@@ -4,15 +4,24 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Tekla.Structures;
 using Tekla.Structures.Drawing;
+using Tekla.Structures.Drawing.UI;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
+using Tekla.Structures.Model.UI;
 
 namespace TeklaBridge;
 
 // Must be STA for Tekla API (COM/IPC compatibility)
-internal class Program
+internal partial class Program
 {
+    private sealed class DrawingPropertyFilter
+    {
+        public string Property { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
     private static bool ContainsIgnoreCase(string? source, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -27,6 +36,213 @@ internal class Program
         foreach (var c in Path.GetInvalidFileNameChars())
             value = value.Replace(c, '_');
         return value;
+    }
+
+    private static List<int> ParseIntList(string? csv)
+    {
+        if (string.IsNullOrWhiteSpace(csv))
+            return new List<int>();
+
+        return csv
+            .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => int.TryParse(x, out _))
+            .Select(int.Parse)
+            .Distinct()
+            .ToList();
+    }
+
+    private static List<DrawingPropertyFilter> ParseDrawingFilters(string filtersJson)
+    {
+        var result = new List<DrawingPropertyFilter>();
+        if (string.IsNullOrWhiteSpace(filtersJson))
+            return result;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(filtersJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                return result;
+
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                var property = item.TryGetProperty("property", out var p)
+                    ? (p.GetString() ?? string.Empty)
+                    : string.Empty;
+                var value = item.TryGetProperty("value", out var v)
+                    ? (v.GetString() ?? string.Empty)
+                    : string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(property))
+                    result.Add(new DrawingPropertyFilter { Property = property, Value = value });
+            }
+        }
+        catch
+        {
+            // ignored, caller validates result
+        }
+
+        return result;
+    }
+
+    private static Type? ResolveDrawingType(string objectType)
+    {
+        if (string.IsNullOrWhiteSpace(objectType))
+            return null;
+
+        return Type.GetType($"Tekla.Structures.Drawing.{objectType}, Tekla.Structures.Drawing", false, true);
+    }
+
+    private static string GetMarkType(Mark mark, Model model)
+    {
+        var associatedObjects = mark.GetRelatedObjects();
+        foreach (object associated in associatedObjects)
+        {
+            if (associated is not Tekla.Structures.Drawing.ModelObject drawingModelObject)
+                continue;
+
+            var modelObject = model.SelectModelObject(drawingModelObject.ModelIdentifier);
+            if (modelObject == null)
+                continue;
+
+            if (modelObject is Tekla.Structures.Model.Part) return "Part Mark";
+            if (modelObject is BoltGroup) return "Bolt Mark";
+            if (modelObject is RebarGroup || modelObject is SingleRebar) return "Reinforcement Mark";
+            if (modelObject is Tekla.Structures.Model.Weld) return "Weld Mark";
+            if (modelObject is Assembly) return "Assembly Mark";
+            if (modelObject is Tekla.Structures.Model.Connection) return "Connection Mark";
+        }
+
+        return "Unknown Mark Type";
+    }
+
+    private static PropertyElement? CreateMarkPropertyElement(string attributeName)
+    {
+        switch ((attributeName ?? string.Empty).Trim().ToUpperInvariant())
+        {
+            case "PART_POS":
+            case "PARTPOSITION":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.PartPosition());
+            case "PROFILE":
+            case "PART_PROFILE":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Profile());
+            case "MATERIAL":
+            case "PART_MATERIAL":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Material());
+            case "ASSEMBLY_POS":
+            case "PART_PREFIX":
+            case "ASSEMBLYPOSITION":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.AssemblyPosition());
+            case "NAME":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Name());
+            case "CLASS":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Class());
+            case "SIZE":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Size());
+            case "CAMBER":
+                return new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Camber());
+            default:
+                return null;
+        }
+    }
+
+    private static bool CreateGaDrawingViaMacro(string viewName, string gaAttribute, bool openGaDrawing, out string error)
+    {
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(viewName))
+        {
+            error = "View name is required.";
+            return false;
+        }
+
+        string macroDirs = string.Empty;
+        if (!TeklaStructuresSettings.GetAdvancedOption("XS_MACRO_DIRECTORY", ref macroDirs))
+        {
+            error = "XS_MACRO_DIRECTORY is not defined.";
+            return false;
+        }
+
+        string? modelingDir = null;
+        foreach (var path in macroDirs.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var cleanPath = path.Trim();
+            var subDir = Path.Combine(cleanPath, "modeling");
+            if (Directory.Exists(subDir))
+            {
+                modelingDir = subDir;
+                break;
+            }
+
+            if (Directory.Exists(cleanPath))
+            {
+                modelingDir = cleanPath;
+                break;
+            }
+        }
+
+        if (modelingDir == null)
+        {
+            error = "Valid modeling macro directory not found.";
+            return false;
+        }
+
+        var macroName = $"_tmp_ga_{Guid.NewGuid():N}.cs";
+        var macroPath = Path.Combine(modelingDir, macroName);
+        var safeViewName = viewName.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var attrLine = string.IsNullOrWhiteSpace(gaAttribute)
+            ? string.Empty
+            : $"            akit.ValueChange(\"Create GA-drawing\", \"dia_attr_name\", \"{gaAttribute}\");{Environment.NewLine}";
+        var openFlag = openGaDrawing ? "1" : "0";
+
+        var macroSource =
+$@"
+            namespace Tekla.Technology.Akit.UserScript
+            {{
+                public sealed class Script
+                {{
+                    public static void Run(Tekla.Technology.Akit.IScript akit)
+                    {{
+                        akit.Callback(""acmd_create_dim_general_assembly_drawing"", """", ""main_frame"");
+{attrLine}            akit.ListSelect(""Create GA-drawing"", ""dia_view_name_list"", ""{safeViewName}"");
+                        akit.ValueChange(""Create GA-drawing"", ""dia_creation_mode"", ""0"");
+                        akit.ValueChange(""Create GA-drawing"", ""dia_open_drawing"", ""{openFlag}"");
+                        akit.PushButton(""Pushbutton_127"", ""Create GA-drawing"");
+                    }}
+                }}
+            }}";
+
+        File.WriteAllText(macroPath, macroSource);
+        try
+        {
+            if (!Tekla.Structures.Model.Operations.Operation.RunMacro(macroName))
+            {
+                error = "RunMacro returned false.";
+                return false;
+            }
+
+            var timeout = DateTime.Now.AddSeconds(30);
+            while (Tekla.Structures.Model.Operations.Operation.IsMacroRunning())
+            {
+                if (DateTime.Now > timeout)
+                {
+                    error = "Macro timeout exceeded.";
+                    return false;
+                }
+
+                System.Threading.Thread.Sleep(100);
+            }
+
+            return true;
+        }
+        finally
+        {
+            if (File.Exists(macroPath))
+                File.Delete(macroPath);
+        }
     }
 
     [STAThread]
@@ -148,205 +364,11 @@ internal class Program
                 return;
             }
 
-            switch (command)
-            {
-                case "get_selected_properties":
-                {
-                    var selector = new Tekla.Structures.Model.UI.ModelObjectSelector();
-                    var objs = selector.GetSelectedObjects();
-                    var results = new System.Collections.Generic.List<object>();
-                    while (objs.MoveNext())
-                    {
-                        if (objs.Current is Tekla.Structures.Model.Part part)
-                        {
-                            double weight = 0;
-                            part.GetReportProperty("WEIGHT", ref weight);
-                            results.Add(new
-                            {
-                                guid = part.Identifier.GUID.ToString(),
-                                name = part.Name,
-                                profile = part.Profile.ProfileString,
-                                material = part.Material.MaterialString,
-                                @class = part.Class,
-                                finish = part.Finish,
-                                weight = Math.Round(weight, 3)
-                            });
-                        }
-                    }
-                    realOut.WriteLine(JsonSerializer.Serialize(results));
-                    break;
-                }
+            var handled = TryHandleModelCommand(command, args, model, realOut)
+                || TryHandleDrawingCommand(command, args, model, realOut);
 
-                case "select_by_class":
-                {
-                    if (args.Length < 2) { realOut.WriteLine("{\"error\":\"Missing class number\"}"); return; }
-                    var className = args[1];
-                    var allObjs = model.GetModelObjectSelector().GetAllObjects();
-                    var toSelect = new ArrayList();
-                    while (allObjs.MoveNext())
-                    {
-                        if (allObjs.Current is Tekla.Structures.Model.Part p && p.Class == className)
-                            toSelect.Add(p);
-                    }
-                    new Tekla.Structures.Model.UI.ModelObjectSelector().Select(toSelect);
-                    realOut.WriteLine(JsonSerializer.Serialize(new { count = toSelect.Count, @class = className }));
-                    break;
-                }
-
-                case "get_selected_weight":
-                {
-                    var sel = new Tekla.Structures.Model.UI.ModelObjectSelector().GetSelectedObjects();
-                    double totalWeight = 0;
-                    int count = 0;
-                    while (sel.MoveNext())
-                    {
-                        if (sel.Current is Tekla.Structures.Model.Part pt)
-                        {
-                            double w = 0;
-                            pt.GetReportProperty("WEIGHT", ref w);
-                            totalWeight += w;
-                            count++;
-                        }
-                    }
-                    realOut.WriteLine(JsonSerializer.Serialize(new { totalWeight = Math.Round(totalWeight, 2), count }));
-                    break;
-                }
-
-                case "list_drawings":
-                {
-                    var drawingHandler = new DrawingHandler();
-                    var drawingEnumerator = drawingHandler.GetDrawings();
-                    var drawings = new List<object>();
-
-                    while (drawingEnumerator.MoveNext())
-                    {
-                        var drawing = drawingEnumerator.Current;
-                        drawings.Add(new
-                        {
-                            guid = drawing.GetIdentifier().GUID.ToString(),
-                            name = drawing.Name,
-                            mark = drawing.Mark,
-                            type = drawing.GetType().Name
-                        });
-                    }
-
-                    realOut.WriteLine(JsonSerializer.Serialize(drawings));
-                    break;
-                }
-
-                case "find_drawings":
-                {
-                    var nameContains = args.Length > 1 ? args[1] : string.Empty;
-                    var markContains = args.Length > 2 ? args[2] : string.Empty;
-
-                    if (string.IsNullOrWhiteSpace(nameContains) && string.IsNullOrWhiteSpace(markContains))
-                    {
-                        realOut.WriteLine("{\"error\":\"Provide at least one filter: nameContains or markContains\"}");
-                        return;
-                    }
-
-                    var drawingHandler = new DrawingHandler();
-                    var drawingEnumerator = drawingHandler.GetDrawings();
-                    var drawings = new List<object>();
-
-                    while (drawingEnumerator.MoveNext())
-                    {
-                        var drawing = drawingEnumerator.Current;
-                        if (!ContainsIgnoreCase(drawing.Name, nameContains))
-                            continue;
-
-                        if (!ContainsIgnoreCase(drawing.Mark, markContains))
-                            continue;
-
-                        drawings.Add(new
-                        {
-                            guid = drawing.GetIdentifier().GUID.ToString(),
-                            name = drawing.Name,
-                            mark = drawing.Mark,
-                            type = drawing.GetType().Name
-                        });
-                    }
-
-                    realOut.WriteLine(JsonSerializer.Serialize(drawings));
-                    break;
-                }
-
-                case "export_drawings_pdf":
-                {
-                    if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
-                    {
-                        realOut.WriteLine("{\"error\":\"Missing drawing GUID list (comma-separated)\"}");
-                        return;
-                    }
-
-                    var requestedGuids = args[1]
-                        .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(x => x.Trim())
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                    if (requestedGuids.Count == 0)
-                    {
-                        realOut.WriteLine("{\"error\":\"No valid drawing GUIDs provided\"}");
-                        return;
-                    }
-
-                    var modelInfo = model.GetInfo();
-                    var outputDir = (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
-                        ? args[2]
-                        : Path.Combine(modelInfo.ModelPath, "PlotFiles");
-
-                    Directory.CreateDirectory(outputDir);
-
-                    var drawingHandler = new DrawingHandler();
-                    var drawingEnumerator = drawingHandler.GetDrawings();
-                    var exportedFiles = new List<string>();
-                    var failedToExport = new List<string>();
-                    var foundGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                    var printAttributes = new DPMPrinterAttributes
-                    {
-                        PrinterName = "Microsoft Print to PDF",
-                        OutputType = DotPrintOutputType.PDF
-                    };
-
-                    while (drawingEnumerator.MoveNext())
-                    {
-                        var drawing = drawingEnumerator.Current;
-                        var guid = drawing.GetIdentifier().GUID.ToString();
-                        if (!requestedGuids.Contains(guid))
-                            continue;
-
-                        foundGuids.Add(guid);
-
-                        var fileName = $"{SanitizeFileName(drawing.Name)}_{SanitizeFileName(drawing.Mark)}.pdf";
-                        var filePath = Path.Combine(outputDir, fileName);
-
-                        if (drawingHandler.PrintDrawing(drawing, printAttributes, filePath))
-                            exportedFiles.Add(filePath);
-                        else
-                            failedToExport.Add(guid);
-                    }
-
-                    var missingGuids = requestedGuids
-                        .Where(g => !foundGuids.Contains(g))
-                        .ToList();
-
-                    realOut.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        exportedCount = exportedFiles.Count,
-                        exportedFiles,
-                        failedToExport,
-                        missingGuids,
-                        outputDirectory = outputDir
-                    }));
-                    break;
-                }
-
-                default:
-                    realOut.WriteLine($"{{\"error\":\"Unknown command: {command}\"}}");
-                    break;
-            }
+            if (!handled)
+                realOut.WriteLine($"{{\"error\":\"Unknown command: {command}\"}}");
         }
         catch (Exception ex)
         {
