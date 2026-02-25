@@ -1,39 +1,35 @@
 # Build output
-**/[Bb]in/
-**/[Oo]bj/
+bin/
+obj/
+
+# NuGet
+*.nupkg
+*.snupkg
+project.assets.json
+project.nuget.cache
+*.nuget.props
+*.nuget.targets
+packages/
 
 # Visual Studio
 .vs/
 *.user
-*.rsuser
 *.suo
 *.userosscache
 *.sln.docstates
 
-# Rider / ReSharper
+# Rider
 .idea/
-_ReSharper*/
-*.DotSettings.user
-
-# VS Code local
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# NuGet
-packages/
-*.nupkg
-*.snupkg
-
-# Logs and temp
-*.log
-*.tmp
-*.temp
-*.cache
-*.pdb
 
 # OS
-.DS_Store
 Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs & diagnostics
+*.log
+C:/temp/teklabridge*.txt
+C:/temp/tekla_channel.txt
+
+# Tekla temp macros
+_tmp_ga_*.cs

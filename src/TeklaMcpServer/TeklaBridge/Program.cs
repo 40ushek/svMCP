@@ -273,30 +273,38 @@ $@"
             _ = typeof(Tekla.Structures.Model.Model);
             _ = typeof(Tekla.Structures.Drawing.DrawingHandler);
 
+            // Internal assemblies (DrawingInternal, TeklaStructuresInternal, etc.) are NOT
+            // auto-loaded — force-load all Tekla.Structures.*Internal*.dll from the same directory
+            try {
+                var dir = Path.GetDirectoryName(typeof(Tekla.Structures.Drawing.DrawingHandler).Assembly.Location) ?? "";
+                foreach (var dll in Directory.GetFiles(dir, "Tekla.Structures.*Internal*.dll")) {
+                    try { System.Reflection.Assembly.LoadFrom(dll); } catch { }
+                }
+            } catch { }
+
             var log = new System.Text.StringBuilder();
             int fixedCount = 0;
+            var bindingFlags = System.Reflection.BindingFlags.Static |
+                               System.Reflection.BindingFlags.Public |
+                               System.Reflection.BindingFlags.NonPublic;
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
                 if (!asm.GetName().Name.StartsWith("Tekla.Structures")) continue;
                 Type[] types;
                 try { types = asm.GetTypes(); } catch { continue; }
                 foreach (var t in types) {
-                    if (!t.Name.Contains("Remoter")) continue;
-                    var f = t.GetField("ChannelName",
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public |
-                        System.Reflection.BindingFlags.NonPublic);
-                    if (f == null) continue;
-                    try {
-                        var val = f.GetValue(null)?.ToString() ?? "";
-                        if (val.Contains("-:")) {
-                            var corrected = val.Replace("-:", "-Console:");
-                            f.SetValue(null, corrected);
-                            log.AppendLine($"FIXED {t.FullName}: {val} -> {corrected}");
-                            fixedCount++;
-                        } else {
-                            log.AppendLine($"OK    {t.FullName}: {val}");
-                        }
-                    } catch (Exception ex2) {
-                        log.AppendLine($"ERR   {t.FullName}: {ex2.Message}");
+                    // Search ALL static string fields for broken channel name pattern,
+                    // regardless of class/field name — Drawing API may use different names
+                    foreach (var f in t.GetFields(bindingFlags)) {
+                        if (f.FieldType != typeof(string)) continue;
+                        try {
+                            var val = f.GetValue(null)?.ToString() ?? "";
+                            if (val.StartsWith("Tekla.Structures.") && val.Contains("-:")) {
+                                var corrected = val.Replace("-:", "-Console:");
+                                f.SetValue(null, corrected);
+                                log.AppendLine($"FIXED {t.FullName}.{f.Name}: {val} -> {corrected}");
+                                fixedCount++;
+                            }
+                        } catch { }
                     }
                 }
             }
