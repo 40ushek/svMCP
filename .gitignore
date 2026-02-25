@@ -1,0 +1,39 @@
+# Build output
+**/[Bb]in/
+**/[Oo]bj/
+
+# Visual Studio
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# VS Code local
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+*.cache
+*.pdb
+
+# OS
+.DS_Store
+Thumbs.db
