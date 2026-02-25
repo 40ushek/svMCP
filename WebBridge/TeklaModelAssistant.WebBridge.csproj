@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <AssemblyName>TeklaModelAssistant.WebBridge</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <UseWPF>True</UseWPF>
+    <TargetFramework>net48</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>7</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup>
+    <RootNamespace />
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="WebUI.index.html" />
+    <EmbeddedResource Include="WebUI.index.html" LogicalName="WebUI.index.html" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="TeklaModelAssistant.McpTools">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\TeklaModelAssistant.McpTools.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Fusion" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="Tekla.Structures.WebBrowser">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\Tekla.Structures.WebBrowser.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Core" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Trimble.Connect.Client.Common">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\Trimble.Connect.Client.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection">
+      <HintPath>C:\TeklaStructures\2025.0\Environments\common\extensions\Features\Microsoft.Extensions.DependencyInjection.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
