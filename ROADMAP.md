@@ -7,9 +7,19 @@
 
 ### Готово ✅
 
+**Соединение и модель**
+
 | Инструмент | Описание |
 |---|---|
 | `check_connection` | Соединение с Tekla |
+| `get_selected_elements_properties` | Свойства выделенных элементов: GUID, имя, профиль, материал, класс, вес |
+| `get_selected_elements_total_weight` | Суммарный вес выделенных элементов (кг) |
+| `select_elements_by_class` | Выделить элементы по номеру класса Tekla |
+
+**Чертежи**
+
+| Инструмент | Описание |
+|---|---|
 | `list_drawings` | Список всех чертежей |
 | `find_drawings` | Поиск по имени / марке |
 | `find_drawings_by_properties` | Поиск по фильтрам (name, mark, type, status) |
