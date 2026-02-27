@@ -10,6 +10,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<PackageReference Include="System.Text.Json" Version="9.0.0" />
 		<PackageReference Include="Tekla.Application.Library" Version="2021.0.0" />
 		<PackageReference Include="Tekla.Structures" Version="2021.0.0" />

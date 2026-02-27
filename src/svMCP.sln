@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "svMCP", "svMCP\svMCP.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer", "TeklaMcpServer\TeklaMcpServer.csproj", "{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Api", "TeklaMcpServer.Api\TeklaMcpServer.Api.csproj", "{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
