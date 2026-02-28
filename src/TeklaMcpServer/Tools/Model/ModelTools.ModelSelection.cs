@@ -63,4 +63,31 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description("Filter model objects by type (e.g. bolts, parts, beams) and optionally select matches in Tekla")]
+    public static string FilterModelObjectsByType(
+        [Description("Object type, e.g. bolt, part, beam, plate, assembly, weld, rebar, connection")] string objectType,
+        [Description("Select found objects in Tekla model. Default: true")] bool selectMatches = true)
+    {
+        if (string.IsNullOrWhiteSpace(objectType))
+            return "Error: 'objectType' is required and cannot be empty.";
+
+        var json = RunBridge("filter_model_objects", objectType, selectMatches ? "true" : "false");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            var count = doc.RootElement.TryGetProperty("count", out var c) ? c.GetInt32() : 0;
+            if (count == 0)
+                return $"No model objects found for type '{objectType}'.";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
 }

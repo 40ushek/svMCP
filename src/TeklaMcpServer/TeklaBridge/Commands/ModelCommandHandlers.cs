@@ -1,6 +1,8 @@
 using System.Collections;
 using System.IO;
 using System.Text.Json;
+using TeklaBridge.Filtering;
+using TeklaMcpServer.Api.Filtering;
 using Tekla.Structures.Model;
 
 namespace TeklaBridge;
@@ -78,6 +80,30 @@ internal partial class Program
                 }
 
                 realOut.WriteLine(JsonSerializer.Serialize(new { totalWeight = Math.Round(totalWeight, 2), count }));
+                return true;
+            }
+
+            case "filter_model_objects":
+            {
+                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                {
+                    realOut.WriteLine("{\"error\":\"Missing object type\"}");
+                    return true;
+                }
+
+                var objectType = args[1];
+                var selectMatches = true;
+                if (args.Length >= 3 && bool.TryParse(args[2], out var parsed))
+                    selectMatches = parsed;
+
+                var api = new TeklaModelFilteringApi(model);
+                var result = api.FilterByType(new ModelObjectFilter
+                {
+                    ObjectType = objectType,
+                    SelectMatches = selectMatches
+                });
+
+                realOut.WriteLine(JsonSerializer.Serialize(result));
                 return true;
             }
 

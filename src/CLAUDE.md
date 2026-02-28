@@ -45,32 +45,52 @@ TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and re
 
 - **TeklaMcpServer/** — MCP server (net8.0-windows). Entry point: [Program.cs](TeklaMcpServer/Program.cs)
 - **TeklaMcpServer/TeklaBridge/** — Bridge subprocess (net48). Entry point: [TeklaBridge/Program.cs](TeklaMcpServer/TeklaBridge/Program.cs)
+- **TeklaMcpServer.Api/** — Contracts library (net48): interfaces + DTOs for all Tekla operations. Referenced by TeklaBridge (implementations live there).
 - **svMCP/** — Unused placeholder library (netstandard2.0)
+
+### Responsibility split
+
+| Layer | Project | Role |
+|---|---|---|
+| MCP Tools | `TeklaMcpServer/Tools/` | **Thin wrappers only** — call `RunBridge()`, parse JSON, return string |
+| Bridge commands | `TeklaBridge/Commands/` | Dispatch to Api implementations, serialize result |
+| Api implementations | `TeklaBridge/**/*Api.cs` | All Tekla API logic — implement interfaces from `TeklaMcpServer.Api` |
+| Contracts | `TeklaMcpServer.Api/` | Interfaces + DTOs, no Tekla calls |
+
+New Tekla logic goes into `TeklaMcpServer.Api` (interface + DTO) and a `TeklaBridge/*/**Api.cs` implementation. MCP tools stay as thin wrappers.
 
 ### MCP Tool Registration
 
 `Program.cs` calls `.WithToolsFromAssembly()`, which auto-discovers all classes annotated with `[McpServerToolType]` and methods annotated with `[McpServerTool]`.
 
 **To add a new tool:**
-1. Add a `[McpServerTool]` static method in `TeklaMcpServer/Tools/` — call `RunBridge("command_name", ...args)`
-2. Handle `"command_name"` in `TeklaBridge/Commands/ModelCommandHandlers.cs` or `DrawingCommandHandlers.cs`
+1. Define interface + DTOs in `TeklaMcpServer.Api/`
+2. Implement in `TeklaBridge/` (e.g. `TeklaBridge/Filtering/TeklaXxxApi.cs`)
+3. Wire command in `TeklaBridge/Commands/ModelCommandHandlers.cs` or `DrawingCommandHandlers.cs`
+4. Add thin `[McpServerTool]` wrapper in `TeklaMcpServer/Tools/` calling `RunBridge("command_name", ...args)`
 
 ### File Structure
 
 ```
 src/
+├── TeklaMcpServer.Api/       # Contracts (net48) — interfaces + DTOs
+│   ├── Connection/           # ITeklaConnectionApi, ConnectionInfo
+│   ├── Model/                # IModelSelectionApi, ModelObjectInfo, SelectedWeightResult
+│   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
+│   └── Filtering/            # IModelFilteringApi, ModelObjectFilter, FilteredModelObjectsResult
 ├── TeklaMcpServer/           # MCP server (net8.0-windows)
 │   ├── Program.cs            # Entry point — MCP host config
-│   ├── Tools/
-│   │   ├── Shared/           # RunBridge() helper (ModelTools.Shared.cs)
+│   ├── Tools/                # Thin MCP tool wrappers
+│   │   ├── Shared/           # RunBridge() helper
 │   │   ├── Connection/       # check_connection
-│   │   ├── Model/            # Model selection tools
-│   │   └── Drawing/          # Drawing tools (Basic + Advanced)
+│   │   ├── Model/            # Model tools
+│   │   └── Drawing/          # Drawing tools
 │   └── TeklaBridge/          # Bridge process (net48)
 │       ├── Program.cs        # Entry point + IPC fix + Console capture
-│       └── Commands/
-│           ├── ModelCommandHandlers.cs
-│           └── DrawingCommandHandlers.cs
+│       ├── Commands/
+│       │   ├── ModelCommandHandlers.cs
+│       │   └── DrawingCommandHandlers.cs
+│       └── Filtering/        # TeklaModelFilteringApi (implements IModelFilteringApi)
 └── svMCP/                    # Unused stub
 ```
 
@@ -89,6 +109,7 @@ src/
 | `get_selected_elements_properties` | Properties of selected elements: GUID, name, profile, material, class, weight |
 | `get_selected_elements_total_weight` | Total weight of selected elements (kg) |
 | `select_elements_by_class` | Select model elements by Tekla class number |
+| `filter_model_objects_by_type` | Filter / select model objects by type (beam, plate, bolt, assembly…) |
 
 ### Drawing
 

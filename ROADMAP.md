@@ -21,6 +21,7 @@
 | `get_selected_elements_properties` | Свойства выделенных элементов: GUID, имя, профиль, материал, класс, вес |
 | `get_selected_elements_total_weight` | Суммарный вес выделенных элементов (кг) |
 | `select_elements_by_class` | Выделить элементы по номеру класса Tekla |
+| `filter_model_objects_by_type` | Найти и выделить объекты по типу (beam, plate, bolt, assembly…) |
 
 **Чертежи**
 

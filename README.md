@@ -72,20 +72,37 @@ TeklaBridge — тонкая net48-обёртка: принимает коман
 
 ```
 src/
+├── TeklaMcpServer.Api/       # Контракты (net48) — интерфейсы + DTO
+│   ├── Connection/           # ITeklaConnectionApi, ConnectionInfo
+│   ├── Model/                # IModelSelectionApi, ModelObjectInfo, SelectedWeightResult
+│   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
+│   └── Filtering/            # IModelFilteringApi, ModelObjectFilter, FilteredModelObjectsResult
 ├── TeklaMcpServer/           # MCP сервер (net8.0-windows)
 │   ├── Program.cs            # Точка входа, конфигурация MCP host
-│   ├── Tools/
+│   ├── Tools/                # Тонкие MCP-обёртки
 │   │   ├── Shared/           # RunBridge(), общий код
-│   │   ├── Connection/       # CheckConnection
-│   │   ├── Model/            # Работа с элементами модели
-│   │   └── Drawing/          # Работа с чертежами
+│   │   ├── Connection/       # check_connection
+│   │   ├── Model/            # Model tools
+│   │   └── Drawing/          # Drawing tools
 │   └── TeklaBridge/          # Bridge процесс (net48)
-│       ├── Program.cs        # Точка входа + reflection fix
-│       └── Commands/
-│           ├── ModelCommandHandlers.cs
-│           └── DrawingCommandHandlers.cs
+│       ├── Program.cs        # Точка входа + IPC fix + Console capture
+│       ├── Commands/
+│       │   ├── ModelCommandHandlers.cs
+│       │   └── DrawingCommandHandlers.cs
+│       └── Filtering/        # TeklaModelFilteringApi (реализует IModelFilteringApi)
 └── svMCP/                    # Заглушка (не используется)
 ```
+
+### Разделение ответственности
+
+| Слой | Проект | Роль |
+|---|---|---|
+| MCP Tools | `TeklaMcpServer/Tools/` | **Только тонкие обёртки** — вызов `RunBridge()`, разбор JSON, возврат строки |
+| Bridge commands | `TeklaBridge/Commands/` | Диспетчеризация к реализациям Api, сериализация результата |
+| Api реализации | `TeklaBridge/**/*Api.cs` | Вся логика работы с Tekla API — реализуют интерфейсы из `TeklaMcpServer.Api` |
+| Контракты | `TeklaMcpServer.Api/` | Интерфейсы + DTO, никаких вызовов Tekla |
+
+`TeklaMcpServer.Api` — отдельный net48-проект (не shared с net8-сервером), его ценность — в чёткой границе контрактов внутри bridge-процесса: обзорность, тестируемость через mock и готовность к поддержке нескольких версий Tekla.
 
 ## Доступные инструменты
 
@@ -102,6 +119,7 @@ src/
 | `get_selected_elements_properties` | Свойства выделенных элементов: GUID, имя, профиль, материал, класс, вес |
 | `get_selected_elements_total_weight` | Суммарный вес выделенных элементов (кг) |
 | `select_elements_by_class` | Выделить элементы по номеру класса Tekla |
+| `filter_model_objects_by_type` | Найти и выделить объекты модели по типу (beam, plate, bolt, assembly…) |
 
 ### Чертежи
 
