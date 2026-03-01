@@ -64,9 +64,9 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Filter model objects by type (e.g. bolts, parts, beams) and optionally select matches in Tekla")]
+    [McpServerTool, Description("Filter model objects by simple type (bolt, part, beam) or by Tekla filter expression criteria, and optionally select matches in Tekla")]
     public static string FilterModelObjectsByType(
-        [Description("Object type, e.g. bolt, part, beam, plate, assembly, weld, rebar, connection")] string objectType,
+        [Description("Object type (e.g. bolt, part, beam) or filter criteria like 'Part|PROFILE|IS_EQUAL|HEA300|AND;Part|CLASS|IS_EQUAL|3'")] string objectType,
         [Description("Select found objects in Tekla model. Default: true")] bool selectMatches = true)
     {
         if (string.IsNullOrWhiteSpace(objectType))

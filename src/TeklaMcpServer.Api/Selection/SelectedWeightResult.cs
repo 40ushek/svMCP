@@ -1,4 +1,4 @@
-namespace TeklaMcpServer.Api.Model;
+namespace TeklaMcpServer.Api.Selection;
 
 public sealed class SelectedWeightResult
 {

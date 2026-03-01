@@ -1,8 +1,6 @@
-using System.Collections;
-using System.IO;
 using System.Text.Json;
-using TeklaBridge.Filtering;
 using TeklaMcpServer.Api.Filtering;
+using TeklaMcpServer.Api.Selection;
 using Tekla.Structures.Model;
 
 namespace TeklaBridge;
@@ -15,29 +13,8 @@ internal partial class Program
         {
             case "get_selected_properties":
             {
-                var selector = new Tekla.Structures.Model.UI.ModelObjectSelector();
-                var objs = selector.GetSelectedObjects();
-                var results = new System.Collections.Generic.List<object>();
-                while (objs.MoveNext())
-                {
-                    if (objs.Current is Tekla.Structures.Model.Part part)
-                    {
-                        double weight = 0;
-                        part.GetReportProperty("WEIGHT", ref weight);
-                        results.Add(new
-                        {
-                            guid = part.Identifier.GUID.ToString(),
-                            name = part.Name,
-                            profile = part.Profile.ProfileString,
-                            material = part.Material.MaterialString,
-                            @class = part.Class,
-                            finish = part.Finish,
-                            weight = Math.Round(weight, 3)
-                        });
-                    }
-                }
-
-                realOut.WriteLine(JsonSerializer.Serialize(results));
+                var api = new TeklaModelSelectionApi(model);
+                realOut.WriteLine(JsonSerializer.Serialize(api.GetSelectedObjects()));
                 return true;
             }
 
@@ -49,37 +26,23 @@ internal partial class Program
                     return true;
                 }
 
-                var className = args[1];
-                var allObjs = model.GetModelObjectSelector().GetAllObjects();
-                var toSelect = new ArrayList();
-                while (allObjs.MoveNext())
+                if (!int.TryParse(args[1], out var classNumber))
                 {
-                    if (allObjs.Current is Tekla.Structures.Model.Part p && p.Class == className)
-                        toSelect.Add(p);
+                    realOut.WriteLine("{\"error\":\"Invalid class number\"}");
+                    return true;
                 }
 
-                new Tekla.Structures.Model.UI.ModelObjectSelector().Select(toSelect);
-                realOut.WriteLine(JsonSerializer.Serialize(new { count = toSelect.Count, @class = className }));
+                var api = new TeklaModelSelectionApi(model);
+                var count = api.SelectObjectsByClass(classNumber);
+                realOut.WriteLine(JsonSerializer.Serialize(new { count, @class = classNumber }));
                 return true;
             }
 
             case "get_selected_weight":
             {
-                var sel = new Tekla.Structures.Model.UI.ModelObjectSelector().GetSelectedObjects();
-                double totalWeight = 0;
-                int count = 0;
-                while (sel.MoveNext())
-                {
-                    if (sel.Current is Tekla.Structures.Model.Part pt)
-                    {
-                        double w = 0;
-                        pt.GetReportProperty("WEIGHT", ref w);
-                        totalWeight += w;
-                        count++;
-                    }
-                }
-
-                realOut.WriteLine(JsonSerializer.Serialize(new { totalWeight = Math.Round(totalWeight, 2), count }));
+                var api = new TeklaModelSelectionApi(model);
+                var result = api.GetSelectedObjectsWeight();
+                realOut.WriteLine(JsonSerializer.Serialize(new { totalWeight = result.TotalWeightKg, count = result.Count }));
                 return true;
             }
 
@@ -87,11 +50,10 @@ internal partial class Program
             {
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
                 {
-                    realOut.WriteLine("{\"error\":\"Missing object type\"}");
+                    realOut.WriteLine("{\"error\":\"Missing object type or filter criteria\"}");
                     return true;
                 }
 
-                var objectType = args[1];
                 var selectMatches = true;
                 if (args.Length >= 3 && bool.TryParse(args[2], out var parsed))
                     selectMatches = parsed;
@@ -99,7 +61,7 @@ internal partial class Program
                 var api = new TeklaModelFilteringApi(model);
                 var result = api.FilterByType(new ModelObjectFilter
                 {
-                    ObjectType = objectType,
+                    ObjectType = args[1],
                     SelectMatches = selectMatches
                 });
 

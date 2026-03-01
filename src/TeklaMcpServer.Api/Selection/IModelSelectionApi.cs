@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace TeklaMcpServer.Api.Model;
+namespace TeklaMcpServer.Api.Selection;
 
 public interface IModelSelectionApi
 {

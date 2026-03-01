@@ -45,7 +45,7 @@ TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and re
 
 - **TeklaMcpServer/** — MCP server (net8.0-windows). Entry point: [Program.cs](TeklaMcpServer/Program.cs)
 - **TeklaMcpServer/TeklaBridge/** — Bridge subprocess (net48). Entry point: [TeklaBridge/Program.cs](TeklaMcpServer/TeklaBridge/Program.cs)
-- **TeklaMcpServer.Api/** — Contracts library (net48): interfaces + DTOs for all Tekla operations. Referenced by TeklaBridge (implementations live there).
+- **TeklaMcpServer.Api/** — All Tekla API logic (net48): interfaces, DTOs, and implementations. The single place for all Tekla interaction code.
 - **svMCP/** — Unused placeholder library (netstandard2.0)
 
 ### Responsibility split
@@ -53,31 +53,29 @@ TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and re
 | Layer | Project | Role |
 |---|---|---|
 | MCP Tools | `TeklaMcpServer/Tools/` | **Thin wrappers only** — call `RunBridge()`, parse JSON, return string |
-| Bridge commands | `TeklaBridge/Commands/` | Dispatch to Api implementations, serialize result |
-| Api implementations | `TeklaBridge/**/*Api.cs` | All Tekla API logic — implement interfaces from `TeklaMcpServer.Api` |
-| Contracts | `TeklaMcpServer.Api/` | Interfaces + DTOs, no Tekla calls |
+| Bridge dispatcher | `TeklaBridge/Commands/` | Route command to the right `TeklaMcpServer.Api` class, serialize result |
+| All Tekla logic | `TeklaMcpServer.Api/` | Interfaces, DTOs, and all Tekla API implementations |
 
-New Tekla logic goes into `TeklaMcpServer.Api` (interface + DTO) and a `TeklaBridge/*/**Api.cs` implementation. MCP tools stay as thin wrappers.
+New Tekla logic goes entirely into `TeklaMcpServer.Api/`. TeklaBridge stays as a thin command dispatcher. MCP tools stay as thin wrappers.
 
 ### MCP Tool Registration
 
 `Program.cs` calls `.WithToolsFromAssembly()`, which auto-discovers all classes annotated with `[McpServerToolType]` and methods annotated with `[McpServerTool]`.
 
 **To add a new tool:**
-1. Define interface + DTOs in `TeklaMcpServer.Api/`
-2. Implement in `TeklaBridge/` (e.g. `TeklaBridge/Filtering/TeklaXxxApi.cs`)
-3. Wire command in `TeklaBridge/Commands/ModelCommandHandlers.cs` or `DrawingCommandHandlers.cs`
-4. Add thin `[McpServerTool]` wrapper in `TeklaMcpServer/Tools/` calling `RunBridge("command_name", ...args)`
+1. Define interface + DTOs + implementation in `TeklaMcpServer.Api/`
+2. Wire command in `TeklaBridge/Commands/ModelCommandHandlers.cs` or `DrawingCommandHandlers.cs`
+3. Add thin `[McpServerTool]` wrapper in `TeklaMcpServer/Tools/` calling `RunBridge("command_name", ...args)`
 
 ### File Structure
 
 ```
 src/
-├── TeklaMcpServer.Api/       # Contracts (net48) — interfaces + DTOs
+├── TeklaMcpServer.Api/       # ALL Tekla API code (net48)
 │   ├── Connection/           # ITeklaConnectionApi, ConnectionInfo
 │   ├── Model/                # IModelSelectionApi, ModelObjectInfo, SelectedWeightResult
 │   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
-│   └── Filtering/            # IModelFilteringApi, ModelObjectFilter, FilteredModelObjectsResult
+│   └── Filtering/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi, FilterHelper…
 ├── TeklaMcpServer/           # MCP server (net8.0-windows)
 │   ├── Program.cs            # Entry point — MCP host config
 │   ├── Tools/                # Thin MCP tool wrappers
@@ -85,12 +83,11 @@ src/
 │   │   ├── Connection/       # check_connection
 │   │   ├── Model/            # Model tools
 │   │   └── Drawing/          # Drawing tools
-│   └── TeklaBridge/          # Bridge process (net48)
+│   └── TeklaBridge/          # Bridge process (net48) — command dispatcher only
 │       ├── Program.cs        # Entry point + IPC fix + Console capture
-│       ├── Commands/
-│       │   ├── ModelCommandHandlers.cs
-│       │   └── DrawingCommandHandlers.cs
-│       └── Filtering/        # TeklaModelFilteringApi (implements IModelFilteringApi)
+│       └── Commands/
+│           ├── ModelCommandHandlers.cs
+│           └── DrawingCommandHandlers.cs
 └── svMCP/                    # Unused stub
 ```
 
