@@ -71,9 +71,11 @@ New Tekla logic goes entirely into `TeklaMcpServer.Api/`. TeklaBridge stays as a
 
 ```
 src/
-├── TeklaMcpServer.Api/       # ALL Tekla API code (net48)
+├── TeklaMcpServer.Api/       # ALL Tekla API code (net48) — interfaces, DTOs, implementations
 │   ├── Connection/           # ITeklaConnectionApi, ConnectionInfo
-│   ├── Model/                # IModelSelectionApi, ModelObjectInfo, SelectedWeightResult
+│   ├── Selection/            # IModelSelectionApi, ModelObjectInfo, TeklaModelSelectionApi
+│   │                         # ISelectionCacheManager, SelectionCacheManager
+│   │                         # SelectionResult, ToolInputSelectionHandler
 │   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
 │   └── Filtering/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi, FilterHelper…
 ├── TeklaMcpServer/           # MCP server (net8.0-windows)
@@ -103,7 +105,7 @@ src/
 
 | Tool | Description |
 |------|-------------|
-| `get_selected_elements_properties` | Properties of selected elements: GUID, name, profile, material, class, weight |
+| `get_selected_elements_properties` | Properties of selected elements: Part, BoltGroup, Weld, RebarGroup — all types |
 | `get_selected_elements_total_weight` | Total weight of selected elements (kg) |
 | `select_elements_by_class` | Select model elements by Tekla class number |
 | `filter_model_objects_by_type` | Filter / select model objects by type (beam, plate, bolt, assembly…) |

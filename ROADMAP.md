@@ -18,10 +18,10 @@
 | Инструмент | Описание |
 |---|---|
 | `check_connection` | Соединение с Tekla |
-| `get_selected_elements_properties` | Свойства выделенных элементов: GUID, имя, профиль, материал, класс, вес |
+| `get_selected_elements_properties` | Свойства выделенных элементов: Part, BoltGroup, Weld, RebarGroup — все типы |
 | `get_selected_elements_total_weight` | Суммарный вес выделенных элементов (кг) |
 | `select_elements_by_class` | Выделить элементы по номеру класса Tekla |
-| `filter_model_objects_by_type` | Найти и выделить объекты по типу (beam, plate, bolt, assembly…) |
+| `filter_model_objects_by_type` | Найти и выделить объекты по типу (beam, plate, bolt, assembly…) или по Tekla filter expression |
 
 **Чертежи**
 
@@ -218,3 +218,40 @@ tidy_drawing
 ```
 
 Каждый шаг тестируется отдельно перед переходом к следующему.
+
+---
+
+## Известные ограничения
+
+### `filter_model_objects_by_type` — объекты внутри компонентов
+
+`GetAllObjects()` возвращает только объекты верхнего уровня. Болты, швы и части внутри компонентов (соединений) недоступны. Для обхода нужно для каждого `Component` вызывать `component.GetChildren()` рекурсивно.
+
+### `get_selected_elements_properties` — болты
+
+Если болты выделены через компонент, они могут не попасть в выборку `GetSelectedObjects()` по той же причине вложенности.
+
+---
+
+## Технический долг
+
+### Selection cache — персистентность между вызовами
+
+**Проблема:** TeklaBridge запускается как новый процесс на каждую команду. `selectionId`, созданный в одном вызове, недоступен в следующем — `SelectionCacheManager` in-memory не переживает завершение процесса.
+
+**Инфраструктура уже написана** (`TeklaMcpServer.Api/Selection/`):
+- `ISelectionCacheManager` / `SelectionCacheManager` — кэш с TTL 30 мин
+- `SelectionResult` — DTO с пагинацией (`selectionId`, `hasMore`, cursor base64)
+- `ToolInputSelectionHandler` — резолвер источника ID (cachedSelectionId / useCurrentSelection / elementIds), работает для модели и чертежей
+
+**Не подключено к командам** — нужно переработать Bridge handlers для использования этой инфраструктуры.
+
+**Варианты реализации (по сложности):**
+
+| Вариант | Сложность | Суть |
+|---|---|---|
+| Файловый кэш | Низкая | `SelectionCacheManager` читает/пишет `C:\temp\svmcp_selections.json` |
+| Кэш в TeklaMcpServer | Средняя | Состояние хранится на стороне net8, IDs передаются в каждый вызов bridge |
+| TeklaBridge как long-lived процесс | Высокая | MCP server держит bridge открытым, общается в цикле stdin/stdout |
+
+**Рекомендуется начать с файлового кэша** — наименьший объём изменений, совместим с текущей архитектурой.
