@@ -78,7 +78,10 @@ src/
 │   │                         # ISelectionCacheManager, SelectionCacheManager
 │   │                         # SelectionResult, ToolInputSelectionHandler
 │   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
-│   └── Filtering/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi, FilterHelper…
+│   └── Filtering/
+│       ├── Common/           # FilterExpressionParser, FilterTokenizer, FilterAstBuilder, FilterHelper…
+│       ├── Drawing/          # DrawingObjectsFilterHelper
+│       └── Model/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi
 ├── TeklaMcpServer/           # MCP сервер (net8.0-windows)
 │   ├── Program.cs            # Точка входа, конфигурация MCP host
 │   ├── Tools/                # Тонкие MCP-обёртки

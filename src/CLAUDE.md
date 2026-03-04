@@ -77,7 +77,12 @@ src/
 │   │                         # ISelectionCacheManager, SelectionCacheManager
 │   │                         # SelectionResult, ToolInputSelectionHandler
 │   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
-│   └── Filtering/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi, FilterHelper…
+│   └── Filtering/
+│       ├── Common/           # FilterExpressionParser, FilterTokenizer, FilterAstBuilder, FilterHelper
+│       │                     # FilterNode, GroupNode, SimpleExpressionNode, Token, TokenType, exceptions
+│       ├── Drawing/          # DrawingObjectsFilterHelper
+│       └── Model/            # IModelFilteringApi, ModelObjectFilter, FilteredModelObjectsResult
+│                             # TeklaModelFilteringApi
 ├── TeklaMcpServer/           # MCP server (net8.0-windows)
 │   ├── Program.cs            # Entry point — MCP host config
 │   ├── Tools/                # Thin MCP tool wrappers
