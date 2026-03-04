@@ -79,7 +79,7 @@ public static partial class ModelTools
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
-            var count = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("count", out var c) ? c.GetInt32() : 0;
+            var count = doc.RootElement.ValueKind == JsonValueKind.Object && (doc.RootElement.TryGetProperty("Count", out var c) || doc.RootElement.TryGetProperty("count", out c)) ? c.GetInt32() : 0;
             if (count == 0)
                 return $"No model objects found for type '{objectType}'.";
 
