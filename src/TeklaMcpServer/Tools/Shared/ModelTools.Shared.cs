@@ -40,10 +40,18 @@ public static partial class ModelTools
         var stderr = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         var result = output.Trim();
-        // Strip any non-JSON prefix (BOM, Tekla diagnostics leaked before Console capture)
-        var jsonStart = result.IndexOfAny(new[] { '[', '{' });
-        if (jsonStart > 0)
-            result = result.Substring(jsonStart);
+        // Strip any non-JSON prefix (BOM, Tekla diagnostics leaked before Console capture).
+        // Find the LAST line starting with '{' or '[' — the actual JSON is always last.
+        var lines = result.Split('\n');
+        for (var i = lines.Length - 1; i >= 0; i--)
+        {
+            var line = lines[i].TrimStart('\r');
+            if (line.Length > 0 && (line[0] == '{' || line[0] == '['))
+            {
+                result = line;
+                break;
+            }
+        }
         if (string.IsNullOrEmpty(result))
             result = JsonSerializer.Serialize(new { error = "TeklaBridge produced no output", stderr = stderr.Trim() });
         return result;

@@ -93,7 +93,7 @@ public sealed class TeklaModelFilteringApi : IModelFilteringApi
             "bolt" or "bolts" or "boltgroup" or "boltarray" or "boltcircle" or "boltxylist" or "болт" or "болты"
                 => typeName.IndexOf("Bolt", StringComparison.OrdinalIgnoreCase) >= 0,
             "part" or "parts"
-                => IsPartLike(typeName),
+                => IsPartLike(modelObject),
             "beam" or "beams"
                 => typeName.Equals("Beam", StringComparison.OrdinalIgnoreCase),
             "plate" or "plates" or "contourplate"
@@ -106,16 +106,22 @@ public sealed class TeklaModelFilteringApi : IModelFilteringApi
                 => typeName.Equals("RebarGroup", StringComparison.OrdinalIgnoreCase) || typeName.Equals("SingleRebar", StringComparison.OrdinalIgnoreCase),
             "connection" or "connections"
                 => typeName.Equals("Connection", StringComparison.OrdinalIgnoreCase),
-            _ => typeName.Equals(objectType, StringComparison.OrdinalIgnoreCase)
-                 || typeName.IndexOf(objectType, StringComparison.OrdinalIgnoreCase) >= 0
+            _ => typeName.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+                 || typeName.IndexOf(normalized, StringComparison.OrdinalIgnoreCase) >= 0
         };
     }
 
-    private static bool IsPartLike(string typeName)
+    private static bool IsPartLike(ModelObject modelObject)
     {
-        return typeName.Equals("Beam", StringComparison.OrdinalIgnoreCase)
-            || typeName.Equals("ContourPlate", StringComparison.OrdinalIgnoreCase)
-            || typeName.Equals("PolyBeam", StringComparison.OrdinalIgnoreCase)
-            || typeName.Equals("Part", StringComparison.OrdinalIgnoreCase);
+        // `is Part` fails on .NET Remoting transparent proxies.
+        // GetType() returns the actual remote type, so walk the inheritance chain instead.
+        var type = modelObject.GetType();
+        while (type != null && type != typeof(object))
+        {
+            if (type == typeof(Part))
+                return true;
+            type = type.BaseType;
+        }
+        return false;
     }
 }

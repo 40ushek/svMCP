@@ -16,6 +16,36 @@ namespace TeklaBridge;
 // Must be STA for Tekla API (COM/IPC compatibility)
 internal partial class Program
 {
+    private static string? DetectTeklaRoot()
+    {
+        // Scan C:\TeklaStructures\ for version directories (e.g. 2021.0, 2022.0, 2025.0)
+        // and return the highest version that has nt\bin present.
+        var baseDir = @"C:\TeklaStructures";
+        if (!System.IO.Directory.Exists(baseDir))
+            return null;
+
+        Version? bestVersion = null;
+        string? bestPath = null;
+
+        foreach (var dir in System.IO.Directory.GetDirectories(baseDir))
+        {
+            var name = System.IO.Path.GetFileName(dir);
+            if (!Version.TryParse(name, out var ver))
+                continue;
+
+            if (!System.IO.Directory.Exists(System.IO.Path.Combine(dir, "nt", "bin")))
+                continue;
+
+            if (bestVersion == null || ver > bestVersion)
+            {
+                bestVersion = ver;
+                bestPath = dir;
+            }
+        }
+
+        return bestPath;
+    }
+
     private sealed class DrawingPropertyFilter
     {
         public string Property { get; set; } = string.Empty;
@@ -248,21 +278,23 @@ $@"
     [STAThread]
     static void Main(string[] args)
     {
-        // Set Tekla 2021 environment
-        var teklaRoot = @"C:\TeklaStructures\2021.0";
-        var teklaPath = teklaRoot + @"\nt\bin";
+        // Set Tekla environment — prefer already-set XS_SYSTEM (Tekla sets it when running),
+        // otherwise auto-detect the latest installed version under C:\TeklaStructures\.
+        var teklaRoot = Environment.GetEnvironmentVariable("XS_SYSTEM");
+        if (string.IsNullOrWhiteSpace(teklaRoot) || !System.IO.Directory.Exists(teklaRoot))
+            teklaRoot = DetectTeklaRoot();
 
-        if (System.IO.Directory.Exists(teklaRoot))
+        if (!string.IsNullOrEmpty(teklaRoot) && System.IO.Directory.Exists(teklaRoot))
         {
             Environment.SetEnvironmentVariable("XS_SYSTEM", teklaRoot);
             Environment.SetEnvironmentVariable("XS_DIR", teklaRoot + @"\nt");
-        }
-
-        if (System.IO.Directory.Exists(teklaPath))
-        {
-            var currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-            if (currentPath.IndexOf(teklaPath, StringComparison.OrdinalIgnoreCase) < 0)
-                Environment.SetEnvironmentVariable("PATH", teklaPath + ";" + currentPath);
+            var teklaPath = teklaRoot + @"\nt\bin";
+            if (System.IO.Directory.Exists(teklaPath))
+            {
+                var currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+                if (currentPath.IndexOf(teklaPath, StringComparison.OrdinalIgnoreCase) < 0)
+                    Environment.SetEnvironmentVariable("PATH", teklaPath + ";" + currentPath);
+            }
         }
 
         // FIX: Tekla computes ChannelName based on stdout type.
