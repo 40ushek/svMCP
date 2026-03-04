@@ -223,13 +223,17 @@ tidy_drawing
 
 ## Известные ограничения
 
-### `filter_model_objects_by_type` — объекты внутри компонентов
+### Объекты внутри компонентов
 
-`GetAllObjects()` возвращает только объекты верхнего уровня. Болты, швы и части внутри компонентов (соединений) недоступны. Для обхода нужно для каждого `Component` вызывать `component.GetChildren()` рекурсивно.
+`GetAllObjects()` возвращает только объекты верхнего уровня. Части внутри компонентов (соединений) недоступны. Для обхода нужно для каждого `Component` вызывать `component.GetChildren()` рекурсивно.
 
-### `get_selected_elements_properties` — болты
+### `BoltGrade` всегда null
 
-Если болты выделены через компонент, они могут не попасть в выборку `GetSelectedObjects()` по той же причине вложенности.
+Класс болта не доступен через стандартные свойства `BoltGroup`. Нужен `GetReportProperty("BOLT_GRADE")`.
+
+### Оператор `is` не работает для IPC-прокси
+
+Объекты, полученные через `GetAllObjects()` / `GetObjectsByFilter()`, — transparent proxies .NET Remoting. `is Beam` всегда `false`. Нужно использовать `GetType().Name`. Это касается любого нового кода с `GetAllObjects()`.
 
 ---
 
