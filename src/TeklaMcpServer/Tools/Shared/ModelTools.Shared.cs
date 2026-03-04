@@ -40,6 +40,10 @@ public static partial class ModelTools
         var stderr = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         var result = output.Trim();
+        // Strip any non-JSON prefix (BOM, Tekla diagnostics leaked before Console capture)
+        var jsonStart = result.IndexOfAny(new[] { '[', '{' });
+        if (jsonStart > 0)
+            result = result.Substring(jsonStart);
         if (string.IsNullOrEmpty(result))
             result = JsonSerializer.Serialize(new { error = "TeklaBridge produced no output", stderr = stderr.Trim() });
         return result;
