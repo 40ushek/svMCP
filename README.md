@@ -84,16 +84,16 @@ src/
 │       └── Model/            # IModelFilteringApi, DTOs, TeklaModelFilteringApi
 ├── TeklaMcpServer/           # MCP сервер (net8.0-windows)
 │   ├── Program.cs            # Точка входа, конфигурация MCP host
-│   ├── Tools/                # Тонкие MCP-обёртки
-│   │   ├── Shared/           # RunBridge(), общий код
-│   │   ├── Connection/       # check_connection
-│   │   ├── Model/            # Model tools
-│   │   └── Drawing/          # Drawing tools
-│   └── TeklaBridge/          # Bridge процесс (net48) — только диспетчер команд
-│       ├── Program.cs        # Точка входа + IPC fix + Console capture
-│       └── Commands/
-│           ├── ModelCommandHandlers.cs
-│           └── DrawingCommandHandlers.cs
+│   └── Tools/                # Тонкие MCP-обёртки
+│       ├── Shared/           # RunBridge(), общий код
+│       ├── Connection/       # check_connection
+│       ├── Model/            # Model tools
+│       └── Drawing/          # Drawing tools
+├── TeklaBridge/              # Bridge процесс (net48) — только диспетчер команд
+│   ├── Program.cs            # Точка входа + IPC fix + Console capture
+│   └── Commands/
+│       ├── ModelCommandHandlers.cs
+│       └── DrawingCommandHandlers.cs
 └── svMCP/                    # Заглушка (не используется)
 ```
 

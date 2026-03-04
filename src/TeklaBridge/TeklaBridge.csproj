@@ -10,7 +10,7 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
+		<ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>

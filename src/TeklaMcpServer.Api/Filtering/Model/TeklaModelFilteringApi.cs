@@ -80,7 +80,7 @@ public sealed class TeklaModelFilteringApi : IModelFilteringApi
 
         return normalized switch
         {
-            "bolt" or "bolts" or "boltgroup" => modelObject is BoltGroup,
+            "bolt" or "bolts" or "boltgroup" or "boltarray" or "boltcircle" or "boltxylist" or "болт" or "болты" => IsBoltLike(modelObject),
             "part" or "parts" => modelObject is Part,
             "beam" or "beams" => modelObject is Beam,
             "plate" or "plates" or "contourplate" => modelObject is ContourPlate,
@@ -90,6 +90,15 @@ public sealed class TeklaModelFilteringApi : IModelFilteringApi
             "connection" or "connections" => modelObject is TsConnection,
             _ => MatchByRuntimeTypeName(modelObject, objectType)
         };
+    }
+
+    private static bool IsBoltLike(ModelObject modelObject)
+    {
+        if (modelObject is BoltGroup)
+            return true;
+
+        var typeName = modelObject.GetType().Name;
+        return typeName.IndexOf("Bolt", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static bool MatchByRuntimeTypeName(ModelObject modelObject, string objectType)

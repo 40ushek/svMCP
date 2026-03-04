@@ -13,19 +13,13 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
 	</ItemGroup>
 
-	<ItemGroup>
-		<!-- Exclude TeklaBridge subfolder from this project's compilation -->
-		<Compile Remove="TeklaBridge\**" />
-		<None Remove="TeklaBridge\**" />
-	</ItemGroup>
-
 	<!-- Build TeklaBridge (net48) and copy to our output directory -->
 	<Target Name="BuildAndCopyTeklaBridge" AfterTargets="Build">
-		<MSBuild Projects="$(MSBuildThisFileDirectory)TeklaBridge\TeklaBridge.csproj"
+		<MSBuild Projects="$(MSBuildThisFileDirectory)..\TeklaBridge\TeklaBridge.csproj"
 		         Targets="Build"
 		         Properties="Configuration=$(Configuration)" />
 		<ItemGroup>
-			<BridgeFiles Include="$(MSBuildThisFileDirectory)TeklaBridge\bin\$(Configuration)\net48\*.*" />
+			<BridgeFiles Include="$(MSBuildThisFileDirectory)..\TeklaBridge\bin\$(Configuration)\net48\*.*" />
 		</ItemGroup>
 		<!-- Copy to bridge\ subdirectory to avoid DLL version conflicts with net8 server -->
 		<Copy SourceFiles="@(BridgeFiles)"

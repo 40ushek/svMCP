@@ -44,7 +44,7 @@ TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and re
 ### Projects
 
 - **TeklaMcpServer/** — MCP server (net8.0-windows). Entry point: [Program.cs](TeklaMcpServer/Program.cs)
-- **TeklaMcpServer/TeklaBridge/** — Bridge subprocess (net48). Entry point: [TeklaBridge/Program.cs](TeklaMcpServer/TeklaBridge/Program.cs)
+- **TeklaBridge/** — Bridge subprocess (net48). Entry point: [TeklaBridge/Program.cs](TeklaBridge/Program.cs)
 - **TeklaMcpServer.Api/** — All Tekla API logic (net48): interfaces, DTOs, and implementations. The single place for all Tekla interaction code.
 - **svMCP/** — Unused placeholder library (netstandard2.0)
 
@@ -85,16 +85,16 @@ src/
 │                             # TeklaModelFilteringApi
 ├── TeklaMcpServer/           # MCP server (net8.0-windows)
 │   ├── Program.cs            # Entry point — MCP host config
-│   ├── Tools/                # Thin MCP tool wrappers
-│   │   ├── Shared/           # RunBridge() helper
-│   │   ├── Connection/       # check_connection
-│   │   ├── Model/            # Model tools
-│   │   └── Drawing/          # Drawing tools
-│   └── TeklaBridge/          # Bridge process (net48) — command dispatcher only
-│       ├── Program.cs        # Entry point + IPC fix + Console capture
-│       └── Commands/
-│           ├── ModelCommandHandlers.cs
-│           └── DrawingCommandHandlers.cs
+│   └── Tools/                # Thin MCP tool wrappers
+│       ├── Shared/           # RunBridge() helper
+│       ├── Connection/       # check_connection
+│       ├── Model/            # Model tools
+│       └── Drawing/          # Drawing tools
+├── TeklaBridge/              # Bridge process (net48) — command dispatcher only
+│   ├── Program.cs            # Entry point + IPC fix + Console capture
+│   └── Commands/
+│       ├── ModelCommandHandlers.cs
+│       └── DrawingCommandHandlers.cs
 └── svMCP/                    # Unused stub
 ```
 
