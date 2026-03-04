@@ -249,11 +249,7 @@ tidy_drawing
    - Риск: часть объектов-потомков `Part` не попадет в результат.  
    - Файл: `src/TeklaMcpServer.Api/Filtering/Model/TeklaModelFilteringApi.cs` (`IsPartLike`).
 
-3. **Medium**: очистка stdout до JSON через первый символ `[`/`{` потенциально хрупкая.  
-   - Риск: при диагностике с `[` до JSON может быть снова невалидный payload.  
-   - Файл: `src/TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs` (`RunBridge`).
-
-4. **Low**: fallback-сопоставление типа использует сырой `objectType`, а не `normalized`.  
+3. **Low**: fallback-сопоставление типа использует сырой `objectType`, а не `normalized`.  
    - Риск: ложные "не найдено" при хвостовых пробелах/грязном вводе в `_` ветке `IsTypeMatch`.  
    - Файл: `src/TeklaMcpServer.Api/Filtering/Model/TeklaModelFilteringApi.cs`.
 

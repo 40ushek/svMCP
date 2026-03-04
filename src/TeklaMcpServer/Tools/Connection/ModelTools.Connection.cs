@@ -13,7 +13,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out _))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out _))
                 return $"Not connected. Bridge response:\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
             var model = doc.RootElement.GetProperty("modelName").GetString();
             var path = doc.RootElement.GetProperty("modelPath").GetString();

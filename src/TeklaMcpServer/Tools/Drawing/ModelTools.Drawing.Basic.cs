@@ -13,7 +13,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() == 0)
@@ -36,7 +36,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() == 0)
@@ -62,7 +62,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
             var exportedCount = doc.RootElement.GetProperty("exportedCount").GetInt32();
@@ -88,7 +88,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() == 0)

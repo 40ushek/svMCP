@@ -33,7 +33,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
             var count = doc.RootElement.GetProperty("count").GetInt32();
             return $"Selected {count} elements with class {classNumber}.";
@@ -51,7 +51,7 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
             var totalWeight = doc.RootElement.GetProperty("totalWeight").GetDouble();
             var count = doc.RootElement.GetProperty("count").GetInt32();
