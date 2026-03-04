@@ -13,15 +13,15 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
             if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() == 0)
                 return "No parts selected. Please select elements in Tekla first.";
             return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
         }
-        catch
+        catch (Exception ex)
         {
-            return $"Bridge error: {json}";
+            return $"Bridge error ({ex.GetType().Name}: {ex.Message}): {json}";
         }
     }
 
@@ -76,10 +76,10 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
-            var count = doc.RootElement.TryGetProperty("count", out var c) ? c.GetInt32() : 0;
+            var count = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("count", out var c) ? c.GetInt32() : 0;
             if (count == 0)
                 return $"No model objects found for type '{objectType}'.";
 
