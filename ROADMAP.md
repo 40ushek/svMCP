@@ -239,6 +239,24 @@ tidy_drawing
 
 ## Технический долг
 
+### Ревью изменений от 2026-03-04 (фильтрация/bridge)
+
+1. **High**: рассинхрон версии Tekla (2021 vs 2025) в runtime-конфигурации bridge.  
+   - Риск: нестабильное поведение фильтрации/selection в зависимости от установленной версии.  
+   - Файлы: `src/TeklaBridge/Program.cs` (жестко задан `C:\TeklaStructures\2021.0`), `src/TeklaBridge/TeklaBridge.csproj` (пакеты 2021), сборка использует окружение 2025.
+
+2. **Medium**: `part`-фильтр ограничен whitelist-ом имен типов.  
+   - Риск: часть объектов-потомков `Part` не попадет в результат.  
+   - Файл: `src/TeklaMcpServer.Api/Filtering/Model/TeklaModelFilteringApi.cs` (`IsPartLike`).
+
+3. **Medium**: очистка stdout до JSON через первый символ `[`/`{` потенциально хрупкая.  
+   - Риск: при диагностике с `[` до JSON может быть снова невалидный payload.  
+   - Файл: `src/TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs` (`RunBridge`).
+
+4. **Low**: fallback-сопоставление типа использует сырой `objectType`, а не `normalized`.  
+   - Риск: ложные "не найдено" при хвостовых пробелах/грязном вводе в `_` ветке `IsTypeMatch`.  
+   - Файл: `src/TeklaMcpServer.Api/Filtering/Model/TeklaModelFilteringApi.cs`.
+
 ### Selection cache — персистентность между вызовами
 
 **Проблема:** TeklaBridge запускается как новый процесс на каждую команду. `selectionId`, созданный в одном вызове, недоступен в следующем — `SelectionCacheManager` in-memory не переживает завершение процесса.
