@@ -1,0 +1,44 @@
+using System.Collections.Generic;
+
+namespace TeklaMcpServer.Api.Drawing;
+
+public sealed class DrawingViewsResult
+{
+    public double SheetWidth  { get; set; }
+    public double SheetHeight { get; set; }
+    public List<DrawingViewInfo> Views { get; set; } = new();
+}
+
+public sealed class MoveViewResult
+{
+    public bool   Moved      { get; set; }
+    public int    ViewId     { get; set; }
+    public double OldOriginX { get; set; }
+    public double OldOriginY { get; set; }
+    public double NewOriginX { get; set; }
+    public double NewOriginY { get; set; }
+}
+
+public sealed class SetViewScaleResult
+{
+    public int          UpdatedCount { get; set; }
+    public List<int>    UpdatedIds   { get; set; } = new();
+    public double       Scale        { get; set; }
+}
+
+public sealed class FitViewsResult
+{
+    public double              OptimalScale { get; set; }
+    public double              SheetWidth   { get; set; }
+    public double              SheetHeight  { get; set; }
+    public int                 Arranged     { get; set; }
+    public List<ArrangedView>  Views        { get; set; } = new();
+}
+
+public sealed class ArrangedView
+{
+    public int    Id       { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public double OriginX  { get; set; }
+    public double OriginY  { get; set; }
+}

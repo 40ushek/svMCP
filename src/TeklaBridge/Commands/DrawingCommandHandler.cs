@@ -10,6 +10,7 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.Drawing.UI;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaBridge.Commands;
 
@@ -499,44 +500,24 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_views":
             {
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                var api    = new TeklaDrawingViewApi(_model);
+                var result = api.GetViews();
+                _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
-                    return true;
-                }
-
-                var views = new List<object>();
-                var viewEnumerator = activeDrawing.GetSheet().GetViews();
-                while (viewEnumerator.MoveNext())
-                {
-                    var v = viewEnumerator.Current as View;
-                    if (v == null) continue;
-
-                    views.Add(new
+                    sheetWidth  = result.SheetWidth,
+                    sheetHeight = result.SheetHeight,
+                    views       = result.Views.Select(v => new
                     {
-                        id = v.GetIdentifier().ID,
-                        viewType = v.ViewType.ToString(),
-                        name = v.Name ?? string.Empty,
-                        originX = v.Origin?.X ?? 0,
-                        originY = v.Origin?.Y ?? 0,
-                        scale = v.Attributes.Scale,
-                        width = v.Width,
-                        height = v.Height
-                    });
-                }
-
-                double sheetWidth = 0, sheetHeight = 0;
-                try
-                {
-                    var sheetSize = activeDrawing.Layout.SheetSize;
-                    sheetWidth = sheetSize.Width;
-                    sheetHeight = sheetSize.Height;
-                }
-                catch { }
-
-                _output.WriteLine(JsonSerializer.Serialize(new { sheetWidth, sheetHeight, views }));
+                        id       = v.Id,
+                        viewType = v.ViewType,
+                        name     = v.Name,
+                        originX  = v.OriginX,
+                        originY  = v.OriginY,
+                        scale    = v.Scale,
+                        width    = v.Width,
+                        height   = v.Height
+                    })
+                }));
                 return true;
             }
 
@@ -562,60 +543,16 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var absolute = args.Length > 4 && string.Equals(args[4], "abs", StringComparison.OrdinalIgnoreCase);
-
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
-                {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
-                    return true;
-                }
-
-                View? foundView = null;
-                var viewEnumerator = activeDrawing.GetSheet().GetViews();
-                while (viewEnumerator.MoveNext())
-                {
-                    var view = viewEnumerator.Current as View;
-                    if (view != null && view.GetIdentifier().ID == viewId)
-                    {
-                        foundView = view;
-                        break;
-                    }
-                }
-
-                if (foundView == null)
-                {
-                    _output.WriteLine($"{{\"error\":\"View with ID {viewId} not found in active drawing\"}}");
-                    return true;
-                }
-
-                var oldX = foundView.Origin.X;
-                var oldY = foundView.Origin.Y;
-                var newOrigin = foundView.Origin;
-
-                if (absolute)
-                {
-                    newOrigin.X = dx;
-                    newOrigin.Y = dy;
-                }
-                else
-                {
-                    newOrigin.X += dx;
-                    newOrigin.Y += dy;
-                }
-
-                foundView.Origin = newOrigin;
-                foundView.Modify();
-                activeDrawing.CommitChanges();
-
+                var api      = new TeklaDrawingViewApi(_model);
+                var result   = api.MoveView(viewId, dx, dy, absolute);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    moved = true,
-                    viewId,
-                    oldOriginX = oldX,
-                    oldOriginY = oldY,
-                    newOriginX = newOrigin.X,
-                    newOriginY = newOrigin.Y
+                    moved      = result.Moved,
+                    viewId     = result.ViewId,
+                    oldOriginX = result.OldOriginX,
+                    oldOriginY = result.OldOriginY,
+                    newOriginX = result.NewOriginX,
+                    newOriginY = result.NewOriginY
                 }));
                 return true;
             }
@@ -628,8 +565,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var targetIds = ParseIntList(args[1]).ToHashSet();
-                if (targetIds.Count == 0)
+                var ids = ParseIntList(args[1]);
+                if (ids.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"No valid view IDs provided\"}");
                     return true;
@@ -641,31 +578,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                var api    = new TeklaDrawingViewApi(_model);
+                var result = api.SetViewScale(ids, scale);
+                _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
-                    return true;
-                }
-
-                var updatedIds = new List<int>();
-                var viewEnumerator2 = activeDrawing.GetSheet().GetViews();
-                while (viewEnumerator2.MoveNext())
-                {
-                    var v = viewEnumerator2.Current as View;
-                    if (v == null) continue;
-                    var objId = v.GetIdentifier().ID;
-                    if (!targetIds.Contains(objId)) continue;
-                    v.Attributes.Scale = scale;
-                    v.Modify();
-                    updatedIds.Add(objId);
-                }
-
-                if (updatedIds.Count > 0)
-                    activeDrawing.CommitChanges();
-
-                _output.WriteLine(JsonSerializer.Serialize(new { updatedCount = updatedIds.Count, updatedIds, scale }));
+                    updatedCount = result.UpdatedCount,
+                    updatedIds   = result.UpdatedIds,
+                    scale        = result.Scale
+                }));
                 return true;
             }
 
@@ -675,63 +595,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var gap         = args.Length > 2 && double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)  ? g  : 8.0;
                 var titleBlockH = args.Length > 3 && double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var tb) ? tb : 0.0;
 
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing  = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
-                {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
-                    return true;
-                }
-
-                var views = new List<View>();
-                var ve = activeDrawing.GetSheet().GetViews();
-                while (ve.MoveNext()) { if (ve.Current is View v) views.Add(v); }
-                if (views.Count == 0) { _output.WriteLine("{\"error\":\"No views found\"}"); return true; }
-
-                double sheetW = 0, sheetH = 0;
-                try { var ss = activeDrawing.Layout.SheetSize; sheetW = ss.Width; sheetH = ss.Height; } catch { }
-
-                double availW = sheetW - 2 * margin;
-                double availH = sheetH - 2 * margin - titleBlockH;
-
-                // Scale selection: use current sizes scaled by ratio (more accurate than model dims)
-                double currentScale = views.Count > 0 ? views[0].Attributes.Scale : 10.0;
-                var standardScales  = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
-                var optimalScale    = standardScales.Last();
-                foreach (var s in standardScales)
-                {
-                    double ratio = currentScale / s;
-                    var frames = views.Select(v => (w: v.Width * ratio, h: v.Height * ratio)).ToList();
-                    if (FitsShelfPacking(frames, availW, availH, gap))
-                    {
-                        optimalScale = s;
-                        break;
-                    }
-                }
-
-                // Pass 1: apply scale and commit so Tekla updates view frame sizes
-                foreach (var view in views)
-                {
-                    view.Attributes.Scale = optimalScale;
-                    view.Modify();
-                }
-                activeDrawing.CommitChanges();
-
-                // Pass 2: re-read ACTUAL sizes after scale change
-                var viewsAfterScale = new List<View>();
-                var ve2 = activeDrawing.GetSheet().GetViews();
-                while (ve2.MoveNext()) { if (ve2.Current is View v2) viewsAfterScale.Add(v2); }
-
-                var arranged = ArrangeViews(viewsAfterScale, sheetW, sheetH, margin, gap);
-                activeDrawing.CommitChanges();
-
+                var api    = new TeklaDrawingViewApi(_model);
+                var result = api.FitViewsToSheet(margin, gap, titleBlockH);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    optimalScale,
-                    sheetWidth  = sheetW,
-                    sheetHeight = sheetH,
-                    arranged    = arranged.Count,
-                    views       = arranged
+                    optimalScale = result.OptimalScale,
+                    sheetWidth   = result.SheetWidth,
+                    sheetHeight  = result.SheetHeight,
+                    arranged     = result.Arranged,
+                    views        = result.Views.Select(v => new { id = v.Id, viewType = v.ViewType, originX = v.OriginX, originY = v.OriginY })
                 }));
                 return true;
             }
@@ -742,126 +614,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
-
-    private static List<object> ArrangeViews(List<View> views, double sheetW, double sheetH, double margin, double gap)
-    {
-        var arranged = new List<object>();
-
-        var front   = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.FrontView);
-        var top     = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.TopView);
-        var bottom  = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BottomView);
-        var back    = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BackView);
-        var sections = views.Where(v => v.ViewType == View.ViewTypes.SectionView).ToList();
-        var view3d  = views.FirstOrDefault(v => v.ViewType.ToString().Contains("3D") || v.ViewType.ToString().Contains("Iso"));
-        var others  = views.Where(v => v != front && v != top && v != bottom && v != back
-                                    && !sections.Contains(v) && v != view3d).ToList();
-
-        if (front != null)
-        {
-            // Orthographic layout: Top above, Bottom below, Back left, Section right, 3D corner
-            double leftW    = back   != null ? back.Width   + gap : 0;
-            double rightW   = sections.Sum(s => s.Width + gap);
-            double topH     = top    != null ? top.Height   + gap : 0;
-            double bottomH  = bottom != null ? bottom.Height + gap : 0;
-
-            double groupW = leftW + front.Width + rightW;
-            double groupH = topH  + front.Height + bottomH;
-
-            // Center group on sheet
-            double frontCX = margin + (sheetW - 2 * margin - groupW) / 2 + leftW + front.Width / 2;
-            double frontCY = margin + (sheetH - 2 * margin - groupH) / 2 + bottomH + front.Height / 2;
-
-            void Place(View v, double cx, double cy)
-            {
-                var o = v.Origin; o.X = cx; o.Y = cy; v.Origin = o; v.Modify();
-                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = cx, originY = cy });
-            }
-
-            Place(front, frontCX, frontCY);
-
-            if (top    != null) Place(top,    frontCX, frontCY + front.Height / 2 + gap + top.Height    / 2);
-            if (bottom != null) Place(bottom, frontCX, frontCY - front.Height / 2 - gap - bottom.Height / 2);
-            if (back   != null) Place(back,   frontCX - front.Width / 2 - gap - back.Width / 2, frontCY);
-
-            double rightX = frontCX + front.Width / 2 + gap;
-            foreach (var s in sections)
-            {
-                Place(s, rightX + s.Width / 2, frontCY);
-                rightX += s.Width + gap;
-            }
-
-            // 3D view placement: right of sections if fits, else below BottomView, else top-left
-            if (view3d != null)
-            {
-                // Option 1: right of section views, vertically centered with FrontView
-                double opt1X = rightX + view3d.Width / 2;
-                double opt1Y = frontCY;
-                bool opt1Fits = opt1X + view3d.Width / 2 <= sheetW - margin;
-
-                // Option 2: above TopView, centered on FrontView X
-                double topEdge = frontCY + front.Height / 2 + gap + (top != null ? top.Height + gap : 0);
-                double opt2X = frontCX;
-                double opt2Y = topEdge + view3d.Height / 2;
-                bool opt2Fits = opt2Y + view3d.Height / 2 <= sheetH - margin
-                             && opt2X + view3d.Width / 2 <= sheetW - margin
-                             && opt2X - view3d.Width / 2 >= margin;
-
-                // Option 3: below BottomView, centered on FrontView X
-                double botEdge = (bottom != null) ? frontCY - front.Height / 2 - gap : frontCY - front.Height / 2 - gap;
-                double opt3X = frontCX;
-                double opt3Y = botEdge - view3d.Height / 2;
-                bool opt3Fits = opt3Y - view3d.Height / 2 >= margin;
-
-                double finalX, finalY;
-                if (opt1Fits)       { finalX = opt1X; finalY = opt1Y; }
-                else if (opt2Fits)  { finalX = opt2X; finalY = opt2Y; }
-                else if (opt3Fits)  { finalX = opt3X; finalY = opt3Y; }
-                else                { finalX = margin + view3d.Width / 2; finalY = margin + view3d.Height / 2; }
-
-                Place(view3d, finalX, finalY);
-            }
-
-            // Any remaining views: shelf-pack below the group
-            double curX = margin, curY = frontCY - front.Height / 2 - bottomH - gap * 2, rowH = 0;
-            foreach (var v in others)
-            {
-                if (curX + v.Width > sheetW - margin && curX > margin) { curX = margin; curY -= rowH + gap; rowH = 0; }
-                var o = v.Origin; o.X = curX + v.Width / 2; o.Y = curY - v.Height / 2; v.Origin = o; v.Modify();
-                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = o.X, originY = o.Y });
-                curX += v.Width + gap;
-                if (v.Height > rowH) rowH = v.Height;
-            }
-        }
-        else
-        {
-            // Fallback: shelf packing (for GA drawings etc.)
-            var frames = views.OrderByDescending(v => v.Height).ToList();
-            double curX = margin, curY = sheetH - margin, rowH = 0;
-            foreach (var v in frames)
-            {
-                if (curX + v.Width > sheetW - margin && curX > margin) { curX = margin; curY -= rowH + gap; rowH = 0; }
-                var o = v.Origin; o.X = curX + v.Width / 2; o.Y = curY - v.Height / 2; v.Origin = o; v.Modify();
-                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = o.X, originY = o.Y });
-                curX += v.Width + gap;
-                if (v.Height > rowH) rowH = v.Height;
-            }
-        }
-
-        return arranged;
-    }
-
-    private static bool FitsShelfPacking(List<(double w, double h)> frames, double availW, double availH, double gap)
-    {
-        double curX = 0, curY = availH, rowH = 0;
-        foreach (var (w, h) in frames.OrderByDescending(f => f.h))
-        {
-            if (curX + w > availW && curX > 0) { curX = 0; curY -= rowH + gap; rowH = 0; }
-            if (w > availW || curY - h < 0) return false;
-            curX += w + gap;
-            if (h > rowH) rowH = h;
-        }
-        return true;
-    }
 
     private sealed class DrawingPropertyFilter
     {
