@@ -44,7 +44,7 @@
 | `get_drawing_parts` | Модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
-| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок — итеративный AABB push-apart |
+| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок — итеративный AABB push-apart с учётом якоря |
 
 ---
 
@@ -119,16 +119,20 @@
 
 ---
 
-### `auto_resolve_annotation_conflicts`
-Автоматически разрешить конфликты марок.
+### `auto_resolve_annotation_conflicts` ✅ реализовано как `resolve_mark_overlaps`
 
-**Алгоритм:**
-1. Обнаружить конфликтующие пары через bounding box
-2. Для каждой пары — сдвинуть одну марку по 8 стандартным направлениям (N, NE, E, SE…)
-3. Выбрать направление с минимальным суммарным перемещением без новых конфликтов
-4. Итерировать до разрешения или до `maxIterations`
+`resolve_mark_overlaps` — итеративный AABB push-apart для текстовых блоков марок.
 
-**Ограничение:** Tekla не гарантирует что `BoundingBox` марки доступен — может потребоваться эвристика по тексту.
+**Текущий алгоритм:**
+1. Загружает марки по видам, вычисляет якорь (`LeaderLinePlacing.StartPoint`) в координатах листа: `sheetPt = viewOrigin + startPoint / scale`
+2. Для каждой перекрывающейся пары (A, B) выталкивает обе марки, деля смещение 70/30 в пользу той, что дальше от якоря — ближняя к детали двигается меньше
+3. Применяет только `InsertionPoint` (текстовый блок в координатах листа); `LeaderLinePlacing.StartPoint` (стрелка на детали) не трогает
+
+**Возможные улучшения:**
+- **Spring simulation**: пружина к якорю (F = k · (anchor − pos)) + отталкивание при перекрытии → органичная сходимость, минимизирует длину выносок
+- **COG как якорь**: для сборочных чертежей центр масс детали точнее, чем точка прикрепления выноски; требует `part.GetReportProperty("COG_X/Y/Z")` + трансформацию view coords → sheet coords через `view.GetCoordinateSystem()`
+- **Sliding anchor**: для длинных деталей (балки, листы) стрелка может скользить вдоль bbox детали, а не быть прикреплена к фиксированной точке — разрешает конфликты без удлинения выносок
+- **Размеры как препятствия**: `StraightDimensionSet` не имеет `GetAxisAlignedBoundingBox()` — bbox нужно вычислять вручную из координат сегментов и `Distance`
 
 ---
 
