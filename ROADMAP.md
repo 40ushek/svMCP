@@ -44,7 +44,7 @@
 | `get_drawing_parts` | Модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
-| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок — итеративный AABB push-apart с учётом якоря |
+| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок — mark layout engine + локальный overlap resolver |
 
 ---
 
@@ -121,17 +121,41 @@
 
 ### `auto_resolve_annotation_conflicts` ✅ реализовано как `resolve_mark_overlaps`
 
-`resolve_mark_overlaps` — итеративный AABB push-apart для текстовых блоков марок.
+`resolve_mark_overlaps` теперь работает в два слоя:
+- `TeklaDrawingMarkApi` / `TeklaDrawingMarkLayoutAdapter` — адаптер Tekla API
+- `TeklaMcpServer.Api/Algorithms/Marks/` — чистый layout engine для марок
 
-**Текущий алгоритм:**
-1. Загружает марки по видам, вычисляет якорь (`LeaderLinePlacing.StartPoint`) в координатах листа: `sheetPt = viewOrigin + startPoint / scale`
-2. Для каждой перекрывающейся пары (A, B) выталкивает обе марки, деля смещение 70/30 в пользу той, что дальше от якоря — ближняя к детали двигается меньше
-3. Применяет только `InsertionPoint` (текстовый блок в координатах листа); `LeaderLinePlacing.StartPoint` (стрелка на детали) не трогает
+**Текущий алгоритм (упрощённая версия):**
+1. Загружает марки по видам и строит `MarkLayoutItem`
+2. Вычисляет якорь: если есть `LeaderLinePlacing`, используется `StartPoint` в координатах листа (`sheetPt = viewOrigin + startPoint / scale`), иначе якорь = текущий центр марки
+3. Сначала размещает самые конфликтные марки, затем остальные
+4. Генерирует кандидаты:
+   - для leader-line marks: текущая позиция + 8 позиций вокруг якоря
+   - для non-leader marks: локальные смещения вокруг текущей позиции
+5. Считает score кандидата:
+   - большой штраф за overlap
+   - штраф за удаление от текущей позиции
+   - штраф за длину leader line
+   - мягкий штраф за менее предпочтительный кандидат
+6. После greedy placement запускает локальный `MarkOverlapResolver`
+7. Применяет только `InsertionPoint`; `LeaderLinePlacing.StartPoint` не трогает
 
-**Возможные улучшения:**
-- **Spring simulation**: пружина к якорю (F = k · (anchor − pos)) + отталкивание при перекрытии → органичная сходимость, минимизирует длину выносок
+**Что уже выделено в отдельный алгоритмический слой:**
+- `MarkLayoutEngine`
+- `SimpleMarkCandidateGenerator`
+- `SimpleMarkCostEvaluator`
+- `MarkOverlapResolver`
+- `MarkLayoutItem`, `MarkLayoutOptions`, `MarkLayoutResult`
+
+**Ближайшие улучшения без усложнения модели:**
+- отдельные candidate generators для разных типов mark placing
+- obstacle-aware score (размеры, тексты, другие annotation objects)
+- более аккуратный local refinement после greedy placement
+
+**Более поздние улучшения:**
 - **COG как якорь**: для сборочных чертежей центр масс детали точнее, чем точка прикрепления выноски; требует `part.GetReportProperty("COG_X/Y/Z")` + трансформацию view coords → sheet coords через `view.GetCoordinateSystem()`
-- **Sliding anchor**: для длинных деталей (балки, листы) стрелка может скользить вдоль bbox детали, а не быть прикреплена к фиксированной точке — разрешает конфликты без удлинения выносок
+- **Sliding anchor**: для длинных деталей (балки, листы) стрелка может скользить вдоль bbox детали, а не быть прикреплена к фиксированной точке
+- **Spring simulation** как дополнительный refinement, а не базовый алгоритм
 - **Размеры как препятствия**: `StraightDimensionSet` не имеет `GetAxisAlignedBoundingBox()` — bbox нужно вычислять вручную из координат сегментов и `Distance`
 
 ---

@@ -8,7 +8,8 @@ public sealed class MarkOverlapResolver
 {
     public List<MarkLayoutPlacement> Resolve(
         IReadOnlyList<MarkLayoutPlacement> placements,
-        MarkLayoutOptions options)
+        MarkLayoutOptions options,
+        out int iterationsUsed)
     {
         var result = placements
             .Select(p => new MarkLayoutPlacement
@@ -23,8 +24,11 @@ public sealed class MarkOverlapResolver
             })
             .ToList();
 
+        iterationsUsed = 0;
+
         for (var iteration = 0; iteration < options.MaxResolverIterations; iteration++)
         {
+            iterationsUsed = iteration + 1;
             var movedAny = false;
 
             for (var i = 0; i < result.Count; i++)

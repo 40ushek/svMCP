@@ -10,6 +10,8 @@ public sealed class MarkLayoutOptions
 
     public double LeaderLengthWeight { get; set; } = 0.05;
 
+    public double CandidatePriorityWeight { get; set; } = 0.25;
+
     public double OverlapPenalty { get; set; } = 1_000_000.0;
 
     public bool EnableOverlapResolver { get; set; } = true;

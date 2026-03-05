@@ -18,6 +18,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
             score += CalculateOverlapPenalty(candidate, item, placement, options);
         }
 
+        score += candidate.Priority * options.CandidatePriorityWeight;
         score += Distance(candidate.X, candidate.Y, item.CurrentX, item.CurrentY) * options.CurrentPositionWeight;
 
         if (item.HasLeaderLine)
