@@ -85,6 +85,67 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "open_drawing":
+            {
+                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                {
+                    _output.WriteLine("{\"error\":\"Missing drawing GUID\"}");
+                    return true;
+                }
+
+                if (!Guid.TryParse(args[1], out var requestedGuid))
+                {
+                    _output.WriteLine("{\"error\":\"Invalid drawing GUID format\"}");
+                    return true;
+                }
+
+                var drawingHandler = new DrawingHandler();
+                var drawingEnumerator = drawingHandler.GetDrawings();
+                Drawing? targetDrawing = null;
+
+                while (drawingEnumerator.MoveNext())
+                {
+                    var drawing = drawingEnumerator.Current;
+                    if (drawing == null) continue;
+                    if (drawing.GetIdentifier().GUID == requestedGuid)
+                    {
+                        targetDrawing = drawing;
+                        break;
+                    }
+                }
+
+                if (targetDrawing == null)
+                {
+                    _output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        error = "Drawing not found",
+                        guid = requestedGuid.ToString()
+                    }));
+                    return true;
+                }
+
+                var opened = drawingHandler.SetActiveDrawing(targetDrawing);
+                if (!opened)
+                {
+                    _output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        error = "Failed to open drawing",
+                        guid = requestedGuid.ToString()
+                    }));
+                    return true;
+                }
+
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    opened = true,
+                    guid = targetDrawing.GetIdentifier().GUID.ToString(),
+                    name = targetDrawing.Name,
+                    mark = targetDrawing.Mark,
+                    type = targetDrawing.GetType().Name
+                }));
+                return true;
+            }
+
             case "export_drawings_pdf":
             {
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))

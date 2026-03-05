@@ -77,6 +77,28 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Open (activate) drawing by GUID in Tekla Drawing Editor")]
+    public static string OpenDrawing(
+        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid)
+    {
+        if (string.IsNullOrWhiteSpace(drawingGuid))
+            return "Error: 'drawingGuid' is required and cannot be empty.";
+
+        var json = RunBridge("open_drawing", drawingGuid);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Drawing opened.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Find drawings by multiple properties using JSON filters")]
     public static string FindDrawingsByProperties(
         [Description("JSON array of filters. Example: [{\"property\":\"Name\",\"value\":\"GA-001\"},{\"property\":\"Mark\",\"value\":\"A1\"}]")] string drawingPropertyFiltersJson)
