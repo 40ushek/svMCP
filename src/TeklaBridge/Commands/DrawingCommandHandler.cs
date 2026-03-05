@@ -589,6 +589,26 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "get_drawing_marks":
+            {
+                int? viewId = null;
+                if (args.Length > 1 && int.TryParse(args[1], out var vid)) viewId = vid;
+
+                var api    = new TeklaDrawingMarkApi(_model);
+                var result = api.GetMarks(viewId);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    total = result.Total,
+                    marks = result.Marks.Select(m => new
+                    {
+                        id         = m.Id,
+                        modelId    = m.ModelId,
+                        properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
+                    })
+                }));
+                return true;
+            }
+
             case "fit_views_to_sheet":
             {
                 var margin      = args.Length > 1 && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var m)  ? m  : 10.0;

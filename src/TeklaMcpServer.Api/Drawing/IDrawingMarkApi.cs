@@ -1,0 +1,10 @@
+namespace TeklaMcpServer.Api.Drawing;
+
+public interface IDrawingMarkApi
+{
+    /// <summary>
+    /// Returns all marks on the active drawing, optionally filtered to a single view.
+    /// Each mark includes its property elements (name + computed value).
+    /// </summary>
+    GetMarksResult GetMarks(int? viewId);
+}

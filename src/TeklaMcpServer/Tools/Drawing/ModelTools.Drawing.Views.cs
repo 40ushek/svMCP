@@ -85,6 +85,26 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Get all marks on the active drawing with their property names and computed values (e.g. PART_POS='Б1-1', PROFILE='HEA200'). Optionally filter to a single view by viewId.")]
+    public static string GetDrawingMarks(
+        [Description("View ID to read marks from (from get_drawing_views). Omit to get all marks on the drawing.")] int? viewId = null)
+    {
+        var arg = viewId.HasValue ? viewId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        var json = RunBridge("get_drawing_marks", arg);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
