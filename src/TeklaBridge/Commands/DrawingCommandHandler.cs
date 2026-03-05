@@ -589,6 +589,34 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "get_drawing_dimensions":
+            {
+                int? viewId = null;
+                if (args.Length > 1 && int.TryParse(args[1], out var vid)) viewId = vid;
+
+                var api    = new TeklaDrawingDimensionsApi(_model);
+                var result = api.GetDimensions(viewId);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    total      = result.Total,
+                    dimensions = result.Dimensions.Select(d => new
+                    {
+                        id       = d.Id,
+                        type     = d.Type,
+                        segments = d.Segments.Select(s => new
+                        {
+                            id     = s.Id,
+                            value  = s.Value,
+                            startX = s.StartX,
+                            startY = s.StartY,
+                            endX   = s.EndX,
+                            endY   = s.EndY
+                        })
+                    })
+                }));
+                return true;
+            }
+
             case "get_drawing_parts":
             {
                 var api    = new TeklaDrawingPartsApi(_model);

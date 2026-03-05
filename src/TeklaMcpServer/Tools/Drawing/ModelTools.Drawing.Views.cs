@@ -85,6 +85,26 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Get all StraightDimensionSet objects from the active drawing (or a specific view). Each set contains segments with computed distance values (mm) and start/end points in model coordinates.")]
+    public static string GetDrawingDimensions(
+        [Description("View ID to read dimensions from (from get_drawing_views). Omit to get all dimensions on the drawing.")] int? viewId = null)
+    {
+        var arg = viewId.HasValue ? viewId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        var json = RunBridge("get_drawing_dimensions", arg);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
     public static string GetDrawingParts()
     {
