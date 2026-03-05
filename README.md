@@ -81,6 +81,9 @@ src/
 │   │                         # IDrawingViewApi, TeklaDrawingViewApi
 │   │                         # IDrawingMarkApi, TeklaDrawingMarkApi
 │   │                         # DrawingViewInfo, DrawingViewsResult, DrawingMarkInfo, …
+│   ├── Algorithms/
+│   │   ├── Packing/          # MaxRectsBinPacker
+│   │   └── Marks/            # MarkLayoutEngine, candidate generation, scoring, overlap resolver
 │   └── Filtering/
 │       ├── Common/           # FilterExpressionParser, FilterTokenizer, FilterAstBuilder, FilterHelper…
 │       ├── Drawing/          # DrawingObjectsFilterHelper
@@ -150,7 +153,15 @@ src/
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
-| `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок — итеративный AABB push-apart |
+| `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок — mark layout engine + локальный overlap resolver |
+
+`resolve_mark_overlaps` сейчас работает так:
+- Tekla-слой собирает нейтральные `MarkLayoutItem` через adapter, а сам алгоритм живет в `TeklaMcpServer.Api/Algorithms/Marks/`
+- сначала размещаются самые конфликтные марки
+- для leader-line marks генерируются 8 позиций вокруг якоря + текущая позиция
+- для non-leader marks используются локальные смещения вокруг текущего положения
+- score учитывает overlap, crowding, длину leader line, смещение от текущей позиции и мягкий приоритет кандидата
+- после greedy placement запускается локальный overlap resolver; `LeaderLinePlacing.StartPoint` не меняется, двигается только `InsertionPoint`
 
 ## Диагностика
 

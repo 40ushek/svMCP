@@ -151,6 +151,7 @@
 - отдельные candidate generators для разных типов mark placing
 - obstacle-aware score (размеры, тексты, другие annotation objects)
 - более аккуратный local refinement после greedy placement
+- настройка весов score через `MarkLayoutOptions` под разные типы чертежей
 
 **Более поздние улучшения:**
 - **COG как якорь**: для сборочных чертежей центр масс детали точнее, чем точка прикрепления выноски; требует `part.GetReportProperty("COG_X/Y/Z")` + трансформацию view coords → sheet coords через `view.GetCoordinateSystem()`
