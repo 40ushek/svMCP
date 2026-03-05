@@ -78,6 +78,9 @@ src/
 │   │                         # ISelectionCacheManager, SelectionCacheManager
 │   │                         # SelectionResult, ToolInputSelectionHandler
 │   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
+│   │                         # IDrawingViewApi, TeklaDrawingViewApi
+│   │                         # IDrawingMarkApi, TeklaDrawingMarkApi
+│   │                         # DrawingViewInfo, DrawingViewsResult, DrawingMarkInfo, …
 │   └── Filtering/
 │       ├── Common/           # FilterExpressionParser, FilterTokenizer, FilterAstBuilder, FilterHelper…
 │       ├── Drawing/          # DrawingObjectsFilterHelper
@@ -92,8 +95,8 @@ src/
 ├── TeklaBridge/              # Bridge процесс (net48) — только диспетчер команд
 │   ├── Program.cs            # Точка входа + IPC fix + Console capture
 │   └── Commands/
-│       ├── ModelCommandHandlers.cs
-│       └── DrawingCommandHandlers.cs
+│       ├── ModelCommandHandler.cs
+│       └── DrawingCommandHandler.cs
 └── svMCP/                    # Заглушка (не используется)
 ```
 
@@ -139,6 +142,11 @@ src/
 | `select_drawing_objects` | Выделить объекты чертежа по ID модельных объектов |
 | `filter_drawing_objects` | Фильтр объектов чертежа по типу (Mark, Part, DimensionBase…) |
 | `set_mark_content` | Изменить содержимое и шрифт марок |
+| `get_drawing_views` | Все виды активного чертежа: позиция, масштаб, размер, размеры листа |
+| `move_view` | Переместить вид на листе (абсолютно или на смещение) |
+| `set_view_scale` | Изменить масштаб одного или нескольких видов |
+| `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
+| `get_drawing_marks` | Прочитать содержимое марок (имя и значение PropertyElement); фильтрация по виду |
 
 ## Диагностика
 

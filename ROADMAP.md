@@ -36,34 +36,17 @@
 | `select_drawing_objects` | Выделить объекты по model ID |
 | `filter_drawing_objects` | Фильтр объектов по типу (Mark, Part, DimensionBase…) |
 | `set_mark_content` | Изменить содержимое и шрифт марок |
+| `get_drawing_views` | Виды активного чертежа: позиция, масштаб, размер, размеры листа |
+| `move_view` | Переместить вид (абсолютно или на смещение) |
+| `set_view_scale` | Изменить масштаб одного или нескольких видов |
+| `fit_views_to_sheet` | Авторасстановка: подбор стандартного масштаба, ортографическая раскладка |
+| `get_drawing_marks` | Содержимое марок — имена и значения PropertyElement; фильтрация по виду |
 
 ---
 
 ## Фаза 1 — Чтение геометрии чертежа
 
-> **Приоритет: высокий.** Без этого невозможно обнаружение конфликтов.
-
-### `get_drawing_views`
-Получить все виды активного чертежа с их геометрией.
-
-**Возвращает:**
-```json
-[
-  {
-    "id": 123,
-    "name": "FRONT VIEW",
-    "origin": { "x": 100.0, "y": 150.0 },
-    "width": 400.0,
-    "height": 300.0,
-    "scale": 50.0,
-    "type": "DetailView | SectionView | StandardView"
-  }
-]
-```
-
-**Tekla API:** `DrawingHandler.GetActiveDrawing().GetSheet().GetAllObjects()` → фильтр по `View`; `View.Origin`, `View.RestrictionBox`, `View.Attributes.Scale`.
-
----
+> **`get_drawing_views` реализован ✅.** Возвращает `id`, `viewType`, `name`, `originX/Y`, `scale`, `width`, `height`, `sheetWidth`, `sheetHeight`.
 
 ### `get_drawing_objects_layout`
 Получить bounding box всех аннотационных объектов (марки, размеры, тексты) в координатах листа.
@@ -111,36 +94,13 @@
 
 ## Фаза 3 — Редактирование видов
 
-### `move_view`
-Сдвинуть вид на листе.
+> **`move_view`, `set_view_scale`, `fit_views_to_sheet` реализованы ✅.**
 
-**Параметры:** `viewId`, `dx`, `dy` (смещение в мм листа) или `newOrigin` (абсолютные координаты).
+`fit_views_to_sheet` — двухпроходной алгоритм: применяет масштаб + `CommitChanges`, перечитывает реальные размеры видов, затем расставляет:
+- **SinglePartDrawing**: ортографическая раскладка — FrontView в центре, TopView выше, BottomView ниже, BackView слева, SectionView справа, 3D-вид в свободный угол
+- **GA и прочие**: shelf-packing (полочная укладка по убыванию высоты)
 
-**Tekla API:** `view.Origin = new Point(x, y); view.Modify();`
-
----
-
-### `set_view_scale`
-Изменить масштаб вида.
-
-**Параметры:** `viewId`, `scale` (например `50` для 1:50).
-
-**Tekla API:** `view.Attributes.Scale = scale; view.Modify();`
-
-**Нюанс:** после изменения масштаба размер вида на листе меняется — нужно пересчитать конфликты.
-
----
-
-### `auto_fit_views`
-Автоматически расставить виды без перекрытий.
-
-**Алгоритм:**
-1. Получить размер листа (`Sheet.Width`, `Sheet.Height`)
-2. Отсортировать виды по размеру (большие — первыми)
-3. Разместить жадным алгоритмом (strip packing или grid layout)
-4. Сохранить отступы между видами (параметр `margin`, default 20мм)
-
-**Ограничение:** не меняет масштаб — только двигает. Если не влезает, возвращает ошибку с рекомендацией уменьшить масштаб.
+Стандартные масштабы: 1, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000.
 
 ---
 
@@ -238,6 +198,17 @@ tidy_drawing
 ---
 
 ## Технический долг
+
+### Рефакторинг 2026-03-05: Drawing View API перенесён в TeklaMcpServer.Api ✅
+
+Вся логика видов (`get_drawing_views`, `move_view`, `set_view_scale`, `fit_views_to_sheet`) и марок (`get_drawing_marks`) вынесена из `DrawingCommandHandler` в `TeklaMcpServer.Api/Drawing/`:
+- `IDrawingViewApi` / `TeklaDrawingViewApi` — операции с видами
+- `IDrawingMarkApi` / `TeklaDrawingMarkApi` — чтение марок
+- DTOs: `DrawingViewInfo`, `DrawingViewsResult`, `MoveViewResult`, `SetViewScaleResult`, `FitViewsResult`, `ArrangedView`, `DrawingMarkInfo`, `MarkPropertyValue`, `GetMarksResult`
+
+`DrawingCommandHandler` теперь тонкий диспетчер (~15 строк на команду).
+
+**Известный нюанс:** `View.GetIdentifier()` — extension-метод из `Tekla.Structures.DrawingInternal`, требует явного `using Tekla.Structures.DrawingInternal;` в файлах `TeklaMcpServer.Api`.
 
 ### Ревью изменений от 2026-03-04 (фильтрация/bridge)
 
