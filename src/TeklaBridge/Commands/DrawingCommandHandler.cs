@@ -669,12 +669,114 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "fit_views_to_sheet":
+            {
+                var margin      = args.Length > 1 && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var m)  ? m  : 10.0;
+                var gap         = args.Length > 2 && double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)  ? g  : 8.0;
+                var titleBlockH = args.Length > 3 && double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var tb) ? tb : 0.0;
+
+                var drawingHandler = new DrawingHandler();
+                var activeDrawing  = drawingHandler.GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                var views = new List<View>();
+                var ve = activeDrawing.GetSheet().GetViews();
+                while (ve.MoveNext()) { if (ve.Current is View v) views.Add(v); }
+                if (views.Count == 0) { _output.WriteLine("{\"error\":\"No views found\"}"); return true; }
+
+                double sheetW = 0, sheetH = 0;
+                try { var ss = activeDrawing.Layout.SheetSize; sheetW = ss.Width; sheetH = ss.Height; } catch { }
+
+                double availW = sheetW - 2 * margin;
+                double availH = sheetH - 2 * margin - titleBlockH;
+
+                var modelSizes = views
+                    .Select(v => (view: v, mw: v.Width * v.Attributes.Scale, mh: v.Height * v.Attributes.Scale))
+                    .ToList();
+
+                var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
+                var optimalScale   = standardScales.Last();
+                foreach (var s in standardScales)
+                {
+                    var frames = modelSizes.Select(x => (w: x.mw / s, h: x.mh / s)).ToList();
+                    if (FitsShelfPacking(frames, availW, availH, gap))
+                    {
+                        optimalScale = s;
+                        break;
+                    }
+                }
+
+                foreach (var (view, _, _) in modelSizes)
+                {
+                    view.Attributes.Scale = optimalScale;
+                    view.Modify();
+                }
+
+                var newFrames = modelSizes
+                    .Select(x => (view: x.view, fw: x.mw / optimalScale, fh: x.mh / optimalScale))
+                    .OrderByDescending(x => x.fh)
+                    .ToList();
+
+                double curX = margin, curY = sheetH - margin, rowH = 0;
+                var arranged = new List<object>();
+
+                foreach (var (view, fw, fh) in newFrames)
+                {
+                    if (curX + fw > sheetW - margin && curX > margin)
+                    {
+                        curX  = margin;
+                        curY -= rowH + gap;
+                        rowH  = 0;
+                    }
+
+                    var origin = view.Origin;
+                    origin.X = curX + fw / 2;
+                    origin.Y = curY - fh / 2;
+                    view.Origin = origin;
+                    view.Modify();
+
+                    arranged.Add(new { id = view.GetIdentifier().ID, viewType = view.ViewType.ToString(), originX = origin.X, originY = origin.Y });
+
+                    curX += fw + gap;
+                    if (fh > rowH) rowH = fh;
+                }
+
+                activeDrawing.CommitChanges();
+
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    optimalScale,
+                    sheetWidth  = sheetW,
+                    sheetHeight = sheetH,
+                    arranged    = arranged.Count,
+                    views       = arranged
+                }));
+                return true;
+            }
+
             default:
                 return false;
         }
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    private static bool FitsShelfPacking(List<(double w, double h)> frames, double availW, double availH, double gap)
+    {
+        double curX = 0, curY = availH, rowH = 0;
+        foreach (var (w, h) in frames.OrderByDescending(f => f.h))
+        {
+            if (curX + w > availW && curX > 0) { curX = 0; curY -= rowH + gap; rowH = 0; }
+            if (w > availW || curY - h < 0) return false;
+            curX += w + gap;
+            if (h > rowH) rowH = h;
+        }
+        return true;
+    }
 
     private sealed class DrawingPropertyFilter
     {

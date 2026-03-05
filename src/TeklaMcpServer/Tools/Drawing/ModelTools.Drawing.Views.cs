@@ -84,4 +84,32 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
+    public static string FitViewsToSheet(
+        [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
+        [Description("Gap between views in mm. Default: 8")] double gap = 8,
+        [Description("Height of title block at bottom of sheet in mm. Default: 0")] double titleBlockHeight = 0)
+    {
+        var json = RunBridge(
+            "fit_views_to_sheet",
+            margin.ToString(CultureInfo.InvariantCulture),
+            gap.ToString(CultureInfo.InvariantCulture),
+            titleBlockHeight.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return string.Concat("Error: ", err.GetString());
+
+            var optScale = doc.RootElement.TryGetProperty("optimalScale", out var s) ? s.GetDouble() : 0;
+            var count    = doc.RootElement.TryGetProperty("arranged",     out var a) ? a.GetInt32()  : 0;
+            var details  = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            return string.Concat("Arranged ", count, " views at scale 1:", optScale, System.Environment.NewLine, details);
+        }
+        catch
+        {
+            return string.Concat("Bridge error: ", json);
+        }
+    }
 }
