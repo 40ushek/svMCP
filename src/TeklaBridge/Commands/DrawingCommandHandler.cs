@@ -605,13 +605,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                         type     = d.Type,
                         segments = d.Segments.Select(s => new
                         {
-                            id       = s.Id,
-                            value    = s.Value,
-                            rawValue = s.RawValue,
-                            startX   = s.StartX,
-                            startY   = s.StartY,
-                            endX     = s.EndX,
-                            endY     = s.EndY
+                            id     = s.Id,
+                            startX = s.StartX,
+                            startY = s.StartY,
+                            endX   = s.EndX,
+                            endY   = s.EndY
                         })
                     })
                 }));
