@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -493,6 +494,178 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     selectedCount = selectedObjects.Count,
                     selectedObjects
                 }));
+                return true;
+            }
+
+            case "get_drawing_views":
+            {
+                var drawingHandler = new DrawingHandler();
+                var activeDrawing = drawingHandler.GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                var views = new List<object>();
+                var viewEnumerator = activeDrawing.GetSheet().GetViews();
+                while (viewEnumerator.MoveNext())
+                {
+                    var v = viewEnumerator.Current as View;
+                    if (v == null) continue;
+
+                    views.Add(new
+                    {
+                        id = v.GetIdentifier().ID,
+                        viewType = v.ViewType.ToString(),
+                        name = v.Name ?? string.Empty,
+                        originX = v.Origin?.X ?? 0,
+                        originY = v.Origin?.Y ?? 0,
+                        scale = v.Attributes.Scale,
+                        width = v.Width,
+                        height = v.Height
+                    });
+                }
+
+                double sheetWidth = 0, sheetHeight = 0;
+                try
+                {
+                    var sheetSize = activeDrawing.Layout.SheetSize;
+                    sheetWidth = sheetSize.Width;
+                    sheetHeight = sheetSize.Height;
+                }
+                catch { }
+
+                _output.WriteLine(JsonSerializer.Serialize(new { sheetWidth, sheetHeight, views }));
+                return true;
+            }
+
+            case "move_view":
+            {
+                if (args.Length < 4)
+                {
+                    _output.WriteLine("{\"error\":\"Usage: move_view <viewId> <dx> <dy> [abs]\"}");
+                    return true;
+                }
+
+                if (!int.TryParse(args[1], out var viewId))
+                {
+                    _output.WriteLine("{\"error\":\"viewId must be an integer\"}");
+                    return true;
+                }
+
+                if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var dx) ||
+                    !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var dy))
+                {
+                    _output.WriteLine("{\"error\":\"dx and dy must be numbers\"}");
+                    return true;
+                }
+
+                var absolute = args.Length > 4 && string.Equals(args[4], "abs", StringComparison.OrdinalIgnoreCase);
+
+                var drawingHandler = new DrawingHandler();
+                var activeDrawing = drawingHandler.GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                View? foundView = null;
+                var viewEnumerator = activeDrawing.GetSheet().GetViews();
+                while (viewEnumerator.MoveNext())
+                {
+                    var view = viewEnumerator.Current as View;
+                    if (view != null && view.GetIdentifier().ID == viewId)
+                    {
+                        foundView = view;
+                        break;
+                    }
+                }
+
+                if (foundView == null)
+                {
+                    _output.WriteLine($"{{\"error\":\"View with ID {viewId} not found in active drawing\"}}");
+                    return true;
+                }
+
+                var oldX = foundView.Origin.X;
+                var oldY = foundView.Origin.Y;
+                var newOrigin = foundView.Origin;
+
+                if (absolute)
+                {
+                    newOrigin.X = dx;
+                    newOrigin.Y = dy;
+                }
+                else
+                {
+                    newOrigin.X += dx;
+                    newOrigin.Y += dy;
+                }
+
+                foundView.Origin = newOrigin;
+                foundView.Modify();
+                activeDrawing.CommitChanges();
+
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    moved = true,
+                    viewId,
+                    oldOriginX = oldX,
+                    oldOriginY = oldY,
+                    newOriginX = newOrigin.X,
+                    newOriginY = newOrigin.Y
+                }));
+                return true;
+            }
+
+            case "set_view_scale":
+            {
+                if (args.Length < 3)
+                {
+                    _output.WriteLine("{\"error\":\"Usage: set_view_scale <viewIdsCsv> <scale>\"}");
+                    return true;
+                }
+
+                var targetIds = ParseIntList(args[1]).ToHashSet();
+                if (targetIds.Count == 0)
+                {
+                    _output.WriteLine("{\"error\":\"No valid view IDs provided\"}");
+                    return true;
+                }
+
+                if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var scale) || scale <= 0)
+                {
+                    _output.WriteLine("{\"error\":\"scale must be a positive number\"}");
+                    return true;
+                }
+
+                var drawingHandler = new DrawingHandler();
+                var activeDrawing = drawingHandler.GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                var updatedIds = new List<int>();
+                var viewEnumerator2 = activeDrawing.GetSheet().GetViews();
+                while (viewEnumerator2.MoveNext())
+                {
+                    var v = viewEnumerator2.Current as View;
+                    if (v == null) continue;
+                    var objId = v.GetIdentifier().ID;
+                    if (!targetIds.Contains(objId)) continue;
+                    v.Attributes.Scale = scale;
+                    v.Modify();
+                    updatedIds.Add(objId);
+                }
+
+                if (updatedIds.Count > 0)
+                    activeDrawing.CommitChanges();
+
+                _output.WriteLine(JsonSerializer.Serialize(new { updatedCount = updatedIds.Count, updatedIds, scale }));
                 return true;
             }
 
