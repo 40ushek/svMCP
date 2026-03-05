@@ -694,15 +694,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 double availW = sheetW - 2 * margin;
                 double availH = sheetH - 2 * margin - titleBlockH;
 
-                var modelSizes = views
-                    .Select(v => (view: v, mw: v.Width * v.Attributes.Scale, mh: v.Height * v.Attributes.Scale))
-                    .ToList();
-
-                var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
-                var optimalScale   = standardScales.Last();
+                // Scale selection: use current sizes scaled by ratio (more accurate than model dims)
+                double currentScale = views.Count > 0 ? views[0].Attributes.Scale : 10.0;
+                var standardScales  = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
+                var optimalScale    = standardScales.Last();
                 foreach (var s in standardScales)
                 {
-                    var frames = modelSizes.Select(x => (w: x.mw / s, h: x.mh / s)).ToList();
+                    double ratio = currentScale / s;
+                    var frames = views.Select(v => (w: v.Width * ratio, h: v.Height * ratio)).ToList();
                     if (FitsShelfPacking(frames, availW, availH, gap))
                     {
                         optimalScale = s;
@@ -710,41 +709,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     }
                 }
 
-                foreach (var (view, _, _) in modelSizes)
+                // Pass 1: apply scale and commit so Tekla updates view frame sizes
+                foreach (var view in views)
                 {
                     view.Attributes.Scale = optimalScale;
                     view.Modify();
                 }
+                activeDrawing.CommitChanges();
 
-                var newFrames = modelSizes
-                    .Select(x => (view: x.view, fw: x.mw / optimalScale, fh: x.mh / optimalScale))
-                    .OrderByDescending(x => x.fh)
-                    .ToList();
+                // Pass 2: re-read ACTUAL sizes after scale change
+                var viewsAfterScale = new List<View>();
+                var ve2 = activeDrawing.GetSheet().GetViews();
+                while (ve2.MoveNext()) { if (ve2.Current is View v2) viewsAfterScale.Add(v2); }
 
-                double curX = margin, curY = sheetH - margin, rowH = 0;
-                var arranged = new List<object>();
-
-                foreach (var (view, fw, fh) in newFrames)
-                {
-                    if (curX + fw > sheetW - margin && curX > margin)
-                    {
-                        curX  = margin;
-                        curY -= rowH + gap;
-                        rowH  = 0;
-                    }
-
-                    var origin = view.Origin;
-                    origin.X = curX + fw / 2;
-                    origin.Y = curY - fh / 2;
-                    view.Origin = origin;
-                    view.Modify();
-
-                    arranged.Add(new { id = view.GetIdentifier().ID, viewType = view.ViewType.ToString(), originX = origin.X, originY = origin.Y });
-
-                    curX += fw + gap;
-                    if (fh > rowH) rowH = fh;
-                }
-
+                var arranged = ArrangeViews(viewsAfterScale, sheetW, sheetH, margin, gap);
                 activeDrawing.CommitChanges();
 
                 _output.WriteLine(JsonSerializer.Serialize(new
@@ -764,6 +742,113 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    private static List<object> ArrangeViews(List<View> views, double sheetW, double sheetH, double margin, double gap)
+    {
+        var arranged = new List<object>();
+
+        var front   = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.FrontView);
+        var top     = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.TopView);
+        var bottom  = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BottomView);
+        var back    = views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BackView);
+        var sections = views.Where(v => v.ViewType == View.ViewTypes.SectionView).ToList();
+        var view3d  = views.FirstOrDefault(v => v.ViewType.ToString().Contains("3D") || v.ViewType.ToString().Contains("Iso"));
+        var others  = views.Where(v => v != front && v != top && v != bottom && v != back
+                                    && !sections.Contains(v) && v != view3d).ToList();
+
+        if (front != null)
+        {
+            // Orthographic layout: Top above, Bottom below, Back left, Section right, 3D corner
+            double leftW    = back   != null ? back.Width   + gap : 0;
+            double rightW   = sections.Sum(s => s.Width + gap);
+            double topH     = top    != null ? top.Height   + gap : 0;
+            double bottomH  = bottom != null ? bottom.Height + gap : 0;
+
+            double groupW = leftW + front.Width + rightW;
+            double groupH = topH  + front.Height + bottomH;
+
+            // Center group on sheet
+            double frontCX = margin + (sheetW - 2 * margin - groupW) / 2 + leftW + front.Width / 2;
+            double frontCY = margin + (sheetH - 2 * margin - groupH) / 2 + bottomH + front.Height / 2;
+
+            void Place(View v, double cx, double cy)
+            {
+                var o = v.Origin; o.X = cx; o.Y = cy; v.Origin = o; v.Modify();
+                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = cx, originY = cy });
+            }
+
+            Place(front, frontCX, frontCY);
+
+            if (top    != null) Place(top,    frontCX, frontCY + front.Height / 2 + gap + top.Height    / 2);
+            if (bottom != null) Place(bottom, frontCX, frontCY - front.Height / 2 - gap - bottom.Height / 2);
+            if (back   != null) Place(back,   frontCX - front.Width / 2 - gap - back.Width / 2, frontCY);
+
+            double rightX = frontCX + front.Width / 2 + gap;
+            foreach (var s in sections)
+            {
+                Place(s, rightX + s.Width / 2, frontCY);
+                rightX += s.Width + gap;
+            }
+
+            // 3D view placement: right of sections if fits, else below BottomView, else top-left
+            if (view3d != null)
+            {
+                // Option 1: right of section views, vertically centered with FrontView
+                double opt1X = rightX + view3d.Width / 2;
+                double opt1Y = frontCY;
+                bool opt1Fits = opt1X + view3d.Width / 2 <= sheetW - margin;
+
+                // Option 2: above TopView, centered on FrontView X
+                double topEdge = frontCY + front.Height / 2 + gap + (top != null ? top.Height + gap : 0);
+                double opt2X = frontCX;
+                double opt2Y = topEdge + view3d.Height / 2;
+                bool opt2Fits = opt2Y + view3d.Height / 2 <= sheetH - margin
+                             && opt2X + view3d.Width / 2 <= sheetW - margin
+                             && opt2X - view3d.Width / 2 >= margin;
+
+                // Option 3: below BottomView, centered on FrontView X
+                double botEdge = (bottom != null) ? frontCY - front.Height / 2 - gap : frontCY - front.Height / 2 - gap;
+                double opt3X = frontCX;
+                double opt3Y = botEdge - view3d.Height / 2;
+                bool opt3Fits = opt3Y - view3d.Height / 2 >= margin;
+
+                double finalX, finalY;
+                if (opt1Fits)       { finalX = opt1X; finalY = opt1Y; }
+                else if (opt2Fits)  { finalX = opt2X; finalY = opt2Y; }
+                else if (opt3Fits)  { finalX = opt3X; finalY = opt3Y; }
+                else                { finalX = margin + view3d.Width / 2; finalY = margin + view3d.Height / 2; }
+
+                Place(view3d, finalX, finalY);
+            }
+
+            // Any remaining views: shelf-pack below the group
+            double curX = margin, curY = frontCY - front.Height / 2 - bottomH - gap * 2, rowH = 0;
+            foreach (var v in others)
+            {
+                if (curX + v.Width > sheetW - margin && curX > margin) { curX = margin; curY -= rowH + gap; rowH = 0; }
+                var o = v.Origin; o.X = curX + v.Width / 2; o.Y = curY - v.Height / 2; v.Origin = o; v.Modify();
+                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = o.X, originY = o.Y });
+                curX += v.Width + gap;
+                if (v.Height > rowH) rowH = v.Height;
+            }
+        }
+        else
+        {
+            // Fallback: shelf packing (for GA drawings etc.)
+            var frames = views.OrderByDescending(v => v.Height).ToList();
+            double curX = margin, curY = sheetH - margin, rowH = 0;
+            foreach (var v in frames)
+            {
+                if (curX + v.Width > sheetW - margin && curX > margin) { curX = margin; curY -= rowH + gap; rowH = 0; }
+                var o = v.Origin; o.X = curX + v.Width / 2; o.Y = curY - v.Height / 2; v.Origin = o; v.Modify();
+                arranged.Add(new { id = v.GetIdentifier().ID, viewType = v.ViewType.ToString(), originX = o.X, originY = o.Y });
+                curX += v.Width + gap;
+                if (v.Height > rowH) rowH = v.Height;
+            }
+        }
+
+        return arranged;
+    }
 
     private static bool FitsShelfPacking(List<(double w, double h)> frames, double availW, double availH, double gap)
     {
