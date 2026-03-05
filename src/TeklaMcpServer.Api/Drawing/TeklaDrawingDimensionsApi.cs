@@ -18,56 +18,64 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
         DrawingEnumeratorBase.AutoFetch = false;
-
-        DrawingObjectEnumerator dimObjects;
-        if (viewId.HasValue)
+        try
         {
-            var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
-                ?? throw new ViewNotFoundException(viewId.Value);
-            dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
-        }
-        else
-        {
-            dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-        }
 
-        var dimensions = new List<DrawingDimensionInfo>();
-
-        while (dimObjects.MoveNext())
-        {
-            if (dimObjects.Current is not StraightDimensionSet dimSet) continue;
-
-            var info = new DrawingDimensionInfo
+            DrawingObjectEnumerator dimObjects;
+            if (viewId.HasValue)
             {
-                Id       = dimSet.GetIdentifier().ID,
-                Type     = dimSet.GetType().Name,
-                Distance = dimSet.Distance
-            };
-
-            // Iterate individual StraightDimension segments within this set
-            var segEnum = dimSet.GetObjects();
-            while (segEnum.MoveNext())
+                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value);
+                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
+            }
+            else
             {
-                if (segEnum.Current is not StraightDimension seg) continue;
-
-                var start = seg.StartPoint;
-                var end   = seg.EndPoint;
-
-                info.Segments.Add(new DimensionSegmentInfo
-                {
-                    Id     = seg.GetIdentifier().ID,
-                    StartX = Math.Round(start.X, 1),
-                    StartY = Math.Round(start.Y, 1),
-                    EndX   = Math.Round(end.X, 1),
-                    EndY   = Math.Round(end.Y, 1)
-                });
+                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
             }
 
-            dimensions.Add(info);
-        }
+            var dimensions = new List<DrawingDimensionInfo>();
 
-        return new GetDimensionsResult { Total = dimensions.Count, Dimensions = dimensions };
+            while (dimObjects.MoveNext())
+            {
+                if (dimObjects.Current is not StraightDimensionSet dimSet) continue;
+
+                var info = new DrawingDimensionInfo
+                {
+                    Id       = dimSet.GetIdentifier().ID,
+                    Type     = dimSet.GetType().Name,
+                    Distance = dimSet.Distance
+                };
+
+                // Iterate individual StraightDimension segments within this set
+                var segEnum = dimSet.GetObjects();
+                while (segEnum.MoveNext())
+                {
+                    if (segEnum.Current is not StraightDimension seg) continue;
+
+                    var start = seg.StartPoint;
+                    var end   = seg.EndPoint;
+
+                    info.Segments.Add(new DimensionSegmentInfo
+                    {
+                        Id     = seg.GetIdentifier().ID,
+                        StartX = Math.Round(start.X, 1),
+                        StartY = Math.Round(start.Y, 1),
+                        EndX   = Math.Round(end.X, 1),
+                        EndY   = Math.Round(end.Y, 1)
+                    });
+                }
+
+                dimensions.Add(info);
+            }
+
+            return new GetDimensionsResult { Total = dimensions.Count, Dimensions = dimensions };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
     }
 
     public MoveDimensionResult MoveDimension(int dimensionId, double delta)
@@ -76,27 +84,35 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
         DrawingEnumeratorBase.AutoFetch = false;
-
-        // Find the StraightDimensionSet by ID across all sheet objects
-        StraightDimensionSet? dimSet = null;
-        var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-        while (allDims.MoveNext())
+        try
         {
-            if (allDims.Current is StraightDimensionSet ds && ds.GetIdentifier().ID == dimensionId)
+
+            // Find the StraightDimensionSet by ID across all sheet objects
+            StraightDimensionSet? dimSet = null;
+            var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+            while (allDims.MoveNext())
             {
-                dimSet = ds;
-                break;
+                if (allDims.Current is StraightDimensionSet ds && ds.GetIdentifier().ID == dimensionId)
+                {
+                    dimSet = ds;
+                    break;
+                }
             }
+
+            if (dimSet == null)
+                throw new System.Exception($"DimensionSet {dimensionId} not found");
+
+            dimSet.Distance += delta;
+            dimSet.Modify();
+            activeDrawing.CommitChanges();
+            return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = dimSet.Distance };
         }
-
-        if (dimSet == null)
-            throw new System.Exception($"DimensionSet {dimensionId} not found");
-
-        dimSet.Distance += delta;
-        dimSet.Modify();
-        activeDrawing.CommitChanges();
-        return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = dimSet.Distance };
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
     }
 
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)

@@ -661,7 +661,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             case "resolve_mark_overlaps":
             {
                 double margin = 2.0;
-                if (args.Length > 1) double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out margin);
+                if (args.Length > 1)
+                {
+                    if (!double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out margin))
+                    {
+                        _output.WriteLine("{\"error\":\"margin must be a number\"}");
+                        return true;
+                    }
+
+                    if (margin < 0)
+                    {
+                        _output.WriteLine("{\"error\":\"margin must be >= 0\"}");
+                        return true;
+                    }
+                }
                 var api    = new TeklaDrawingMarkApi(_model);
                 var result = api.ResolveMarkOverlaps(margin);
                 _output.WriteLine(JsonSerializer.Serialize(new
@@ -735,9 +748,13 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private static bool ContainsIgnoreCase(string? source, string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return true;
-        return !string.IsNullOrWhiteSpace(source)
-            && source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+
+        if (string.IsNullOrWhiteSpace(source))
+            return false;
+
+        return source!.IndexOf(value!, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static string SanitizeFileName(string value)
@@ -749,8 +766,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private static List<int> ParseIntList(string? csv)
     {
-        if (string.IsNullOrWhiteSpace(csv)) return new List<int>();
-        return csv.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+        if (string.IsNullOrWhiteSpace(csv))
+            return new List<int>();
+
+        var normalized = csv!;
+        return normalized.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(x => x.Trim())
             .Where(x => int.TryParse(x, out _))
             .Select(int.Parse)

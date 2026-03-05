@@ -76,7 +76,7 @@ public static partial class ModelTools
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
-            var updatedCount = doc.RootElement.TryGetProperty("updatedCount", out var u) ? u.GetInt32() : 0;
+            var updatedCount = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("updatedCount", out var u) ? u.GetInt32() : 0;
             return $"Updated scale to 1:{scale} for {updatedCount} view(s).\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
         }
         catch
@@ -201,8 +201,8 @@ public static partial class ModelTools
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return string.Concat("Error: ", err.GetString());
 
-            var optScale = doc.RootElement.TryGetProperty("optimalScale", out var s) ? s.GetDouble() : 0;
-            var count    = doc.RootElement.TryGetProperty("arranged",     out var a) ? a.GetInt32()  : 0;
+            var optScale = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("optimalScale", out var s) ? s.GetDouble() : 0;
+            var count    = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("arranged", out var a) ? a.GetInt32() : 0;
             var details  = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
             return string.Concat("Arranged ", count, " views at scale 1:", optScale, System.Environment.NewLine, details);
         }

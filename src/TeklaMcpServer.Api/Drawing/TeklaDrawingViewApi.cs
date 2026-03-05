@@ -94,6 +94,13 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
     public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
     {
+        if (margin < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
+        if (gap < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(gap), "gap must be >= 0.");
+        if (titleBlockHeight < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
+
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -104,23 +111,37 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
         double sheetW = 0, sheetH = 0;
         try { var ss = activeDrawing.Layout.SheetSize; sheetW = ss.Width; sheetH = ss.Height; } catch { }
+        if (sheetW <= 0 || sheetH <= 0)
+            throw new System.InvalidOperationException("Unable to read drawing sheet size.");
 
         double availW = sheetW - 2 * margin;
         double availH = sheetH - 2 * margin - titleBlockHeight;
+        if (availW <= 0 || availH <= 0)
+            throw new System.InvalidOperationException("No drawable area left after applying margin/titleBlockHeight.");
 
         // Find optimal scale using current sizes scaled by ratio
-        double currentScale = views[0].Attributes.Scale;
+        double currentScale = views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
+        if (currentScale <= 0)
+            currentScale = 1.0;
+
         var standardScales  = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
-        var optimalScale    = standardScales.Last();
+        double? optimalScale = null;
         foreach (var s in standardScales)
         {
             double ratio = currentScale / s;
             var frames   = views.Select(v => (w: v.Width * ratio, h: v.Height * ratio)).ToList();
-            if (FitsShelfPacking(frames, availW, availH, gap)) { optimalScale = s; break; }
+            if (FitsShelfPacking(frames, availW, availH, gap))
+            {
+                optimalScale = s;
+                break;
+            }
         }
 
+        if (!optimalScale.HasValue)
+            throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
+
         // Pass 1: apply scale
-        foreach (var v in views) { v.Attributes.Scale = optimalScale; v.Modify(); }
+        foreach (var v in views) { v.Attributes.Scale = optimalScale.Value; v.Modify(); }
         activeDrawing.CommitChanges();
 
         // Pass 2: re-read actual sizes and arrange
@@ -130,7 +151,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
         return new FitViewsResult
         {
-            OptimalScale = optimalScale,
+            OptimalScale = optimalScale.Value,
             SheetWidth   = sheetW,
             SheetHeight  = sheetH,
             Arranged     = arranged.Count,
@@ -233,6 +254,9 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
     private static bool FitsShelfPacking(List<(double w, double h)> frames, double availW, double availH, double gap)
     {
+        if (availW <= 0 || availH <= 0)
+            return false;
+
         double curX = 0, curY = availH, rowH = 0;
         foreach (var (w, h) in frames.OrderByDescending(f => f.h))
         {

@@ -12,11 +12,11 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // Set Tekla environment — prefer already-set XS_SYSTEM (Tekla sets it when running),
-        // otherwise auto-detect the latest installed version under C:\TeklaStructures\.
-        var teklaRoot = Environment.GetEnvironmentVariable("XS_SYSTEM");
-        if (string.IsNullOrWhiteSpace(teklaRoot) || !Directory.Exists(teklaRoot))
-            teklaRoot = DetectTeklaRoot();
+        // Set Tekla environment:
+        // 1) use XS_SYSTEM if already valid,
+        // 2) otherwise prefer installation matching referenced Tekla API major version,
+        // 3) fallback to latest installed version.
+        var teklaRoot = ResolveTeklaRoot();
 
         if (!string.IsNullOrEmpty(teklaRoot) && Directory.Exists(teklaRoot))
         {
@@ -124,6 +124,52 @@ internal static class Program
             if (!Version.TryParse(name, out var ver)) continue;
             if (!Directory.Exists(Path.Combine(dir, "nt", "bin"))) continue;
             if (bestVersion == null || ver > bestVersion) { bestVersion = ver; bestPath = dir; }
+        }
+
+        return bestPath;
+    }
+
+    private static string? ResolveTeklaRoot()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("XS_SYSTEM");
+        if (!string.IsNullOrWhiteSpace(fromEnv) && Directory.Exists(fromEnv))
+            return fromEnv;
+
+        var apiMajor = typeof(Model).Assembly.GetName().Version?.Major;
+        var matching = DetectTeklaRootForMajor(apiMajor);
+        if (!string.IsNullOrWhiteSpace(matching))
+            return matching;
+
+        return DetectTeklaRoot();
+    }
+
+    private static string? DetectTeklaRootForMajor(int? major)
+    {
+        if (!major.HasValue)
+            return null;
+
+        var baseDir = @"C:\TeklaStructures";
+        if (!Directory.Exists(baseDir))
+            return null;
+
+        Version? bestVersion = null;
+        string? bestPath = null;
+
+        foreach (var dir in Directory.GetDirectories(baseDir))
+        {
+            var name = Path.GetFileName(dir);
+            if (!Version.TryParse(name, out var ver))
+                continue;
+            if (ver.Major != major.Value)
+                continue;
+            if (!Directory.Exists(Path.Combine(dir, "nt", "bin")))
+                continue;
+
+            if (bestVersion == null || ver > bestVersion)
+            {
+                bestVersion = ver;
+                bestPath = dir;
+            }
         }
 
         return bestPath;

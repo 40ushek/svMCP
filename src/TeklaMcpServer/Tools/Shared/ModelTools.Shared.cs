@@ -40,20 +40,52 @@ public static partial class ModelTools
         var stderr = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         var result = output.Trim();
-        // Strip any non-JSON prefix (BOM, Tekla diagnostics leaked before Console capture).
-        // Find the LAST line starting with '{' or '[' — the actual JSON is always last.
-        var lines = result.Split('\n');
-        for (var i = lines.Length - 1; i >= 0; i--)
-        {
-            var line = lines[i].TrimStart('\r');
-            if (line.Length > 0 && (line[0] == '{' || line[0] == '['))
-            {
-                result = line;
-                break;
-            }
-        }
+        if (!string.IsNullOrEmpty(result))
+            result = ExtractJsonPayload(result);
+
         if (string.IsNullOrEmpty(result))
             result = JsonSerializer.Serialize(new { error = "TeklaBridge produced no output", stderr = stderr.Trim() });
         return result;
+    }
+
+    private static string ExtractJsonPayload(string output)
+    {
+        // Strip any non-JSON prefix (BOM, leaked diagnostics). Keep full JSON payload, including multi-line.
+        var trimmed = output.TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        if (LooksLikeJson(trimmed) && IsValidJson(trimmed))
+            return trimmed;
+
+        for (var i = trimmed.Length - 1; i >= 0; i--)
+        {
+            var ch = trimmed[i];
+            if (ch != '{' && ch != '[')
+                continue;
+
+            var candidate = trimmed.Substring(i).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+            if (LooksLikeJson(candidate) && IsValidJson(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static bool LooksLikeJson(string value)
+    {
+        return !string.IsNullOrEmpty(value) && (value[0] == '{' || value[0] == '[');
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
