@@ -658,6 +658,22 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "resolve_mark_overlaps":
+            {
+                double margin = 2.0;
+                if (args.Length > 1) double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out margin);
+                var api    = new TeklaDrawingMarkApi(_model);
+                var result = api.ResolveMarkOverlaps(margin);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    marksMovedCount   = result.MarksMovedCount,
+                    movedIds          = result.MovedIds,
+                    iterations        = result.Iterations,
+                    remainingOverlaps = result.RemainingOverlaps
+                }));
+                return true;
+            }
+
             case "get_drawing_marks":
             {
                 int? viewId = null;
@@ -675,8 +691,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                         modelId    = m.ModelId,
                         insertionX = m.InsertionX,
                         insertionY = m.InsertionY,
-                        bbox       = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
-                        properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
+                        bbox        = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
+                        placingType = m.PlacingType,
+                        placingX    = m.PlacingX,
+                        placingY    = m.PlacingY,
+                        properties  = m.Properties.Select(p => new { name = p.Name, value = p.Value })
                     })
                 }));
                 return true;

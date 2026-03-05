@@ -6,5 +6,6 @@ public interface IDrawingMarkApi
     /// Returns all marks on the active drawing, optionally filtered to a single view.
     /// Each mark includes its property elements (name + computed value).
     /// </summary>
-    GetMarksResult GetMarks(int? viewId);
+    GetMarksResult    GetMarks(int? viewId);
+    ResolveMarksResult ResolveMarkOverlaps(double margin);
 }

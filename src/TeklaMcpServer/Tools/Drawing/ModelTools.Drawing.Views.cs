@@ -165,6 +165,25 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Automatically resolve overlapping marks on the active drawing by iteratively pushing them apart. Returns how many marks were moved and remaining overlap count.")]
+    public static string ResolveMarkOverlaps(
+        [Description("Minimum gap between mark bounding boxes after resolution (mm). Default: 2.")] double margin = 2.0)
+    {
+        var json = RunBridge("resolve_mark_overlaps", margin.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
