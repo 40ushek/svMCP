@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
@@ -39,7 +40,18 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         {
             if (markObjects.Current is not Mark mark) continue;
 
-            var info = new DrawingMarkInfo { Id = mark.GetIdentifier().ID };
+            var bbox = mark.GetAxisAlignedBoundingBox();
+            var ins  = mark.InsertionPoint;
+            var info = new DrawingMarkInfo
+            {
+                Id         = mark.GetIdentifier().ID,
+                InsertionX = Math.Round(ins.X, 1),
+                InsertionY = Math.Round(ins.Y, 1),
+                BboxMinX   = Math.Round(bbox.MinPoint.X, 1),
+                BboxMinY   = Math.Round(bbox.MinPoint.Y, 1),
+                BboxMaxX   = Math.Round(bbox.MaxPoint.X, 1),
+                BboxMaxY   = Math.Round(bbox.MaxPoint.Y, 1)
+            };
 
             // Resolve model object ID from first related drawing object
             var related = mark.GetRelatedObjects();
@@ -63,7 +75,18 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
             marks.Add(info);
         }
 
-        return new GetMarksResult { Total = marks.Count, Marks = marks };
+        // Detect pairwise AABB overlaps
+        var overlaps = new List<MarkOverlap>();
+        for (int i = 0; i < marks.Count; i++)
+        for (int j = i + 1; j < marks.Count; j++)
+        {
+            var a = marks[i]; var b = marks[j];
+            if (a.BboxMaxX > b.BboxMinX && b.BboxMaxX > a.BboxMinX &&
+                a.BboxMaxY > b.BboxMinY && b.BboxMaxY > a.BboxMinY)
+                overlaps.Add(new MarkOverlap { IdA = a.Id, IdB = b.Id });
+        }
+
+        return new GetMarksResult { Total = marks.Count, Marks = marks, Overlaps = overlaps };
     }
 
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)

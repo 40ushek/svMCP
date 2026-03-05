@@ -667,11 +667,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.GetMarks(viewId);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    total = result.Total,
-                    marks = result.Marks.Select(m => new
+                    total    = result.Total,
+                    overlaps = result.Overlaps.Select(o => new { idA = o.IdA, idB = o.IdB }),
+                    marks    = result.Marks.Select(m => new
                     {
                         id         = m.Id,
                         modelId    = m.ModelId,
+                        insertionX = m.InsertionX,
+                        insertionY = m.InsertionY,
+                        bbox       = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
                         properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
                     })
                 }));
