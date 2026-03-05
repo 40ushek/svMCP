@@ -9,22 +9,18 @@
 
 	<ItemGroup>
 		<!-- MCP SDK — requires net8+ for tool registration -->
-		<PackageReference Include="ModelContextProtocol" Version="0.9.0-preview.2" />
+		<PackageReference Include="ModelContextProtocol" Version="1.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
 	</ItemGroup>
 
 	<!-- Build TeklaBridge (net48) and copy to our output directory -->
 	<Target Name="BuildAndCopyTeklaBridge" AfterTargets="Build">
-		<MSBuild Projects="$(MSBuildThisFileDirectory)..\TeklaBridge\TeklaBridge.csproj"
-		         Targets="Build"
-		         Properties="Configuration=$(Configuration)" />
+		<MSBuild Projects="$(MSBuildThisFileDirectory)..\TeklaBridge\TeklaBridge.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
 		<ItemGroup>
 			<BridgeFiles Include="$(MSBuildThisFileDirectory)..\TeklaBridge\bin\$(Configuration)\net48\*.*" />
 		</ItemGroup>
 		<!-- Copy to bridge\ subdirectory to avoid DLL version conflicts with net8 server -->
-		<Copy SourceFiles="@(BridgeFiles)"
-		      DestinationFolder="$(OutputPath)bridge\"
-		      SkipUnchangedFiles="true" />
+		<Copy SourceFiles="@(BridgeFiles)" DestinationFolder="$(OutputPath)bridge\" SkipUnchangedFiles="true" />
 	</Target>
 
 </Project>

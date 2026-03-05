@@ -23,4 +23,18 @@
 		<PackageReference Include="TSAppConfigPatcherTask" Version="2.1.3" />
 	</ItemGroup>
 
+	<!-- Auto-deploy to TeklaMcpServer bridge/ folder so dotnet build TeklaBridge.csproj is enough -->
+	<Target Name="CopyToMcpServer" AfterTargets="Build">
+		<PropertyGroup>
+			<McpBridgeDir>$(MSBuildThisFileDirectory)..\TeklaMcpServer\bin\$(Configuration)\net8.0-windows\bridge\</McpBridgeDir>
+		</PropertyGroup>
+		<ItemGroup>
+			<BridgeOutput Include="$(OutputPath)*.*" />
+		</ItemGroup>
+		<Copy SourceFiles="@(BridgeOutput)"
+		      DestinationFolder="$(McpBridgeDir)"
+		      SkipUnchangedFiles="true"
+		      Condition="Exists('$(McpBridgeDir)')" />
+	</Target>
+
 </Project>

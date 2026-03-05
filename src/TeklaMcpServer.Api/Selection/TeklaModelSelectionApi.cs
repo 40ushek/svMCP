@@ -23,7 +23,11 @@ public sealed class TeklaModelSelectionApi : IModelSelectionApi
 
         while (objs.MoveNext())
         {
-            var info = CreateObjectInfo(objs.Current as ModelObject);
+            // `as ModelObject` fails for .NET Remoting proxies (same as `is`).
+            // Explicit cast routes through the proxy and works correctly.
+            ModelObject? current = null;
+            try { current = (ModelObject)objs.Current; } catch { }
+            var info = CreateObjectInfo(current);
             if (info != null)
                 results.Add(info);
         }
@@ -106,6 +110,33 @@ public sealed class TeklaModelSelectionApi : IModelSelectionApi
                 BoltStandard = bolt.BoltStandard,
                 BoltSize = bolt.BoltSize
             };
+        }
+
+        var typeName = obj.GetType().Name;
+        if (typeName == "Component" || typeName == "Connection" || typeName == "Detail")
+        {
+            // `is Component` fails on .NET Remoting proxies — explicit cast works.
+            try
+            {
+                var component = (Tekla.Structures.Model.Component)obj;
+                return new ModelObjectInfo
+                {
+                    Id = obj.Identifier.ID,
+                    Guid = obj.Identifier.GUID.ToString(),
+                    Type = typeName,
+                    Name = string.IsNullOrWhiteSpace(component.Name) ? null : component.Name,
+                    Class = component.Number != 0 ? component.Number.ToString() : null
+                };
+            }
+            catch
+            {
+                return new ModelObjectInfo
+                {
+                    Id = obj.Identifier.ID,
+                    Guid = obj.Identifier.GUID.ToString(),
+                    Type = typeName
+                };
+            }
         }
 
         if (obj is Weld weld)
