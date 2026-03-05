@@ -1,20 +1,30 @@
+using System.IO;
 using System.Text.Json;
+using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Filtering;
 using TeklaMcpServer.Api.Selection;
-using Tekla.Structures.Model;
 
-namespace TeklaBridge;
+namespace TeklaBridge.Commands;
 
-internal partial class Program
+internal sealed class ModelCommandHandler : ICommandHandler
 {
-    private static bool TryHandleModelCommand(string command, string[] args, Model model, TextWriter realOut)
+    private readonly Model _model;
+    private readonly TextWriter _output;
+
+    public ModelCommandHandler(Model model, TextWriter output)
+    {
+        _model = model;
+        _output = output;
+    }
+
+    public bool TryHandle(string command, string[] args)
     {
         switch (command)
         {
             case "get_selected_properties":
             {
-                var api = new TeklaModelSelectionApi(model);
-                realOut.WriteLine(JsonSerializer.Serialize(api.GetSelectedObjects()));
+                var api = new TeklaModelSelectionApi(_model);
+                _output.WriteLine(JsonSerializer.Serialize(api.GetSelectedObjects()));
                 return true;
             }
 
@@ -22,27 +32,27 @@ internal partial class Program
             {
                 if (args.Length < 2)
                 {
-                    realOut.WriteLine("{\"error\":\"Missing class number\"}");
+                    _output.WriteLine("{\"error\":\"Missing class number\"}");
                     return true;
                 }
 
                 if (!int.TryParse(args[1], out var classNumber))
                 {
-                    realOut.WriteLine("{\"error\":\"Invalid class number\"}");
+                    _output.WriteLine("{\"error\":\"Invalid class number\"}");
                     return true;
                 }
 
-                var api = new TeklaModelSelectionApi(model);
+                var api = new TeklaModelSelectionApi(_model);
                 var count = api.SelectObjectsByClass(classNumber);
-                realOut.WriteLine(JsonSerializer.Serialize(new { count, @class = classNumber }));
+                _output.WriteLine(JsonSerializer.Serialize(new { count, @class = classNumber }));
                 return true;
             }
 
             case "get_selected_weight":
             {
-                var api = new TeklaModelSelectionApi(model);
+                var api = new TeklaModelSelectionApi(_model);
                 var result = api.GetSelectedObjectsWeight();
-                realOut.WriteLine(JsonSerializer.Serialize(new { totalWeight = result.TotalWeightKg, count = result.Count }));
+                _output.WriteLine(JsonSerializer.Serialize(new { totalWeight = result.TotalWeightKg, count = result.Count }));
                 return true;
             }
 
@@ -50,7 +60,7 @@ internal partial class Program
             {
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
                 {
-                    realOut.WriteLine("{\"error\":\"Missing object type or filter criteria\"}");
+                    _output.WriteLine("{\"error\":\"Missing object type or filter criteria\"}");
                     return true;
                 }
 
@@ -58,14 +68,14 @@ internal partial class Program
                 if (args.Length >= 3 && bool.TryParse(args[2], out var parsed))
                     selectMatches = parsed;
 
-                var api = new TeklaModelFilteringApi(model);
+                var api = new TeklaModelFilteringApi(_model);
                 var result = api.FilterByType(new ModelObjectFilter
                 {
                     ObjectType = args[1],
                     SelectMatches = selectMatches
                 });
 
-                realOut.WriteLine(JsonSerializer.Serialize(result));
+                _output.WriteLine(JsonSerializer.Serialize(result));
                 return true;
             }
 
