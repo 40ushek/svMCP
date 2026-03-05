@@ -146,10 +146,11 @@ src/
 | `move_view` | Переместить вид на листе (абсолютно или на смещение) |
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
 | `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
-| `get_drawing_marks` | Прочитать содержимое марок (имя и значение PropertyElement); фильтрация по виду |
+| `get_drawing_marks` | Прочитать марки: позиция, bbox текстового блока, перекрытия, содержимое PropertyElement; фильтрация по виду |
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
+| `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок — итеративный AABB push-apart |
 
 ## Диагностика
 
