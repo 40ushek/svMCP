@@ -41,6 +41,9 @@
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
 | `fit_views_to_sheet` | Авторасстановка: подбор стандартного масштаба, ортографическая раскладка |
 | `get_drawing_marks` | Содержимое марок — имена и значения PropertyElement; фильтрация по виду |
+| `get_drawing_parts` | Модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
+| `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
+| `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
 
 ---
 
