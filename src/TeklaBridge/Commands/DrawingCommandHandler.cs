@@ -603,6 +603,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     {
                         id       = d.Id,
                         type     = d.Type,
+                        distance = d.Distance,
                         segments = d.Segments.Select(s => new
                         {
                             id     = s.Id,

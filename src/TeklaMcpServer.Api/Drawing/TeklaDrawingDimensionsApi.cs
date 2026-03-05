@@ -40,8 +40,9 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
             var info = new DrawingDimensionInfo
             {
-                Id   = dimSet.GetIdentifier().ID,
-                Type = dimSet.GetType().Name
+                Id       = dimSet.GetIdentifier().ID,
+                Type     = dimSet.GetType().Name,
+                Distance = dimSet.Distance
             };
 
             // Iterate individual StraightDimension segments within this set

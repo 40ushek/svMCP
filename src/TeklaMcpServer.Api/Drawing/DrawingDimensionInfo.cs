@@ -15,6 +15,7 @@ public sealed class DrawingDimensionInfo
 {
     public int                         Id       { get; set; }
     public string                      Type     { get; set; } = string.Empty;
+    public double                      Distance { get; set; }
     public List<DimensionSegmentInfo>  Segments { get; set; } = new();
 }
 
