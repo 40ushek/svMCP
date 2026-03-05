@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
@@ -53,30 +52,12 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
                 var start = seg.StartPoint;
                 var end   = seg.EndPoint;
-                var up    = seg.UpDirection;
 
-                double dx = end.X - start.X;
-                double dy = end.Y - start.Y;
-                double dz = end.Z - start.Z;
-
-                // Project (End-Start) onto the plane perpendicular to UpDirection.
-                // UpDirection points from the part toward the dimension line — perpendicular to measurement.
-                // The displayed value is the component in the measurement direction.
-                double dist;
-                double upLen = Math.Sqrt(up.X * up.X + up.Y * up.Y + up.Z * up.Z);
-                if (upLen > 1e-10)
-                {
-                    double unx = up.X / upLen, uny = up.Y / upLen, unz = up.Z / upLen;
-                    double dot = dx * unx + dy * uny + dz * unz;
-                    double px  = dx - dot * unx;
-                    double py  = dy - dot * uny;
-                    double pz  = dz - dot * unz;
-                    dist = Math.Round(Math.Sqrt(px * px + py * py + pz * pz), 1);
-                }
-                else
-                {
-                    dist = Math.Round(Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
-                }
+                // Read the displayed value directly — ContainerElement.GetUnformattedString()
+                // returns the formatted dimension text exactly as shown on the drawing.
+                var raw = seg.Value.GetUnformattedString() ?? string.Empty;
+                double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var dist);
 
                 info.Segments.Add(new DimensionSegmentInfo
                 {
