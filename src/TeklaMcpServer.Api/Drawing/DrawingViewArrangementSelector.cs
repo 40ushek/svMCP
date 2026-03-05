@@ -18,17 +18,30 @@ public sealed class DrawingViewArrangementSelector
     {
         return new DrawingViewArrangementSelector(new IDrawingViewArrangeStrategy[]
         {
+            new GaDrawingMaxRectsArrangeStrategy(),
             new FrontViewDrawingArrangeStrategy(),
             new ShelfPackingDrawingArrangeStrategy()
         });
     }
 
+    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight)
+    {
+        var strategy = SelectStrategy(context);
+        return strategy.EstimateFit(frames, availableWidth, availableHeight, context.Gap);
+    }
+
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
+    {
+        var strategy = SelectStrategy(context);
+        return strategy.Arrange(context);
+    }
+
+    private IDrawingViewArrangeStrategy SelectStrategy(DrawingArrangeContext context)
     {
         var strategy = _strategies.FirstOrDefault(s => s.CanArrange(context));
         if (strategy == null)
             throw new System.InvalidOperationException("No drawing view arrangement strategy matched the current drawing.");
 
-        return strategy.Arrange(context);
+        return strategy;
     }
 }

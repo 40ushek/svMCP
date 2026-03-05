@@ -13,6 +13,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         return context.Views.Any(v => v.ViewType == View.ViewTypes.FrontView);
     }
 
+    public bool EstimateFit(IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight, double gap)
+    {
+        // Scale estimation remains conservative and behavior-compatible for front-based layout.
+        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, gap);
+    }
+
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
     {
         var arranged = new List<ArrangedView>();

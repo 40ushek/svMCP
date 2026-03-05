@@ -124,6 +124,8 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin/titleBlockHeight.");
 
+        var arrangeContext = new DrawingArrangeContext(activeDrawing, views, sheetW, sheetH, margin, gap);
+
         // Find optimal scale using current sizes scaled by ratio
         double currentScale = views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
         if (currentScale <= 0)
@@ -135,7 +137,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         {
             double ratio = currentScale / s;
             var frames   = views.Select(v => (w: v.Width * ratio, h: v.Height * ratio)).ToList();
-            if (FitsShelfPacking(frames, availW, availH, gap))
+            if (_arrangementSelector.EstimateFit(arrangeContext, frames, availW, availH))
             {
                 optimalScale = s;
                 break;
@@ -163,22 +165,6 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             Arranged     = arranged.Count,
             Views        = arranged
         };
-    }
-
-    private static bool FitsShelfPacking(List<(double w, double h)> frames, double availW, double availH, double gap)
-    {
-        if (availW <= 0 || availH <= 0)
-            return false;
-
-        double curX = 0, curY = availH, rowH = 0;
-        foreach (var (w, h) in frames.OrderByDescending(f => f.h))
-        {
-            if (curX + w > availW && curX > 0) { curX = 0; curY -= rowH + gap; rowH = 0; }
-            if (w > availW || curY - h < 0) return false;
-            curX += w + gap;
-            if (h > rowH) rowH = h;
-        }
-        return true;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
