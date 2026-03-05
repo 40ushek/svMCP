@@ -5,7 +5,8 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed class DimensionSegmentInfo
 {
     public int    Id       { get; set; }
-    public double Value    { get; set; }   // computed distance in mm (model units)
+    public double Value    { get; set; }
+    public string RawValue { get; set; } = string.Empty;
     public double StartX   { get; set; }
     public double StartY   { get; set; }
     public double EndX     { get; set; }

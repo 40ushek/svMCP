@@ -52,21 +52,40 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
                 var start = seg.StartPoint;
                 var end   = seg.EndPoint;
+                var up    = seg.UpDirection;
 
-                // Read the displayed value directly — ContainerElement.GetUnformattedString()
-                // returns the formatted dimension text exactly as shown on the drawing.
-                var raw = seg.Value.GetUnformattedString() ?? string.Empty;
-                double.TryParse(raw.Trim(), System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var dist);
+                double dx = end.X - start.X;
+                double dy = end.Y - start.Y;
+                double dz = end.Z - start.Z;
+
+                double dist;
+                double upLen = System.Math.Sqrt(up.X * up.X + up.Y * up.Y + up.Z * up.Z);
+                if (upLen > 1e-10)
+                {
+                    // Project (end-start) onto the plane perpendicular to UpDirection
+                    // to get the measured component (UpDirection is perpendicular to measurement)
+                    double unx = up.X / upLen, uny = up.Y / upLen, unz = up.Z / upLen;
+                    double dot = dx * unx + dy * uny + dz * unz;
+                    double px  = dx - dot * unx;
+                    double py  = dy - dot * uny;
+                    double pz  = dz - dot * unz;
+                    dist = System.Math.Round(System.Math.Sqrt(px * px + py * py + pz * pz), 1);
+                }
+                else
+                {
+                    dist = System.Math.Round(System.Math.Sqrt(dx * dx + dy * dy + dz * dz), 1);
+                }
+                var raw = dist.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
                 info.Segments.Add(new DimensionSegmentInfo
                 {
-                    Id     = seg.GetIdentifier().ID,
-                    Value  = dist,
-                    StartX = Math.Round(start.X, 1),
-                    StartY = Math.Round(start.Y, 1),
-                    EndX   = Math.Round(end.X, 1),
-                    EndY   = Math.Round(end.Y, 1)
+                    Id       = seg.GetIdentifier().ID,
+                    Value    = dist,
+                    RawValue = raw,
+                    StartX   = Math.Round(start.X, 1),
+                    StartY   = Math.Round(start.Y, 1),
+                    EndX     = Math.Round(end.X, 1),
+                    EndY     = Math.Round(end.Y, 1)
                 });
             }
 
