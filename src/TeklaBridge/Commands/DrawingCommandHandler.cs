@@ -589,6 +589,27 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "get_drawing_parts":
+            {
+                var api    = new TeklaDrawingPartsApi(_model);
+                var result = api.GetDrawingParts();
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    total = result.Total,
+                    parts = result.Parts.Select(p => new
+                    {
+                        modelId     = p.ModelId,
+                        type        = p.Type,
+                        partPos     = p.PartPos,
+                        assemblyPos = p.AssemblyPos,
+                        profile     = p.Profile,
+                        material    = p.Material,
+                        name        = p.Name
+                    })
+                }));
+                return true;
+            }
+
             case "get_drawing_marks":
             {
                 int? viewId = null;

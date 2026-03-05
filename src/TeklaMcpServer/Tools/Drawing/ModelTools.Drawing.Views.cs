@@ -85,6 +85,24 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
+    public static string GetDrawingParts()
+    {
+        var json = RunBridge("get_drawing_parts");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Get all marks on the active drawing with their property names and computed values (e.g. PART_POS='Б1-1', PROFILE='HEA200'). Optionally filter to a single view by viewId.")]
     public static string GetDrawingMarks(
         [Description("View ID to read marks from (from get_drawing_views). Omit to get all marks on the drawing.")] int? viewId = null)
