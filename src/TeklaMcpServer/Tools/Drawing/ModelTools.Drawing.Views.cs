@@ -105,6 +105,28 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Move a StraightDimensionSet by changing its dimension line offset (Distance). Positive delta moves the line away from measured points, negative — closer. dimensionId from get_drawing_dimensions.")]
+    public static string MoveDimension(
+        [Description("Dimension set ID from get_drawing_dimensions")] int dimensionId,
+        [Description("Delta to add to the dimension line offset (mm). Positive = further, negative = closer.")] double delta)
+    {
+        var json = RunBridge("move_dimension",
+            dimensionId.ToString(CultureInfo.InvariantCulture),
+            delta.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
     public static string GetDrawingParts()
     {

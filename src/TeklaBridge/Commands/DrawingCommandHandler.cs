@@ -616,6 +616,26 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "move_dimension":
+            {
+                if (args.Length < 3 ||
+                    !int.TryParse(args[1], out var dimId) ||
+                    !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var delta))
+                {
+                    _output.WriteLine("{\"error\":\"Usage: move_dimension <dimensionId> <delta>\"}");
+                    return true;
+                }
+                var api    = new TeklaDrawingDimensionsApi(_model);
+                var result = api.MoveDimension(dimId, delta);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    moved       = result.Moved,
+                    dimensionId = result.DimensionId,
+                    newDistance = result.NewDistance
+                }));
+                return true;
+            }
+
             case "get_drawing_parts":
             {
                 var api    = new TeklaDrawingPartsApi(_model);

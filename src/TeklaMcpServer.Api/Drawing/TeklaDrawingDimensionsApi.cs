@@ -69,6 +69,35 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return new GetDimensionsResult { Total = dimensions.Count, Dimensions = dimensions };
     }
 
+    public MoveDimensionResult MoveDimension(int dimensionId, double delta)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        DrawingEnumeratorBase.AutoFetch = false;
+
+        // Find the StraightDimensionSet by ID across all sheet objects
+        StraightDimensionSet? dimSet = null;
+        var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+        while (allDims.MoveNext())
+        {
+            if (allDims.Current is StraightDimensionSet ds && ds.GetIdentifier().ID == dimensionId)
+            {
+                dimSet = ds;
+                break;
+            }
+        }
+
+        if (dimSet == null)
+            throw new System.Exception($"DimensionSet {dimensionId} not found");
+
+        dimSet.Distance += delta;
+        dimSet.Modify();
+        activeDrawing.CommitChanges();
+        return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = dimSet.Distance };
+    }
+
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)
     {
         var enumerator = drawing.GetSheet().GetViews();

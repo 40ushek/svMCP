@@ -6,5 +6,6 @@ public interface IDrawingDimensionsApi
     /// Returns all StraightDimensionSet objects from the active drawing (or a specific view).
     /// Each dimension set contains one or more segments with computed distances (mm).
     /// </summary>
-    GetDimensionsResult GetDimensions(int? viewId);
+    GetDimensionsResult   GetDimensions(int? viewId);
+    MoveDimensionResult   MoveDimension(int dimensionId, double delta);
 }

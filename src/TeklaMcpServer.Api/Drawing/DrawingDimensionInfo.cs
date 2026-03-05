@@ -23,3 +23,10 @@ public sealed class GetDimensionsResult
     public int                           Total      { get; set; }
     public List<DrawingDimensionInfo>    Dimensions { get; set; } = new();
 }
+
+public sealed class MoveDimensionResult
+{
+    public bool   Moved        { get; set; }
+    public int    DimensionId  { get; set; }
+    public double NewDistance  { get; set; }
+}
