@@ -153,15 +153,16 @@ src/
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
-| `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок — mark layout engine + локальный overlap resolver |
+| `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок внутри каждого вида — минимальные локальные сдвиги |
+| `arrange_marks` | Полная автоматическая расстановка марок внутри каждого вида вокруг anchor point |
 
-`resolve_mark_overlaps` сейчас работает так:
-- Tekla-слой собирает нейтральные `MarkLayoutItem` через adapter, а сам алгоритм живет в `TeklaMcpServer.Api/Algorithms/Marks/`
-- сначала размещаются самые конфликтные марки
-- для leader-line marks генерируются 8 позиций вокруг якоря + текущая позиция
-- для non-leader marks используются локальные смещения вокруг текущего положения
-- score учитывает overlap, crowding, длину leader line, смещение от текущей позиции и мягкий приоритет кандидата
-- после greedy placement запускается локальный overlap resolver; `LeaderLinePlacing.StartPoint` не меняется, двигается только `InsertionPoint`
+Раскладка марок сейчас устроена так:
+- единица обработки — один `View`, а не весь drawing sheet
+- все вычисления layout engine идут в локальной системе координат вида
+- Tekla-слой только собирает нейтральные `MarkLayoutItem` и переводит смещения между координатами вида и листа
+- `resolve_mark_overlaps` использует только локальный `MarkOverlapResolver` для минимальных сдвигов внутри вида
+- `arrange_marks` использует `MarkLayoutEngine`: candidate generation, scoring, greedy placement и затем локальный overlap resolver
+- для leader-line marks якорь берется из `LeaderLinePlacing.StartPoint` в координатах вида; `StartPoint` не меняется, двигается только `InsertionPoint`
 
 ## Диагностика
 

@@ -44,7 +44,8 @@
 | `get_drawing_parts` | Модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
-| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок — mark layout engine + локальный overlap resolver |
+| `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок внутри каждого вида — локальный overlap resolver |
+| `arrange_marks` | Полная расстановка марок внутри каждого вида вокруг anchor point |
 
 ---
 
@@ -119,45 +120,48 @@
 
 ---
 
-### `auto_resolve_annotation_conflicts` ✅ реализовано как `resolve_mark_overlaps`
+### `resolve_mark_overlaps` ✅ — минимальные сдвиги
 
-`resolve_mark_overlaps` теперь работает в два слоя:
-- `TeklaDrawingMarkApi` / `TeklaDrawingMarkLayoutAdapter` — адаптер Tekla API
-- `TeklaMcpServer.Api/Algorithms/Marks/` — чистый layout engine для марок
+Использует `MarkOverlapResolver` напрямую: итеративно толкает перекрывающиеся пары ровно на величину перекрытия + gap. Марки сдвигаются минимально, якорь не учитывается.
 
-**Текущий алгоритм (упрощённая версия):**
-1. Загружает марки по видам и строит `MarkLayoutItem`
-2. Вычисляет якорь: если есть `LeaderLinePlacing`, используется `StartPoint` в координатах листа (`sheetPt = viewOrigin + startPoint / scale`), иначе якорь = текущий центр марки
-3. Сначала размещает самые конфликтные марки, затем остальные
-4. Генерирует кандидаты:
-   - для leader-line marks: текущая позиция + 8 позиций вокруг якоря
-   - для non-leader marks: локальные смещения вокруг текущей позиции
-5. Считает score кандидата:
-   - большой штраф за overlap
-   - штраф за удаление от текущей позиции
-   - штраф за длину leader line
-   - мягкий штраф за менее предпочтительный кандидат
-6. После greedy placement запускает локальный `MarkOverlapResolver`
-7. Применяет только `InsertionPoint`; `LeaderLinePlacing.StartPoint` не трогает
+**Архитектурное правило:** обработка идет отдельно для каждого `View`. Марки из других видов в расчет не попадают.
 
-**Что уже выделено в отдельный алгоритмический слой:**
-- `MarkLayoutEngine`
-- `SimpleMarkCandidateGenerator`
-- `SimpleMarkCostEvaluator`
-- `MarkOverlapResolver`
-- `MarkLayoutItem`, `MarkLayoutOptions`, `MarkLayoutResult`
+**Система координат:** все вычисления делаются в локальной СК вида. В sheet coordinates выполняется только чтение из Tekla и применение `InsertionPoint`.
 
-**Ближайшие улучшения без усложнения модели:**
-- отдельные candidate generators для разных типов mark placing
-- obstacle-aware score (размеры, тексты, другие annotation objects)
-- более аккуратный local refinement после greedy placement
-- настройка весов score через `MarkLayoutOptions` под разные типы чертежей
+**Когда использовать:** марки уже расставлены вручную или Tekla, нужно только разлепить перекрывающиеся.
+
+---
+
+### `arrange_marks` ✅ — полная расстановка по видам
+
+Использует `MarkLayoutEngine` для размещения марок внутри каждого `View` с нуля: учитывает якорь, длину выноски, плотность и предпочтительный квадрант.
+
+**Когда использовать:** чертёж новый или метки в хаосе, нужна полная расстановка.
+
+**Алгоритмический слой уже готов:**
+- `MarkLayoutEngine` — greedy placement + overlap resolver
+- `SimpleMarkCandidateGenerator` — кандидаты в 3 кольца вокруг якоря (8 направлений × 3 мультипликатора), упорядоченные по квадрантному сходству с текущей позицией
+- `SimpleMarkCostEvaluator` — штраф за overlap, crowding, длину выноски, удаление от текущей позиции
+- `MarkOverlapResolver` — post-processing push-apart
+- `MarkLayoutOptions` — `Gap`, `CandidateDistanceMultipliers`, веса score
+
+**Текущее правило:** один `View` = один набор меток = один layout pass. Другие виды полностью игнорируются.
+
+**Текущая реализация adapter layer:**
+1. Для каждого `View` отдельно собираются `MarkLayoutItem`
+2. В `MarkLayoutItem` попадают локальные координаты вида, а не координаты листа
+3. Для меток с leader line якорь берется из `LeaderLinePlacing.StartPoint` в СК вида
+4. После расчета результат переводится обратно в delta `InsertionPoint` через `view.Attributes.Scale`
+
+**Ближайшие улучшения:**
+- уточнить owner-view для `get_drawing_marks`, чтобы диагностический `viewId` был так же строгим, как в auto-layout
+- obstacle-aware score (размеры, тексты, рамки видов)
+- настройка весов через `MarkLayoutOptions`
 
 **Более поздние улучшения:**
-- **COG как якорь**: для сборочных чертежей центр масс детали точнее, чем точка прикрепления выноски; требует `part.GetReportProperty("COG_X/Y/Z")` + трансформацию view coords → sheet coords через `view.GetCoordinateSystem()`
-- **Sliding anchor**: для длинных деталей (балки, листы) стрелка может скользить вдоль bbox детали, а не быть прикреплена к фиксированной точке
-- **Spring simulation** как дополнительный refinement, а не базовый алгоритм
-- **Размеры как препятствия**: `StraightDimensionSet` не имеет `GetAxisAlignedBoundingBox()` — bbox нужно вычислять вручную из координат сегментов и `Distance`
+- **COG как якорь**: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
+- **Sliding anchor**: для длинных деталей стрелка скользит вдоль bbox
+- **Размеры как препятствия**: `StraightDimensionSet` не имеет `GetAxisAlignedBoundingBox()` — вычислять вручную из сегментов
 
 ---
 
