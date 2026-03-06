@@ -99,6 +99,24 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Close the currently active drawing in Tekla Drawing Editor")]
+    public static string CloseDrawing()
+    {
+        var json = RunBridge("close_drawing");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Drawing closed.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Find drawings by multiple properties using JSON filters")]
     public static string FindDrawingsByProperties(
         [Description("JSON array of filters. Example: [{\"property\":\"Name\",\"value\":\"GA-001\"},{\"property\":\"Mark\",\"value\":\"A1\"}]")] string drawingPropertyFiltersJson)

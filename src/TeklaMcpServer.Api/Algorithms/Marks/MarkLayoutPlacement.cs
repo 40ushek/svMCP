@@ -12,6 +12,10 @@ public sealed class MarkLayoutPlacement
 
     public double Height { get; set; }
 
+    public double AnchorX { get; set; }
+
+    public double AnchorY { get; set; }
+
     public bool HasLeaderLine { get; set; }
 
     public bool CanMove { get; set; }

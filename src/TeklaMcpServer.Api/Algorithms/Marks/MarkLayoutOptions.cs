@@ -12,6 +12,10 @@ public sealed class MarkLayoutOptions
 
     public double CandidatePriorityWeight { get; set; } = 0.25;
 
+    public double CrowdingPenaltyWeight { get; set; } = 5.0;
+
+    public double PreferredSidePenaltyWeight { get; set; } = 0.75;
+
     public double OverlapPenalty { get; set; } = 1_000_000.0;
 
     public bool EnableOverlapResolver { get; set; } = true;

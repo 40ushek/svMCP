@@ -114,6 +114,8 @@ public sealed class MarkLayoutEngine
             Y = y,
             Width = item.Width,
             Height = item.Height,
+            AnchorX = item.AnchorX,
+            AnchorY = item.AnchorY,
             HasLeaderLine = item.HasLeaderLine,
             CanMove = item.CanMove
         };

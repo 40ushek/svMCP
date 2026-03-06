@@ -124,37 +124,121 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin/titleBlockHeight.");
 
-        var arrangeContext = new DrawingArrangeContext(activeDrawing, views, sheetW, sheetH, margin, gap);
-
-        // Find optimal scale using current sizes scaled by ratio
+        // Rough lower bound for the scale denominator, ignoring Tekla's fixed view-frame border
+        // (~20 mm regardless of scale). Filters out candidates that are obviously too large
+        // before making any Tekla API calls.
         double currentScale = views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
-        if (currentScale <= 0)
-            currentScale = 1.0;
+        if (currentScale <= 0) currentScale = 1.0;
 
-        var standardScales  = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500, 1000 };
+        const double borderEst = 20.0;
+        double maxModelW = views.Max(v => v.Width  * currentScale);
+        double maxModelH = views.Max(v => v.Height * currentScale);
+        double minDenom  = System.Math.Max(
+            maxModelW / System.Math.Max(availW - borderEst, 1),
+            maxModelH / System.Math.Max(availH - borderEst, 1));
+
+        var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 50, 75, 100, 125, 150, 175, 200, 250, 500, 1000 };
+        var candidates     = System.Array.FindAll(standardScales, s => s >= minDenom);
+        if (candidates.Length == 0) candidates = new[] { standardScales[standardScales.Length - 1] };
+
+        // Apply each candidate scale, then read the ACTUAL Tekla-reported view dimensions and
+        // check fit. Estimating via ratio is unreliable: Tekla's view frame has a fixed border
+        // that does not scale with content, so the simple linear estimate can be 5-10 mm off.
         double? optimalScale = null;
-        foreach (var s in standardScales)
+        var currentViews    = views;
+
+        foreach (var s in candidates)
         {
-            double ratio = currentScale / s;
-            var frames   = views.Select(v => (w: v.Width * ratio, h: v.Height * ratio)).ToList();
-            if (_arrangementSelector.EstimateFit(arrangeContext, frames, availW, availH))
+            foreach (var v in currentViews) { v.Attributes.Scale = s; v.Modify(); }
+            activeDrawing.CommitChanges();
+
+            var reread       = EnumerateViews(activeDrawing).ToList();
+            var actualFrames = reread.Select(v => (w: v.Width, h: v.Height)).ToList();
+            var ctx          = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap);
+
+            if (_arrangementSelector.EstimateFit(ctx, actualFrames, availW, availH))
             {
                 optimalScale = s;
+                currentViews = reread;
                 break;
             }
+
+            currentViews = reread;
         }
 
         if (!optimalScale.HasValue)
             throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
 
-        // Pass 1: apply scale
-        foreach (var v in views) { v.Attributes.Scale = optimalScale.Value; v.Modify(); }
-        activeDrawing.CommitChanges();
+        // ── Compute frame-to-origin offsets (two-scale probe) ─────────────────
+        // view.Origin in Tekla is the projection of the view's local (0,0) onto the sheet —
+        // NOT the center of the view frame.  Frame center = Origin + frameOffset / scale.
+        // When scale changes Tekla adjusts Origin to keep the frame center fixed, so two
+        // readings at different scales let us solve for frameOffset analytically.
+        var originsAtOptimal = currentViews
+            .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
+            .ToList();
 
-        // Pass 2: re-read actual sizes and arrange
-        var viewsAfterScale = EnumerateViews(activeDrawing).ToList();
-        var arranged        = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, viewsAfterScale, sheetW, sheetH, margin, gap));
+        var frameOffsetXs = new double[currentViews.Count];
+        var frameOffsetYs = new double[currentViews.Count];
+        bool offsetsComputed = false;
+
+        double probeScale = standardScales.FirstOrDefault(s => System.Math.Abs(s - optimalScale.Value) > 0.5);
+        if (probeScale > 0)
+        {
+            foreach (var v in currentViews) { v.Attributes.Scale = probeScale; v.Modify(); }
+            activeDrawing.CommitChanges();
+            var probeViews = EnumerateViews(activeDrawing).ToList();
+
+            double denom = 1.0 / optimalScale.Value - 1.0 / probeScale;
+            for (int i = 0; i < currentViews.Count && i < probeViews.Count; i++)
+            {
+                double dX = (probeViews[i].Origin?.X ?? 0) - originsAtOptimal[i].X;
+                double dY = (probeViews[i].Origin?.Y ?? 0) - originsAtOptimal[i].Y;
+                frameOffsetXs[i] = dX / denom;
+                frameOffsetYs[i] = dY / denom;
+            }
+
+            // Restore optimal scale
+            foreach (var v in probeViews) { v.Attributes.Scale = optimalScale.Value; v.Modify(); }
+            activeDrawing.CommitChanges();
+            currentViews = EnumerateViews(activeDrawing).ToList();
+            offsetsComputed = true;
+        }
+
+        // ── Arrange (naive: assumes Origin = frame center) ────────────────────
+        var arranged = _arrangementSelector.Arrange(
+            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap));
+
+        // ── Post-correction: shift each origin so the frame lands at the intended position ─
+        // arranged[i].OriginX/Y holds the desired frame-center position on the sheet.
+        // Correct: actual_origin = desired_frame_center - frameOffset / scale
+        // Use ID-based lookup because Arrange may reorder views relative to currentViews.
+        if (offsetsComputed)
+        {
+            var viewById   = currentViews.ToDictionary(v => v.GetIdentifier().ID);
+            var offsetById = new System.Collections.Generic.Dictionary<int, (double X, double Y)>();
+            for (int i = 0; i < currentViews.Count; i++)
+                offsetById[currentViews[i].GetIdentifier().ID] = (frameOffsetXs[i], frameOffsetYs[i]);
+
+            for (int i = 0; i < arranged.Count; i++)
+            {
+                if (!viewById.TryGetValue(arranged[i].Id, out var v)) continue;
+                if (!offsetById.TryGetValue(arranged[i].Id, out var off)) continue;
+                var o = v.Origin;
+                o.X = arranged[i].OriginX - off.X / optimalScale.Value;
+                o.Y = arranged[i].OriginY - off.Y / optimalScale.Value;
+                v.Origin = o;
+                v.Modify();
+                arranged[i] = new ArrangedView
+                {
+                    Id       = arranged[i].Id,
+                    ViewType = arranged[i].ViewType,
+                    OriginX  = o.X,
+                    OriginY  = o.Y
+                };
+            }
+        }
+
         activeDrawing.CommitChanges();
 
         return new FitViewsResult

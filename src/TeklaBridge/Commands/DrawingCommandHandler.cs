@@ -138,10 +138,50 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     opened = true,
-                    guid = targetDrawing.GetIdentifier().GUID.ToString(),
+                    guid = requestedGuid.ToString(),
                     name = targetDrawing.Name,
                     mark = targetDrawing.Mark,
                     type = targetDrawing.GetType().Name
+                }));
+                return true;
+            }
+
+            case "close_drawing":
+            {
+                var drawingHandler = new DrawingHandler();
+                var activeDrawing = drawingHandler.GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                var activeGuid = activeDrawing.GetIdentifier().GUID.ToString();
+                var activeName = activeDrawing.Name;
+                var activeMark = activeDrawing.Mark;
+                var activeType = activeDrawing.GetType().Name;
+
+                var closed = drawingHandler.CloseActiveDrawing();
+                if (!closed)
+                {
+                    _output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        error = "Failed to close active drawing",
+                        guid = activeGuid,
+                        name = activeName,
+                        mark = activeMark,
+                        type = activeType
+                    }));
+                    return true;
+                }
+
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    closed = true,
+                    guid = activeGuid,
+                    name = activeName,
+                    mark = activeMark,
+                    type = activeType
                 }));
                 return true;
             }

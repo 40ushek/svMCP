@@ -19,6 +19,8 @@ public sealed class MarkOverlapResolver
                 Y = p.Y,
                 Width = p.Width,
                 Height = p.Height,
+                AnchorX = p.AnchorX,
+                AnchorY = p.AnchorY,
                 HasLeaderLine = p.HasLeaderLine,
                 CanMove = p.CanMove
             })
@@ -47,7 +49,7 @@ public sealed class MarkOverlapResolver
 
                 var moveX = overlapX <= overlapY;
                 var push = (moveX ? overlapX : overlapY) + options.Gap;
-                var split = GetSplit(a.CanMove, b.CanMove);
+                var split = GetSplit(a, b);
                 if (split.Total == 0)
                     continue;
 
@@ -96,17 +98,47 @@ public sealed class MarkOverlapResolver
         return overlaps;
     }
 
-    private static (double MoveA, double MoveB, double Total) GetSplit(bool canMoveA, bool canMoveB)
+    private static (double MoveA, double MoveB, double Total) GetSplit(
+        MarkLayoutPlacement a,
+        MarkLayoutPlacement b)
     {
-        if (canMoveA && canMoveB)
-            return (0.5, 0.5, 1.0);
+        if (a.CanMove && b.CanMove)
+        {
+            if (a.HasLeaderLine && !b.HasLeaderLine)
+                return (0.35, 0.65, 1.0);
 
-        if (canMoveA)
+            if (!a.HasLeaderLine && b.HasLeaderLine)
+                return (0.65, 0.35, 1.0);
+
+            if (a.HasLeaderLine && b.HasLeaderLine)
+            {
+                var distA = Distance(a.X, a.Y, a.AnchorX, a.AnchorY);
+                var distB = Distance(b.X, b.Y, b.AnchorX, b.AnchorY);
+
+                if (Math.Abs(distA - distB) < 2.0)
+                    return (0.5, 0.5, 1.0);
+
+                return distA > distB
+                    ? (0.7, 0.3, 1.0)
+                    : (0.3, 0.7, 1.0);
+            }
+
+            return (0.5, 0.5, 1.0);
+        }
+
+        if (a.CanMove)
             return (1.0, 0.0, 1.0);
 
-        if (canMoveB)
+        if (b.CanMove)
             return (0.0, 1.0, 1.0);
 
         return (0.0, 0.0, 0.0);
+    }
+
+    private static double Distance(double x1, double y1, double x2, double y2)
+    {
+        var dx = x1 - x2;
+        var dy = y1 - y2;
+        return Math.Sqrt((dx * dx) + (dy * dy));
     }
 }
