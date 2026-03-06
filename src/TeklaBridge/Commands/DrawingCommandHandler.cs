@@ -843,6 +843,49 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "create_part_marks":
+            {
+                var contentAttributesCsv = args.Length > 1 ? args[1] : string.Empty;
+                var markAttributesFile   = args.Length > 2 ? args[2] : string.Empty;
+                var frameType            = args.Length > 3 ? args[3] : string.Empty;
+                var arrowheadType        = args.Length > 4 ? args[4] : string.Empty;
+
+                var api    = new TeklaDrawingMarkApi(_model);
+                var result = api.CreatePartMarks(contentAttributesCsv, markAttributesFile, frameType, arrowheadType);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    createdCount     = result.CreatedCount,
+                    skippedCount     = result.SkippedCount,
+                    createdMarkIds   = result.CreatedMarkIds,
+                    attributesLoaded = result.AttributesLoaded
+                }));
+                return true;
+            }
+
+            case "delete_all_marks":
+            {
+                var activeDrawing = new DrawingHandler().GetActiveDrawing();
+                if (activeDrawing == null)
+                {
+                    _output.WriteLine("{\"error\":\"No active drawing\"}");
+                    return true;
+                }
+                var deletedCount = 0;
+                var viewEnum = activeDrawing.GetSheet().GetViews();
+                while (viewEnum.MoveNext())
+                {
+                    if (viewEnum.Current is not View view) continue;
+                    var markEnum2 = view.GetAllObjects(typeof(Mark));
+                    while (markEnum2.MoveNext())
+                    {
+                        if (markEnum2.Current is Mark m) { m.Delete(); deletedCount++; }
+                    }
+                }
+                if (deletedCount > 0) activeDrawing.CommitChanges("(MCP) DeleteAllMarks");
+                _output.WriteLine(JsonSerializer.Serialize(new { deletedCount }));
+                return true;
+            }
+
             case "resolve_mark_overlaps":
             {
                 double margin = 2.0;

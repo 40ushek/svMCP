@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -190,8 +191,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     new MarkLayoutOptions
                     {
                         Gap = gap,
-                        CurrentPositionWeight = 0.0,
-                        LeaderLengthWeight = 0.5,
+                        CurrentPositionWeight = 0.3,
+                        LeaderLengthWeight = 15.0,
                     });
 
                 var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
@@ -216,6 +217,141 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
     }
+
+    public CreateMarksResult CreatePartMarks(string contentAttributesCsv, string markAttributesFile, string frameType, string arrowheadType)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var contentAttrs = (contentAttributesCsv ?? string.Empty)
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrEmpty(x))
+            .ToList();
+
+        // Track whether caller explicitly requested content elements.
+        // If not, the attributes file defines content — don't override.
+        bool contentExplicit = contentAttrs.Count > 0;
+        if (!contentExplicit && string.IsNullOrWhiteSpace(markAttributesFile))
+            contentAttrs.Add("ASSEMBLY_POS"); // fallback when no file either
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            var createdIds = new List<int>();
+            var skipped = 0;
+            bool? attributesLoaded = null;
+
+            foreach (var view in EnumerateViews(activeDrawing))
+            {
+                // A part can legitimately appear in multiple views and may need
+                // a separate drawing mark in each one. Deduplicate only inside
+                // the current view to avoid duplicate enumerator entries.
+                var seenModelIds = new HashSet<int>();
+                var partEnum = view.GetAllObjects(typeof(Tekla.Structures.Drawing.Part));
+                while (partEnum.MoveNext())
+                {
+                    var part = partEnum.Current as Tekla.Structures.Drawing.Part;
+                    if (part == null) continue;
+
+                    var modelId = part.ModelIdentifier.ID;
+                    if (!seenModelIds.Add(modelId)) { skipped++; continue; }
+
+                    // Place at view origin — user runs arrange_marks to distribute around anchors
+                    var mark = new Mark(part);
+                    mark.Placing = new LeaderLinePlacing(new Point(0, 0, 0));
+
+                    // Set content before Insert only when explicitly requested.
+                    if (contentExplicit)
+                    {
+                        var content = mark.Attributes.Content;
+                        content.Clear();
+                        foreach (var attr in contentAttrs)
+                        {
+                            var element = CreatePropertyElement(attr);
+                            if (element != null) content.Add(element);
+                        }
+                    }
+
+                    if (mark.Insert())
+                    {
+                        // After Insert, Tekla resolves the part's actual position into
+                        // LeaderLinePlacing.StartPoint. Now load visual attributes from
+                        // file (frame, leader line style, font, color, content…).
+                        if (!string.IsNullOrWhiteSpace(markAttributesFile))
+                        {
+                            bool loaded = mark.Attributes.LoadAttributes(markAttributesFile);
+                            if (attributesLoaded == null) attributesLoaded = loaded;
+                        }
+
+                        // Re-apply explicit content override after LoadAttributes if provided
+                        // (LoadAttributes would have reset it to file defaults).
+                        if (contentExplicit)
+                        {
+                            var content2 = mark.Attributes.Content;
+                            content2.Clear();
+                            foreach (var attr in contentAttrs)
+                            {
+                                var element = CreatePropertyElement(attr);
+                                if (element != null) content2.Add(element);
+                            }
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(frameType) &&
+                            Enum.TryParse<FrameTypes>(frameType, ignoreCase: true, out var parsedFrame))
+                            mark.Attributes.Frame.Type = parsedFrame;
+
+                        if (!string.IsNullOrWhiteSpace(arrowheadType) &&
+                            Enum.TryParse<ArrowheadTypes>(arrowheadType, ignoreCase: true, out var parsedArrow))
+                            mark.Attributes.ArrowHead.Head = parsedArrow;
+
+                        if (mark.Placing is LeaderLinePlacing lp)
+                            mark.InsertionPoint = new Point(lp.StartPoint.X, lp.StartPoint.Y, 0);
+
+                        mark.Modify();
+                        createdIds.Add(mark.GetIdentifier().ID);
+                    }
+                    else
+                        skipped++;
+                }
+            }
+
+            if (createdIds.Count > 0)
+                activeDrawing.CommitChanges("(MCP) CreatePartMarks");
+
+            return new CreateMarksResult
+            {
+                CreatedCount     = createdIds.Count,
+                SkippedCount     = skipped,
+                CreatedMarkIds   = createdIds,
+                AttributesLoaded = attributesLoaded
+            };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    private static PropertyElement? CreatePropertyElement(string attributeName) =>
+        (attributeName ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "PART_POS" or "PARTPOSITION"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.PartPosition()),
+            "PROFILE" or "PART_PROFILE"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Profile()),
+            "MATERIAL" or "PART_MATERIAL"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Material()),
+            "ASSEMBLY_POS" or "ASSEMBLYPOSITION"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.AssemblyPosition()),
+            "NAME"   => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Name()),
+            "CLASS"  => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Class()),
+            "SIZE"   => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Size()),
+            "CAMBER" => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Camber()),
+            _        => null
+        };
 
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)
     {

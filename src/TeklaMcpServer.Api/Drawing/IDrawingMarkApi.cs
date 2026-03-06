@@ -9,4 +9,6 @@ public interface IDrawingMarkApi
     GetMarksResult    GetMarks(int? viewId);
     ResolveMarksResult ResolveMarkOverlaps(double margin);
     ResolveMarksResult ArrangeMarks(double gap);
+
+    CreateMarksResult CreatePartMarks(string contentAttributesCsv, string markAttributesFile, string frameType, string arrowheadType);
 }

@@ -203,6 +203,25 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Delete all marks on the active drawing. Use before recreating marks to start fresh.")]
+    public static string DeleteAllMarks()
+    {
+        var json = RunBridge("delete_all_marks");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            var deleted = doc.RootElement.TryGetProperty("deletedCount", out var d) ? d.GetInt32() : 0;
+            return $"Deleted {deleted} marks.";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,

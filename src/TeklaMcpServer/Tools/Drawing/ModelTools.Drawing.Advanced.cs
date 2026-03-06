@@ -177,7 +177,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create part marks for all unique parts in the active drawing. One mark per unique model object ID, content defaults to ASSEMBLY_POS.")]
+    [McpServerTool, Description("Create part marks for parts in the active drawing, per view. If contentElements is empty, the attributes file controls content; if both contentElements and markAttributesFile are empty, fallback content is ASSEMBLY_POS.")]
     public static string CreatePartMarks(
         [Description("Comma-separated content attributes, e.g. ASSEMBLY_POS,PART_POS,PROFILE. Default: ASSEMBLY_POS")] string contentElements = "",
         [Description("Mark attributes file name. Default: standard")] string markAttributesFile = "standard",
