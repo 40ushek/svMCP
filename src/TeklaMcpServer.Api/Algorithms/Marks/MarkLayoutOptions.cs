@@ -6,6 +6,13 @@ public sealed class MarkLayoutOptions
 
     public double CandidateOffset { get; set; } = 4.0;
 
+    /// <summary>
+    /// Multipliers applied to CandidateOffset to generate candidates at several distances.
+    /// Each level produces a ring of positions; more levels help in dense drawings where
+    /// the nearest ring is fully blocked.
+    /// </summary>
+    public double[] CandidateDistanceMultipliers { get; set; } = { 1.0, 1.5, 2.25 };
+
     public double CurrentPositionWeight { get; set; } = 0.15;
 
     public double LeaderLengthWeight { get; set; } = 0.05;

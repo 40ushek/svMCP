@@ -6,50 +6,121 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 {
+    // 8 compass directions: E, NE, N, NW, W, SW, S, SE
+    private static readonly (double Dx, double Dy)[] Directions =
+    {
+        ( 1,  0), ( 1,  1), ( 0,  1), (-1,  1),
+        (-1,  0), (-1, -1), ( 0, -1), ( 1, -1)
+    };
+
     public IReadOnlyList<MarkCandidate> GenerateCandidates(MarkLayoutItem item, MarkLayoutOptions options)
     {
-        var offsetX = (item.Width / 2.0) + options.CandidateOffset + options.Gap;
-        var offsetY = (item.Height / 2.0) + options.CandidateOffset + options.Gap;
+        var baseOffsetX = (item.Width  / 2.0) + options.CandidateOffset + options.Gap;
+        var baseOffsetY = (item.Height / 2.0) + options.CandidateOffset + options.Gap;
+
         var candidates = item.HasLeaderLine
-            ? BuildLeaderCandidates(item, offsetX, offsetY)
-            : BuildLocalCandidates(item, offsetX, offsetY);
+            ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
+            : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
         return RemoveNearDuplicates(candidates);
     }
 
-    private static List<MarkCandidate> BuildLeaderCandidates(MarkLayoutItem item, double offsetX, double offsetY)
+    /// <summary>
+    /// For leader-line marks: rings of candidates around the anchor point at each distance
+    /// multiplier, with priority ordered so closer positions and same-quadrant positions
+    /// score better before the cost evaluator applies its own weights.
+    /// </summary>
+    private static List<MarkCandidate> BuildLeaderCandidates(
+        MarkLayoutItem item,
+        double baseOffsetX,
+        double baseOffsetY,
+        double[] multipliers)
     {
-        return new List<MarkCandidate>
+        var result = new List<MarkCandidate>
         {
-            new() { X = item.CurrentX,          Y = item.CurrentY,          Priority = 0 },
-            new() { X = item.AnchorX + offsetX, Y = item.AnchorY + offsetY, Priority = 1 },
-            new() { X = item.AnchorX + offsetX, Y = item.AnchorY - offsetY, Priority = 2 },
-            new() { X = item.AnchorX - offsetX, Y = item.AnchorY + offsetY, Priority = 3 },
-            new() { X = item.AnchorX - offsetX, Y = item.AnchorY - offsetY, Priority = 4 },
-            new() { X = item.AnchorX + offsetX, Y = item.AnchorY,           Priority = 5 },
-            new() { X = item.AnchorX - offsetX, Y = item.AnchorY,           Priority = 6 },
-            new() { X = item.AnchorX,           Y = item.AnchorY + offsetY, Priority = 7 },
-            new() { X = item.AnchorX,           Y = item.AnchorY - offsetY, Priority = 8 },
+            // Priority 0: keep current position — always the cheapest first try
+            new() { X = item.CurrentX, Y = item.CurrentY, Priority = 0 }
         };
+
+        // Determine the quadrant of the current mark relative to its anchor so we
+        // can favour same-quadrant candidates (lower priority number = preferred).
+        var currentSignX = Math.Sign(item.CurrentX - item.AnchorX);
+        var currentSignY = Math.Sign(item.CurrentY - item.AnchorY);
+
+        var priority = 1;
+        foreach (var multiplier in multipliers.OrderBy(m => m))
+        {
+            var ox = baseOffsetX * multiplier;
+            var oy = baseOffsetY * multiplier;
+
+            // Sort directions: same quadrant first, then adjacent, then opposite.
+            var ordered = Directions
+                .Select(d => (d.Dx, d.Dy, Affinity: QuadrantAffinity(d.Dx, d.Dy, currentSignX, currentSignY)))
+                .OrderBy(d => d.Affinity)
+                .Select(d => (d.Dx, d.Dy));
+
+            foreach (var (dx, dy) in ordered)
+            {
+                result.Add(new MarkCandidate
+                {
+                    X        = item.AnchorX + dx * ox,
+                    Y        = item.AnchorY + dy * oy,
+                    Priority = priority++
+                });
+            }
+        }
+
+        return result;
     }
 
-    private static List<MarkCandidate> BuildLocalCandidates(MarkLayoutItem item, double offsetX, double offsetY)
+    /// <summary>
+    /// For non-leader marks: rings around the current position at each distance multiplier.
+    /// </summary>
+    private static List<MarkCandidate> BuildLocalCandidates(
+        MarkLayoutItem item,
+        double baseOffsetX,
+        double baseOffsetY,
+        double[] multipliers)
     {
-        var localOffsetX = Math.Max(offsetX * 0.6, 2.0);
-        var localOffsetY = Math.Max(offsetY * 0.6, 2.0);
-
-        return new List<MarkCandidate>
+        var result = new List<MarkCandidate>
         {
-            new() { X = item.CurrentX,               Y = item.CurrentY,               Priority = 0 },
-            new() { X = item.CurrentX + localOffsetX, Y = item.CurrentY,              Priority = 1 },
-            new() { X = item.CurrentX - localOffsetX, Y = item.CurrentY,              Priority = 2 },
-            new() { X = item.CurrentX,               Y = item.CurrentY + localOffsetY, Priority = 3 },
-            new() { X = item.CurrentX,               Y = item.CurrentY - localOffsetY, Priority = 4 },
-            new() { X = item.CurrentX + localOffsetX, Y = item.CurrentY + localOffsetY, Priority = 5 },
-            new() { X = item.CurrentX + localOffsetX, Y = item.CurrentY - localOffsetY, Priority = 6 },
-            new() { X = item.CurrentX - localOffsetX, Y = item.CurrentY + localOffsetY, Priority = 7 },
-            new() { X = item.CurrentX - localOffsetX, Y = item.CurrentY - localOffsetY, Priority = 8 },
+            new() { X = item.CurrentX, Y = item.CurrentY, Priority = 0 }
         };
+
+        var priority = 1;
+        foreach (var multiplier in multipliers.OrderBy(m => m))
+        {
+            var ox = Math.Max(baseOffsetX * multiplier * 0.6, 2.0);
+            var oy = Math.Max(baseOffsetY * multiplier * 0.6, 2.0);
+
+            foreach (var (dx, dy) in Directions)
+            {
+                result.Add(new MarkCandidate
+                {
+                    X        = item.CurrentX + dx * ox,
+                    Y        = item.CurrentY + dy * oy,
+                    Priority = priority++
+                });
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Returns 0 for same quadrant as current, 1 for adjacent, 2 for opposite.
+    /// Used to order candidates so the cost evaluator sees preferred positions first
+    /// (lower Priority → lower CandidatePriorityWeight cost).
+    /// </summary>
+    private static int QuadrantAffinity(double dx, double dy, int signX, int signY)
+    {
+        var sx = Math.Sign(dx);
+        var sy = Math.Sign(dy);
+        var matchX = signX == 0 || sx == 0 || sx == signX;
+        var matchY = signY == 0 || sy == 0 || sy == signY;
+        if (matchX && matchY) return 0;
+        if (matchX || matchY) return 1;
+        return 2;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)
@@ -62,9 +133,7 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
             if (result.Any(existing =>
                     Math.Abs(existing.X - candidate.X) < epsilon &&
                     Math.Abs(existing.Y - candidate.Y) < epsilon))
-            {
                 continue;
-            }
 
             result.Add(candidate);
         }
