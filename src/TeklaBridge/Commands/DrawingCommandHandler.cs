@@ -759,6 +759,36 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "arrange_marks":
+            {
+                double gap = 2.0;
+                if (args.Length > 1)
+                {
+                    if (!double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out gap))
+                    {
+                        _output.WriteLine("{\"error\":\"gap must be a number\"}");
+                        return true;
+                    }
+
+                    if (gap < 0)
+                    {
+                        _output.WriteLine("{\"error\":\"gap must be >= 0\"}");
+                        return true;
+                    }
+                }
+
+                var api    = new TeklaDrawingMarkApi(_model);
+                var result = api.ArrangeMarks(gap);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    marksMovedCount   = result.MarksMovedCount,
+                    movedIds          = result.MovedIds,
+                    iterations        = result.Iterations,
+                    remainingOverlaps = result.RemainingOverlaps
+                }));
+                return true;
+            }
+
             case "resolve_mark_overlaps":
             {
                 double margin = 2.0;
@@ -802,6 +832,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     marks    = result.Marks.Select(m => new
                     {
                         id         = m.Id,
+                        viewId     = m.ViewId,
                         modelId    = m.ModelId,
                         insertionX = m.InsertionX,
                         insertionY = m.InsertionY,

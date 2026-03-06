@@ -184,6 +184,25 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Arrange all marks on the active drawing to optimal positions around their anchor points, minimising overlap and leader line length. Use this when marks are displaced or clustered. For minor overlap fixes use resolve_mark_overlaps instead.")]
+    public static string ArrangeMarks(
+        [Description("Minimum gap between mark bounding boxes (mm). Default: 2.")] double gap = 2.0)
+    {
+        var json = RunBridge("arrange_marks", gap.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,

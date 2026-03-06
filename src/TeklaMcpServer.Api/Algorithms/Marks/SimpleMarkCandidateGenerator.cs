@@ -22,7 +22,11 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
             ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
             : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
-        return RemoveNearDuplicates(candidates);
+        var filtered = item.HasBounds
+            ? candidates.Where(c => IsWithinBounds(c, item)).ToList()
+            : candidates;
+
+        return RemoveNearDuplicates(filtered);
     }
 
     /// <summary>
@@ -121,6 +125,14 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         if (matchX && matchY) return 0;
         if (matchX || matchY) return 1;
         return 2;
+    }
+
+    private static bool IsWithinBounds(MarkCandidate c, MarkLayoutItem item)
+    {
+        var hw = item.Width  / 2.0;
+        var hh = item.Height / 2.0;
+        return c.X - hw >= item.BoundsMinX && c.X + hw <= item.BoundsMaxX &&
+               c.Y - hh >= item.BoundsMinY && c.Y + hh <= item.BoundsMaxY;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)

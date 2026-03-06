@@ -8,4 +8,5 @@ public interface IDrawingMarkApi
     /// </summary>
     GetMarksResult    GetMarks(int? viewId);
     ResolveMarksResult ResolveMarkOverlaps(double margin);
+    ResolveMarksResult ArrangeMarks(double gap);
 }

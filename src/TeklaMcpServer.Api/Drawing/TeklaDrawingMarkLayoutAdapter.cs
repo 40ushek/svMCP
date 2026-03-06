@@ -11,6 +11,8 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 {
     public Mark Mark { get; set; } = null!;
 
+    public int ViewId { get; set; }
+
     public MarkLayoutItem Item { get; set; } = null!;
 
     public double CenterX { get; set; }
@@ -20,56 +22,63 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 
 internal static class TeklaDrawingMarkLayoutAdapter
 {
-    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(IEnumerable<View> views)
+    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view)
     {
         var entries = new List<TeklaDrawingMarkLayoutEntry>();
+        var viewId = view.GetIdentifier().ID;
+        var viewWidth = view.Width;
+        var viewHeight = view.Height;
 
-        foreach (var view in views)
+        // Layout runs in view-local coordinates.
+        var boundsMinX = -(viewWidth * 0.5) - 10.0;
+        var boundsMaxX = +(viewWidth * 0.5) + 10.0;
+        var boundsMinY = -(viewHeight * 0.5) - 10.0;
+        var boundsMaxY = +(viewHeight * 0.5) + 10.0;
+        var markEnum = view.GetAllObjects(typeof(Mark));
+
+        while (markEnum.MoveNext())
         {
-            var viewOriginX = view.Origin.X;
-            var viewOriginY = view.Origin.Y;
-            var scale = view.Attributes.Scale;
-            var markEnum = view.GetAllObjects(typeof(Mark));
+            if (markEnum.Current is not Mark mark)
+                continue;
 
-            while (markEnum.MoveNext())
+            var bbox = mark.GetAxisAlignedBoundingBox();
+            var centerLocalX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+            var centerLocalY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+            var widthLocal = bbox.MaxPoint.X - bbox.MinPoint.X;
+            var heightLocal = bbox.MaxPoint.Y - bbox.MinPoint.Y;
+            var anchorLocalX = centerLocalX;
+            var anchorLocalY = centerLocalY;
+            var hasLeaderLine = false;
+
+            if (mark.Placing is LeaderLinePlacing leaderLinePlacing)
             {
-                if (markEnum.Current is not Mark mark)
-                    continue;
-
-                var bbox = mark.GetAxisAlignedBoundingBox();
-                var centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-                var centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-                var width = bbox.MaxPoint.X - bbox.MinPoint.X;
-                var height = bbox.MaxPoint.Y - bbox.MinPoint.Y;
-                var anchorX = centerX;
-                var anchorY = centerY;
-                var hasLeaderLine = false;
-
-                if (mark.Placing is LeaderLinePlacing leaderLinePlacing && scale > 0)
-                {
-                    anchorX = viewOriginX + (leaderLinePlacing.StartPoint.X / scale);
-                    anchorY = viewOriginY + (leaderLinePlacing.StartPoint.Y / scale);
-                    hasLeaderLine = true;
-                }
-
-                entries.Add(new TeklaDrawingMarkLayoutEntry
-                {
-                    Mark = mark,
-                    CenterX = centerX,
-                    CenterY = centerY,
-                    Item = new MarkLayoutItem
-                    {
-                        Id = mark.GetIdentifier().ID,
-                        AnchorX = anchorX,
-                        AnchorY = anchorY,
-                        CurrentX = centerX,
-                        CurrentY = centerY,
-                        Width = width,
-                        Height = height,
-                        HasLeaderLine = hasLeaderLine
-                    }
-                });
+                anchorLocalX = leaderLinePlacing.StartPoint.X;
+                anchorLocalY = leaderLinePlacing.StartPoint.Y;
+                hasLeaderLine = true;
             }
+
+            entries.Add(new TeklaDrawingMarkLayoutEntry
+            {
+                Mark = mark,
+                ViewId = viewId,
+                CenterX = centerLocalX,
+                CenterY = centerLocalY,
+                Item = new MarkLayoutItem
+                {
+                    Id            = mark.GetIdentifier().ID,
+                    AnchorX       = anchorLocalX,
+                    AnchorY       = anchorLocalY,
+                    CurrentX      = centerLocalX,
+                    CurrentY      = centerLocalY,
+                    Width         = widthLocal,
+                    Height        = heightLocal,
+                    HasLeaderLine = hasLeaderLine,
+                    BoundsMinX    = boundsMinX,
+                    BoundsMaxX    = boundsMaxX,
+                    BoundsMinY    = boundsMinY,
+                    BoundsMaxY    = boundsMaxY,
+                }
+            });
         }
 
         return entries;

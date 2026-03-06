@@ -26,60 +26,64 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         try
         {
 
-            DrawingObjectEnumerator markObjects;
-            if (viewId.HasValue)
-            {
-                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
-                    ?? throw new ViewNotFoundException(viewId.Value);
-                markObjects = view.GetAllObjects(typeof(Mark));
-            }
-            else
-            {
-                markObjects = activeDrawing.GetSheet().GetAllObjects(typeof(Mark));
-            }
+            var viewsToQuery = viewId.HasValue
+                ? new[] { EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value) }
+                : EnumerateViews(activeDrawing).ToArray();
 
-            var marks = new List<DrawingMarkInfo>();
+            var marks   = new List<DrawingMarkInfo>();
+            var seenIds = new System.Collections.Generic.HashSet<int>();
 
-            while (markObjects.MoveNext())
+            foreach (var view in viewsToQuery)
             {
-                if (markObjects.Current is not Mark mark) continue;
+                var vid        = view.GetIdentifier().ID;
+                var markObjects = view.GetAllObjects(typeof(Mark));
 
-                var bbox = mark.GetAxisAlignedBoundingBox();
-                var ins  = mark.InsertionPoint;
-                var info = new DrawingMarkInfo
+                while (markObjects.MoveNext())
                 {
-                    Id         = mark.GetIdentifier().ID,
-                    InsertionX = Math.Round(ins.X, 1),
-                    InsertionY = Math.Round(ins.Y, 1),
-                    BboxMinX   = Math.Round(bbox.MinPoint.X, 1),
-                    BboxMinY   = Math.Round(bbox.MinPoint.Y, 1),
-                    BboxMaxX    = Math.Round(bbox.MaxPoint.X, 1),
-                    BboxMaxY    = Math.Round(bbox.MaxPoint.Y, 1),
-                    PlacingType = mark.Placing?.GetType().Name ?? "null",
-                    PlacingX    = mark.Placing is LeaderLinePlacing lp2 ? Math.Round(lp2.StartPoint.X, 2) : 0,
-                    PlacingY    = mark.Placing is LeaderLinePlacing lp3 ? Math.Round(lp3.StartPoint.Y, 2) : 0
-                };
+                    if (markObjects.Current is not Mark mark) continue;
 
-                // Resolve model object ID from first related drawing object
-                var related = mark.GetRelatedObjects();
-                while (related.MoveNext())
-                {
-                    if (related.Current is Tekla.Structures.Drawing.ModelObject mo)
+                    var markId = mark.GetIdentifier().ID;
+                    if (!seenIds.Add(markId)) continue; // deduplicate
+
+                    var bbox = mark.GetAxisAlignedBoundingBox();
+                    var ins  = mark.InsertionPoint;
+                    var info = new DrawingMarkInfo
                     {
-                        info.ModelId = mo.ModelIdentifier.ID;
-                        break;
+                        Id         = markId,
+                        ViewId     = vid,
+                        InsertionX = Math.Round(ins.X, 1),
+                        InsertionY = Math.Round(ins.Y, 1),
+                        BboxMinX   = Math.Round(bbox.MinPoint.X, 1),
+                        BboxMinY   = Math.Round(bbox.MinPoint.Y, 1),
+                        BboxMaxX    = Math.Round(bbox.MaxPoint.X, 1),
+                        BboxMaxY    = Math.Round(bbox.MaxPoint.Y, 1),
+                        PlacingType = mark.Placing?.GetType().Name ?? "null",
+                        PlacingX    = mark.Placing is LeaderLinePlacing lp2 ? Math.Round(lp2.StartPoint.X, 2) : 0,
+                        PlacingY    = mark.Placing is LeaderLinePlacing lp3 ? Math.Round(lp3.StartPoint.Y, 2) : 0
+                    };
+
+                    // Resolve model object ID from first related drawing object
+                    var related = mark.GetRelatedObjects();
+                    while (related.MoveNext())
+                    {
+                        if (related.Current is Tekla.Structures.Drawing.ModelObject mo)
+                        {
+                            info.ModelId = mo.ModelIdentifier.ID;
+                            break;
+                        }
                     }
-                }
 
-                // Read property element names and their computed values
-                var contentEnum = mark.Attributes.Content.GetEnumerator();
-                while (contentEnum.MoveNext())
-                {
-                    if (contentEnum.Current is PropertyElement prop)
-                        info.Properties.Add(new MarkPropertyValue { Name = prop.Name, Value = prop.Value });
-                }
+                    // Read property element names and their computed values
+                    var contentEnum = mark.Attributes.Content.GetEnumerator();
+                    while (contentEnum.MoveNext())
+                    {
+                        if (contentEnum.Current is PropertyElement prop)
+                            info.Properties.Add(new MarkPropertyValue { Name = prop.Name, Value = prop.Value });
+                    }
 
-                marks.Add(info);
+                    marks.Add(info);
+                }
             }
 
             // Detect pairwise AABB overlaps
@@ -111,26 +115,37 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
-            var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(EnumerateViews(activeDrawing));
+            var movedIds = new List<int>();
+            var totalIterations = 0;
+            var totalRemainingOverlaps = 0;
 
-            var placements = markEntries.Select(e => new MarkLayoutPlacement
+            foreach (var view in EnumerateViews(activeDrawing))
             {
-                Id         = e.Mark.GetIdentifier().ID,
-                X          = e.CenterX,
-                Y          = e.CenterY,
-                Width      = e.Item.Width,
-                Height     = e.Item.Height,
-                AnchorX    = e.Item.AnchorX,
-                AnchorY    = e.Item.AnchorY,
-                HasLeaderLine = e.Item.HasLeaderLine,
-                CanMove    = true
-            }).ToList();
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view);
+                if (markEntries.Count == 0)
+                    continue;
 
-            var resolver = new MarkOverlapResolver();
-            var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = margin }, out var iterations);
+                var placements = markEntries.Select(e => new MarkLayoutPlacement
+                {
+                    Id = e.Mark.GetIdentifier().ID,
+                    X = e.CenterX,
+                    Y = e.CenterY,
+                    Width = e.Item.Width,
+                    Height = e.Item.Height,
+                    AnchorX = e.Item.AnchorX,
+                    AnchorY = e.Item.AnchorY,
+                    HasLeaderLine = e.Item.HasLeaderLine,
+                    CanMove = true
+                }).ToList();
 
-            var resolvedById = resolved.ToDictionary(x => x.Id);
-            var movedIds = TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById);
+                var resolver = new MarkOverlapResolver();
+                var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = margin }, out var iterations);
+                var resolvedById = resolved.ToDictionary(x => x.Id);
+
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById));
+                totalIterations += iterations;
+                totalRemainingOverlaps += resolver.CountOverlaps(resolved);
+            }
 
             if (movedIds.Count > 0)
                 activeDrawing.CommitChanges();
@@ -139,8 +154,61 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
             {
                 MarksMovedCount = movedIds.Count,
                 MovedIds = movedIds,
-                Iterations = iterations,
-                RemainingOverlaps = resolver.CountOverlaps(resolved)
+                Iterations = totalIterations,
+                RemainingOverlaps = totalRemainingOverlaps
+            };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    public ResolveMarksResult ArrangeMarks(double gap)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            var engine = new MarkLayoutEngine();
+            var movedIds = new List<int>();
+            var totalIterations = 0;
+            var totalRemainingOverlaps = 0;
+
+            foreach (var view in EnumerateViews(activeDrawing))
+            {
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view);
+                if (markEntries.Count == 0)
+                    continue;
+
+                var layoutResult = engine.Arrange(
+                    markEntries.Select(x => x.Item),
+                    new MarkLayoutOptions
+                    {
+                        Gap = gap,
+                        CurrentPositionWeight = 0.0,
+                        LeaderLengthWeight = 0.5,
+                    });
+
+                var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById));
+                totalIterations += layoutResult.Iterations;
+                totalRemainingOverlaps += layoutResult.RemainingOverlaps;
+            }
+
+            if (movedIds.Count > 0)
+                activeDrawing.CommitChanges();
+
+            return new ResolveMarksResult
+            {
+                MarksMovedCount   = movedIds.Count,
+                MovedIds          = movedIds,
+                Iterations        = totalIterations,
+                RemainingOverlaps = totalRemainingOverlaps
             };
         }
         finally

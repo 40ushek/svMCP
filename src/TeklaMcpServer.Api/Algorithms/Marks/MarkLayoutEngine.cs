@@ -36,6 +36,12 @@ public sealed class MarkLayoutEngine
         foreach (var item in OrderMovableItems(sourceItems, conflictCounts))
         {
             var candidates = _candidateGenerator.GenerateCandidates(item, layoutOptions);
+            if (candidates.Count == 0)
+            {
+                placements.Add(CreatePlacement(item, item.CurrentX, item.CurrentY));
+                continue;
+            }
+
             var best = candidates
                 .Select(candidate =>
                 {

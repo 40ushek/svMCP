@@ -11,6 +11,7 @@ public sealed class MarkPropertyValue
 public sealed class DrawingMarkInfo
 {
     public int                     Id         { get; set; }
+    public int                     ViewId     { get; set; }
     public int?                    ModelId    { get; set; }
     public double                  InsertionX { get; set; }
     public double                  InsertionY { get; set; }

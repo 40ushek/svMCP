@@ -19,4 +19,13 @@ public sealed class MarkLayoutItem
     public bool HasLeaderLine { get; set; }
 
     public bool CanMove { get; set; } = true;
+
+    // Optional view bounds in sheet coordinates — candidates outside will be rejected.
+    // If all are 0 (default) bounds are not enforced.
+    public double BoundsMinX { get; set; }
+    public double BoundsMinY { get; set; }
+    public double BoundsMaxX { get; set; }
+    public double BoundsMaxY { get; set; }
+
+    public bool HasBounds => BoundsMaxX > BoundsMinX && BoundsMaxY > BoundsMinY;
 }
