@@ -113,18 +113,24 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         {
             var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(EnumerateViews(activeDrawing));
 
-            var engine = new MarkLayoutEngine();
-            var layoutResult = engine.Arrange(
-                markEntries.Select(x => x.Item),
-                new MarkLayoutOptions
-                {
-                    Gap = margin,
-                    EnableOverlapResolver = true,
-                    MaxResolverIterations = 10
-                });
+            var placements = markEntries.Select(e => new MarkLayoutPlacement
+            {
+                Id         = e.Mark.GetIdentifier().ID,
+                X          = e.CenterX,
+                Y          = e.CenterY,
+                Width      = e.Item.Width,
+                Height     = e.Item.Height,
+                AnchorX    = e.Item.AnchorX,
+                AnchorY    = e.Item.AnchorY,
+                HasLeaderLine = e.Item.HasLeaderLine,
+                CanMove    = true
+            }).ToList();
 
-            var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
-            var movedIds = TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById);
+            var resolver = new MarkOverlapResolver();
+            var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = margin }, out var iterations);
+
+            var resolvedById = resolved.ToDictionary(x => x.Id);
+            var movedIds = TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById);
 
             if (movedIds.Count > 0)
                 activeDrawing.CommitChanges();
@@ -133,8 +139,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
             {
                 MarksMovedCount = movedIds.Count,
                 MovedIds = movedIds,
-                Iterations = layoutResult.Iterations,
-                RemainingOverlaps = layoutResult.RemainingOverlaps
+                Iterations = iterations,
+                RemainingOverlaps = resolver.CountOverlaps(resolved)
             };
         }
         finally
