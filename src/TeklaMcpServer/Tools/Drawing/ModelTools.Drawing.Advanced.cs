@@ -7,7 +7,7 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
-    [McpServerTool, Description("Create a General Arrangement (GA) drawing from a saved model view")]
+    [McpServerTool, Description("Legacy workaround: create a General Arrangement (GA) drawing from a saved model view via Tekla macro. Obsolete for further development; prefer Open API-based drawing creation tools.")]
     public static string CreateGeneralArrangementDrawing(
         [Description("Name of drawing properties file. Default: standard")] string drawingProperties = "standard",
         [Description("Open drawing after creation. Default: true")] bool openDrawing = true,
@@ -27,7 +27,7 @@ public static partial class ModelTools
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
-            return $"GA drawing creation command executed:\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+            return $"Legacy GA drawing macro executed.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
         }
         catch
         {
@@ -170,6 +170,30 @@ public static partial class ModelTools
 
             var updatedCount = doc.RootElement.TryGetProperty("updatedCount", out var u) ? u.GetInt32() : 0;
             return $"Updated {updatedCount} mark objects.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description("Create part marks for all unique parts in the active drawing. One mark per unique model object ID, content defaults to ASSEMBLY_POS.")]
+    public static string CreatePartMarks(
+        [Description("Comma-separated content attributes, e.g. ASSEMBLY_POS,PART_POS,PROFILE. Default: ASSEMBLY_POS")] string contentElements = "",
+        [Description("Mark attributes file name. Default: standard")] string markAttributesFile = "standard",
+        [Description("Frame type override: None, Rectangular, Line, Round, Circle, Diamond, Hexagon, Triangle, Sharpened. Leave empty to use attributes file default.")] string frameType = "",
+        [Description("Arrowhead type override: NoArrow, FilledArrow, LineArrow, CircleArrow, FilledCircleArrow. Leave empty to use attributes file default.")] string arrowheadType = "")
+    {
+        var json = RunBridge("create_part_marks", contentElements ?? string.Empty, markAttributesFile ?? string.Empty, frameType ?? string.Empty, arrowheadType ?? string.Empty);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            var created = doc.RootElement.TryGetProperty("createdCount", out var c) ? c.GetInt32() : 0;
+            var skipped = doc.RootElement.TryGetProperty("skippedCount", out var s) ? s.GetInt32() : 0;
+            return $"Created {created} marks, skipped {skipped}.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
         }
         catch
         {

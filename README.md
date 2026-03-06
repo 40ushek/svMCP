@@ -140,7 +140,9 @@ src/
 | `find_drawings` | Поиск по имени и/или марке (contains, без учёта регистра) |
 | `find_drawings_by_properties` | Поиск по нескольким свойствам (JSON-фильтры) |
 | `export_drawings_to_pdf` | Экспорт чертежей в PDF по GUID |
-| `create_general_arrangement_drawing` | Создать GA-чертёж из сохранённого вида модели |
+| `create_general_arrangement_drawing` | Legacy workaround: создать GA-чертёж из сохранённого вида модели через макрос |
+| `create_single_part_drawing` | Создать Single Part drawing через Tekla Open API |
+| `create_assembly_drawing` | Создать Assembly drawing через Tekla Open API |
 | `get_drawing_context` | Активный чертёж и выделенные объекты |
 | `select_drawing_objects` | Выделить объекты чертежа по ID модельных объектов |
 | `filter_drawing_objects` | Фильтр объектов чертежа по типу (Mark, Part, DimensionBase…) |
@@ -418,9 +420,11 @@ dotnet build ...
 
 ---
 
-### Этап 7. Создание GA-чертежей через макрос
+### Этап 7. Legacy: создание GA-чертежей через макрос
 
-Tekla API не предоставляет прямого метода для создания GA (General Arrangement) чертежей из кода. Единственный способ — через **Tekla Macro** (скрипт на C#, исполняемый внутри Tekla процесса через `akit` интерфейс).
+`create_general_arrangement_drawing` сохранен только как временный legacy workaround. Для дальнейшего развития блока создания чертежей используем Open API, не макросы.
+
+Исторически для GA здесь использовался macro-подход, потому что он повторял штатный UI workflow выбора saved model view. Это не рекомендуемый путь для дальнейшей разработки: он зависит от UI, локализации и внутренних имен элементов диалога.
 
 Алгоритм:
 1. Узнать `XS_MACRO_DIRECTORY` через `TeklaStructuresSettings.GetAdvancedOption`

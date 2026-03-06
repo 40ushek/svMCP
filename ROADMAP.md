@@ -31,7 +31,9 @@
 | `find_drawings` | Поиск по имени / марке |
 | `find_drawings_by_properties` | Поиск по фильтрам (name, mark, type, status) |
 | `export_drawings_to_pdf` | Экспорт в PDF по GUID |
-| `create_general_arrangement_drawing` | Создать GA-чертёж через макрос |
+| `create_general_arrangement_drawing` | Legacy workaround: создать GA-чертёж через макрос; не развивать дальше |
+| `create_single_part_drawing` | Создать Single Part drawing через Open API |
+| `create_assembly_drawing` | Создать Assembly drawing через Open API |
 | `get_drawing_context` | Активный чертёж + выделенные объекты |
 | `select_drawing_objects` | Выделить объекты по model ID |
 | `filter_drawing_objects` | Фильтр объектов по типу (Mark, Part, DimensionBase…) |
@@ -46,6 +48,12 @@
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
 | `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок внутри каждого вида — локальный overlap resolver |
 | `arrange_marks` | Полная расстановка марок внутри каждого вида вокруг anchor point |
+
+### Создание чертежей
+
+- `create_single_part_drawing` и `create_assembly_drawing` — основной путь, развивать через Open API
+- `create_general_arrangement_drawing` — legacy workaround через macro/UI automation
+- новые возможности по созданию чертежей добавлять только через Open API, не через макросы
 
 ---
 
@@ -151,7 +159,7 @@
 1. Для каждого `View` отдельно собираются `MarkLayoutItem`
 2. В `MarkLayoutItem` попадают локальные координаты вида, а не координаты листа
 3. Для меток с leader line якорь берется из `LeaderLinePlacing.StartPoint` в СК вида
-4. После расчета результат переводится обратно в delta `InsertionPoint` через `view.Attributes.Scale`
+4. После расчета результат применяется обратно в `InsertionPoint` в той же локальной СК вида
 
 **Ближайшие улучшения:**
 - уточнить owner-view для `get_drawing_marks`, чтобы диагностический `viewId` был так же строгим, как в auto-layout
