@@ -35,6 +35,62 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Create a Single Part drawing directly through Tekla Open API for one model object ID")]
+    public static string CreateSinglePartDrawing(
+        [Description("Model object ID of the part")] int modelObjectId,
+        [Description("Name of drawing properties file. Default: standard")] string drawingProperties = "standard",
+        [Description("Open drawing after creation. Default: true")] bool openDrawing = true)
+    {
+        if (modelObjectId <= 0)
+            return "Error: 'modelObjectId' must be a positive integer.";
+
+        var json = RunBridge(
+            "create_single_part_drawing",
+            modelObjectId.ToString(CultureInfo.InvariantCulture),
+            drawingProperties ?? "standard",
+            openDrawing ? "true" : "false");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Single Part drawing creation command executed:\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description("Create an Assembly drawing directly through Tekla Open API for one model object ID")]
+    public static string CreateAssemblyDrawing(
+        [Description("Model object ID of the assembly main part or assembly object")] int modelObjectId,
+        [Description("Name of drawing properties file. Default: standard")] string drawingProperties = "standard",
+        [Description("Open drawing after creation. Default: true")] bool openDrawing = true)
+    {
+        if (modelObjectId <= 0)
+            return "Error: 'modelObjectId' must be a positive integer.";
+
+        var json = RunBridge(
+            "create_assembly_drawing",
+            modelObjectId.ToString(CultureInfo.InvariantCulture),
+            drawingProperties ?? "standard",
+            openDrawing ? "true" : "false");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Assembly drawing creation command executed:\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Select drawing objects in the active drawing by model object IDs (comma-separated)")]
     public static string SelectDrawingObjects(
         [Description("Comma-separated model object IDs")] string modelObjectIdsCsv)
