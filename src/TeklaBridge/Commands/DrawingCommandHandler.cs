@@ -822,6 +822,34 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "get_part_geometry_in_view":
+            {
+                // args: viewId, modelId
+                if (args.Length < 3
+                    || !int.TryParse(args[1], out var pgViewId)
+                    || !int.TryParse(args[2], out var pgModelId))
+                {
+                    _output.WriteLine("{\"error\":\"Usage: get_part_geometry_in_view <viewId> <modelId>\"}");
+                    return true;
+                }
+                var pgApi    = new TeklaDrawingPartGeometryApi(_model);
+                var pgResult = pgApi.GetPartGeometryInView(pgViewId, pgModelId);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    success    = pgResult.Success,
+                    viewId     = pgResult.ViewId,
+                    modelId    = pgResult.ModelId,
+                    startPoint = pgResult.StartPoint,
+                    endPoint   = pgResult.EndPoint,
+                    axisX      = pgResult.AxisX,
+                    axisY      = pgResult.AxisY,
+                    bboxMin    = pgResult.BboxMin,
+                    bboxMax    = pgResult.BboxMax,
+                    error      = pgResult.Error
+                }));
+                return true;
+            }
+
             case "get_drawing_parts":
             {
                 var api    = new TeklaDrawingPartsApi(_model);
