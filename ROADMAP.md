@@ -46,14 +46,37 @@
 | `get_drawing_parts` | Модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
+| `create_dimension` | Создать `StraightDimensionSet` по набору точек; поддерживает горизонтальные, вертикальные, диагональные и цепочки размеров |
+| `get_part_geometry_in_view` | Геометрия детали (bbox, start/end, оси) в локальной СК вида; используется для точного размещения размеров |
 | `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок внутри каждого вида — локальный overlap resolver |
 | `arrange_marks` | Полная расстановка марок внутри каждого вида вокруг anchor point |
+| `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
+| `delete_all_marks` | Удалить все марки на активном чертеже |
 
 ### Создание чертежей
 
 - `create_single_part_drawing` и `create_assembly_drawing` — основной путь, развивать через Open API
 - `create_general_arrangement_drawing` — legacy workaround через macro/UI automation
 - новые возможности по созданию чертежей добавлять только через Open API, не через макросы
+
+---
+
+## Идеи по размерам (из сессии 2026-03-07)
+
+### Реализовано
+- `create_dimension` поддерживает горизонтальные, вертикальные, **диагональные** и **цепочки** размеров из коробки
+- `get_part_geometry_in_view` даёт bbox в локальной СК вида — достаточно для любого типа размеров
+- Диагональные размеры по противоположным углам bbox — простая проверка геометрии (деревянные/панельные конструкции)
+- Цепочки: передать 3+ точек в `points` — один `StraightDimensionSet` с несколькими сегментами
+
+### К реализации
+- `delete_dimension` — удалить конкретный `StraightDimensionSet` по ID
+- `add_dimension_point` — добавить точку в существующую цепочку (`PointList` → вставить → `Modify()`)
+- Bbox текста размера как препятствие для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false` в `MarkOverlapResolver`
+
+### Идеи из примеров (cs/ и dim/)
+- `GetProjectedShape.GetShape(partId, coordinateSystem)` — реальный контур из `FaceEnumerator`, не bbox; нужен для размеров по граням сложных профилей
+- `ReturnDimensionValue` — форматированная строка значения; не нужна, значение = евклидово расстояние между точками сегмента
 
 ---
 
@@ -237,7 +260,7 @@ TeklaMcpServer.Api/
 **Более поздние улучшения:**
 - **COG как якорь**: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
 - **Sliding anchor**: для длинных деталей стрелка скользит вдоль bbox
-- **Размеры как препятствия**: `StraightDimensionSet` не имеет `GetAxisAlignedBoundingBox()` — вычислять вручную из сегментов
+- **Размеры как препятствия**: bbox текста `StraightDimension.GetObjectAlignedBoundingBox()` — передавать в `MarkOverlapResolver` как `CanMove=false` объекты
 
 ---
 
