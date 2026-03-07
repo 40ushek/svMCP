@@ -33,3 +33,10 @@ C:/temp/tekla_channel.txt
 
 # Tekla temp macros
 _tmp_ga_*.cs
+
+# Reference examples (local only)
+cs/
+dim/
+
+# Claude Code settings
+.claude/
