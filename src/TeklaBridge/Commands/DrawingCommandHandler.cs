@@ -792,6 +792,36 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "create_dimension":
+            {
+                // args: viewId, pointsJson, direction, distance, attributesFile
+                if (args.Length < 4 || !int.TryParse(args[1], out var cdViewId))
+                {
+                    _output.WriteLine("{\"error\":\"Usage: create_dimension <viewId> <pointsJson> <direction> <distance> [attributesFile]\"}");
+                    return true;
+                }
+                var pointsJson    = args.Length > 2 ? args[2] : "[]";
+                var cdDirection   = args.Length > 3 ? args[3] : "horizontal";
+                var cdDistance    = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 50.0;
+                var cdAttrFile    = args.Length > 5 ? args[5] : string.Empty;
+
+                double[] points;
+                try { points = JsonSerializer.Deserialize<double[]>(pointsJson) ?? Array.Empty<double>(); }
+                catch { _output.WriteLine("{\"error\":\"pointsJson must be a JSON array of numbers\"}"); return true; }
+
+                var api    = new TeklaDrawingDimensionsApi(_model);
+                var result = api.CreateDimension(cdViewId, points, cdDirection, cdDistance, cdAttrFile);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    created     = result.Created,
+                    dimensionId = result.DimensionId,
+                    viewId      = result.ViewId,
+                    pointCount  = result.PointCount,
+                    error       = result.Error
+                }));
+                return true;
+            }
+
             case "get_drawing_parts":
             {
                 var api    = new TeklaDrawingPartsApi(_model);

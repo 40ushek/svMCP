@@ -57,6 +57,24 @@
 
 ---
 
+## Структура TeklaMcpServer.Api (целевая)
+
+```
+TeklaMcpServer.Api/
+├── Connection/
+├── Selection/
+├── Filtering/
+├── Drawing/
+│   ├── Marks/        # IDrawingMarkApi, TeklaDrawingMarkApi, DTOs ✅
+│   ├── Views/        # IDrawingViewApi, TeklaDrawingViewApi, DTOs ✅
+│   └── Dimensions/   # IDimensionApi, TeklaDimensionApi, DTOs — следующий шаг
+└── Model/
+```
+
+Каждая подпапка: интерфейс + реализация + DTOs. `DrawingCommandHandler` остаётся тонким диспетчером.
+
+---
+
 ## Фаза 1 — Чтение геометрии чертежа
 
 > **`get_drawing_views` реализован ✅.** Возвращает `id`, `viewType`, `name`, `originX/Y`, `scale`, `width`, `height`, `sheetWidth`, `sheetHeight`.
@@ -239,6 +257,33 @@ tidy_drawing
 ### Оператор `is` не работает для IPC-прокси
 
 Объекты, полученные через `GetAllObjects()` / `GetObjectsByFilter()`, — transparent proxies .NET Remoting. `is Beam` всегда `false`. Нужно использовать `GetType().Name`. Это касается любого нового кода с `GetAllObjects()`.
+
+---
+
+## Деплой и UX для конечного пользователя
+
+### Текущая схема (stdio)
+
+TeklaMcpServer.exe запускается Claude Code как дочерний процесс через stdio. Работает для разработки, но неудобно для конечного пользователя — процесс невидим, нельзя пересобрать exe без перезапуска клиента.
+
+### Целевая схема (трей + SSE/HTTP)
+
+Для готового продукта на Win 10/11:
+
+- **TeklaMcpServer** переключается на SSE/HTTP транспорт (`WithSseServerTransport()`) и запускается как Windows tray-приложение (NotifyIcon)
+- Пользователь видит значок в трее: зелёный = подключён к Tekla, красный = нет
+- Правой кнопкой → контекстное меню: "Перезапустить", "Выйти"
+- Конфиг Claude Code меняется с `"command": "TeklaMcpServer.exe"` на `"url": "http://localhost:5555/sse"`
+- Опционально: автозапуск с Windows
+
+**Преимущества:**
+- Пересборка без перезапуска Claude Code/VSCode
+- Пользователь видит что сервер работает
+- Легко установить/удалить
+
+**Windows 11 ODR (будущее):** Microsoft встраивает реестр MCP-серверов (On-Device Agent Registry) в Windows 11. Поддерживает stdio/SSE/HTTP, изоляцию, MSIX-упаковку. На Win 10 недоступен. Когда ODR станет стандартом — возможна упаковка в MSIX с авто-регистрацией при установке.
+
+**Объём работ:** ~2-3 дня. Делать когда основной функционал стабилизируется.
 
 ---
 
