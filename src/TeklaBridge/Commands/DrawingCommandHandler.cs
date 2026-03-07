@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
@@ -850,6 +850,34 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "get_grid_axes":
+            {
+                if (args.Length < 2 || !int.TryParse(args[1], out var gaViewId))
+                {
+                    _output.WriteLine("{\"error\":\"Usage: get_grid_axes <viewId>\"}");
+                    return true;
+                }
+                var gaApi    = new TeklaDrawingGridApi();
+                var gaResult = gaApi.GetGridAxes(gaViewId);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    success = gaResult.Success,
+                    viewId  = gaResult.ViewId,
+                    axes    = gaResult.Axes.Select(a => new
+                    {
+                        label      = a.Label,
+                        direction  = a.Direction,
+                        coordinate = a.Coordinate,
+                        startX     = a.StartX,
+                        startY     = a.StartY,
+                        endX       = a.EndX,
+                        endY       = a.EndY
+                    }),
+                    error   = gaResult.Error
+                }));
+                return true;
+            }
+
             case "get_drawing_parts":
             {
                 var api    = new TeklaDrawingPartsApi(_model);
@@ -1221,3 +1249,4 @@ $@"
         }
     }
 }
+
