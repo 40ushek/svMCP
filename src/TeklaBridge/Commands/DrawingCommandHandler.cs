@@ -576,69 +576,83 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "arrange_marks":
-            {
-                var parseResult = DrawingCommandParsers.ParseArrangeMarksGap(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = GetMarkApi().ArrangeMarks(parseResult.Value);
-                WriteMarkArrangementResult(result);
-                return true;
-            }
+                return HandleArrangeMarks(GetMarkApi(), args);
 
             case "create_part_marks":
-            {
-                var parseRequest = DrawingCommandParsers.ParseCreatePartMarksRequest(args);
-
-                var result = GetMarkApi().CreatePartMarks(
-                    parseRequest.ContentAttributesCsv,
-                    parseRequest.MarkAttributesFile,
-                    parseRequest.FrameType,
-                    parseRequest.ArrowheadType);
-                WriteCreatePartMarksResult(result);
-                return true;
-            }
+                return HandleCreatePartMarks(GetMarkApi(), args);
 
             case "delete_all_marks":
-            {
-                if (!EnsureActiveDrawingShort())
-                {
-                    return true;
-                }
-
-                var result = GetMarkApi().DeleteAllMarks();
-                WriteDeleteAllMarksResult(result);
-                return true;
-            }
+                return HandleDeleteAllMarks(GetMarkApi());
 
             case "resolve_mark_overlaps":
-            {
-                var parseResult = DrawingCommandParsers.ParseResolveMarkOverlapsMargin(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-                var result = GetMarkApi().ResolveMarkOverlaps(parseResult.Value);
-                WriteMarkArrangementResult(result);
-                return true;
-            }
+                return HandleResolveMarkOverlaps(GetMarkApi(), args);
 
             case "get_drawing_marks":
-            {
-                var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-
-                var result = GetMarkApi().GetMarks(viewId);
-                WriteGetMarksResult(result);
-                return true;
-            }
+                return HandleGetDrawingMarks(GetMarkApi(), args);
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleArrangeMarks(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseArrangeMarksGap(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.ArrangeMarks(parseResult.Value);
+        WriteMarkArrangementResult(result);
+        return true;
+    }
+
+    private bool HandleCreatePartMarks(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseRequest = DrawingCommandParsers.ParseCreatePartMarksRequest(args);
+        var result = api.CreatePartMarks(
+            parseRequest.ContentAttributesCsv,
+            parseRequest.MarkAttributesFile,
+            parseRequest.FrameType,
+            parseRequest.ArrowheadType);
+        WriteCreatePartMarksResult(result);
+        return true;
+    }
+
+    private bool HandleDeleteAllMarks(TeklaDrawingMarkApi api)
+    {
+        if (!EnsureActiveDrawingShort())
+        {
+            return true;
+        }
+
+        var result = api.DeleteAllMarks();
+        WriteDeleteAllMarksResult(result);
+        return true;
+    }
+
+    private bool HandleResolveMarkOverlaps(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseResolveMarkOverlapsMargin(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.ResolveMarkOverlaps(parseResult.Value);
+        WriteMarkArrangementResult(result);
+        return true;
+    }
+
+    private bool HandleGetDrawingMarks(TeklaDrawingMarkApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var result = api.GetMarks(viewId);
+        WriteGetMarksResult(result);
+        return true;
     }
 
     private bool EnsureActiveDrawing(string noActiveDrawingJson)
