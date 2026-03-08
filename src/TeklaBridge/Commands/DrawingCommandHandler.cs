@@ -361,21 +361,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         {
             case "select_drawing_objects":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                var parseResult = DrawingCommandParsers.ParseSelectDrawingObjectsRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Missing model object IDs. Use comma-separated IDs.\"}");
-                    return true;
-                }
-
-                var targetModelIds = DrawingCommandParsers.ParseIntList(args[1]).ToHashSet();
-                if (targetModelIds.Count == 0)
-                {
-                    _output.WriteLine("{\"error\":\"No valid model object IDs provided\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingInteractionApi(_model);
-                var result = api.SelectObjectsByModelIds(targetModelIds.ToList());
+                var result = api.SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
                 if (result.SelectedDrawingObjectIds.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"None of the specified model IDs were found in the active drawing\"}");
@@ -393,14 +387,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "filter_drawing_objects":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                var parseResult = DrawingCommandParsers.ParseFilterDrawingObjectsRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Missing objectType. Example: Mark, Part, DimensionBase\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
-
-                var objectType = args[1];
-                var specificType = args.Length > 2 ? args[2] : string.Empty;
 
                 var drawingHandler = new DrawingHandler();
                 if (drawingHandler.GetActiveDrawing() == null)
@@ -410,12 +402,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var api = new TeklaDrawingInteractionApi(_model);
-                var result = api.FilterObjects(objectType, specificType);
+                var result = api.FilterObjects(
+                    parseResult.Request.ObjectType,
+                    parseResult.Request.SpecificType);
                 if (!result.IsKnownType)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
                     {
-                        error = $"Unknown drawing type: {objectType}",
+                        error = $"Unknown drawing type: {parseResult.Request.ObjectType}",
                         hint = "Use Tekla.Structures.Drawing type names, e.g. Mark, Part, DimensionBase, Text."
                     }));
                     return true;

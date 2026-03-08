@@ -86,6 +86,39 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static SelectDrawingObjectsParseResult ParseSelectDrawingObjectsRequest(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return SelectDrawingObjectsParseResult.Fail(
+                "Missing model object IDs. Use comma-separated IDs.");
+        }
+
+        var targetModelIds = ParseIntList(args[1]).ToHashSet();
+        if (targetModelIds.Count == 0)
+            return SelectDrawingObjectsParseResult.Fail("No valid model object IDs provided");
+
+        return SelectDrawingObjectsParseResult.Success(new SelectDrawingObjectsRequest
+        {
+            TargetModelIds = targetModelIds.ToList()
+        });
+    }
+
+    public static FilterDrawingObjectsParseResult ParseFilterDrawingObjectsRequest(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return FilterDrawingObjectsParseResult.Fail(
+                "Missing objectType. Example: Mark, Part, DimensionBase");
+        }
+
+        return FilterDrawingObjectsParseResult.Success(new FilterDrawingObjectsRequest
+        {
+            ObjectType = args[1],
+            SpecificType = args.Length > 2 ? args[2] : string.Empty
+        });
+    }
+
     public static int? ParseOptionalViewId(string[] args, int index = 1)
     {
         if (args.Length > index && int.TryParse(args[index], out var viewId))
@@ -496,6 +529,43 @@ public sealed class FindDrawingsByPropertiesParseResult
         new() { IsValid = true, Request = request };
 
     public static FindDrawingsByPropertiesParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class SelectDrawingObjectsRequest
+{
+    public List<int> TargetModelIds { get; set; } = new();
+}
+
+public sealed class SelectDrawingObjectsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public SelectDrawingObjectsRequest Request { get; private set; } = new();
+
+    public static SelectDrawingObjectsParseResult Success(SelectDrawingObjectsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static SelectDrawingObjectsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class FilterDrawingObjectsRequest
+{
+    public string ObjectType { get; set; } = string.Empty;
+    public string SpecificType { get; set; } = string.Empty;
+}
+
+public sealed class FilterDrawingObjectsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public FilterDrawingObjectsRequest Request { get; private set; } = new();
+
+    public static FilterDrawingObjectsParseResult Success(FilterDrawingObjectsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static FilterDrawingObjectsParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 
