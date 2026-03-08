@@ -596,17 +596,33 @@ sealed class PersistentBridge : IDisposable
 - Вся логика в `TeklaMcpServer.Api` — без изменений
 - `DrawingCommandHandler`, `ModelCommandHandler` — без изменений (только добавляется `HandleJson` обёртка)
 
-**Внешнее поведение идентично. Меняется только транспортный слой.**
+**Внешнее поведение API идентично.** Но важно понимать: меняется не только транспортный слой — меняется и семантика времени жизни процесса. Появляются lifecycle, авторестарт, stale state после перезапуска Tekla. Это управляемые риски, но называть изменение "просто транспортом" неточно.
 
 ---
 
-### Риски и mitigation
+### Главный технический риск: stdout-дисциплина в TeklaBridge
+
+В one-shot режиме stdout почти без ограничений: `RunBridge()` просто берёт последнюю строку с `{`/`[`. В persistent loop любой лишний байт в stdout ломает протокол навсегда — клиент читает мусор и десинхронизируется.
+
+**Что должно быть жёстко разделено:**
+
+| Поток | Содержимое |
+|---|---|
+| stdout | **только** протокольные JSON-строки — ровно одна строка на запрос |
+| stderr | диагностика, warnings, stack traces |
+| `C:\temp\teklabridge_log.txt` | Tekla internal diagnostics (через `Console.SetOut(teklaLog)`) |
+
+**Правило:** каждый `catch` в loop должен писать `{ok:false, error}` в stdout и ничего больше. Stack trace — только в stderr/файл.
+
+Это самый тонкий момент всей реализации. Нарушить stdout-дисциплину легко; отладить десинхронизацию протокола — тяжело, потому что баги редкие и неочевидные.
+
+### Остальные риски
 
 | Риск | Mitigation |
 |---|---|
 | TeklaBridge зависает (Tekla disconnected) | Таймаут 30 сек на чтение stdout → KillProcess() → авторестарт |
-| Tekla выбрасывает exception в команде | Catch в loop → отправить `{ok:false, error}` → процесс живёт дальше |
-| Tekla пишет в Console.Out (diagnostic noise) | Уже решено: `Console.SetOut(teklaLog)` до loop, realOut отдельно |
+| Tekla выбрасывает exception в команде | Catch в loop → `{ok:false, error}` в stdout → процесс живёт дальше |
+| Stale state после перезапуска Tekla | KillProcess() при потере IPC → авторестарт при следующем вызове |
 | IPC-канал Tekla умирает | Перезапуск TeklaBridge — reconnection не поддерживается Tekla API |
 | Параллельные вызовы из Claude | `SemaphoreSlim(1)` — сериализация; в будущем можно pool из N процессов |
 
@@ -615,25 +631,38 @@ sealed class PersistentBridge : IDisposable
 ### Порядок реализации
 
 ```
-1. TeklaBridge: добавить loop-режим (args пустые = stdin loop)
-   Обратная совместимость: если args не пустые — старый one-shot режим
-   Файл: TeklaBridge/Program.cs
-   Объём: ~30 строк
+0. Регрессионная защита (делать ПЕРЕД рефакторингом транспорта)
+   Короткий набор snapshot-тестов на 5-7 ключевых команд:
+   get_drawing_views, get_drawing_parts, get_part_geometry_in_view,
+   create_dimension, get_drawing_marks.
+   Проверяем: валидный JSON + ключевые поля в ответе.
+   Без этого сломать что-то тихо — очень просто.
+
+1. TeklaBridge: loop-режим + жёсткая stdout-дисциплина
+   - args пустые = stdin loop; args не пустые = старый one-shot (обратная совместимость)
+   - stdout только для протокольных строк, всё остальное в stderr / файл
+   - Файл: TeklaBridge/Program.cs
+   - Объём: ~30 строк
 
 2. PersistentBridge: singleton с EnsureStarted + Send + авторестарт
-   Файл: TeklaMcpServer/PersistentBridge.cs (новый)
-   Объём: ~80 строк
+   - Таймаут чтения stdout: 30 сек → KillProcess() → throw
+   - KillProcess() вызывается и при любом Exception в Send()
+   - Файл: TeklaMcpServer/PersistentBridge.cs (новый)
+   - Объём: ~80 строк
 
 3. RunBridge(): заменить Process.Start на PersistentBridge.Instance.Send
-   Файл: TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs
-   Объём: ~10 строк изменений
+   - Файл: TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs
+   - Объём: ~10 строк изменений
 
-4. Тест: get_drawing_views → открыть чертёж → 10 последовательных вызовов
+4. Прогнать регрессионные тесты из шага 0 — все должны пройти
+
+5. Замер latency: 10 последовательных вызовов get_drawing_views
    Ожидаемое время: < 500 мс суммарно (vs ~25 секунд сейчас)
 ```
 
-**Оценка объёма:** ~120 строк кода, ~0.5 дня работы.
+**Оценка объёма:** ~120 строк кода + тесты, ~1 день с тестами.
 **Приоритет: ВЫСОКИЙ** — без этого инструмент непригоден для реального использования.
+**Предусловие:** сначала baseline-тесты (шаг 0), потом рефакторинг.
 
 ---
 
@@ -666,15 +695,15 @@ sealed class PersistentBridge : IDisposable
 
 **Не подключено к командам** — нужно переработать Bridge handlers для использования этой инфраструктуры.
 
-**Варианты реализации (по сложности):**
+**Варианты реализации:**
 
 | Вариант | Сложность | Суть |
 |---|---|---|
 | Файловый кэш | Низкая | `SelectionCacheManager` читает/пишет `C:\temp\svmcp_selections.json` |
 | Кэш в TeklaMcpServer | Средняя | Состояние хранится на стороне net8, IDs передаются в каждый вызов bridge |
-| TeklaBridge как long-lived процесс | Высокая | MCP server держит bridge открытым, общается в цикле stdin/stdout |
+| TeklaBridge как long-lived процесс | — | **Запланировано** — см. раздел "Персистентный TeklaBridge" выше |
 
-**Рекомендуется начать с файлового кэша** — наименьший объём изменений, совместим с текущей архитектурой.
+**После реализации персистентного bridge** selection cache станет тривиальным: TeklaBridge живёт постоянно, in-memory `SelectionCacheManager` работает между вызовами без файлового кэша. До тех пор — либо передавать все ID явно в каждом вызове, либо использовать файловый кэш как временный workaround.
 
 ## Роадмап рефакторинга архитектуры (2026-03-08)
 
