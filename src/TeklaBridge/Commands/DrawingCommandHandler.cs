@@ -510,24 +510,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
                 var result = api.GetDimensions(viewId);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    total      = result.Total,
-                    dimensions = result.Dimensions.Select(d => new
-                    {
-                        id       = d.Id,
-                        type     = d.Type,
-                        distance = d.Distance,
-                        segments = d.Segments.Select(s => new
-                        {
-                            id     = s.Id,
-                            startX = s.StartX,
-                            startY = s.StartY,
-                            endX   = s.EndX,
-                            endY   = s.EndY
-                        })
-                    })
-                }));
+                WriteGetDimensionsResult(result);
                 return true;
             }
 
@@ -889,6 +872,28 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 placingX = m.PlacingX,
                 placingY = m.PlacingY,
                 properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
+            })
+        }));
+    }
+
+    private void WriteGetDimensionsResult(GetDimensionsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            total = result.Total,
+            dimensions = result.Dimensions.Select(d => new
+            {
+                id = d.Id,
+                type = d.Type,
+                distance = d.Distance,
+                segments = d.Segments.Select(s => new
+                {
+                    id = s.Id,
+                    startX = s.StartX,
+                    startY = s.StartY,
+                    endX = s.EndX,
+                    endY = s.EndY
+                })
             })
         }));
     }
