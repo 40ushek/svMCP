@@ -644,17 +644,17 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private void WriteError(string message)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new { error = message }));
+        WriteJson(new { error = message });
     }
 
     private void WriteDrawingsList(IEnumerable<object> drawings)
     {
-        _output.WriteLine(JsonSerializer.Serialize(drawings));
+        WriteJson(drawings);
     }
 
     private void WriteDrawingCreationResult(DrawingCreationResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             created = result.Created,
             opened = result.Opened,
@@ -662,38 +662,38 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             drawingType = result.DrawingType,
             modelObjectId = result.ModelObjectId,
             drawingProperties = result.DrawingProperties
-        }));
+        });
     }
 
     private void WriteGaDrawingCreationFailure(string details, string viewName)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             error = "Failed to create GA drawing",
             details,
             viewName
-        }));
+        });
     }
 
     private void WriteGaDrawingCreationResult(GaDrawingCreationResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             created = true,
             drawingType = "GA",
             viewName = result.ViewName,
             drawingProperties = result.DrawingProperties,
             openDrawing = result.OpenDrawing
-        }));
+        });
     }
 
     private void WriteDrawingFailure(string error, string? guid)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             error,
             guid
-        }));
+        });
     }
 
     private void WriteDrawingFailure(
@@ -703,85 +703,85 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         string? mark,
         string? type)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             error,
             guid,
             name,
             mark,
             type
-        }));
+        });
     }
 
     private void WriteOpenedDrawing(string? guid, string? name, string? mark, string? type)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             opened = true,
             guid,
             name,
             mark,
             type
-        }));
+        });
     }
 
     private void WriteClosedDrawing(string? guid, string? name, string? mark, string? type)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             closed = true,
             guid,
             name,
             mark,
             type
-        }));
+        });
     }
 
     private void WriteMarkArrangementResult(ResolveMarksResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             marksMovedCount = result.MarksMovedCount,
             movedIds = result.MovedIds,
             iterations = result.Iterations,
             remainingOverlaps = result.RemainingOverlaps
-        }));
+        });
     }
 
     private void WriteCreatePartMarksResult(CreateMarksResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             createdCount = result.CreatedCount,
             skippedCount = result.SkippedCount,
             createdMarkIds = result.CreatedMarkIds,
             attributesLoaded = result.AttributesLoaded
-        }));
+        });
     }
 
     private void WriteDeleteAllMarksResult(DeleteAllMarksResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             deletedCount = result.DeletedCount
-        }));
+        });
     }
 
     private void WriteExportDrawingsPdfResult(ExportDrawingsPdfResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             exportedCount = result.ExportedFiles.Count,
             exportedFiles = result.ExportedFiles,
             failedToExport = result.FailedToExport,
             missingGuids = result.MissingGuids,
             outputDirectory = result.OutputDirectory
-        }));
+        });
     }
 
     private void WriteGetMarksResult(GetMarksResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             total = result.Total,
             overlaps = result.Overlaps.Select(o => new { idA = o.IdA, idB = o.IdB }),
@@ -798,12 +798,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 placingY = m.PlacingY,
                 properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
             })
-        }));
+        });
     }
 
     private void WriteGetDimensionsResult(GetDimensionsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             total = result.Total,
             dimensions = result.Dimensions.Select(d => new
@@ -820,12 +820,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     endY = s.EndY
                 })
             })
-        }));
+        });
     }
 
     private void WriteGetDrawingPartsResult(GetDrawingPartsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             total = result.Total,
             parts = result.Parts.Select(p => new
@@ -838,12 +838,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 material = p.Material,
                 name = p.Name
             })
-        }));
+        });
     }
 
     private void WriteGetDrawingViewsResult(DrawingViewsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             sheetWidth = result.SheetWidth,
             sheetHeight = result.SheetHeight,
@@ -858,48 +858,48 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 width = v.Width,
                 height = v.Height
             })
-        }));
+        });
     }
 
     private void WriteSelectDrawingObjectsResult(SelectDrawingObjectsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             selectedCount = result.SelectedDrawingObjectIds.Count,
             selectedDrawingObjectIds = result.SelectedDrawingObjectIds,
             selectedModelIds = result.SelectedModelIds
-        }));
+        });
     }
 
     private void WriteUnknownDrawingTypeError(string objectType)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             error = $"Unknown drawing type: {objectType}",
             hint = "Use Tekla.Structures.Drawing type names, e.g. Mark, Part, DimensionBase, Text."
-        }));
+        });
     }
 
     private void WriteFilterDrawingObjectsResult(FilterDrawingObjectsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(result.Objects)));
+        WriteJson(MapDrawingObjects(result.Objects));
     }
 
     private void WriteSetMarkContentResult(SetMarkContentResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             updatedCount = result.UpdatedObjectIds.Count,
             failedCount = result.FailedObjectIds.Count,
             updatedObjectIds = result.UpdatedObjectIds,
             failedObjectIds = result.FailedObjectIds,
             errors = result.Errors
-        }));
+        });
     }
 
     private void WriteDrawingContextResult(DrawingContextResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             drawing = new
             {
@@ -911,12 +911,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             },
             selectedCount = result.SelectedObjects.Count,
             selectedObjects = MapDrawingObjects(result.SelectedObjects)
-        }));
+        });
     }
 
     private void WriteMoveViewResult(MoveViewResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             moved = result.Moved,
             viewId = result.ViewId,
@@ -924,22 +924,22 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             oldOriginY = result.OldOriginY,
             newOriginX = result.NewOriginX,
             newOriginY = result.NewOriginY
-        }));
+        });
     }
 
     private void WriteSetViewScaleResult(SetViewScaleResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             updatedCount = result.UpdatedCount,
             updatedIds = result.UpdatedIds,
             scale = result.Scale
-        }));
+        });
     }
 
     private void WriteFitViewsToSheetResult(FitViewsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             optimalScale = result.OptimalScale,
             sheetWidth = result.SheetWidth,
@@ -952,12 +952,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 originX = v.OriginX,
                 originY = v.OriginY
             })
-        }));
+        });
     }
 
     private void WritePartGeometryInViewResult(PartGeometryInViewResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             success = result.Success,
             viewId = result.ViewId,
@@ -969,12 +969,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             bboxMin = result.BboxMin,
             bboxMax = result.BboxMax,
             error = result.Error
-        }));
+        });
     }
 
     private void WriteGridAxesResult(GetGridAxesResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             success = result.Success,
             viewId = result.ViewId,
@@ -989,38 +989,43 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 endY = a.EndY
             }),
             error = result.Error
-        }));
+        });
     }
 
     private void WriteMoveDimensionResult(MoveDimensionResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             moved = result.Moved,
             dimensionId = result.DimensionId,
             newDistance = result.NewDistance
-        }));
+        });
     }
 
     private void WriteCreateDimensionResult(CreateDimensionResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             created = result.Created,
             dimensionId = result.DimensionId,
             viewId = result.ViewId,
             pointCount = result.PointCount,
             error = result.Error
-        }));
+        });
     }
 
     private void WriteDeleteDimensionResult(DeleteDimensionResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(new
+        WriteJson(new
         {
             deleted = result.Deleted,
             dimensionId = result.DimensionId
-        }));
+        });
+    }
+
+    private void WriteJson<T>(T payload)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(payload));
     }
 
     private static IEnumerable<object> MapBasicDrawings(
