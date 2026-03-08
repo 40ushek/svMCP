@@ -145,7 +145,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.CloseActiveDrawing();
                 if (!result.HasActiveDrawing)
                 {
-                    _output.WriteLine(NoActiveDrawingErrorJson);
+                    WriteRawJson(NoActiveDrawingErrorJson);
                     return true;
                 }
 
@@ -281,7 +281,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = GetInteractionApi().SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
                 if (result.SelectedDrawingObjectIds.Count == 0)
                 {
-                    _output.WriteLine(NoMatchingModelIdsInDrawingErrorJson);
+                    WriteRawJson(NoMatchingModelIdsInDrawingErrorJson);
                     return true;
                 }
 
@@ -470,7 +470,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.DeleteDimension(parseResult.Request.DimensionId);
                 if (!result.HasActiveDrawing)
                 {
-                    _output.WriteLine(NoActiveDrawingWithPeriodErrorJson);
+                    WriteRawJson(NoActiveDrawingWithPeriodErrorJson);
                     return true;
                 }
 
@@ -612,7 +612,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         if (new DrawingHandler().GetActiveDrawing() != null)
             return true;
 
-        _output.WriteLine(noActiveDrawingJson);
+        WriteRawJson(noActiveDrawingJson);
         return false;
     }
 
@@ -1026,6 +1026,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     private void WriteJson<T>(T payload)
     {
         _output.WriteLine(JsonSerializer.Serialize(payload));
+    }
+
+    private void WriteRawJson(string json)
+    {
+        _output.WriteLine(json);
     }
 
     private static IEnumerable<object> MapBasicDrawings(
