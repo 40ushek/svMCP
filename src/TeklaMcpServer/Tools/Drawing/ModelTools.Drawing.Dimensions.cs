@@ -7,6 +7,22 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
+    [McpServerTool, Description("Delete a straight dimension set from the active drawing by its ID (from get_drawing_dimensions).")]
+    public static string DeleteDimension(
+        [Description("ID of the StraightDimensionSet to delete")] int dimensionId)
+    {
+        var json = RunBridge("delete_dimension", dimensionId.ToString());
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+            var deleted = doc.RootElement.TryGetProperty("deleted", out var d) && d.GetBoolean();
+            return deleted ? $"Deleted dimension {dimensionId}." : $"Dimension {dimensionId} not found.";
+        }
+        catch { return $"Bridge error: {json}"; }
+    }
+
     [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

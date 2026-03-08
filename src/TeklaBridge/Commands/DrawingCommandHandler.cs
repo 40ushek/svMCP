@@ -822,6 +822,41 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "delete_dimension":
+            {
+                // args: dimensionId
+                if (args.Length < 2 || !int.TryParse(args[1], out var ddId))
+                {
+                    _output.WriteLine("{\"error\":\"Usage: delete_dimension <dimensionId>\"}");
+                    return true;
+                }
+                var dh2 = new DrawingHandler();
+                var ad2 = dh2.GetActiveDrawing();
+                if (ad2 == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open.\"}");
+                    return true;
+                }
+                bool ddFound = false;
+                var viewEnum2 = ad2.GetSheet().GetViews();
+                while (viewEnum2.MoveNext())
+                {
+                    if (viewEnum2.Current is not View ddView) continue;
+                    var dimEnum = ddView.GetAllObjects(new[] { typeof(StraightDimensionSet) });
+                    while (dimEnum.MoveNext())
+                    {
+                        if (dimEnum.Current is not StraightDimensionSet sds) continue;
+                        if (sds.GetIdentifier().ID != ddId) continue;
+                        sds.Delete();
+                        ddFound = true;
+                        break;
+                    }
+                    if (ddFound) break;
+                }
+                _output.WriteLine(JsonSerializer.Serialize(new { deleted = ddFound, dimensionId = ddId }));
+                return true;
+            }
+
             case "get_part_geometry_in_view":
             {
                 // args: viewId, modelId

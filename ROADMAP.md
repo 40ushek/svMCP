@@ -47,6 +47,7 @@
 | `get_drawing_dimensions` | `StraightDimensionSet`: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию (delta к `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек; поддерживает горизонтальные, вертикальные, диагональные и цепочки размеров |
+| `delete_dimension` | Удалить `StraightDimensionSet` по ID |
 | `get_part_geometry_in_view` | Геометрия детали (bbox, start/end, оси) в локальной СК вида; используется для точного размещения размеров |
 | `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок внутри каждого вида — локальный overlap resolver |
 | `arrange_marks` | Полная расстановка марок внутри каждого вида вокруг anchor point |
@@ -69,8 +70,13 @@
 - Диагональные размеры по противоположным углам bbox — простая проверка геометрии (деревянные/панельные конструкции)
 - Цепочки: передать 3+ точек в `points` — один `StraightDimensionSet` с несколькими сегментами
 
+### Стратегия простановки размеров (2026-03-08)
+- При размере цепочки по рёбрам сборки: тики следует ставить на **края рёбер** (bboxMin.X / bboxMax.X), а не в центры
+- Цепочка по всем граням 7 рёбер (100×100, шаг 400мм) = 14 точек, 13 сегментов: `100, 300, 100, 300, ...` — симметрично, показывает и ширину ребра и просвет
+- Это быстрее измерять рулеткой: не нужно делить на 2 чтобы найти центр
+- `delete_dimension` + `create_dimension` — рабочий паттерн для корректировки цепочек
+
 ### К реализации
-- `delete_dimension` — удалить конкретный `StraightDimensionSet` по ID
 - `add_dimension_point` — добавить точку в существующую цепочку. Публичный API (`StraightDimensionSet`) не имеет свойства `Points`. В UI такая возможность есть → искать в `Tekla.Structures.DrawingInternal` или внутренних сборках. Временный workaround: `delete_dimension` + `create_dimension` с новым набором точек.
 - Bbox текста размера как препятствие для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false` в `MarkOverlapResolver`
 - `get_part_openings(modelId, viewId)` — проёмы (двери/окна) в стенах: итерировать `part.GetBooleans()`, возвращать bbox каждого выреза в СК вида. Нужен для цепочек вида: ось → до проёма → ширина проёма → после проёма → ось
