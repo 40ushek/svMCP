@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -102,7 +102,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseFindDrawingsRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -126,7 +126,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -204,7 +204,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseExportDrawingsPdfRequest(args, defaultOutputDirectory);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -229,7 +229,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseFindDrawingsByPropertiesRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -261,7 +261,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseGaDrawingCreationRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -297,7 +297,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -315,7 +315,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -342,7 +342,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseSelectDrawingObjectsRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -368,7 +368,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseFilterDrawingObjectsRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -405,7 +405,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -495,7 +495,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseMoveViewRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -522,7 +522,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseSetViewScaleRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -595,7 +595,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
                 var api    = new TeklaDrawingDimensionsApi(_model);
@@ -614,7 +614,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseCreateDimensionRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -641,7 +641,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseDeleteDimensionRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -671,7 +671,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParsePartGeometryInViewRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
                 var pgApi    = new TeklaDrawingPartGeometryApi(_model);
@@ -697,7 +697,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseGridAxesRequest(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
                 var gaApi    = new TeklaDrawingGridApi();
@@ -756,7 +756,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseArrangeMarksGap(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
 
@@ -804,7 +804,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var parseResult = DrawingCommandParsers.ParseResolveMarkOverlapsMargin(args);
                 if (!parseResult.IsValid)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    WriteError(parseResult.Error);
                     return true;
                 }
                 var api    = new TeklaDrawingMarkApi(_model);
@@ -854,6 +854,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         return false;
     }
 
+    private void WriteError(string message)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new { error = message }));
+    }
+
     private void WriteDrawingCreationResult(DrawingCreationResult result)
     {
         _output.WriteLine(JsonSerializer.Serialize(new
@@ -879,3 +884,4 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     }
 
 }
+
