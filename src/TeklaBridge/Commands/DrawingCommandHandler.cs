@@ -82,11 +82,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleDrawingCatalogCommands(string command, string[] args)
     {
+        var api = new TeklaDrawingQueryApi();
+
         switch (command)
         {
             case "list_drawings":
             {
-                var api = new TeklaDrawingQueryApi();
                 var drawings = MapBasicDrawings(api.ListDrawings());
 
                 _output.WriteLine(JsonSerializer.Serialize(drawings));
@@ -102,7 +103,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingQueryApi();
                 var drawings = MapBasicDrawings(
                     api.FindDrawings(parseResult.Request.NameContains, parseResult.Request.MarkContains));
 
@@ -119,7 +119,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingQueryApi();
                 var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
                 if (!result.Found)
                 {
@@ -143,7 +142,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "close_drawing":
             {
-                var api = new TeklaDrawingQueryApi();
                 var result = api.CloseActiveDrawing();
                 if (!result.HasActiveDrawing)
                 {
@@ -181,7 +179,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingQueryApi();
                 var result = api.ExportDrawingsPdf(
                     parseResult.Request.RequestedGuids,
                     parseResult.Request.OutputDirectory);
@@ -206,7 +203,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingQueryApi();
                 var drawings = MapBasicDrawings(
                     api.FindDrawingsByProperties(parseResult.Request.Filters),
                     includeStatus: true);
