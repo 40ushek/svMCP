@@ -270,86 +270,98 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "select_drawing_objects":
-            {
-                var parseResult = DrawingCommandParsers.ParseSelectDrawingObjectsRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = GetInteractionApi().SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
-                if (result.SelectedDrawingObjectIds.Count == 0)
-                {
-                    WriteRawJson(NoMatchingModelIdsInDrawingErrorJson);
-                    return true;
-                }
-
-                WriteSelectDrawingObjectsResult(result);
-                return true;
-            }
+                return HandleSelectDrawingObjects(GetInteractionApi(), args);
 
             case "filter_drawing_objects":
-            {
-                var parseResult = DrawingCommandParsers.ParseFilterDrawingObjectsRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                if (!EnsureActiveDrawing())
-                {
-                    return true;
-                }
-
-                var result = GetInteractionApi().FilterObjects(
-                    parseResult.Request.ObjectType,
-                    parseResult.Request.SpecificType);
-                if (!result.IsKnownType)
-                {
-                    WriteUnknownDrawingTypeError(parseResult.Request.ObjectType);
-                    return true;
-                }
-
-                WriteFilterDrawingObjectsResult(result);
-                return true;
-            }
+                return HandleFilterDrawingObjects(GetInteractionApi(), args);
 
             case "set_mark_content":
-            {
-                var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                if (!EnsureActiveDrawing())
-                {
-                    return true;
-                }
-
-                var result = GetMarkApi().SetMarkContent(parseResult.Request);
-                WriteSetMarkContentResult(result);
-                return true;
-            }
+                return HandleSetMarkContent(GetMarkApi(), args);
 
             case "get_drawing_context":
-            {
-                if (!EnsureActiveDrawing())
-                {
-                    return true;
-                }
-
-                var result = GetInteractionApi().GetDrawingContext();
-                WriteDrawingContextResult(result);
-                return true;
-            }
+                return HandleGetDrawingContext(GetInteractionApi());
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleSelectDrawingObjects(TeklaDrawingInteractionApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseSelectDrawingObjectsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
+        if (result.SelectedDrawingObjectIds.Count == 0)
+        {
+            WriteRawJson(NoMatchingModelIdsInDrawingErrorJson);
+            return true;
+        }
+
+        WriteSelectDrawingObjectsResult(result);
+        return true;
+    }
+
+    private bool HandleFilterDrawingObjects(TeklaDrawingInteractionApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseFilterDrawingObjectsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var result = api.FilterObjects(
+            parseResult.Request.ObjectType,
+            parseResult.Request.SpecificType);
+        if (!result.IsKnownType)
+        {
+            WriteUnknownDrawingTypeError(parseResult.Request.ObjectType);
+            return true;
+        }
+
+        WriteFilterDrawingObjectsResult(result);
+        return true;
+    }
+
+    private bool HandleSetMarkContent(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var result = api.SetMarkContent(parseResult.Request);
+        WriteSetMarkContentResult(result);
+        return true;
+    }
+
+    private bool HandleGetDrawingContext(TeklaDrawingInteractionApi api)
+    {
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var result = api.GetDrawingContext();
+        WriteDrawingContextResult(result);
+        return true;
     }
 
     private bool TryHandleViewCommands(string command, string[] args)
