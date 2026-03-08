@@ -7,6 +7,16 @@ namespace TeklaMcpServer.Tools;
 public static partial class ModelTools
 {
     [McpServerTool, Description(
+        "Get geometry (bboxMin, bboxMax, startPoint, endPoint, axes) for ALL parts in a drawing view in a single call. " +
+        "Returns type, name, partPos, profile, material and full view-local coordinates for every part. " +
+        "Use instead of calling get_part_geometry_in_view N times — dramatically faster for dimension placement.")]
+    public static string GetAllPartsGeometryInView(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+    {
+        return RunBridge("get_all_parts_geometry_in_view", viewId.ToString());
+    }
+
+    [McpServerTool, Description(
         "Get the geometry of a model part (beam, plate, etc.) expressed in the coordinate system of a specific drawing view. " +
         "Returns start/end points, bounding box, and local axes — all in view-local coordinates (mm). " +
         "Use these coordinates to compute correct dimension points for create_dimension.")]

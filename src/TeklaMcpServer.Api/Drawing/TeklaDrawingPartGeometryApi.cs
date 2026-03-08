@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -14,6 +15,102 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
     public TeklaDrawingPartGeometryApi(Model model)
     {
         _model = model;
+    }
+
+    public List<PartGeometryInViewResult> GetAllPartsGeometryInView(int viewId)
+    {
+        var dh = new DrawingHandler();
+        var activeDrawing = dh.GetActiveDrawing();
+        if (activeDrawing == null)
+            return new List<PartGeometryInViewResult>();
+
+        View? view = null;
+        var viewEnum = activeDrawing.GetSheet().GetViews();
+        while (viewEnum.MoveNext())
+        {
+            if (viewEnum.Current is View v && v.GetIdentifier().ID == viewId)
+            {
+                view = v;
+                break;
+            }
+        }
+        if (view == null)
+            return new List<PartGeometryInViewResult>();
+
+        var workPlaneHandler = _model.GetWorkPlaneHandler();
+        var originalPlane    = workPlaneHandler.GetCurrentTransformationPlane();
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.DisplayCoordinateSystem));
+
+        var results = new List<PartGeometryInViewResult>();
+        try
+        {
+            var identifiers = dh.GetModelObjectIdentifiers(activeDrawing);
+            foreach (Tekla.Structures.Identifier id in identifiers)
+            {
+                var modelObj = _model.SelectModelObject(id);
+                if (modelObj == null) continue;
+
+                var modelId = id.ID;
+                double[] startPt = [], endPt = [], axisX = [], axisY = [];
+
+                if (modelObj is Beam beam)
+                {
+                    startPt = ToArray(beam.StartPoint);
+                    endPt   = ToArray(beam.EndPoint);
+                    var cs  = beam.GetCoordinateSystem();
+                    axisX   = ToArray(cs.AxisX);
+                    axisY   = ToArray(cs.AxisY);
+                }
+                else if (modelObj is ModelPart part)
+                {
+                    var cs = part.GetCoordinateSystem();
+                    startPt = ToArray(cs.Origin);
+                    axisX   = ToArray(cs.AxisX);
+                    axisY   = ToArray(cs.AxisY);
+                }
+
+                double[] bboxMin = [], bboxMax = [];
+                if (modelObj is ModelPart solidPart)
+                {
+                    var solid = solidPart.GetSolid();
+                    if (solid != null)
+                    {
+                        bboxMin = ToArray(solid.MinimumPoint);
+                        bboxMax = ToArray(solid.MaximumPoint);
+                    }
+                }
+
+                string typeName = modelObj.GetType().Name;
+                string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
+                modelObj.GetReportProperty("NAME",     ref name);
+                modelObj.GetReportProperty("PART_POS", ref partPos);
+                modelObj.GetReportProperty("PROFILE",  ref profile);
+                modelObj.GetReportProperty("MATERIAL", ref material);
+
+                results.Add(new PartGeometryInViewResult
+                {
+                    Success    = true,
+                    ViewId     = viewId,
+                    ModelId    = modelId,
+                    StartPoint = startPt,
+                    EndPoint   = endPt,
+                    AxisX      = axisX,
+                    AxisY      = axisY,
+                    BboxMin    = bboxMin,
+                    BboxMax    = bboxMax,
+                    Type       = typeName,
+                    Name       = name,
+                    PartPos    = partPos,
+                    Profile    = profile,
+                    Material   = material
+                });
+            }
+        }
+        finally
+        {
+            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+        }
+        return results;
     }
 
     public PartGeometryInViewResult GetPartGeometryInView(int viewId, int modelId)

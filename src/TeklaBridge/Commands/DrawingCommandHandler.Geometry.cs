@@ -19,6 +19,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_part_geometry_in_view":
                 return HandleGetPartGeometryInView(GetPartGeometryApi(), args);
 
+            case "get_all_parts_geometry_in_view":
+                return HandleGetAllPartsGeometryInView(GetPartGeometryApi(), args);
+
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
 
@@ -28,6 +31,37 @@ internal sealed partial class DrawingCommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetAllPartsGeometryInView(TeklaDrawingPartGeometryApi api, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_all_parts_geometry_in_view requires viewId argument");
+            return true;
+        }
+        var results = api.GetAllPartsGeometryInView(viewId);
+        WriteJson(new
+        {
+            viewId,
+            total = results.Count,
+            parts = results.Select(r => new
+            {
+                modelId    = r.ModelId,
+                type       = r.Type,
+                name       = r.Name,
+                partPos    = r.PartPos,
+                profile    = r.Profile,
+                material   = r.Material,
+                startPoint = r.StartPoint,
+                endPoint   = r.EndPoint,
+                axisX      = r.AxisX,
+                axisY      = r.AxisY,
+                bboxMin    = r.BboxMin,
+                bboxMax    = r.BboxMax
+            })
+        });
+        return true;
     }
 
     private bool HandleGetPartGeometryInView(TeklaDrawingPartGeometryApi api, string[] args)

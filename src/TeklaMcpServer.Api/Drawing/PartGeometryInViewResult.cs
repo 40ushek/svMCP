@@ -24,4 +24,11 @@ public sealed class PartGeometryInViewResult
 
     /// <summary>Solid bounding box maximum corner in view coordinate system (mm).</summary>
     public double[] BboxMax { get; set; } = [];
+
+    // Fields populated by GetAllPartsGeometryInView (not set by single-part call)
+    public string? Type     { get; set; }
+    public string? Name     { get; set; }
+    public string? PartPos  { get; set; }
+    public string? Profile  { get; set; }
+    public string? Material { get; set; }
 }
