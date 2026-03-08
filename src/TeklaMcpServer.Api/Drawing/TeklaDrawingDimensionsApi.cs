@@ -143,7 +143,9 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             _ => TryParseVector(direction) ?? new Vector(0, 1, 0)
         };
 
+#pragma warning disable CS0618 // Tekla 2021 API still uses this constructor in current workflow.
         var attr = new StraightDimensionSet.StraightDimensionSetAttributes();
+#pragma warning restore CS0618
         if (!string.IsNullOrWhiteSpace(attributesFile))
             attr.LoadAttributes(attributesFile);
 
@@ -212,8 +214,11 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     private static Vector? TryParseVector(string? s)
     {
-        if (string.IsNullOrWhiteSpace(s)) return null;
-        var parts = s.Split(',');
+        if (string.IsNullOrWhiteSpace(s))
+            return null;
+
+        var value = s!.Trim();
+        var parts = value.Split(',');
         if (parts.Length == 3 &&
             double.TryParse(parts[0], out var x) &&
             double.TryParse(parts[1], out var y) &&
