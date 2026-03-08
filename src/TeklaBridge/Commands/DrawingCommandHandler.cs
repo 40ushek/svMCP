@@ -90,7 +90,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             {
                 var drawings = MapBasicDrawings(api.ListDrawings());
 
-                _output.WriteLine(JsonSerializer.Serialize(drawings));
+                WriteDrawingsList(drawings);
                 return true;
             }
 
@@ -106,7 +106,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var drawings = MapBasicDrawings(
                     api.FindDrawings(parseResult.Request.NameContains, parseResult.Request.MarkContains));
 
-                _output.WriteLine(JsonSerializer.Serialize(drawings));
+                WriteDrawingsList(drawings);
                 return true;
             }
 
@@ -199,7 +199,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     api.FindDrawingsByProperties(parseResult.Request.Filters),
                     includeStatus: true);
 
-                _output.WriteLine(JsonSerializer.Serialize(drawings));
+                WriteDrawingsList(drawings);
                 return true;
             }
 
@@ -644,6 +644,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     private void WriteError(string message)
     {
         _output.WriteLine(JsonSerializer.Serialize(new { error = message }));
+    }
+
+    private void WriteDrawingsList(IEnumerable<object> drawings)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(drawings));
     }
 
     private void WriteDrawingCreationResult(DrawingCreationResult result)
