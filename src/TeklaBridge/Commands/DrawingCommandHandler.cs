@@ -226,21 +226,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "find_drawings_by_properties":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                var parseResult = DrawingCommandParsers.ParseFindDrawingsByPropertiesRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Missing filters JSON\"}");
-                    return true;
-                }
-
-                var filters = DrawingPropertyFilterParser.Parse(args[1]);
-                if (filters.Count == 0)
-                {
-                    _output.WriteLine("{\"error\":\"filtersJson must be a JSON array like [{\\\"property\\\":\\\"Name\\\",\\\"value\\\":\\\"GA\\\"}]\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingQueryApi();
-                var drawings = api.FindDrawingsByProperties(filters).Select(d => new
+                var drawings = api.FindDrawingsByProperties(parseResult.Request.Filters).Select(d => new
                 {
                     guid = d.Guid,
                     name = d.Name,

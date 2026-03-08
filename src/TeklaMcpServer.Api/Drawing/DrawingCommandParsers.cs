@@ -68,6 +68,24 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static FindDrawingsByPropertiesParseResult ParseFindDrawingsByPropertiesRequest(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+            return FindDrawingsByPropertiesParseResult.Fail("Missing filters JSON");
+
+        var filters = DrawingPropertyFilterParser.Parse(args[1]);
+        if (filters.Count == 0)
+        {
+            return FindDrawingsByPropertiesParseResult.Fail(
+                "filtersJson must be a JSON array like [{\\\"property\\\":\\\"Name\\\",\\\"value\\\":\\\"GA\\\"}]");
+        }
+
+        return FindDrawingsByPropertiesParseResult.Success(new FindDrawingsByPropertiesRequest
+        {
+            Filters = filters
+        });
+    }
+
     public static int? ParseOptionalViewId(string[] args, int index = 1)
     {
         if (args.Length > index && int.TryParse(args[index], out var viewId))
@@ -460,6 +478,24 @@ public sealed class ExportDrawingsPdfParseResult
         new() { IsValid = true, Request = request };
 
     public static ExportDrawingsPdfParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class FindDrawingsByPropertiesRequest
+{
+    public List<DrawingPropertyFilter> Filters { get; set; } = new();
+}
+
+public sealed class FindDrawingsByPropertiesParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public FindDrawingsByPropertiesRequest Request { get; private set; } = new();
+
+    public static FindDrawingsByPropertiesParseResult Success(FindDrawingsByPropertiesRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static FindDrawingsByPropertiesParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 
