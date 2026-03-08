@@ -78,6 +78,12 @@
 - `delete_dimension` + `create_dimension` — рабочий паттерн для пересоздания цепочек
 - **Общий (габаритный) размер ставить всегда** — даже если цепочка полная. Складывать сегменты в уме долго и ошибочно. Общий размер = быстрый однозначный ответ на вопрос "сколько всего".
 
+### Cumulative (нарастающий) тип размера
+- В Tekla есть тип "Straight" с нарастающим итогом: показывает и каждый сегмент, и суммарное расстояние от начала
+- Удобно для монтажа рулеткой: лента не двигается, просто отмечаешь 400, 800, 1200... и не считаешь в уме
+- **Реализация уже возможна**: сохранить стиль в Tekla UI (Dimension Properties → Straight type → cumulative → Save as `"cumulative"`), затем `create_dimension(..., attributesFile="cumulative")`
+- Альтернатива: установить программно через `StraightDimensionSetAttributes.DimensionType` — нужно проверить enum значения через reflection
+
 ### К реализации
 - `add_dimension_point` — добавить точку в существующую цепочку. Публичный API (`StraightDimensionSet`) не имеет свойства `Points`. В UI такая возможность есть → искать в `Tekla.Structures.DrawingInternal` или внутренних сборках. Временный workaround: `delete_dimension` + `create_dimension` с новым набором точек.
 - Bbox текста размера как препятствие для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false` в `MarkOverlapResolver`
