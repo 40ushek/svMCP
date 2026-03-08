@@ -294,38 +294,18 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_single_part_drawing":
             {
-                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var api = new TeklaDrawingCreationApi(_model);
-                var result = api.CreateSinglePartDrawing(
-                    parseResult.Request.ModelObjectId,
-                    parseResult.Request.DrawingProperties,
-                    parseResult.Request.OpenDrawing);
-                WriteDrawingCreationResult(result);
-                return true;
+                return TryCreateModelObjectDrawing(
+                    args,
+                    static (api, modelObjectId, drawingProperties, openDrawing) =>
+                        api.CreateSinglePartDrawing(modelObjectId, drawingProperties, openDrawing));
             }
 
             case "create_assembly_drawing":
             {
-                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var api = new TeklaDrawingCreationApi(_model);
-                var result = api.CreateAssemblyDrawing(
-                    parseResult.Request.ModelObjectId,
-                    parseResult.Request.DrawingProperties,
-                    parseResult.Request.OpenDrawing);
-                WriteDrawingCreationResult(result);
-                return true;
+                return TryCreateModelObjectDrawing(
+                    args,
+                    static (api, modelObjectId, drawingProperties, openDrawing) =>
+                        api.CreateAssemblyDrawing(modelObjectId, drawingProperties, openDrawing));
             }
 
             default:
@@ -852,6 +832,27 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
         _output.WriteLine(noActiveDrawingJson);
         return false;
+    }
+
+    private bool TryCreateModelObjectDrawing(
+        string[] args,
+        Func<TeklaDrawingCreationApi, int, string, bool, DrawingCreationResult> createDrawing)
+    {
+        var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var api = new TeklaDrawingCreationApi(_model);
+        var result = createDrawing(
+            api,
+            parseResult.Request.ModelObjectId,
+            parseResult.Request.DrawingProperties,
+            parseResult.Request.OpenDrawing);
+        WriteDrawingCreationResult(result);
+        return true;
     }
 
     private void WriteError(string message)
