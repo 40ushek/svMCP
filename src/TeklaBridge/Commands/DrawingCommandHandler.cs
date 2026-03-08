@@ -15,6 +15,8 @@ namespace TeklaBridge.Commands;
 
 internal sealed class DrawingCommandHandler : ICommandHandler
 {
+    private const string NoActiveDrawingErrorJson = "{\"error\":\"No drawing is currently open\"}";
+
     private readonly Model _model;
     private readonly TextWriter _output;
 
@@ -154,7 +156,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.CloseActiveDrawing();
                 if (!result.HasActiveDrawing)
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    _output.WriteLine(NoActiveDrawingErrorJson);
                     return true;
                 }
 
@@ -331,7 +333,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
+                if (!EnsureActiveDrawing())
                 {
                     return true;
                 }
@@ -367,7 +369,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
+                if (!EnsureActiveDrawing())
                 {
                     return true;
                 }
@@ -388,7 +390,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_context":
             {
-                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
+                if (!EnsureActiveDrawing())
                 {
                     return true;
                 }
@@ -809,6 +811,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
         _output.WriteLine(noActiveDrawingJson);
         return false;
+    }
+
+    private bool EnsureActiveDrawing()
+    {
+        return EnsureActiveDrawing(NoActiveDrawingErrorJson);
     }
 
     private bool TryCreateModelObjectDrawing(
