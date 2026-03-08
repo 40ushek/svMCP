@@ -414,22 +414,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             case "get_drawing_views":
             {
                 var result = api.GetViews();
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    sheetWidth  = result.SheetWidth,
-                    sheetHeight = result.SheetHeight,
-                    views       = result.Views.Select(v => new
-                    {
-                        id       = v.Id,
-                        viewType = v.ViewType,
-                        name     = v.Name,
-                        originX  = v.OriginX,
-                        originY  = v.OriginY,
-                        scale    = v.Scale,
-                        width    = v.Width,
-                        height   = v.Height
-                    })
-                }));
+                WriteGetDrawingViewsResult(result);
                 return true;
             }
 
@@ -447,15 +432,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.Dx,
                     parseResult.Request.Dy,
                     parseResult.Request.Absolute);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    moved      = result.Moved,
-                    viewId     = result.ViewId,
-                    oldOriginX = result.OldOriginX,
-                    oldOriginY = result.OldOriginY,
-                    newOriginX = result.NewOriginX,
-                    newOriginY = result.NewOriginY
-                }));
+                WriteMoveViewResult(result);
                 return true;
             }
 
@@ -469,12 +446,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var result = api.SetViewScale(parseResult.Request.ViewIds, parseResult.Request.Scale);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    updatedCount = result.UpdatedCount,
-                    updatedIds   = result.UpdatedIds,
-                    scale        = result.Scale
-                }));
+                WriteSetViewScaleResult(result);
                 return true;
             }
 
@@ -483,14 +455,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
 
                 var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    optimalScale = result.OptimalScale,
-                    sheetWidth   = result.SheetWidth,
-                    sheetHeight  = result.SheetHeight,
-                    arranged     = result.Arranged,
-                    views        = result.Views.Select(v => new { id = v.Id, viewType = v.ViewType, originX = v.OriginX, originY = v.OriginY })
-                }));
+                WriteFitViewsToSheetResult(result);
                 return true;
             }
 
@@ -872,6 +837,67 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 profile = p.Profile,
                 material = p.Material,
                 name = p.Name
+            })
+        }));
+    }
+
+    private void WriteGetDrawingViewsResult(DrawingViewsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            views = result.Views.Select(v => new
+            {
+                id = v.Id,
+                viewType = v.ViewType,
+                name = v.Name,
+                originX = v.OriginX,
+                originY = v.OriginY,
+                scale = v.Scale,
+                width = v.Width,
+                height = v.Height
+            })
+        }));
+    }
+
+    private void WriteMoveViewResult(MoveViewResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            moved = result.Moved,
+            viewId = result.ViewId,
+            oldOriginX = result.OldOriginX,
+            oldOriginY = result.OldOriginY,
+            newOriginX = result.NewOriginX,
+            newOriginY = result.NewOriginY
+        }));
+    }
+
+    private void WriteSetViewScaleResult(SetViewScaleResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            updatedCount = result.UpdatedCount,
+            updatedIds = result.UpdatedIds,
+            scale = result.Scale
+        }));
+    }
+
+    private void WriteFitViewsToSheetResult(FitViewsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            optimalScale = result.OptimalScale,
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            arranged = result.Arranged,
+            views = result.Views.Select(v => new
+            {
+                id = v.Id,
+                viewType = v.ViewType,
+                originX = v.OriginX,
+                originY = v.OriginY
             })
         }));
     }
