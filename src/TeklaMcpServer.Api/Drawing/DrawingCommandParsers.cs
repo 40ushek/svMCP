@@ -9,6 +9,35 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public static class DrawingCommandParsers
 {
+    public static FindDrawingsParseResult ParseFindDrawingsRequest(string[] args)
+    {
+        var nameContains = args.Length > 1 ? args[1] : string.Empty;
+        var markContains = args.Length > 2 ? args[2] : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(nameContains) && string.IsNullOrWhiteSpace(markContains))
+            return FindDrawingsParseResult.Fail("Provide at least one filter: nameContains or markContains");
+
+        return FindDrawingsParseResult.Success(new FindDrawingsRequest
+        {
+            NameContains = nameContains,
+            MarkContains = markContains
+        });
+    }
+
+    public static OpenDrawingParseResult ParseOpenDrawingRequest(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+            return OpenDrawingParseResult.Fail("Missing drawing GUID");
+
+        if (!Guid.TryParse(args[1], out var requestedGuid))
+            return OpenDrawingParseResult.Fail("Invalid drawing GUID format");
+
+        return OpenDrawingParseResult.Success(new OpenDrawingRequest
+        {
+            RequestedGuid = requestedGuid
+        });
+    }
+
     public static int? ParseOptionalViewId(string[] args, int index = 1)
     {
         if (args.Length > index && int.TryParse(args[index], out var viewId))
@@ -345,6 +374,43 @@ public sealed class SetMarkContentParseResult
         new() { IsValid = true, Request = request };
 
     public static SetMarkContentParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class FindDrawingsRequest
+{
+    public string NameContains { get; set; } = string.Empty;
+    public string MarkContains { get; set; } = string.Empty;
+}
+
+public sealed class FindDrawingsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public FindDrawingsRequest Request { get; private set; } = new();
+
+    public static FindDrawingsParseResult Success(FindDrawingsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static FindDrawingsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class OpenDrawingRequest
+{
+    public Guid RequestedGuid { get; set; }
+}
+
+public sealed class OpenDrawingParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public OpenDrawingRequest Request { get; private set; } = new();
+
+    public static OpenDrawingParseResult Success(OpenDrawingRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static OpenDrawingParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

@@ -99,17 +99,17 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "find_drawings":
             {
-                var nameContains = args.Length > 1 ? args[1] : string.Empty;
-                var markContains = args.Length > 2 ? args[2] : string.Empty;
-
-                if (string.IsNullOrWhiteSpace(nameContains) && string.IsNullOrWhiteSpace(markContains))
+                var parseResult = DrawingCommandParsers.ParseFindDrawingsRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Provide at least one filter: nameContains or markContains\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingQueryApi();
-                var drawings = api.FindDrawings(nameContains, markContains).Select(d => new
+                var drawings = api.FindDrawings(
+                    parseResult.Request.NameContains,
+                    parseResult.Request.MarkContains).Select(d => new
                 {
                     guid = d.Guid,
                     name = d.Name,
@@ -123,20 +123,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "open_drawing":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Missing drawing GUID\"}");
-                    return true;
-                }
-
-                if (!Guid.TryParse(args[1], out var requestedGuid))
-                {
-                    _output.WriteLine("{\"error\":\"Invalid drawing GUID format\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingQueryApi();
-                var result = api.OpenDrawing(requestedGuid);
+                var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
                 if (!result.Found)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
