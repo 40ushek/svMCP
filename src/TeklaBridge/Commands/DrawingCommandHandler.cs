@@ -484,6 +484,13 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleGeometryCommands(string command, string[] args)
     {
+        TeklaDrawingPartGeometryApi? partGeometryApi = null;
+        TeklaDrawingPartGeometryApi GetPartGeometryApi() => partGeometryApi ??= new TeklaDrawingPartGeometryApi(_model);
+        TeklaDrawingGridApi? gridApi = null;
+        TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
+        TeklaDrawingPartsApi? partsApi = null;
+        TeklaDrawingPartsApi GetPartsApi() => partsApi ??= new TeklaDrawingPartsApi(_model);
+
         switch (command)
         {
             case "get_part_geometry_in_view":
@@ -494,8 +501,9 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     WriteError(parseResult.Error);
                     return true;
                 }
-                var pgApi    = new TeklaDrawingPartGeometryApi(_model);
-                var pgResult = pgApi.GetPartGeometryInView(parseResult.Request.ViewId, parseResult.Request.ModelId);
+                var pgResult = GetPartGeometryApi().GetPartGeometryInView(
+                    parseResult.Request.ViewId,
+                    parseResult.Request.ModelId);
                 WritePartGeometryInViewResult(pgResult);
                 return true;
             }
@@ -508,16 +516,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     WriteError(parseResult.Error);
                     return true;
                 }
-                var gaApi    = new TeklaDrawingGridApi();
-                var gaResult = gaApi.GetGridAxes(parseResult.Request.ViewId);
+                var gaResult = GetGridApi().GetGridAxes(parseResult.Request.ViewId);
                 WriteGridAxesResult(gaResult);
                 return true;
             }
 
             case "get_drawing_parts":
             {
-                var api    = new TeklaDrawingPartsApi(_model);
-                var result = api.GetDrawingParts();
+                var result = GetPartsApi().GetDrawingParts();
                 WriteGetDrawingPartsResult(result);
                 return true;
             }
