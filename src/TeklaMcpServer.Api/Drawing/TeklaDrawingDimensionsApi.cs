@@ -196,6 +196,7 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
                     continue;
 
                 dimensionSet.Delete();
+                activeDrawing.CommitChanges();
                 deleted = true;
                 break;
             }
