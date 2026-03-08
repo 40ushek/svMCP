@@ -263,6 +263,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     {
         TeklaDrawingInteractionApi? interactionApi = null;
         TeklaDrawingInteractionApi GetInteractionApi() => interactionApi ??= new TeklaDrawingInteractionApi(_model);
+        TeklaDrawingMarkApi? markApi = null;
+        TeklaDrawingMarkApi GetMarkApi() => markApi ??= new TeklaDrawingMarkApi(_model);
 
         switch (command)
         {
@@ -327,8 +329,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingMarkApi(_model);
-                var result = api.SetMarkContent(parseResult.Request);
+                var result = GetMarkApi().SetMarkContent(parseResult.Request);
                 WriteSetMarkContentResult(result);
                 return true;
             }
