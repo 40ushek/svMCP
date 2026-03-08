@@ -411,11 +411,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleViewCommands(string command, string[] args)
     {
+        var api = new TeklaDrawingViewApi(_model);
+
         switch (command)
         {
             case "get_drawing_views":
             {
-                var api    = new TeklaDrawingViewApi(_model);
                 var result = api.GetViews();
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
@@ -445,7 +446,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api      = new TeklaDrawingViewApi(_model);
                 var result   = api.MoveView(
                     parseResult.Request.ViewId,
                     parseResult.Request.Dx,
@@ -472,7 +472,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api    = new TeklaDrawingViewApi(_model);
                 var result = api.SetViewScale(parseResult.Request.ViewIds, parseResult.Request.Scale);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
@@ -487,7 +486,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             {
                 var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
 
-                var api    = new TeklaDrawingViewApi(_model);
                 var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
