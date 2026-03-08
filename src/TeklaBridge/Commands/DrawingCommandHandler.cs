@@ -130,32 +130,21 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
                 if (!result.Found)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        error = "Drawing not found",
-                        guid = result.RequestedGuid
-                    }));
+                    WriteDrawingFailure("Drawing not found", result.RequestedGuid);
                     return true;
                 }
 
                 if (!result.Opened)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        error = "Failed to open drawing",
-                        guid = result.RequestedGuid
-                    }));
+                    WriteDrawingFailure("Failed to open drawing", result.RequestedGuid);
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    opened = true,
-                    guid = result.RequestedGuid,
-                    name = result.Drawing.Name,
-                    mark = result.Drawing.Mark,
-                    type = result.Drawing.Type
-                }));
+                WriteOpenedDrawing(
+                    result.RequestedGuid,
+                    result.Drawing.Name,
+                    result.Drawing.Mark,
+                    result.Drawing.Type);
                 return true;
             }
 
@@ -171,25 +160,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
                 if (!result.Closed)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        error = "Failed to close active drawing",
-                        guid = result.Drawing.Guid,
-                        name = result.Drawing.Name,
-                        mark = result.Drawing.Mark,
-                        type = result.Drawing.Type
-                    }));
+                    WriteDrawingFailure(
+                        "Failed to close active drawing",
+                        result.Drawing.Guid,
+                        result.Drawing.Name,
+                        result.Drawing.Mark,
+                        result.Drawing.Type);
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    closed = true,
-                    guid = result.Drawing.Guid,
-                    name = result.Drawing.Name,
-                    mark = result.Drawing.Mark,
-                    type = result.Drawing.Type
-                }));
+                WriteClosedDrawing(
+                    result.Drawing.Guid,
+                    result.Drawing.Name,
+                    result.Drawing.Mark,
+                    result.Drawing.Type);
                 return true;
             }
 
@@ -863,6 +847,56 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             drawingType = result.DrawingType,
             modelObjectId = result.ModelObjectId,
             drawingProperties = result.DrawingProperties
+        }));
+    }
+
+    private void WriteDrawingFailure(string error, string? guid)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            error,
+            guid
+        }));
+    }
+
+    private void WriteDrawingFailure(
+        string error,
+        string? guid,
+        string? name,
+        string? mark,
+        string? type)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            error,
+            guid,
+            name,
+            mark,
+            type
+        }));
+    }
+
+    private void WriteOpenedDrawing(string? guid, string? name, string? mark, string? type)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            opened = true,
+            guid,
+            name,
+            mark,
+            type
+        }));
+    }
+
+    private void WriteClosedDrawing(string? guid, string? name, string? mark, string? type)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            closed = true,
+            guid,
+            name,
+            mark,
+            type
         }));
     }
 
