@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Drawing.UI;
-using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Drawing;
 
