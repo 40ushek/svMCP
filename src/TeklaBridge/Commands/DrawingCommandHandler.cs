@@ -279,6 +279,9 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleDrawingInteractionCommands(string command, string[] args)
     {
+        TeklaDrawingInteractionApi? interactionApi = null;
+        TeklaDrawingInteractionApi GetInteractionApi() => interactionApi ??= new TeklaDrawingInteractionApi(_model);
+
         switch (command)
         {
             case "select_drawing_objects":
@@ -290,8 +293,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingInteractionApi(_model);
-                var result = api.SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
+                var result = GetInteractionApi().SelectObjectsByModelIds(parseResult.Request.TargetModelIds);
                 if (result.SelectedDrawingObjectIds.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"None of the specified model IDs were found in the active drawing\"}");
@@ -321,8 +323,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingInteractionApi(_model);
-                var result = api.FilterObjects(
+                var result = GetInteractionApi().FilterObjects(
                     parseResult.Request.ObjectType,
                     parseResult.Request.SpecificType);
                 if (!result.IsKnownType)
@@ -378,8 +379,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingInteractionApi(_model);
-                var result = api.GetDrawingContext();
+                var result = GetInteractionApi().GetDrawingContext();
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     drawing = new
