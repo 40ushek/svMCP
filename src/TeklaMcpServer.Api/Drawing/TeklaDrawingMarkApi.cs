@@ -335,6 +335,125 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         }
     }
 
+    public SetMarkContentResult SetMarkContent(SetMarkContentRequest request)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var result = new SetMarkContentResult();
+        var targetIds = new HashSet<int>(request.TargetIds ?? Array.Empty<int>());
+        var requestedContentElements = request.RequestedContentElements ?? Array.Empty<string>();
+        var parsedColor = (DrawingColors)request.FontColorValue;
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            var drawingObjects = activeDrawing.GetSheet().GetAllObjects();
+            while (drawingObjects.MoveNext())
+            {
+                if (drawingObjects.Current is not Mark mark)
+                    continue;
+
+                var drawingId = mark.GetIdentifier().ID;
+                var matches = targetIds.Contains(drawingId);
+
+                if (!matches)
+                {
+                    var related = mark.GetRelatedObjects();
+                    while (related.MoveNext())
+                    {
+                        if (related.Current is Tekla.Structures.Drawing.ModelObject relatedModelObject &&
+                            targetIds.Contains(relatedModelObject.ModelIdentifier.ID))
+                        {
+                            matches = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!matches)
+                    continue;
+
+                try
+                {
+                    var content = mark.Attributes.Content;
+                    var existingFont = default(FontAttributes);
+                    var contentEnumerator = content.GetEnumerator();
+                    if (contentEnumerator.MoveNext() && contentEnumerator.Current is PropertyElement existingProperty && existingProperty.Font != null)
+                        existingFont = (FontAttributes)existingProperty.Font.Clone();
+
+                    var newFont = existingFont != null ? (FontAttributes)existingFont.Clone() : new FontAttributes();
+                    var fontChanged = false;
+
+                    if (request.UpdateFontName && !string.Equals(newFont.Name, request.FontName, StringComparison.Ordinal))
+                    {
+                        newFont.Name = request.FontName;
+                        fontChanged = true;
+                    }
+
+                    if (request.UpdateFontHeight && Math.Abs(newFont.Height - request.FontHeight) > 0.01)
+                    {
+                        newFont.Height = request.FontHeight;
+                        fontChanged = true;
+                    }
+
+                    if (request.UpdateFontColor && newFont.Color != parsedColor)
+                    {
+                        newFont.Color = parsedColor;
+                        fontChanged = true;
+                    }
+
+                    if (request.UpdateContent)
+                    {
+                        content.Clear();
+                        foreach (var attribute in requestedContentElements)
+                        {
+                            var element = CreateSetMarkContentPropertyElement(attribute);
+                            if (element == null)
+                            {
+                                result.Errors.Add($"Object {drawingId}: unsupported content attribute '{attribute}'.");
+                                continue;
+                            }
+
+                            element.Font = (FontAttributes)newFont.Clone();
+                            content.Add(element);
+                        }
+                    }
+                    else if (fontChanged)
+                    {
+                        var existingElements = content.GetEnumerator();
+                        while (existingElements.MoveNext())
+                        {
+                            if (existingElements.Current is PropertyElement propElement)
+                                propElement.Font = (FontAttributes)newFont.Clone();
+                        }
+                    }
+
+                    if (mark.Modify())
+                        result.UpdatedObjectIds.Add(drawingId);
+                    else
+                        result.FailedObjectIds.Add(drawingId);
+                }
+                catch (Exception markEx)
+                {
+                    result.FailedObjectIds.Add(drawingId);
+                    result.Errors.Add($"Object {drawingId}: {markEx.Message}");
+                }
+            }
+
+            if (result.UpdatedObjectIds.Count > 0)
+                activeDrawing.CommitChanges("(MCP) SetMarkContent");
+
+            return result;
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     private static PropertyElement? CreatePropertyElement(string attributeName) =>
         (attributeName ?? string.Empty).Trim().ToUpperInvariant() switch
         {
@@ -351,6 +470,24 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
             "SIZE"   => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Size()),
             "CAMBER" => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Camber()),
             _        => null
+        };
+
+    private static PropertyElement? CreateSetMarkContentPropertyElement(string attributeName) =>
+        (attributeName ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "PART_POS" or "PARTPOSITION"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.PartPosition()),
+            "PROFILE" or "PART_PROFILE"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Profile()),
+            "MATERIAL" or "PART_MATERIAL"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Material()),
+            "ASSEMBLY_POS" or "PART_PREFIX" or "ASSEMBLYPOSITION"
+                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.AssemblyPosition()),
+            "NAME"     => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Name()),
+            "CLASS"    => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Class()),
+            "SIZE"     => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Size()),
+            "CAMBER"   => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Camber()),
+            _          => null
         };
 
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)

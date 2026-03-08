@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -30,22 +29,69 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "list_drawings":
-            {
-                var drawingHandler = new DrawingHandler();
-                var drawingEnumerator = drawingHandler.GetDrawings();
-                var drawings = new List<object>();
+            case "find_drawings":
+            case "open_drawing":
+            case "close_drawing":
+            case "export_drawings_pdf":
+            case "find_drawings_by_properties":
+                return TryHandleDrawingCatalogCommands(command, args);
 
-                while (drawingEnumerator.MoveNext())
+            case "create_ga_drawing":
+            case "create_single_part_drawing":
+            case "create_assembly_drawing":
+                return TryHandleDrawingCreationCommands(command, args);
+
+            case "select_drawing_objects":
+            case "filter_drawing_objects":
+            case "set_mark_content":
+            case "get_drawing_context":
+                return TryHandleDrawingInteractionCommands(command, args);
+
+            case "get_drawing_views":
+            case "move_view":
+            case "set_view_scale":
+            case "fit_views_to_sheet":
+                return TryHandleViewCommands(command, args);
+
+            case "get_drawing_dimensions":
+            case "move_dimension":
+            case "create_dimension":
+            case "delete_dimension":
+                return TryHandleDimensionCommands(command, args);
+
+            case "get_part_geometry_in_view":
+            case "get_grid_axes":
+            case "get_drawing_parts":
+                return TryHandleGeometryCommands(command, args);
+
+            case "arrange_marks":
+            case "create_part_marks":
+            case "delete_all_marks":
+            case "resolve_mark_overlaps":
+            case "get_drawing_marks":
+                return TryHandleMarkCommands(command, args);
+
+            default:
+                return false;
+        }
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────
+
+    private bool TryHandleDrawingCatalogCommands(string command, string[] args)
+    {
+        switch (command)
+        {
+            case "list_drawings":
+            {
+                var api = new TeklaDrawingQueryApi();
+                var drawings = api.ListDrawings().Select(d => new
                 {
-                    var drawing = drawingEnumerator.Current;
-                    drawings.Add(new
-                    {
-                        guid = drawing.GetIdentifier().GUID.ToString(),
-                        name = drawing.Name,
-                        mark = drawing.Mark,
-                        type = drawing.GetType().Name
-                    });
-                }
+                    guid = d.Guid,
+                    name = d.Name,
+                    mark = d.Mark,
+                    type = d.Type
+                });
 
                 _output.WriteLine(JsonSerializer.Serialize(drawings));
                 return true;
@@ -62,24 +108,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var drawingEnumerator = drawingHandler.GetDrawings();
-                var drawings = new List<object>();
-
-                while (drawingEnumerator.MoveNext())
+                var api = new TeklaDrawingQueryApi();
+                var drawings = api.FindDrawings(nameContains, markContains).Select(d => new
                 {
-                    var drawing = drawingEnumerator.Current;
-                    if (!ContainsIgnoreCase(drawing.Name, nameContains)) continue;
-                    if (!ContainsIgnoreCase(drawing.Mark, markContains)) continue;
-
-                    drawings.Add(new
-                    {
-                        guid = drawing.GetIdentifier().GUID.ToString(),
-                        name = drawing.Name,
-                        mark = drawing.Mark,
-                        type = drawing.GetType().Name
-                    });
-                }
+                    guid = d.Guid,
+                    name = d.Name,
+                    mark = d.Mark,
+                    type = d.Type
+                });
 
                 _output.WriteLine(JsonSerializer.Serialize(drawings));
                 return true;
@@ -269,29 +305,29 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var drawingEnumerator = drawingHandler.GetDrawings();
-                var drawings = new List<object>();
-
-                while (drawingEnumerator.MoveNext())
+                var api = new TeklaDrawingQueryApi();
+                var drawings = api.FindDrawingsByProperties(filters).Select(d => new
                 {
-                    var drawing = drawingEnumerator.Current;
-                    if (!MatchesAllFilters(drawing, filters)) continue;
-
-                    drawings.Add(new
-                    {
-                        guid = drawing.GetIdentifier().GUID.ToString(),
-                        name = drawing.Name,
-                        mark = drawing.Mark,
-                        type = drawing.GetType().Name,
-                        status = drawing.UpToDateStatus.ToString()
-                    });
-                }
+                    guid = d.Guid,
+                    name = d.Name,
+                    mark = d.Mark,
+                    type = d.Type,
+                    status = d.Status
+                });
 
                 _output.WriteLine(JsonSerializer.Serialize(drawings));
                 return true;
             }
 
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleDrawingCreationCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "create_ga_drawing":
             {
                 var drawingProperties = args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]) ? args[1] : "standard";
@@ -370,18 +406,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleDrawingInteractionCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "select_drawing_objects":
             {
                 if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
                 {
                     _output.WriteLine("{\"error\":\"Missing model object IDs. Use comma-separated IDs.\"}");
-                    return true;
-                }
-
-                var activeDrawing = new DrawingHandler().GetActiveDrawing();
-                if (activeDrawing == null)
-                {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
@@ -392,33 +430,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingObjectsToSelect = new ArrayList();
-                var selectedDrawingObjectIds = new List<int>();
-                var selectedModelIds = new List<int>();
-                var allDrawingObjects = activeDrawing.GetSheet().GetAllObjects();
-                while (allDrawingObjects.MoveNext())
-                {
-                    if (allDrawingObjects.Current is Tekla.Structures.Drawing.ModelObject drawingModelObject &&
-                        targetModelIds.Contains(drawingModelObject.ModelIdentifier.ID))
-                    {
-                        drawingObjectsToSelect.Add(drawingModelObject);
-                        selectedDrawingObjectIds.Add(drawingModelObject.GetIdentifier().ID);
-                        selectedModelIds.Add(drawingModelObject.ModelIdentifier.ID);
-                    }
-                }
-
-                if (drawingObjectsToSelect.Count == 0)
+                var api = new TeklaDrawingInteractionApi(_model);
+                var result = api.SelectObjectsByModelIds(targetModelIds.ToList());
+                if (result.SelectedDrawingObjectIds.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"None of the specified model IDs were found in the active drawing\"}");
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var selector = drawingHandler.GetDrawingObjectSelector();
-                selector.SelectObjects(drawingObjectsToSelect, false);
-                activeDrawing.CommitChanges("(MCP) SelectDrawingObjects");
-
-                _output.WriteLine(JsonSerializer.Serialize(new { selectedCount = drawingObjectsToSelect.Count, selectedDrawingObjectIds, selectedModelIds }));
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    selectedCount = result.SelectedDrawingObjectIds.Count,
+                    selectedDrawingObjectIds = result.SelectedDrawingObjectIds,
+                    selectedModelIds = result.SelectedModelIds
+                }));
                 return true;
             }
 
@@ -432,8 +457,17 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
                 var objectType = args[1];
                 var specificType = args.Length > 2 ? args[2] : string.Empty;
-                var targetType = ResolveDrawingType(objectType);
-                if (targetType == null)
+
+                var drawingHandler = new DrawingHandler();
+                if (drawingHandler.GetActiveDrawing() == null)
+                {
+                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
+                    return true;
+                }
+
+                var api = new TeklaDrawingInteractionApi(_model);
+                var result = api.FilterObjects(objectType, specificType);
+                if (!result.IsKnownType)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
                     {
@@ -443,36 +477,12 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                _output.WriteLine(JsonSerializer.Serialize(result.Objects.Select(x => new
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
-                    return true;
-                }
-
-                var results = new List<object>();
-                var drawingObjects = activeDrawing.GetSheet().GetAllObjects();
-                while (drawingObjects.MoveNext())
-                {
-                    var drawingObject = drawingObjects.Current;
-                    if (drawingObject == null || !targetType.IsInstanceOfType(drawingObject)) continue;
-
-                    if (drawingObject is Mark mark && !string.IsNullOrWhiteSpace(specificType))
-                    {
-                        var markType = GetMarkType(mark);
-                        if (!string.Equals(markType, specificType, StringComparison.OrdinalIgnoreCase)) continue;
-                    }
-
-                    results.Add(new
-                    {
-                        id = drawingObject.GetIdentifier().ID,
-                        type = drawingObject.GetType().Name,
-                        modelId = drawingObject is Tekla.Structures.Drawing.ModelObject dm ? dm.ModelIdentifier.ID : (int?)null
-                    });
-                }
-
-                _output.WriteLine(JsonSerializer.Serialize(results));
+                    id = x.Id,
+                    type = x.Type,
+                    modelId = x.ModelId
+                })));
                 return true;
             }
 
@@ -534,125 +544,72 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var updatedObjectIds = new List<int>();
-                var failedObjectIds = new List<int>();
-                var errors = new List<string>();
-                var drawingObjects = activeDrawing.GetSheet().GetAllObjects();
-                while (drawingObjects.MoveNext())
+                var api = new TeklaDrawingMarkApi(_model);
+                var result = api.SetMarkContent(new SetMarkContentRequest
                 {
-                    if (drawingObjects.Current is not Mark mark) continue;
+                    TargetIds = targetIds.ToList(),
+                    RequestedContentElements = requestedContentElements,
+                    UpdateContent = updateContent,
+                    UpdateFontName = updateFontName,
+                    FontName = fontName,
+                    UpdateFontColor = updateFontColor,
+                    FontColorValue = (int)parsedColor,
+                    UpdateFontHeight = updateFontHeight,
+                    FontHeight = parsedFontHeight
+                });
 
-                    var drawingId = mark.GetIdentifier().ID;
-                    var matches = targetIds.Contains(drawingId);
-
-                    if (!matches)
-                    {
-                        var related = mark.GetRelatedObjects();
-                        while (related.MoveNext())
-                        {
-                            if (related.Current is Tekla.Structures.Drawing.ModelObject relatedModelObject &&
-                                targetIds.Contains(relatedModelObject.ModelIdentifier.ID))
-                            {
-                                matches = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!matches) continue;
-
-                    try
-                    {
-                        var content = mark.Attributes.Content;
-                        var existingFont = default(FontAttributes);
-                        var contentEnumerator = content.GetEnumerator();
-                        if (contentEnumerator.MoveNext() && contentEnumerator.Current is PropertyElement existingProperty && existingProperty.Font != null)
-                            existingFont = (FontAttributes)existingProperty.Font.Clone();
-
-                        var newFont = existingFont != null ? (FontAttributes)existingFont.Clone() : new FontAttributes();
-                        var fontChanged = false;
-
-                        if (updateFontName && !string.Equals(newFont.Name, fontName, StringComparison.Ordinal)) { newFont.Name = fontName; fontChanged = true; }
-                        if (updateFontHeight && Math.Abs(newFont.Height - parsedFontHeight) > 0.01) { newFont.Height = parsedFontHeight; fontChanged = true; }
-                        if (updateFontColor && newFont.Color != parsedColor) { newFont.Color = parsedColor; fontChanged = true; }
-
-                        if (updateContent)
-                        {
-                            content.Clear();
-                            foreach (var attribute in requestedContentElements)
-                            {
-                                var element = CreateMarkPropertyElement(attribute);
-                                if (element == null) { errors.Add($"Object {drawingId}: unsupported content attribute '{attribute}'."); continue; }
-                                element.Font = (FontAttributes)newFont.Clone();
-                                content.Add(element);
-                            }
-                        }
-                        else if (fontChanged)
-                        {
-                            var existingElements = content.GetEnumerator();
-                            while (existingElements.MoveNext())
-                                if (existingElements.Current is PropertyElement propElement)
-                                    propElement.Font = (FontAttributes)newFont.Clone();
-                        }
-
-                        if (mark.Modify()) updatedObjectIds.Add(drawingId);
-                        else failedObjectIds.Add(drawingId);
-                    }
-                    catch (Exception markEx)
-                    {
-                        failedObjectIds.Add(drawingId);
-                        errors.Add($"Object {drawingId}: {markEx.Message}");
-                    }
-                }
-
-                if (updatedObjectIds.Count > 0)
-                    activeDrawing.CommitChanges("(MCP) SetMarkContent");
-
-                _output.WriteLine(JsonSerializer.Serialize(new { updatedCount = updatedObjectIds.Count, failedCount = failedObjectIds.Count, updatedObjectIds, failedObjectIds, errors }));
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    updatedCount = result.UpdatedObjectIds.Count,
+                    failedCount = result.FailedObjectIds.Count,
+                    updatedObjectIds = result.UpdatedObjectIds,
+                    failedObjectIds = result.FailedObjectIds,
+                    errors = result.Errors
+                }));
                 return true;
             }
 
             case "get_drawing_context":
             {
                 var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                if (drawingHandler.GetActiveDrawing() == null)
                 {
                     _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
-                var selectedObjects = new List<object>();
-                var selector = drawingHandler.GetDrawingObjectSelector();
-                var selected = selector.GetSelected();
-                while (selected.MoveNext())
-                {
-                    var selectedObject = selected.Current;
-                    if (selectedObject == null) continue;
-                    selectedObjects.Add(new
-                    {
-                        id = selectedObject.GetIdentifier().ID,
-                        type = selectedObject.GetType().Name,
-                        modelId = selectedObject is Tekla.Structures.Drawing.ModelObject dm ? dm.ModelIdentifier.ID : (int?)null
-                    });
-                }
-
+                var api = new TeklaDrawingInteractionApi(_model);
+                var result = api.GetDrawingContext();
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     drawing = new
                     {
-                        guid = activeDrawing.GetIdentifier().GUID.ToString(),
-                        name = activeDrawing.Name,
-                        mark = activeDrawing.Mark,
-                        type = activeDrawing.GetType().Name,
-                        status = activeDrawing.UpToDateStatus.ToString()
+                        guid = result.Drawing.Guid,
+                        name = result.Drawing.Name,
+                        mark = result.Drawing.Mark,
+                        type = result.Drawing.Type,
+                        status = result.Drawing.Status
                     },
-                    selectedCount = selectedObjects.Count,
-                    selectedObjects
+                    selectedCount = result.SelectedObjects.Count,
+                    selectedObjects = result.SelectedObjects.Select(x => new
+                    {
+                        id = x.Id,
+                        type = x.Type,
+                        modelId = x.ModelId
+                    })
                 }));
                 return true;
             }
 
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleViewCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "get_drawing_views":
             {
                 var api    = new TeklaDrawingViewApi(_model);
@@ -744,6 +701,34 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            case "fit_views_to_sheet":
+            {
+                var margin      = args.Length > 1 && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var m)  ? m  : 10.0;
+                var gap         = args.Length > 2 && double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)  ? g  : 8.0;
+                var titleBlockH = args.Length > 3 && double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var tb) ? tb : 0.0;
+
+                var api    = new TeklaDrawingViewApi(_model);
+                var result = api.FitViewsToSheet(margin, gap, titleBlockH);
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    optimalScale = result.OptimalScale,
+                    sheetWidth   = result.SheetWidth,
+                    sheetHeight  = result.SheetHeight,
+                    arranged     = result.Arranged,
+                    views        = result.Views.Select(v => new { id = v.Id, viewType = v.ViewType, originX = v.OriginX, originY = v.OriginY })
+                }));
+                return true;
+            }
+
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleDimensionCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "get_drawing_dimensions":
             {
                 int? viewId = null;
@@ -857,6 +842,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleGeometryCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "get_part_geometry_in_view":
             {
                 // args: viewId, modelId
@@ -934,6 +928,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
+            default:
+                return false;
+        }
+    }
+
+    private bool TryHandleMarkCommands(string command, string[] args)
+    {
+        switch (command)
+        {
             case "arrange_marks":
             {
                 double gap = 2.0;
@@ -1064,47 +1067,9 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return true;
             }
 
-            case "fit_views_to_sheet":
-            {
-                var margin      = args.Length > 1 && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var m)  ? m  : 10.0;
-                var gap         = args.Length > 2 && double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)  ? g  : 8.0;
-                var titleBlockH = args.Length > 3 && double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var tb) ? tb : 0.0;
-
-                var api    = new TeklaDrawingViewApi(_model);
-                var result = api.FitViewsToSheet(margin, gap, titleBlockH);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    optimalScale = result.OptimalScale,
-                    sheetWidth   = result.SheetWidth,
-                    sheetHeight  = result.SheetHeight,
-                    arranged     = result.Arranged,
-                    views        = result.Views.Select(v => new { id = v.Id, viewType = v.ViewType, originX = v.OriginX, originY = v.OriginY })
-                }));
-                return true;
-            }
-
             default:
                 return false;
         }
-    }
-
-    // ── Private helpers ────────────────────────────────────────────────────
-
-    private sealed class DrawingPropertyFilter
-    {
-        public string Property { get; set; } = string.Empty;
-        public string Value { get; set; } = string.Empty;
-    }
-
-    private static bool ContainsIgnoreCase(string? source, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return true;
-
-        if (string.IsNullOrWhiteSpace(source))
-            return false;
-
-        return source!.IndexOf(value!, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     private static string SanitizeFileName(string value)
@@ -1147,69 +1112,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         }
         catch { }
         return result;
-    }
-
-    private static bool MatchesAllFilters(Drawing drawing, List<DrawingPropertyFilter> filters)
-    {
-        foreach (var filter in filters)
-        {
-            var key = filter.Property.Trim().ToLowerInvariant();
-            var value = filter.Value ?? string.Empty;
-            var match = key switch
-            {
-                "name"   => string.Equals(drawing.Name ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
-                "mark"   => string.Equals(drawing.Mark ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
-                "type"   => string.Equals(drawing.GetType().Name, value, StringComparison.OrdinalIgnoreCase),
-                "status" => string.Equals(drawing.UpToDateStatus.ToString(), value, StringComparison.OrdinalIgnoreCase),
-                _        => false
-            };
-            if (!match) return false;
-        }
-        return true;
-    }
-
-    private static Type? ResolveDrawingType(string objectType)
-    {
-        if (string.IsNullOrWhiteSpace(objectType)) return null;
-        return Type.GetType($"Tekla.Structures.Drawing.{objectType}, Tekla.Structures.Drawing", false, true);
-    }
-
-    private string GetMarkType(Mark mark)
-    {
-        var associatedObjects = mark.GetRelatedObjects();
-        foreach (object associated in associatedObjects)
-        {
-            if (associated is not Tekla.Structures.Drawing.ModelObject drawingModelObject) continue;
-            var modelObject = _model.SelectModelObject(drawingModelObject.ModelIdentifier);
-            if (modelObject == null) continue;
-            if (modelObject is Tekla.Structures.Model.Part) return "Part Mark";
-            if (modelObject is BoltGroup) return "Bolt Mark";
-            if (modelObject is RebarGroup || modelObject is SingleRebar) return "Reinforcement Mark";
-            if (modelObject is Tekla.Structures.Model.Weld) return "Weld Mark";
-            if (modelObject is Assembly) return "Assembly Mark";
-            if (modelObject is Tekla.Structures.Model.Connection) return "Connection Mark";
-        }
-        return "Unknown Mark Type";
-    }
-
-    private static PropertyElement? CreateMarkPropertyElement(string attributeName)
-    {
-        return (attributeName ?? string.Empty).Trim().ToUpperInvariant() switch
-        {
-            "PART_POS" or "PARTPOSITION"
-                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.PartPosition()),
-            "PROFILE" or "PART_PROFILE"
-                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Profile()),
-            "MATERIAL" or "PART_MATERIAL"
-                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Material()),
-            "ASSEMBLY_POS" or "PART_PREFIX" or "ASSEMBLYPOSITION"
-                => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.AssemblyPosition()),
-            "NAME"     => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Name()),
-            "CLASS"    => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Class()),
-            "SIZE"     => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Size()),
-            "CAMBER"   => new PropertyElement(PropertyElement.PropertyElementType.PartMarkPropertyElementTypes.Camber()),
-            _          => null
-        };
     }
 
     private static bool CreateGaDrawingViaMacro(string viewName, string gaAttribute, bool openGaDrawing, out string error)
@@ -1284,4 +1186,3 @@ $@"
         }
     }
 }
-

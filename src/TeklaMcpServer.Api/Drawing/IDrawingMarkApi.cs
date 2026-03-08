@@ -11,4 +11,5 @@ public interface IDrawingMarkApi
     ResolveMarksResult ArrangeMarks(double gap);
 
     CreateMarksResult CreatePartMarks(string contentAttributesCsv, string markAttributesFile, string frameType, string arrowheadType);
+    SetMarkContentResult SetMarkContent(SetMarkContentRequest request);
 }
