@@ -628,6 +628,21 @@ sealed class PersistentBridge : IDisposable
 
 ---
 
+### Точки интеграции в реальном коде
+
+**Важно:** кодовый пример выше упрощён для иллюстрации. Реальная архитектура `Program.cs`:
+
+```
+args[0] == "--loop"  →  новый persistent loop (см. ниже)
+args[0] == "check_connection"  →  special-case: только new Model(), без CommandDispatcher
+иначе  →  new Model() → new CommandDispatcher(model, realOut) → dispatcher.Dispatch(command, args)
+```
+
+Persistent loop должен оборачивать `CommandDispatcher`, а не `DrawingCommandHandler` напрямую.
+`check_connection` внутри loop тоже обрабатывается — но без выхода из процесса.
+
+Флаг запуска: **`--loop`**, а не "пустые args". Текущий `Program.cs:48-52` трактует пустые args как ошибку (`{"error":"No command specified"}`). Явный флаг проще отлаживать, логировать и не ломает текущую обратную совместимость.
+
 ### Порядок реализации
 
 ```
@@ -638,20 +653,22 @@ sealed class PersistentBridge : IDisposable
    Проверяем: валидный JSON + ключевые поля в ответе.
    Без этого сломать что-то тихо — очень просто.
 
-1. TeklaBridge: loop-режим + жёсткая stdout-дисциплина
-   - args пустые = stdin loop; args не пустые = старый one-shot (обратная совместимость)
+1. TeklaBridge/Program.cs: добавить ветку --loop
+   - if (args[0] == "--loop") → RunPersistentLoop(realOut)
+   - RunPersistentLoop: SetOut(teklaLog) → new Model() → new CommandDispatcher(...)
+     → while ReadLine() → dispatch → write response JSON → flush
    - stdout только для протокольных строк, всё остальное в stderr / файл
-   - Файл: TeklaBridge/Program.cs
-   - Объём: ~30 строк
+   - Объём: ~40 строк
 
-2. PersistentBridge: singleton с EnsureStarted + Send + авторестарт
+2. TeklaMcpServer/PersistentBridge.cs (новый файл)
+   - Singleton, запускает TeklaBridge.exe --loop
+   - EnsureStarted() + Send() + KillProcess() + авторестарт
    - Таймаут чтения stdout: 30 сек → KillProcess() → throw
-   - KillProcess() вызывается и при любом Exception в Send()
-   - Файл: TeklaMcpServer/PersistentBridge.cs (новый)
+   - SemaphoreSlim(1) — один запрос за раз
    - Объём: ~80 строк
 
-3. RunBridge(): заменить Process.Start на PersistentBridge.Instance.Send
-   - Файл: TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs
+3. TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs
+   - RunBridge(): заменить Process.Start на PersistentBridge.Instance.Send
    - Объём: ~10 строк изменений
 
 4. Прогнать регрессионные тесты из шага 0 — все должны пройти
@@ -660,7 +677,7 @@ sealed class PersistentBridge : IDisposable
    Ожидаемое время: < 500 мс суммарно (vs ~25 секунд сейчас)
 ```
 
-**Оценка объёма:** ~120 строк кода + тесты, ~1 день с тестами.
+**Оценка объёма:** ~130 строк кода + тесты, ~1 день с тестами.
 **Приоритет: ВЫСОКИЙ** — без этого инструмент непригоден для реального использования.
 **Предусловие:** сначала baseline-тесты (шаг 0), потом рефакторинг.
 
