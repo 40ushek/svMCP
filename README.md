@@ -139,6 +139,8 @@ src/
 | `list_drawings` | Список всех чертежей модели |
 | `find_drawings` | Поиск по имени и/или марке (contains, без учёта регистра) |
 | `find_drawings_by_properties` | Поиск по нескольким свойствам (JSON-фильтры) |
+| `open_drawing` | Открыть (активировать) чертёж по GUID |
+| `close_drawing` | Закрыть активный чертёж |
 | `export_drawings_to_pdf` | Экспорт чертежей в PDF по GUID |
 | `create_general_arrangement_drawing` | Legacy workaround: создать GA-чертёж из сохранённого вида модели через макрос |
 | `create_single_part_drawing` | Создать Single Part drawing через Tekla Open API |
@@ -152,9 +154,15 @@ src/
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
 | `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
 | `get_drawing_marks` | Прочитать марки: позиция, bbox текстового блока, перекрытия, содержимое PropertyElement; фильтрация по виду |
+| `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
+| `delete_all_marks` | Удалить все марки на активном чертеже |
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, distance, координаты сегментов |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
+| `create_dimension` | Создать `StraightDimensionSet` по набору точек |
+| `delete_dimension` | Удалить `StraightDimensionSet` по ID |
+| `get_part_geometry_in_view` | Получить геометрию детали (bbox, start/end, оси) в локальной СК вида |
+| `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
 | `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок внутри каждого вида — минимальные локальные сдвиги |
 | `arrange_marks` | Полная автоматическая расстановка марок внутри каждого вида вокруг anchor point |
 
@@ -408,7 +416,7 @@ Run a NuGet restore to generate this file.
 
 **Решение**:
 ```bash
-dotnet restore src/TeklaMcpServer/TeklaBridge/TeklaBridge.csproj
+dotnet restore src/TeklaBridge/TeklaBridge.csproj
 dotnet build ...
 ```
 

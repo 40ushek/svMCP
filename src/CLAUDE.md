@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 
 # Bridge-only rebuild (no need to close Claude Desktop)
-dotnet build src/TeklaMcpServer/TeklaBridge/TeklaBridge.csproj -c Release
+dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 ```
 
 - Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2021 (Windows only)
@@ -64,7 +64,7 @@ New Tekla logic goes entirely into `TeklaMcpServer.Api/`. TeklaBridge stays as a
 
 **To add a new tool:**
 1. Define interface + DTOs + implementation in `TeklaMcpServer.Api/`
-2. Wire command in `TeklaBridge/Commands/ModelCommandHandlers.cs` or `DrawingCommandHandlers.cs`
+2. Wire command in `TeklaBridge/Commands/ModelCommandHandler.cs` or `DrawingCommandHandler.cs`
 3. Add thin `[McpServerTool]` wrapper in `TeklaMcpServer/Tools/` calling `RunBridge("command_name", ...args)`
 
 ### File Structure
@@ -93,12 +93,15 @@ src/
 ├── TeklaBridge/              # Bridge process (net48) — command dispatcher only
 │   ├── Program.cs            # Entry point + IPC fix + Console capture
 │   └── Commands/
-│       ├── ModelCommandHandlers.cs
-│       └── DrawingCommandHandlers.cs
+│       ├── ModelCommandHandler.cs
+│       └── DrawingCommandHandler*.cs
 └── svMCP/                    # Unused stub
 ```
 
 ## Available Tools
+
+Полный и актуальный список инструментов поддерживается в `README.md` и `ROADMAP.md`.
+Ниже — краткий перечень основных групп.
 
 ### Connection
 
@@ -124,10 +127,27 @@ src/
 | `find_drawings_by_properties` | Search by multiple JSON filters (name, mark, type, status) |
 | `export_drawings_to_pdf` | Export drawings to PDF by GUID |
 | `create_general_arrangement_drawing` | Create GA drawing from a saved model view via macro |
+| `open_drawing` | Open (activate) drawing by GUID |
+| `close_drawing` | Close active drawing |
 | `get_drawing_context` | Active drawing and currently selected objects |
 | `select_drawing_objects` | Select drawing objects by model object IDs |
 | `filter_drawing_objects` | Filter drawing objects by type (Mark, Part, DimensionBase…) |
 | `set_mark_content` | Modify mark content and font settings |
+| `get_drawing_views` | Read drawing views and sheet/layout data |
+| `move_view` | Move a drawing view |
+| `set_view_scale` | Set one or many view scales |
+| `fit_views_to_sheet` | Auto-fit and arrange views on sheet |
+| `get_drawing_marks` | Read marks and text bounding boxes |
+| `create_part_marks` | Create part marks with configured content/style |
+| `delete_all_marks` | Delete all marks in active drawing |
+| `resolve_mark_overlaps` | Resolve mark text overlaps per view |
+| `arrange_marks` | Full mark auto-layout per view |
+| `get_drawing_dimensions` | Read drawing dimensions |
+| `move_dimension` | Move a dimension by delta |
+| `create_dimension` | Create a `StraightDimensionSet` |
+| `delete_dimension` | Delete a `StraightDimensionSet` |
+| `get_part_geometry_in_view` | Read part geometry in view coordinates |
+| `get_grid_axes` | Read drawing grid axes for a specific view |
 
 ## Critical Tekla API Patterns
 
@@ -202,7 +222,7 @@ var drawings = new DrawingHandler().GetDrawings(); // DrawingEnumerator
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `ModelContextProtocol` | 0.9.0-preview.2 | MCP server SDK |
+| `ModelContextProtocol` | 1.0.0 | MCP server SDK |
 | `Microsoft.Extensions.Hosting` | 8.0.0 | DI / hosting |
 | `Tekla.Structures` | 2021.0.0 | Core Tekla API |
 | `Tekla.Structures.Model` | 2021.0.0 | Model manipulation |

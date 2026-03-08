@@ -30,6 +30,8 @@
 | `list_drawings` | Список всех чертежей |
 | `find_drawings` | Поиск по имени / марке |
 | `find_drawings_by_properties` | Поиск по фильтрам (name, mark, type, status) |
+| `open_drawing` | Открыть (активировать) чертёж по GUID |
+| `close_drawing` | Закрыть активный чертёж |
 | `export_drawings_to_pdf` | Экспорт в PDF по GUID |
 | `create_general_arrangement_drawing` | Legacy workaround: создать GA-чертёж через макрос; не развивать дальше |
 | `create_single_part_drawing` | Создать Single Part drawing через Open API |
@@ -49,6 +51,7 @@
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек; поддерживает горизонтальные, вертикальные, диагональные и цепочки размеров |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
 | `get_part_geometry_in_view` | Геометрия детали (bbox, start/end, оси) в локальной СК вида; используется для точного размещения размеров |
+| `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
 | `resolve_mark_overlaps` | Разрешить перекрытия текстовых блоков марок внутри каждого вида — локальный overlap resolver |
 | `arrange_marks` | Полная расстановка марок внутри каждого вида вокруг anchor point |
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
