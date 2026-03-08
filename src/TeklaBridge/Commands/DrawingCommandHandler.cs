@@ -230,14 +230,13 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var api = new TeklaDrawingQueryApi();
-                var drawings = api.FindDrawingsByProperties(parseResult.Request.Filters).Select(d => new
-                {
-                    guid = d.Guid,
-                    name = d.Name,
-                    mark = d.Mark,
-                    type = d.Type,
-                    status = d.Status
-                });
+                var drawings = MapBasicDrawingsWithStatus(
+                    api.FindDrawingsByProperties(parseResult.Request.Filters),
+                    d => d.Guid,
+                    d => d.Name,
+                    d => d.Mark,
+                    d => d.Type,
+                    d => d.Status);
 
                 _output.WriteLine(JsonSerializer.Serialize(drawings));
                 return true;
@@ -882,10 +881,10 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private static IEnumerable<object> MapBasicDrawings<TDrawing>(
         IEnumerable<TDrawing> drawings,
-        Func<TDrawing, object> guidSelector,
-        Func<TDrawing, string> nameSelector,
-        Func<TDrawing, string> markSelector,
-        Func<TDrawing, string> typeSelector)
+        Func<TDrawing, object?> guidSelector,
+        Func<TDrawing, string?> nameSelector,
+        Func<TDrawing, string?> markSelector,
+        Func<TDrawing, string?> typeSelector)
     {
         return drawings.Select(d => (object)new
         {
@@ -893,6 +892,24 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             name = nameSelector(d),
             mark = markSelector(d),
             type = typeSelector(d)
+        });
+    }
+
+    private static IEnumerable<object> MapBasicDrawingsWithStatus<TDrawing>(
+        IEnumerable<TDrawing> drawings,
+        Func<TDrawing, object?> guidSelector,
+        Func<TDrawing, string?> nameSelector,
+        Func<TDrawing, string?> markSelector,
+        Func<TDrawing, string?> typeSelector,
+        Func<TDrawing, string?> statusSelector)
+    {
+        return drawings.Select(d => (object)new
+        {
+            guid = guidSelector(d),
+            name = nameSelector(d),
+            mark = markSelector(d),
+            type = typeSelector(d),
+            status = statusSelector(d)
         });
     }
 
