@@ -8,6 +8,10 @@ namespace TeklaBridge.Commands;
 
 internal sealed class ModelCommandHandler : ICommandHandler
 {
+    private const string MissingClassNumberErrorJson = "{\"error\":\"Missing class number\"}";
+    private const string InvalidClassNumberErrorJson = "{\"error\":\"Invalid class number\"}";
+    private const string MissingObjectTypeOrFilterCriteriaErrorJson = "{\"error\":\"Missing object type or filter criteria\"}";
+
     private readonly Model _model;
     private readonly TextWriter _output;
 
@@ -22,65 +26,89 @@ internal sealed class ModelCommandHandler : ICommandHandler
         switch (command)
         {
             case "get_selected_properties":
-            {
-                var api = new TeklaModelSelectionApi(_model);
-                _output.WriteLine(JsonSerializer.Serialize(api.GetSelectedObjects()));
-                return true;
-            }
+                return HandleGetSelectedProperties();
 
             case "select_by_class":
-            {
-                if (args.Length < 2)
-                {
-                    _output.WriteLine("{\"error\":\"Missing class number\"}");
-                    return true;
-                }
-
-                if (!int.TryParse(args[1], out var classNumber))
-                {
-                    _output.WriteLine("{\"error\":\"Invalid class number\"}");
-                    return true;
-                }
-
-                var api = new TeklaModelSelectionApi(_model);
-                var count = api.SelectObjectsByClass(classNumber);
-                _output.WriteLine(JsonSerializer.Serialize(new { count, @class = classNumber }));
-                return true;
-            }
+                return HandleSelectByClass(args);
 
             case "get_selected_weight":
-            {
-                var api = new TeklaModelSelectionApi(_model);
-                var result = api.GetSelectedObjectsWeight();
-                _output.WriteLine(JsonSerializer.Serialize(new { totalWeight = result.TotalWeightKg, count = result.Count }));
-                return true;
-            }
+                return HandleGetSelectedWeight();
 
             case "filter_model_objects":
-            {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
-                {
-                    _output.WriteLine("{\"error\":\"Missing object type or filter criteria\"}");
-                    return true;
-                }
-
-                var selectMatches = true;
-                if (args.Length >= 3 && bool.TryParse(args[2], out var parsed))
-                    selectMatches = parsed;
-
-                var api = new TeklaModelFilteringApi(_model);
-                var result = api.FilterByType(new ModelObjectFilter
-                {
-                    ObjectType = args[1],
-                    SelectMatches = selectMatches
-                });
-
-                _output.WriteLine(JsonSerializer.Serialize(result));
-                return true;
-            }
+                return HandleFilterModelObjects(args);
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetSelectedProperties()
+    {
+        var api = new TeklaModelSelectionApi(_model);
+        WriteJson(api.GetSelectedObjects());
+        return true;
+    }
+
+    private bool HandleSelectByClass(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            WriteRawJson(MissingClassNumberErrorJson);
+            return true;
+        }
+
+        if (!int.TryParse(args[1], out var classNumber))
+        {
+            WriteRawJson(InvalidClassNumberErrorJson);
+            return true;
+        }
+
+        var api = new TeklaModelSelectionApi(_model);
+        var count = api.SelectObjectsByClass(classNumber);
+        WriteJson(new { count, @class = classNumber });
+        return true;
+    }
+
+    private bool HandleGetSelectedWeight()
+    {
+        var api = new TeklaModelSelectionApi(_model);
+        var result = api.GetSelectedObjectsWeight();
+        WriteJson(new { totalWeight = result.TotalWeightKg, count = result.Count });
+        return true;
+    }
+
+    private bool HandleFilterModelObjects(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            WriteRawJson(MissingObjectTypeOrFilterCriteriaErrorJson);
+            return true;
+        }
+
+        var selectMatches = true;
+        if (args.Length >= 3 && bool.TryParse(args[2], out var parsed))
+        {
+            selectMatches = parsed;
+        }
+
+        var api = new TeklaModelFilteringApi(_model);
+        var result = api.FilterByType(new ModelObjectFilter
+        {
+            ObjectType = args[1],
+            SelectMatches = selectMatches
+        });
+
+        WriteJson(result);
+        return true;
+    }
+
+    private void WriteJson<T>(T payload)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(payload));
+    }
+
+    private void WriteRawJson(string json)
+    {
+        _output.WriteLine(json);
     }
 }
