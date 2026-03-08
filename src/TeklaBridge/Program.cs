@@ -9,41 +9,18 @@ namespace TeklaBridge;
 
 internal static class Program
 {
+    private static readonly JsonSerializerOptions ProtocolJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true
+    };
+
     [STAThread]
     static void Main(string[] args)
     {
-        // Set Tekla environment:
-        // 1) use XS_SYSTEM if already valid,
-        // 2) otherwise prefer installation matching referenced Tekla API major version,
-        // 3) fallback to latest installed version.
         var teklaRoot = ResolveTeklaRoot();
-
-        if (!string.IsNullOrEmpty(teklaRoot) && Directory.Exists(teklaRoot))
-        {
-            Environment.SetEnvironmentVariable("XS_SYSTEM", teklaRoot);
-            // TS2021: nt/ layout; TS2025+: bin/ directly under root
-            var ntDir = Path.Combine(teklaRoot, "nt");
-            Environment.SetEnvironmentVariable("XS_DIR", Directory.Exists(ntDir) ? ntDir : teklaRoot);
-            var teklaPath = Directory.Exists(Path.Combine(teklaRoot, "nt", "bin"))
-                ? Path.Combine(teklaRoot, "nt", "bin")
-                : Path.Combine(teklaRoot, "bin");
-            if (Directory.Exists(teklaPath))
-            {
-                var currentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-                if (currentPath.IndexOf(teklaPath, StringComparison.OrdinalIgnoreCase) < 0)
-                    Environment.SetEnvironmentVariable("PATH", teklaPath + ";" + currentPath);
-            }
-        }
-
-        // FIX: Tekla 2021 — stdout-pipe makes API omit "Console" from channel name. Patch via reflection.
-        // FIX: Tekla 2025+ — NuGet package has channel name "...Console:2025.0.0.0" but the
-        //   actual installed Tekla uses a build-specific version like "...Console:2025.0.52577.0".
-        //   Read the real version from the installed DLL and patch our NuGet DLL's static fields.
-        var apiVersion = typeof(Model).Assembly.GetName().Version;
-        if (apiVersion == null || apiVersion.Major < 2025)
-            ApplyIpcChannelFix();
-        else
-            ApplyTs2025ChannelVersionFix(teklaRoot);
+        ConfigureTeklaEnvironment(teklaRoot);
+        ApplyTeklaChannelFixes(teklaRoot);
 
         if (args.Length == 0)
         {
@@ -51,59 +28,152 @@ internal static class Program
             return;
         }
 
-        var command = args[0];
-
-        // Capture Tekla's internal diagnostics (it writes to Console.Out during API calls)
-        // so they don't pollute our JSON output.
         var realOut = Console.Out;
         var teklaLog = new StringWriter();
         Console.SetOut(teklaLog);
 
-        try
+        if (string.Equals(args[0], "--loop", StringComparison.OrdinalIgnoreCase))
         {
-            var model = new Model();
+            RunPersistentLoop(realOut, teklaLog);
+            return;
+        }
 
-            if (command == "check_connection")
+        ExecuteLegacyCommand(args, realOut, teklaLog);
+    }
+
+    private static void ConfigureTeklaEnvironment(string? teklaRoot)
+    {
+        // Set Tekla environment:
+        // 1) use XS_SYSTEM if already valid,
+        // 2) otherwise prefer installation matching referenced Tekla API major version,
+        // 3) fallback to latest installed version.
+        if (string.IsNullOrEmpty(teklaRoot) || !Directory.Exists(teklaRoot))
+            return;
+
+        Environment.SetEnvironmentVariable("XS_SYSTEM", teklaRoot);
+        var ntDir = Path.Combine(teklaRoot, "nt");
+        Environment.SetEnvironmentVariable("XS_DIR", Directory.Exists(ntDir) ? ntDir : teklaRoot);
+        var teklaPath = Directory.Exists(Path.Combine(teklaRoot, "nt", "bin"))
+            ? Path.Combine(teklaRoot, "nt", "bin")
+            : Path.Combine(teklaRoot, "bin");
+        if (!Directory.Exists(teklaPath))
+            return;
+
+        var currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        if (currentPath.IndexOf(teklaPath, StringComparison.OrdinalIgnoreCase) < 0)
+            Environment.SetEnvironmentVariable("PATH", teklaPath + ";" + currentPath);
+    }
+
+    private static void ApplyTeklaChannelFixes(string? teklaRoot)
+    {
+        // FIX: Tekla 2021 — stdout-pipe makes API omit "Console" from channel name. Patch via reflection.
+        // FIX: Tekla 2025+ — NuGet package has channel name "...Console:2025.0.0.0" but the
+        // actual installed Tekla uses a build-specific version like "...Console:2025.0.52577.0".
+        var apiVersion = typeof(Model).Assembly.GetName().Version;
+        if (apiVersion == null || apiVersion.Major < 2025)
+            ApplyIpcChannelFix();
+        else
+            ApplyTs2025ChannelVersionFix(teklaRoot);
+    }
+
+    private static void ExecuteLegacyCommand(string[] args, TextWriter realOut, StringWriter teklaLog)
+    {
+        var model = new Model();
+        var payload = ExecuteCommand(model, args[0], args, teklaLog);
+        realOut.WriteLine(payload);
+    }
+
+    private static void RunPersistentLoop(TextWriter realOut, StringWriter teklaLog)
+    {
+        var model = new Model();
+        var teklaLogBuffer = teklaLog.GetStringBuilder();
+        string? line;
+
+        while ((line = Console.In.ReadLine()) != null)
+        {
+            teklaLogBuffer.Clear();
+            BridgeRequest? request;
+            try
             {
-                if (model.GetConnectionStatus())
+                request = JsonSerializer.Deserialize<BridgeRequest>(line, ProtocolJsonOptions);
+                if (request == null || string.IsNullOrWhiteSpace(request.Cmd))
+                    throw new InvalidDataException("Invalid bridge request.");
+            }
+            catch (Exception ex)
+            {
+                WriteBridgeResponse(realOut, new BridgeResponse
                 {
-                    var info = model.GetInfo();
-                    realOut.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        status = "connected",
-                        modelName = info.ModelName,
-                        modelPath = info.ModelPath
-                    }));
-                }
-                else
-                {
-                    var result = JsonSerializer.Serialize(new
-                    {
-                        error = "Not connected to Tekla Structures",
-                        xs_system = Environment.GetEnvironmentVariable("XS_SYSTEM"),
-                        xs_dir = Environment.GetEnvironmentVariable("XS_DIR"),
-                        teklaLog = teklaLog.ToString().Trim()
-                    });
-                    realOut.WriteLine(result);
-                    File.WriteAllText(@"C:\temp\teklabridge_log.txt", result);
-                }
-                return;
+                    Id = 0,
+                    Ok = false,
+                    Error = ex.Message
+                });
+                continue;
             }
 
-            if (!model.GetConnectionStatus())
+            try
             {
-                realOut.WriteLine(JsonSerializer.Serialize(new
+                var fullArgs = BuildFullArgs(request.Cmd, request.Args);
+                var payload = ExecuteCommand(model, request.Cmd, fullArgs, teklaLog);
+                WriteBridgeResponse(realOut, new BridgeResponse
+                {
+                    Id = request.Id,
+                    Ok = true,
+                    Result = payload
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex);
+                WriteBridgeResponse(realOut, new BridgeResponse
+                {
+                    Id = request.Id,
+                    Ok = false,
+                    Error = ex.Message
+                });
+            }
+        }
+    }
+
+    private static string[] BuildFullArgs(string command, string[]? requestArgs)
+    {
+        var tail = requestArgs ?? Array.Empty<string>();
+        var fullArgs = new string[tail.Length + 1];
+        fullArgs[0] = command;
+        Array.Copy(tail, 0, fullArgs, 1, tail.Length);
+        return fullArgs;
+    }
+
+    private static void WriteBridgeResponse(TextWriter output, BridgeResponse response)
+    {
+        output.WriteLine(JsonSerializer.Serialize(response, ProtocolJsonOptions));
+        output.Flush();
+    }
+
+    private static string ExecuteCommand(Model model, string command, string[] args, StringWriter teklaLog)
+    {
+        using var payloadWriter = new StringWriter();
+
+        try
+        {
+            if (string.Equals(command, "check_connection", StringComparison.OrdinalIgnoreCase))
+            {
+                WriteCheckConnectionPayload(model, payloadWriter, teklaLog);
+            }
+            else if (!model.GetConnectionStatus())
+            {
+                payloadWriter.Write(JsonSerializer.Serialize(new
                 {
                     error = "Not connected to Tekla Structures",
                     xs_system = Environment.GetEnvironmentVariable("XS_SYSTEM"),
                     teklaLog = teklaLog.ToString().Trim()
                 }));
-                return;
             }
-
-            var dispatcher = new CommandDispatcher(model, realOut);
-            if (!dispatcher.Dispatch(command, args))
-                realOut.WriteLine($"{{\"error\":\"Unknown command: {command}\"}}");
+            else
+            {
+                var dispatcher = new CommandDispatcher(model, payloadWriter);
+                if (!dispatcher.Dispatch(command, args))
+                    payloadWriter.Write($"{{\"error\":\"Unknown command: {command}\"}}");
+            }
         }
         catch (Exception ex)
         {
@@ -114,8 +184,46 @@ internal static class Program
                 xs_system = Environment.GetEnvironmentVariable("XS_SYSTEM"),
                 teklaLog = teklaLog.ToString().Trim()
             });
-            realOut.WriteLine(result);
-            File.WriteAllText(@"C:\temp\teklabridge_log.txt", result);
+            payloadWriter.Write(result);
+            TryWriteBridgeLog(result);
+        }
+
+        return payloadWriter.ToString().Trim();
+    }
+
+    private static void WriteCheckConnectionPayload(Model model, TextWriter output, StringWriter teklaLog)
+    {
+        if (model.GetConnectionStatus())
+        {
+            var info = model.GetInfo();
+            output.Write(JsonSerializer.Serialize(new
+            {
+                status = "connected",
+                modelName = info.ModelName,
+                modelPath = info.ModelPath
+            }));
+            return;
+        }
+
+        var result = JsonSerializer.Serialize(new
+        {
+            error = "Not connected to Tekla Structures",
+            xs_system = Environment.GetEnvironmentVariable("XS_SYSTEM"),
+            xs_dir = Environment.GetEnvironmentVariable("XS_DIR"),
+            teklaLog = teklaLog.ToString().Trim()
+        });
+        output.Write(result);
+        TryWriteBridgeLog(result);
+    }
+
+    private static void TryWriteBridgeLog(string payload)
+    {
+        try
+        {
+            File.WriteAllText(@"C:\temp\teklabridge_log.txt", payload);
+        }
+        catch
+        {
         }
     }
 
@@ -215,7 +323,7 @@ internal static class Program
 
             // Patch all Tekla static string fields: replace "...Console:2025.X.0.0" → "...Console:installedVersion"
             var log = new System.Text.StringBuilder();
-            int fixedCount = 0;
+            var fixedCount = 0;
             var flags = System.Reflection.BindingFlags.Static |
                         System.Reflection.BindingFlags.Public |
                         System.Reflection.BindingFlags.NonPublic;
@@ -244,13 +352,12 @@ internal static class Program
                         if (f.FieldType != typeof(string)) continue;
                         try
                         {
-                            var val = f.GetValue(null)?.ToString() ?? "";
+                            var val = f.GetValue(null)?.ToString() ?? string.Empty;
                             if (!val.StartsWith("Tekla.Structures.") || !val.Contains("-Console:")) continue;
-                            // Replace the version suffix
                             var colonIdx = val.LastIndexOf(':');
                             if (colonIdx < 0) continue;
                             var currentVer = val.Substring(colonIdx + 1);
-                            if (currentVer == installedVersion) continue; // already correct
+                            if (currentVer == installedVersion) continue;
                             var corrected = val.Substring(0, colonIdx + 1) + installedVersion;
                             f.SetValue(null, corrected);
                             log.AppendLine($"FIXED {t.FullName}.{f.Name}: {val} -> {corrected}");
@@ -280,7 +387,6 @@ internal static class Program
         try
         {
             var fvi = System.Diagnostics.FileVersionInfo.GetVersionInfo(dllPath);
-            // FileVersion is "2025.0.52577.0" — matches what Tekla uses in channel names
             var ver = fvi.FileVersion?.Trim();
             if (!string.IsNullOrEmpty(ver) && ver.Contains('.'))
                 return ver;
@@ -298,14 +404,14 @@ internal static class Program
 
             try
             {
-                var dir = Path.GetDirectoryName(typeof(DrawingHandler).Assembly.Location) ?? "";
+                var dir = Path.GetDirectoryName(typeof(DrawingHandler).Assembly.Location) ?? string.Empty;
                 foreach (var dll in Directory.GetFiles(dir, "Tekla.Structures.*Internal*.dll"))
                     try { System.Reflection.Assembly.LoadFrom(dll); } catch { }
             }
             catch { }
 
             var log = new System.Text.StringBuilder();
-            int fixedCount = 0;
+            var fixedCount = 0;
             var flags = System.Reflection.BindingFlags.Static |
                         System.Reflection.BindingFlags.Public |
                         System.Reflection.BindingFlags.NonPublic;
@@ -321,7 +427,7 @@ internal static class Program
                         if (f.FieldType != typeof(string)) continue;
                         try
                         {
-                            var val = f.GetValue(null)?.ToString() ?? "";
+                            var val = f.GetValue(null)?.ToString() ?? string.Empty;
                             if (val.StartsWith("Tekla.Structures.") && val.Contains("-:"))
                             {
                                 var corrected = val.Replace("-:", "-Console:");
@@ -340,5 +446,20 @@ internal static class Program
         {
             File.WriteAllText(@"C:\temp\tekla_channel.txt", "ChannelName fix error: " + ex.Message);
         }
+    }
+
+    private sealed class BridgeRequest
+    {
+        public int Id { get; set; }
+        public string Cmd { get; set; } = string.Empty;
+        public string[] Args { get; set; } = Array.Empty<string>();
+    }
+
+    private sealed class BridgeResponse
+    {
+        public int Id { get; set; }
+        public bool Ok { get; set; }
+        public string? Result { get; set; }
+        public string? Error { get; set; }
     }
 }

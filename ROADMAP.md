@@ -489,103 +489,49 @@ TeklaMcpServer: читает ответ
 
 ### Изменения в коде
 
-**TeklaBridge/Program.cs** — вместо single-shot: цикл чтения stdin:
+**Реализовано (2026-03-08)**
 
-```csharp
-// Текущий код (one-shot):
-var handler = new DrawingCommandHandler(realOut);
-handler.Handle(args[0], args);
+**TeklaBridge/Program.cs**
+- Добавлен явный режим `--loop`.
+- Legacy one-shot path сохранён.
+- В loop режиме bridge:
+  - читает JSON requests из stdin,
+  - обрабатывает `check_connection` special-case или общий `ExecuteCommand(...)`,
+  - маршрутизирует обычные команды через `CommandDispatcher`,
+  - пишет в stdout ровно одну protocol JSON-строку на запрос.
+- `teklaLog` очищается на каждый запрос, чтобы буфер не рос в долгоживущем процессе.
 
-// Новый код (persistent loop):
-var handler = new DrawingCommandHandler(realOut);
-string? line;
-while ((line = Console.In.ReadLine()) != null)
-{
-    var req = JsonSerializer.Deserialize<BridgeRequest>(line);
-    try {
-        var result = handler.HandleJson(req.Cmd, req.Args);
-        realOut.WriteLine(JsonSerializer.Serialize(new { id = req.Id, ok = true, result }));
-    }
-    catch (Exception ex) {
-        realOut.WriteLine(JsonSerializer.Serialize(new { id = req.Id, ok = false, error = ex.Message }));
-    }
-}
+Схема выполнения:
+
+```text
+--loop
+  -> RunPersistentLoop(realOut, teklaLog)
+  -> new Model()
+  -> while ReadLine(stdin)
+     -> ExecuteCommand(model, cmd, args, teklaLog)
+     -> check_connection special-case OR CommandDispatcher(model, payloadWriter)
+     -> write { id, ok, result|error } to stdout
 ```
 
-**TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs** — вместо `Process.Start()`:
+**TeklaMcpServer/Tools/Shared/PersistentBridge.cs**
+- Новый transport abstraction для long-lived bridge.
+- Реализованы:
+  - lazy start `TeklaBridge.exe --loop`,
+  - single-flight `SemaphoreSlim(1,1)`,
+  - response timeout,
+  - protocol id validation,
+  - `KillProcess()` на timeout / malformed protocol / exited process,
+  - restart after fatal payload (`Not connected to Tekla Structures`, IPC errors).
 
-```csharp
-// Текущий код:
-static string RunBridge(string command, params string[] args) {
-    var proc = Process.Start(new ProcessStartInfo {
-        FileName = BridgePath,
-        Arguments = string.Join(" ", new[] { command }.Concat(args)),
-        ...
-    });
-    return proc.StandardOutput.ReadToEnd();
-}
+**TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs**
+- `RunBridge()` больше не запускает новый процесс на каждый вызов.
+- Все MCP tools продолжают вызывать тот же `RunBridge(...)`, но внутри теперь используется singleton `PersistentBridge`.
+- Ошибки transport-layer сериализуются чище: уже понятные protocol errors не оборачиваются повторно.
 
-// Новый код:
-static string RunBridge(string command, params string[] args) {
-    return PersistentBridge.Instance.Send(command, args);
-}
-```
-
-**Новый файл TeklaMcpServer/PersistentBridge.cs**:
-
-```csharp
-sealed class PersistentBridge : IDisposable
-{
-    public static readonly PersistentBridge Instance = new();
-
-    private Process? _process;
-    private StreamWriter? _stdin;
-    private StreamReader? _stdout;
-    private int _nextId = 0;
-    private readonly SemaphoreSlim _lock = new(1, 1); // один запрос за раз
-
-    public string Send(string cmd, string[] args)
-    {
-        _lock.Wait();
-        try {
-            EnsureStarted();
-            var id = Interlocked.Increment(ref _nextId);
-            var req = JsonSerializer.Serialize(new { id, cmd, args });
-            _stdin!.WriteLine(req);
-            _stdin.Flush();
-
-            var response = _stdout!.ReadLine()
-                ?? throw new Exception("TeklaBridge process died");
-
-            var resp = JsonSerializer.Deserialize<BridgeResponse>(response)!;
-            if (!resp.Ok) throw new Exception(resp.Error);
-            return resp.Result ?? "";
-        }
-        catch {
-            KillProcess(); // при ошибке — убить, следующий вызов перезапустит
-            throw;
-        }
-        finally {
-            _lock.Release();
-        }
-    }
-
-    private void EnsureStarted()
-    {
-        if (_process is { HasExited: false }) return;
-        // запустить TeklaBridge в persistent-режиме (без аргументов = loop mode)
-        _process = Process.Start(new ProcessStartInfo {
-            FileName = BridgePath,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        });
-        _stdin  = _process.StandardInput;
-        _stdout = new StreamReader(_process.StandardOutput.BaseStream);
-    }
-}
-```
+**Tests**
+- Добавлен проект `TeklaMcpServer.Tests` с двумя группами проверок:
+  - smoke tests на реальный `TeklaBridge.exe` для legacy и `--loop`,
+  - transport tests на fake persistent bridge для timeout/restart/protocol recovery.
 
 ---
 
@@ -594,7 +540,7 @@ sealed class PersistentBridge : IDisposable
 - Все MCP-инструменты (`[McpServerTool]` методы) — без изменений
 - Все bridge-команды и их JSON-форматы — без изменений
 - Вся логика в `TeklaMcpServer.Api` — без изменений
-- `DrawingCommandHandler`, `ModelCommandHandler` — без изменений (только добавляется `HandleJson` обёртка)
+- Доменные handlers сохраняют прежние команды; transport-обвязка теперь идёт через общий `ExecuteCommand(...)` и `CommandDispatcher`
 
 **Внешнее поведение API идентично.** Но важно понимать: меняется не только транспортный слой — меняется и семантика времени жизни процесса. Появляются lifecycle, авторестарт, stale state после перезапуска Tekla. Это управляемые риски, но называть изменение "просто транспортом" неточно.
 
