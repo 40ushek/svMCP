@@ -845,11 +845,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private void WriteFilterDrawingObjectsResult(FilterDrawingObjectsResult result)
     {
-        _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(
-            result.Objects,
-            x => x.Id,
-            x => x.Type,
-            x => x.ModelId)));
+        _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(result.Objects)));
     }
 
     private void WriteSetMarkContentResult(SetMarkContentResult result)
@@ -877,11 +873,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 status = result.Drawing.Status
             },
             selectedCount = result.SelectedObjects.Count,
-            selectedObjects = MapDrawingObjects(
-                result.SelectedObjects,
-                x => x.Id,
-                x => x.Type,
-                x => x.ModelId)
+            selectedObjects = MapDrawingObjects(result.SelectedObjects)
         }));
     }
 
@@ -1019,17 +1011,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         });
     }
 
-    private static IEnumerable<object> MapDrawingObjects<TDrawingObject>(
-        IEnumerable<TDrawingObject> drawingObjects,
-        Func<TDrawingObject, object?> idSelector,
-        Func<TDrawingObject, string?> typeSelector,
-        Func<TDrawingObject, object?> modelIdSelector)
+    private static IEnumerable<object> MapDrawingObjects(
+        IEnumerable<DrawingObjectItem> drawingObjects)
     {
         return drawingObjects.Select(x => (object)new
         {
-            id = idSelector(x),
-            type = typeSelector(x),
-            modelId = modelIdSelector(x)
+            id = x.Id,
+            type = x.Type,
+            modelId = x.ModelId
         });
     }
 
