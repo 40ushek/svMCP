@@ -830,24 +830,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         {
             case "arrange_marks":
             {
-                double gap = 2.0;
-                if (args.Length > 1)
+                var parseResult = DrawingCommandParsers.ParseArrangeMarksGap(args);
+                if (!parseResult.IsValid)
                 {
-                    if (!double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out gap))
-                    {
-                        _output.WriteLine("{\"error\":\"gap must be a number\"}");
-                        return true;
-                    }
-
-                    if (gap < 0)
-                    {
-                        _output.WriteLine("{\"error\":\"gap must be >= 0\"}");
-                        return true;
-                    }
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    return true;
                 }
 
                 var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.ArrangeMarks(gap);
+                var result = api.ArrangeMarks(parseResult.Value);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     marksMovedCount   = result.MarksMovedCount,
@@ -894,23 +885,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "resolve_mark_overlaps":
             {
-                double margin = 2.0;
-                if (args.Length > 1)
+                var parseResult = DrawingCommandParsers.ParseResolveMarkOverlapsMargin(args);
+                if (!parseResult.IsValid)
                 {
-                    if (!double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out margin))
-                    {
-                        _output.WriteLine("{\"error\":\"margin must be a number\"}");
-                        return true;
-                    }
-
-                    if (margin < 0)
-                    {
-                        _output.WriteLine("{\"error\":\"margin must be >= 0\"}");
-                        return true;
-                    }
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    return true;
                 }
                 var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.ResolveMarkOverlaps(margin);
+                var result = api.ResolveMarkOverlaps(parseResult.Value);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     marksMovedCount   = result.MarksMovedCount,

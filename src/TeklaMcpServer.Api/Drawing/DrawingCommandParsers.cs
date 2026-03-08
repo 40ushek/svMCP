@@ -161,6 +161,31 @@ public static class DrawingCommandParsers
             AttributesFile = attributesFile
         });
     }
+
+    public static NonNegativeDoubleParseResult ParseArrangeMarksGap(string[] args) =>
+        ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "gap");
+
+    public static NonNegativeDoubleParseResult ParseResolveMarkOverlapsMargin(string[] args) =>
+        ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "margin");
+
+    private static NonNegativeDoubleParseResult ParseOptionalNonNegativeDoubleArg(
+        string[] args,
+        int index,
+        double defaultValue,
+        string argumentName)
+    {
+        var value = defaultValue;
+        if (args.Length > index)
+        {
+            if (!double.TryParse(args[index], NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                return NonNegativeDoubleParseResult.Fail($"{argumentName} must be a number");
+
+            if (value < 0)
+                return NonNegativeDoubleParseResult.Fail($"{argumentName} must be >= 0");
+        }
+
+        return NonNegativeDoubleParseResult.Success(value);
+    }
 }
 
 public sealed class SetMarkContentParseResult
@@ -236,5 +261,18 @@ public sealed class CreateDimensionParseResult
         new() { IsValid = true, Request = request };
 
     public static CreateDimensionParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class NonNegativeDoubleParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public double Value { get; private set; }
+
+    public static NonNegativeDoubleParseResult Success(double value) =>
+        new() { IsValid = true, Value = value };
+
+    public static NonNegativeDoubleParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
