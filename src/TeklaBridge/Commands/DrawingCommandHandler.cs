@@ -388,10 +388,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                if (drawingHandler.GetActiveDrawing() == null)
+                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
@@ -427,11 +425,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
@@ -451,10 +446,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_context":
             {
-                var drawingHandler = new DrawingHandler();
-                if (drawingHandler.GetActiveDrawing() == null)
+                if (!EnsureActiveDrawing("{\"error\":\"No drawing is currently open\"}"))
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
@@ -817,10 +810,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "delete_all_marks":
             {
-                var activeDrawing = new DrawingHandler().GetActiveDrawing();
-                if (activeDrawing == null)
+                if (!EnsureActiveDrawing("{\"error\":\"No active drawing\"}"))
                 {
-                    _output.WriteLine("{\"error\":\"No active drawing\"}");
                     return true;
                 }
 
@@ -880,6 +871,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool EnsureActiveDrawing(string noActiveDrawingJson)
+    {
+        if (new DrawingHandler().GetActiveDrawing() != null)
+            return true;
+
+        _output.WriteLine(noActiveDrawingJson);
+        return false;
     }
 
 }
