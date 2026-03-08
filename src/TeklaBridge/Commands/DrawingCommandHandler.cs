@@ -762,13 +762,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
                 var api    = new TeklaDrawingMarkApi(_model);
                 var result = api.ArrangeMarks(parseResult.Value);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    marksMovedCount   = result.MarksMovedCount,
-                    movedIds          = result.MovedIds,
-                    iterations        = result.Iterations,
-                    remainingOverlaps = result.RemainingOverlaps
-                }));
+                WriteMarkArrangementResult(result);
                 return true;
             }
 
@@ -815,13 +809,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
                 var api    = new TeklaDrawingMarkApi(_model);
                 var result = api.ResolveMarkOverlaps(parseResult.Value);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    marksMovedCount   = result.MarksMovedCount,
-                    movedIds          = result.MovedIds,
-                    iterations        = result.Iterations,
-                    remainingOverlaps = result.RemainingOverlaps
-                }));
+                WriteMarkArrangementResult(result);
                 return true;
             }
 
@@ -876,6 +864,17 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             drawingType = result.DrawingType,
             modelObjectId = result.ModelObjectId,
             drawingProperties = result.DrawingProperties
+        }));
+    }
+
+    private void WriteMarkArrangementResult(ResolveMarksResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            marksMovedCount = result.MarksMovedCount,
+            movedIds = result.MovedIds,
+            iterations = result.Iterations,
+            remainingOverlaps = result.RemainingOverlaps
         }));
     }
 
