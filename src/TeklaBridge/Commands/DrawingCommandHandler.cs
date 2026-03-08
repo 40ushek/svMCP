@@ -579,27 +579,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "set_view_scale":
             {
-                if (args.Length < 3)
+                var parseResult = DrawingCommandParsers.ParseSetViewScaleRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: set_view_scale <viewIdsCsv> <scale>\"}");
-                    return true;
-                }
-
-                var ids = DrawingCommandParsers.ParseIntList(args[1]);
-                if (ids.Count == 0)
-                {
-                    _output.WriteLine("{\"error\":\"No valid view IDs provided\"}");
-                    return true;
-                }
-
-                if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var scale) || scale <= 0)
-                {
-                    _output.WriteLine("{\"error\":\"scale must be a positive number\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api    = new TeklaDrawingViewApi(_model);
-                var result = api.SetViewScale(ids, scale);
+                var result = api.SetViewScale(parseResult.Request.ViewIds, parseResult.Request.Scale);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     updatedCount = result.UpdatedCount,
@@ -667,15 +655,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "move_dimension":
             {
-                if (args.Length < 3 ||
-                    !int.TryParse(args[1], out var dimId) ||
-                    !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var delta))
+                var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: move_dimension <dimensionId> <delta>\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
                 var api    = new TeklaDrawingDimensionsApi(_model);
-                var result = api.MoveDimension(dimId, delta);
+                var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     moved       = result.Moved,

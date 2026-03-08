@@ -162,6 +162,41 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static SetViewScaleParseResult ParseSetViewScaleRequest(string[] args)
+    {
+        if (args.Length < 3)
+            return SetViewScaleParseResult.Fail("Usage: set_view_scale <viewIdsCsv> <scale>");
+
+        var ids = ParseIntList(args[1]);
+        if (ids.Count == 0)
+            return SetViewScaleParseResult.Fail("No valid view IDs provided");
+
+        if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var scale) || scale <= 0)
+            return SetViewScaleParseResult.Fail("scale must be a positive number");
+
+        return SetViewScaleParseResult.Success(new SetViewScaleRequest
+        {
+            ViewIds = ids,
+            Scale = scale
+        });
+    }
+
+    public static MoveDimensionParseResult ParseMoveDimensionRequest(string[] args)
+    {
+        if (args.Length < 3 ||
+            !int.TryParse(args[1], out var dimensionId) ||
+            !double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var delta))
+        {
+            return MoveDimensionParseResult.Fail("Usage: move_dimension <dimensionId> <delta>");
+        }
+
+        return MoveDimensionParseResult.Success(new MoveDimensionRequest
+        {
+            DimensionId = dimensionId,
+            Delta = delta
+        });
+    }
+
     public static NonNegativeDoubleParseResult ParseArrangeMarksGap(string[] args) =>
         ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "gap");
 
@@ -274,5 +309,43 @@ public sealed class NonNegativeDoubleParseResult
         new() { IsValid = true, Value = value };
 
     public static NonNegativeDoubleParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class SetViewScaleRequest
+{
+    public List<int> ViewIds { get; set; } = new();
+    public double Scale { get; set; }
+}
+
+public sealed class SetViewScaleParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public SetViewScaleRequest Request { get; private set; } = new();
+
+    public static SetViewScaleParseResult Success(SetViewScaleRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static SetViewScaleParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class MoveDimensionRequest
+{
+    public int DimensionId { get; set; }
+    public double Delta { get; set; }
+}
+
+public sealed class MoveDimensionParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public MoveDimensionRequest Request { get; private set; } = new();
+
+    public static MoveDimensionParseResult Success(MoveDimensionRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static MoveDimensionParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
