@@ -411,6 +411,232 @@ TeklaMcpServer.exe запускается Claude Code как дочерний п
 
 ---
 
+## Персистентный TeklaBridge — критически важная оптимизация производительности
+
+### Проблема: каждый MCP-вызов = запуск нового процесса (~2-3 секунды)
+
+Сейчас каждый вызов любого MCP-инструмента проходит через такую цепочку:
+
+```
+Claude вызывает MCP tool
+    ↓
+TeklaMcpServer: Process.Start("TeklaBridge.exe", command)
+    ↓  ~200 мс  .NET Framework 4.8 CLR init
+    ↓  ~500 мс  загрузка Tekla DLL (~20 сборок)
+    ↓  ~300 мс  reflection-сканирование IPC-каналов (фикс -: → -Console:)
+    ↓  ~500 мс  new Model() — подключение к Tekla по IPC
+    ↓  ~200 мс  new DrawingHandler() — подключение к Drawing IPC
+    ↓  ~100 мс  сама команда (get_part_geometry_in_view, create_dimension, etc.)
+    ↓  процесс завершается
+= 1.8 – 3 секунды на КАЖДЫЙ вызов
+```
+
+**Последствия:**
+
+| Сценарий | Кол-во вызовов | Время |
+|---|---|---|
+| Поставить 8 размеров на чертеже W-14 | ~15 вызовов | ~35 секунд |
+| Полный цикл авторазмерования (geometry + dimensions + marks) | ~30 вызовов | ~75 секунд |
+| Человек с рулеткой и карандашом | — | ~5 минут |
+| **Цель** | — | **< 30 секунд** |
+
+При таком overhead'е инструмент не может конкурировать с ручной работой. Это фундаментальная архитектурная проблема, а не медленный алгоритм.
+
+---
+
+### Решение: TeklaBridge как постоянный процесс
+
+TeklaBridge запускается **один раз** при старте TeklaMcpServer и живёт всё время его работы. Команды передаются через stdin/stdout JSON-протокол.
+
+```
+Claude вызывает MCP tool
+    ↓
+TeklaMcpServer: пишет JSON в stdin уже запущенного TeklaBridge
+    ↓  ~5 мс   парсинг команды
+    ↓  ~10 мс  сама команда (model already connected)
+    ↓  ~5 мс   запись JSON в stdout
+    ↓
+TeklaMcpServer: читает ответ
+= 20 – 50 мс на вызов (100× быстрее)
+```
+
+**Startup платится один раз** — при первом вызове любого инструмента (или при старте MCP-сервера), а не при каждом.
+
+---
+
+### Протокол stdin/stdout
+
+Каждое сообщение — одна строка JSON (newline-delimited).
+
+**Request** (TeklaMcpServer → TeklaBridge stdin):
+```json
+{"id": 1, "cmd": "get_all_parts_geometry_in_view", "args": ["1129"]}
+```
+
+**Response** (TeklaBridge stdout → TeklaMcpServer):
+```json
+{"id": 1, "ok": true, "result": "{...json string...}"}
+```
+
+или при ошибке:
+```json
+{"id": 1, "ok": false, "error": "View 1129 not found"}
+```
+
+Поле `id` нужно для сопоставления запрос/ответ — позволяет в будущем делать параллельные вызовы.
+
+---
+
+### Изменения в коде
+
+**TeklaBridge/Program.cs** — вместо single-shot: цикл чтения stdin:
+
+```csharp
+// Текущий код (one-shot):
+var handler = new DrawingCommandHandler(realOut);
+handler.Handle(args[0], args);
+
+// Новый код (persistent loop):
+var handler = new DrawingCommandHandler(realOut);
+string? line;
+while ((line = Console.In.ReadLine()) != null)
+{
+    var req = JsonSerializer.Deserialize<BridgeRequest>(line);
+    try {
+        var result = handler.HandleJson(req.Cmd, req.Args);
+        realOut.WriteLine(JsonSerializer.Serialize(new { id = req.Id, ok = true, result }));
+    }
+    catch (Exception ex) {
+        realOut.WriteLine(JsonSerializer.Serialize(new { id = req.Id, ok = false, error = ex.Message }));
+    }
+}
+```
+
+**TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs** — вместо `Process.Start()`:
+
+```csharp
+// Текущий код:
+static string RunBridge(string command, params string[] args) {
+    var proc = Process.Start(new ProcessStartInfo {
+        FileName = BridgePath,
+        Arguments = string.Join(" ", new[] { command }.Concat(args)),
+        ...
+    });
+    return proc.StandardOutput.ReadToEnd();
+}
+
+// Новый код:
+static string RunBridge(string command, params string[] args) {
+    return PersistentBridge.Instance.Send(command, args);
+}
+```
+
+**Новый файл TeklaMcpServer/PersistentBridge.cs**:
+
+```csharp
+sealed class PersistentBridge : IDisposable
+{
+    public static readonly PersistentBridge Instance = new();
+
+    private Process? _process;
+    private StreamWriter? _stdin;
+    private StreamReader? _stdout;
+    private int _nextId = 0;
+    private readonly SemaphoreSlim _lock = new(1, 1); // один запрос за раз
+
+    public string Send(string cmd, string[] args)
+    {
+        _lock.Wait();
+        try {
+            EnsureStarted();
+            var id = Interlocked.Increment(ref _nextId);
+            var req = JsonSerializer.Serialize(new { id, cmd, args });
+            _stdin!.WriteLine(req);
+            _stdin.Flush();
+
+            var response = _stdout!.ReadLine()
+                ?? throw new Exception("TeklaBridge process died");
+
+            var resp = JsonSerializer.Deserialize<BridgeResponse>(response)!;
+            if (!resp.Ok) throw new Exception(resp.Error);
+            return resp.Result ?? "";
+        }
+        catch {
+            KillProcess(); // при ошибке — убить, следующий вызов перезапустит
+            throw;
+        }
+        finally {
+            _lock.Release();
+        }
+    }
+
+    private void EnsureStarted()
+    {
+        if (_process is { HasExited: false }) return;
+        // запустить TeklaBridge в persistent-режиме (без аргументов = loop mode)
+        _process = Process.Start(new ProcessStartInfo {
+            FileName = BridgePath,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        });
+        _stdin  = _process.StandardInput;
+        _stdout = new StreamReader(_process.StandardOutput.BaseStream);
+    }
+}
+```
+
+---
+
+### Что НЕ меняется
+
+- Все MCP-инструменты (`[McpServerTool]` методы) — без изменений
+- Все bridge-команды и их JSON-форматы — без изменений
+- Вся логика в `TeklaMcpServer.Api` — без изменений
+- `DrawingCommandHandler`, `ModelCommandHandler` — без изменений (только добавляется `HandleJson` обёртка)
+
+**Внешнее поведение идентично. Меняется только транспортный слой.**
+
+---
+
+### Риски и mitigation
+
+| Риск | Mitigation |
+|---|---|
+| TeklaBridge зависает (Tekla disconnected) | Таймаут 30 сек на чтение stdout → KillProcess() → авторестарт |
+| Tekla выбрасывает exception в команде | Catch в loop → отправить `{ok:false, error}` → процесс живёт дальше |
+| Tekla пишет в Console.Out (diagnostic noise) | Уже решено: `Console.SetOut(teklaLog)` до loop, realOut отдельно |
+| IPC-канал Tekla умирает | Перезапуск TeklaBridge — reconnection не поддерживается Tekla API |
+| Параллельные вызовы из Claude | `SemaphoreSlim(1)` — сериализация; в будущем можно pool из N процессов |
+
+---
+
+### Порядок реализации
+
+```
+1. TeklaBridge: добавить loop-режим (args пустые = stdin loop)
+   Обратная совместимость: если args не пустые — старый one-shot режим
+   Файл: TeklaBridge/Program.cs
+   Объём: ~30 строк
+
+2. PersistentBridge: singleton с EnsureStarted + Send + авторестарт
+   Файл: TeklaMcpServer/PersistentBridge.cs (новый)
+   Объём: ~80 строк
+
+3. RunBridge(): заменить Process.Start на PersistentBridge.Instance.Send
+   Файл: TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs
+   Объём: ~10 строк изменений
+
+4. Тест: get_drawing_views → открыть чертёж → 10 последовательных вызовов
+   Ожидаемое время: < 500 мс суммарно (vs ~25 секунд сейчас)
+```
+
+**Оценка объёма:** ~120 строк кода, ~0.5 дня работы.
+**Приоритет: ВЫСОКИЙ** — без этого инструмент непригоден для реального использования.
+
+---
+
 ## Технический долг
 
 ### Рефакторинг 2026-03-05: Drawing View API перенесён в TeklaMcpServer.Api ✅
