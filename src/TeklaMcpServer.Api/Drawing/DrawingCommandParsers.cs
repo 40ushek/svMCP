@@ -227,6 +227,44 @@ public static class DrawingCommandParsers
         return request;
     }
 
+    public static DeleteDimensionParseResult ParseDeleteDimensionRequest(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var dimensionId))
+            return DeleteDimensionParseResult.Fail("Usage: delete_dimension <dimensionId>");
+
+        return DeleteDimensionParseResult.Success(new DeleteDimensionRequest
+        {
+            DimensionId = dimensionId
+        });
+    }
+
+    public static PartGeometryInViewParseResult ParsePartGeometryInViewRequest(string[] args)
+    {
+        if (args.Length < 3
+            || !int.TryParse(args[1], out var viewId)
+            || !int.TryParse(args[2], out var modelId))
+        {
+            return PartGeometryInViewParseResult.Fail("Usage: get_part_geometry_in_view <viewId> <modelId>");
+        }
+
+        return PartGeometryInViewParseResult.Success(new PartGeometryInViewRequest
+        {
+            ViewId = viewId,
+            ModelId = modelId
+        });
+    }
+
+    public static GridAxesParseResult ParseGridAxesRequest(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+            return GridAxesParseResult.Fail("Usage: get_grid_axes <viewId>");
+
+        return GridAxesParseResult.Success(new GridAxesRequest
+        {
+            ViewId = viewId
+        });
+    }
+
     public static NonNegativeDoubleParseResult ParseArrangeMarksGap(string[] args) =>
         ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "gap");
 
@@ -385,4 +423,59 @@ public sealed class FitViewsToSheetRequest
     public double Margin { get; set; }
     public double Gap { get; set; }
     public double TitleBlockHeight { get; set; }
+}
+
+public sealed class DeleteDimensionRequest
+{
+    public int DimensionId { get; set; }
+}
+
+public sealed class DeleteDimensionParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public DeleteDimensionRequest Request { get; private set; } = new();
+
+    public static DeleteDimensionParseResult Success(DeleteDimensionRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static DeleteDimensionParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class PartGeometryInViewRequest
+{
+    public int ViewId { get; set; }
+    public int ModelId { get; set; }
+}
+
+public sealed class PartGeometryInViewParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public PartGeometryInViewRequest Request { get; private set; } = new();
+
+    public static PartGeometryInViewParseResult Success(PartGeometryInViewRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static PartGeometryInViewParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class GridAxesRequest
+{
+    public int ViewId { get; set; }
+}
+
+public sealed class GridAxesParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public GridAxesRequest Request { get; private set; } = new();
+
+    public static GridAxesParseResult Success(GridAxesRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static GridAxesParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
 }

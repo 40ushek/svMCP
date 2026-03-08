@@ -699,15 +699,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "delete_dimension":
             {
-                // args: dimensionId
-                if (args.Length < 2 || !int.TryParse(args[1], out var ddId))
+                var parseResult = DrawingCommandParsers.ParseDeleteDimensionRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: delete_dimension <dimensionId>\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingDimensionsApi(_model);
-                var result = api.DeleteDimension(ddId);
+                var result = api.DeleteDimension(parseResult.Request.DimensionId);
                 if (!result.HasActiveDrawing)
                 {
                     _output.WriteLine("{\"error\":\"No drawing is currently open.\"}");
@@ -729,16 +729,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         {
             case "get_part_geometry_in_view":
             {
-                // args: viewId, modelId
-                if (args.Length < 3
-                    || !int.TryParse(args[1], out var pgViewId)
-                    || !int.TryParse(args[2], out var pgModelId))
+                var parseResult = DrawingCommandParsers.ParsePartGeometryInViewRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: get_part_geometry_in_view <viewId> <modelId>\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
                 var pgApi    = new TeklaDrawingPartGeometryApi(_model);
-                var pgResult = pgApi.GetPartGeometryInView(pgViewId, pgModelId);
+                var pgResult = pgApi.GetPartGeometryInView(parseResult.Request.ViewId, parseResult.Request.ModelId);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     success    = pgResult.Success,
@@ -757,13 +755,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "get_grid_axes":
             {
-                if (args.Length < 2 || !int.TryParse(args[1], out var gaViewId))
+                var parseResult = DrawingCommandParsers.ParseGridAxesRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: get_grid_axes <viewId>\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
                 var gaApi    = new TeklaDrawingGridApi();
-                var gaResult = gaApi.GetGridAxes(gaViewId);
+                var gaResult = gaApi.GetGridAxes(parseResult.Request.ViewId);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     success = gaResult.Success,
