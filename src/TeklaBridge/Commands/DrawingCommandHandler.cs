@@ -585,19 +585,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
                 var pgApi    = new TeklaDrawingPartGeometryApi(_model);
                 var pgResult = pgApi.GetPartGeometryInView(parseResult.Request.ViewId, parseResult.Request.ModelId);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    success    = pgResult.Success,
-                    viewId     = pgResult.ViewId,
-                    modelId    = pgResult.ModelId,
-                    startPoint = pgResult.StartPoint,
-                    endPoint   = pgResult.EndPoint,
-                    axisX      = pgResult.AxisX,
-                    axisY      = pgResult.AxisY,
-                    bboxMin    = pgResult.BboxMin,
-                    bboxMax    = pgResult.BboxMax,
-                    error      = pgResult.Error
-                }));
+                WritePartGeometryInViewResult(pgResult);
                 return true;
             }
 
@@ -611,22 +599,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
                 var gaApi    = new TeklaDrawingGridApi();
                 var gaResult = gaApi.GetGridAxes(parseResult.Request.ViewId);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    success = gaResult.Success,
-                    viewId  = gaResult.ViewId,
-                    axes    = gaResult.Axes.Select(a => new
-                    {
-                        label      = a.Label,
-                        direction  = a.Direction,
-                        coordinate = a.Coordinate,
-                        startX     = a.StartX,
-                        startY     = a.StartY,
-                        endX       = a.EndX,
-                        endY       = a.EndY
-                    }),
-                    error   = gaResult.Error
-                }));
+                WriteGridAxesResult(gaResult);
                 return true;
             }
 
@@ -900,6 +873,43 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 material = p.Material,
                 name = p.Name
             })
+        }));
+    }
+
+    private void WritePartGeometryInViewResult(PartGeometryInViewResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            modelId = result.ModelId,
+            startPoint = result.StartPoint,
+            endPoint = result.EndPoint,
+            axisX = result.AxisX,
+            axisY = result.AxisY,
+            bboxMin = result.BboxMin,
+            bboxMax = result.BboxMax,
+            error = result.Error
+        }));
+    }
+
+    private void WriteGridAxesResult(GetGridAxesResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            axes = result.Axes.Select(a => new
+            {
+                label = a.Label,
+                direction = a.Direction,
+                coordinate = a.Coordinate,
+                startX = a.StartX,
+                startY = a.StartY,
+                endX = a.EndX,
+                endY = a.EndY
+            }),
+            error = result.Error
         }));
     }
 
