@@ -104,6 +104,31 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static GaDrawingCreationParseResult ParseGaDrawingCreationRequest(string[] args)
+    {
+        var drawingProperties = args.Length > 1 && !string.IsNullOrWhiteSpace(args[1])
+            ? args[1]
+            : "standard";
+
+        var openDrawing = true;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) && bool.TryParse(args[2], out var parsedOpen))
+            openDrawing = parsedOpen;
+
+        var viewName = args.Length > 3 ? args[3] : string.Empty;
+        if (string.IsNullOrWhiteSpace(viewName))
+        {
+            return GaDrawingCreationParseResult.Fail(
+                "viewName is required for this Tekla version. Pass a saved model view name.");
+        }
+
+        return GaDrawingCreationParseResult.Success(new GaDrawingCreationRequest
+        {
+            DrawingProperties = drawingProperties,
+            OpenDrawing = openDrawing,
+            ViewName = viewName
+        });
+    }
+
     public static MoveViewParseResult ParseMoveViewRequest(string[] args)
     {
         if (args.Length < 4)
@@ -321,6 +346,26 @@ public sealed class ModelObjectDrawingCreationParseResult
         new() { IsValid = true, Request = request };
 
     public static ModelObjectDrawingCreationParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class GaDrawingCreationRequest
+{
+    public string DrawingProperties { get; set; } = "standard";
+    public bool OpenDrawing { get; set; } = true;
+    public string ViewName { get; set; } = string.Empty;
+}
+
+public sealed class GaDrawingCreationParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public GaDrawingCreationRequest Request { get; private set; } = new();
+
+    public static GaDrawingCreationParseResult Success(GaDrawingCreationRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static GaDrawingCreationParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

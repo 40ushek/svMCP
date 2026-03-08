@@ -281,23 +281,26 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         {
             case "create_ga_drawing":
             {
-                var drawingProperties = args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]) ? args[1] : "standard";
-                var openDrawing = true;
-                if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) && bool.TryParse(args[2], out var parsedOpen))
-                    openDrawing = parsedOpen;
-
-                var viewName = args.Length > 3 ? args[3] : string.Empty;
-                if (string.IsNullOrWhiteSpace(viewName))
+                var parseResult = DrawingCommandParsers.ParseGaDrawingCreationRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"viewName is required for this Tekla version. Pass a saved model view name.\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
                 var api = new TeklaDrawingCreationApi(_model);
-                var result = api.CreateGaDrawing(viewName, drawingProperties, openDrawing);
+                var result = api.CreateGaDrawing(
+                    parseResult.Request.ViewName,
+                    parseResult.Request.DrawingProperties,
+                    parseResult.Request.OpenDrawing);
                 if (!result.Created)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = "Failed to create GA drawing", details = result.ErrorDetails, viewName }));
+                    _output.WriteLine(JsonSerializer.Serialize(new
+                    {
+                        error = "Failed to create GA drawing",
+                        details = result.ErrorDetails,
+                        viewName = parseResult.Request.ViewName
+                    }));
                     return true;
                 }
 
