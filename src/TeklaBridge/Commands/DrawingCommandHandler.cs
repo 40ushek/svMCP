@@ -675,6 +675,9 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleMarkCommands(string command, string[] args)
     {
+        TeklaDrawingMarkApi? api = null;
+        TeklaDrawingMarkApi GetMarkApi() => api ??= new TeklaDrawingMarkApi(_model);
+
         switch (command)
         {
             case "arrange_marks":
@@ -686,8 +689,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.ArrangeMarks(parseResult.Value);
+                var result = GetMarkApi().ArrangeMarks(parseResult.Value);
                 WriteMarkArrangementResult(result);
                 return true;
             }
@@ -696,8 +698,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             {
                 var parseRequest = DrawingCommandParsers.ParseCreatePartMarksRequest(args);
 
-                var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.CreatePartMarks(
+                var result = GetMarkApi().CreatePartMarks(
                     parseRequest.ContentAttributesCsv,
                     parseRequest.MarkAttributesFile,
                     parseRequest.FrameType,
@@ -719,8 +720,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingMarkApi(_model);
-                var result = api.DeleteAllMarks();
+                var result = GetMarkApi().DeleteAllMarks();
                 _output.WriteLine(JsonSerializer.Serialize(new { deletedCount = result.DeletedCount }));
                 return true;
             }
@@ -733,8 +733,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     WriteError(parseResult.Error);
                     return true;
                 }
-                var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.ResolveMarkOverlaps(parseResult.Value);
+                var result = GetMarkApi().ResolveMarkOverlaps(parseResult.Value);
                 WriteMarkArrangementResult(result);
                 return true;
             }
@@ -743,8 +742,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             {
                 var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
-                var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.GetMarks(viewId);
+                var result = GetMarkApi().GetMarks(viewId);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     total    = result.Total,
