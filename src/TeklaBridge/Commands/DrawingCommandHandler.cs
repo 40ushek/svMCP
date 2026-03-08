@@ -182,15 +182,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.ExportDrawingsPdf(
                     parseResult.Request.RequestedGuids,
                     parseResult.Request.OutputDirectory);
-
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    exportedCount = result.ExportedFiles.Count,
-                    exportedFiles = result.ExportedFiles,
-                    failedToExport = result.FailedToExport,
-                    missingGuids = result.MissingGuids,
-                    outputDirectory = result.OutputDirectory
-                }));
+                WriteExportDrawingsPdfResult(result);
                 return true;
             }
 
@@ -586,7 +578,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var result = GetMarkApi().DeleteAllMarks();
-                _output.WriteLine(JsonSerializer.Serialize(new { deletedCount = result.DeletedCount }));
+                WriteDeleteAllMarksResult(result);
                 return true;
             }
 
@@ -739,6 +731,26 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             skippedCount = result.SkippedCount,
             createdMarkIds = result.CreatedMarkIds,
             attributesLoaded = result.AttributesLoaded
+        }));
+    }
+
+    private void WriteDeleteAllMarksResult(DeleteAllMarksResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            deletedCount = result.DeletedCount
+        }));
+    }
+
+    private void WriteExportDrawingsPdfResult(ExportDrawingsPdfResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            exportedCount = result.ExportedFiles.Count,
+            exportedFiles = result.ExportedFiles,
+            failedToExport = result.FailedToExport,
+            missingGuids = result.MissingGuids,
+            outputDirectory = result.OutputDirectory
         }));
     }
 
