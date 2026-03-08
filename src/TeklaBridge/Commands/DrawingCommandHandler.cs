@@ -1,7 +1,4 @@
 using System;
-using System.Text.Json;
-using Tekla.Structures.Drawing;
-using Tekla.Structures.Drawing.UI;
 using Tekla.Structures.Model;
 
 namespace TeklaBridge.Commands;
@@ -75,45 +72,5 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
-
-    private bool EnsureActiveDrawing(string noActiveDrawingJson)
-    {
-        if (new DrawingHandler().GetActiveDrawing() != null)
-            return true;
-
-        WriteRawJson(noActiveDrawingJson);
-        return false;
-    }
-
-    private bool EnsureActiveDrawing()
-    {
-        return EnsureActiveDrawing(NoActiveDrawingErrorJson);
-    }
-
-    private bool EnsureActiveDrawingShort()
-    {
-        return EnsureActiveDrawing(NoActiveDrawingShortErrorJson);
-    }
-
-    private void WriteError(string message)
-    {
-        WriteJson(new { error = message });
-    }
-
-    private void WriteJson<T>(T payload)
-    {
-        _output.WriteLine(JsonSerializer.Serialize(payload));
-    }
-
-    private void WriteRawJson(string json)
-    {
-        _output.WriteLine(json);
-    }
-
-    private void WriteNoActiveDrawingWithPeriodError()
-    {
-        WriteRawJson(NoActiveDrawingWithPeriodErrorJson);
-    }
-
 }
 
