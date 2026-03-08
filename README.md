@@ -1,13 +1,13 @@
 # svMCP — Tekla Structures MCP Server
 
-MCP (Model Context Protocol) сервер для работы с **Tekla Structures 2021** через Claude Desktop и другие MCP-клиенты.
+MCP (Model Context Protocol) сервер для работы с **Tekla Structures 2021 и 2025** через Claude Desktop и другие MCP-клиенты.
 
 ## Требования
 
 - Windows 10/11
 - .NET 8 SDK
 - .NET Framework 4.8 (входит в Windows 10+)
-- Tekla Structures 2021 (установленная и запущенная)
+- Tekla Structures **2021** или **2025** (установленная и запущенная)
 
 ## Установка и настройка
 
@@ -46,6 +46,36 @@ dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 > Если менялся только TeklaBridge — его можно пересобрать без закрытия Claude Desktop,
 > результат копируется в `bridge/` автоматически через цель `BuildAndCopyTeklaBridge`.
 
+### Дополнительно для Tekla Structures 2025
+
+TeklaBridge должен запускаться из папки расширений Tekla, а не из стандартной `bridge/` директории.
+Это необходимо, потому что Tekla генерирует `exe.config` с `<codeBase>` записями, которые
+указывают на установленные DLL с правильными версиями (FileVersion `2025.0.52577.0`, а не NuGet `2025.0.0.0`).
+
+Папка расширений: `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\`
+
+**Деплой TeklaBridge для TS2025:**
+
+```bash
+# Сборка TeklaBridge (без закрытия Claude Desktop)
+dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
+
+# Скопировать TeklaBridge.exe и TeklaMcpServer.Api.dll в папку расширений
+$src = "src\TeklaBridge\bin\Release\net48"
+$dst = "C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP"
+New-Item -ItemType Directory -Force $dst
+Copy-Item "$src\TeklaBridge.exe" $dst
+Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
+# Также скопировать сторонние зависимости (System.Text.Json, Newtonsoft.Json и т.д.)
+```
+
+**exe.config:** создаётся вручную один раз и хранится в extensions-папке.
+Содержит `<bindingRedirect>` + `<codeBase>` для всех Tekla DLL, указывающие на `C:\TeklaStructures\2025.0\bin\`.
+Исходник-генератор: `C:\temp\GenConfig2.ps1`.
+
+TeklaMcpServer автоматически определяет наличие TS2025 и запускает мост из extensions-папки,
+если файл существует (`ResolveBridgePath()` в `ModelTools.Shared.cs`).
+
 ## Архитектура
 
 ```
@@ -56,15 +86,20 @@ TeklaMcpServer.exe  (net8.0-windows)
     │  Process.Start → stdout pipe
     ▼
 TeklaBridge.exe  (net48)
-    │  .NET Remoting IPC
+    │  .NET Remoting IPC (TS2021) / Trimble.Remoting MMF (TS2025)
     ▼
-Tekla Structures 2021
+Tekla Structures 2021 / 2025
 ```
 
 ### Почему два процесса?
 
-Tekla Structures 2021 Open API требует **net48** и работает через **.NET Remoting IPC**.
+Tekla Structures Open API требует **net48**.
 MCP SDK требует **net8+**. Совместить в одном процессе невозможно — разные рантаймы, разные CLR.
+
+| Версия | IPC-механизм | Особенность запуска |
+|---|---|---|
+| TS2021 | .NET Remoting, named pipes | Reflection-фикс имени канала (суффикс `-Console:`) |
+| TS2025 | Trimble.Remoting, Memory Mapped Files | Запуск из extensions-папки с `exe.config` + `<codeBase>` |
 
 TeklaBridge — тонкая net48-обёртка: принимает команду первым аргументом, выполняет Tekla API, возвращает JSON в stdout.
 
@@ -447,17 +482,94 @@ dotnet build ...
 
 ---
 
-### Итог
+### Этап 9. Поддержка Tekla Structures 2025
+
+После перехода на TS2025 TeklaBridge перестал подключаться с новой ошибкой:
+
+```
+RemotingIOException: Cannot connect to remoting service
+'Tekla.Structures.Model-TeklaStructures-Console:2025.0.0.0' because it does not exist
+```
+
+#### Смена транспорта в TS2025
+
+TS2025 заменил `.NET Remoting` (named pipes) на `Trimble.Remoting` поверх **Memory Mapped Files** (MMF).
+Имя MMF-объекта включает не AssemblyVersion, а **FileVersion** установленного DLL.
+
+| | TS2021 | TS2025 |
+|---|---|---|
+| Транспорт | `System.Runtime.Remoting`, named pipes | `Trimble.Remoting`, MMF |
+| Имя канала | `Tekla.Structures.Model-Console:2021.0.0.0` | `Tekla.Structures.Model-TeklaStructures-Console:2025.0.52577.0` |
+| NuGet версия | `2021.0.0.0` = FileVersion | `2025.0.0.0` ≠ FileVersion `2025.0.52577.0` |
+
+#### Попытка 1: Runtime-патч через reflection
+
+Прочитать FileVersion установленного DLL через `FileVersionInfo.GetVersionInfo()` и обновить
+статические поля `ChannelName` в загруженных NuGet-сборках. **Не сработало** — статические
+конструкторы NuGet DLL ещё не выполнились в момент патча; `Remoter.ChannelName` был `null`.
+
+#### Решение: запуск из extensions-папки с exe.config
+
+Правильный подход — загрузить **установленные** Tekla DLL (с правильной FileVersion) вместо NuGet копий.
+
+1. **TeklaBridge.exe** копируется в:
+   `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\`
+
+2. Рядом кладётся **`TeklaBridge.exe.config`** с `<codeBase>` записями для всех Tekla/Trimble DLL:
+   ```xml
+   <dependentAssembly>
+     <assemblyIdentity name="Tekla.Structures.Model" publicKeyToken="..." culture="neutral"/>
+     <bindingRedirect oldVersion="0.0.0.0-2025.0.0.0" newVersion="2025.0.0.0"/>
+     <codeBase version="2025.0.0.0" href="file:///C:/TeklaStructures/2025.0/bin/Tekla.Structures.Model.dll"/>
+   </dependentAssembly>
+   ```
+
+3. Когда TeklaBridge запускается из этой папки, CLR подхватывает `exe.config` и загружает
+   DLL из `C:\TeklaStructures\2025.0\bin\` — там FileVersion `2025.0.52577.0`, канал работает.
+
+4. **TeklaMcpServer** автоматически выбирает мост из extensions-папки при наличии:
+   ```csharp
+   private static string ResolveBridgePath() {
+       // Newest TS >= 2025 with TeklaBridge.exe in extensions folder takes priority
+       var extensionsBridge = Directory.GetDirectories(@"C:\TeklaStructures")
+           .Where(d => Version.TryParse(...) && v.Major >= 2025)
+           .OrderByDescending(...)
+           .Select(d => Path.Combine(d, "Environments", "common", "extensions", "svMCP", "TeklaBridge.exe"))
+           .FirstOrDefault(File.Exists);
+       return extensionsBridge ?? localBridgePath;
+   }
+   ```
+
+#### Дополнительные изменения (TeklaBridge/Program.cs)
+
+- Определение версии API: `typeof(Model).Assembly.GetName().Version?.Major`
+- `< 2025` → `ApplyIpcChannelFix()` (старый reflection-фикс `-:` → `-Console:`)
+- `>= 2025` → `ApplyTs2025ChannelVersionFix()` (читает FileVersion, патчит если поля инициализированы)
+- Определение пути bin: TS2021 — `nt/bin/`, TS2025 — `bin/` напрямую
+- `XS_DIR` для TS2025 = корневая папка (`C:\TeklaStructures\2025.0`), без `nt/` подкаталога
+
+#### Итог
 
 | Проблема | Причина | Решение |
 |---|---|---|
-| IPC не работает из pipe | Tekla вычисляет имя канала по типу stdout | Reflection-фикс всех `*Internal` каналов до `new Model()` |
+| MMF канал не найден | NuGet DLL имеет FileVersion `2025.0.0.0`, а не `2025.0.52577.0` | Запуск из extensions-папки, DLL грузятся через `<codeBase>` из installed dir |
+| Сборка не находит путь TS2025 | Код проверял только `nt/bin/` | Добавлена проверка `bin/` напрямую |
+| `XS_SYSTEM` указывал на TS2021 | Нет — `DetectTeklaRootForMajor` возвращал null | Исправлена проверка директории |
+
+---
+
+### Итог (все версии)
+
+| Проблема | Причина | Решение |
+|---|---|---|
+| IPC не работает из pipe (TS2021) | Tekla вычисляет имя канала по типу stdout | Reflection-фикс всех `*Internal` каналов до `new Model()` |
 | Drawing API не подключается | `DrawingInternal.dll` не грузится автоматически | Force-load всех `*Internal*.dll` |
 | PDF экспорт падает | `TeklaStructuresInternal` тоже сломан | Универсальное сканирование по значению `-:` |
 | Мусор в JSON выводе | Tekla пишет в Console.Out | Перехват Console.Out до API вызовов |
 | EXE заблокирован | Claude Desktop держит файл открытым | Закрывать Claude Desktop перед пересборкой |
 | NETSDK1004 после git | `obj/` в .gitignore | `dotnet restore` перед build |
 | `filter_model_objects` всегда возвращал 0 | `is Beam` не работает для IPC-прокси + `"count"` vs `"Count"` | `GetType().Name` + обе формы ключа |
+| MMF канал не найден (TS2025) | FileVersion mismatch: NuGet `2025.0.0.0` ≠ installed `2025.0.52577.0` | extensions-папка + exe.config с `<codeBase>` на installed DLLs |
 
 ---
 

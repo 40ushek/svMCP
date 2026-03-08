@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**svMCP** is a Windows-only MCP (Model Context Protocol) server that bridges Claude and other MCP clients to **Tekla Structures 2021** (a structural BIM design application). It exposes Tekla model and drawing operations as MCP tools over stdio transport.
+**svMCP** is a Windows-only MCP (Model Context Protocol) server that bridges Claude and other MCP clients to **Tekla Structures 2021 / 2025** (a structural BIM design application). It exposes Tekla model and drawing operations as MCP tools over stdio transport.
 
 ## Build & Run
 
@@ -16,7 +16,7 @@ dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 ```
 
-- Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2021 (Windows only)
+- Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2021 or 2025 (Windows only)
 - The server communicates via **stdio** — launched by an MCP client (e.g., Claude Desktop), not run interactively
 - **TeklaMcpServer.exe is locked by Claude Desktop** while it's open — always close Claude Desktop before rebuilding TeklaMcpServer. TeklaBridge.exe can be rebuilt without closing Claude Desktop.
 
@@ -32,12 +32,19 @@ TeklaMcpServer.exe  (net8.0-windows)
     │  Process.Start → stdout pipe
     ▼
 TeklaBridge.exe  (net48)
-    │  .NET Remoting IPC
+    │  .NET Remoting IPC (TS2021) / Trimble.Remoting MMF (TS2025)
     ▼
-Tekla Structures 2021
+Tekla Structures 2021 / 2025
 ```
 
-**Why two processes?** MCP SDK requires .NET 8+; Tekla Structures 2021 Open API requires .NET Framework 4.8. Two different CLRs cannot run in the same process.
+**Why two processes?** MCP SDK requires .NET 8+; Tekla Open API requires .NET Framework 4.8. Two different CLRs cannot run in the same process.
+
+**TS2025 deployment:** For TS2025, TeklaBridge.exe must run from the Tekla extensions folder so that the installed DLLs (FileVersion `2025.0.52577.0`) are loaded instead of NuGet copies (`2025.0.0.0`). The extensions folder and the channel name format differ.
+
+| Version | IPC transport | TeklaBridge location |
+|---|---|---|
+| TS2021 | .NET Remoting, named pipes | `bridge/` next to TeklaMcpServer |
+| TS2025 | Trimble.Remoting, MMF | `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` |
 
 TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and returns JSON to stdout.
 
@@ -151,7 +158,19 @@ src/
 
 ## Critical Tekla API Patterns
 
-### IPC Channel Fix (must run before any Tekla API call)
+### IPC / Remoting Connection (version-dependent)
+
+TeklaBridge selects the fix strategy based on the compiled API version:
+
+```csharp
+var apiVersion = typeof(Model).Assembly.GetName().Version;
+if (apiVersion == null || apiVersion.Major < 2025)
+    ApplyIpcChannelFix();      // TS2021: reflection patch of named-pipe channel names
+else
+    ApplyTs2025ChannelVersionFix(teklaRoot); // TS2025: patch FileVersion suffix if fields are initialized
+```
+
+#### TS2021 — IPC Channel Fix (named pipes)
 
 When TeklaBridge stdout is a pipe (redirected by MCP server), Tekla computes IPC channel names without the `-Console` suffix, causing `RemotingException: Failed to connect to an IPC Port`. The fix scans all static string fields across all Tekla assemblies and corrects the channel names:
 
@@ -186,6 +205,24 @@ This must execute **before** `new Model()` or `new DrawingHandler()`. Affects th
 - `Tekla.Structures.Model-Console:2021.0.0.0`
 - `Tekla.Structures.Drawing-Console:2021.0.0.0`
 - `Tekla.Structures.TeklaStructures-Console:2021.0.0.0`
+
+#### TS2025 — Extensions folder deployment (MMF / Trimble.Remoting)
+
+TS2025 uses `Trimble.Remoting` over Memory Mapped Files. Channel name includes the installed **FileVersion** (`2025.0.52577.0`), not the NuGet AssemblyVersion (`2025.0.0.0`).
+
+**The only working solution:** run TeklaBridge from the Tekla extensions folder with an `exe.config` that has `<codeBase>` entries pointing to installed DLLs. CLR then loads the installed DLLs which have the correct FileVersion baked into their static channel name fields.
+
+```
+C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\
+    TeklaBridge.exe          ← copy of built bridge
+    TeklaBridge.exe.config   ← custom config with <codeBase> entries for all Tekla DLLs
+    TeklaMcpServer.Api.dll
+    System.Text.Json.dll     ← non-Tekla runtime deps
+    Newtonsoft.Json.dll
+    ...
+```
+
+`TeklaMcpServer` prefers this path automatically via `ResolveBridgePath()` in `ModelTools.Shared.cs`.
 
 ### Console.Out Capture
 

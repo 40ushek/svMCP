@@ -359,6 +359,31 @@ tidy_drawing
 
 ---
 
+## Поддержка версий Tekla
+
+| Версия | Статус | IPC | Особенности |
+|---|---|---|---|
+| **TS2021** | ✅ Работает | .NET Remoting, named pipes | Reflection-фикс `-:` → `-Console:` до `new Model()` |
+| **TS2025** | ✅ Работает | Trimble.Remoting, MMF | TeklaBridge в extensions-папке + `exe.config` с `<codeBase>` |
+
+### Деплой TeklaBridge для TS2025
+
+Для TS2025 TeklaBridge.exe должен запускаться из папки расширений Tekla:
+`C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\`
+
+Это необходимо из-за несоответствия версий: NuGet пакет `2025.0.0.0` vs. установленная FileVersion `2025.0.52577.0`.
+Канал MMF содержит FileVersion — поэтому NuGet DLL не может найти канал, а установленная DLL — может.
+
+**Требуется:**
+1. `TeklaBridge.exe` + `TeklaMcpServer.Api.dll` + не-Tekla зависимости → скопировать в extensions-папку
+2. `TeklaBridge.exe.config` с `<codeBase>` записями → хранится в extensions-папке вручную
+3. Генератор конфига: `C:\temp\GenConfig2.ps1`
+
+TeklaMcpServer автоматически выбирает bridge из extensions-папки если файл существует
+(`ResolveBridgePath()` в `src/TeklaMcpServer/Tools/Shared/ModelTools.Shared.cs`).
+
+---
+
 ## Деплой и UX для конечного пользователя
 
 ### Текущая схема (stdio)
