@@ -300,12 +300,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    selectedCount = result.SelectedDrawingObjectIds.Count,
-                    selectedDrawingObjectIds = result.SelectedDrawingObjectIds,
-                    selectedModelIds = result.SelectedModelIds
-                }));
+                WriteSelectDrawingObjectsResult(result);
                 return true;
             }
 
@@ -328,19 +323,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.SpecificType);
                 if (!result.IsKnownType)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        error = $"Unknown drawing type: {parseResult.Request.ObjectType}",
-                        hint = "Use Tekla.Structures.Drawing type names, e.g. Mark, Part, DimensionBase, Text."
-                    }));
+                    WriteUnknownDrawingTypeError(parseResult.Request.ObjectType);
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(
-                    result.Objects,
-                    x => x.Id,
-                    x => x.Type,
-                    x => x.ModelId)));
+                WriteFilterDrawingObjectsResult(result);
                 return true;
             }
 
@@ -360,15 +347,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
                 var api = new TeklaDrawingMarkApi(_model);
                 var result = api.SetMarkContent(parseResult.Request);
-
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    updatedCount = result.UpdatedObjectIds.Count,
-                    failedCount = result.FailedObjectIds.Count,
-                    updatedObjectIds = result.UpdatedObjectIds,
-                    failedObjectIds = result.FailedObjectIds,
-                    errors = result.Errors
-                }));
+                WriteSetMarkContentResult(result);
                 return true;
             }
 
@@ -380,23 +359,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var result = GetInteractionApi().GetDrawingContext();
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    drawing = new
-                    {
-                        guid = result.Drawing.Guid,
-                        name = result.Drawing.Name,
-                        mark = result.Drawing.Mark,
-                        type = result.Drawing.Type,
-                        status = result.Drawing.Status
-                    },
-                    selectedCount = result.SelectedObjects.Count,
-                    selectedObjects = MapDrawingObjects(
-                        result.SelectedObjects,
-                        x => x.Id,
-                        x => x.Type,
-                        x => x.ModelId)
-                }));
+                WriteDrawingContextResult(result);
                 return true;
             }
 
@@ -858,6 +821,67 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 width = v.Width,
                 height = v.Height
             })
+        }));
+    }
+
+    private void WriteSelectDrawingObjectsResult(SelectDrawingObjectsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            selectedCount = result.SelectedDrawingObjectIds.Count,
+            selectedDrawingObjectIds = result.SelectedDrawingObjectIds,
+            selectedModelIds = result.SelectedModelIds
+        }));
+    }
+
+    private void WriteUnknownDrawingTypeError(string objectType)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            error = $"Unknown drawing type: {objectType}",
+            hint = "Use Tekla.Structures.Drawing type names, e.g. Mark, Part, DimensionBase, Text."
+        }));
+    }
+
+    private void WriteFilterDrawingObjectsResult(FilterDrawingObjectsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(
+            result.Objects,
+            x => x.Id,
+            x => x.Type,
+            x => x.ModelId)));
+    }
+
+    private void WriteSetMarkContentResult(SetMarkContentResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            updatedCount = result.UpdatedObjectIds.Count,
+            failedCount = result.FailedObjectIds.Count,
+            updatedObjectIds = result.UpdatedObjectIds,
+            failedObjectIds = result.FailedObjectIds,
+            errors = result.Errors
+        }));
+    }
+
+    private void WriteDrawingContextResult(DrawingContextResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            drawing = new
+            {
+                guid = result.Drawing.Guid,
+                name = result.Drawing.Name,
+                mark = result.Drawing.Mark,
+                type = result.Drawing.Type,
+                status = result.Drawing.Status
+            },
+            selectedCount = result.SelectedObjects.Count,
+            selectedObjects = MapDrawingObjects(
+                result.SelectedObjects,
+                x => x.Id,
+                x => x.Type,
+                x => x.ModelId)
         }));
     }
 
