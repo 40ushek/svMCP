@@ -366,12 +366,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(result.Objects.Select(x => new
-                {
-                    id = x.Id,
-                    type = x.Type,
-                    modelId = x.ModelId
-                })));
+                _output.WriteLine(JsonSerializer.Serialize(MapDrawingObjects(
+                    result.Objects,
+                    x => x.Id,
+                    x => x.Type,
+                    x => x.ModelId)));
                 return true;
             }
 
@@ -423,12 +422,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                         status = result.Drawing.Status
                     },
                     selectedCount = result.SelectedObjects.Count,
-                    selectedObjects = result.SelectedObjects.Select(x => new
-                    {
-                        id = x.Id,
-                        type = x.Type,
-                        modelId = x.ModelId
-                    })
+                    selectedObjects = MapDrawingObjects(
+                        result.SelectedObjects,
+                        x => x.Id,
+                        x => x.Type,
+                        x => x.ModelId)
                 }));
                 return true;
             }
@@ -910,6 +908,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             mark = markSelector(d),
             type = typeSelector(d),
             status = statusSelector(d)
+        });
+    }
+
+    private static IEnumerable<object> MapDrawingObjects<TDrawingObject>(
+        IEnumerable<TDrawingObject> drawingObjects,
+        Func<TDrawingObject, object?> idSelector,
+        Func<TDrawingObject, string?> typeSelector,
+        Func<TDrawingObject, object?> modelIdSelector)
+    {
+        return drawingObjects.Select(x => (object)new
+        {
+            id = idSelector(x),
+            type = typeSelector(x),
+            modelId = modelIdSelector(x)
         });
     }
 
