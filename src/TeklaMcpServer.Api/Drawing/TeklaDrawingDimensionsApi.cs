@@ -210,7 +210,7 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         };
     }
 
-    private static Vector? TryParseVector(string s)
+    private static Vector? TryParseVector(string? s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;
         var parts = s.Split(',');

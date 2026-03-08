@@ -7,7 +7,7 @@ namespace TeklaMcpServer.Api.Filtering
 {
 	public class FilterExpressionParser
 	{
-		private List<Token> _tokens;
+		private List<Token> _tokens = new List<Token>();
 
 		private int _position;
 

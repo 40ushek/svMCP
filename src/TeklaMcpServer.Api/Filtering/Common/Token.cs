@@ -4,7 +4,7 @@ namespace TeklaMcpServer.Api.Filtering
 	{
 		public TokenType Type { get; set; }
 
-		public string Value { get; set; }
+		public string Value { get; set; } = string.Empty;
 
 		public int Position { get; set; }
 

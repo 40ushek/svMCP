@@ -71,7 +71,7 @@ public static class ToolInputSelectionHandler
         }
         else if (!string.IsNullOrWhiteSpace(elementIds))
         {
-            idsList = ParseElementIds(elementIds);
+            idsList = ParseElementIds(elementIds!);
             if (idsList.Count == 0)
             {
                 return new SelectionResult
@@ -153,7 +153,7 @@ public static class ToolInputSelectionHandler
         }
         else if (!string.IsNullOrWhiteSpace(elementIds))
         {
-            idsList = ParseElementIds(elementIds);
+            idsList = ParseElementIds(elementIds!);
             if (idsList.Count == 0)
             {
                 return new SelectionResult
@@ -293,7 +293,7 @@ public static class ToolInputSelectionHandler
 
         try
         {
-            using var doc = JsonDocument.Parse(value);
+            using var doc = JsonDocument.Parse(value!);
             if (doc.RootElement.ValueKind == JsonValueKind.True)
                 return true;
             if (doc.RootElement.ValueKind == JsonValueKind.False)

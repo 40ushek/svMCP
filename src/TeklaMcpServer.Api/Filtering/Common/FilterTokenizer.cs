@@ -6,7 +6,7 @@ namespace TeklaMcpServer.Api.Filtering
 {
 	public class FilterTokenizer
 	{
-		private string _input;
+		private string _input = string.Empty;
 
 		private int _position;
 
@@ -57,7 +57,7 @@ namespace TeklaMcpServer.Api.Filtering
 					break;
 				case '|':
 				{
-					string logicalOp = TryReadLogicalOperator();
+					string? logicalOp = TryReadLogicalOperator();
 					if (logicalOp != null)
 					{
 						tokens.Add(new Token
@@ -147,7 +147,7 @@ namespace TeklaMcpServer.Api.Filtering
 			return false;
 		}
 
-		private string TryReadLogicalOperator()
+		private string? TryReadLogicalOperator()
 		{
 			if (_position >= _input.Length || _input[_position] != '|')
 			{

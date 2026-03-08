@@ -67,7 +67,7 @@ namespace TeklaMcpServer.Api.Filtering
 		{
 			BinaryFilterExpressionCollection expressions = new BinaryFilterExpressionCollection();
 			List<Dictionary<string, object>> expressionList = new List<Dictionary<string, object>>();
-			JsonArray jsonArray = null;
+			JsonArray? jsonArray = null;
 			if (expressionsArgument is string jsonString)
 			{
 				jsonArray = JsonNode.Parse(jsonString)?.AsArray();
@@ -78,16 +78,16 @@ namespace TeklaMcpServer.Api.Filtering
 			}
 			if (jsonArray != null)
 			{
-				foreach (JsonNode item in jsonArray)
+				foreach (JsonNode? item in jsonArray)
 				{
 					if (!(item is JsonObject jObject))
 					{
 						continue;
 					}
 					Dictionary<string, object> expressionDict = new Dictionary<string, object>();
-					foreach (KeyValuePair<string, JsonNode> prop in jObject)
+					foreach (KeyValuePair<string, JsonNode?> prop in jObject)
 					{
-						expressionDict[prop.Key] = prop.Value?.ToString();
+						expressionDict[prop.Key] = prop.Value?.ToString()!;
 					}
 					expressionList.Add(expressionDict);
 				}
@@ -127,14 +127,14 @@ namespace TeklaMcpServer.Api.Filtering
 					string errorMessage = string.Format("Invalid filter expression at index {0}: missing required keys: {1}", i, string.Join(", ", missingKeys));
 					throw new FilterExpressionException(errorMessage);
 				}
-				string category = expression["category"].ToString();
-				string property = expression["property"].ToString();
-				string operatorStr = expression["operator"].ToString();
-				string value = expression["value"].ToString();
+				string category = expression["category"].ToString()!;
+				string property = expression["property"].ToString()!;
+				string operatorStr = expression["operator"].ToString()!;
+				string value = expression["value"].ToString()!;
 				BinaryFilterOperatorType logicalOp = BinaryFilterOperatorType.BOOLEAN_AND;
 				if (i > 0 && expression.ContainsKey("logicalOperator"))
 				{
-					string logicalOpStr = expression["logicalOperator"].ToString();
+					string logicalOpStr = expression["logicalOperator"].ToString()!;
 					logicalOp = ((!(logicalOpStr == "OR")) ? BinaryFilterOperatorType.BOOLEAN_AND : BinaryFilterOperatorType.BOOLEAN_OR);
 				}
 				BinaryFilterExpression filterExpression = CreateFilterExpression(category, property, operatorStr, value);

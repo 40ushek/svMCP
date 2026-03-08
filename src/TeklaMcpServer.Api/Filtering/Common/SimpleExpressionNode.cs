@@ -2,13 +2,13 @@ namespace TeklaMcpServer.Api.Filtering
 {
 	public class SimpleExpressionNode : FilterNode
 	{
-		public string Category { get; set; }
+		public string Category { get; set; } = string.Empty;
 
-		public string Property { get; set; }
+		public string Property { get; set; } = string.Empty;
 
-		public string Operator { get; set; }
+		public string Operator { get; set; } = string.Empty;
 
-		public string Value { get; set; }
+		public string Value { get; set; } = string.Empty;
 
 		public override string ToString()
 		{

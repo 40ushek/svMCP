@@ -41,12 +41,13 @@ public class SelectionCacheManager : ISelectionCacheManager
         if (string.IsNullOrWhiteSpace(selectionId))
             return false;
 
-        if (!_idsBySelection.TryGetValue(selectionId, out var entry))
+        var key = selectionId!;
+        if (!_idsBySelection.TryGetValue(key, out var entry))
             return false;
 
         if (DateTime.UtcNow - entry.StoredAtUtc > _defaultTtl)
         {
-            _idsBySelection.TryRemove(selectionId, out _);
+            _idsBySelection.TryRemove(key, out _);
             return false;
         }
 

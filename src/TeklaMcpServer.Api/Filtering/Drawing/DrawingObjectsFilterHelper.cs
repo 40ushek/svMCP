@@ -11,7 +11,7 @@ namespace TeklaMcpServer.Api.Filtering
 {
 	public static class DrawingObjectsFilterHelper
 	{
-		public static List<int> FindDrawingObjectsIds(TsDrawing activeDrawing, TsModel model, string objectType, string specificType)
+		public static List<int>? FindDrawingObjectsIds(TsDrawing activeDrawing, TsModel model, string objectType, string specificType)
 		{
 			Type targetType = Type.GetType("Tekla.Structures.Drawing." + objectType + ", Tekla.Structures.Drawing");
 			if (targetType == null)
@@ -22,7 +22,7 @@ namespace TeklaMcpServer.Api.Filtering
 			string text = name;
 			Func<DrawingObject, bool> predicate = ((!(text == "Mark")) ? ((Func<DrawingObject, bool>)((DrawingObject obj) => targetType.IsInstanceOfType(obj))) : ((Func<DrawingObject, bool>)delegate(DrawingObject obj)
 			{
-				Mark mark = obj as Mark;
+				Mark? mark = obj as Mark;
 				return string.IsNullOrEmpty(specificType) || GetMarkType(mark, model).Equals(specificType, StringComparison.OrdinalIgnoreCase);
 			}));
 			List<int> foundObjects = new List<int>();
@@ -38,7 +38,7 @@ namespace TeklaMcpServer.Api.Filtering
 			return foundObjects;
 		}
 
-		public static List<DrawingObject> FindDrawingObjects(TsDrawing activeDrawing, TsModel model, string objectType, string specificType)
+		public static List<DrawingObject>? FindDrawingObjects(TsDrawing activeDrawing, TsModel model, string objectType, string specificType)
 		{
 			Type targetType = Type.GetType("Tekla.Structures.Drawing." + objectType + ", Tekla.Structures.Drawing");
 			if (targetType == null)
@@ -49,7 +49,7 @@ namespace TeklaMcpServer.Api.Filtering
 			string text = name;
 			Func<DrawingObject, bool> predicate = ((!(text == "Mark")) ? ((Func<DrawingObject, bool>)((DrawingObject obj) => targetType.IsInstanceOfType(obj))) : ((Func<DrawingObject, bool>)delegate(DrawingObject obj)
 			{
-				Mark mark = obj as Mark;
+				Mark? mark = obj as Mark;
 				return string.IsNullOrEmpty(specificType) || GetMarkType(mark, model).Equals(specificType, StringComparison.OrdinalIgnoreCase);
 			}));
 			List<DrawingObject> foundObjects = new List<DrawingObject>();
@@ -86,8 +86,13 @@ namespace TeklaMcpServer.Api.Filtering
 			return drawingObjectsList;
 		}
 
-		private static string GetMarkType(Mark mark, TsModel model)
+		private static string GetMarkType(Mark? mark, TsModel model)
 		{
+			if (mark == null)
+			{
+				return "Unknown Mark Type";
+			}
+
 			DrawingObjectEnumerator associatedObjects = mark.GetRelatedObjects();
 			foreach (object associatedObject in associatedObjects)
 			{
