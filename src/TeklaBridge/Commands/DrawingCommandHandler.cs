@@ -314,19 +314,21 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_single_part_drawing":
             {
-                if (args.Length < 2 || !int.TryParse(args[1], out var modelObjectId) || modelObjectId <= 0)
+                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(
+                    args.Length > 1 ? args[1] : string.Empty,
+                    args.Length > 2 ? args[2] : string.Empty,
+                    args.Length > 3 ? args[3] : string.Empty);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"modelObjectId must be a positive integer\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
-                var drawingProperties = args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) ? args[2] : "standard";
-                var openDrawing = true;
-                if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) && bool.TryParse(args[3], out var parsedOpen))
-                    openDrawing = parsedOpen;
-
                 var api = new TeklaDrawingCreationApi(_model);
-                var result = api.CreateSinglePartDrawing(modelObjectId, drawingProperties, openDrawing);
+                var result = api.CreateSinglePartDrawing(
+                    parseResult.Request.ModelObjectId,
+                    parseResult.Request.DrawingProperties,
+                    parseResult.Request.OpenDrawing);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     created = result.Created,
@@ -341,19 +343,21 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_assembly_drawing":
             {
-                if (args.Length < 2 || !int.TryParse(args[1], out var modelObjectId) || modelObjectId <= 0)
+                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(
+                    args.Length > 1 ? args[1] : string.Empty,
+                    args.Length > 2 ? args[2] : string.Empty,
+                    args.Length > 3 ? args[3] : string.Empty);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"modelObjectId must be a positive integer\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
-                var drawingProperties = args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) ? args[2] : "standard";
-                var openDrawing = true;
-                if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) && bool.TryParse(args[3], out var parsedOpen))
-                    openDrawing = parsedOpen;
-
                 var api = new TeklaDrawingCreationApi(_model);
-                var result = api.CreateAssemblyDrawing(modelObjectId, drawingProperties, openDrawing);
+                var result = api.CreateAssemblyDrawing(
+                    parseResult.Request.ModelObjectId,
+                    parseResult.Request.DrawingProperties,
+                    parseResult.Request.OpenDrawing);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     created = result.Created,

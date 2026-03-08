@@ -77,6 +77,30 @@ public static class DrawingCommandParsers
             FontHeight = parsedFontHeight
         });
     }
+
+    public static ModelObjectDrawingCreationParseResult ParseModelObjectDrawingCreationRequest(
+        string? modelObjectIdRaw,
+        string? drawingPropertiesRaw,
+        string? openDrawingRaw)
+    {
+        if (!int.TryParse(modelObjectIdRaw, out var modelObjectId) || modelObjectId <= 0)
+            return ModelObjectDrawingCreationParseResult.Fail("modelObjectId must be a positive integer");
+
+        var drawingProperties = string.IsNullOrWhiteSpace(drawingPropertiesRaw)
+            ? "standard"
+            : drawingPropertiesRaw!;
+
+        var openDrawing = true;
+        if (!string.IsNullOrWhiteSpace(openDrawingRaw) && bool.TryParse(openDrawingRaw, out var parsedOpen))
+            openDrawing = parsedOpen;
+
+        return ModelObjectDrawingCreationParseResult.Success(new ModelObjectDrawingCreationRequest
+        {
+            ModelObjectId = modelObjectId,
+            DrawingProperties = drawingProperties,
+            OpenDrawing = openDrawing
+        });
+    }
 }
 
 public sealed class SetMarkContentParseResult
@@ -89,5 +113,25 @@ public sealed class SetMarkContentParseResult
         new() { IsValid = true, Request = request };
 
     public static SetMarkContentParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class ModelObjectDrawingCreationRequest
+{
+    public int ModelObjectId { get; set; }
+    public string DrawingProperties { get; set; } = "standard";
+    public bool OpenDrawing { get; set; } = true;
+}
+
+public sealed class ModelObjectDrawingCreationParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public ModelObjectDrawingCreationRequest Request { get; private set; } = new();
+
+    public static ModelObjectDrawingCreationParseResult Success(ModelObjectDrawingCreationRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static ModelObjectDrawingCreationParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
