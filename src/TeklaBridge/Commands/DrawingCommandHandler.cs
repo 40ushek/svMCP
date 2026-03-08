@@ -135,38 +135,24 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var drawingHandler = new DrawingHandler();
-                var drawingEnumerator = drawingHandler.GetDrawings();
-                Drawing? targetDrawing = null;
-
-                while (drawingEnumerator.MoveNext())
-                {
-                    var drawing = drawingEnumerator.Current;
-                    if (drawing == null) continue;
-                    if (drawing.GetIdentifier().GUID == requestedGuid)
-                    {
-                        targetDrawing = drawing;
-                        break;
-                    }
-                }
-
-                if (targetDrawing == null)
+                var api = new TeklaDrawingQueryApi();
+                var result = api.OpenDrawing(requestedGuid);
+                if (!result.Found)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
                     {
                         error = "Drawing not found",
-                        guid = requestedGuid.ToString()
+                        guid = result.RequestedGuid
                     }));
                     return true;
                 }
 
-                var opened = drawingHandler.SetActiveDrawing(targetDrawing);
-                if (!opened)
+                if (!result.Opened)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
                     {
                         error = "Failed to open drawing",
-                        guid = requestedGuid.ToString()
+                        guid = result.RequestedGuid
                     }));
                     return true;
                 }
@@ -174,39 +160,33 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     opened = true,
-                    guid = requestedGuid.ToString(),
-                    name = targetDrawing.Name,
-                    mark = targetDrawing.Mark,
-                    type = targetDrawing.GetType().Name
+                    guid = result.RequestedGuid,
+                    name = result.Drawing.Name,
+                    mark = result.Drawing.Mark,
+                    type = result.Drawing.Type
                 }));
                 return true;
             }
 
             case "close_drawing":
             {
-                var drawingHandler = new DrawingHandler();
-                var activeDrawing = drawingHandler.GetActiveDrawing();
-                if (activeDrawing == null)
+                var api = new TeklaDrawingQueryApi();
+                var result = api.CloseActiveDrawing();
+                if (!result.HasActiveDrawing)
                 {
                     _output.WriteLine("{\"error\":\"No drawing is currently open\"}");
                     return true;
                 }
 
-                var activeGuid = activeDrawing.GetIdentifier().GUID.ToString();
-                var activeName = activeDrawing.Name;
-                var activeMark = activeDrawing.Mark;
-                var activeType = activeDrawing.GetType().Name;
-
-                var closed = drawingHandler.CloseActiveDrawing();
-                if (!closed)
+                if (!result.Closed)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new
                     {
                         error = "Failed to close active drawing",
-                        guid = activeGuid,
-                        name = activeName,
-                        mark = activeMark,
-                        type = activeType
+                        guid = result.Drawing.Guid,
+                        name = result.Drawing.Name,
+                        mark = result.Drawing.Mark,
+                        type = result.Drawing.Type
                     }));
                     return true;
                 }
@@ -214,10 +194,10 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     closed = true,
-                    guid = activeGuid,
-                    name = activeName,
-                    mark = activeMark,
-                    type = activeType
+                    guid = result.Drawing.Guid,
+                    name = result.Drawing.Name,
+                    mark = result.Drawing.Mark,
+                    type = result.Drawing.Type
                 }));
                 return true;
             }
@@ -247,45 +227,16 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     ? args[2]
                     : Path.Combine(modelInfo.ModelPath, "PlotFiles");
 
-                Directory.CreateDirectory(outputDir);
-
-                var drawingHandler = new DrawingHandler();
-                var drawingEnumerator = drawingHandler.GetDrawings();
-                var exportedFiles = new List<string>();
-                var failedToExport = new List<string>();
-                var foundGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                var printAttributes = new DPMPrinterAttributes
-                {
-                    PrinterName = "Microsoft Print to PDF",
-                    OutputType = DotPrintOutputType.PDF
-                };
-
-                while (drawingEnumerator.MoveNext())
-                {
-                    var drawing = drawingEnumerator.Current;
-                    var guid = drawing.GetIdentifier().GUID.ToString();
-                    if (!requestedGuids.Contains(guid)) continue;
-
-                    foundGuids.Add(guid);
-                    var fileName = $"{SanitizeFileName(drawing.Name)}_{SanitizeFileName(drawing.Mark)}.pdf";
-                    var filePath = Path.Combine(outputDir, fileName);
-
-                    if (drawingHandler.PrintDrawing(drawing, printAttributes, filePath))
-                        exportedFiles.Add(filePath);
-                    else
-                        failedToExport.Add(guid);
-                }
-
-                var missingGuids = requestedGuids.Where(g => !foundGuids.Contains(g)).ToList();
+                var api = new TeklaDrawingQueryApi();
+                var result = api.ExportDrawingsPdf(requestedGuids.ToList(), outputDir);
 
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
-                    exportedCount = exportedFiles.Count,
-                    exportedFiles,
-                    failedToExport,
-                    missingGuids,
-                    outputDirectory = outputDir
+                    exportedCount = result.ExportedFiles.Count,
+                    exportedFiles = result.ExportedFiles,
+                    failedToExport = result.FailedToExport,
+                    missingGuids = result.MissingGuids,
+                    outputDirectory = result.OutputDirectory
                 }));
                 return true;
             }
@@ -298,7 +249,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var filters = ParseDrawingFilters(args[1]);
+                var filters = DrawingPropertyFilterParser.Parse(args[1]);
                 if (filters.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"filtersJson must be a JSON array like [{\\\"property\\\":\\\"Name\\\",\\\"value\\\":\\\"GA\\\"}]\"}");
@@ -342,13 +293,22 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                if (!CreateGaDrawingViaMacro(viewName, drawingProperties, openDrawing, out var macroError))
+                var api = new TeklaDrawingCreationApi(_model);
+                var result = api.CreateGaDrawing(viewName, drawingProperties, openDrawing);
+                if (!result.Created)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new { error = "Failed to create GA drawing", details = macroError, viewName }));
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = "Failed to create GA drawing", details = result.ErrorDetails, viewName }));
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new { created = true, drawingType = "GA", viewName, drawingProperties, openDrawing }));
+                _output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    created = true,
+                    drawingType = "GA",
+                    viewName = result.ViewName,
+                    drawingProperties = result.DrawingProperties,
+                    openDrawing = result.OpenDrawing
+                }));
                 return true;
             }
 
@@ -994,19 +954,10 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     _output.WriteLine("{\"error\":\"No active drawing\"}");
                     return true;
                 }
-                var deletedCount = 0;
-                var viewEnum = activeDrawing.GetSheet().GetViews();
-                while (viewEnum.MoveNext())
-                {
-                    if (viewEnum.Current is not View view) continue;
-                    var markEnum2 = view.GetAllObjects(typeof(Mark));
-                    while (markEnum2.MoveNext())
-                    {
-                        if (markEnum2.Current is Mark m) { m.Delete(); deletedCount++; }
-                    }
-                }
-                if (deletedCount > 0) activeDrawing.CommitChanges("(MCP) DeleteAllMarks");
-                _output.WriteLine(JsonSerializer.Serialize(new { deletedCount }));
+
+                var api = new TeklaDrawingMarkApi(_model);
+                var result = api.DeleteAllMarks();
+                _output.WriteLine(JsonSerializer.Serialize(new { deletedCount = result.DeletedCount }));
                 return true;
             }
 
@@ -1072,13 +1023,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         }
     }
 
-    private static string SanitizeFileName(string value)
-    {
-        foreach (var c in Path.GetInvalidFileNameChars())
-            value = value.Replace(c, '_');
-        return value;
-    }
-
     private static List<int> ParseIntList(string? csv)
     {
         if (string.IsNullOrWhiteSpace(csv))
@@ -1093,96 +1037,4 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             .ToList();
     }
 
-    private static List<DrawingPropertyFilter> ParseDrawingFilters(string filtersJson)
-    {
-        var result = new List<DrawingPropertyFilter>();
-        if (string.IsNullOrWhiteSpace(filtersJson)) return result;
-        try
-        {
-            using var doc = JsonDocument.Parse(filtersJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array) return result;
-            foreach (var item in doc.RootElement.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object) continue;
-                var property = item.TryGetProperty("property", out var p) ? (p.GetString() ?? string.Empty) : string.Empty;
-                var value = item.TryGetProperty("value", out var v) ? (v.GetString() ?? string.Empty) : string.Empty;
-                if (!string.IsNullOrWhiteSpace(property))
-                    result.Add(new DrawingPropertyFilter { Property = property, Value = value });
-            }
-        }
-        catch { }
-        return result;
-    }
-
-    private static bool CreateGaDrawingViaMacro(string viewName, string gaAttribute, bool openGaDrawing, out string error)
-    {
-        error = string.Empty;
-
-        if (string.IsNullOrWhiteSpace(viewName)) { error = "View name is required."; return false; }
-
-        string macroDirs = string.Empty;
-        if (!TeklaStructuresSettings.GetAdvancedOption("XS_MACRO_DIRECTORY", ref macroDirs))
-        {
-            error = "XS_MACRO_DIRECTORY is not defined.";
-            return false;
-        }
-
-        string? modelingDir = null;
-        foreach (var path in macroDirs.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
-        {
-            var cleanPath = path.Trim();
-            var subDir = Path.Combine(cleanPath, "modeling");
-            if (Directory.Exists(subDir)) { modelingDir = subDir; break; }
-            if (Directory.Exists(cleanPath)) { modelingDir = cleanPath; break; }
-        }
-
-        if (modelingDir == null) { error = "Valid modeling macro directory not found."; return false; }
-
-        var macroName = $"_tmp_ga_{Guid.NewGuid():N}.cs";
-        var macroPath = Path.Combine(modelingDir, macroName);
-        var safeViewName = viewName.Replace("\\", "\\\\").Replace("\"", "\\\"");
-        var attrLine = string.IsNullOrWhiteSpace(gaAttribute) ? string.Empty
-            : $"            akit.ValueChange(\"Create GA-drawing\", \"dia_attr_name\", \"{gaAttribute}\");{Environment.NewLine}";
-        var openFlag = openGaDrawing ? "1" : "0";
-
-        var macroSource =
-$@"
-            namespace Tekla.Technology.Akit.UserScript
-            {{
-                public sealed class Script
-                {{
-                    public static void Run(Tekla.Technology.Akit.IScript akit)
-                    {{
-                        akit.Callback(""acmd_create_dim_general_assembly_drawing"", """", ""main_frame"");
-{attrLine}            akit.ListSelect(""Create GA-drawing"", ""dia_view_name_list"", ""{safeViewName}"");
-                        akit.ValueChange(""Create GA-drawing"", ""dia_creation_mode"", ""0"");
-                        akit.ValueChange(""Create GA-drawing"", ""dia_open_drawing"", ""{openFlag}"");
-                        akit.PushButton(""Pushbutton_127"", ""Create GA-drawing"");
-                    }}
-                }}
-            }}";
-
-        File.WriteAllText(macroPath, macroSource);
-        try
-        {
-            if (!Tekla.Structures.Model.Operations.Operation.RunMacro(macroName))
-            {
-                error = "RunMacro returned false.";
-                return false;
-            }
-
-            var timeout = DateTime.Now.AddSeconds(30);
-            while (Tekla.Structures.Model.Operations.Operation.IsMacroRunning())
-            {
-                if (DateTime.Now > timeout) { error = "Macro timeout exceeded."; return false; }
-                System.Threading.Thread.Sleep(100);
-            }
-
-            return true;
-        }
-        finally
-        {
-            if (File.Exists(macroPath)) File.Delete(macroPath);
-        }
-    }
 }

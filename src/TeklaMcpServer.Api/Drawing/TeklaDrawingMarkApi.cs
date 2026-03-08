@@ -335,6 +335,39 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         }
     }
 
+    public DeleteAllMarksResult DeleteAllMarks()
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var deletedCount = 0;
+        var viewEnum = activeDrawing.GetSheet().GetViews();
+        while (viewEnum.MoveNext())
+        {
+            if (viewEnum.Current is not View view)
+                continue;
+
+            var markEnum = view.GetAllObjects(typeof(Mark));
+            while (markEnum.MoveNext())
+            {
+                if (markEnum.Current is not Mark mark)
+                    continue;
+
+                mark.Delete();
+                deletedCount++;
+            }
+        }
+
+        if (deletedCount > 0)
+            activeDrawing.CommitChanges("(MCP) DeleteAllMarks");
+
+        return new DeleteAllMarksResult
+        {
+            DeletedCount = deletedCount
+        };
+    }
+
     public SetMarkContentResult SetMarkContent(SetMarkContentRequest request)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -66,6 +67,115 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         return drawings;
     }
 
+    public OpenDrawingResult OpenDrawing(Guid drawingGuid)
+    {
+        var drawingHandler = new DrawingHandler();
+        var drawingEnumerator = drawingHandler.GetDrawings();
+        Tekla.Structures.Drawing.Drawing? targetDrawing = null;
+
+        while (drawingEnumerator.MoveNext())
+        {
+            if (drawingEnumerator.Current is not Tekla.Structures.Drawing.Drawing drawing)
+                continue;
+            if (drawing.GetIdentifier().GUID != drawingGuid)
+                continue;
+
+            targetDrawing = drawing;
+            break;
+        }
+
+        if (targetDrawing == null)
+        {
+            return new OpenDrawingResult
+            {
+                Found = false,
+                Opened = false,
+                RequestedGuid = drawingGuid.ToString()
+            };
+        }
+
+        var opened = drawingHandler.SetActiveDrawing(targetDrawing);
+        return new OpenDrawingResult
+        {
+            Found = true,
+            Opened = opened,
+            RequestedGuid = drawingGuid.ToString(),
+            Drawing = ToDrawingInfo(targetDrawing)
+        };
+    }
+
+    public CloseDrawingResult CloseActiveDrawing()
+    {
+        var drawingHandler = new DrawingHandler();
+        var activeDrawing = drawingHandler.GetActiveDrawing();
+        if (activeDrawing == null)
+        {
+            return new CloseDrawingResult
+            {
+                HasActiveDrawing = false,
+                Closed = false
+            };
+        }
+
+        var drawingInfo = ToDrawingInfo(activeDrawing);
+        var closed = drawingHandler.CloseActiveDrawing();
+        return new CloseDrawingResult
+        {
+            HasActiveDrawing = true,
+            Closed = closed,
+            Drawing = drawingInfo
+        };
+    }
+
+    public ExportDrawingsPdfResult ExportDrawingsPdf(IReadOnlyCollection<string> drawingGuids, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+
+        var requestedGuids = drawingGuids
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var drawingHandler = new DrawingHandler();
+        var drawingEnumerator = drawingHandler.GetDrawings();
+        var exportedFiles = new List<string>();
+        var failedToExport = new List<string>();
+        var foundGuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var printAttributes = new DPMPrinterAttributes
+        {
+            PrinterName = "Microsoft Print to PDF",
+            OutputType = DotPrintOutputType.PDF
+        };
+
+        while (drawingEnumerator.MoveNext())
+        {
+            if (drawingEnumerator.Current is not Tekla.Structures.Drawing.Drawing drawing)
+                continue;
+
+            var guid = drawing.GetIdentifier().GUID.ToString();
+            if (!requestedGuids.Contains(guid))
+                continue;
+
+            foundGuids.Add(guid);
+            var fileName = $"{SanitizeFileName(drawing.Name)}_{SanitizeFileName(drawing.Mark)}.pdf";
+            var filePath = Path.Combine(outputDirectory, fileName);
+
+            if (drawingHandler.PrintDrawing(drawing, printAttributes, filePath))
+                exportedFiles.Add(filePath);
+            else
+                failedToExport.Add(guid);
+        }
+
+        var missingGuids = requestedGuids.Where(g => !foundGuids.Contains(g)).ToList();
+        return new ExportDrawingsPdfResult
+        {
+            ExportedFiles = exportedFiles,
+            FailedToExport = failedToExport,
+            MissingGuids = missingGuids,
+            OutputDirectory = outputDirectory
+        };
+    }
+
     private static DrawingInfo ToDrawingInfo(Tekla.Structures.Drawing.Drawing drawing)
     {
         return new DrawingInfo
@@ -109,5 +219,12 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         }
 
         return true;
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            value = value.Replace(c, '_');
+        return value;
     }
 }
