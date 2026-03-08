@@ -87,28 +87,10 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "list_drawings":
-            {
-                var drawings = MapBasicDrawings(api.ListDrawings());
-
-                WriteDrawingsList(drawings);
-                return true;
-            }
+                return HandleListDrawings(api);
 
             case "find_drawings":
-            {
-                var parseResult = DrawingCommandParsers.ParseFindDrawingsRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var drawings = MapBasicDrawings(
-                    api.FindDrawings(parseResult.Request.NameContains, parseResult.Request.MarkContains));
-
-                WriteDrawingsList(drawings);
-                return true;
-            }
+                return HandleFindDrawings(api, args);
 
             case "open_drawing":
             {
@@ -206,6 +188,28 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool HandleListDrawings(TeklaDrawingQueryApi api)
+    {
+        var drawings = MapBasicDrawings(api.ListDrawings());
+        WriteDrawingsList(drawings);
+        return true;
+    }
+
+    private bool HandleFindDrawings(TeklaDrawingQueryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseFindDrawingsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var drawings = MapBasicDrawings(
+            api.FindDrawings(parseResult.Request.NameContains, parseResult.Request.MarkContains));
+        WriteDrawingsList(drawings);
+        return true;
     }
 
     private bool TryHandleDrawingCreationCommands(string command, string[] args)
