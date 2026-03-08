@@ -622,7 +622,7 @@ sealed class PersistentBridge : IDisposable
 |---|---|
 | TeklaBridge зависает (Tekla disconnected) | Таймаут 30 сек на чтение stdout → KillProcess() → авторестарт |
 | Tekla выбрасывает exception в команде | Catch в loop → `{ok:false, error}` в stdout → процесс живёт дальше |
-| Stale state после перезапуска Tekla | KillProcess() при потере IPC → авторестарт при следующем вызове |
+| Потеря соединения с Tekla после её перезапуска | PersistentBridge трактует IPC / `Not connected to Tekla Structures` как fatal-for-process, делает `KillProcess()` и перезапускает bridge на следующем вызове |
 | IPC-канал Tekla умирает | Перезапуск TeklaBridge — reconnection не поддерживается Tekla API |
 | Параллельные вызовы из Claude | `SemaphoreSlim(1)` — сериализация; в будущем можно pool из N процессов |
 
@@ -693,7 +693,7 @@ Persistent loop должен оборачивать `CommandDispatcher`, а не
 - `stdout` содержит только протокольные JSON-строки; диагностика не загрязняет канал.
 - Baseline-тесты из prerequisites зелёные до и после рефакторинга.
 - Есть замер latency до/после на серии вызовов, подтверждающий практический выигрыш.
-- После перезапуска Tekla bridge автоматически переподключается при следующем вызове (без перезапуска TeklaMcpServer).
+- После закрытия и повторного запуска Tekla следующий MCP-вызов автоматически восстанавливает bridge без перезапуска TeklaMcpServer.
 
 ---
 
