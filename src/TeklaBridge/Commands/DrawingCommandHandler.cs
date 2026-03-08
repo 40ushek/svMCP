@@ -306,15 +306,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.ModelObjectId,
                     parseResult.Request.DrawingProperties,
                     parseResult.Request.OpenDrawing);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    created = result.Created,
-                    opened = result.Opened,
-                    drawingId = result.DrawingId,
-                    drawingType = result.DrawingType,
-                    modelObjectId = result.ModelObjectId,
-                    drawingProperties = result.DrawingProperties
-                }));
+                WriteDrawingCreationResult(result);
                 return true;
             }
 
@@ -332,15 +324,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.ModelObjectId,
                     parseResult.Request.DrawingProperties,
                     parseResult.Request.OpenDrawing);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    created = result.Created,
-                    opened = result.Opened,
-                    drawingId = result.DrawingId,
-                    drawingType = result.DrawingType,
-                    modelObjectId = result.ModelObjectId,
-                    drawingProperties = result.DrawingProperties
-                }));
+                WriteDrawingCreationResult(result);
                 return true;
             }
 
@@ -880,6 +864,19 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
         _output.WriteLine(noActiveDrawingJson);
         return false;
+    }
+
+    private void WriteDrawingCreationResult(DrawingCreationResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            created = result.Created,
+            opened = result.Opened,
+            drawingId = result.DrawingId,
+            drawingType = result.DrawingType,
+            modelObjectId = result.ModelObjectId,
+            drawingProperties = result.DrawingProperties
+        }));
     }
 
 }
