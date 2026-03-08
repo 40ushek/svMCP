@@ -93,97 +93,16 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 return HandleFindDrawings(api, args);
 
             case "open_drawing":
-            {
-                var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
-                if (!result.Found)
-                {
-                    WriteDrawingFailure("Drawing not found", result.RequestedGuid);
-                    return true;
-                }
-
-                if (!result.Opened)
-                {
-                    WriteDrawingFailure("Failed to open drawing", result.RequestedGuid);
-                    return true;
-                }
-
-                WriteOpenedDrawing(
-                    result.RequestedGuid,
-                    result.Drawing.Name,
-                    result.Drawing.Mark,
-                    result.Drawing.Type);
-                return true;
-            }
+                return HandleOpenDrawing(api, args);
 
             case "close_drawing":
-            {
-                var result = api.CloseActiveDrawing();
-                if (!result.HasActiveDrawing)
-                {
-                    WriteNoActiveDrawingError();
-                    return true;
-                }
-
-                if (!result.Closed)
-                {
-                    WriteDrawingFailure(
-                        "Failed to close active drawing",
-                        result.Drawing.Guid,
-                        result.Drawing.Name,
-                        result.Drawing.Mark,
-                        result.Drawing.Type);
-                    return true;
-                }
-
-                WriteClosedDrawing(
-                    result.Drawing.Guid,
-                    result.Drawing.Name,
-                    result.Drawing.Mark,
-                    result.Drawing.Type);
-                return true;
-            }
+                return HandleCloseDrawing(api);
 
             case "export_drawings_pdf":
-            {
-                var modelInfo = _model.GetInfo();
-                var defaultOutputDirectory = Path.Combine(modelInfo.ModelPath, "PlotFiles");
-                var parseResult = DrawingCommandParsers.ParseExportDrawingsPdfRequest(args, defaultOutputDirectory);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.ExportDrawingsPdf(
-                    parseResult.Request.RequestedGuids,
-                    parseResult.Request.OutputDirectory);
-                WriteExportDrawingsPdfResult(result);
-                return true;
-            }
+                return HandleExportDrawingsPdf(api, args);
 
             case "find_drawings_by_properties":
-            {
-                var parseResult = DrawingCommandParsers.ParseFindDrawingsByPropertiesRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var drawings = MapBasicDrawings(
-                    api.FindDrawingsByProperties(parseResult.Request.Filters),
-                    includeStatus: true);
-
-                WriteDrawingsList(drawings);
-                return true;
-            }
+                return HandleFindDrawingsByProperties(api, args);
 
             default:
                 return false;
@@ -208,6 +127,98 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
         var drawings = MapBasicDrawings(
             api.FindDrawings(parseResult.Request.NameContains, parseResult.Request.MarkContains));
+        WriteDrawingsList(drawings);
+        return true;
+    }
+
+    private bool HandleOpenDrawing(TeklaDrawingQueryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
+        if (!result.Found)
+        {
+            WriteDrawingFailure("Drawing not found", result.RequestedGuid);
+            return true;
+        }
+
+        if (!result.Opened)
+        {
+            WriteDrawingFailure("Failed to open drawing", result.RequestedGuid);
+            return true;
+        }
+
+        WriteOpenedDrawing(
+            result.RequestedGuid,
+            result.Drawing.Name,
+            result.Drawing.Mark,
+            result.Drawing.Type);
+        return true;
+    }
+
+    private bool HandleCloseDrawing(TeklaDrawingQueryApi api)
+    {
+        var result = api.CloseActiveDrawing();
+        if (!result.HasActiveDrawing)
+        {
+            WriteNoActiveDrawingError();
+            return true;
+        }
+
+        if (!result.Closed)
+        {
+            WriteDrawingFailure(
+                "Failed to close active drawing",
+                result.Drawing.Guid,
+                result.Drawing.Name,
+                result.Drawing.Mark,
+                result.Drawing.Type);
+            return true;
+        }
+
+        WriteClosedDrawing(
+            result.Drawing.Guid,
+            result.Drawing.Name,
+            result.Drawing.Mark,
+            result.Drawing.Type);
+        return true;
+    }
+
+    private bool HandleExportDrawingsPdf(TeklaDrawingQueryApi api, string[] args)
+    {
+        var modelInfo = _model.GetInfo();
+        var defaultOutputDirectory = Path.Combine(modelInfo.ModelPath, "PlotFiles");
+        var parseResult = DrawingCommandParsers.ParseExportDrawingsPdfRequest(args, defaultOutputDirectory);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.ExportDrawingsPdf(
+            parseResult.Request.RequestedGuids,
+            parseResult.Request.OutputDirectory);
+        WriteExportDrawingsPdfResult(result);
+        return true;
+    }
+
+    private bool HandleFindDrawingsByProperties(TeklaDrawingQueryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseFindDrawingsByPropertiesRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var drawings = MapBasicDrawings(
+            api.FindDrawingsByProperties(parseResult.Request.Filters),
+            includeStatus: true);
         WriteDrawingsList(drawings);
         return true;
     }
