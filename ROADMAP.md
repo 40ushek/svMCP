@@ -73,6 +73,7 @@
 - `delete_dimension` — удалить конкретный `StraightDimensionSet` по ID
 - `add_dimension_point` — добавить точку в существующую цепочку (`PointList` → вставить → `Modify()`)
 - Bbox текста размера как препятствие для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false` в `MarkOverlapResolver`
+- `get_part_openings(modelId, viewId)` — проёмы (двери/окна) в стенах: итерировать `part.GetBooleans()`, возвращать bbox каждого выреза в СК вида. Нужен для цепочек вида: ось → до проёма → ширина проёма → после проёма → ось
 
 ### Идеи из примеров (cs/ и dim/)
 - `GetProjectedShape.GetShape(partId, coordinateSystem)` — реальный контур из `FaceEnumerator`, не bbox; нужен для размеров по граням сложных профилей
