@@ -198,6 +198,16 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static SetMarkContentParseResult ParseSetMarkContentRequest(string[] args)
+    {
+        return ParseSetMarkContentRequest(
+            args.Length > 1 ? args[1] : string.Empty,
+            args.Length > 2 ? args[2] : string.Empty,
+            args.Length > 3 ? args[3] : string.Empty,
+            args.Length > 4 ? args[4] : string.Empty,
+            args.Length > 5 ? args[5] : string.Empty);
+    }
+
     public static ModelObjectDrawingCreationParseResult ParseModelObjectDrawingCreationRequest(
         string? modelObjectIdRaw,
         string? drawingPropertiesRaw,

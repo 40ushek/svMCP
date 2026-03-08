@@ -420,12 +420,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "set_mark_content":
             {
-                var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(
-                    args.Length > 1 ? args[1] : string.Empty,
-                    args.Length > 2 ? args[2] : string.Empty,
-                    args.Length > 3 ? args[3] : string.Empty,
-                    args.Length > 4 ? args[4] : string.Empty,
-                    args.Length > 5 ? args[5] : string.Empty);
+                var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
                 if (!parseResult.IsValid)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
