@@ -294,10 +294,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_single_part_drawing":
             {
-                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(
-                    args.Length > 1 ? args[1] : string.Empty,
-                    args.Length > 2 ? args[2] : string.Empty,
-                    args.Length > 3 ? args[3] : string.Empty);
+                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
                 if (!parseResult.IsValid)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
@@ -323,10 +320,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_assembly_drawing":
             {
-                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(
-                    args.Length > 1 ? args[1] : string.Empty,
-                    args.Length > 2 ? args[2] : string.Empty,
-                    args.Length > 3 ? args[3] : string.Empty);
+                var parseResult = DrawingCommandParsers.ParseModelObjectDrawingCreationRequest(args);
                 if (!parseResult.IsValid)
                 {
                     _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));

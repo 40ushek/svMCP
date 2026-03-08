@@ -222,6 +222,14 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static ModelObjectDrawingCreationParseResult ParseModelObjectDrawingCreationRequest(string[] args)
+    {
+        return ParseModelObjectDrawingCreationRequest(
+            args.Length > 1 ? args[1] : string.Empty,
+            args.Length > 2 ? args[2] : string.Empty,
+            args.Length > 3 ? args[3] : string.Empty);
+    }
+
     public static GaDrawingCreationParseResult ParseGaDrawingCreationRequest(string[] args)
     {
         var drawingProperties = args.Length > 1 && !string.IsNullOrWhiteSpace(args[1])
