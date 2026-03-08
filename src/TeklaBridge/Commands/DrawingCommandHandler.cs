@@ -559,12 +559,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
                 var api    = new TeklaDrawingDimensionsApi(_model);
                 var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    moved       = result.Moved,
-                    dimensionId = result.DimensionId,
-                    newDistance = result.NewDistance
-                }));
+                WriteMoveDimensionResult(result);
                 return true;
             }
 
@@ -584,14 +579,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.Direction,
                     parseResult.Request.Distance,
                     parseResult.Request.AttributesFile);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    created     = result.Created,
-                    dimensionId = result.DimensionId,
-                    viewId      = result.ViewId,
-                    pointCount  = result.PointCount,
-                    error       = result.Error
-                }));
+                WriteCreateDimensionResult(result);
                 return true;
             }
 
@@ -612,7 +600,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new { deleted = result.Deleted, dimensionId = result.DimensionId }));
+                WriteDeleteDimensionResult(result);
                 return true;
             }
 
@@ -915,6 +903,37 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             movedIds = result.MovedIds,
             iterations = result.Iterations,
             remainingOverlaps = result.RemainingOverlaps
+        }));
+    }
+
+    private void WriteMoveDimensionResult(MoveDimensionResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            moved = result.Moved,
+            dimensionId = result.DimensionId,
+            newDistance = result.NewDistance
+        }));
+    }
+
+    private void WriteCreateDimensionResult(CreateDimensionResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            created = result.Created,
+            dimensionId = result.DimensionId,
+            viewId = result.ViewId,
+            pointCount = result.PointCount,
+            error = result.Error
+        }));
+    }
+
+    private void WriteDeleteDimensionResult(DeleteDimensionResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            deleted = result.Deleted,
+            dimensionId = result.DimensionId
         }));
     }
 
