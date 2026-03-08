@@ -16,6 +16,8 @@ namespace TeklaBridge.Commands;
 internal sealed class DrawingCommandHandler : ICommandHandler
 {
     private const string NoActiveDrawingErrorJson = "{\"error\":\"No drawing is currently open\"}";
+    private const string NoActiveDrawingWithPeriodErrorJson = "{\"error\":\"No drawing is currently open.\"}";
+    private const string NoActiveDrawingShortErrorJson = "{\"error\":\"No active drawing\"}";
 
     private readonly Model _model;
     private readonly TextWriter _output;
@@ -469,7 +471,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.DeleteDimension(parseResult.Request.DimensionId);
                 if (!result.HasActiveDrawing)
                 {
-                    _output.WriteLine("{\"error\":\"No drawing is currently open.\"}");
+                    _output.WriteLine(NoActiveDrawingWithPeriodErrorJson);
                     return true;
                 }
 
@@ -569,7 +571,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "delete_all_marks":
             {
-                if (!EnsureActiveDrawing("{\"error\":\"No active drawing\"}"))
+                if (!EnsureActiveDrawing(NoActiveDrawingShortErrorJson))
                 {
                     return true;
                 }
