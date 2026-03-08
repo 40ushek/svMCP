@@ -634,20 +634,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             {
                 var api    = new TeklaDrawingPartsApi(_model);
                 var result = api.GetDrawingParts();
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    total = result.Total,
-                    parts = result.Parts.Select(p => new
-                    {
-                        modelId     = p.ModelId,
-                        type        = p.Type,
-                        partPos     = p.PartPos,
-                        assemblyPos = p.AssemblyPos,
-                        profile     = p.Profile,
-                        material    = p.Material,
-                        name        = p.Name
-                    })
-                }));
+                WriteGetDrawingPartsResult(result);
                 return true;
             }
 
@@ -894,6 +881,24 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     endX = s.EndX,
                     endY = s.EndY
                 })
+            })
+        }));
+    }
+
+    private void WriteGetDrawingPartsResult(GetDrawingPartsResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            total = result.Total,
+            parts = result.Parts.Select(p => new
+            {
+                modelId = p.ModelId,
+                type = p.Type,
+                partPos = p.PartPos,
+                assemblyPos = p.AssemblyPos,
+                profile = p.Profile,
+                material = p.Material,
+                name = p.Name
             })
         }));
     }
