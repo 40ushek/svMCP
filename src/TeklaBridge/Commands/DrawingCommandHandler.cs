@@ -507,13 +507,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleDimensionCommands(string command, string[] args)
     {
+        var api = new TeklaDrawingDimensionsApi(_model);
+
         switch (command)
         {
             case "get_drawing_dimensions":
             {
                 var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
-                var api    = new TeklaDrawingDimensionsApi(_model);
                 var result = api.GetDimensions(viewId);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
@@ -544,7 +545,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     WriteError(parseResult.Error);
                     return true;
                 }
-                var api    = new TeklaDrawingDimensionsApi(_model);
                 var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
                 WriteMoveDimensionResult(result);
                 return true;
@@ -559,7 +559,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api    = new TeklaDrawingDimensionsApi(_model);
                 var result = api.CreateDimension(
                     parseResult.Request.ViewId,
                     parseResult.Request.Points,
@@ -579,7 +578,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingDimensionsApi(_model);
                 var result = api.DeleteDimension(parseResult.Request.DimensionId);
                 if (!result.HasActiveDrawing)
                 {
