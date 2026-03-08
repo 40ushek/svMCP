@@ -214,7 +214,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var api = new TeklaDrawingQueryApi();
-                var drawings = MapBasicDrawingsWithStatus(
+                var drawings = MapBasicDrawings(
                     api.FindDrawingsByProperties(parseResult.Request.Filters),
                     d => d.Guid,
                     d => d.Name,
@@ -916,25 +916,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         Func<TDrawing, object?> guidSelector,
         Func<TDrawing, string?> nameSelector,
         Func<TDrawing, string?> markSelector,
-        Func<TDrawing, string?> typeSelector)
-    {
-        return drawings.Select(d => (object)new
-        {
-            guid = guidSelector(d),
-            name = nameSelector(d),
-            mark = markSelector(d),
-            type = typeSelector(d)
-        });
-    }
-
-    private static IEnumerable<object> MapBasicDrawingsWithStatus<TDrawing>(
-        IEnumerable<TDrawing> drawings,
-        Func<TDrawing, object?> guidSelector,
-        Func<TDrawing, string?> nameSelector,
-        Func<TDrawing, string?> markSelector,
         Func<TDrawing, string?> typeSelector,
-        Func<TDrawing, string?> statusSelector)
+        Func<TDrawing, string?>? statusSelector = null)
     {
+        if (statusSelector is null)
+        {
+            return drawings.Select(d => (object)new
+            {
+                guid = guidSelector(d),
+                name = nameSelector(d),
+                mark = markSelector(d),
+                type = typeSelector(d)
+            });
+        }
+
         return drawings.Select(d => (object)new
         {
             guid = guidSelector(d),
