@@ -359,56 +359,67 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "get_drawing_views":
-            {
-                var result = api.GetViews();
-                WriteGetDrawingViewsResult(result);
-                return true;
-            }
+                return HandleGetDrawingViews(api);
 
             case "move_view":
-            {
-                var parseResult = DrawingCommandParsers.ParseMoveViewRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result   = api.MoveView(
-                    parseResult.Request.ViewId,
-                    parseResult.Request.Dx,
-                    parseResult.Request.Dy,
-                    parseResult.Request.Absolute);
-                WriteMoveViewResult(result);
-                return true;
-            }
+                return HandleMoveView(api, args);
 
             case "set_view_scale":
-            {
-                var parseResult = DrawingCommandParsers.ParseSetViewScaleRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.SetViewScale(parseResult.Request.ViewIds, parseResult.Request.Scale);
-                WriteSetViewScaleResult(result);
-                return true;
-            }
+                return HandleSetViewScale(api, args);
 
             case "fit_views_to_sheet":
-            {
-                var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
-
-                var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
-                WriteFitViewsToSheetResult(result);
-                return true;
-            }
+                return HandleFitViewsToSheet(api, args);
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetDrawingViews(TeklaDrawingViewApi api)
+    {
+        var result = api.GetViews();
+        WriteGetDrawingViewsResult(result);
+        return true;
+    }
+
+    private bool HandleMoveView(TeklaDrawingViewApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseMoveViewRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.MoveView(
+            parseResult.Request.ViewId,
+            parseResult.Request.Dx,
+            parseResult.Request.Dy,
+            parseResult.Request.Absolute);
+        WriteMoveViewResult(result);
+        return true;
+    }
+
+    private bool HandleSetViewScale(TeklaDrawingViewApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseSetViewScaleRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.SetViewScale(parseResult.Request.ViewIds, parseResult.Request.Scale);
+        WriteSetViewScaleResult(result);
+        return true;
+    }
+
+    private bool HandleFitViewsToSheet(TeklaDrawingViewApi api, string[] args)
+    {
+        var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
+        var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
+        WriteFitViewsToSheetResult(result);
+        return true;
     }
 
     private bool TryHandleDimensionCommands(string command, string[] args)
