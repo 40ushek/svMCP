@@ -197,6 +197,36 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static FitViewsToSheetRequest ParseFitViewsToSheetRequest(string[] args)
+    {
+        var request = new FitViewsToSheetRequest
+        {
+            Margin = 10.0,
+            Gap = 8.0,
+            TitleBlockHeight = 0.0
+        };
+
+        if (args.Length > 1 &&
+            double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var margin))
+        {
+            request.Margin = margin;
+        }
+
+        if (args.Length > 2 &&
+            double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var gap))
+        {
+            request.Gap = gap;
+        }
+
+        if (args.Length > 3 &&
+            double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var titleBlockHeight))
+        {
+            request.TitleBlockHeight = titleBlockHeight;
+        }
+
+        return request;
+    }
+
     public static NonNegativeDoubleParseResult ParseArrangeMarksGap(string[] args) =>
         ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "gap");
 
@@ -348,4 +378,11 @@ public sealed class MoveDimensionParseResult
 
     public static MoveDimensionParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
+}
+
+public sealed class FitViewsToSheetRequest
+{
+    public double Margin { get; set; }
+    public double Gap { get; set; }
+    public double TitleBlockHeight { get; set; }
 }

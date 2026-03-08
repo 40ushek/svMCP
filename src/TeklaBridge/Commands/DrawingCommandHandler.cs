@@ -599,12 +599,10 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "fit_views_to_sheet":
             {
-                var margin      = args.Length > 1 && double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var m)  ? m  : 10.0;
-                var gap         = args.Length > 2 && double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var g)  ? g  : 8.0;
-                var titleBlockH = args.Length > 3 && double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var tb) ? tb : 0.0;
+                var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
 
                 var api    = new TeklaDrawingViewApi(_model);
-                var result = api.FitViewsToSheet(margin, gap, titleBlockH);
+                var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     optimalScale = result.OptimalScale,
