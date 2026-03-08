@@ -145,7 +145,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.CloseActiveDrawing();
                 if (!result.HasActiveDrawing)
                 {
-                    WriteRawJson(NoActiveDrawingErrorJson);
+                    WriteNoActiveDrawingError();
                     return true;
                 }
 
@@ -470,7 +470,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var result = api.DeleteDimension(parseResult.Request.DimensionId);
                 if (!result.HasActiveDrawing)
                 {
-                    WriteRawJson(NoActiveDrawingWithPeriodErrorJson);
+                    WriteNoActiveDrawingWithPeriodError();
                     return true;
                 }
 
@@ -570,7 +570,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "delete_all_marks":
             {
-                if (!EnsureActiveDrawing(NoActiveDrawingShortErrorJson))
+                if (!EnsureActiveDrawingShort())
                 {
                     return true;
                 }
@@ -619,6 +619,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     private bool EnsureActiveDrawing()
     {
         return EnsureActiveDrawing(NoActiveDrawingErrorJson);
+    }
+
+    private bool EnsureActiveDrawingShort()
+    {
+        return EnsureActiveDrawing(NoActiveDrawingShortErrorJson);
     }
 
     private bool TryCreateModelObjectDrawing(
@@ -1031,6 +1036,16 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     private void WriteRawJson(string json)
     {
         _output.WriteLine(json);
+    }
+
+    private void WriteNoActiveDrawingError()
+    {
+        WriteRawJson(NoActiveDrawingErrorJson);
+    }
+
+    private void WriteNoActiveDrawingWithPeriodError()
+    {
+        WriteRawJson(NoActiveDrawingWithPeriodErrorJson);
     }
 
     private static IEnumerable<object> MapBasicDrawings(
