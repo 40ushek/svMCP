@@ -210,6 +210,8 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
     private bool TryHandleDrawingCreationCommands(string command, string[] args)
     {
+        var api = new TeklaDrawingCreationApi(_model);
+
         switch (command)
         {
             case "create_ga_drawing":
@@ -221,7 +223,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var api = new TeklaDrawingCreationApi(_model);
                 var result = api.CreateGaDrawing(
                     parseResult.Request.ViewName,
                     parseResult.Request.DrawingProperties,
@@ -251,6 +252,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             case "create_single_part_drawing":
             {
                 return TryCreateModelObjectDrawing(
+                    api,
                     args,
                     static (api, modelObjectId, drawingProperties, openDrawing) =>
                         api.CreateSinglePartDrawing(modelObjectId, drawingProperties, openDrawing));
@@ -259,6 +261,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             case "create_assembly_drawing":
             {
                 return TryCreateModelObjectDrawing(
+                    api,
                     args,
                     static (api, modelObjectId, drawingProperties, openDrawing) =>
                         api.CreateAssemblyDrawing(modelObjectId, drawingProperties, openDrawing));
@@ -624,6 +627,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
     }
 
     private bool TryCreateModelObjectDrawing(
+        TeklaDrawingCreationApi api,
         string[] args,
         Func<TeklaDrawingCreationApi, int, string, bool, DrawingCreationResult> createDrawing)
     {
@@ -634,7 +638,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             return true;
         }
 
-        var api = new TeklaDrawingCreationApi(_model);
         var result = createDrawing(
             api,
             parseResult.Request.ModelObjectId,
