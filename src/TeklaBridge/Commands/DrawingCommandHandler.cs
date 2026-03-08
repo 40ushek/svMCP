@@ -6,8 +6,6 @@ namespace TeklaBridge.Commands;
 internal sealed partial class DrawingCommandHandler : ICommandHandler
 {
     private const string NoActiveDrawingErrorJson = "{\"error\":\"No drawing is currently open\"}";
-    private const string NoActiveDrawingWithPeriodErrorJson = "{\"error\":\"No drawing is currently open.\"}";
-    private const string NoActiveDrawingShortErrorJson = "{\"error\":\"No active drawing\"}";
     private const string NoMatchingModelIdsInDrawingErrorJson = "{\"error\":\"None of the specified model IDs were found in the active drawing\"}";
 
     private readonly Model _model;
@@ -38,7 +36,6 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "select_drawing_objects":
             case "filter_drawing_objects":
-            case "set_mark_content":
             case "get_drawing_context":
                 return TryHandleDrawingInteractionCommands(command, args);
 
@@ -61,6 +58,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "arrange_marks":
             case "create_part_marks":
+            case "set_mark_content":
             case "delete_all_marks":
             case "resolve_mark_overlaps":
             case "get_drawing_marks":

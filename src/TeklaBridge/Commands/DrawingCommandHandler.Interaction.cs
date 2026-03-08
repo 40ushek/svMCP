@@ -10,8 +10,6 @@ internal sealed partial class DrawingCommandHandler
     {
         TeklaDrawingInteractionApi? interactionApi = null;
         TeklaDrawingInteractionApi GetInteractionApi() => interactionApi ??= new TeklaDrawingInteractionApi(_model);
-        TeklaDrawingMarkApi? markApi = null;
-        TeklaDrawingMarkApi GetMarkApi() => markApi ??= new TeklaDrawingMarkApi(_model);
 
         switch (command)
         {
@@ -20,9 +18,6 @@ internal sealed partial class DrawingCommandHandler
 
             case "filter_drawing_objects":
                 return HandleFilterDrawingObjects(GetInteractionApi(), args);
-
-            case "set_mark_content":
-                return HandleSetMarkContent(GetMarkApi(), args);
 
             case "get_drawing_context":
                 return HandleGetDrawingContext(GetInteractionApi());
@@ -79,25 +74,6 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private bool HandleSetMarkContent(TeklaDrawingMarkApi api, string[] args)
-    {
-        var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
-        if (!parseResult.IsValid)
-        {
-            WriteError(parseResult.Error);
-            return true;
-        }
-
-        if (!EnsureActiveDrawing())
-        {
-            return true;
-        }
-
-        var result = api.SetMarkContent(parseResult.Request);
-        WriteSetMarkContentResult(result);
-        return true;
-    }
-
     private bool HandleGetDrawingContext(TeklaDrawingInteractionApi api)
     {
         if (!EnsureActiveDrawing())
@@ -132,18 +108,6 @@ internal sealed partial class DrawingCommandHandler
     private void WriteFilterDrawingObjectsResult(FilterDrawingObjectsResult result)
     {
         WriteJson(MapDrawingObjects(result.Objects));
-    }
-
-    private void WriteSetMarkContentResult(SetMarkContentResult result)
-    {
-        WriteJson(new
-        {
-            updatedCount = result.UpdatedObjectIds.Count,
-            failedCount = result.FailedObjectIds.Count,
-            updatedObjectIds = result.UpdatedObjectIds,
-            failedObjectIds = result.FailedObjectIds,
-            errors = result.Errors
-        });
     }
 
     private void WriteDrawingContextResult(DrawingContextResult result)

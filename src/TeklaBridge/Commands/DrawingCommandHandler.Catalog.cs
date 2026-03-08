@@ -93,7 +93,7 @@ internal sealed partial class DrawingCommandHandler
         var result = api.CloseActiveDrawing();
         if (!result.HasActiveDrawing)
         {
-            WriteNoActiveDrawingError();
+            WriteRawJson(NoActiveDrawingErrorJson);
             return true;
         }
 
@@ -215,11 +215,6 @@ internal sealed partial class DrawingCommandHandler
             missingGuids = result.MissingGuids,
             outputDirectory = result.OutputDirectory
         });
-    }
-
-    private void WriteNoActiveDrawingError()
-    {
-        WriteRawJson(NoActiveDrawingErrorJson);
     }
 
     private static IEnumerable<object> MapBasicDrawings(

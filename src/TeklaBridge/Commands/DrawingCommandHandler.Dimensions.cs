@@ -81,7 +81,7 @@ internal sealed partial class DrawingCommandHandler
         var result = api.DeleteDimension(parseResult.Request.DimensionId);
         if (!result.HasActiveDrawing)
         {
-            WriteNoActiveDrawingWithPeriodError();
+            WriteRawJson(NoActiveDrawingErrorJson);
             return true;
         }
 

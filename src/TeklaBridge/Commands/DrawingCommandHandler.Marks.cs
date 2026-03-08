@@ -18,6 +18,9 @@ internal sealed partial class DrawingCommandHandler
             case "create_part_marks":
                 return HandleCreatePartMarks(GetMarkApi(), args);
 
+            case "set_mark_content":
+                return HandleSetMarkContent(GetMarkApi(), args);
+
             case "delete_all_marks":
                 return HandleDeleteAllMarks(GetMarkApi());
 
@@ -58,9 +61,28 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleSetMarkContent(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var result = api.SetMarkContent(parseResult.Request);
+        WriteSetMarkContentResult(result);
+        return true;
+    }
+
     private bool HandleDeleteAllMarks(TeklaDrawingMarkApi api)
     {
-        if (!EnsureActiveDrawingShort())
+        if (!EnsureActiveDrawing())
         {
             return true;
         }
@@ -111,6 +133,18 @@ internal sealed partial class DrawingCommandHandler
             skippedCount = result.SkippedCount,
             createdMarkIds = result.CreatedMarkIds,
             attributesLoaded = result.AttributesLoaded
+        });
+    }
+
+    private void WriteSetMarkContentResult(SetMarkContentResult result)
+    {
+        WriteJson(new
+        {
+            updatedCount = result.UpdatedObjectIds.Count,
+            failedCount = result.FailedObjectIds.Count,
+            updatedObjectIds = result.UpdatedObjectIds,
+            failedObjectIds = result.FailedObjectIds,
+            errors = result.Errors
         });
     }
 

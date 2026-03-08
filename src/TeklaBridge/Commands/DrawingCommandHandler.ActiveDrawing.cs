@@ -19,14 +19,4 @@ internal sealed partial class DrawingCommandHandler
     {
         return EnsureActiveDrawing(NoActiveDrawingErrorJson);
     }
-
-    private bool EnsureActiveDrawingShort()
-    {
-        return EnsureActiveDrawing(NoActiveDrawingShortErrorJson);
-    }
-
-    private void WriteNoActiveDrawingWithPeriodError()
-    {
-        WriteRawJson(NoActiveDrawingWithPeriodErrorJson);
-    }
 }
