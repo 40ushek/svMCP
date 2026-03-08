@@ -31,3 +31,10 @@ public sealed class MoveDimensionResult
     public int    DimensionId  { get; set; }
     public double NewDistance  { get; set; }
 }
+
+public sealed class DeleteDimensionResult
+{
+    public bool HasActiveDrawing { get; set; }
+    public bool Deleted { get; set; }
+    public int DimensionId { get; set; }
+}

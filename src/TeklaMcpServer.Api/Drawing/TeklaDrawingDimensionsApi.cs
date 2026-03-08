@@ -164,6 +164,52 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         };
     }
 
+    public DeleteDimensionResult DeleteDimension(int dimensionId)
+    {
+        var drawingHandler = new DrawingHandler();
+        var activeDrawing = drawingHandler.GetActiveDrawing();
+        if (activeDrawing == null)
+        {
+            return new DeleteDimensionResult
+            {
+                HasActiveDrawing = false,
+                Deleted = false,
+                DimensionId = dimensionId
+            };
+        }
+
+        var deleted = false;
+        var viewEnum = activeDrawing.GetSheet().GetViews();
+        while (viewEnum.MoveNext())
+        {
+            if (viewEnum.Current is not View view)
+                continue;
+
+            var dimEnum = view.GetAllObjects(new[] { typeof(StraightDimensionSet) });
+            while (dimEnum.MoveNext())
+            {
+                if (dimEnum.Current is not StraightDimensionSet dimensionSet)
+                    continue;
+                if (dimensionSet.GetIdentifier().ID != dimensionId)
+                    continue;
+
+                dimensionSet.Delete();
+                deleted = true;
+                break;
+            }
+
+            if (deleted)
+                break;
+        }
+
+        return new DeleteDimensionResult
+        {
+            HasActiveDrawing = true,
+            Deleted = deleted,
+            DimensionId = dimensionId
+        };
+    }
+
     private static Vector? TryParseVector(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return null;

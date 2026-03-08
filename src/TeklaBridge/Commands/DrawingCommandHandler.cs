@@ -383,7 +383,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var targetModelIds = ParseIntList(args[1]).ToHashSet();
+                var targetModelIds = DrawingCommandParsers.ParseIntList(args[1]).ToHashSet();
                 if (targetModelIds.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"No valid model object IDs provided\"}");
@@ -448,51 +448,15 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "set_mark_content":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                var parseResult = DrawingCommandParsers.ParseSetMarkContentRequest(
+                    args.Length > 1 ? args[1] : string.Empty,
+                    args.Length > 2 ? args[2] : string.Empty,
+                    args.Length > 3 ? args[3] : string.Empty,
+                    args.Length > 4 ? args[4] : string.Empty,
+                    args.Length > 5 ? args[5] : string.Empty);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Missing element IDs (drawing IDs or model IDs)\"}");
-                    return true;
-                }
-
-                var targetIds = ParseIntList(args[1]).ToHashSet();
-                if (targetIds.Count == 0)
-                {
-                    _output.WriteLine("{\"error\":\"No valid IDs provided\"}");
-                    return true;
-                }
-
-                var contentElementsCsv = args.Length > 2 ? args[2] : string.Empty;
-                var fontName = args.Length > 3 ? args[3] : string.Empty;
-                var fontColorRaw = args.Length > 4 ? args[4] : string.Empty;
-                var fontHeightRaw = args.Length > 5 ? args[5] : string.Empty;
-
-                var requestedContentElements = string.IsNullOrWhiteSpace(contentElementsCsv)
-                    ? new List<string>()
-                    : contentElementsCsv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(x => x.Trim()).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
-
-                var updateContent = requestedContentElements.Count > 0;
-                var updateFontName = !string.IsNullOrWhiteSpace(fontName);
-                var updateFontColor = !string.IsNullOrWhiteSpace(fontColorRaw);
-                var updateFontHeight = !string.IsNullOrWhiteSpace(fontHeightRaw);
-
-                if (!updateContent && !updateFontName && !updateFontColor && !updateFontHeight)
-                {
-                    _output.WriteLine("{\"error\":\"No changes requested. Provide content elements and/or font attributes.\"}");
-                    return true;
-                }
-
-                var parsedFontHeight = 0.0;
-                if (updateFontHeight && (!double.TryParse(fontHeightRaw, out parsedFontHeight) || parsedFontHeight <= 0))
-                {
-                    _output.WriteLine("{\"error\":\"fontHeight must be a positive number\"}");
-                    return true;
-                }
-
-                var parsedColor = DrawingColors.Black;
-                if (updateFontColor && !Enum.TryParse(fontColorRaw, true, out parsedColor))
-                {
-                    _output.WriteLine("{\"error\":\"Invalid fontColor. Use DrawingColors enum values, e.g. Black, Red, Blue\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
@@ -505,18 +469,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 }
 
                 var api = new TeklaDrawingMarkApi(_model);
-                var result = api.SetMarkContent(new SetMarkContentRequest
-                {
-                    TargetIds = targetIds.ToList(),
-                    RequestedContentElements = requestedContentElements,
-                    UpdateContent = updateContent,
-                    UpdateFontName = updateFontName,
-                    FontName = fontName,
-                    UpdateFontColor = updateFontColor,
-                    FontColorValue = (int)parsedColor,
-                    UpdateFontHeight = updateFontHeight,
-                    FontHeight = parsedFontHeight
-                });
+                var result = api.SetMarkContent(parseResult.Request);
 
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
@@ -637,7 +590,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     return true;
                 }
 
-                var ids = ParseIntList(args[1]);
+                var ids = DrawingCommandParsers.ParseIntList(args[1]);
                 if (ids.Count == 0)
                 {
                     _output.WriteLine("{\"error\":\"No valid view IDs provided\"}");
@@ -775,30 +728,16 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     _output.WriteLine("{\"error\":\"Usage: delete_dimension <dimensionId>\"}");
                     return true;
                 }
-                var dh2 = new DrawingHandler();
-                var ad2 = dh2.GetActiveDrawing();
-                if (ad2 == null)
+
+                var api = new TeklaDrawingDimensionsApi(_model);
+                var result = api.DeleteDimension(ddId);
+                if (!result.HasActiveDrawing)
                 {
                     _output.WriteLine("{\"error\":\"No drawing is currently open.\"}");
                     return true;
                 }
-                bool ddFound = false;
-                var viewEnum2 = ad2.GetSheet().GetViews();
-                while (viewEnum2.MoveNext())
-                {
-                    if (viewEnum2.Current is not View ddView) continue;
-                    var dimEnum = ddView.GetAllObjects(new[] { typeof(StraightDimensionSet) });
-                    while (dimEnum.MoveNext())
-                    {
-                        if (dimEnum.Current is not StraightDimensionSet sds) continue;
-                        if (sds.GetIdentifier().ID != ddId) continue;
-                        sds.Delete();
-                        ddFound = true;
-                        break;
-                    }
-                    if (ddFound) break;
-                }
-                _output.WriteLine(JsonSerializer.Serialize(new { deleted = ddFound, dimensionId = ddId }));
+
+                _output.WriteLine(JsonSerializer.Serialize(new { deleted = result.Deleted, dimensionId = result.DimensionId }));
                 return true;
             }
 
@@ -1021,20 +960,6 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             default:
                 return false;
         }
-    }
-
-    private static List<int> ParseIntList(string? csv)
-    {
-        if (string.IsNullOrWhiteSpace(csv))
-            return new List<int>();
-
-        var normalized = csv!;
-        return normalized.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(x => x.Trim())
-            .Where(x => int.TryParse(x, out _))
-            .Select(int.Parse)
-            .Distinct()
-            .ToList();
     }
 
 }

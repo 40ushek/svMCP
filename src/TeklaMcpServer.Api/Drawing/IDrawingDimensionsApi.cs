@@ -9,4 +9,5 @@ public interface IDrawingDimensionsApi
     GetDimensionsResult    GetDimensions(int? viewId);
     MoveDimensionResult    MoveDimension(int dimensionId, double delta);
     CreateDimensionResult  CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
+    DeleteDimensionResult  DeleteDimension(int dimensionId);
 }
