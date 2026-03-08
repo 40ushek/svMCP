@@ -518,43 +518,54 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "get_part_geometry_in_view":
-            {
-                var parseResult = DrawingCommandParsers.ParsePartGeometryInViewRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-                var pgResult = GetPartGeometryApi().GetPartGeometryInView(
-                    parseResult.Request.ViewId,
-                    parseResult.Request.ModelId);
-                WritePartGeometryInViewResult(pgResult);
-                return true;
-            }
+                return HandleGetPartGeometryInView(GetPartGeometryApi(), args);
 
             case "get_grid_axes":
-            {
-                var parseResult = DrawingCommandParsers.ParseGridAxesRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-                var gaResult = GetGridApi().GetGridAxes(parseResult.Request.ViewId);
-                WriteGridAxesResult(gaResult);
-                return true;
-            }
+                return HandleGetGridAxes(GetGridApi(), args);
 
             case "get_drawing_parts":
-            {
-                var result = GetPartsApi().GetDrawingParts();
-                WriteGetDrawingPartsResult(result);
-                return true;
-            }
+                return HandleGetDrawingParts(GetPartsApi());
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetPartGeometryInView(TeklaDrawingPartGeometryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParsePartGeometryInViewRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.GetPartGeometryInView(
+            parseResult.Request.ViewId,
+            parseResult.Request.ModelId);
+        WritePartGeometryInViewResult(result);
+        return true;
+    }
+
+    private bool HandleGetGridAxes(TeklaDrawingGridApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseGridAxesRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.GetGridAxes(parseResult.Request.ViewId);
+        WriteGridAxesResult(result);
+        return true;
+    }
+
+    private bool HandleGetDrawingParts(TeklaDrawingPartsApi api)
+    {
+        var result = api.GetDrawingParts();
+        WriteGetDrawingPartsResult(result);
+        return true;
     }
 
     private bool TryHandleMarkCommands(string command, string[] args)
