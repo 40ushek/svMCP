@@ -628,8 +628,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         {
             case "get_drawing_dimensions":
             {
-                int? viewId = null;
-                if (args.Length > 1 && int.TryParse(args[1], out var vid)) viewId = vid;
+                var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
                 var api    = new TeklaDrawingDimensionsApi(_model);
                 var result = api.GetDimensions(viewId);
@@ -838,13 +837,14 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_part_marks":
             {
-                var contentAttributesCsv = args.Length > 1 ? args[1] : string.Empty;
-                var markAttributesFile   = args.Length > 2 ? args[2] : string.Empty;
-                var frameType            = args.Length > 3 ? args[3] : string.Empty;
-                var arrowheadType        = args.Length > 4 ? args[4] : string.Empty;
+                var parseRequest = DrawingCommandParsers.ParseCreatePartMarksRequest(args);
 
                 var api    = new TeklaDrawingMarkApi(_model);
-                var result = api.CreatePartMarks(contentAttributesCsv, markAttributesFile, frameType, arrowheadType);
+                var result = api.CreatePartMarks(
+                    parseRequest.ContentAttributesCsv,
+                    parseRequest.MarkAttributesFile,
+                    parseRequest.FrameType,
+                    parseRequest.ArrowheadType);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     createdCount     = result.CreatedCount,
@@ -892,8 +892,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_marks":
             {
-                int? viewId = null;
-                if (args.Length > 1 && int.TryParse(args[1], out var vid)) viewId = vid;
+                var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
                 var api    = new TeklaDrawingMarkApi(_model);
                 var result = api.GetMarks(viewId);

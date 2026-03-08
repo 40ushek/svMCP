@@ -9,6 +9,14 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public static class DrawingCommandParsers
 {
+    public static int? ParseOptionalViewId(string[] args, int index = 1)
+    {
+        if (args.Length > index && int.TryParse(args[index], out var viewId))
+            return viewId;
+
+        return null;
+    }
+
     public static List<int> ParseIntList(string? csv)
     {
         if (string.IsNullOrWhiteSpace(csv))
@@ -290,6 +298,17 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static CreatePartMarksRequest ParseCreatePartMarksRequest(string[] args)
+    {
+        return new CreatePartMarksRequest
+        {
+            ContentAttributesCsv = args.Length > 1 ? args[1] : string.Empty,
+            MarkAttributesFile = args.Length > 2 ? args[2] : string.Empty,
+            FrameType = args.Length > 3 ? args[3] : string.Empty,
+            ArrowheadType = args.Length > 4 ? args[4] : string.Empty
+        };
+    }
+
     public static NonNegativeDoubleParseResult ParseArrangeMarksGap(string[] args) =>
         ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "gap");
 
@@ -523,4 +542,12 @@ public sealed class GridAxesParseResult
 
     public static GridAxesParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
+}
+
+public sealed class CreatePartMarksRequest
+{
+    public string ContentAttributesCsv { get; set; } = string.Empty;
+    public string MarkAttributesFile { get; set; } = string.Empty;
+    public string FrameType { get; set; } = string.Empty;
+    public string ArrowheadType { get; set; } = string.Empty;
 }
