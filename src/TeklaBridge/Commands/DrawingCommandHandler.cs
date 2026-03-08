@@ -429,69 +429,81 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "get_drawing_dimensions":
-            {
-                var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-
-                var result = api.GetDimensions(viewId);
-                WriteGetDimensionsResult(result);
-                return true;
-            }
+                return HandleGetDrawingDimensions(api, args);
 
             case "move_dimension":
-            {
-                var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-                var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
-                WriteMoveDimensionResult(result);
-                return true;
-            }
+                return HandleMoveDimension(api, args);
 
             case "create_dimension":
-            {
-                var parseResult = DrawingCommandParsers.ParseCreateDimensionRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.CreateDimension(
-                    parseResult.Request.ViewId,
-                    parseResult.Request.Points,
-                    parseResult.Request.Direction,
-                    parseResult.Request.Distance,
-                    parseResult.Request.AttributesFile);
-                WriteCreateDimensionResult(result);
-                return true;
-            }
+                return HandleCreateDimension(api, args);
 
             case "delete_dimension":
-            {
-                var parseResult = DrawingCommandParsers.ParseDeleteDimensionRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.DeleteDimension(parseResult.Request.DimensionId);
-                if (!result.HasActiveDrawing)
-                {
-                    WriteNoActiveDrawingWithPeriodError();
-                    return true;
-                }
-
-                WriteDeleteDimensionResult(result);
-                return true;
-            }
+                return HandleDeleteDimension(api, args);
 
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetDrawingDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var result = api.GetDimensions(viewId);
+        WriteGetDimensionsResult(result);
+        return true;
+    }
+
+    private bool HandleMoveDimension(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
+        WriteMoveDimensionResult(result);
+        return true;
+    }
+
+    private bool HandleCreateDimension(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseCreateDimensionRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.CreateDimension(
+            parseResult.Request.ViewId,
+            parseResult.Request.Points,
+            parseResult.Request.Direction,
+            parseResult.Request.Distance,
+            parseResult.Request.AttributesFile);
+        WriteCreateDimensionResult(result);
+        return true;
+    }
+
+    private bool HandleDeleteDimension(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseDeleteDimensionRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.DeleteDimension(parseResult.Request.DimensionId);
+        if (!result.HasActiveDrawing)
+        {
+            WriteNoActiveDrawingWithPeriodError();
+            return true;
+        }
+
+        WriteDeleteDimensionResult(result);
+        return true;
     }
 
     private bool TryHandleGeometryCommands(string command, string[] args)
