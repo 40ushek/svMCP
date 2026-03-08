@@ -199,31 +199,19 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "export_drawings_pdf":
             {
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
-                {
-                    _output.WriteLine("{\"error\":\"Missing drawing GUID list (comma-separated)\"}");
-                    return true;
-                }
-
-                var requestedGuids = args[1]
-                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(x => x.Trim())
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                if (requestedGuids.Count == 0)
-                {
-                    _output.WriteLine("{\"error\":\"No valid drawing GUIDs provided\"}");
-                    return true;
-                }
-
                 var modelInfo = _model.GetInfo();
-                var outputDir = (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
-                    ? args[2]
-                    : Path.Combine(modelInfo.ModelPath, "PlotFiles");
+                var defaultOutputDirectory = Path.Combine(modelInfo.ModelPath, "PlotFiles");
+                var parseResult = DrawingCommandParsers.ParseExportDrawingsPdfRequest(args, defaultOutputDirectory);
+                if (!parseResult.IsValid)
+                {
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
+                    return true;
+                }
 
                 var api = new TeklaDrawingQueryApi();
-                var result = api.ExportDrawingsPdf(requestedGuids.ToList(), outputDir);
+                var result = api.ExportDrawingsPdf(
+                    parseResult.Request.RequestedGuids,
+                    parseResult.Request.OutputDirectory);
 
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {

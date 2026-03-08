@@ -38,6 +38,36 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static ExportDrawingsPdfParseResult ParseExportDrawingsPdfRequest(
+        string[] args,
+        string defaultOutputDirectory)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            return ExportDrawingsPdfParseResult.Fail(
+                "Missing drawing GUID list (comma-separated)");
+        }
+
+        var requestedGuids = args[1]
+            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (requestedGuids.Count == 0)
+            return ExportDrawingsPdfParseResult.Fail("No valid drawing GUIDs provided");
+
+        var outputDirectory = (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+            ? args[2]
+            : defaultOutputDirectory;
+
+        return ExportDrawingsPdfParseResult.Success(new ExportDrawingsPdfRequest
+        {
+            RequestedGuids = requestedGuids.ToList(),
+            OutputDirectory = outputDirectory
+        });
+    }
+
     public static int? ParseOptionalViewId(string[] args, int index = 1)
     {
         if (args.Length > index && int.TryParse(args[index], out var viewId))
@@ -411,6 +441,25 @@ public sealed class OpenDrawingParseResult
         new() { IsValid = true, Request = request };
 
     public static OpenDrawingParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class ExportDrawingsPdfRequest
+{
+    public List<string> RequestedGuids { get; set; } = new();
+    public string OutputDirectory { get; set; } = string.Empty;
+}
+
+public sealed class ExportDrawingsPdfParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public ExportDrawingsPdfRequest Request { get; private set; } = new();
+
+    public static ExportDrawingsPdfParseResult Success(ExportDrawingsPdfRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static ExportDrawingsPdfParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 
