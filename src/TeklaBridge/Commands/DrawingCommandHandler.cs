@@ -552,28 +552,19 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "move_view":
             {
-                if (args.Length < 4)
+                var parseResult = DrawingCommandParsers.ParseMoveViewRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: move_view <viewId> <dx> <dy> [abs]\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
 
-                if (!int.TryParse(args[1], out var viewId))
-                {
-                    _output.WriteLine("{\"error\":\"viewId must be an integer\"}");
-                    return true;
-                }
-
-                if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var dx) ||
-                    !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var dy))
-                {
-                    _output.WriteLine("{\"error\":\"dx and dy must be numbers\"}");
-                    return true;
-                }
-
-                var absolute = args.Length > 4 && string.Equals(args[4], "abs", StringComparison.OrdinalIgnoreCase);
                 var api      = new TeklaDrawingViewApi(_model);
-                var result   = api.MoveView(viewId, dx, dy, absolute);
+                var result   = api.MoveView(
+                    parseResult.Request.ViewId,
+                    parseResult.Request.Dx,
+                    parseResult.Request.Dy,
+                    parseResult.Request.Absolute);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     moved      = result.Moved,
@@ -696,23 +687,20 @@ internal sealed class DrawingCommandHandler : ICommandHandler
 
             case "create_dimension":
             {
-                // args: viewId, pointsJson, direction, distance, attributesFile
-                if (args.Length < 4 || !int.TryParse(args[1], out var cdViewId))
+                var parseResult = DrawingCommandParsers.ParseCreateDimensionRequest(args);
+                if (!parseResult.IsValid)
                 {
-                    _output.WriteLine("{\"error\":\"Usage: create_dimension <viewId> <pointsJson> <direction> <distance> [attributesFile]\"}");
+                    _output.WriteLine(JsonSerializer.Serialize(new { error = parseResult.Error }));
                     return true;
                 }
-                var pointsJson    = args.Length > 2 ? args[2] : "[]";
-                var cdDirection   = args.Length > 3 ? args[3] : "horizontal";
-                var cdDistance    = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 50.0;
-                var cdAttrFile    = args.Length > 5 ? args[5] : string.Empty;
-
-                double[] points;
-                try { points = JsonSerializer.Deserialize<double[]>(pointsJson) ?? Array.Empty<double>(); }
-                catch { _output.WriteLine("{\"error\":\"pointsJson must be a JSON array of numbers\"}"); return true; }
 
                 var api    = new TeklaDrawingDimensionsApi(_model);
-                var result = api.CreateDimension(cdViewId, points, cdDirection, cdDistance, cdAttrFile);
+                var result = api.CreateDimension(
+                    parseResult.Request.ViewId,
+                    parseResult.Request.Points,
+                    parseResult.Request.Direction,
+                    parseResult.Request.Distance,
+                    parseResult.Request.AttributesFile);
                 _output.WriteLine(JsonSerializer.Serialize(new
                 {
                     created     = result.Created,

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using Tekla.Structures.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -101,6 +103,64 @@ public static class DrawingCommandParsers
             OpenDrawing = openDrawing
         });
     }
+
+    public static MoveViewParseResult ParseMoveViewRequest(string[] args)
+    {
+        if (args.Length < 4)
+            return MoveViewParseResult.Fail("Usage: move_view <viewId> <dx> <dy> [abs]");
+
+        if (!int.TryParse(args[1], out var viewId))
+            return MoveViewParseResult.Fail("viewId must be an integer");
+
+        if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var dx) ||
+            !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var dy))
+        {
+            return MoveViewParseResult.Fail("dx and dy must be numbers");
+        }
+
+        var absolute = args.Length > 4 && string.Equals(args[4], "abs", StringComparison.OrdinalIgnoreCase);
+        return MoveViewParseResult.Success(new MoveViewRequest
+        {
+            ViewId = viewId,
+            Dx = dx,
+            Dy = dy,
+            Absolute = absolute
+        });
+    }
+
+    public static CreateDimensionParseResult ParseCreateDimensionRequest(string[] args)
+    {
+        if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
+        {
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> <distance> [attributesFile]");
+        }
+
+        var pointsJson = args.Length > 2 ? args[2] : "[]";
+        var direction = args.Length > 3 ? args[3] : "horizontal";
+        var distance = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance)
+            ? parsedDistance
+            : 50.0;
+        var attributesFile = args.Length > 5 ? args[5] : string.Empty;
+
+        double[] points;
+        try
+        {
+            points = JsonSerializer.Deserialize<double[]>(pointsJson) ?? Array.Empty<double>();
+        }
+        catch
+        {
+            return CreateDimensionParseResult.Fail("pointsJson must be a JSON array of numbers");
+        }
+
+        return CreateDimensionParseResult.Success(new CreateDimensionRequest
+        {
+            ViewId = viewId,
+            Points = points,
+            Direction = direction,
+            Distance = distance,
+            AttributesFile = attributesFile
+        });
+    }
 }
 
 public sealed class SetMarkContentParseResult
@@ -133,5 +193,48 @@ public sealed class ModelObjectDrawingCreationParseResult
         new() { IsValid = true, Request = request };
 
     public static ModelObjectDrawingCreationParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class MoveViewRequest
+{
+    public int ViewId { get; set; }
+    public double Dx { get; set; }
+    public double Dy { get; set; }
+    public bool Absolute { get; set; }
+}
+
+public sealed class MoveViewParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public MoveViewRequest Request { get; private set; } = new();
+
+    public static MoveViewParseResult Success(MoveViewRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static MoveViewParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class CreateDimensionRequest
+{
+    public int ViewId { get; set; }
+    public double[] Points { get; set; } = Array.Empty<double>();
+    public string Direction { get; set; } = "horizontal";
+    public double Distance { get; set; } = 50.0;
+    public string AttributesFile { get; set; } = string.Empty;
+}
+
+public sealed class CreateDimensionParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public CreateDimensionRequest Request { get; private set; } = new();
+
+    public static CreateDimensionParseResult Success(CreateDimensionRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static CreateDimensionParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
