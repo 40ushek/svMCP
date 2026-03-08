@@ -229,23 +229,11 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseResult.Request.OpenDrawing);
                 if (!result.Created)
                 {
-                    _output.WriteLine(JsonSerializer.Serialize(new
-                    {
-                        error = "Failed to create GA drawing",
-                        details = result.ErrorDetails,
-                        viewName = parseResult.Request.ViewName
-                    }));
+                    WriteGaDrawingCreationFailure(result.ErrorDetails, parseResult.Request.ViewName);
                     return true;
                 }
 
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    created = true,
-                    drawingType = "GA",
-                    viewName = result.ViewName,
-                    drawingProperties = result.DrawingProperties,
-                    openDrawing = result.OpenDrawing
-                }));
+                WriteGaDrawingCreationResult(result);
                 return true;
             }
 
@@ -662,6 +650,28 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             drawingType = result.DrawingType,
             modelObjectId = result.ModelObjectId,
             drawingProperties = result.DrawingProperties
+        }));
+    }
+
+    private void WriteGaDrawingCreationFailure(string details, string viewName)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            error = "Failed to create GA drawing",
+            details,
+            viewName
+        }));
+    }
+
+    private void WriteGaDrawingCreationResult(GaDrawingCreationResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            created = true,
+            drawingType = "GA",
+            viewName = result.ViewName,
+            drawingProperties = result.DrawingProperties,
+            openDrawing = result.OpenDrawing
         }));
     }
 
