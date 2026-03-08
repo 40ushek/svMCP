@@ -230,27 +230,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
         switch (command)
         {
             case "create_ga_drawing":
-            {
-                var parseResult = DrawingCommandParsers.ParseGaDrawingCreationRequest(args);
-                if (!parseResult.IsValid)
-                {
-                    WriteError(parseResult.Error);
-                    return true;
-                }
-
-                var result = api.CreateGaDrawing(
-                    parseResult.Request.ViewName,
-                    parseResult.Request.DrawingProperties,
-                    parseResult.Request.OpenDrawing);
-                if (!result.Created)
-                {
-                    WriteGaDrawingCreationFailure(result.ErrorDetails, parseResult.Request.ViewName);
-                    return true;
-                }
-
-                WriteGaDrawingCreationResult(result);
-                return true;
-            }
+                return HandleCreateGaDrawing(api, args);
 
             case "create_single_part_drawing":
             {
@@ -273,6 +253,29 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool HandleCreateGaDrawing(TeklaDrawingCreationApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseGaDrawingCreationRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.CreateGaDrawing(
+            parseResult.Request.ViewName,
+            parseResult.Request.DrawingProperties,
+            parseResult.Request.OpenDrawing);
+        if (!result.Created)
+        {
+            WriteGaDrawingCreationFailure(result.ErrorDetails, parseResult.Request.ViewName);
+            return true;
+        }
+
+        WriteGaDrawingCreationResult(result);
+        return true;
     }
 
     private bool TryHandleDrawingInteractionCommands(string command, string[] args)
