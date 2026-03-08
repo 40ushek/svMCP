@@ -703,13 +703,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                     parseRequest.MarkAttributesFile,
                     parseRequest.FrameType,
                     parseRequest.ArrowheadType);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    createdCount     = result.CreatedCount,
-                    skippedCount     = result.SkippedCount,
-                    createdMarkIds   = result.CreatedMarkIds,
-                    attributesLoaded = result.AttributesLoaded
-                }));
+                WriteCreatePartMarksResult(result);
                 return true;
             }
 
@@ -743,24 +737,7 @@ internal sealed class DrawingCommandHandler : ICommandHandler
                 var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
 
                 var result = GetMarkApi().GetMarks(viewId);
-                _output.WriteLine(JsonSerializer.Serialize(new
-                {
-                    total    = result.Total,
-                    overlaps = result.Overlaps.Select(o => new { idA = o.IdA, idB = o.IdB }),
-                    marks    = result.Marks.Select(m => new
-                    {
-                        id         = m.Id,
-                        viewId     = m.ViewId,
-                        modelId    = m.ModelId,
-                        insertionX = m.InsertionX,
-                        insertionY = m.InsertionY,
-                        bbox        = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
-                        placingType = m.PlacingType,
-                        placingX    = m.PlacingX,
-                        placingY    = m.PlacingY,
-                        properties  = m.Properties.Select(p => new { name = p.Name, value = p.Value })
-                    })
-                }));
+                WriteGetMarksResult(result);
                 return true;
             }
 
@@ -880,6 +857,39 @@ internal sealed class DrawingCommandHandler : ICommandHandler
             movedIds = result.MovedIds,
             iterations = result.Iterations,
             remainingOverlaps = result.RemainingOverlaps
+        }));
+    }
+
+    private void WriteCreatePartMarksResult(CreateMarksResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            createdCount = result.CreatedCount,
+            skippedCount = result.SkippedCount,
+            createdMarkIds = result.CreatedMarkIds,
+            attributesLoaded = result.AttributesLoaded
+        }));
+    }
+
+    private void WriteGetMarksResult(GetMarksResult result)
+    {
+        _output.WriteLine(JsonSerializer.Serialize(new
+        {
+            total = result.Total,
+            overlaps = result.Overlaps.Select(o => new { idA = o.IdA, idB = o.IdB }),
+            marks = result.Marks.Select(m => new
+            {
+                id = m.Id,
+                viewId = m.ViewId,
+                modelId = m.ModelId,
+                insertionX = m.InsertionX,
+                insertionY = m.InsertionY,
+                bbox = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
+                placingType = m.PlacingType,
+                placingX = m.PlacingX,
+                placingY = m.PlacingY,
+                properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
+            })
         }));
     }
 
