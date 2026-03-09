@@ -108,7 +108,6 @@ TeklaBridge — тонкая net48-обёртка: принимает коман
 ```
 src/
 ├── TeklaMcpServer.Api/       # Весь Tekla API код (net48) — интерфейсы, DTO, реализации
-│   ├── Connection/           # ITeklaConnectionApi, ConnectionInfo
 │   ├── Selection/            # IModelSelectionApi, ModelObjectInfo, TeklaModelSelectionApi
 │   │                         # ISelectionCacheManager, SelectionCacheManager
 │   │                         # SelectionResult, ToolInputSelectionHandler
