@@ -35,7 +35,7 @@
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 
 **Архитектура**
-- Персистентный TeklaBridge (`--loop`): 100× быстрее, bridge живёт всю сессию
+- Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
 - TS2021 + TS2025 поддержка
 
 ---
@@ -89,7 +89,7 @@ TS2025: NuGet `2025.0.0.0` vs FileVersion `2025.0.52577.0` → channel mismatch 
 
 ## Персистентный TeklaBridge ✅ (2026-03-08)
 
-`--loop` режим: bridge стартует один раз, команды через stdin/stdout JSON. Даёт 100× ускорение.
+`--loop` режим: bridge стартует один раз, команды идут через stdin/stdout JSON. Даёт заметный выигрыш на повторных коротких вызовах; по текущим локальным замерам около ~7× на серии `check_connection`.
 
 **stdout-дисциплина:** только протокольные JSON-строки, одна на запрос. `Console.SetOut(teklaLog)` — **до** `ApplyTeklaChannelFixes()`. Автовосстановление: IPC-ошибка → `KillProcess()` → рестарт на следующем вызове.
 
@@ -97,9 +97,8 @@ TS2025: NuGet `2025.0.0.0` vs FileVersion `2025.0.52577.0` → channel mismatch 
 
 ## Архитектурный долг
 
-- Разбить `DrawingCommandHandler` на доменные обработчики (Views, Dimensions, Marks, Geometry, Grid)
-- Добавить contract/snapshot-тесты на ключевые bridge-команды
-- `View.GetIdentifier()` — extension из `Tekla.Structures.DrawingInternal`, нужен явный `using`
+- Довести текущий `DrawingCommandHandler` от partial-декомпозиции до отдельных доменных handler-классов, если это даст практическую пользу
+- Расширить текущие smoke/transport tests до более строгих contract/snapshot-тестов на ключевые bridge-команды
 - Selection cache (`SelectionCacheManager`) написан но не подключён к bridge handlers
 
 ---
