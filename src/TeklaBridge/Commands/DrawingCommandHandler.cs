@@ -52,6 +52,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
                 return TryHandleDimensionCommands(command, args);
 
             case "get_part_geometry_in_view":
+            case "get_all_parts_geometry_in_view":
             case "get_grid_axes":
             case "get_drawing_parts":
                 return TryHandleGeometryCommands(command, args);

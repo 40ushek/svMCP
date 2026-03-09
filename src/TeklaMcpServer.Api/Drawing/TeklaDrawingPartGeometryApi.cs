@@ -53,39 +53,37 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 var modelId = id.ID;
                 double[] startPt = [], endPt = [], axisX = [], axisY = [];
 
+                string typeName = modelObj.GetType().Name;
+                string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
+                double[] bboxMin = [], bboxMax = [];
+
                 if (modelObj is Beam beam)
                 {
-                    startPt = ToArray(beam.StartPoint);
-                    endPt   = ToArray(beam.EndPoint);
-                    var cs  = beam.GetCoordinateSystem();
-                    axisX   = ToArray(cs.AxisX);
-                    axisY   = ToArray(cs.AxisY);
+                    startPt  = ToArray(beam.StartPoint);
+                    endPt    = ToArray(beam.EndPoint);
+                    var cs   = beam.GetCoordinateSystem();
+                    axisX    = ToArray(cs.AxisX);
+                    axisY    = ToArray(cs.AxisY);
+                    name     = beam.Name;
+                    profile  = beam.Profile.ProfileString;
+                    material = beam.Material.MaterialString;
+                    var solid = beam.GetSolid();
+                    if (solid != null) { bboxMin = ToArray(solid.MinimumPoint); bboxMax = ToArray(solid.MaximumPoint); }
                 }
                 else if (modelObj is ModelPart part)
                 {
-                    var cs = part.GetCoordinateSystem();
-                    startPt = ToArray(cs.Origin);
-                    axisX   = ToArray(cs.AxisX);
-                    axisY   = ToArray(cs.AxisY);
+                    var cs   = part.GetCoordinateSystem();
+                    startPt  = ToArray(cs.Origin);
+                    axisX    = ToArray(cs.AxisX);
+                    axisY    = ToArray(cs.AxisY);
+                    name     = part.Name;
+                    var solid = part.GetSolid();
+                    if (solid != null) { bboxMin = ToArray(solid.MinimumPoint); bboxMax = ToArray(solid.MaximumPoint); }
+                    part.GetReportProperty("PROFILE",  ref profile);
+                    part.GetReportProperty("MATERIAL", ref material);
                 }
 
-                double[] bboxMin = [], bboxMax = [];
-                if (modelObj is ModelPart solidPart)
-                {
-                    var solid = solidPart.GetSolid();
-                    if (solid != null)
-                    {
-                        bboxMin = ToArray(solid.MinimumPoint);
-                        bboxMax = ToArray(solid.MaximumPoint);
-                    }
-                }
-
-                string typeName = modelObj.GetType().Name;
-                string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
-                modelObj.GetReportProperty("NAME",     ref name);
                 modelObj.GetReportProperty("PART_POS", ref partPos);
-                modelObj.GetReportProperty("PROFILE",  ref profile);
-                modelObj.GetReportProperty("MATERIAL", ref material);
 
                 results.Add(new PartGeometryInViewResult
                 {

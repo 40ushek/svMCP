@@ -18,19 +18,19 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        var realOut = Console.Out;
+        var teklaLog = new StringWriter();
+        Console.SetOut(teklaLog);
+
         var teklaRoot = ResolveTeklaRoot();
         ConfigureTeklaEnvironment(teklaRoot);
         ApplyTeklaChannelFixes(teklaRoot);
 
         if (args.Length == 0)
         {
-            Console.WriteLine("{\"error\":\"No command specified\"}");
+            realOut.WriteLine("{\"error\":\"No command specified\"}");
             return;
         }
-
-        var realOut = Console.Out;
-        var teklaLog = new StringWriter();
-        Console.SetOut(teklaLog);
 
         if (string.Equals(args[0], "--loop", StringComparison.OrdinalIgnoreCase))
         {

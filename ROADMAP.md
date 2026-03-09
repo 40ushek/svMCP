@@ -678,9 +678,9 @@ Persistent loop должен оборачивать `CommandDispatcher`, а не
 |---|---|---|
 | Файловый кэш | Низкая | `SelectionCacheManager` читает/пишет `C:\temp\svmcp_selections.json` |
 | Кэш в TeklaMcpServer | Средняя | Состояние хранится на стороне net8, IDs передаются в каждый вызов bridge |
-| TeklaBridge как long-lived процесс | — | **Запланировано** — см. раздел "Персистентный TeklaBridge" выше |
+| TeklaBridge как long-lived процесс | — | ✅ **Реализовано (2026-03-08)** — см. раздел "Персистентный TeklaBridge" выше |
 
-**После реализации персистентного bridge** selection cache станет тривиальным: TeklaBridge живёт постоянно, in-memory `SelectionCacheManager` работает между вызовами без файлового кэша. До тех пор — либо передавать все ID явно в каждом вызове, либо использовать файловый кэш как временный workaround.
+**Персистентный bridge реализован** — TeklaBridge живёт постоянно, in-memory `SelectionCacheManager` работает между вызовами без файлового кэша. Selection cache теперь тривиален: `selectionId` из одного вызова доступен в следующем.
 
 ## Роадмап рефакторинга архитектуры (2026-03-08)
 
