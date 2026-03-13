@@ -73,7 +73,18 @@
 - **IPC-прокси**: объекты из `GetAllObjects()` — transparent proxies. `is Beam` всегда `false`. Использовать `GetType().Name`
 - **BoltGrade**: не доступен через свойства, нужен `GetReportProperty("BOLT_GRADE")`
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
-- **Шаблонные объекты (штамп, таблицы) недоступны через Open API** — `sheet.GetAllObjects()` возвращает только content-объекты (детали, марки, размеры); элементы `.tpl`-шаблона (title block, parts list и т.п.) в объектной модели не присутствуют. `DrawingInternal.TableLayout` и `LayoutTable` требуют запуска внутри процесса Tekla (плагин) — из TeklaBridge (отдельный процесс через Remoting) не работают. Следствие: `fit_views_to_sheet` не знает где штамп и может разместить вид поверх него. Решение — in-process plugin (см. ниже).
+- **Шаблонные объекты (штамп, таблицы) — частичный доступ через DrawingInternal:**
+  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона. Но через internal API доступно:
+  - `LayoutTable`: `FileName`, `XOffset`, `YOffset`, `Scale`, `TableCorner`, `RefCorner`, `OverlapVithViews` — placement metadata для каждой таблицы
+  - `TableLayout`: `GetCurrentTables()`, `GetMarginsAndSpaces()` — список таблиц и отступы layout
+  - `LayoutManager`: `GetDrawingFrames()`, `GetDrawingSize()` — фреймы и размер чертежа
+  - `LayoutAttributes`: скрытые поля `InternalLayout`, `InternalTableLayoutId`; `LoadAttributes()` загружает layout через `DRAWING_LOAD_LAYOUT_ATTRIBUTES`
+
+  **Что НЕ найдено**: `GetTableRect()` / `GetTitleBlockRect()`. В `LayoutTable` и `dotGrLayTable_t` нет `Width`/`Height`/`BoundingBox`. `REPORT_TEMPLATE` в managed-слое бросает `NotImplementedException`.
+
+  **Главное ограничение**: таблицы динамические — высота parts list зависит от количества строк модели, итоговая геометрия определяется только после генерации содержимого. Для фиксированных штампов (title block) статическое размещение можно приблизительно вычислить из `XOffset`/`YOffset`/`RefCorner`, но не высоту.
+
+  `TableLayout` и `LayoutManager` требуют запуска внутри процесса Tekla — из TeklaBridge (Remoting) не работают. Решение — in-process plugin (см. ниже), который вернёт реальные frame-прямоугольники через `LayoutManager.GetDrawingFrames()`.
 
 ---
 
