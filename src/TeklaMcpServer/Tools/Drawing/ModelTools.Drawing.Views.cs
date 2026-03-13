@@ -222,7 +222,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Place all views on the active drawing using Tekla's built-in placement algorithm. Runs until stable (up to 10 iterations). Returns success flag.")]
+    [McpServerTool, Description("Trigger Tekla's built-in view placement for views that were auto-generated and not yet manually positioned. Only affects views still under automatic placement control — views moved manually or via move_view/fit_views_to_sheet are ignored. Use fit_views_to_sheet for full rearrangement.")]
     public static string PlaceViews()
     {
         var json = RunBridge("place_views");
