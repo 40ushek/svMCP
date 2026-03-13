@@ -219,7 +219,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Debug active drawing sheet-level objects and their bounding boxes to inspect layout tables, title blocks, and other reserved zones")]
+    [McpServerTool, Description("Debug active drawing: returns all drawing objects with type, isSheetLevel flag, bounding boxes, and reserved area candidates (sheet-level objects excluding views)")]
     public static string GetSheetObjectsDebug()
     {
         var json = RunBridge("get_sheet_objects_debug");
