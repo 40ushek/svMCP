@@ -11,7 +11,8 @@ public sealed class DrawingArrangeContext
         double sheetWidth,
         double sheetHeight,
         double margin,
-        double gap)
+        double gap,
+        IReadOnlyList<ReservedRect>? reservedAreas = null)
     {
         Drawing = drawing ?? throw new System.ArgumentNullException(nameof(drawing));
         Views = views ?? throw new System.ArgumentNullException(nameof(views));
@@ -19,6 +20,7 @@ public sealed class DrawingArrangeContext
         SheetHeight = sheetHeight;
         Margin = margin;
         Gap = gap;
+        ReservedAreas = reservedAreas ?? System.Array.Empty<ReservedRect>();
     }
 
     public Tekla.Structures.Drawing.Drawing Drawing { get; }
@@ -27,4 +29,5 @@ public sealed class DrawingArrangeContext
     public double SheetHeight { get; }
     public double Margin { get; }
     public double Gap { get; }
+    public IReadOnlyList<ReservedRect> ReservedAreas { get; }
 }

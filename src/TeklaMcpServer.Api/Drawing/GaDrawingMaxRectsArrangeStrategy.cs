@@ -12,12 +12,24 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
 
     public bool CanArrange(DrawingArrangeContext context)
     {
-        return context.Drawing is GADrawing;
+        return context.ReservedAreas.Count > 0 || context.Drawing is GADrawing;
     }
 
-    public bool EstimateFit(IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight, double gap)
+    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
-        return DrawingPackingEstimator.FitsMaxRects(frames, availableWidth, availableHeight, gap, MaxRectsHeuristic.BestAreaFit);
+        var availableW = context.SheetWidth - 2 * context.Margin;
+        var availableH = context.SheetHeight - 2 * context.Margin;
+        if (availableW <= 0 || availableH <= 0)
+            return false;
+
+        var packer = CreatePacker(context, availableW, availableH);
+        foreach (var frame in frames.OrderByDescending(f => f.w * f.h))
+        {
+            if (!packer.TryInsert(frame.w + context.Gap, frame.h + context.Gap, MaxRectsHeuristic.BestAreaFit, out _))
+                return false;
+        }
+
+        return true;
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
@@ -32,13 +44,18 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
             .ToList();
 
         // Inflate with gap and expand bin by the same amount so sheet edges keep full usable span.
-        var packer = new MaxRectsBinPacker(availableW + context.Gap, availableH + context.Gap, allowRotation: false);
+        var packer = CreatePacker(context, availableW, availableH);
         var packed = new Dictionary<View, PackedRectangle>();
 
         foreach (var view in orderedViews)
         {
             if (!packer.TryInsert(view.Width + context.Gap, view.Height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
-                return _fallback.Arrange(context);
+            {
+                if (context.ReservedAreas.Count == 0)
+                    return _fallback.Arrange(context);
+
+                throw new System.InvalidOperationException("Could not arrange views within the available sheet area after applying reserved zones.");
+            }
 
             packed[view] = placement;
         }
@@ -63,5 +80,34 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
         }
 
         return arranged;
+    }
+
+    private static MaxRectsBinPacker CreatePacker(DrawingArrangeContext context, double availableW, double availableH)
+    {
+        return new MaxRectsBinPacker(
+            availableW + context.Gap,
+            availableH + context.Gap,
+            allowRotation: false,
+            blockedRectangles: ToBlockedRectangles(context));
+    }
+
+    private static IEnumerable<PackedRectangle> ToBlockedRectangles(DrawingArrangeContext context)
+    {
+        foreach (var area in context.ReservedAreas)
+        {
+            var minX = System.Math.Max(context.Margin, area.MinX - context.Gap);
+            var maxX = System.Math.Min(context.SheetWidth - context.Margin, area.MaxX + context.Gap);
+            var minY = System.Math.Max(context.Margin, area.MinY - context.Gap);
+            var maxY = System.Math.Min(context.SheetHeight - context.Margin, area.MaxY + context.Gap);
+
+            if (maxX <= minX || maxY <= minY)
+                continue;
+
+            yield return new PackedRectangle(
+                minX - context.Margin,
+                (context.SheetHeight - context.Margin) - maxY,
+                maxX - minX,
+                maxY - minY);
+        }
     }
 }

@@ -70,7 +70,7 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleFitViewsToSheet(TeklaDrawingViewApi api, string[] args)
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
-        var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
+        var result = api.FitViewsToSheet(request.Margin, request.Gap);
         WriteFitViewsToSheetResult(result);
         return true;
     }

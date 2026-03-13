@@ -7,4 +7,5 @@ public interface IDrawingInteractionApi
     SelectDrawingObjectsResult SelectObjectsByModelIds(IReadOnlyCollection<int> targetModelIds);
     FilterDrawingObjectsResult FilterObjects(string objectType, string specificType);
     DrawingContextResult GetDrawingContext();
+    SheetObjectsDebugResult GetSheetObjectsDebug();
 }

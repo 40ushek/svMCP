@@ -37,6 +37,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "select_drawing_objects":
             case "filter_drawing_objects":
             case "get_drawing_context":
+            case "get_sheet_objects_debug":
                 return TryHandleDrawingInteractionCommands(command, args);
 
             case "get_drawing_views":
@@ -72,4 +73,3 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
     // ── Private helpers ────────────────────────────────────────────────────
 }
-

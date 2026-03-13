@@ -225,14 +225,12 @@ public static partial class ModelTools
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
-        [Description("Gap between views in mm. Default: 8")] double gap = 8,
-        [Description("Height of title block at bottom of sheet in mm. Default: 0")] double titleBlockHeight = 0)
+        [Description("Gap between views in mm. Default: 8")] double gap = 8)
     {
         var json = RunBridge(
             "fit_views_to_sheet",
             margin.ToString(CultureInfo.InvariantCulture),
-            gap.ToString(CultureInfo.InvariantCulture),
-            titleBlockHeight.ToString(CultureInfo.InvariantCulture));
+            gap.ToString(CultureInfo.InvariantCulture));
         try
         {
             var doc = JsonDocument.Parse(json);

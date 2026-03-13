@@ -20,6 +20,16 @@ public sealed class DrawingContextResult
     public List<DrawingObjectItem> SelectedObjects { get; set; } = new();
 }
 
+public sealed class SheetObjectsDebugResult
+{
+    public DrawingContextDrawingInfo Drawing { get; set; } = new();
+    public double SheetWidth { get; set; }
+    public double SheetHeight { get; set; }
+    public int TotalObjectsScanned { get; set; }
+    public List<SheetObjectDebugItem> SheetLevelObjects { get; set; } = new();
+    public List<ReservedRect> ReservedAreaCandidates { get; set; } = new();
+}
+
 public sealed class DrawingContextDrawingInfo
 {
     public string Guid { get; set; } = string.Empty;
@@ -35,3 +45,19 @@ public sealed class DrawingObjectItem
     public string Type { get; set; } = string.Empty;
     public int? ModelId { get; set; }
 }
+
+public sealed class SheetObjectDebugItem
+{
+    public int Id { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public int? ModelId { get; set; }
+    public bool IsSheetLevel { get; set; }
+    public string OwnerViewType { get; set; } = string.Empty;
+    public string OwnerViewName { get; set; } = string.Empty;
+    public bool HasBoundingBox { get; set; }
+    public double? BboxMinX { get; set; }
+    public double? BboxMinY { get; set; }
+    public double? BboxMaxX { get; set; }
+    public double? BboxMaxY { get; set; }
+}
+

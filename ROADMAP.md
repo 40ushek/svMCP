@@ -73,6 +73,7 @@
 - **IPC-прокси**: объекты из `GetAllObjects()` — transparent proxies. `is Beam` всегда `false`. Использовать `GetType().Name`
 - **BoltGrade**: не доступен через свойства, нужен `GetReportProperty("BOLT_GRADE")`
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
+- **Шаблонные объекты (штамп, таблицы) недоступны через Open API** — `sheet.GetAllObjects()` возвращает только content-объекты (детали, марки, размеры); элементы `.tpl`-шаблона (title block, parts list и т.п.) в объектной модели не присутствуют. `DrawingInternal.TableLayout` и `LayoutTable` требуют запуска внутри процесса Tekla (плагин) — из TeklaBridge (отдельный процесс через Remoting) не работают. Следствие: `fit_views_to_sheet` не знает где штамп и может разместить вид поверх него. Решение — in-process plugin (см. ниже).
 
 ---
 

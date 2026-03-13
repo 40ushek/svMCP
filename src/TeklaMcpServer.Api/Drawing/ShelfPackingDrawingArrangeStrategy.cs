@@ -10,9 +10,11 @@ public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStra
 {
     public bool CanArrange(DrawingArrangeContext context) => true;
 
-    public bool EstimateFit(IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight, double gap)
+    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
-        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, gap);
+        var availableWidth = context.SheetWidth - 2 * context.Margin;
+        var availableHeight = context.SheetHeight - 2 * context.Margin;
+        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, context.Gap);
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)

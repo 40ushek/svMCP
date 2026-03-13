@@ -218,4 +218,22 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description("Debug active drawing sheet-level objects and their bounding boxes to inspect layout tables, title blocks, and other reserved zones")]
+    public static string GetSheetObjectsDebug()
+    {
+        var json = RunBridge("get_sheet_objects_debug");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
 }

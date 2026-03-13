@@ -24,10 +24,10 @@ public sealed class DrawingViewArrangementSelector
         });
     }
 
-    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight)
+    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
         var strategy = SelectStrategy(context);
-        return strategy.EstimateFit(frames, availableWidth, availableHeight, context.Gap);
+        return strategy.EstimateFit(context, frames);
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)

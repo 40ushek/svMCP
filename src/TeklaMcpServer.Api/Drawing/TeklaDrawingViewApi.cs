@@ -97,14 +97,12 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
     // ── FitViewsToSheet ───────────────────────────────────────────────────
 
-    public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
+    public FitViewsResult FitViewsToSheet(double margin, double gap)
     {
         if (margin < 0)
             throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
         if (gap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(gap), "gap must be >= 0.");
-        if (titleBlockHeight < 0)
-            throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -119,10 +117,11 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
 
+        IReadOnlyList<ReservedRect> reservedAreas = System.Array.Empty<ReservedRect>();
         double availW = sheetW - 2 * margin;
-        double availH = sheetH - 2 * margin - titleBlockHeight;
+        double availH = sheetH - 2 * margin;
         if (availW <= 0 || availH <= 0)
-            throw new System.InvalidOperationException("No drawable area left after applying margin/titleBlockHeight.");
+            throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
         // Rough lower bound for the scale denominator, ignoring Tekla's fixed view-frame border
         // (~20 mm regardless of scale). Filters out candidates that are obviously too large
@@ -154,9 +153,9 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
             var reread       = EnumerateViews(activeDrawing).ToList();
             var actualFrames = reread.Select(v => (w: v.Width, h: v.Height)).ToList();
-            var ctx          = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap);
+            var ctx          = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap, reservedAreas);
 
-            if (_arrangementSelector.EstimateFit(ctx, actualFrames, availW, availH))
+            if (_arrangementSelector.EstimateFit(ctx, actualFrames))
             {
                 optimalScale = s;
                 currentViews = reread;
@@ -207,7 +206,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
         // ── Arrange (naive: assumes Origin = frame center) ────────────────────
         var arranged = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap));
+            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap, reservedAreas));
 
         // ── Post-correction: shift each origin so the frame lands at the intended position ─
         // arranged[i].OriginX/Y holds the desired frame-center position on the sheet.

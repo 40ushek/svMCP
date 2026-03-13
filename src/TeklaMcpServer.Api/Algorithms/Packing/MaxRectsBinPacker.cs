@@ -28,13 +28,28 @@ public sealed class MaxRectsBinPacker
     private readonly bool _allowRotation;
     private readonly List<PackedRectangle> _freeRectangles = new();
 
-    public MaxRectsBinPacker(double binWidth, double binHeight, bool allowRotation = false)
+    public MaxRectsBinPacker(
+        double binWidth,
+        double binHeight,
+        bool allowRotation = false,
+        IEnumerable<PackedRectangle>? blockedRectangles = null)
     {
         if (binWidth <= 0) throw new System.ArgumentOutOfRangeException(nameof(binWidth));
         if (binHeight <= 0) throw new System.ArgumentOutOfRangeException(nameof(binHeight));
 
         _allowRotation = allowRotation;
         _freeRectangles.Add(new PackedRectangle(0, 0, binWidth, binHeight));
+
+        if (blockedRectangles == null)
+            return;
+
+        foreach (var blocked in blockedRectangles)
+        {
+            if (!TryClipToBin(blocked, binWidth, binHeight, out var clipped))
+                continue;
+
+            PlaceRectangle(clipped);
+        }
     }
 
     public bool TryInsert(double width, double height, MaxRectsHeuristic heuristic, out PackedRectangle placement)
@@ -192,6 +207,23 @@ public sealed class MaxRectsBinPacker
         }
 
         _freeRectangles.RemoveAll(r => r.Width <= 0 || r.Height <= 0);
+    }
+
+    private static bool TryClipToBin(PackedRectangle rectangle, double binWidth, double binHeight, out PackedRectangle clipped)
+    {
+        var minX = System.Math.Max(0, rectangle.X);
+        var minY = System.Math.Max(0, rectangle.Y);
+        var maxX = System.Math.Min(binWidth, rectangle.X + rectangle.Width);
+        var maxY = System.Math.Min(binHeight, rectangle.Y + rectangle.Height);
+
+        if (maxX <= minX || maxY <= minY)
+        {
+            clipped = default;
+            return false;
+        }
+
+        clipped = new PackedRectangle(minX, minY, maxX - minX, maxY - minY);
+        return true;
     }
 
     private static bool Contains(PackedRectangle a, PackedRectangle b)

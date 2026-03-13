@@ -13,10 +13,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         return context.Views.Any(v => v.ViewType == View.ViewTypes.FrontView);
     }
 
-    public bool EstimateFit(IReadOnlyList<(double w, double h)> frames, double availableWidth, double availableHeight, double gap)
+    public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
         // Scale estimation remains conservative and behavior-compatible for front-based layout.
-        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, gap);
+        var availableWidth = context.SheetWidth - 2 * context.Margin;
+        var availableHeight = context.SheetHeight - 2 * context.Margin;
+        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, context.Gap);
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)

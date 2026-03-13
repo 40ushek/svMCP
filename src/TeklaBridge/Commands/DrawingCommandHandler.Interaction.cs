@@ -22,6 +22,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_context":
                 return HandleGetDrawingContext(GetInteractionApi());
 
+            case "get_sheet_objects_debug":
+                return HandleGetSheetObjectsDebug(GetInteractionApi());
+
             default:
                 return false;
         }
@@ -86,6 +89,18 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleGetSheetObjectsDebug(TeklaDrawingInteractionApi api)
+    {
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var result = api.GetSheetObjectsDebug();
+        WriteSheetObjectsDebugResult(result);
+        return true;
+    }
+
     private void WriteSelectDrawingObjectsResult(SelectDrawingObjectsResult result)
     {
         WriteJson(new
@@ -124,6 +139,49 @@ internal sealed partial class DrawingCommandHandler
             },
             selectedCount = result.SelectedObjects.Count,
             selectedObjects = MapDrawingObjects(result.SelectedObjects)
+        });
+    }
+
+    private void WriteSheetObjectsDebugResult(SheetObjectsDebugResult result)
+    {
+        WriteJson(new
+        {
+            drawing = new
+            {
+                guid = result.Drawing.Guid,
+                name = result.Drawing.Name,
+                mark = result.Drawing.Mark,
+                type = result.Drawing.Type,
+                status = result.Drawing.Status
+            },
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            totalObjectsScanned = result.TotalObjectsScanned,
+            sheetLevelObjectCount = result.SheetLevelObjects.Count,
+            sheetLevelObjects = result.SheetLevelObjects.Select(x => new
+            {
+                id = x.Id,
+                type = x.Type,
+                modelId = x.ModelId,
+                isSheetLevel = x.IsSheetLevel,
+                ownerViewType = x.OwnerViewType,
+                ownerViewName = x.OwnerViewName,
+                hasBoundingBox = x.HasBoundingBox,
+                bboxMinX = x.BboxMinX,
+                bboxMinY = x.BboxMinY,
+                bboxMaxX = x.BboxMaxX,
+                bboxMaxY = x.BboxMaxY
+            }),
+            reservedAreaCandidateCount = result.ReservedAreaCandidates.Count,
+            reservedAreaCandidates = result.ReservedAreaCandidates.Select(x => new
+            {
+                minX = x.MinX,
+                minY = x.MinY,
+                maxX = x.MaxX,
+                maxY = x.MaxY,
+                width = x.Width,
+                height = x.Height
+            })
         });
     }
 

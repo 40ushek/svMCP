@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TeklaMcpServer\TeklaMcpServer.csproj" />
+    <ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

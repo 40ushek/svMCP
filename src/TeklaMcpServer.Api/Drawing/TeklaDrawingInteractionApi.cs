@@ -133,6 +133,83 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
         return result;
     }
 
+    public SheetObjectsDebugResult GetSheetObjectsDebug()
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        double sheetWidth = 0;
+        double sheetHeight = 0;
+        try
+        {
+            var size = activeDrawing.Layout.SheetSize;
+            sheetWidth = size.Width;
+            sheetHeight = size.Height;
+        }
+        catch
+        {
+        }
+
+        var result = new SheetObjectsDebugResult
+        {
+            Drawing = new DrawingContextDrawingInfo
+            {
+                Guid = activeDrawing.GetIdentifier().GUID.ToString(),
+                Name = activeDrawing.Name ?? string.Empty,
+                Mark = activeDrawing.Mark ?? string.Empty,
+                Type = activeDrawing.GetType().Name,
+                Status = activeDrawing.UpToDateStatus.ToString()
+            },
+            SheetWidth = sheetWidth,
+            SheetHeight = sheetHeight
+        };
+
+        var sheet = activeDrawing.GetSheet();
+        var objects = sheet.GetAllObjects();
+        while (objects.MoveNext())
+        {
+            result.TotalObjectsScanned++;
+            if (objects.Current is not DrawingObject drawingObject)
+                continue;
+
+            var ownerView = drawingObject.GetView();
+            var isSheetLevel = ownerView is ContainerView;
+
+            // Collect ALL object types for discovery (not just sheet-level)
+            var item = new SheetObjectDebugItem
+            {
+                Id = drawingObject.GetIdentifier().ID,
+                Type = drawingObject.GetType().Name,
+                ModelId = drawingObject is Tekla.Structures.Drawing.ModelObject drawingModelObject2
+                    ? drawingModelObject2.ModelIdentifier.ID
+                    : (int?)null,
+                IsSheetLevel = isSheetLevel,
+                OwnerViewType = ownerView?.GetType().Name ?? string.Empty,
+                OwnerViewName = ownerView is View ownerNamedView2 ? ownerNamedView2.Name ?? string.Empty : string.Empty
+            };
+
+            if (drawingObject is IAxisAlignedBoundingBox bounded2)
+            {
+                var box2 = bounded2.GetAxisAlignedBoundingBox();
+                if (box2 != null)
+                {
+                    item.HasBoundingBox = true;
+                    item.BboxMinX = box2.MinPoint.X;
+                    item.BboxMinY = box2.MinPoint.Y;
+                    item.BboxMaxX = box2.MaxPoint.X;
+                    item.BboxMaxY = box2.MaxPoint.Y;
+                }
+            }
+
+            result.SheetLevelObjects.Add(item);
+        }
+
+        result.ReservedAreaCandidates.AddRange(DrawingReservedAreaReader.Read(activeDrawing, 0, 0));
+
+        return result;
+    }
+
     private static Type? ResolveDrawingType(string objectType)
     {
         if (string.IsNullOrWhiteSpace(objectType))
