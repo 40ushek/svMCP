@@ -42,8 +42,16 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var sheetW = context.SheetWidth;
         var sheetH = context.SheetHeight;
 
-        double leftW = back != null ? back.Width + gap : 0;
-        double rightW = sections.Sum(s => s.Width + gap);
+        // Decide where to stack sections: try right first, then left, then stacked vertically on right
+        double sectionsRowW = sections.Count > 0 ? sections.Sum(s => s.Width) + (sections.Count - 1) * gap : 0;
+        double sectionsStackH = sections.Count > 0 ? sections.Sum(s => s.Height) + (sections.Count - 1) * gap : 0;
+        double sectionsMaxW = sections.Count > 0 ? sections.Max(s => s.Width) : 0;
+
+        bool sectionsRight = sectionsRowW > 0 && front.Width + sectionsRowW + gap + (back != null ? back.Width + gap : 0) <= sheetW - 2 * margin;
+        bool sectionsLeft  = !sectionsRight && sectionsRowW > 0 && back == null && sectionsRowW <= sheetW - 2 * margin - front.Width - gap;
+
+        double leftW  = (back != null ? back.Width + gap : 0) + (sectionsLeft  ? sectionsRowW + gap : 0);
+        double rightW = sectionsRight ? sectionsRowW + gap : 0;
         double topH = top != null ? top.Height + gap : 0;
         double bottomH = bottom != null ? bottom.Height + gap : 0;
 
@@ -68,16 +76,68 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         if (bottom != null) Place(bottom, frontCX, frontCY - front.Height / 2 - gap - bottom.Height / 2);
         if (back != null) Place(back, frontCX - front.Width / 2 - gap - back.Width / 2, frontCY);
 
-        double rightX = frontCX + front.Width / 2 + gap;
-        foreach (var s in sections)
+        // rightX tracks the right edge after placing sections (used for view3d placement)
+        double rightX = frontCX + front.Width / 2;
+
+        if (sectionsRight)
         {
-            Place(s, rightX + s.Width / 2, frontCY);
-            rightX += s.Width + gap;
+            double rx = rightX + gap;
+            foreach (var s in sections)
+            {
+                Place(s, rx + s.Width / 2, frontCY);
+                rx += s.Width + gap;
+            }
+            rightX = rx;
+        }
+        else if (sectionsLeft)
+        {
+            double leftX = frontCX - front.Width / 2 - gap;
+            foreach (var s in sections)
+            {
+                Place(s, leftX - s.Width / 2, frontCY);
+                leftX -= s.Width + gap;
+            }
+        }
+        else if (sections.Count > 0)
+        {
+            // Stack sections vertically to the right of front view (or wherever they fit)
+            double stackX = frontCX + front.Width / 2 + gap + sectionsMaxW / 2;
+            bool stackFitsRight = stackX + sectionsMaxW / 2 <= sheetW - margin;
+            if (stackFitsRight)
+            {
+                double stackY = frontCY + front.Height / 2;
+                foreach (var s in sections)
+                {
+                    stackY -= s.Height / 2;
+                    Place(s, stackX, stackY);
+                    stackY -= s.Height / 2 + gap;
+                }
+                rightX = stackX + sectionsMaxW / 2;
+            }
+            else
+            {
+                // Last resort: place sections below in a wrapping row
+                double secX = margin;
+                double secY = frontCY - front.Height / 2 - bottomH - gap;
+                double secRowH = 0;
+                foreach (var s in sections)
+                {
+                    if (secX + s.Width > sheetW - margin && secX > margin)
+                    {
+                        secX = margin;
+                        secY -= secRowH + gap;
+                        secRowH = 0;
+                    }
+                    Place(s, secX + s.Width / 2, secY - s.Height / 2);
+                    secX += s.Width + gap;
+                    if (s.Height > secRowH) secRowH = s.Height;
+                }
+            }
         }
 
         if (view3d != null)
         {
-            double opt1X = rightX + view3d.Width / 2;
+            double opt1X = rightX + gap + view3d.Width / 2;
             bool opt1Fits = opt1X + view3d.Width / 2 <= sheetW - margin;
 
             double topEdge = frontCY + front.Height / 2 + gap + (top != null ? top.Height + gap : 0);

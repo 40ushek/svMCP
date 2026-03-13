@@ -10,10 +10,7 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
 {
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
 
-    public bool CanArrange(DrawingArrangeContext context)
-    {
-        return context.ReservedAreas.Count > 0 || context.Drawing is GADrawing;
-    }
+    public bool CanArrange(DrawingArrangeContext context) => true;
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
