@@ -143,6 +143,9 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         var candidates     = System.Array.FindAll(standardScales, s => s >= minDenom);
         if (candidates.Length == 0) candidates = new[] { standardScales[standardScales.Length - 1] };
 
+        // Save original scales so we can restore them if no candidate fits.
+        var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
+
         // Apply each candidate scale, then read the ACTUAL Tekla-reported view dimensions and
         // check fit. Estimating via ratio is unreliable: Tekla's view frame has a fixed border
         // that does not scale with content, so the simple linear estimate can be 5-10 mm off.
@@ -169,7 +172,16 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         }
 
         if (!optimalScale.HasValue)
+        {
+            // Restore original scales before throwing
+            foreach (var v in EnumerateViews(activeDrawing))
+            {
+                if (originalScales.TryGetValue(v.GetIdentifier().ID, out var orig))
+                { v.Attributes.Scale = orig; v.Modify(); }
+            }
+            activeDrawing.CommitChanges();
             throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
+        }
 
         // ── Compute frame-to-origin offsets (two-scale probe) ─────────────────
         // view.Origin in Tekla is the projection of the view's local (0,0) onto the sheet —
@@ -262,7 +274,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             throw new DrawingNotOpenException();
 
         int iterations = 0;
-        while (activeDrawing.PlaceViews() && iterations < 10)
+        while (iterations < 10 && activeDrawing.PlaceViews())
             iterations++;
 
         if (iterations > 0)
