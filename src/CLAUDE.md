@@ -156,6 +156,24 @@ src/
 | `get_part_geometry_in_view` | Read part geometry in view coordinates |
 | `get_grid_axes` | Read drawing grid axes for a specific view |
 
+### Контрольные диагональные размеры
+
+Контрольный размер — измерение по диагонали между внешними угловыми точками вида,
+позволяет проверить геометрию при сборке (аналог гипотенузы).
+
+**Алгоритм:**
+1. `get_drawing_dimensions viewId` — получить все snap-точки
+2. Собрать уникальные точки: все `startX/Y` и `endX/Y` из всех сегментов
+3. Построить convex hull — угловые точки это и есть внешние corners
+4. Создать `create_dimension` для каждой диагонали hull
+
+**Вектор направления** для диагонали `(dx, dy)`:
+direction = `"-dy,dx,0"` (перпендикуляр к диагонали)
+
+**Важно:** snap-точки размеров не всегда покрывают всю внешнюю геометрию.
+Если hull даёт неверный угол — использовать `get_part_geometry_in_view`
+для получения реального контура детали.
+
 ## Critical Tekla API Patterns
 
 ### IPC / Remoting Connection (version-dependent)
