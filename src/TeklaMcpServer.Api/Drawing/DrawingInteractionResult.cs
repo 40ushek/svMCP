@@ -26,7 +26,7 @@ public sealed class SheetObjectsDebugResult
     public double SheetWidth { get; set; }
     public double SheetHeight { get; set; }
     public int TotalObjectsScanned { get; set; }
-    public List<SheetObjectDebugItem> SheetLevelObjects { get; set; } = new();
+    public List<SheetObjectDebugItem> AllObjects { get; set; } = new();
     public List<ReservedRect> ReservedAreaCandidates { get; set; } = new();
 }
 

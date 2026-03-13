@@ -203,10 +203,14 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
                 }
             }
 
-            result.SheetLevelObjects.Add(item);
+            result.AllObjects.Add(item);
         }
 
-        result.ReservedAreaCandidates.AddRange(DrawingReservedAreaReader.Read(activeDrawing, 0, 0));
+        var viewIds = result.AllObjects
+            .Where(o => o.IsSheetLevel && o.Type == "View")
+            .Select(o => o.Id)
+            .ToList();
+        result.ReservedAreaCandidates.AddRange(DrawingReservedAreaReader.Read(activeDrawing, 0, 0, viewIds));
 
         return result;
     }

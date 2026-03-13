@@ -7,7 +7,7 @@ internal sealed partial class DrawingCommandHandler
 {
     private bool TryHandleViewCommands(string command, string[] args)
     {
-        var api = new TeklaDrawingViewApi(_model);
+        var api = new TeklaDrawingViewApi();
 
         switch (command)
         {

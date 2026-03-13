@@ -157,8 +157,8 @@ internal sealed partial class DrawingCommandHandler
             sheetWidth = result.SheetWidth,
             sheetHeight = result.SheetHeight,
             totalObjectsScanned = result.TotalObjectsScanned,
-            sheetLevelObjectCount = result.SheetLevelObjects.Count,
-            sheetLevelObjects = result.SheetLevelObjects.Select(x => new
+            allObjectCount = result.AllObjects.Count,
+            allObjects = result.AllObjects.Select(x => new
             {
                 id = x.Id,
                 type = x.Type,

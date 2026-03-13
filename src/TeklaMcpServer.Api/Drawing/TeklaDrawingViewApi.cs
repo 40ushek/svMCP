@@ -3,18 +3,14 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
-using Tekla.Structures.Model;
-
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class TeklaDrawingViewApi : IDrawingViewApi
 {
-    private readonly Model _model;
     private readonly DrawingViewArrangementSelector _arrangementSelector;
 
-    public TeklaDrawingViewApi(Model model, DrawingViewArrangementSelector? arrangementSelector = null)
+    public TeklaDrawingViewApi(DrawingViewArrangementSelector? arrangementSelector = null)
     {
-        _model = model;
         _arrangementSelector = arrangementSelector ?? DrawingViewArrangementSelector.CreateDefault();
     }
 
