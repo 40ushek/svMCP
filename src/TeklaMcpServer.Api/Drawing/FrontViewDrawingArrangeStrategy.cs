@@ -15,10 +15,44 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
-        // Scale estimation remains conservative and behavior-compatible for front-based layout.
-        var availableWidth = context.SheetWidth - 2 * context.Margin;
-        var availableHeight = context.SheetHeight - 2 * context.Margin;
-        return DrawingPackingEstimator.FitsShelfPacking(frames, availableWidth, availableHeight, context.Gap);
+        var availW = context.SheetWidth - 2 * context.Margin;
+        var availH = context.SheetHeight - 2 * context.Margin;
+        if (availW <= 0 || availH <= 0) return false;
+
+        var front    = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.FrontView);
+        var top      = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.TopView);
+        var bottom   = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BottomView);
+        var sections = context.Views.Where(v => v.ViewType == View.ViewTypes.SectionView).ToList();
+
+        if (front == null) return false;
+
+        // Landscape sections (w >= h) → left column; portrait sections (h > w) → right column
+        var (leftSecs, rightSecs) = ClassifySections(sections);
+
+        double leftColW  = leftSecs.Count  > 0 ? leftSecs.Max(s => s.Width)   + context.Gap : 0;
+        double rightColW = rightSecs.Count > 0 ? rightSecs.Max(s => s.Width)  + context.Gap : 0;
+        double leftColH  = leftSecs.Count  > 0 ? leftSecs.Sum(s => s.Height)  + (leftSecs.Count  - 1) * context.Gap : 0;
+        double rightColH = rightSecs.Count > 0 ? rightSecs.Sum(s => s.Height) + (rightSecs.Count - 1) * context.Gap : 0;
+        double topH      = top    != null ? top.Height    + context.Gap : 0;
+        double bottomH   = bottom != null ? bottom.Height + context.Gap : 0;
+
+        double backColW = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BackView) is { } bk ? bk.Width + context.Gap : 0;
+
+        double neededW = backColW + leftColW + front.Width + rightColW;
+        double neededH = System.Math.Max(
+            System.Math.Max(leftColH, rightColH),
+            front.Height + topH + bottomH);
+
+        return neededW <= availW && neededH <= availH;
+    }
+
+    private static (List<View> left, List<View> right) ClassifySections(List<View> sections)
+    {
+        var left  = new List<View>();
+        var right = new List<View>();
+        foreach (var s in sections)
+            (s.Width >= s.Height ? left : right).Add(s);
+        return (left, right);
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
@@ -42,23 +76,24 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var sheetW = context.SheetWidth;
         var sheetH = context.SheetHeight;
 
-        // Decide where to stack sections: try right first, then left, then stacked vertically on right
-        double sectionsRowW = sections.Count > 0 ? sections.Sum(s => s.Width) + (sections.Count - 1) * gap : 0;
-        double sectionsStackH = sections.Count > 0 ? sections.Sum(s => s.Height) + (sections.Count - 1) * gap : 0;
-        double sectionsMaxW = sections.Count > 0 ? sections.Max(s => s.Width) : 0;
+        // Classify sections by orientation: landscape → left column, portrait → right column
+        var (leftSecs, rightSecs) = ClassifySections(sections);
 
-        bool sectionsRight = sectionsRowW > 0 && front.Width + sectionsRowW + gap + (back != null ? back.Width + gap : 0) <= sheetW - 2 * margin;
-        bool sectionsLeft  = !sectionsRight && sectionsRowW > 0 && back == null && sectionsRowW <= sheetW - 2 * margin - front.Width - gap;
+        double leftSecMaxW  = leftSecs.Count  > 0 ? leftSecs.Max(s => s.Width)   : 0;
+        double rightSecMaxW = rightSecs.Count > 0 ? rightSecs.Max(s => s.Width)  : 0;
+        double leftSecTotalH  = leftSecs.Count  > 0 ? leftSecs.Sum(s => s.Height)  + (leftSecs.Count  - 1) * gap : 0;
+        double rightSecTotalH = rightSecs.Count > 0 ? rightSecs.Sum(s => s.Height) + (rightSecs.Count - 1) * gap : 0;
 
-        double leftW  = (back != null ? back.Width + gap : 0) + (sectionsLeft  ? sectionsRowW + gap : 0);
-        double rightW = sectionsRight ? sectionsRowW + gap : 0;
-        double topH = top != null ? top.Height + gap : 0;
+        double backColW  = back != null ? back.Width + gap : 0;
+        double leftColW  = leftSecMaxW  > 0 ? leftSecMaxW  + gap : 0;
+        double rightColW = rightSecMaxW > 0 ? rightSecMaxW + gap : 0;
+        double topH    = top    != null ? top.Height    + gap : 0;
         double bottomH = bottom != null ? bottom.Height + gap : 0;
 
-        double groupW = leftW + front.Width + rightW;
-        double groupH = topH + front.Height + bottomH;
+        double groupW = backColW + leftColW + front.Width + rightColW;
+        double groupH = System.Math.Max(System.Math.Max(leftSecTotalH, rightSecTotalH), topH + front.Height + bottomH);
 
-        double frontCX = margin + (sheetW - 2 * margin - groupW) / 2 + leftW + front.Width / 2;
+        double frontCX = margin + (sheetW - 2 * margin - groupW) / 2 + backColW + leftColW + front.Width / 2;
         double frontCY = margin + (sheetH - 2 * margin - groupH) / 2 + bottomH + front.Height / 2;
 
         void Place(View v, double cx, double cy)
@@ -72,67 +107,26 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         }
 
         Place(front, frontCX, frontCY);
-        if (top != null) Place(top, frontCX, frontCY + front.Height / 2 + gap + top.Height / 2);
+        if (top    != null) Place(top,    frontCX, frontCY + front.Height / 2 + gap + top.Height / 2);
         if (bottom != null) Place(bottom, frontCX, frontCY - front.Height / 2 - gap - bottom.Height / 2);
-        if (back != null) Place(back, frontCX - front.Width / 2 - gap - back.Width / 2, frontCY);
+        if (back   != null) Place(back,   frontCX - front.Width / 2 - leftColW - gap - back.Width / 2, frontCY);
 
-        // rightX tracks the right edge after placing sections (used for view3d placement)
+        // Left column: landscape sections, centred vertically
+        if (leftSecs.Count > 0)
+        {
+            double lx = frontCX - front.Width / 2 - gap - leftSecMaxW / 2;
+            double ly = frontCY + leftSecTotalH / 2;
+            foreach (var s in leftSecs) { ly -= s.Height / 2; Place(s, lx, ly); ly -= s.Height / 2 + gap; }
+        }
+
+        // Right column: portrait sections, centred vertically
         double rightX = frontCX + front.Width / 2;
-
-        if (sectionsRight)
+        if (rightSecs.Count > 0)
         {
-            double rx = rightX + gap;
-            foreach (var s in sections)
-            {
-                Place(s, rx + s.Width / 2, frontCY);
-                rx += s.Width + gap;
-            }
-            rightX = rx;
-        }
-        else if (sectionsLeft)
-        {
-            double leftX = frontCX - front.Width / 2 - gap;
-            foreach (var s in sections)
-            {
-                Place(s, leftX - s.Width / 2, frontCY);
-                leftX -= s.Width + gap;
-            }
-        }
-        else if (sections.Count > 0)
-        {
-            // Stack sections vertically to the right of front view (or wherever they fit)
-            double stackX = frontCX + front.Width / 2 + gap + sectionsMaxW / 2;
-            bool stackFitsRight = stackX + sectionsMaxW / 2 <= sheetW - margin;
-            if (stackFitsRight)
-            {
-                double stackY = frontCY + front.Height / 2;
-                foreach (var s in sections)
-                {
-                    stackY -= s.Height / 2;
-                    Place(s, stackX, stackY);
-                    stackY -= s.Height / 2 + gap;
-                }
-                rightX = stackX + sectionsMaxW / 2;
-            }
-            else
-            {
-                // Last resort: place sections below in a wrapping row
-                double secX = margin;
-                double secY = frontCY - front.Height / 2 - bottomH - gap;
-                double secRowH = 0;
-                foreach (var s in sections)
-                {
-                    if (secX + s.Width > sheetW - margin && secX > margin)
-                    {
-                        secX = margin;
-                        secY -= secRowH + gap;
-                        secRowH = 0;
-                    }
-                    Place(s, secX + s.Width / 2, secY - s.Height / 2);
-                    secX += s.Width + gap;
-                    if (s.Height > secRowH) secRowH = s.Height;
-                }
-            }
+            double rx = rightX + gap + rightSecMaxW / 2;
+            double ry = frontCY + rightSecTotalH / 2;
+            foreach (var s in rightSecs) { ry -= s.Height / 2; Place(s, rx, ry); ry -= s.Height / 2 + gap; }
+            rightX += rightColW;
         }
 
         if (view3d != null)
