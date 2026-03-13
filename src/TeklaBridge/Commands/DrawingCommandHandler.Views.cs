@@ -23,6 +23,9 @@ internal sealed partial class DrawingCommandHandler
             case "fit_views_to_sheet":
                 return HandleFitViewsToSheet(api, args);
 
+            case "place_views":
+                return HandlePlaceViews(api);
+
             default:
                 return false;
         }
@@ -70,8 +73,15 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleFitViewsToSheet(TeklaDrawingViewApi api, string[] args)
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
-        var result = api.FitViewsToSheet(request.Margin, request.Gap);
+        var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
         WriteFitViewsToSheetResult(result);
+        return true;
+    }
+
+    private bool HandlePlaceViews(TeklaDrawingViewApi api)
+    {
+        var ok = api.PlaceViews();
+        WriteJson(new { success = ok });
         return true;
     }
 

@@ -222,15 +222,35 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale (1:1, 1:5, 1:10, 1:20...) and arranges views without overlaps")]
+    [McpServerTool, Description("Place all views on the active drawing using Tekla's built-in placement algorithm. Respects the drawing layout (title block, tables). Returns success flag.")]
+    public static string PlaceViews()
+    {
+        var json = RunBridge("place_views");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+            var ok = doc.RootElement.TryGetProperty("success", out var s) && s.GetBoolean();
+            return ok ? "Views placed successfully." : "PlaceViews returned false (no changes made).";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
-        [Description("Gap between views in mm. Default: 8")] double gap = 8)
+        [Description("Gap between views in mm. Default: 8")] double gap = 8,
+        [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0)
     {
         var json = RunBridge(
             "fit_views_to_sheet",
             margin.ToString(CultureInfo.InvariantCulture),
-            gap.ToString(CultureInfo.InvariantCulture));
+            gap.ToString(CultureInfo.InvariantCulture),
+            titleBlockHeight.ToString(CultureInfo.InvariantCulture));
         try
         {
             var doc = JsonDocument.Parse(json);

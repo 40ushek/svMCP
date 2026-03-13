@@ -166,6 +166,7 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
         };
 
         var sheet = activeDrawing.GetSheet();
+        var sheetId = sheet.GetIdentifier().ID;
         var objects = sheet.GetAllObjects();
         while (objects.MoveNext())
         {
@@ -174,7 +175,7 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
                 continue;
 
             var ownerView = drawingObject.GetView();
-            var isSheetLevel = ownerView is ContainerView;
+            var isSheetLevel = ownerView != null && ownerView.GetIdentifier().ID == sheetId;
 
             // Collect ALL object types for discovery (not just sheet-level)
             var item = new SheetObjectDebugItem

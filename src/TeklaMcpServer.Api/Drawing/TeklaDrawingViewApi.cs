@@ -97,12 +97,14 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
     // ── FitViewsToSheet ───────────────────────────────────────────────────
 
-    public FitViewsResult FitViewsToSheet(double margin, double gap)
+    public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
     {
         if (margin < 0)
             throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
         if (gap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(gap), "gap must be >= 0.");
+        if (titleBlockHeight < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -117,7 +119,12 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
 
-        IReadOnlyList<ReservedRect> reservedAreas = System.Array.Empty<ReservedRect>();
+        var viewIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
+        IReadOnlyList<ReservedRect> reservedAreas = DrawingReservedAreaReader.Read(
+            activeDrawing,
+            margin,
+            titleBlockHeight,
+            viewIds);
         double availW = sheetW - 2 * margin;
         double availH = sheetH - 2 * margin;
         if (availW <= 0 || availH <= 0)
@@ -248,6 +255,24 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             Arranged     = arranged.Count,
             Views        = arranged
         };
+    }
+
+    // ── PlaceViews ────────────────────────────────────────────────────────
+
+    public bool PlaceViews()
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        int iterations = 0;
+        while (activeDrawing.PlaceViews() && iterations < 10)
+            iterations++;
+
+        if (iterations > 0)
+            activeDrawing.CommitChanges();
+
+        return iterations > 0;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

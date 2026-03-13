@@ -34,6 +34,7 @@ internal static class DrawingReservedAreaReader
         }
 
         var sheet = drawing.GetSheet();
+        var sheetId = sheet.GetIdentifier().ID;
         var objects = sheet.GetAllObjects();
         while (objects.MoveNext())
         {
@@ -41,7 +42,7 @@ internal static class DrawingReservedAreaReader
                 continue;
 
             var owner = drawingObject.GetView();
-            if (owner is not ContainerView)
+            if (owner == null || owner.GetIdentifier().ID != sheetId)
                 continue;
 
             if (drawingObject is ViewBase)

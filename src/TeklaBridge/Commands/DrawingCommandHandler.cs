@@ -44,6 +44,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "move_view":
             case "set_view_scale":
             case "fit_views_to_sheet":
+            case "place_views":
                 return TryHandleViewCommands(command, args);
 
             case "get_drawing_dimensions":

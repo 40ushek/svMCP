@@ -360,7 +360,7 @@ public static class DrawingCommandParsers
 
     public static FitViewsToSheetRequest ParseFitViewsToSheetRequest(string[] args)
     {
-        var request = new FitViewsToSheetRequest { Margin = 10.0, Gap = 8.0 };
+        var request = new FitViewsToSheetRequest { Margin = 10.0, Gap = 8.0, TitleBlockHeight = 0.0 };
 
         if (args.Length > 1 &&
             double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var margin))
@@ -369,6 +369,10 @@ public static class DrawingCommandParsers
         if (args.Length > 2 &&
             double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var gap))
             request.Gap = gap;
+
+        if (args.Length > 3 &&
+            double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var titleBlockHeight))
+            request.TitleBlockHeight = titleBlockHeight;
 
         return request;
     }
@@ -710,6 +714,7 @@ public sealed class FitViewsToSheetRequest
 {
     public double Margin { get; set; }
     public double Gap { get; set; }
+    public double TitleBlockHeight { get; set; }
 }
 
 public sealed class DeleteDimensionRequest
