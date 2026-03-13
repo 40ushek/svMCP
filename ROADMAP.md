@@ -86,6 +86,8 @@
 
   `TableLayout` и `LayoutManager` требуют запуска внутри процесса Tekla — из TeklaBridge (Remoting) не работают. Решение — in-process plugin (см. ниже).
 
+  Из `LayoutAttributes` через рефлексию доступны поля: `_tableLayoutId` (int, напр. 8562), `_layout` (string, имя файла layout, напр. `"MPD_multizone_wall"`), `_sheetSize`, `_DrawingType`. `LayoutTable.Select()` с любым ID возвращает `false` из внешнего процесса — данные из БД не загружаются.
+
   При реализации плагина проверять в таком порядке:
   1. `TableLayout.GetCurrentTables()` + `LayoutTable.Select()` — placement metadata по каждой таблице
   2. `LayoutManager.GetDrawingFrames()` — возвращает `List<Tuple<bool,double,double,double,double,int>>`, по декомпиляции `UnmarshalFrames()` ожидает ровно 2 entry; скорее frame metadata листа, не прямоугольники таблиц — **гипотеза, не доказано**
