@@ -23,7 +23,7 @@
 |---|---|
 | `list_drawings` / `find_drawings` / `find_drawings_by_properties` | Поиск чертежей |
 | `open_drawing` / `close_drawing` | Открыть / закрыть |
-| `export_drawings_to_pdf` | Экспорт в PDF |
+| `export_drawings_pdf` | Экспорт в PDF |
 | `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж через Open API |
 | `get_drawing_context` / `select_drawing_objects` / `filter_drawing_objects` | Контекст и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
@@ -51,6 +51,11 @@
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)
 - COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
+
+### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
+- `ConvexHull` — Graham scan по 2D точкам (используется `Tekla.Structures.Geometry3d.Point`, Z игнорируется)
+- `FarthestPointPair` — диаметр множества точек (две самые удалённые)
+- Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок
 
 ### Прочее
 - `tidy_drawing` — комплексная команда (analyze / preview / apply)

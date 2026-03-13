@@ -132,7 +132,7 @@ src/
 | `list_drawings` | List all drawings in the model |
 | `find_drawings` | Search by name / mark (case-insensitive contains) |
 | `find_drawings_by_properties` | Search by multiple JSON filters (name, mark, type, status) |
-| `export_drawings_to_pdf` | Export drawings to PDF by GUID |
+| `export_drawings_pdf` | Export drawings to PDF by GUID |
 | `create_general_arrangement_drawing` | Create GA drawing from a saved model view via macro |
 | `open_drawing` | Open (activate) drawing by GUID |
 | `close_drawing` | Close active drawing |
