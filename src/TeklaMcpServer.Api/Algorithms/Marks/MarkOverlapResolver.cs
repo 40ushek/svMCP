@@ -128,12 +128,12 @@ public sealed class MarkOverlapResolver
             return false;
 
         var dot = (aAxisDx * bAxisDx) + (aAxisDy * bAxisDy);
-        if (Math.Abs(dot) < 0.95)
-            return false;
-
         var split = GetSplit(a, b);
         if (split.Total == 0)
             return true;
+
+        if (Math.Abs(dot) < 0.95)
+            return TryResolveAlongIndependentAxes(a, b, aAxisDx, aAxisDy, bAxisDx, bAxisDy, overlapX, overlapY, options, split, out movedAny);
 
         bAxisDx = dot < 0 ? -bAxisDx : bAxisDx;
         bAxisDy = dot < 0 ? -bAxisDy : bAxisDy;
@@ -160,6 +160,89 @@ public sealed class MarkOverlapResolver
         b.Y += axisDy * direction * push * split.MoveB;
         movedAny = true;
         return true;
+    }
+
+    private static bool TryResolveAlongIndependentAxes(
+        MarkLayoutPlacement a,
+        MarkLayoutPlacement b,
+        double aAxisDx,
+        double aAxisDy,
+        double bAxisDx,
+        double bAxisDy,
+        double overlapX,
+        double overlapY,
+        MarkLayoutOptions options,
+        (double MoveA, double MoveB, double Total) split,
+        out bool movedAny)
+    {
+        movedAny = false;
+
+        if (!a.CanMove && !b.CanMove)
+            return true;
+
+        if (a.CanMove && b.CanMove)
+        {
+            var desiredDx = (b.X >= a.X ? 1.0 : -1.0) * (overlapX + options.Gap);
+            var desiredDy = (b.Y >= a.Y ? 1.0 : -1.0) * (overlapY + options.Gap);
+
+            var determinant = (aAxisDx * bAxisDy) - (aAxisDy * bAxisDx);
+            if (Math.Abs(determinant) < 0.001)
+                return false;
+
+            var moveA = ((desiredDx * bAxisDy) - (desiredDy * bAxisDx)) / determinant;
+            var moveB = ((aAxisDx * desiredDy) - (aAxisDy * desiredDx)) / determinant;
+
+            a.X -= aAxisDx * moveA * split.MoveA;
+            a.Y -= aAxisDy * moveA * split.MoveA;
+            b.X += bAxisDx * moveB * split.MoveB;
+            b.Y += bAxisDy * moveB * split.MoveB;
+            movedAny = true;
+            return true;
+        }
+
+        if (a.CanMove)
+        {
+            var move = ResolveSingleAxisMove(aAxisDx, aAxisDy, overlapX, overlapY, options, b.X >= a.X, b.Y >= a.Y);
+            a.X -= aAxisDx * move;
+            a.Y -= aAxisDy * move;
+            movedAny = true;
+            return true;
+        }
+
+        if (b.CanMove)
+        {
+            var move = ResolveSingleAxisMove(bAxisDx, bAxisDy, overlapX, overlapY, options, b.X >= a.X, b.Y >= a.Y);
+            b.X += bAxisDx * move;
+            b.Y += bAxisDy * move;
+            movedAny = true;
+            return true;
+        }
+
+        return true;
+    }
+
+    private static double ResolveSingleAxisMove(
+        double axisDx,
+        double axisDy,
+        double overlapX,
+        double overlapY,
+        MarkLayoutOptions options,
+        bool positiveXDirection,
+        bool positiveYDirection)
+    {
+        var targetDx = (positiveXDirection ? 1.0 : -1.0) * (overlapX + options.Gap);
+        var targetDy = (positiveYDirection ? 1.0 : -1.0) * (overlapY + options.Gap);
+
+        var alongX = Math.Abs(axisDx) >= 0.001 ? targetDx / axisDx : 0.0;
+        var alongY = Math.Abs(axisDy) >= 0.001 ? targetDy / axisDy : 0.0;
+
+        if (Math.Abs(axisDx) < 0.001)
+            return alongY;
+
+        if (Math.Abs(axisDy) < 0.001)
+            return alongX;
+
+        return Math.Abs(alongX) >= Math.Abs(alongY) ? alongX : alongY;
     }
 
     private static (double MoveA, double MoveB, double Total) GetSplit(

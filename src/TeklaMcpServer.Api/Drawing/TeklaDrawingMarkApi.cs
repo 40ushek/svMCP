@@ -48,6 +48,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     if (!seenIds.Add(markId)) continue; // deduplicate
 
                     var bbox = mark.GetAxisAlignedBoundingBox();
+                    var obb = mark.GetObjectAlignedBoundingBox();
                     var ins  = mark.InsertionPoint;
                     var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
                     var info = new DrawingMarkInfo
@@ -68,6 +69,25 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                         Angle      = Math.Round(mark.Attributes.Angle, 2),
                         RotationAngle = Math.Round(mark.Attributes.RotationAngle, 2),
                         TextAlignment = mark.Attributes.TextAlignment.ToString(),
+                        ObjectAlignedBoundingBox = new MarkObjectAlignedBoundingBoxInfo
+                        {
+                            Width = Math.Round(obb.Width, 2),
+                            Height = Math.Round(obb.Height, 2),
+                            AngleToAxis = Math.Round(obb.AngleToAxis, 2),
+                            CenterX = Math.Round((obb.MinPoint.X + obb.MaxPoint.X) / 2.0, 2),
+                            CenterY = Math.Round((obb.MinPoint.Y + obb.MaxPoint.Y) / 2.0, 2),
+                            MinX = Math.Round(obb.MinPoint.X, 2),
+                            MinY = Math.Round(obb.MinPoint.Y, 2),
+                            MaxX = Math.Round(obb.MaxPoint.X, 2),
+                            MaxY = Math.Round(obb.MaxPoint.Y, 2),
+                            Corners = new List<double[]>
+                            {
+                                new[] { Math.Round(obb.LowerLeft.X, 2), Math.Round(obb.LowerLeft.Y, 2) },
+                                new[] { Math.Round(obb.UpperLeft.X, 2), Math.Round(obb.UpperLeft.Y, 2) },
+                                new[] { Math.Round(obb.UpperRight.X, 2), Math.Round(obb.UpperRight.Y, 2) },
+                                new[] { Math.Round(obb.LowerRight.X, 2), Math.Round(obb.LowerRight.Y, 2) }
+                            }
+                        },
                         ArrowHead   = new MarkArrowheadInfo
                         {
                             Type = mark.Attributes.ArrowHead.Head.ToString(),
@@ -184,7 +204,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
             foreach (var view in EnumerateViews(activeDrawing))
             {
-                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view);
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model);
                 if (markEntries.Count == 0)
                     continue;
 
@@ -247,7 +267,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
             foreach (var view in EnumerateViews(activeDrawing))
             {
-                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view);
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model);
                 if (markEntries.Count == 0)
                     continue;
 

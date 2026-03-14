@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
+using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Marks;
+using ModelPart = Tekla.Structures.Model.Part;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -22,7 +26,9 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 
 internal static class TeklaDrawingMarkLayoutAdapter
 {
-    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view)
+    private const double MovementVerificationEpsilon = 0.05;
+
+    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view, Model model)
     {
         var entries = new List<TeklaDrawingMarkLayoutEntry>();
         var viewId = view.GetIdentifier().ID;
@@ -35,71 +41,171 @@ internal static class TeklaDrawingMarkLayoutAdapter
         var boundsMinY = -(viewHeight * 0.5) - 10.0;
         var boundsMaxY = +(viewHeight * 0.5) + 10.0;
         var markEnum = view.GetAllObjects(typeof(Mark));
+        var workPlaneHandler = model.GetWorkPlaneHandler();
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.DisplayCoordinateSystem));
 
-        while (markEnum.MoveNext())
+        try
         {
-            if (markEnum.Current is not Mark mark)
-                continue;
-
-            var bbox = mark.GetAxisAlignedBoundingBox();
-            var centerLocalX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-            var centerLocalY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-            var widthLocal = bbox.MaxPoint.X - bbox.MinPoint.X;
-            var heightLocal = bbox.MaxPoint.Y - bbox.MinPoint.Y;
-            var anchorLocalX = centerLocalX;
-            var anchorLocalY = centerLocalY;
-            var hasLeaderLine = false;
-            var hasAxis = false;
-            var axisDx = 0.0;
-            var axisDy = 0.0;
-
-            if (mark.Placing is LeaderLinePlacing leaderLinePlacing)
+            while (markEnum.MoveNext())
             {
-                anchorLocalX = leaderLinePlacing.StartPoint.X;
-                anchorLocalY = leaderLinePlacing.StartPoint.Y;
-                hasLeaderLine = true;
-            }
-            else if (mark.Placing is BaseLinePlacing baseLinePlacing)
-            {
-                axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
-                axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
-                var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
-                if (axisLength >= 0.001)
+                if (markEnum.Current is not Mark mark)
+                    continue;
+
+                var bbox = mark.GetAxisAlignedBoundingBox();
+                var centerLocalX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+                var centerLocalY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+                var widthLocal = bbox.MaxPoint.X - bbox.MinPoint.X;
+                var heightLocal = bbox.MaxPoint.Y - bbox.MinPoint.Y;
+                var anchorLocalX = centerLocalX;
+                var anchorLocalY = centerLocalY;
+                var hasLeaderLine = false;
+                var hasAxis = false;
+                var axisDx = 0.0;
+                var axisDy = 0.0;
+
+                if (mark.Placing is LeaderLinePlacing leaderLinePlacing)
                 {
-                    axisDx /= axisLength;
-                    axisDy /= axisLength;
-                    hasAxis = true;
+                    anchorLocalX = leaderLinePlacing.StartPoint.X;
+                    anchorLocalY = leaderLinePlacing.StartPoint.Y;
+                    hasLeaderLine = true;
                 }
-            }
-
-            entries.Add(new TeklaDrawingMarkLayoutEntry
-            {
-                Mark = mark,
-                ViewId = viewId,
-                CenterX = centerLocalX,
-                CenterY = centerLocalY,
-                Item = new MarkLayoutItem
+                else if (mark.Placing is BaseLinePlacing baseLinePlacing)
                 {
-                    Id            = mark.GetIdentifier().ID,
-                    AnchorX       = anchorLocalX,
-                    AnchorY       = anchorLocalY,
-                    CurrentX      = centerLocalX,
-                    CurrentY      = centerLocalY,
-                    Width         = widthLocal,
-                    Height        = heightLocal,
-                    HasLeaderLine = hasLeaderLine,
-                    HasAxis       = hasAxis,
-                    AxisDx        = axisDx,
-                    AxisDy        = axisDy,
-                    BoundsMinX    = boundsMinX,
-                    BoundsMaxX    = boundsMaxX,
-                    BoundsMinY    = boundsMinY,
-                    BoundsMaxY    = boundsMaxY,
+                    axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
+                    axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
+                    var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+                    if (axisLength >= 0.001)
+                    {
+                        axisDx /= axisLength;
+                        axisDy /= axisLength;
+                        hasAxis = true;
+                    }
+
+                    if (TryGetRelatedPartAxisInView(mark, model, out var partAxisDx, out var partAxisDy))
+                    {
+                        axisDx = partAxisDx;
+                        axisDy = partAxisDy;
+                        hasAxis = true;
+
+                        var objectAligned = mark.GetObjectAlignedBoundingBox();
+                        ComputeAxisAlignedExtents(centerLocalX, centerLocalY, objectAligned.Width, objectAligned.Height, axisDx, axisDy,
+                            out widthLocal, out heightLocal);
+                    }
                 }
-            });
+
+                entries.Add(new TeklaDrawingMarkLayoutEntry
+                {
+                    Mark = mark,
+                    ViewId = viewId,
+                    CenterX = centerLocalX,
+                    CenterY = centerLocalY,
+                    Item = new MarkLayoutItem
+                    {
+                        Id            = mark.GetIdentifier().ID,
+                        AnchorX       = anchorLocalX,
+                        AnchorY       = anchorLocalY,
+                        CurrentX      = centerLocalX,
+                        CurrentY      = centerLocalY,
+                        Width         = widthLocal,
+                        Height        = heightLocal,
+                        HasLeaderLine = hasLeaderLine,
+                        HasAxis       = hasAxis,
+                        AxisDx        = axisDx,
+                        AxisDy        = axisDy,
+                        BoundsMinX    = boundsMinX,
+                        BoundsMaxX    = boundsMaxX,
+                        BoundsMinY    = boundsMinY,
+                        BoundsMaxY    = boundsMaxY,
+                    }
+                });
+            }
+        }
+        finally
+        {
+            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
         }
 
         return entries;
+    }
+
+    private static bool TryGetRelatedPartAxisInView(Mark mark, Model model, out double axisDx, out double axisDy)
+    {
+        axisDx = 0.0;
+        axisDy = 0.0;
+
+        var related = mark.GetRelatedObjects();
+        while (related.MoveNext())
+        {
+            if (related.Current is not Tekla.Structures.Drawing.ModelObject drawingModelObject)
+                continue;
+
+            var modelObject = model.SelectModelObject(new Identifier(drawingModelObject.ModelIdentifier.ID));
+            if (modelObject == null)
+                continue;
+
+            Point? startPoint = null;
+            Point? endPoint = null;
+            if (modelObject is Beam beam)
+            {
+                startPoint = beam.StartPoint;
+                endPoint = beam.EndPoint;
+            }
+            else if (modelObject is ModelPart part)
+            {
+                var cs = part.GetCoordinateSystem();
+                startPoint = cs.Origin;
+                endPoint = new Point(cs.Origin.X + cs.AxisX.X, cs.Origin.Y + cs.AxisX.Y, cs.Origin.Z + cs.AxisX.Z);
+            }
+
+            if (startPoint == null || endPoint == null)
+                continue;
+
+            axisDx = endPoint.X - startPoint.X;
+            axisDy = endPoint.Y - startPoint.Y;
+            var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+            if (axisLength < 0.001)
+                continue;
+
+            axisDx /= axisLength;
+            axisDy /= axisLength;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void ComputeAxisAlignedExtents(
+        double centerX,
+        double centerY,
+        double objectWidth,
+        double objectHeight,
+        double axisDx,
+        double axisDy,
+        out double axisAlignedWidth,
+        out double axisAlignedHeight)
+    {
+        var vx = -axisDy;
+        var vy = axisDx;
+        var halfWidth = objectWidth / 2.0;
+        var halfHeight = objectHeight / 2.0;
+
+        var p1x = centerX - (axisDx * halfWidth) - (vx * halfHeight);
+        var p1y = centerY - (axisDy * halfWidth) - (vy * halfHeight);
+        var p2x = centerX + (axisDx * halfWidth) - (vx * halfHeight);
+        var p2y = centerY + (axisDy * halfWidth) - (vy * halfHeight);
+        var p3x = centerX + (axisDx * halfWidth) + (vx * halfHeight);
+        var p3y = centerY + (axisDy * halfWidth) + (vy * halfHeight);
+        var p4x = centerX - (axisDx * halfWidth) + (vx * halfHeight);
+        var p4y = centerY - (axisDy * halfWidth) + (vy * halfHeight);
+
+        var minX = Math.Min(Math.Min(p1x, p2x), Math.Min(p3x, p4x));
+        var maxX = Math.Max(Math.Max(p1x, p2x), Math.Max(p3x, p4x));
+        var minY = Math.Min(Math.Min(p1y, p2y), Math.Min(p3y, p4y));
+        var maxY = Math.Max(Math.Max(p1y, p2y), Math.Max(p3y, p4y));
+
+        axisAlignedWidth = maxX - minX;
+        axisAlignedHeight = maxY - minY;
     }
 
     public static List<int> ApplyPlacements(
@@ -126,14 +232,68 @@ internal static class TeklaDrawingMarkLayoutAdapter
             if (Math.Abs(dx) < 0.001 && Math.Abs(dy) < 0.001)
                 continue;
 
+            var beforeInsertion = entry.Mark.InsertionPoint;
+            var beforeCenterX = entry.CenterX;
+            var beforeCenterY = entry.CenterY;
             var insertionPoint = entry.Mark.InsertionPoint;
             insertionPoint.X += dx;
             insertionPoint.Y += dy;
             entry.Mark.InsertionPoint = insertionPoint;
-            entry.Mark.Modify();
+            if (!entry.Mark.Modify())
+                continue;
+
+            if (!TryReloadMarkState(entry.Mark, out var actualInsertion, out var actualCenterX, out var actualCenterY))
+                continue;
+
+            var insertionChanged =
+                Math.Abs(actualInsertion.X - beforeInsertion.X) > MovementVerificationEpsilon ||
+                Math.Abs(actualInsertion.Y - beforeInsertion.Y) > MovementVerificationEpsilon;
+            var centerChanged =
+                Math.Abs(actualCenterX - beforeCenterX) > MovementVerificationEpsilon ||
+                Math.Abs(actualCenterY - beforeCenterY) > MovementVerificationEpsilon;
+
+            if (!insertionChanged && !centerChanged)
+                continue;
+
+            entry.CenterX = actualCenterX;
+            entry.CenterY = actualCenterY;
             movedIds.Add(id);
         }
 
         return movedIds;
+    }
+
+    private static bool TryReloadMarkState(
+        Mark mark,
+        out Point insertionPoint,
+        out double centerX,
+        out double centerY)
+    {
+        insertionPoint = mark.InsertionPoint;
+        centerX = 0.0;
+        centerY = 0.0;
+
+        var ownerView = mark.GetView();
+        if (ownerView == null)
+            return false;
+
+        var targetId = mark.GetIdentifier().ID;
+        var marks = ownerView.GetAllObjects(typeof(Mark));
+        while (marks.MoveNext())
+        {
+            if (marks.Current is not Mark currentMark)
+                continue;
+
+            if (currentMark.GetIdentifier().ID != targetId)
+                continue;
+
+            insertionPoint = currentMark.InsertionPoint;
+            var bbox = currentMark.GetAxisAlignedBoundingBox();
+            centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+            centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+            return true;
+        }
+
+        return false;
     }
 }

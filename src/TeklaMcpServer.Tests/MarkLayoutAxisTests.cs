@@ -114,4 +114,47 @@ public sealed class MarkLayoutAxisTests
         Assert.True(b.Y > 130);
         Assert.Equal(0, resolver.CountOverlaps(resolved));
     }
+
+    [Fact]
+    public void Resolve_ForOrthogonalAxisMarks_MovesEachAlongOwnAxis()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 100,
+                Y = 100,
+                Width = 120,
+                Height = 40,
+                HasAxis = true,
+                AxisDx = 1,
+                AxisDy = 0,
+                CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 120,
+                Y = 120,
+                Width = 40,
+                Height = 120,
+                HasAxis = true,
+                AxisDx = 0,
+                AxisDy = 1,
+                CanMove = true
+            }
+        };
+
+        var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = 2.0 }, out _);
+        var a = resolved.Single(x => x.Id == 1);
+        var b = resolved.Single(x => x.Id == 2);
+
+        Assert.Equal(100, a.Y, 6);
+        Assert.Equal(120, b.X, 6);
+        Assert.NotEqual(100, a.X);
+        Assert.NotEqual(120, b.Y);
+        Assert.Equal(0, resolver.CountOverlaps(resolved));
+    }
 }

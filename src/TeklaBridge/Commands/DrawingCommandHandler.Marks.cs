@@ -200,6 +200,19 @@ internal sealed partial class DrawingCommandHandler
                     angleDeg = m.Axis.AngleDeg,
                     isReliable = m.Axis.IsReliable
                 },
+                objectAlignedBbox = m.ObjectAlignedBoundingBox == null ? null : new
+                {
+                    width = m.ObjectAlignedBoundingBox.Width,
+                    height = m.ObjectAlignedBoundingBox.Height,
+                    angleToAxis = m.ObjectAlignedBoundingBox.AngleToAxis,
+                    centerX = m.ObjectAlignedBoundingBox.CenterX,
+                    centerY = m.ObjectAlignedBoundingBox.CenterY,
+                    minX = m.ObjectAlignedBoundingBox.MinX,
+                    minY = m.ObjectAlignedBoundingBox.MinY,
+                    maxX = m.ObjectAlignedBoundingBox.MaxX,
+                    maxY = m.ObjectAlignedBoundingBox.MaxY,
+                    corners = m.ObjectAlignedBoundingBox.Corners
+                },
                 arrowHead = new
                 {
                     type = m.ArrowHead.Type,

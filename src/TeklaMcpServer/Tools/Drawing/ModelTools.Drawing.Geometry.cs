@@ -54,6 +54,14 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Draw a developer debug geometry overlay for the currently selected drawing mark using the axis of its related model part in the current view. " +
+        "Requires exactly one selected Mark. Draws a green oriented polygon, cyan part axis, yellow center cross, and a small angle label.")]
+    public static string DrawSelectedMarkPartAxisGeometry()
+    {
+        return RunBridge("draw_selected_mark_part_axis_geometry");
+    }
+
+    [McpServerTool, Description(
         "Clear previously drawn developer debug overlay objects from the active drawing. " +
         "If group is empty, clears all svMCP debug overlay objects.")]
     public static string ClearDebugOverlay(

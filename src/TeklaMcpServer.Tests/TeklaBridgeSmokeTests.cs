@@ -17,6 +17,7 @@ public sealed class TeklaBridgeSmokeTests
         yield return new object[] { "get_drawing_parts", Array.Empty<string>(), "parts" };
         yield return new object[] { "get_part_geometry_in_view", new[] { "1", "1" }, "success" };
         yield return new object[] { "get_drawing_marks", Array.Empty<string>(), "marks" };
+        yield return new object[] { "draw_selected_mark_part_axis_geometry", Array.Empty<string>(), "group" };
         yield return new object[] { "create_dimension", new[] { "1", "[0,0,0,1000,0,0]", "horizontal", "50", "standard" }, "created" };
     }
 
