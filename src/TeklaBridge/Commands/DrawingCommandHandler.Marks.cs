@@ -213,6 +213,21 @@ internal sealed partial class DrawingCommandHandler
                     maxY = m.ObjectAlignedBoundingBox.MaxY,
                     corners = m.ObjectAlignedBoundingBox.Corners
                 },
+                resolvedGeometry = m.ResolvedGeometry == null ? null : new
+                {
+                    source = m.ResolvedGeometry.Source,
+                    isReliable = m.ResolvedGeometry.IsReliable,
+                    width = m.ResolvedGeometry.Width,
+                    height = m.ResolvedGeometry.Height,
+                    centerX = m.ResolvedGeometry.CenterX,
+                    centerY = m.ResolvedGeometry.CenterY,
+                    minX = m.ResolvedGeometry.MinX,
+                    minY = m.ResolvedGeometry.MinY,
+                    maxX = m.ResolvedGeometry.MaxX,
+                    maxY = m.ResolvedGeometry.MaxY,
+                    angleDeg = m.ResolvedGeometry.AngleDeg,
+                    corners = m.ResolvedGeometry.Corners
+                },
                 arrowHead = new
                 {
                     type = m.ArrowHead.Type,

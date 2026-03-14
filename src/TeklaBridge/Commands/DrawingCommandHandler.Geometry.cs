@@ -39,7 +39,7 @@ internal sealed partial class DrawingCommandHandler
                 return HandleDrawDebugOverlay(GetDebugOverlayApi(), args);
 
             case "draw_selected_mark_part_axis_geometry":
-                return HandleDrawSelectedMarkPartAxisGeometry(GetPartGeometryApi(), GetDebugOverlayApi());
+                return HandleDrawSelectedMarkPartAxisGeometry(GetDebugOverlayApi());
 
             case "clear_debug_overlay":
                 return HandleClearDebugOverlay(GetDebugOverlayApi(), args);
@@ -136,7 +136,7 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private bool HandleDrawSelectedMarkPartAxisGeometry(TeklaDrawingPartGeometryApi partGeometryApi, TeklaDrawingDebugOverlayApi debugOverlayApi)
+    private bool HandleDrawSelectedMarkPartAxisGeometry(TeklaDrawingDebugOverlayApi debugOverlayApi)
     {
         if (!EnsureActiveDrawing())
             return true;
@@ -188,48 +188,24 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var geometry = partGeometryApi.GetPartGeometryInView(view.GetIdentifier().ID, modelId.Value);
-        if (!geometry.Success)
+        var geometry = MarkGeometryHelper.Build(mark, _model);
+        if (geometry.Corners.Count < 4)
         {
-            WriteError(geometry.Error ?? "Failed to read part geometry in view");
+            WriteError($"Failed to resolve geometry for mark {mark.GetIdentifier().ID}");
             return true;
         }
 
-        if (geometry.StartPoint.Length < 2 || geometry.EndPoint.Length < 2)
-        {
-            WriteError($"Related model object {modelId.Value} does not expose a usable start/end axis in view {view.GetIdentifier().ID}");
-            return true;
-        }
-
-        var axisDx = geometry.EndPoint[0] - geometry.StartPoint[0];
-        var axisDy = geometry.EndPoint[1] - geometry.StartPoint[1];
-        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
-        if (axisLength < 0.001)
-        {
-            WriteError($"Related model object {modelId.Value} axis is too short in view {view.GetIdentifier().ID}");
-            return true;
-        }
-
-        var bbox = mark.GetAxisAlignedBoundingBox();
-        var objectAligned = mark.GetObjectAlignedBoundingBox();
-        var centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-        var centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-        var halfWidth = objectAligned.Width / 2.0;
-        var halfHeight = objectAligned.Height / 2.0;
-        var ux = axisDx / axisLength;
-        var uy = axisDy / axisLength;
-        var vx = -uy;
-        var vy = ux;
-
-        var p1 = new[] { Round2(centerX - (ux * halfWidth) - (vx * halfHeight)), Round2(centerY - (uy * halfWidth) - (vy * halfHeight)) };
-        var p2 = new[] { Round2(centerX + (ux * halfWidth) - (vx * halfHeight)), Round2(centerY + (uy * halfWidth) - (vy * halfHeight)) };
-        var p3 = new[] { Round2(centerX + (ux * halfWidth) + (vx * halfHeight)), Round2(centerY + (uy * halfWidth) + (vy * halfHeight)) };
-        var p4 = new[] { Round2(centerX - (ux * halfWidth) + (vx * halfHeight)), Round2(centerY - (uy * halfWidth) + (vy * halfHeight)) };
-
-        var axisHalf = Math.Min(objectAligned.Width * 0.6, 250.0);
+        var centerX = geometry.CenterX;
+        var centerY = geometry.CenterY;
+        var ux = geometry.HasAxis ? geometry.AxisDx : 1.0;
+        var uy = geometry.HasAxis ? geometry.AxisDy : 0.0;
+        var axisHalf = Math.Min(geometry.Width * 0.6, 250.0);
         var axisStart = new[] { Round2(centerX - (ux * axisHalf)), Round2(centerY - (uy * axisHalf)) };
         var axisEnd = new[] { Round2(centerX + (ux * axisHalf)), Round2(centerY + (uy * axisHalf)) };
-        var angleDeg = Round2(Math.Atan2(uy, ux) * (180.0 / Math.PI));
+        var angleDeg = Round2(geometry.AngleDeg);
+        var polygonPoints = geometry.Corners
+            .Select(p => new[] { Round2(p[0]), Round2(p[1]) })
+            .ToList();
 
         var request = new DrawingDebugOverlayRequest
         {
@@ -241,20 +217,9 @@ internal sealed partial class DrawingCommandHandler
                 {
                     Kind = "polygon",
                     ViewId = view.GetIdentifier().ID,
-                    Points = new List<double[]> { p1, p2, p3, p4 },
+                    Points = polygonPoints,
                     Color = "Green",
                     LineType = "DashDot"
-                },
-                new()
-                {
-                    Kind = "line",
-                    ViewId = view.GetIdentifier().ID,
-                    X1 = axisStart[0],
-                    Y1 = axisStart[1],
-                    X2 = axisEnd[0],
-                    Y2 = axisEnd[1],
-                    Color = "Cyan",
-                    LineType = "Solid"
                 },
                 new()
                 {
@@ -264,19 +229,24 @@ internal sealed partial class DrawingCommandHandler
                     Y1 = Round2(centerY),
                     Size = 30,
                     Color = "Yellow"
-                },
-                new()
-                {
-                    Kind = "text",
-                    ViewId = view.GetIdentifier().ID,
-                    X1 = Round2(centerX + 35),
-                    Y1 = Round2(centerY + 25),
-                    Text = $"partAxis={angleDeg} deg",
-                    Color = "Yellow",
-                    TextHeight = 1.5
                 }
             }
         };
+
+        if (geometry.HasAxis)
+        {
+            request.Shapes.Add(new DrawingDebugShape
+            {
+                Kind = "line",
+                ViewId = view.GetIdentifier().ID,
+                X1 = axisStart[0],
+                Y1 = axisStart[1],
+                X2 = axisEnd[0],
+                Y2 = axisEnd[1],
+                Color = "Cyan",
+                LineType = "Solid"
+            });
+        }
 
         var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
         WriteJson(new
@@ -286,9 +256,10 @@ internal sealed partial class DrawingCommandHandler
             modelId = modelId.Value,
             centerX = Round2(centerX),
             centerY = Round2(centerY),
-            objectWidth = Round2(objectAligned.Width),
-            objectHeight = Round2(objectAligned.Height),
-            partAxisAngleDeg = angleDeg,
+            objectWidth = Round2(geometry.Width),
+            objectHeight = Round2(geometry.Height),
+            angleDeg,
+            geometrySource = geometry.Source,
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,
             createdCount = overlayResult.CreatedCount,

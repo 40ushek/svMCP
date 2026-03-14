@@ -40,6 +40,14 @@
   - `leaderLines[]` с типом и геометрией
   - `axis` (`start/end`, `dx/dy`, `length`, `angleDeg`, `isReliable`) для диагностики
   - `objectAlignedBoundingBox` (`width`, `height`, `angleToAxis`, `center`, `corners`) — OBB метки
+  - `resolvedGeometry` — итоговая геометрия от `MarkGeometryHelper` с `source`, `isReliable`, `angleDeg`, `corners`
+
+**Централизация геометрии (реализовано):**
+- Добавлен `MarkGeometryHelper`
+- `LeaderLinePlacing` → `ObjectAlignedBoundingBox`
+- `BaseLinePlacing` → ось связанной детали через `get_part_geometry_in_view`-эквивалентный путь
+- Fallback → `ObjectAlignedBoundingBox`
+- Debug overlay выбранной метки теперь использует `resolvedGeometry`, а не свою отдельную математику
 
 **Источник оси для BaseLinePlacing (обновлено):**
 - Сначала пробуем `TryGetRelatedPartAxisInView`: читает реальную ось детали из модели

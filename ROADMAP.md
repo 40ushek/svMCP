@@ -28,16 +28,17 @@
 | `get_drawing_context` / `select_drawing_objects` / `filter_drawing_objects` | Контекст и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
-| `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/content, arrowhead и leader line данные |
+| `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` | Расстановка марок |
 | `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` | Размеры |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
-| `draw_debug_overlay` / `clear_debug_overlay` | Dev-only overlay слой: линии, прямоугольники, полилинии, полигоны, текст |
+| `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
 
 **Архитектура**
 - Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
 - TS2021 + TS2025 поддержка
+- `MarkGeometryHelper`: единая точка расчета геометрии меток для diagnostics/debug overlay
 
 **Геометрические утилиты**
 - `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется)
@@ -56,7 +57,7 @@
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)
 - COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
-- Для `BaseLinePlacing` перевести collision geometry с `StartPoint/EndPoint` на более надежную модель, используя debug overlay и фактическую визуальную ориентацию текста
+- Использовать `MarkGeometryHelper` внутри resolver/arrange, чтобы debug и layout считали одну и ту же геометрию
 
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок

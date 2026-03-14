@@ -187,7 +187,7 @@ src/
 | `move_view` | Переместить вид на листе (абсолютно или на смещение) |
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
 | `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
-| `get_drawing_marks` | Прочитать марки: позиция, bbox текстового блока, перекрытия, содержимое PropertyElement; фильтрация по виду |
+| `get_drawing_marks` | Прочитать марки: позиция, bbox/OBB, `resolvedGeometry`, перекрытия, leader lines, содержимое PropertyElement; фильтрация по виду |
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
 | `delete_all_marks` | Удалить все марки на активном чертеже |
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
@@ -207,6 +207,7 @@ src/
 - `resolve_mark_overlaps` использует только локальный `MarkOverlapResolver` для минимальных сдвигов внутри вида
 - `arrange_marks` использует `MarkLayoutEngine`: candidate generation, scoring, greedy placement и затем локальный overlap resolver
 - для leader-line marks якорь берется из `LeaderLinePlacing.StartPoint` в координатах вида; `StartPoint` не меняется, двигается только `InsertionPoint`
+- геометрия метки теперь централизована в `MarkGeometryHelper`: `LeaderLinePlacing` берет `ObjectAlignedBoundingBox`, `BaseLinePlacing` пытается брать ось связанной детали в текущем виде, fallback — `ObjectAlignedBoundingBox`
 
 ## Диагностика
 

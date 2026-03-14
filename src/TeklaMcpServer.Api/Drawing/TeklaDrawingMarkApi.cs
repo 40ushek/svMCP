@@ -51,6 +51,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
                     var bbox = mark.GetAxisAlignedBoundingBox();
                     var obb = mark.GetObjectAlignedBoundingBox();
+                    var geometry = MarkGeometryHelper.Build(mark, _model);
                     var ins  = mark.InsertionPoint;
                     var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
                     var info = new DrawingMarkInfo
@@ -89,6 +90,23 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                                 new[] { Math.Round(obb.UpperRight.X, 2), Math.Round(obb.UpperRight.Y, 2) },
                                 new[] { Math.Round(obb.LowerRight.X, 2), Math.Round(obb.LowerRight.Y, 2) }
                             }
+                        },
+                        ResolvedGeometry = new MarkResolvedGeometryInfo
+                        {
+                            Source = geometry.Source,
+                            IsReliable = geometry.IsReliable,
+                            Width = Math.Round(geometry.Width, 2),
+                            Height = Math.Round(geometry.Height, 2),
+                            CenterX = Math.Round(geometry.CenterX, 2),
+                            CenterY = Math.Round(geometry.CenterY, 2),
+                            MinX = Math.Round(geometry.MinX, 2),
+                            MinY = Math.Round(geometry.MinY, 2),
+                            MaxX = Math.Round(geometry.MaxX, 2),
+                            MaxY = Math.Round(geometry.MaxY, 2),
+                            AngleDeg = Math.Round(geometry.AngleDeg, 2),
+                            Corners = geometry.Corners
+                                .Select(c => new[] { Math.Round(c[0], 2), Math.Round(c[1], 2) })
+                                .ToList()
                         },
                         ArrowHead   = new MarkArrowheadInfo
                         {
