@@ -20,6 +20,10 @@ public sealed class DrawingDebugShape
     public List<double[]> Points { get; set; } = new();
     public string Text { get; set; } = string.Empty;
     public double Angle { get; set; }
+    public double Size { get; set; }
+    public string Color { get; set; } = string.Empty;
+    public string LineType { get; set; } = string.Empty;
+    public double? TextHeight { get; set; }
 }
 
 public sealed class DrawingDebugOverlayResult
