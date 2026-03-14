@@ -117,7 +117,17 @@ public sealed class MarkOverlapResolver
         if (a.HasLeaderLine || b.HasLeaderLine || !a.HasAxis || !b.HasAxis)
             return false;
 
-        var dot = (a.AxisDx * b.AxisDx) + (a.AxisDy * b.AxisDy);
+        var aAxisDx = a.AxisDx;
+        var aAxisDy = a.AxisDy;
+        if (!TryNormalize(ref aAxisDx, ref aAxisDy))
+            return false;
+
+        var bAxisDx = b.AxisDx;
+        var bAxisDy = b.AxisDy;
+        if (!TryNormalize(ref bAxisDx, ref bAxisDy))
+            return false;
+
+        var dot = (aAxisDx * bAxisDx) + (aAxisDy * bAxisDy);
         if (Math.Abs(dot) < 0.95)
             return false;
 
@@ -125,10 +135,10 @@ public sealed class MarkOverlapResolver
         if (split.Total == 0)
             return true;
 
-        var bAxisDx = dot < 0 ? -b.AxisDx : b.AxisDx;
-        var bAxisDy = dot < 0 ? -b.AxisDy : b.AxisDy;
-        var axisDx = a.AxisDx + bAxisDx;
-        var axisDy = a.AxisDy + bAxisDy;
+        bAxisDx = dot < 0 ? -bAxisDx : bAxisDx;
+        bAxisDy = dot < 0 ? -bAxisDy : bAxisDy;
+        var axisDx = aAxisDx + bAxisDx;
+        var axisDy = aAxisDy + bAxisDy;
         if (!TryNormalize(ref axisDx, ref axisDy))
             return false;
 
@@ -141,7 +151,7 @@ public sealed class MarkOverlapResolver
         if (axisOverlap <= 0)
             return true;
 
-        var push = Math.Max(axisOverlap, Math.Min(overlapX, overlapY)) + options.Gap;
+        var push = axisOverlap + options.Gap;
         var direction = centerB >= centerA ? 1.0 : -1.0;
 
         a.X -= axisDx * direction * push * split.MoveA;

@@ -36,6 +36,10 @@ public sealed class MarkAxisInfo
     public double Dy { get; set; }
     public double Length { get; set; }
     public double AngleDeg { get; set; }
+    /// <summary>
+    /// False when BaseLinePlacing axis length was too short (&lt;0.001) — data may be unreliable.
+    /// </summary>
+    public bool IsReliable { get; set; }
 }
 
 public sealed class DrawingMarkInfo

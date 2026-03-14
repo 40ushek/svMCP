@@ -74,7 +74,8 @@ public sealed class MarkLayoutEngine
             .Where(x => x.CanMove)
             .OrderByDescending(x => conflictCounts.TryGetValue(x.Id, out var conflicts) ? conflicts : 0)
             .ThenByDescending(x => x.Width * x.Height)
-            .ThenByDescending(x => x.HasLeaderLine);
+            .ThenByDescending(x => x.HasLeaderLine)
+            .ThenBy(x => x.Id);
     }
 
     private static Dictionary<int, int> CalculateConflictCounts(

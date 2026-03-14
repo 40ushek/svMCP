@@ -6,6 +6,10 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 {
+    // Scale factor applied to baseOffset when generating axis/local candidates
+    // (keeps candidates closer to anchor than leader-line rings)
+    private const double LocalCandidateScale = 0.6;
+
     // 8 compass directions: E, NE, N, NW, W, SW, S, SE
     private static readonly (double Dx, double Dy)[] Directions =
     {
@@ -92,7 +96,7 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var priority = 1;
         foreach (var multiplier in multipliers.OrderBy(m => m))
         {
-            var distance = Math.Max(baseOffset * multiplier * 0.6, 2.0);
+            var distance = Math.Max(baseOffset * multiplier * LocalCandidateScale, 2.0);
             result.Add(new MarkCandidate
             {
                 X = item.CurrentX + (item.AxisDx * distance),
@@ -127,8 +131,8 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var priority = 1;
         foreach (var multiplier in multipliers.OrderBy(m => m))
         {
-            var ox = Math.Max(baseOffsetX * multiplier * 0.6, 2.0);
-            var oy = Math.Max(baseOffsetY * multiplier * 0.6, 2.0);
+            var ox = Math.Max(baseOffsetX * multiplier * LocalCandidateScale, 2.0);
+            var oy = Math.Max(baseOffsetY * multiplier * LocalCandidateScale, 2.0);
 
             foreach (var (dx, dy) in Directions)
             {
@@ -170,7 +174,7 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)
     {
-        const double epsilon = 0.01;
+        const double epsilon = 0.1;
         var result = new List<MarkCandidate>();
 
         foreach (var candidate in candidates.OrderBy(x => x.Priority))

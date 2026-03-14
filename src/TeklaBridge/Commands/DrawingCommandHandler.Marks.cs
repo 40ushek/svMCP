@@ -44,6 +44,11 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
         var result = api.ArrangeMarks(parseResult.Value);
         WriteMarkArrangementResult(result);
         return true;
@@ -98,6 +103,11 @@ internal sealed partial class DrawingCommandHandler
         if (!parseResult.IsValid)
         {
             WriteError(parseResult.Error);
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+        {
             return true;
         }
 
@@ -187,7 +197,8 @@ internal sealed partial class DrawingCommandHandler
                     dx = m.Axis.Dx,
                     dy = m.Axis.Dy,
                     length = m.Axis.Length,
-                    angleDeg = m.Axis.AngleDeg
+                    angleDeg = m.Axis.AngleDeg,
+                    isReliable = m.Axis.IsReliable
                 },
                 arrowHead = new
                 {

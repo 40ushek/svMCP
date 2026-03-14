@@ -49,6 +49,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
                     var bbox = mark.GetAxisAlignedBoundingBox();
                     var ins  = mark.InsertionPoint;
+                    var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
                     var info = new DrawingMarkInfo
                     {
                         Id         = markId,
@@ -62,8 +63,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                         CenterX    = Math.Round((bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0, 2),
                         CenterY    = Math.Round((bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0, 2),
                         PlacingType = mark.Placing?.GetType().Name ?? "null",
-                        PlacingX    = mark.Placing is LeaderLinePlacing lp2 ? Math.Round(lp2.StartPoint.X, 2) : 0,
-                        PlacingY    = mark.Placing is LeaderLinePlacing lp3 ? Math.Round(lp3.StartPoint.Y, 2) : 0,
+                        PlacingX    = leaderLinePlacing != null ? Math.Round(leaderLinePlacing.StartPoint.X, 2) : 0,
+                        PlacingY    = leaderLinePlacing != null ? Math.Round(leaderLinePlacing.StartPoint.Y, 2) : 0,
                         Angle      = Math.Round(mark.Attributes.Angle, 2),
                         RotationAngle = Math.Round(mark.Attributes.RotationAngle, 2),
                         TextAlignment = mark.Attributes.TextAlignment.ToString(),
@@ -93,7 +94,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                             Dx = Math.Round(normalizedDx, 4),
                             Dy = Math.Round(normalizedDy, 4),
                             Length = Math.Round(axisLength, 2),
-                            AngleDeg = Math.Round(Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI), 2)
+                            AngleDeg = Math.Round(Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI), 2),
+                            IsReliable = axisLength >= 0.001
                         };
                     }
 
@@ -440,6 +442,13 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         var result = new SetMarkContentResult();
         var targetIds = new HashSet<int>(request.TargetIds ?? Array.Empty<int>());
         var requestedContentElements = request.RequestedContentElements ?? Array.Empty<string>();
+        if (!Enum.IsDefined(typeof(DrawingColors), request.FontColorValue))
+        {
+            return new SetMarkContentResult
+            {
+                Errors = { $"Invalid FontColorValue: {request.FontColorValue}" }
+            };
+        }
         var parsedColor = (DrawingColors)request.FontColorValue;
 
         var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
