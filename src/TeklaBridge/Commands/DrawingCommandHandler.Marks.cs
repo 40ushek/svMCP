@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Diagnostics;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaBridge.Commands;
@@ -49,7 +50,9 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
+        var total = Stopwatch.StartNew();
         var result = api.ArrangeMarks(parseResult.Value);
+        TeklaBridge.PerfTrace.Write("bridge-mark", "arrange_marks", total.ElapsedMilliseconds, $"gap={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
         WriteMarkArrangementResult(result);
         return true;
     }
@@ -57,11 +60,18 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleCreatePartMarks(TeklaDrawingMarkApi api, string[] args)
     {
         var parseRequest = DrawingCommandParsers.ParseCreatePartMarksRequest(args);
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var total = Stopwatch.StartNew();
         var result = api.CreatePartMarks(
             parseRequest.ContentAttributesCsv,
             parseRequest.MarkAttributesFile,
             parseRequest.FrameType,
             parseRequest.ArrowheadType);
+        TeklaBridge.PerfTrace.Write("bridge-mark", "create_part_marks", total.ElapsedMilliseconds, $"created={result.CreatedCount} skipped={result.SkippedCount}");
         WriteCreatePartMarksResult(result);
         return true;
     }
@@ -111,7 +121,9 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
+        var total = Stopwatch.StartNew();
         var result = api.ResolveMarkOverlaps(parseResult.Value);
+        TeklaBridge.PerfTrace.Write("bridge-mark", "resolve_mark_overlaps", total.ElapsedMilliseconds, $"margin={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
         WriteMarkArrangementResult(result);
         return true;
     }
@@ -119,7 +131,9 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDrawingMarks(TeklaDrawingMarkApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var total = Stopwatch.StartNew();
         var result = api.GetMarks(viewId);
+        TeklaBridge.PerfTrace.Write("bridge-mark", "get_drawing_marks", total.ElapsedMilliseconds, $"viewId={(viewId.HasValue ? viewId.Value.ToString() : "all")} total={result.Total} overlaps={result.Overlaps.Count}");
         WriteGetMarksResult(result);
         return true;
     }

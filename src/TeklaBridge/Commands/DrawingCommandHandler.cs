@@ -51,6 +51,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "move_dimension":
             case "create_dimension":
             case "delete_dimension":
+            case "place_control_diagonals":
                 return TryHandleDimensionCommands(command, args);
 
             case "get_part_geometry_in_view":

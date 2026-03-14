@@ -1,0 +1,69 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+
+namespace TeklaMcpServer.Tools;
+
+internal static class PerfTrace
+{
+    private static readonly object Sync = new();
+    private static readonly bool Enabled = IsEnabled();
+    private static readonly string LogPath = ResolveLogPath();
+
+    public static bool IsOn => Enabled;
+
+    public static void Write(string layer, string operation, long elapsedMs, string? details = null)
+    {
+        if (!Enabled)
+            return;
+
+        var line = BuildLine(layer, operation, elapsedMs, details);
+
+        try
+        {
+            lock (Sync)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LogPath) ?? Path.GetTempPath());
+                File.AppendAllText(LogPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // Instrumentation must never break command execution.
+        }
+    }
+
+    private static bool IsEnabled()
+    {
+        var raw = Environment.GetEnvironmentVariable("SVMCP_PERF");
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        return raw.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("on", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveLogPath()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("SVMCP_PERF_LOG");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return fromEnv;
+
+        return Path.Combine(Path.GetTempPath(), "svmcp-perf.log");
+    }
+
+    private static string BuildLine(string layer, string operation, long elapsedMs, string? details)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "{0:O} pid={1} layer={2} op={3} elapsedMs={4} {5}",
+            DateTimeOffset.Now,
+            Process.GetCurrentProcess().Id,
+            layer,
+            operation,
+            elapsedMs,
+            details ?? string.Empty);
+    }
+}

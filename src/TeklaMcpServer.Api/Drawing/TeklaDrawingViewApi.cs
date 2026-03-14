@@ -1,8 +1,10 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Diagnostics;
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class TeklaDrawingViewApi : IDrawingViewApi
@@ -95,6 +97,18 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
     public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
     {
+        var total = Stopwatch.StartNew();
+        long initMs = 0;
+        long reservedMs = 0;
+        long candidateFitMs = 0;
+        long probeMs = 0;
+        long arrangeMs = 0;
+        long postAdjustMs = 0;
+        long finalCommitMs = 0;
+        var viewsCount = 0;
+        var candidateAttempts = 0;
+        double? selectedScale = null;
+
         if (margin < 0)
             throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
         if (gap < 0)
@@ -102,11 +116,13 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         if (titleBlockHeight < 0)
             throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
+        var init = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
         var views = EnumerateViews(activeDrawing).ToList();
+        viewsCount = views.Count;
         if (views.Count == 0)
             throw new System.InvalidOperationException("No views found in active drawing.");
 
@@ -116,11 +132,14 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
 
         var viewIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
+        var reservedRead = Stopwatch.StartNew();
         IReadOnlyList<ReservedRect> reservedAreas = DrawingReservedAreaReader.Read(
             activeDrawing,
             margin,
             titleBlockHeight,
             viewIds);
+        reservedRead.Stop();
+        reservedMs = reservedRead.ElapsedMilliseconds;
         double availW = sheetW - 2 * margin;
         double availH = sheetH - 2 * margin;
         if (availW <= 0 || availH <= 0)
@@ -142,6 +161,8 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 175, 200, 250, 500, 1000 };
         var candidates     = System.Array.FindAll(standardScales, s => s >= minDenom);
         if (candidates.Length == 0) candidates = new[] { standardScales[standardScales.Length - 1] };
+        init.Stop();
+        initMs = init.ElapsedMilliseconds;
 
         // Save original scales so we can restore them if no candidate fits.
         var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
@@ -154,6 +175,8 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
         foreach (var s in candidates)
         {
+            candidateAttempts++;
+            var candidateSw = Stopwatch.StartNew();
             foreach (var v in currentViews) { v.Attributes.Scale = s; v.Modify(); }
             activeDrawing.CommitChanges();
 
@@ -165,10 +188,14 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             {
                 optimalScale = s;
                 currentViews = reread;
+                candidateSw.Stop();
+                candidateFitMs += candidateSw.ElapsedMilliseconds;
                 break;
             }
 
             currentViews = reread;
+            candidateSw.Stop();
+            candidateFitMs += candidateSw.ElapsedMilliseconds;
         }
 
         if (!optimalScale.HasValue)
@@ -199,6 +226,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         double probeScale = standardScales.FirstOrDefault(s => System.Math.Abs(s - optimalScale.Value) > 0.5);
         if (probeScale > 0)
         {
+            var probeSw = Stopwatch.StartNew();
             foreach (var v in currentViews) { v.Attributes.Scale = probeScale; v.Modify(); }
             activeDrawing.CommitChanges();
             var probeViews = EnumerateViews(activeDrawing).ToList();
@@ -217,11 +245,16 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             activeDrawing.CommitChanges();
             currentViews = EnumerateViews(activeDrawing).ToList();
             offsetsComputed = true;
+            probeSw.Stop();
+            probeMs = probeSw.ElapsedMilliseconds;
         }
 
         // ── Arrange (naive: assumes Origin = frame center) ────────────────────
+        var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
             new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap, reservedAreas));
+        arrangeSw.Stop();
+        arrangeMs = arrangeSw.ElapsedMilliseconds;
 
         // ── Post-correction: shift each origin so the frame lands at the intended position ─
         // arranged[i].OriginX/Y holds the desired frame-center position on the sheet.
@@ -229,6 +262,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         // Use ID-based lookup because Arrange may reorder views relative to currentViews.
         if (offsetsComputed)
         {
+            var adjustSw = Stopwatch.StartNew();
             var viewById   = currentViews.ToDictionary(v => v.GetIdentifier().ID);
             var offsetById = new System.Collections.Generic.Dictionary<int, (double X, double Y)>();
             for (int i = 0; i < currentViews.Count; i++)
@@ -251,11 +285,17 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
                     OriginY  = o.Y
                 };
             }
+            adjustSw.Stop();
+            postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
+        var commitSw = Stopwatch.StartNew();
         activeDrawing.CommitChanges();
+        commitSw.Stop();
+        finalCommitMs = commitSw.ElapsedMilliseconds;
+        selectedScale = optimalScale;
 
-        return new FitViewsResult
+        var result = new FitViewsResult
         {
             OptimalScale = optimalScale.Value,
             SheetWidth   = sheetW,
@@ -263,6 +303,12 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             Arranged     = arranged.Count,
             Views        = arranged
         };
+        PerfTrace.Write(
+            "api-view",
+            "fit_views_to_sheet",
+            total.ElapsedMilliseconds,
+            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "n/a")} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} finalCommitMs={finalCommitMs}");
+        return result;
     }
 
     // ── PlaceViews ────────────────────────────────────────────────────────

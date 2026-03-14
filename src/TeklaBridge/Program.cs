@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using Tekla.Structures.Drawing;
@@ -91,16 +92,22 @@ internal static class Program
 
         while ((line = Console.In.ReadLine()) != null)
         {
+            var requestTotal = Stopwatch.StartNew();
             teklaLogBuffer.Clear();
             BridgeRequest? request;
+            var parseMs = 0L;
             try
             {
+                var parse = Stopwatch.StartNew();
                 request = JsonSerializer.Deserialize<BridgeRequest>(line, ProtocolJsonOptions);
+                parse.Stop();
+                parseMs = parse.ElapsedMilliseconds;
                 if (request == null || string.IsNullOrWhiteSpace(request.Cmd))
                     throw new InvalidDataException("Invalid bridge request.");
             }
             catch (Exception ex)
             {
+                PerfTrace.Write("bridge-loop", "parse_request", requestTotal.ElapsedMilliseconds, $"ok=false parseMs={parseMs} errorType={ex.GetType().Name} message={ex.Message}");
                 WriteBridgeResponse(realOut, new BridgeResponse
                 {
                     Id = 0,
@@ -113,23 +120,31 @@ internal static class Program
             try
             {
                 var fullArgs = BuildFullArgs(request.Cmd, request.Args);
+                var execute = Stopwatch.StartNew();
                 var payload = ExecuteCommand(model, request.Cmd, fullArgs, teklaLog);
+                execute.Stop();
+                var write = Stopwatch.StartNew();
                 WriteBridgeResponse(realOut, new BridgeResponse
                 {
                     Id = request.Id,
                     Ok = true,
                     Result = payload
                 });
+                write.Stop();
+                PerfTrace.Write("bridge-loop", request.Cmd, requestTotal.ElapsedMilliseconds, $"ok=true parseMs={parseMs} executeMs={execute.ElapsedMilliseconds} writeMs={write.ElapsedMilliseconds} args={request.Args?.Length ?? 0} payloadBytes={payload.Length}");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine(ex);
+                var write = Stopwatch.StartNew();
                 WriteBridgeResponse(realOut, new BridgeResponse
                 {
                     Id = request.Id,
                     Ok = false,
                     Error = ex.Message
                 });
+                write.Stop();
+                PerfTrace.Write("bridge-loop", request.Cmd, requestTotal.ElapsedMilliseconds, $"ok=false parseMs={parseMs} writeMs={write.ElapsedMilliseconds} errorType={ex.GetType().Name} message={ex.Message}");
             }
         }
     }
@@ -151,7 +166,9 @@ internal static class Program
 
     private static string ExecuteCommand(Model model, string command, string[] args, StringWriter teklaLog)
     {
+        var total = Stopwatch.StartNew();
         using var payloadWriter = new StringWriter();
+        var status = "ok";
 
         try
         {
@@ -161,6 +178,7 @@ internal static class Program
             }
             else if (!model.GetConnectionStatus())
             {
+                status = "not_connected";
                 payloadWriter.Write(JsonSerializer.Serialize(new
                 {
                     error = "Not connected to Tekla Structures",
@@ -172,11 +190,15 @@ internal static class Program
             {
                 var dispatcher = new CommandDispatcher(model, payloadWriter);
                 if (!dispatcher.Dispatch(command, args))
+                {
+                    status = "unknown_command";
                     payloadWriter.Write($"{{\"error\":\"Unknown command: {command}\"}}");
+                }
             }
         }
         catch (Exception ex)
         {
+            status = "exception:" + ex.GetType().Name;
             var result = JsonSerializer.Serialize(new
             {
                 error = ex.Message,
@@ -188,7 +210,9 @@ internal static class Program
             TryWriteBridgeLog(result);
         }
 
-        return payloadWriter.ToString().Trim();
+        var payload = payloadWriter.ToString().Trim();
+        PerfTrace.Write("bridge-exec", command, total.ElapsedMilliseconds, $"status={status} args={Math.Max(0, args.Length - 1)} payloadBytes={payload.Length}");
+        return payload;
     }
 
     private static void WriteCheckConnectionPayload(Model model, TextWriter output, StringWriter teklaLog)

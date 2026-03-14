@@ -55,4 +55,32 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description("Place one control diagonal dimension between farthest extreme points of the assembly in the target drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used.")]
+    public static string PlaceControlDiagonals(
+        [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
+        [Description("Dimension line offset distance in mm. Default: 60")] double distance = 60.0,
+        [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
+    {
+        if (distance <= 0)
+            return "Error: 'distance' must be a positive number.";
+
+        var json = RunBridge(
+            "place_control_diagonals",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            distance.ToString(CultureInfo.InvariantCulture),
+            attributesFile ?? "standard");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
 }

@@ -42,7 +42,10 @@ internal sealed class PersistentBridge : IDisposable
 
     public string Send(string command, params string[] args)
     {
+        var total = Stopwatch.StartNew();
+        var wait = Stopwatch.StartNew();
         _lock.Wait();
+        wait.Stop();
         try
         {
             EnsureStarted();
@@ -54,12 +57,21 @@ internal sealed class PersistentBridge : IDisposable
                 Args = args
             };
 
-            _stdin!.WriteLine(JsonSerializer.Serialize(request, ProtocolJsonOptions));
+            var requestJson = JsonSerializer.Serialize(request, ProtocolJsonOptions);
+            var write = Stopwatch.StartNew();
+            _stdin!.WriteLine(requestJson);
             _stdin.Flush();
+            write.Stop();
 
+            var read = Stopwatch.StartNew();
             var responseLine = ReadResponseLine();
+            read.Stop();
+
+            var parse = Stopwatch.StartNew();
             var response = JsonSerializer.Deserialize<BridgeResponse>(responseLine, ProtocolJsonOptions)
                 ?? throw new InvalidDataException("Bridge returned an empty protocol response.");
+            parse.Stop();
+
             if (response.Id != request.Id)
                 throw new InvalidDataException($"Bridge protocol error: response id {response.Id} did not match request id {request.Id}.");
 
@@ -67,13 +79,28 @@ internal sealed class PersistentBridge : IDisposable
                 throw new InvalidDataException("Bridge protocol error: " + (response.Error ?? "Unknown bridge error."));
 
             var result = response.Result ?? string.Empty;
+            var restart = false;
             if (ShouldRestartAfterPayload(result))
+            {
+                restart = true;
                 KillProcess();
+            }
+
+            PerfTrace.Write(
+                "transport",
+                command,
+                total.ElapsedMilliseconds,
+                $"ok=true waitMs={wait.ElapsedMilliseconds} writeMs={write.ElapsedMilliseconds} readMs={read.ElapsedMilliseconds} parseMs={parse.ElapsedMilliseconds} requestBytes={requestJson.Length} responseBytes={responseLine.Length} restarted={restart}");
 
             return result;
         }
-        catch
+        catch (Exception ex)
         {
+            PerfTrace.Write(
+                "transport",
+                command,
+                total.ElapsedMilliseconds,
+                $"ok=false waitMs={wait.ElapsedMilliseconds} errorType={ex.GetType().Name} message={ex.Message}");
             KillProcess();
             throw;
         }

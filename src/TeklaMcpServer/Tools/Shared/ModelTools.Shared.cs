@@ -1,4 +1,5 @@
 using ModelContextProtocol.Server;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -45,18 +46,30 @@ public static partial class ModelTools
 
     private static string RunBridge(params string[] args)
     {
+        var total = Stopwatch.StartNew();
         if (args.Length == 0)
+        {
+            PerfTrace.Write("mcp", "run_bridge", total.ElapsedMilliseconds, "ok=false reason=no_command");
             return JsonSerializer.Serialize(new { error = "No bridge command specified" });
+        }
+
+        var command = args[0];
 
         if (!File.Exists(BridgePath))
+        {
+            PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=false reason=bridge_missing path={BridgePath}");
             return $"Error: TeklaBridge.exe not found at {BridgePath}";
+        }
 
         try
         {
-            return Bridge.Send(args[0], args.Skip(1).ToArray());
+            var result = Bridge.Send(command, args.Skip(1).ToArray());
+            PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=true args={Math.Max(0, args.Length - 1)} resultBytes={result.Length}");
+            return result;
         }
         catch (Exception ex)
         {
+            PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=false errorType={ex.GetType().Name} message={ex.Message}");
             return JsonSerializer.Serialize(new
             {
                 error = FormatBridgeError(ex)

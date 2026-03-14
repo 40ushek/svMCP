@@ -23,6 +23,9 @@ internal sealed partial class DrawingCommandHandler
             case "delete_dimension":
                 return HandleDeleteDimension(api, args);
 
+            case "place_control_diagonals":
+                return HandlePlaceControlDiagonals(api, args);
+
             default:
                 return false;
         }
@@ -86,6 +89,42 @@ internal sealed partial class DrawingCommandHandler
         }
 
         WriteDeleteDimensionResult(result);
+        return true;
+    }
+
+    private bool HandlePlaceControlDiagonals(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParsePlaceControlDiagonalsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.PlaceControlDiagonals(
+            parseResult.Request.ViewId,
+            parseResult.Request.Distance,
+            parseResult.Request.AttributesFile);
+
+        WriteJson(new
+        {
+            created = result.Created,
+            viewId = result.ViewId,
+            viewType = result.ViewType,
+            partsScanned = result.PartsScanned,
+            candidatePoints = result.CandidatePoints,
+            dimensionId = result.DimensionId,
+            startPoint = result.StartPoint,
+            endPoint = result.EndPoint,
+            farthestDistance = result.FarthestDistance,
+            selectViewMs = result.SelectViewMs,
+            readGeometryMs = result.ReadGeometryMs,
+            findExtremesMs = result.FindExtremesMs,
+            createMs = result.CreateMs,
+            commitMs = result.CommitMs,
+            totalMs = result.TotalMs,
+            error = result.Error
+        });
         return true;
     }
 

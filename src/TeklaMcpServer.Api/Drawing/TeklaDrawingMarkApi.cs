@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Marks;
+using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -221,6 +223,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
     public ResolveMarksResult ResolveMarkOverlaps(double margin)
     {
+        var total = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -235,10 +238,16 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
             foreach (var view in EnumerateViews(activeDrawing))
             {
+                var viewTotal = Stopwatch.StartNew();
+                var collect = Stopwatch.StartNew();
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model);
+                collect.Stop();
 
                 if (markEntries.Count == 0)
+                {
+                    PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks=0 collectMs={collect.ElapsedMilliseconds}");
                     continue;
+                }
 
                 var placements = markEntries.Select(e => new MarkLayoutPlacement
                 {
@@ -258,12 +267,17 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                 }).ToList();
 
                 var resolver = new MarkOverlapResolver();
+                var resolve = Stopwatch.StartNew();
                 var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = margin }, out var iterations);
+                resolve.Stop();
                 var resolvedById = resolved.ToDictionary(x => x.Id);
 
+                var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById));
+                apply.Stop();
                 totalIterations += iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(resolved);
+                PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={iterations}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -281,6 +295,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         }
         finally
         {
+            PerfTrace.Write("api-mark", "resolve_mark_overlaps_total", total.ElapsedMilliseconds, $"margin={margin.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
     }
@@ -288,6 +303,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
     public ResolveMarksResult ArrangeMarks(double gap)
     {
+        var total = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -303,10 +319,17 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
             foreach (var view in EnumerateViews(activeDrawing))
             {
+                var viewTotal = Stopwatch.StartNew();
+                var collect = Stopwatch.StartNew();
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model);
+                collect.Stop();
                 if (markEntries.Count == 0)
+                {
+                    PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks=0 collectMs={collect.ElapsedMilliseconds}");
                     continue;
+                }
 
+                var arrange = Stopwatch.StartNew();
                 var layoutResult = engine.Arrange(
                     markEntries.Select(x => x.Item),
                     new MarkLayoutOptions
@@ -315,11 +338,15 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                         CurrentPositionWeight = 0.3,
                         LeaderLengthWeight = 15.0,
                     });
+                arrange.Stop();
 
                 var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
+                var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById));
+                apply.Stop();
                 totalIterations += layoutResult.Iterations;
                 totalRemainingOverlaps += layoutResult.RemainingOverlaps;
+                PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
             }
 
             if (movedIds.Count > 0)
@@ -335,6 +362,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         }
         finally
         {
+            PerfTrace.Write("api-mark", "arrange_marks_total", total.ElapsedMilliseconds, $"gap={gap.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
     }

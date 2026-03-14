@@ -323,6 +323,35 @@ public static class DrawingCommandParsers
         });
     }
 
+    public static PlaceControlDiagonalsParseResult ParsePlaceControlDiagonalsRequest(string[] args)
+    {
+        int? viewId = null;
+        if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+        {
+            if (!int.TryParse(args[1], out var parsedViewId))
+                return PlaceControlDiagonalsParseResult.Fail("viewId must be an integer");
+            viewId = parsedViewId;
+        }
+
+        var distance = 60.0;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out distance) || distance <= 0)
+                return PlaceControlDiagonalsParseResult.Fail("distance must be a positive number");
+        }
+
+        var attributesFile = (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]))
+            ? args[3]
+            : "standard";
+
+        return PlaceControlDiagonalsParseResult.Success(new PlaceControlDiagonalsRequest
+        {
+            ViewId = viewId,
+            Distance = distance,
+            AttributesFile = attributesFile
+        });
+    }
+
     public static SetViewScaleParseResult ParseSetViewScaleRequest(string[] args)
     {
         if (args.Length < 3)
@@ -656,6 +685,26 @@ public sealed class CreateDimensionParseResult
         new() { IsValid = true, Request = request };
 
     public static CreateDimensionParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class PlaceControlDiagonalsRequest
+{
+    public int? ViewId { get; set; }
+    public double Distance { get; set; } = 60.0;
+    public string AttributesFile { get; set; } = "standard";
+}
+
+public sealed class PlaceControlDiagonalsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public PlaceControlDiagonalsRequest Request { get; private set; } = new();
+
+    public static PlaceControlDiagonalsParseResult Success(PlaceControlDiagonalsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static PlaceControlDiagonalsParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 
