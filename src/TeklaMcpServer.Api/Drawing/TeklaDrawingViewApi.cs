@@ -210,43 +210,40 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
         }
 
-        // ── Compute frame-to-origin offsets (two-scale probe) ─────────────────
-        // view.Origin in Tekla is the projection of the view's local (0,0) onto the sheet —
-        // NOT the center of the view frame.  Frame center = Origin + frameOffset / scale.
-        // When scale changes Tekla adjusts Origin to keep the frame center fixed, so two
-        // readings at different scales let us solve for frameOffset analytically.
-        var originsAtOptimal = currentViews
-            .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
-            .ToList();
-
-        var frameOffsetXs = new double[currentViews.Count];
-        var frameOffsetYs = new double[currentViews.Count];
-        bool offsetsComputed = false;
-
-        double probeScale = standardScales.FirstOrDefault(s => System.Math.Abs(s - optimalScale.Value) > 0.5);
-        if (probeScale > 0)
+        // ── Compute frame-to-origin offsets ────────────────────────────────────
+        // Fast path: derive frame center from the actual current frame bbox (no extra commits).
+        // Fallback: keep the old two-scale probe for environments where bbox is unavailable.
+        var offsetById = TryGetFrameOffsetsFromBoundingBoxes(currentViews, optimalScale.Value);
+        if (offsetById.Count != currentViews.Count)
         {
-            var probeSw = Stopwatch.StartNew();
-            foreach (var v in currentViews) { v.Attributes.Scale = probeScale; v.Modify(); }
-            activeDrawing.CommitChanges();
-            var probeViews = EnumerateViews(activeDrawing).ToList();
+            var originsAtOptimal = currentViews
+                .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
+                .ToList();
 
-            double denom = 1.0 / optimalScale.Value - 1.0 / probeScale;
-            for (int i = 0; i < currentViews.Count && i < probeViews.Count; i++)
+            double probeScale = standardScales.FirstOrDefault(s => System.Math.Abs(s - optimalScale.Value) > 0.5);
+            if (probeScale > 0)
             {
-                double dX = (probeViews[i].Origin?.X ?? 0) - originsAtOptimal[i].X;
-                double dY = (probeViews[i].Origin?.Y ?? 0) - originsAtOptimal[i].Y;
-                frameOffsetXs[i] = dX / denom;
-                frameOffsetYs[i] = dY / denom;
-            }
+                var probeSw = Stopwatch.StartNew();
+                foreach (var v in currentViews) { v.Attributes.Scale = probeScale; v.Modify(); }
+                activeDrawing.CommitChanges();
+                var probeViews = EnumerateViews(activeDrawing).ToList();
 
-            // Restore optimal scale
-            foreach (var v in probeViews) { v.Attributes.Scale = optimalScale.Value; v.Modify(); }
-            activeDrawing.CommitChanges();
-            currentViews = EnumerateViews(activeDrawing).ToList();
-            offsetsComputed = true;
-            probeSw.Stop();
-            probeMs = probeSw.ElapsedMilliseconds;
+                double denom = 1.0 / optimalScale.Value - 1.0 / probeScale;
+                for (int i = 0; i < currentViews.Count && i < probeViews.Count; i++)
+                {
+                    double dX = (probeViews[i].Origin?.X ?? 0) - originsAtOptimal[i].X;
+                    double dY = (probeViews[i].Origin?.Y ?? 0) - originsAtOptimal[i].Y;
+                    var viewId = currentViews[i].GetIdentifier().ID;
+                    offsetById[viewId] = (dX / denom, dY / denom);
+                }
+
+                // Restore optimal scale
+                foreach (var v in probeViews) { v.Attributes.Scale = optimalScale.Value; v.Modify(); }
+                activeDrawing.CommitChanges();
+                currentViews = EnumerateViews(activeDrawing).ToList();
+                probeSw.Stop();
+                probeMs = probeSw.ElapsedMilliseconds;
+            }
         }
 
         // ── Arrange (naive: assumes Origin = frame center) ────────────────────
@@ -260,13 +257,10 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         // arranged[i].OriginX/Y holds the desired frame-center position on the sheet.
         // Correct: actual_origin = desired_frame_center - frameOffset / scale
         // Use ID-based lookup because Arrange may reorder views relative to currentViews.
-        if (offsetsComputed)
+        if (offsetById.Count > 0)
         {
             var adjustSw = Stopwatch.StartNew();
             var viewById   = currentViews.ToDictionary(v => v.GetIdentifier().ID);
-            var offsetById = new System.Collections.Generic.Dictionary<int, (double X, double Y)>();
-            for (int i = 0; i < currentViews.Count; i++)
-                offsetById[currentViews[i].GetIdentifier().ID] = (frameOffsetXs[i], frameOffsetYs[i]);
 
             for (int i = 0; i < arranged.Count; i++)
             {
@@ -350,6 +344,37 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         Width    = v.Width,
         Height   = v.Height
     };
+
+    private static Dictionary<int, (double X, double Y)> TryGetFrameOffsetsFromBoundingBoxes(
+        IReadOnlyList<View> views,
+        double scale)
+    {
+        var offsets = new Dictionary<int, (double X, double Y)>(views.Count);
+        foreach (var view in views)
+        {
+            if (view is not IAxisAlignedBoundingBox bounded)
+            {
+                offsets.Clear();
+                return offsets;
+            }
+
+            var box = bounded.GetAxisAlignedBoundingBox();
+            if (box == null)
+            {
+                offsets.Clear();
+                return offsets;
+            }
+
+            var centerX = (box.MinPoint.X + box.MaxPoint.X) * 0.5;
+            var centerY = (box.MinPoint.Y + box.MaxPoint.Y) * 0.5;
+            var origin = view.Origin;
+            var originX = origin?.X ?? 0;
+            var originY = origin?.Y ?? 0;
+            offsets[view.GetIdentifier().ID] = ((centerX - originX) * scale, (centerY - originY) * scale);
+        }
+
+        return offsets;
+    }
 }
 
 public sealed class DrawingNotOpenException : System.Exception
