@@ -180,9 +180,17 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         if (options.MaxDistanceFromAnchor <= 0)
             return true;
 
+        var maxDistance = options.MaxDistanceFromAnchor;
+
+        // Baseline marks (no leader) must stay on the part. Limit displacement to
+        // the mark's shorter dimension so the mark slides along the axis but
+        // doesn't drift further than one "mark width" from its anchor.
+        if (!item.HasLeaderLine)
+            maxDistance = Math.Min(maxDistance, Math.Min(item.Width, item.Height) + options.Gap);
+
         var dx = candidate.X - item.AnchorX;
         var dy = candidate.Y - item.AnchorY;
-        return Math.Sqrt((dx * dx) + (dy * dy)) <= options.MaxDistanceFromAnchor;
+        return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)

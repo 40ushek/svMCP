@@ -50,6 +50,14 @@ public static class MarkGeometryHelper
 
             if (TryGetBaselineAxis(baseLinePlacing, out var placingAxisDx, out var placingAxisDy))
                 return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, placingAxisDx, placingAxisDy, "BaseLinePlacingAxisFallback", true);
+
+            // Last resort: derive axis from mark text rotation angle.
+            // In Tekla, baseline mark text is oriented parallel to the part axis.
+            var rad = mark.Attributes.Angle * Math.PI / 180.0;
+            var angleDx = Math.Cos(rad);
+            var angleDy = Math.Sin(rad);
+            if (Math.Abs(angleDx) >= 0.001 || Math.Abs(angleDy) >= 0.001)
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, angleDx, angleDy, "MarkAngleFallback", false);
         }
 
         return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBoxFallback", false);
