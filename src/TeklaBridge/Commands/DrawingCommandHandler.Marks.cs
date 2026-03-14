@@ -369,6 +369,8 @@ internal sealed partial class DrawingCommandHandler
                     maxX = m.ResolvedGeometry.MaxX,
                     maxY = m.ResolvedGeometry.MaxY,
                     angleDeg = m.ResolvedGeometry.AngleDeg,
+                    axisDx = m.ResolvedGeometry.AxisDx,
+                    axisDy = m.ResolvedGeometry.AxisDy,
                     corners = m.ResolvedGeometry.Corners
                 },
                 arrowHead = new

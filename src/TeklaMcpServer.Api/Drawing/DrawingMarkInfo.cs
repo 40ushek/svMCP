@@ -69,6 +69,8 @@ public sealed class MarkResolvedGeometryInfo
     public double MaxX { get; set; }
     public double MaxY { get; set; }
     public double AngleDeg { get; set; }
+    public double AxisDx { get; set; }
+    public double AxisDy { get; set; }
     public List<double[]> Corners { get; set; } = new();
 }
 

@@ -104,6 +104,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                             MaxX = Math.Round(geometry.MaxX, 2),
                             MaxY = Math.Round(geometry.MaxY, 2),
                             AngleDeg = Math.Round(geometry.AngleDeg, 2),
+                            AxisDx = Math.Round(geometry.AxisDx, 4),
+                            AxisDy = Math.Round(geometry.AxisDy, 4),
                             Corners = geometry.Corners
                                 .Select(c => new[] { Math.Round(c[0], 2), Math.Round(c[1], 2) })
                                 .ToList()
@@ -347,7 +349,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                         Gap = gap,
                         CurrentPositionWeight = 1.2,
                         AnchorDistanceWeight = 2.5,
-                        MaxDistanceFromAnchor = 140.0,
+                        MaxDistanceFromAnchor = 600.0,
                         CandidateDistanceMultipliers = new[] { 1.0, 2.0, 4.0, 8.0, 16.0 },
                         LeaderLengthWeight = 15.0,
                     });

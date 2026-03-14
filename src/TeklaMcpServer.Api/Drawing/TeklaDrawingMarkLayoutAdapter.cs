@@ -39,16 +39,18 @@ internal static class TeklaDrawingMarkLayoutAdapter
         var boundsMinY = -(viewHeight * 0.5) - 10.0;
         var boundsMaxY = +(viewHeight * 0.5) + 10.0;
         var markEnum = view.GetAllObjects(typeof(Mark));
-        var workPlaneHandler = model.GetWorkPlaneHandler();
-        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.DisplayCoordinateSystem));
 
-        try
+        // NOTE: Do NOT set the work plane to view.DisplayCoordinateSystem here.
+        // That 3D transformation shifts mark.GetAxisAlignedBoundingBox() into model-space
+        // coordinates, producing a center that is offset from the actual view-local 2D position
+        // (mark.InsertionPoint). ApplyPlacements moves marks by (placement - center), so a
+        // wrong center causes wrong displacement. TryGetRelatedPartAxisInView uses
+        // GetPartGeometryInView, which already returns view-local coordinates without a
+        // work-plane override. Leave the work plane at its default.
+        while (markEnum.MoveNext())
         {
-            while (markEnum.MoveNext())
-            {
-                if (markEnum.Current is not Mark mark)
-                    continue;
+            if (markEnum.Current is not Mark mark)
+                continue;
 
                 // CRITICAL: All mark polygon geometry for layout and collision detection
                 // MUST come from MarkGeometryHelper.Build(). Do NOT use Tekla's raw
@@ -70,9 +72,44 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var anchorLocalX = centerLocalX;
                 var anchorLocalY = centerLocalY;
                 var hasLeaderLine = false;
-                var hasAxis = geometry.HasAxis;
-                var axisDx = geometry.AxisDx;
-                var axisDy = geometry.AxisDy;
+
+                // For baseline marks, the layout axis MUST be in drawing (sheet) coordinates,
+                // not in view CS. MarkGeometryHelper.Build uses the part axis in view CS
+                // (from TryGetRelatedPartAxisInView), which can be rotated 90° relative to
+                // the drawing sheet if the view itself is rotated. Using view-CS axis for
+                // InsertionPoint movement causes marks to slide perpendicular to the beam.
+                //
+                // mark.Attributes.Angle is the text rotation angle in drawing coordinates.
+                // For a baseline mark the text is always oriented along the part axis in drawing
+                // space, so this angle gives the correct layout axis direction.
+                var hasAxis = false;
+                var axisDx = 0.0;
+                var axisDy = 0.0;
+                if (mark.Placing is BaseLinePlacing)
+                {
+                    // Use MarkGeometryHelper axis (from TryGetRelatedPartAxisInView → TryGetBaselineAxis → MarkAngleFallback).
+                    // This MUST match the polygon orientation used for collision detection.
+                    // mark.Attributes.Angle is the text rotation angle and may differ from the part axis
+                    // (e.g. 90° text on a horizontal beam), causing marks to move perpendicular to the overlap.
+                    if (geometry.HasAxis && (Math.Abs(geometry.AxisDx) >= 0.001 || Math.Abs(geometry.AxisDy) >= 0.001))
+                    {
+                        axisDx = geometry.AxisDx;
+                        axisDy = geometry.AxisDy;
+                        hasAxis = true;
+                    }
+                    else
+                    {
+                        var rad = mark.Attributes.Angle * Math.PI / 180.0;
+                        var angleDx = Math.Cos(rad);
+                        var angleDy = Math.Sin(rad);
+                        if (Math.Abs(angleDx) >= 0.001 || Math.Abs(angleDy) >= 0.001)
+                        {
+                            axisDx = angleDx;
+                            axisDy = angleDy;
+                            hasAxis = true;
+                        }
+                    }
+                }
 
                 if (mark.Placing is LeaderLinePlacing leaderLinePlacing)
                 {
@@ -107,11 +144,6 @@ internal static class TeklaDrawingMarkLayoutAdapter
                         BoundsMaxY    = boundsMaxY,
                     }
                 });
-            }
-        }
-        finally
-        {
-            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
         }
 
         return entries;
@@ -122,6 +154,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
         IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById)
     {
         var movedIds = new List<int>();
+        var debugLines = new System.Collections.Generic.List<string>();
 
         foreach (var entry in entries)
         {
@@ -131,12 +164,21 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var dx = placement.X - entry.CenterX;
             var dy = placement.Y - entry.CenterY;
+            var rawDx = dx;
+            var rawDy = dy;
             if (entry.Item.HasAxis && !entry.Item.HasLeaderLine)
             {
                 var distanceAlongAxis = (dx * entry.Item.AxisDx) + (dy * entry.Item.AxisDy);
                 dx = entry.Item.AxisDx * distanceAlongAxis;
                 dy = entry.Item.AxisDy * distanceAlongAxis;
             }
+
+            debugLines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "id={0} hasAxis={1} hasLeader={2} axisDx={3:F4} axisDy={4:F4} rawDx={5:F2} rawDy={6:F2} projDx={7:F2} projDy={8:F2} placementX={9:F2} placementY={10:F2} centerX={11:F2} centerY={12:F2}",
+                id, entry.Item.HasAxis, entry.Item.HasLeaderLine,
+                entry.Item.AxisDx, entry.Item.AxisDy,
+                rawDx, rawDy, dx, dy,
+                placement.X, placement.Y, entry.CenterX, entry.CenterY));
 
             if (Math.Abs(dx) < 0.001 && Math.Abs(dy) < 0.001)
                 continue;
@@ -168,6 +210,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
             entry.CenterY = actualCenterY;
             movedIds.Add(id);
         }
+
+        try { System.IO.File.WriteAllLines(@"C:\temp\apply_placements_debug.txt", debugLines); } catch { }
 
         return movedIds;
     }

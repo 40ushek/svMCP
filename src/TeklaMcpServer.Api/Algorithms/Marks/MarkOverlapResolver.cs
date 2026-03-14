@@ -430,11 +430,7 @@ public sealed class MarkOverlapResolver
 
     private static double GetEffectiveMaxDistance(MarkLayoutPlacement placement, MarkLayoutOptions options)
     {
-        var maxDistance = options.MaxDistanceFromAnchor;
-        if (!placement.HasLeaderLine && placement.HasAxis)
-            maxDistance = Math.Min(maxDistance, 30.0);
-
-        return maxDistance;
+        return options.MaxDistanceFromAnchor;
     }
 
     private static bool TryNudgeOneOverlappingMark(List<MarkLayoutPlacement> placements, MarkLayoutOptions options)

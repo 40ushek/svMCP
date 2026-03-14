@@ -25,7 +25,7 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var candidates = item.HasLeaderLine
             ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
             : item.HasAxis
-                ? BuildAxisCandidates(item, Math.Min(baseOffsetX, baseOffsetY), options.CandidateDistanceMultipliers)
+                ? BuildAxisCandidates(item, ComputeAxisBaseOffset(item, options), options.CandidateDistanceMultipliers)
             : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
         var filtered = candidates
@@ -182,15 +182,38 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 
         var maxDistance = options.MaxDistanceFromAnchor;
 
-        // Baseline marks (no leader) must stay on the part. Limit displacement to
-        // the mark's shorter dimension so the mark slides along the axis but
-        // doesn't drift further than one "mark width" from its anchor.
-        if (!item.HasLeaderLine)
+        // For non-axis, non-leader marks: limit drift to the mark's shorter dimension.
+        // For axis marks (baseline): movement is already constrained to the axis in
+        // ApplyPlacements, so only use MaxDistanceFromAnchor.
+        if (!item.HasLeaderLine && !item.HasAxis)
             maxDistance = Math.Min(maxDistance, Math.Min(item.Width, item.Height) + options.Gap);
 
         var dx = candidate.X - item.AnchorX;
         var dy = candidate.Y - item.AnchorY;
         return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
+    }
+
+    /// <summary>
+    /// For axis candidates, use the half-extent along the axis direction so marks are
+    /// spaced by their actual along-axis size, not the (usually smaller) perpendicular size.
+    /// </summary>
+    private static double ComputeAxisBaseOffset(MarkLayoutItem item, MarkLayoutOptions options)
+    {
+        double axisHalfExtent;
+        if (item.LocalCorners.Count >= 3)
+        {
+            axisHalfExtent = item.LocalCorners
+                .Select(c => Math.Abs((c[0] * item.AxisDx) + (c[1] * item.AxisDy)))
+                .DefaultIfEmpty(0.0)
+                .Max();
+        }
+        else
+        {
+            axisHalfExtent = (Math.Abs(item.AxisDx) * (item.Width / 2.0))
+                           + (Math.Abs(item.AxisDy) * (item.Height / 2.0));
+        }
+
+        return axisHalfExtent + options.CandidateOffset + options.Gap;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)
