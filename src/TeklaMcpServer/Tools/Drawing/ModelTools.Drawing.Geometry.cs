@@ -39,4 +39,25 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description(
+        "Draw developer debug overlay geometry into the active drawing. " +
+        "Payload is JSON with group, clearGroupFirst and shapes[]. " +
+        "Supported shape kinds: line, rectangle, polyline, polygon, text. " +
+        "Shapes can target a specific viewId or the sheet when omitted. " +
+        "Objects are tagged and can later be removed with clear_debug_overlay.")]
+    public static string DrawDebugOverlay(
+        [Description("JSON payload describing overlay shapes")] string overlayJson)
+    {
+        return RunBridge("draw_debug_overlay", overlayJson);
+    }
+
+    [McpServerTool, Description(
+        "Clear previously drawn developer debug overlay objects from the active drawing. " +
+        "If group is empty, clears all svMCP debug overlay objects.")]
+    public static string ClearDebugOverlay(
+        [Description("Optional overlay group name to clear")] string group = "")
+    {
+        return RunBridge("clear_debug_overlay", group ?? string.Empty);
+    }
 }

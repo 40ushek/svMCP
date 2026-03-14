@@ -66,6 +66,7 @@
 1. Для конфликтов `BaseLinePlacing` ↔ `LeaderLinePlacing` добавить resolver, который предпочитает двигать leader-line mark, а baseline оставляет на оси
 2. Для непараллельных baseline-меток добавить более точный fallback вместо общего 2D push
 3. Перевести baseline geometry с `StartPoint/EndPoint` на более надежную модель, основанную на `angle/rotationAngle` и визуальном overlay
+4. Использовать общий drawing debug overlay для отрисовки bbox, оси, anchor и displacement в режиме разработки
 
 ### Конвертация BaseLinePlacing → LeaderLinePlacing
 - Если два `BaseLinePlacing` не могут разойтись вдоль вектора (элемент короткий), конвертировать одну метку в `LeaderLinePlacing` с лидерной линией к середине элемента

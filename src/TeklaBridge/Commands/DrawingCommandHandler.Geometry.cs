@@ -13,6 +13,8 @@ internal sealed partial class DrawingCommandHandler
         TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
         TeklaDrawingPartsApi? partsApi = null;
         TeklaDrawingPartsApi GetPartsApi() => partsApi ??= new TeklaDrawingPartsApi(_model);
+        TeklaDrawingDebugOverlayApi? debugOverlayApi = null;
+        TeklaDrawingDebugOverlayApi GetDebugOverlayApi() => debugOverlayApi ??= new TeklaDrawingDebugOverlayApi();
 
         switch (command)
         {
@@ -27,6 +29,12 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_drawing_parts":
                 return HandleGetDrawingParts(GetPartsApi());
+
+            case "draw_debug_overlay":
+                return HandleDrawDebugOverlay(GetDebugOverlayApi(), args);
+
+            case "clear_debug_overlay":
+                return HandleClearDebugOverlay(GetDebugOverlayApi(), args);
 
             default:
                 return false;
@@ -98,6 +106,37 @@ internal sealed partial class DrawingCommandHandler
     {
         var result = api.GetDrawingParts();
         WriteGetDrawingPartsResult(result);
+        return true;
+    }
+
+    private bool HandleDrawDebugOverlay(TeklaDrawingDebugOverlayApi api, string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+        {
+            WriteError("draw_debug_overlay requires a JSON payload argument");
+            return true;
+        }
+
+        var result = api.DrawOverlay(args[1]);
+        WriteJson(new
+        {
+            group = result.Group,
+            clearedCount = result.ClearedCount,
+            createdCount = result.CreatedCount,
+            createdIds = result.CreatedIds
+        });
+        return true;
+    }
+
+    private bool HandleClearDebugOverlay(TeklaDrawingDebugOverlayApi api, string[] args)
+    {
+        var group = args.Length >= 2 ? args[1] : string.Empty;
+        var result = api.ClearOverlay(group);
+        WriteJson(new
+        {
+            group = result.Group,
+            clearedCount = result.ClearedCount
+        });
         return true;
     }
 

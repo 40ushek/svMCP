@@ -57,6 +57,8 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_all_parts_geometry_in_view":
             case "get_grid_axes":
             case "get_drawing_parts":
+            case "draw_debug_overlay":
+            case "clear_debug_overlay":
                 return TryHandleGeometryCommands(command, args);
 
             case "arrange_marks":

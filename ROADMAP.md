@@ -33,6 +33,7 @@
 | `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` | Размеры |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
+| `draw_debug_overlay` / `clear_debug_overlay` | Dev-only overlay слой: линии, прямоугольники, полилинии, полигоны, текст |
 
 **Архитектура**
 - Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
@@ -55,6 +56,7 @@
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)
 - COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
+- Для `BaseLinePlacing` перевести collision geometry с `StartPoint/EndPoint` на более надежную модель, используя debug overlay и фактическую визуальную ориентацию текста
 
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок
