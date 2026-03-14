@@ -20,6 +20,8 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 
         var candidates = item.HasLeaderLine
             ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
+            : item.HasAxis
+                ? BuildAxisCandidates(item, Math.Max(baseOffsetX, baseOffsetY), options.CandidateDistanceMultipliers)
             : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
         var filtered = item.HasBounds
@@ -72,6 +74,37 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
                     Priority = priority++
                 });
             }
+        }
+
+        return result;
+    }
+
+    private static List<MarkCandidate> BuildAxisCandidates(
+        MarkLayoutItem item,
+        double baseOffset,
+        double[] multipliers)
+    {
+        var result = new List<MarkCandidate>
+        {
+            new() { X = item.CurrentX, Y = item.CurrentY, Priority = 0 }
+        };
+
+        var priority = 1;
+        foreach (var multiplier in multipliers.OrderBy(m => m))
+        {
+            var distance = Math.Max(baseOffset * multiplier * 0.6, 2.0);
+            result.Add(new MarkCandidate
+            {
+                X = item.CurrentX + (item.AxisDx * distance),
+                Y = item.CurrentY + (item.AxisDy * distance),
+                Priority = priority++
+            });
+            result.Add(new MarkCandidate
+            {
+                X = item.CurrentX - (item.AxisDx * distance),
+                Y = item.CurrentY - (item.AxisDy * distance),
+                Priority = priority++
+            });
         }
 
         return result;

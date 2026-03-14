@@ -8,6 +8,36 @@ public sealed class MarkPropertyValue
     public string Value { get; set; } = string.Empty;
 }
 
+public sealed class MarkArrowheadInfo
+{
+    public string Type { get; set; } = string.Empty;
+    public string Position { get; set; } = string.Empty;
+    public double Height { get; set; }
+    public double Width { get; set; }
+}
+
+public sealed class MarkLeaderLineInfo
+{
+    public string Type { get; set; } = string.Empty;
+    public double StartX { get; set; }
+    public double StartY { get; set; }
+    public double EndX { get; set; }
+    public double EndY { get; set; }
+    public List<double[]> ElbowPoints { get; set; } = new();
+}
+
+public sealed class MarkAxisInfo
+{
+    public double StartX { get; set; }
+    public double StartY { get; set; }
+    public double EndX { get; set; }
+    public double EndY { get; set; }
+    public double Dx { get; set; }
+    public double Dy { get; set; }
+    public double Length { get; set; }
+    public double AngleDeg { get; set; }
+}
+
 public sealed class DrawingMarkInfo
 {
     public int                     Id         { get; set; }
@@ -19,9 +49,17 @@ public sealed class DrawingMarkInfo
     public double                  BboxMinY   { get; set; }
     public double                  BboxMaxX    { get; set; }
     public double                  BboxMaxY    { get; set; }
+    public double                  CenterX     { get; set; }
+    public double                  CenterY     { get; set; }
     public string                  PlacingType  { get; set; } = string.Empty;
     public double                  PlacingX     { get; set; }
     public double                  PlacingY     { get; set; }
+    public double                  Angle        { get; set; }
+    public double                  RotationAngle { get; set; }
+    public string                  TextAlignment { get; set; } = string.Empty;
+    public MarkAxisInfo?           Axis         { get; set; }
+    public MarkArrowheadInfo       ArrowHead    { get; set; } = new();
+    public List<MarkLeaderLineInfo> LeaderLines { get; set; } = new();
     public List<MarkPropertyValue> Properties  { get; set; } = new();
 }
 

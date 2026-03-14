@@ -123,6 +123,9 @@ public sealed class MarkLayoutEngine
             AnchorX = item.AnchorX,
             AnchorY = item.AnchorY,
             HasLeaderLine = item.HasLeaderLine,
+            HasAxis = item.HasAxis,
+            AxisDx = item.AxisDx,
+            AxisDy = item.AxisDy,
             CanMove = item.CanMove
         };
     }

@@ -18,6 +18,12 @@ public sealed class MarkLayoutItem
 
     public bool HasLeaderLine { get; set; }
 
+    public bool HasAxis { get; set; }
+
+    public double AxisDx { get; set; }
+
+    public double AxisDy { get; set; }
+
     public bool CanMove { get; set; } = true;
 
     // Optional view bounds in sheet coordinates — candidates outside will be rejected.

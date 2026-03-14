@@ -169,10 +169,42 @@ internal sealed partial class DrawingCommandHandler
                 modelId = m.ModelId,
                 insertionX = m.InsertionX,
                 insertionY = m.InsertionY,
+                centerX = m.CenterX,
+                centerY = m.CenterY,
                 bbox = new { minX = m.BboxMinX, minY = m.BboxMinY, maxX = m.BboxMaxX, maxY = m.BboxMaxY },
                 placingType = m.PlacingType,
                 placingX = m.PlacingX,
                 placingY = m.PlacingY,
+                angle = m.Angle,
+                rotationAngle = m.RotationAngle,
+                textAlignment = m.TextAlignment,
+                axis = m.Axis == null ? null : new
+                {
+                    startX = m.Axis.StartX,
+                    startY = m.Axis.StartY,
+                    endX = m.Axis.EndX,
+                    endY = m.Axis.EndY,
+                    dx = m.Axis.Dx,
+                    dy = m.Axis.Dy,
+                    length = m.Axis.Length,
+                    angleDeg = m.Axis.AngleDeg
+                },
+                arrowHead = new
+                {
+                    type = m.ArrowHead.Type,
+                    position = m.ArrowHead.Position,
+                    height = m.ArrowHead.Height,
+                    width = m.ArrowHead.Width
+                },
+                leaderLines = m.LeaderLines.Select(l => new
+                {
+                    type = l.Type,
+                    startX = l.StartX,
+                    startY = l.StartY,
+                    endX = l.EndX,
+                    endY = l.EndY,
+                    elbowPoints = l.ElbowPoints
+                }),
                 properties = m.Properties.Select(p => new { name = p.Name, value = p.Value })
             })
         });

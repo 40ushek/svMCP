@@ -18,5 +18,11 @@ public sealed class MarkLayoutPlacement
 
     public bool HasLeaderLine { get; set; }
 
+    public bool HasAxis { get; set; }
+
+    public double AxisDx { get; set; }
+
+    public double AxisDy { get; set; }
+
     public bool CanMove { get; set; }
 }

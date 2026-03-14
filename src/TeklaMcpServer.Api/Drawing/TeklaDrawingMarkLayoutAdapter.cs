@@ -49,12 +49,27 @@ internal static class TeklaDrawingMarkLayoutAdapter
             var anchorLocalX = centerLocalX;
             var anchorLocalY = centerLocalY;
             var hasLeaderLine = false;
+            var hasAxis = false;
+            var axisDx = 0.0;
+            var axisDy = 0.0;
 
             if (mark.Placing is LeaderLinePlacing leaderLinePlacing)
             {
                 anchorLocalX = leaderLinePlacing.StartPoint.X;
                 anchorLocalY = leaderLinePlacing.StartPoint.Y;
                 hasLeaderLine = true;
+            }
+            else if (mark.Placing is BaseLinePlacing baseLinePlacing)
+            {
+                axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
+                axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
+                var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+                if (axisLength >= 0.001)
+                {
+                    axisDx /= axisLength;
+                    axisDy /= axisLength;
+                    hasAxis = true;
+                }
             }
 
             entries.Add(new TeklaDrawingMarkLayoutEntry
@@ -73,6 +88,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
                     Width         = widthLocal,
                     Height        = heightLocal,
                     HasLeaderLine = hasLeaderLine,
+                    HasAxis       = hasAxis,
+                    AxisDx        = axisDx,
+                    AxisDy        = axisDy,
                     BoundsMinX    = boundsMinX,
                     BoundsMaxX    = boundsMaxX,
                     BoundsMinY    = boundsMinY,
@@ -98,6 +116,13 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var dx = placement.X - entry.CenterX;
             var dy = placement.Y - entry.CenterY;
+            if (entry.Item.HasAxis && !entry.Item.HasLeaderLine)
+            {
+                var distanceAlongAxis = (dx * entry.Item.AxisDx) + (dy * entry.Item.AxisDy);
+                dx = entry.Item.AxisDx * distanceAlongAxis;
+                dy = entry.Item.AxisDy * distanceAlongAxis;
+            }
+
             if (Math.Abs(dx) < 0.001 && Math.Abs(dy) < 0.001)
                 continue;
 

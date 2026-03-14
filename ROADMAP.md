@@ -28,7 +28,7 @@
 | `get_drawing_context` / `select_drawing_objects` / `filter_drawing_objects` | Контекст и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
-| `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки |
+| `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` | Расстановка марок |
 | `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` | Размеры |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
@@ -37,6 +37,10 @@
 **Архитектура**
 - Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
 - TS2021 + TS2025 поддержка
+
+**Геометрические утилиты**
+- `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется)
+- `FarthestPointPair` — диаметр множества точек (две самые удалённые)
 
 ---
 
@@ -53,8 +57,6 @@
 - COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
 
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
-- `ConvexHull` — Graham scan по 2D точкам (используется `Tekla.Structures.Geometry3d.Point`, Z игнорируется)
-- `FarthestPointPair` — диаметр множества точек (две самые удалённые)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок
 
 ### Прочее

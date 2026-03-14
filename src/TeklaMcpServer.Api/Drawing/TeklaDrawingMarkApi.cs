@@ -59,10 +59,43 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                         BboxMinY   = Math.Round(bbox.MinPoint.Y, 1),
                         BboxMaxX    = Math.Round(bbox.MaxPoint.X, 1),
                         BboxMaxY    = Math.Round(bbox.MaxPoint.Y, 1),
+                        CenterX    = Math.Round((bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0, 2),
+                        CenterY    = Math.Round((bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0, 2),
                         PlacingType = mark.Placing?.GetType().Name ?? "null",
                         PlacingX    = mark.Placing is LeaderLinePlacing lp2 ? Math.Round(lp2.StartPoint.X, 2) : 0,
-                        PlacingY    = mark.Placing is LeaderLinePlacing lp3 ? Math.Round(lp3.StartPoint.Y, 2) : 0
+                        PlacingY    = mark.Placing is LeaderLinePlacing lp3 ? Math.Round(lp3.StartPoint.Y, 2) : 0,
+                        Angle      = Math.Round(mark.Attributes.Angle, 2),
+                        RotationAngle = Math.Round(mark.Attributes.RotationAngle, 2),
+                        TextAlignment = mark.Attributes.TextAlignment.ToString(),
+                        ArrowHead   = new MarkArrowheadInfo
+                        {
+                            Type = mark.Attributes.ArrowHead.Head.ToString(),
+                            Position = mark.Attributes.ArrowHead.ArrowPosition.ToString(),
+                            Height = Math.Round(mark.Attributes.ArrowHead.Height, 2),
+                            Width = Math.Round(mark.Attributes.ArrowHead.Width, 2)
+                        }
                     };
+
+                    if (mark.Placing is BaseLinePlacing baseLinePlacing)
+                    {
+                        var axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
+                        var axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
+                        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+                        var normalizedDx = axisLength >= 0.001 ? axisDx / axisLength : 0.0;
+                        var normalizedDy = axisLength >= 0.001 ? axisDy / axisLength : 0.0;
+
+                        info.Axis = new MarkAxisInfo
+                        {
+                            StartX = Math.Round(baseLinePlacing.StartPoint.X, 2),
+                            StartY = Math.Round(baseLinePlacing.StartPoint.Y, 2),
+                            EndX = Math.Round(baseLinePlacing.EndPoint.X, 2),
+                            EndY = Math.Round(baseLinePlacing.EndPoint.Y, 2),
+                            Dx = Math.Round(normalizedDx, 4),
+                            Dy = Math.Round(normalizedDy, 4),
+                            Length = Math.Round(axisLength, 2),
+                            AngleDeg = Math.Round(Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI), 2)
+                        };
+                    }
 
                     // Resolve model object ID from first related drawing object
                     var related = mark.GetRelatedObjects();
@@ -81,6 +114,33 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     {
                         if (contentEnum.Current is PropertyElement prop)
                             info.Properties.Add(new MarkPropertyValue { Name = prop.Name, Value = prop.Value });
+                    }
+
+                    var children = mark.GetObjects();
+                    while (children.MoveNext())
+                    {
+                        if (children.Current is not LeaderLine leaderLine)
+                            continue;
+
+                        var leaderInfo = new MarkLeaderLineInfo
+                        {
+                            Type = leaderLine.LeaderLineType.ToString(),
+                            StartX = Math.Round(leaderLine.StartPoint.X, 2),
+                            StartY = Math.Round(leaderLine.StartPoint.Y, 2),
+                            EndX = Math.Round(leaderLine.EndPoint.X, 2),
+                            EndY = Math.Round(leaderLine.EndPoint.Y, 2)
+                        };
+
+                        foreach (Point elbowPoint in leaderLine.ElbowPoints)
+                        {
+                            leaderInfo.ElbowPoints.Add(new[]
+                            {
+                                Math.Round(elbowPoint.X, 2),
+                                Math.Round(elbowPoint.Y, 2)
+                            });
+                        }
+
+                        info.LeaderLines.Add(leaderInfo);
                     }
 
                     marks.Add(info);
@@ -136,6 +196,9 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     AnchorX = e.Item.AnchorX,
                     AnchorY = e.Item.AnchorY,
                     HasLeaderLine = e.Item.HasLeaderLine,
+                    HasAxis = e.Item.HasAxis,
+                    AxisDx = e.Item.AxisDx,
+                    AxisDy = e.Item.AxisDy,
                     CanMove = true
                 }).ToList();
 
