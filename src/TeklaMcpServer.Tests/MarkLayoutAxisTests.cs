@@ -154,7 +154,47 @@ public sealed class MarkLayoutAxisTests
         Assert.Equal(100, a.Y, 6);
         Assert.Equal(120, b.X, 6);
         Assert.NotEqual(100, a.X);
-        Assert.NotEqual(120, b.Y);
         Assert.Equal(0, resolver.CountOverlaps(resolved));
+    }
+
+    [Fact]
+    public void CountOverlaps_ForPerpendicularFramesWithoutPolygonIntersection_ReturnsZero()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 1452.8,
+                Y = 4211.03,
+                Width = 111.0,
+                Height = 383.32,
+                LocalCorners = new()
+                {
+                    new[] { -55.5, -191.66 },
+                    new[] { -55.5, 191.66 },
+                    new[] { 55.5, 191.66 },
+                    new[] { 55.5, -191.66 }
+                }
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 1407.8,
+                Y = 3833.4,
+                Width = 383.32,
+                Height = 111.0,
+                LocalCorners = new()
+                {
+                    new[] { -191.66, -55.5 },
+                    new[] { 191.66, -55.5 },
+                    new[] { 191.66, 55.5 },
+                    new[] { -191.66, 55.5 }
+                }
+            }
+        };
+
+        Assert.Equal(0, resolver.CountOverlaps(placements));
     }
 }

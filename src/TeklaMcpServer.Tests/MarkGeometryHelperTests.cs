@@ -52,4 +52,28 @@ public sealed class MarkGeometryHelperTests
 
         Assert.True(MarkGeometryHelper.PolygonsIntersect(first, second));
     }
+
+    [Fact]
+    public void TryGetMinimumTranslationVector_ForCrossingBoxes_ReturnsPositiveDepth()
+    {
+        var first = new List<double[]>
+        {
+            new[] { 0.0, 0.0 },
+            new[] { 4.0, 0.0 },
+            new[] { 4.0, 2.0 },
+            new[] { 0.0, 2.0 }
+        };
+
+        var second = new List<double[]>
+        {
+            new[] { 3.0, 1.0 },
+            new[] { 7.0, 1.0 },
+            new[] { 7.0, 3.0 },
+            new[] { 3.0, 3.0 }
+        };
+
+        Assert.True(MarkGeometryHelper.TryGetMinimumTranslationVector(first, second, out var axisX, out var axisY, out var depth));
+        Assert.True(depth > 0);
+        Assert.True(System.Math.Abs(axisX) > 0 || System.Math.Abs(axisY) > 0);
+    }
 }

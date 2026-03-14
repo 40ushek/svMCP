@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class MarkLayoutPlacement
@@ -25,4 +27,6 @@ public sealed class MarkLayoutPlacement
     public double AxisDy { get; set; }
 
     public bool CanMove { get; set; }
+
+    public List<double[]> LocalCorners { get; set; } = new();
 }

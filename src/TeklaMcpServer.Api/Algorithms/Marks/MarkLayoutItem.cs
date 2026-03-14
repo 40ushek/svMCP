@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class MarkLayoutItem
@@ -25,6 +27,8 @@ public sealed class MarkLayoutItem
     public double AxisDy { get; set; }
 
     public bool CanMove { get; set; } = true;
+
+    public List<double[]> LocalCorners { get; set; } = new();
 
     // Optional view bounds in sheet coordinates — candidates outside will be rejected.
     // If all are 0 (default) bounds are not enforced.

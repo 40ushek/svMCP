@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -35,6 +36,36 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         MarkLayoutPlacement placement,
         MarkLayoutOptions options)
     {
+        if (item.LocalCorners.Count >= 3 && placement.LocalCorners.Count >= 3)
+        {
+            var candidatePolygon = MarkGeometryHelper.TranslateLocalCorners(item.LocalCorners, candidate.X, candidate.Y);
+            var placementPolygon = MarkGeometryHelper.TranslateLocalCorners(placement.LocalCorners, placement.X, placement.Y);
+            if (!MarkGeometryHelper.PolygonsIntersect(candidatePolygon, placementPolygon))
+            {
+                MarkGeometryHelper.GetPolygonBounds(candidatePolygon, out var candidateMinX, out var candidateMinY, out var candidateMaxX, out var candidateMaxY);
+                MarkGeometryHelper.GetPolygonBounds(placementPolygon, out var placementMinX, out var placementMinY, out var placementMaxX, out var placementMaxY);
+
+                if (!MarkGeometryHelper.RectanglesOverlap(
+                        candidateMinX - (options.Gap / 2.0),
+                        candidateMinY - (options.Gap / 2.0),
+                        candidateMaxX + (options.Gap / 2.0),
+                        candidateMaxY + (options.Gap / 2.0),
+                        placementMinX - (options.Gap / 2.0),
+                        placementMinY - (options.Gap / 2.0),
+                        placementMaxX + (options.Gap / 2.0),
+                        placementMaxY + (options.Gap / 2.0)))
+                    return 0;
+
+                var shortfallX = Math.Min(candidateMaxX + options.Gap, placementMaxX + options.Gap)
+                    - Math.Max(candidateMinX - options.Gap, placementMinX - options.Gap);
+                var shortfallY = Math.Min(candidateMaxY + options.Gap, placementMaxY + options.Gap)
+                    - Math.Max(candidateMinY - options.Gap, placementMinY - options.Gap);
+                return Math.Max(shortfallX, 0) + Math.Max(shortfallY, 0);
+            }
+
+            return options.OverlapPenalty;
+        }
+
         var halfWidthA = item.Width / 2.0;
         var halfHeightA = item.Height / 2.0;
         var halfWidthB = placement.Width / 2.0;

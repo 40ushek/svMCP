@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -99,6 +100,28 @@ public sealed class MarkLayoutEngine
 
     private static bool Intersects(MarkLayoutItem a, MarkLayoutItem b, double gap)
     {
+        if (a.LocalCorners.Count >= 3 && b.LocalCorners.Count >= 3)
+        {
+            var aPolygon = MarkGeometryHelper.TranslateLocalCorners(a.LocalCorners, a.CurrentX, a.CurrentY);
+            var bPolygon = MarkGeometryHelper.TranslateLocalCorners(b.LocalCorners, b.CurrentX, b.CurrentY);
+
+            if (MarkGeometryHelper.PolygonsIntersect(aPolygon, bPolygon))
+                return true;
+
+            MarkGeometryHelper.GetPolygonBounds(aPolygon, out var aMinX, out var aMinY, out var aMaxX, out var aMaxY);
+            MarkGeometryHelper.GetPolygonBounds(bPolygon, out var bMinX, out var bMinY, out var bMaxX, out var bMaxY);
+
+            return MarkGeometryHelper.RectanglesOverlap(
+                aMinX - (gap / 2.0),
+                aMinY - (gap / 2.0),
+                aMaxX + (gap / 2.0),
+                aMaxY + (gap / 2.0),
+                bMinX - (gap / 2.0),
+                bMinY - (gap / 2.0),
+                bMaxX + (gap / 2.0),
+                bMaxY + (gap / 2.0));
+        }
+
         var halfWidthA = (a.Width / 2.0) + (gap / 2.0);
         var halfHeightA = (a.Height / 2.0) + (gap / 2.0);
         var halfWidthB = (b.Width / 2.0) + (gap / 2.0);
@@ -127,7 +150,10 @@ public sealed class MarkLayoutEngine
             HasAxis = item.HasAxis,
             AxisDx = item.AxisDx,
             AxisDy = item.AxisDy,
-            CanMove = item.CanMove
+            CanMove = item.CanMove,
+            LocalCorners = item.LocalCorners
+                .Select(c => new[] { c[0], c[1] })
+                .ToList()
         };
     }
 }

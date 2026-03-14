@@ -255,7 +255,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     HasAxis = e.Item.HasAxis,
                     AxisDx = e.Item.AxisDx,
                     AxisDy = e.Item.AxisDy,
-                    CanMove = true
+                    CanMove = true,
+                    LocalCorners = e.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
                 }).ToList();
 
                 var resolver = new MarkOverlapResolver();
@@ -263,10 +264,8 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                 var resolvedById = resolved.ToDictionary(x => x.Id);
 
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById));
-                movedIds.AddRange(ResolveRemainingOverlapsLegacy(markEntries, margin, out var legacyIterations, out var legacyRemaining));
                 totalIterations += iterations;
-                totalIterations += legacyIterations;
-                totalRemainingOverlaps += legacyRemaining;
+                totalRemainingOverlaps += resolver.CountOverlaps(resolved);
             }
 
             movedIds = movedIds.Distinct().ToList();

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
@@ -54,6 +55,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var centerLocalY = geometry.CenterY;
                 var widthLocal = geometry.MaxX - geometry.MinX;
                 var heightLocal = geometry.MaxY - geometry.MinY;
+                var localCorners = geometry.Corners
+                    .Select(c => new[] { c[0] - centerLocalX, c[1] - centerLocalY })
+                    .ToList();
                 var anchorLocalX = centerLocalX;
                 var anchorLocalY = centerLocalY;
                 var hasLeaderLine = false;
@@ -87,6 +91,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                         HasAxis       = hasAxis,
                         AxisDx        = axisDx,
                         AxisDy        = axisDy,
+                        LocalCorners  = localCorners,
                         BoundsMinX    = boundsMinX,
                         BoundsMaxX    = boundsMaxX,
                         BoundsMinY    = boundsMinY,

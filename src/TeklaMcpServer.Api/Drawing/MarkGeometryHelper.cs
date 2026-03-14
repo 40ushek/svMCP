@@ -43,15 +43,6 @@ public static class MarkGeometryHelper
         if (mark.Placing is BaseLinePlacing && TryGetRelatedPartAxisInView(mark, model, viewId, out var axisDx, out var axisDy))
             return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, axisDx, axisDy, "RelatedPartAxis", true);
 
-        if (mark.Placing is BaseLinePlacing baseLinePlacing)
-        {
-            var rawDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
-            var rawDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
-            var axisLength = Math.Sqrt((rawDx * rawDx) + (rawDy * rawDy));
-            if (axisLength >= 0.001)
-                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, rawDx / axisLength, rawDy / axisLength, "BaseLinePlacingAxis", true);
-        }
-
         return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBoxFallback", false);
     }
 
@@ -192,6 +183,65 @@ public static class MarkGeometryHelper
         return !HasSeparatingAxis(first, second) && !HasSeparatingAxis(second, first);
     }
 
+    public static bool TryGetMinimumTranslationVector(
+        IReadOnlyList<double[]> first,
+        IReadOnlyList<double[]> second,
+        out double axisX,
+        out double axisY,
+        out double depth)
+    {
+        axisX = 0.0;
+        axisY = 0.0;
+        depth = 0.0;
+
+        if (first.Count < 3 || second.Count < 3)
+            return false;
+
+        var smallestOverlap = double.MaxValue;
+        if (!TryAccumulateMinimumOverlapAxis(first, second, ref smallestOverlap, ref axisX, ref axisY) ||
+            !TryAccumulateMinimumOverlapAxis(second, first, ref smallestOverlap, ref axisX, ref axisY))
+            return false;
+
+        var centerDeltaX = GetCenterX(second) - GetCenterX(first);
+        var centerDeltaY = GetCenterY(second) - GetCenterY(first);
+        if (Dot(centerDeltaX, centerDeltaY, axisX, axisY) < 0)
+        {
+            axisX = -axisX;
+            axisY = -axisY;
+        }
+
+        depth = smallestOverlap;
+        return true;
+    }
+
+    public static List<double[]> TranslateLocalCorners(IReadOnlyList<double[]> localCorners, double centerX, double centerY)
+    {
+        return localCorners
+            .Select(c => new[] { centerX + c[0], centerY + c[1] })
+            .ToList();
+    }
+
+    public static void GetPolygonBounds(
+        IReadOnlyList<double[]> polygon,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        minX = polygon[0][0];
+        maxX = polygon[0][0];
+        minY = polygon[0][1];
+        maxY = polygon[0][1];
+
+        foreach (var point in polygon.Skip(1))
+        {
+            if (point[0] < minX) minX = point[0];
+            if (point[0] > maxX) maxX = point[0];
+            if (point[1] < minY) minY = point[1];
+            if (point[1] > maxY) maxY = point[1];
+        }
+    }
+
     public static bool RectanglesOverlap(
         double firstMinX,
         double firstMinY,
@@ -232,6 +282,50 @@ public static class MarkGeometryHelper
         return false;
     }
 
+    private static bool TryAccumulateMinimumOverlapAxis(
+        IReadOnlyList<double[]> polygonA,
+        IReadOnlyList<double[]> polygonB,
+        ref double smallestOverlap,
+        ref double axisX,
+        ref double axisY)
+    {
+        for (var i = 0; i < polygonA.Count; i++)
+        {
+            var current = polygonA[i];
+            var next = polygonA[(i + 1) % polygonA.Count];
+            var edgeX = next[0] - current[0];
+            var edgeY = next[1] - current[1];
+
+            if (Math.Abs(edgeX) < Epsilon && Math.Abs(edgeY) < Epsilon)
+                continue;
+
+            var candidateAxisX = -edgeY;
+            var candidateAxisY = edgeX;
+            var axisLength = Math.Sqrt((candidateAxisX * candidateAxisX) + (candidateAxisY * candidateAxisY));
+            if (axisLength < Epsilon)
+                continue;
+
+            candidateAxisX /= axisLength;
+            candidateAxisY /= axisLength;
+
+            ProjectPolygon(polygonA, candidateAxisX, candidateAxisY, out var aMin, out var aMax);
+            ProjectPolygon(polygonB, candidateAxisX, candidateAxisY, out var bMin, out var bMax);
+
+            var overlap = Math.Min(aMax, bMax) - Math.Max(aMin, bMin);
+            if (overlap <= Epsilon)
+                return false;
+
+            if (overlap < smallestOverlap)
+            {
+                smallestOverlap = overlap;
+                axisX = candidateAxisX;
+                axisY = candidateAxisY;
+            }
+        }
+
+        return true;
+    }
+
     private static void ProjectPolygon(
         IReadOnlyList<double[]> polygon,
         double axisX,
@@ -252,6 +346,10 @@ public static class MarkGeometryHelper
                 max = projection;
         }
     }
+
+    private static double GetCenterX(IReadOnlyList<double[]> polygon) => polygon.Average(point => point[0]);
+
+    private static double GetCenterY(IReadOnlyList<double[]> polygon) => polygon.Average(point => point[1]);
 
     private static double Dot(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 }
