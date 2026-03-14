@@ -68,7 +68,6 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "delete_all_marks":
             case "resolve_mark_overlaps":
             case "get_drawing_marks":
-            case "test_move_selected_mark":
                 return TryHandleMarkCommands(command, args);
 
             default:

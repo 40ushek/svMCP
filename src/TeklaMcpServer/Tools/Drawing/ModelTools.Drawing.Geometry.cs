@@ -54,8 +54,8 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
-        "Draw a developer debug geometry overlay for the currently selected drawing mark using resolved mark geometry. " +
-        "Requires exactly one selected Mark. Draws a green polygon around the mark, a yellow center cross, and for axis-based marks also a cyan axis line.")]
+        "Draw a developer debug geometry overlay for all currently selected drawing marks using resolved mark geometry. " +
+        "Requires one or more selected Marks. For each mark draws a green polygon, a yellow center cross, and for axis-based marks also a cyan axis line.")]
     public static string DrawSelectedMarkPartAxisGeometry()
     {
         return RunBridge("draw_selected_mark_part_axis_geometry");

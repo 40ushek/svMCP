@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Linq;
-using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaBridge.Commands;
@@ -32,9 +29,6 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_drawing_marks":
                 return HandleGetDrawingMarks(GetMarkApi(), args);
-
-            case "test_move_selected_mark":
-                return HandleTestMoveSelectedMark(args);
 
             default:
                 return false;
@@ -139,70 +133,6 @@ internal sealed partial class DrawingCommandHandler
             iterations = result.Iterations,
             remainingOverlaps = result.RemainingOverlaps
         });
-    }
-
-    private bool HandleTestMoveSelectedMark(string[] args)
-    {
-        if (!EnsureActiveDrawing())
-            return true;
-
-        var moveDelta = 50.0;
-        if (args.Length >= 2 && double.TryParse(args[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
-            moveDelta = parsed;
-
-        var drawingHandler = new DrawingHandler();
-        var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
-        Mark? mark = null;
-        while (selected.MoveNext())
-        {
-            if (selected.Current is Mark m) { mark = m; break; }
-        }
-
-        if (mark == null)
-        {
-            WriteError("No mark selected");
-            return true;
-        }
-
-        var geometry = MarkGeometryHelper.Build(mark, _model);
-        var beforeInsX = mark.InsertionPoint.X;
-        var beforeInsY = mark.InsertionPoint.Y;
-        var beforeCenterX = geometry.CenterX;
-        var beforeCenterY = geometry.CenterY;
-
-        double dx = 0, dy = moveDelta;
-        if (geometry.HasAxis)
-        {
-            dx = geometry.AxisDx * moveDelta;
-            dy = geometry.AxisDy * moveDelta;
-        }
-
-        var insertionPoint = mark.InsertionPoint;
-        insertionPoint.X += dx;
-        insertionPoint.Y += dy;
-        mark.InsertionPoint = insertionPoint;
-        var modifyResult = mark.Modify();
-
-        var afterInsX = mark.InsertionPoint.X;
-        var afterInsY = mark.InsertionPoint.Y;
-        var afterGeometry = MarkGeometryHelper.Build(mark, _model);
-
-        WriteJson(new
-        {
-            markId = -1,
-            placingType = mark.Placing?.GetType().Name,
-            hasAxis = geometry.HasAxis,
-            axisDx = Math.Round(geometry.AxisDx, 4),
-            axisDy = Math.Round(geometry.AxisDy, 4),
-            moveDx = Math.Round(dx, 3),
-            moveDy = Math.Round(dy, 3),
-            before = new { insX = beforeInsX, insY = beforeInsY, centerX = beforeCenterX, centerY = beforeCenterY },
-            modifyResult,
-            after = new { insX = afterInsX, insY = afterInsY, centerX = afterGeometry.CenterX, centerY = afterGeometry.CenterY },
-            insertionChanged = Math.Abs(afterInsX - beforeInsX) > 0.05 || Math.Abs(afterInsY - beforeInsY) > 0.05,
-            centerChanged = Math.Abs(afterGeometry.CenterX - beforeCenterX) > 0.05 || Math.Abs(afterGeometry.CenterY - beforeCenterY) > 0.05
-        });
-        return true;
     }
 
     private void WriteCreatePartMarksResult(CreateMarksResult result)
