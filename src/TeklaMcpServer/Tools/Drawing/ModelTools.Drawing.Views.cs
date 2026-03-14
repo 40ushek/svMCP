@@ -203,6 +203,38 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("One command for mark collision cleanup: runs arrange_marks, then resolve_mark_overlaps repeatedly until no overlaps remain or maxPasses is reached.")]
+    public static string ArrangeMarksNoCollisions(
+        [Description("Minimum gap for arrange_marks (mm). Default: 2.")] double gap = 2.0,
+        [Description("Margin for resolve_mark_overlaps (mm). Default: 2.")] double margin = 2.0,
+        [Description("Maximum resolve passes after arrange. Default: 3.")] int maxPasses = 3)
+    {
+        if (gap < 0)
+            return "Error: 'gap' must be >= 0.";
+        if (margin < 0)
+            return "Error: 'margin' must be >= 0.";
+        if (maxPasses < 1)
+            return "Error: 'maxPasses' must be >= 1.";
+
+        var json = RunBridge(
+            "arrange_marks_no_collisions",
+            gap.ToString(CultureInfo.InvariantCulture),
+            margin.ToString(CultureInfo.InvariantCulture),
+            maxPasses.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Delete all marks on the active drawing. Use before recreating marks to start fresh.")]
     public static string DeleteAllMarks()
     {

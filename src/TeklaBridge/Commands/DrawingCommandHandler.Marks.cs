@@ -13,6 +13,9 @@ internal sealed partial class DrawingCommandHandler
 
         switch (command)
         {
+            case "arrange_marks_no_collisions":
+                return HandleArrangeMarksNoCollisions(GetMarkApi(), args);
+
             case "arrange_marks":
                 return HandleArrangeMarks(GetMarkApi(), args);
 
@@ -34,6 +37,90 @@ internal sealed partial class DrawingCommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool HandleArrangeMarksNoCollisions(TeklaDrawingMarkApi api, string[] args)
+    {
+        var gap = 2.0;
+        var margin = 2.0;
+        var maxPasses = 3;
+
+        if (args.Length > 1 &&
+            (!double.TryParse(args[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out gap) || gap < 0))
+        {
+            WriteError("gap must be a number >= 0");
+            return true;
+        }
+
+        if (args.Length > 2 &&
+            (!double.TryParse(args[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out margin) || margin < 0))
+        {
+            WriteError("margin must be a number >= 0");
+            return true;
+        }
+
+        if (args.Length > 3 &&
+            (!int.TryParse(args[3], out maxPasses) || maxPasses < 1))
+        {
+            WriteError("maxPasses must be an integer >= 1");
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+            return true;
+
+        var total = Stopwatch.StartNew();
+
+        var arrangeSw = Stopwatch.StartNew();
+        var arrange = api.ArrangeMarks(gap);
+        arrangeSw.Stop();
+
+        var resolvePasses = 0;
+        var resolveMovedTotal = 0;
+        var resolveIterationsTotal = 0;
+        var finalRemaining = arrange.RemainingOverlaps;
+
+        var resolveSw = Stopwatch.StartNew();
+        while (finalRemaining > 0 && resolvePasses < maxPasses)
+        {
+            var resolve = api.ResolveMarkOverlaps(margin);
+            resolvePasses++;
+            resolveMovedTotal += resolve.MarksMovedCount;
+            resolveIterationsTotal += resolve.Iterations;
+            finalRemaining = resolve.RemainingOverlaps;
+        }
+        resolveSw.Stop();
+
+        TeklaBridge.PerfTrace.Write(
+            "bridge-mark",
+            "arrange_marks_no_collisions",
+            total.ElapsedMilliseconds,
+            $"gap={gap.ToString(System.Globalization.CultureInfo.InvariantCulture)} margin={margin.ToString(System.Globalization.CultureInfo.InvariantCulture)} maxPasses={maxPasses} arrangeMoved={arrange.MarksMovedCount} arrangeOverlaps={arrange.RemainingOverlaps} resolvePasses={resolvePasses} resolveMoved={resolveMovedTotal} finalOverlaps={finalRemaining} arrangeMs={arrangeSw.ElapsedMilliseconds} resolveMs={resolveSw.ElapsedMilliseconds}");
+
+        WriteJson(new
+        {
+            arrange = new
+            {
+                marksMovedCount = arrange.MarksMovedCount,
+                movedIds = arrange.MovedIds,
+                iterations = arrange.Iterations,
+                remainingOverlaps = arrange.RemainingOverlaps
+            },
+            resolve = new
+            {
+                passes = resolvePasses,
+                movedCount = resolveMovedTotal,
+                iterations = resolveIterationsTotal,
+                finalRemainingOverlaps = finalRemaining
+            },
+            timings = new
+            {
+                arrangeMs = arrangeSw.ElapsedMilliseconds,
+                resolveMs = resolveSw.ElapsedMilliseconds,
+                totalMs = total.ElapsedMilliseconds
+            }
+        });
+        return true;
     }
 
     private bool HandleArrangeMarks(TeklaDrawingMarkApi api, string[] args)
