@@ -157,109 +157,88 @@ internal sealed partial class DrawingCommandHandler
                 selectedMarks.Add(selectedMark);
         }
 
-        if (selectedMarks.Count != 1)
+        if (selectedMarks.Count == 0)
         {
-            WriteError($"Expected exactly 1 selected mark, got {selectedMarks.Count}");
+            WriteError("No marks selected");
             return true;
         }
-
-        var mark = selectedMarks[0];
-        var view = mark.GetView();
-        if (view == null)
-        {
-            WriteError($"Selected mark {mark.GetIdentifier().ID} has no owner view");
-            return true;
-        }
-
-        int? modelId = null;
-        var related = mark.GetRelatedObjects();
-        while (related.MoveNext())
-        {
-            if (related.Current is Tekla.Structures.Drawing.ModelObject drawingModelObject)
-            {
-                modelId = drawingModelObject.ModelIdentifier.ID;
-                break;
-            }
-        }
-
-        if (!modelId.HasValue)
-        {
-            WriteError($"Selected mark {mark.GetIdentifier().ID} has no related model object");
-            return true;
-        }
-
-        var geometry = MarkGeometryHelper.Build(mark, _model);
-        if (geometry.Corners.Count < 4)
-        {
-            WriteError($"Failed to resolve geometry for mark {mark.GetIdentifier().ID}");
-            return true;
-        }
-
-        var centerX = geometry.CenterX;
-        var centerY = geometry.CenterY;
-        var ux = geometry.HasAxis ? geometry.AxisDx : 1.0;
-        var uy = geometry.HasAxis ? geometry.AxisDy : 0.0;
-        var axisHalf = Math.Min(geometry.Width * 0.6, 250.0);
-        var axisStart = new[] { Round2(centerX - (ux * axisHalf)), Round2(centerY - (uy * axisHalf)) };
-        var axisEnd = new[] { Round2(centerX + (ux * axisHalf)), Round2(centerY + (uy * axisHalf)) };
-        var angleDeg = Round2(geometry.AngleDeg);
-        var polygonPoints = geometry.Corners
-            .Select(p => new[] { Round2(p[0]), Round2(p[1]) })
-            .ToList();
 
         var request = new DrawingDebugOverlayRequest
         {
             Group = "selected-mark-part-axis-geometry",
             ClearGroupFirst = true,
-            Shapes = new List<DrawingDebugShape>
-            {
-                new()
-                {
-                    Kind = "polygon",
-                    ViewId = view.GetIdentifier().ID,
-                    Points = polygonPoints,
-                    Color = "Green",
-                    LineType = "DashDot"
-                },
-                new()
-                {
-                    Kind = "cross",
-                    ViewId = view.GetIdentifier().ID,
-                    X1 = Round2(centerX),
-                    Y1 = Round2(centerY),
-                    Size = 30,
-                    Color = "Yellow"
-                }
-            }
+            Shapes = new List<DrawingDebugShape>()
         };
 
-        if (geometry.HasAxis)
+        var markResults = new List<object>();
+
+        foreach (var mark in selectedMarks)
         {
+            var view = mark.GetView();
+            if (view == null)
+                continue;
+
+            var viewId = view.GetIdentifier().ID;
+            var geometry = MarkGeometryHelper.Build(mark, _model, viewId);
+            if (geometry.Corners.Count < 4)
+                continue;
+            var centerX = geometry.CenterX;
+            var centerY = geometry.CenterY;
+            var polygonPoints = geometry.Corners
+                .Select(p => new[] { Round2(p[0]), Round2(p[1]) })
+                .ToList();
+
             request.Shapes.Add(new DrawingDebugShape
             {
-                Kind = "line",
-                ViewId = view.GetIdentifier().ID,
-                X1 = axisStart[0],
-                Y1 = axisStart[1],
-                X2 = axisEnd[0],
-                Y2 = axisEnd[1],
-                Color = "Cyan",
-                LineType = "Solid"
+                Kind = "polygon",
+                ViewId = viewId,
+                Points = polygonPoints,
+                Color = "Green",
+                LineType = "DashDot"
+            });
+            request.Shapes.Add(new DrawingDebugShape
+            {
+                Kind = "cross",
+                ViewId = viewId,
+                X1 = Round2(centerX),
+                Y1 = Round2(centerY),
+                Size = 30,
+                Color = "Yellow"
+            });
+
+            if (geometry.HasAxis)
+            {
+                var ux = geometry.AxisDx;
+                var uy = geometry.AxisDy;
+                var axisHalf = Math.Min(geometry.Width * 0.6, 250.0);
+                request.Shapes.Add(new DrawingDebugShape
+                {
+                    Kind = "line",
+                    ViewId = viewId,
+                    X1 = Round2(centerX - (ux * axisHalf)),
+                    Y1 = Round2(centerY - (uy * axisHalf)),
+                    X2 = Round2(centerX + (ux * axisHalf)),
+                    Y2 = Round2(centerY + (uy * axisHalf)),
+                    Color = "Cyan",
+                    LineType = "Solid"
+                });
+            }
+
+            markResults.Add(new
+            {
+                markId = mark.GetIdentifier().ID,
+                viewId,
+                centerX = Round2(centerX),
+                centerY = Round2(centerY),
+                angleDeg = Round2(geometry.AngleDeg),
+                geometrySource = geometry.Source
             });
         }
 
         var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
         WriteJson(new
         {
-            markId = mark.GetIdentifier().ID,
-            viewId = view.GetIdentifier().ID,
-            modelId = modelId.Value,
-            centerX = Round2(centerX),
-            centerY = Round2(centerY),
-            objectWidth = Round2(geometry.Width),
-            objectHeight = Round2(geometry.Height),
-            angleDeg,
-            geometrySource = geometry.Source,
+            marks = markResults,
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,
             createdCount = overlayResult.CreatedCount,

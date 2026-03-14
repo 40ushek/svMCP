@@ -50,7 +50,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 if (markEnum.Current is not Mark mark)
                     continue;
 
-                var geometry = MarkGeometryHelper.Build(mark, model);
+                var geometry = MarkGeometryHelper.Build(mark, model, viewId);
                 var centerLocalX = geometry.CenterX;
                 var centerLocalY = geometry.CenterY;
                 var widthLocal = geometry.MaxX - geometry.MinX;
@@ -142,7 +142,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
             if (!entry.Mark.Modify())
                 continue;
 
-            if (!TryReloadMarkState(entry.Mark, out var actualInsertion, out var actualCenterX, out var actualCenterY))
+            if (!TryReloadMarkState(entry.Mark, entry.ViewId, out var actualInsertion, out var actualCenterX, out var actualCenterY))
                 continue;
 
             var insertionChanged =
@@ -165,6 +165,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
     private static bool TryReloadMarkState(
         Mark mark,
+        int viewId,
         out Point insertionPoint,
         out double centerX,
         out double centerY)
@@ -178,20 +179,29 @@ internal static class TeklaDrawingMarkLayoutAdapter
             return false;
 
         var targetId = mark.GetIdentifier().ID;
-        var marks = ownerView.GetAllObjects(typeof(Mark));
-        while (marks.MoveNext())
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = true;
+        try
         {
-            if (marks.Current is not Mark currentMark)
-                continue;
+            var marks = ownerView.GetAllObjects(typeof(Mark));
+            while (marks.MoveNext())
+            {
+                if (marks.Current is not Mark currentMark)
+                    continue;
 
-            if (currentMark.GetIdentifier().ID != targetId)
-                continue;
+                if (currentMark.GetIdentifier().ID != targetId)
+                    continue;
 
-            insertionPoint = currentMark.InsertionPoint;
-            var bbox = currentMark.GetAxisAlignedBoundingBox();
-            centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-            centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-            return true;
+                insertionPoint = currentMark.InsertionPoint;
+                var bbox = currentMark.GetAxisAlignedBoundingBox();
+                centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+                centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+                return true;
+            }
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
 
         return false;
