@@ -43,10 +43,29 @@ public static class MarkGeometryHelper
         if (mark.Placing is LeaderLinePlacing)
             return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBox", true);
 
-        if (mark.Placing is BaseLinePlacing && TryGetRelatedPartAxisInView(mark, model, viewId, out var axisDx, out var axisDy))
-            return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, axisDx, axisDy, "RelatedPartAxis", true);
+        if (mark.Placing is BaseLinePlacing baseLinePlacing)
+        {
+            if (TryGetRelatedPartAxisInView(mark, model, viewId, out var partAxisDx, out var partAxisDy))
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, partAxisDx, partAxisDy, "RelatedPartAxis", true);
+
+            if (TryGetBaselineAxis(baseLinePlacing, out var placingAxisDx, out var placingAxisDy))
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, placingAxisDx, placingAxisDy, "BaseLinePlacingAxisFallback", true);
+        }
 
         return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBoxFallback", false);
+    }
+
+    private static bool TryGetBaselineAxis(BaseLinePlacing baseLinePlacing, out double axisDx, out double axisDy)
+    {
+        axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
+        axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
+        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+        if (axisLength < 0.001)
+            return false;
+
+        axisDx /= axisLength;
+        axisDy /= axisLength;
+        return true;
     }
 
     private static MarkGeometryInfo BuildFromObjectAlignedBox(RectangleBoundingBox objectAligned, string source, bool isReliable)

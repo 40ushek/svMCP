@@ -110,7 +110,7 @@ public sealed class MarkOverlapResolver
             var componentPairs = GetComponentPairs(result);
             if (componentPairs.Count == 0)
             {
-                iterationsUsed = iteration;
+                iterationsUsed = iteration + 1;
                 break;
             }
 
@@ -135,6 +135,11 @@ public sealed class MarkOverlapResolver
                 var movedA = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
                 var movedB = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
                 movedAny |= movedA || movedB;
+            }
+
+            if (!movedAny && TryNudgeOneOverlappingMark(result, options))
+            {
+                movedAny = true;
             }
 
             if (!movedAny)
@@ -319,10 +324,10 @@ public sealed class MarkOverlapResolver
         if (a.CanMove && b.CanMove)
         {
             if (a.HasLeaderLine && !b.HasLeaderLine)
-                return (0.35, 0.65, 1.0);
+                return (0.7, 0.3, 1.0);
 
             if (!a.HasLeaderLine && b.HasLeaderLine)
-                return (0.65, 0.35, 1.0);
+                return (0.3, 0.7, 1.0);
 
             if (a.HasLeaderLine && b.HasLeaderLine)
             {
@@ -356,10 +361,10 @@ public sealed class MarkOverlapResolver
         if (a.CanMove && b.CanMove)
         {
             if (a.HasLeaderLine && !b.HasLeaderLine)
-                return (0.35, 0.65, 1.0);
+                return (0.7, 0.3, 1.0);
 
             if (!a.HasLeaderLine && b.HasLeaderLine)
-                return (0.65, 0.35, 1.0);
+                return (0.3, 0.7, 1.0);
 
             return (0.5, 0.5, 1.0);
         }
@@ -404,9 +409,7 @@ public sealed class MarkOverlapResolver
 
         if (options.MaxDistanceFromAnchor > 0)
         {
-            var effectiveMaxDistance = options.MaxDistanceFromAnchor;
-            if (!placement.HasLeaderLine && placement.HasAxis)
-                effectiveMaxDistance = Math.Min(effectiveMaxDistance, 60.0);
+            var effectiveMaxDistance = GetEffectiveMaxDistance(placement, options);
 
             var fromAnchorX = nextX - placement.AnchorX;
             var fromAnchorY = nextY - placement.AnchorY;
@@ -425,81 +428,117 @@ public sealed class MarkOverlapResolver
         return moved;
     }
 
-    private static List<(int IndexA, int IndexB, double Depth)> GetComponentPairs(IReadOnlyList<MarkLayoutPlacement> placements)
+    private static double GetEffectiveMaxDistance(MarkLayoutPlacement placement, MarkLayoutOptions options)
     {
-        var edges = new List<(int A, int B, double Depth)>();
-        var adjacency = new Dictionary<int, List<int>>();
+        var maxDistance = options.MaxDistanceFromAnchor;
+        if (!placement.HasLeaderLine && placement.HasAxis)
+            maxDistance = Math.Min(maxDistance, 30.0);
 
-        for (var i = 0; i < placements.Count; i++)
-        {
-            for (var j = i + 1; j < placements.Count; j++)
-            {
-                if (!TryGetSeparation(placements[i], placements[j], out _, out _, out var depth, out _, out _))
-                    continue;
-
-                edges.Add((i, j, depth));
-                if (!adjacency.TryGetValue(i, out var ai))
-                {
-                    ai = new List<int>();
-                    adjacency[i] = ai;
-                }
-
-                if (!adjacency.TryGetValue(j, out var aj))
-                {
-                    aj = new List<int>();
-                    adjacency[j] = aj;
-                }
-
-                ai.Add(j);
-                aj.Add(i);
-            }
-        }
-
-        if (edges.Count == 0)
-            return new List<(int IndexA, int IndexB, double Depth)>();
-
-        var componentByNode = BuildComponentMap(adjacency);
-        return edges
-            .Where(e => componentByNode.TryGetValue(e.A, out var ca) &&
-                        componentByNode.TryGetValue(e.B, out var cb) &&
-                        ca == cb)
-            .Select(e => (e.A, e.B, e.Depth))
-            .ToList();
+        return maxDistance;
     }
 
-    private static Dictionary<int, int> BuildComponentMap(Dictionary<int, List<int>> adjacency)
+    private static bool TryNudgeOneOverlappingMark(List<MarkLayoutPlacement> placements, MarkLayoutOptions options)
     {
-        var result = new Dictionary<int, int>();
-        var componentId = 0;
-
-        foreach (var node in adjacency.Keys)
+        for (var i = 0; i < placements.Count; i++)
+        for (var j = i + 1; j < placements.Count; j++)
         {
-            if (result.ContainsKey(node))
+            if (!TryGetSeparation(placements[i], placements[j], out _, out _, out _, out _, out _))
                 continue;
 
-            var stack = new Stack<int>();
-            stack.Push(node);
-            result[node] = componentId;
+            if (TryNudgeMark(placements, placements[j], options) ||
+                TryNudgeMark(placements, placements[i], options))
+                return true;
 
-            while (stack.Count > 0)
-            {
-                var current = stack.Pop();
-                if (!adjacency.TryGetValue(current, out var neighbors))
-                    continue;
-
-                foreach (var neighbor in neighbors)
-                {
-                    if (result.ContainsKey(neighbor))
-                        continue;
-
-                    result[neighbor] = componentId;
-                    stack.Push(neighbor);
-                }
-            }
-
-            componentId++;
+            return false;
         }
 
+        return false;
+    }
+
+    private static bool TryNudgeMark(
+        IReadOnlyList<MarkLayoutPlacement> placements,
+        MarkLayoutPlacement mark,
+        MarkLayoutOptions options)
+    {
+        if (!mark.CanMove)
+            return false;
+
+        var originalX = mark.X;
+        var originalY = mark.Y;
+        var baseStep = Math.Max(Math.Min(mark.Width, mark.Height) * 0.2, options.Gap + 2.0);
+        var candidates = new List<(double Dx, double Dy)>();
+
+        if (!mark.HasLeaderLine && mark.HasAxis)
+        {
+            var axisDx = mark.AxisDx;
+            var axisDy = mark.AxisDy;
+            if (!TryNormalize(ref axisDx, ref axisDy))
+                return false;
+
+            for (var ring = 1; ring <= 6; ring++)
+            {
+                var step = baseStep * ring;
+                candidates.Add((axisDx * step, axisDy * step));
+                candidates.Add((-axisDx * step, -axisDy * step));
+            }
+        }
+        else
+        {
+            var dirs = new[]
+            {
+                (1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)
+            };
+            for (var ring = 1; ring <= 5; ring++)
+            {
+                var step = baseStep * ring;
+                foreach (var dir in dirs)
+                    candidates.Add((dir.Item1 * step, dir.Item2 * step));
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            mark.X = originalX;
+            mark.Y = originalY;
+            if (!MoveWithAnchorClamp(mark, candidate.Dx, candidate.Dy, options))
+                continue;
+
+            if (HasAnyOverlap(placements, mark.Id))
+                continue;
+
+            return true;
+        }
+
+        mark.X = originalX;
+        mark.Y = originalY;
+        return false;
+    }
+
+    private static bool HasAnyOverlap(IReadOnlyList<MarkLayoutPlacement> placements, int markId)
+    {
+        var mark = placements.FirstOrDefault(x => x.Id == markId);
+        if (mark == null)
+            return false;
+
+        foreach (var other in placements)
+        {
+            if (other.Id == markId)
+                continue;
+
+            if (Overlaps(mark, other))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static List<(int IndexA, int IndexB, double Depth)> GetComponentPairs(IReadOnlyList<MarkLayoutPlacement> placements)
+    {
+        var result = new List<(int IndexA, int IndexB, double Depth)>();
+        for (var i = 0; i < placements.Count; i++)
+            for (var j = i + 1; j < placements.Count; j++)
+                if (TryGetSeparation(placements[i], placements[j], out _, out _, out var depth, out _, out _))
+                    result.Add((i, j, depth));
         return result;
     }
 
@@ -606,3 +645,4 @@ public sealed class MarkOverlapResolver
         return MarkGeometryHelper.TranslateLocalCorners(placement.LocalCorners, placement.X, placement.Y);
     }
 }
+

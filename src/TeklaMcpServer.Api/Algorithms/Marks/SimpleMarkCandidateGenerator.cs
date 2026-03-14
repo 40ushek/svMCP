@@ -97,17 +97,19 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var priority = 1;
         foreach (var multiplier in multipliers.OrderBy(m => m))
         {
-            var distance = Math.Max(baseOffset * multiplier * LocalCandidateScale, 2.0);
+            // Generate from AnchorX/Y (fixed part position) so that
+            // IsWithinAnchorDistance can correctly bound the final position.
+            var distance = Math.Max(baseOffset * multiplier, 2.0);
             result.Add(new MarkCandidate
             {
-                X = item.CurrentX + (item.AxisDx * distance),
-                Y = item.CurrentY + (item.AxisDy * distance),
+                X = item.AnchorX + (item.AxisDx * distance),
+                Y = item.AnchorY + (item.AxisDy * distance),
                 Priority = priority++
             });
             result.Add(new MarkCandidate
             {
-                X = item.CurrentX - (item.AxisDx * distance),
-                Y = item.CurrentY - (item.AxisDy * distance),
+                X = item.AnchorX - (item.AxisDx * distance),
+                Y = item.AnchorY - (item.AxisDy * distance),
                 Priority = priority++
             });
         }
@@ -178,18 +180,9 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         if (options.MaxDistanceFromAnchor <= 0)
             return true;
 
-        var maxDistance = options.MaxDistanceFromAnchor;
-        if (!item.HasLeaderLine)
-        {
-            // Non-leader marks must remain close to their object to preserve readability.
-            var geometryLimited = (Math.Min(item.Width, item.Height) * 1.25) + options.Gap;
-            if (geometryLimited > 0)
-                maxDistance = Math.Min(maxDistance, geometryLimited);
-        }
-
         var dx = candidate.X - item.AnchorX;
         var dy = candidate.Y - item.AnchorY;
-        return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
+        return Math.Sqrt((dx * dx) + (dy * dy)) <= options.MaxDistanceFromAnchor;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)

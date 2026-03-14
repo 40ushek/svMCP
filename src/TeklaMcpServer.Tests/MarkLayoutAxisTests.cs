@@ -272,4 +272,63 @@ public sealed class MarkLayoutAxisTests
             Assert.True(distance <= 18.001);
         }
     }
+
+    [Fact]
+    public void ResolvePlacedMarks_ForLeaderAndBaselineConflict_PrefersLeaderMovement()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 0,
+                Y = 0,
+                Width = 40,
+                Height = 20,
+                AnchorX = 0,
+                AnchorY = 0,
+                HasLeaderLine = true,
+                CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 10,
+                Y = 0,
+                Width = 40,
+                Height = 20,
+                AnchorX = 10,
+                AnchorY = 0,
+                HasLeaderLine = false,
+                HasAxis = true,
+                AxisDx = 0,
+                AxisDy = 1,
+                CanMove = true
+            }
+        };
+
+        var resolved = resolver.ResolvePlacedMarks(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxResolverIterations = 24,
+                MaxDistanceFromAnchor = 40.0
+            },
+            out _);
+
+        var leader = resolved.Single(x => x.Id == 1);
+        var baseline = resolved.Single(x => x.Id == 2);
+
+        var leaderDistance = System.Math.Sqrt(
+            ((leader.X - 0) * (leader.X - 0)) +
+            ((leader.Y - 0) * (leader.Y - 0)));
+        var baselineDistance = System.Math.Sqrt(
+            ((baseline.X - 10) * (baseline.X - 10)) +
+            ((baseline.Y - 0) * (baseline.Y - 0)));
+
+        Assert.True(leaderDistance >= baselineDistance);
+        Assert.Equal(10, baseline.X, 6);
+    }
 }
