@@ -50,11 +50,20 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 if (markEnum.Current is not Mark mark)
                     continue;
 
+                // CRITICAL: All mark polygon geometry for layout and collision detection
+                // MUST come from MarkGeometryHelper.Build(). Do NOT use Tekla's raw
+                // GetAxisAlignedBoundingBox() or GetObjectAlignedBoundingBox() here —
+                // they return AABB/OBB that ignore part axis orientation for BaseLinePlacing marks.
+                // MarkGeometryHelper resolves the true axis from the related part, the baseline
+                // placing line, or mark.Attributes.Angle as fallback, producing correctly oriented
+                // OBB corners. These corners are what gets drawn by draw_debug_overlay.
                 var geometry = MarkGeometryHelper.Build(mark, model, viewId);
                 var centerLocalX = geometry.CenterX;
                 var centerLocalY = geometry.CenterY;
                 var widthLocal = geometry.MaxX - geometry.MinX;
                 var heightLocal = geometry.MaxY - geometry.MinY;
+                // LocalCorners are geometry.Corners expressed relative to the mark center.
+                // They are the authoritative collision shape used by MarkLayoutEngine.Intersects.
                 var localCorners = geometry.Corners
                     .Select(c => new[] { c[0] - centerLocalX, c[1] - centerLocalY })
                     .ToList();

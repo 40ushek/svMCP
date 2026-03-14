@@ -100,6 +100,10 @@ public sealed class MarkLayoutEngine
 
     private static bool Intersects(MarkLayoutItem a, MarkLayoutItem b, double gap)
     {
+        // LocalCorners must be set from MarkGeometryHelper.Build() via CollectEntries —
+        // they are the axis-oriented OBB polygon used for accurate collision detection.
+        // The AABB fallback below (Width/Height) is only reached when LocalCorners is empty,
+        // which should not happen in normal operation.
         if (a.LocalCorners.Count >= 3 && b.LocalCorners.Count >= 3)
         {
             var aPolygon = MarkGeometryHelper.TranslateLocalCorners(a.LocalCorners, a.CurrentX, a.CurrentY);
