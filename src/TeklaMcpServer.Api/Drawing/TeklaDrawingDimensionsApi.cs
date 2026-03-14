@@ -221,126 +221,128 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
     {
         var total = Stopwatch.StartNew();
         var result = new PlaceControlDiagonalsResult();
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
 
-        var drawingHandler = new DrawingHandler();
-        var activeDrawing = drawingHandler.GetActiveDrawing();
-        if (activeDrawing == null)
-            throw new DrawingNotOpenException();
-
-        var selectViewSw = Stopwatch.StartNew();
-        var targetView = ResolveTargetView(activeDrawing, viewId);
-        selectViewSw.Stop();
-
-        result.ViewId = targetView.GetIdentifier().ID;
-        result.ViewType = targetView.ViewType.ToString();
-        result.SelectViewMs = selectViewSw.ElapsedMilliseconds;
-
-        var readGeometrySw = Stopwatch.StartNew();
-        var points = new List<Point>();
-        var partsScanned = 0;
-
-        var workPlaneHandler = _model.GetWorkPlaneHandler();
-        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(targetView.DisplayCoordinateSystem));
         try
         {
-            var identifiers = drawingHandler.GetModelObjectIdentifiers(activeDrawing);
-            foreach (Identifier id in identifiers)
+            var drawingHandler = new DrawingHandler();
+            var activeDrawing = drawingHandler.GetActiveDrawing();
+            if (activeDrawing == null)
+                throw new DrawingNotOpenException();
+
+            var selectViewSw = Stopwatch.StartNew();
+            var targetView = ResolveTargetView(activeDrawing, viewId);
+            selectViewSw.Stop();
+
+            result.ViewId = targetView.GetIdentifier().ID;
+            result.ViewType = targetView.ViewType.ToString();
+            result.SelectViewMs = selectViewSw.ElapsedMilliseconds;
+
+            var readGeometrySw = Stopwatch.StartNew();
+            var sourcePoints = CollectDimensionSegmentPoints(targetView, out var dimensionsScanned);
+            readGeometrySw.Stop();
+            result.ReadGeometryMs = readGeometrySw.ElapsedMilliseconds;
+            result.PartsScanned = dimensionsScanned;
+            result.SourceDimensionsScanned = dimensionsScanned;
+            result.CandidatePoints = sourcePoints.Count;
+
+            if (sourcePoints.Count < 2)
             {
-                var modelObject = _model.SelectModelObject(id);
-                if (modelObject is not ModelPart part)
-                    continue;
-
-                Solid? solid = null;
-                try
-                {
-                    solid = part.GetSolid();
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (solid == null)
-                    continue;
-
-                var min = solid.MinimumPoint;
-                var max = solid.MaximumPoint;
-                if (min == null || max == null)
-                    continue;
-
-                partsScanned++;
-                var z = (min.Z + max.Z) / 2.0;
-                points.Add(new Point(min.X, min.Y, z));
-                points.Add(new Point(min.X, max.Y, z));
-                points.Add(new Point(max.X, min.Y, z));
-                points.Add(new Point(max.X, max.Y, z));
+                result.Error = "Not enough dimension points. Add dimensions on the target view first.";
+                result.TotalMs = total.ElapsedMilliseconds;
+                return result;
             }
+
+            var findExtremesSw = Stopwatch.StartNew();
+            var hull = ConvexHull.Compute(sourcePoints).ToList();
+            if (hull.Count < 2)
+            {
+                findExtremesSw.Stop();
+                result.FindExtremesMs = findExtremesSw.ElapsedMilliseconds;
+                result.Error = "Convex hull has fewer than 2 points.";
+                result.TotalMs = total.ElapsedMilliseconds;
+                return result;
+            }
+
+            var primary = FarthestPointPair.Find(hull);
+            var rectangleLike = IsRectangleLikeHull(hull);
+            var requestedDiagonalCount = rectangleLike ? 1 : 2;
+
+            var pairs = new List<(Point Start, Point End)>
+            {
+                (primary.First, primary.Second)
+            };
+
+            if (requestedDiagonalCount > 1
+                && TryFindSecondaryDiagonal(hull, primary.First, primary.Second, out var secondary))
+            {
+                pairs.Add(secondary);
+            }
+
+            findExtremesSw.Stop();
+            result.FindExtremesMs = findExtremesSw.ElapsedMilliseconds;
+            result.RectangleLike = rectangleLike;
+            result.RequestedDiagonalCount = requestedDiagonalCount;
+
+            var start = primary.First;
+            var end = primary.Second;
+            result.StartPoint = [start.X, start.Y, start.Z];
+            result.EndPoint = [end.X, end.Y, end.Z];
+            result.FarthestDistance = System.Math.Round(System.Math.Sqrt(primary.DistanceSquared), 3);
+
+            var createSw = Stopwatch.StartNew();
+#pragma warning disable CS0618 // Tekla 2021 API constructor is required in current workflow.
+            var attributes = new StraightDimensionSet.StraightDimensionSetAttributes();
+#pragma warning restore CS0618
+            var normalizedAttributes = string.IsNullOrWhiteSpace(attributesFile) ? "standard" : attributesFile.Trim();
+            attributes.LoadAttributes(normalizedAttributes);
+
+            var dimIds = new List<int>();
+            for (var i = 0; i < pairs.Count; i++)
+            {
+                var pair = pairs[i];
+                var pointList = new PointList { pair.Start, pair.End };
+                var direction = BuildDiagonalOffsetDirection(pair.Start, pair.End);
+
+                var dim = new StraightDimensionSetHandler().CreateDimensionSet(
+                    targetView,
+                    pointList,
+                    direction,
+                    distance,
+                    attributes);
+                if (dim == null)
+                    continue;
+
+                dimIds.Add(dim.GetIdentifier().ID);
+            }
+
+            createSw.Stop();
+            result.CreateMs = createSw.ElapsedMilliseconds;
+
+            if (dimIds.Count == 0)
+            {
+                result.Error = "CreateDimensionSet returned null for all requested diagonals.";
+                result.TotalMs = total.ElapsedMilliseconds;
+                return result;
+            }
+
+            var commitSw = Stopwatch.StartNew();
+            activeDrawing.CommitChanges("(MCP) PlaceControlDiagonals");
+            commitSw.Stop();
+
+            result.Created = true;
+            result.CreatedCount = dimIds.Count;
+            result.DimensionId = dimIds[0];
+            result.DimensionIds = dimIds.ToArray();
+            result.CommitMs = commitSw.ElapsedMilliseconds;
+            result.TotalMs = total.ElapsedMilliseconds;
+            return result;
         }
         finally
         {
-            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
-
-        readGeometrySw.Stop();
-        result.ReadGeometryMs = readGeometrySw.ElapsedMilliseconds;
-        result.PartsScanned = partsScanned;
-        result.CandidatePoints = points.Count;
-
-        if (points.Count < 2)
-        {
-            result.Error = "Not enough geometry points to place control diagonal dimension.";
-            result.TotalMs = total.ElapsedMilliseconds;
-            return result;
-        }
-
-        var findExtremesSw = Stopwatch.StartNew();
-        var farthest = FarthestPointPair.Find(points);
-        findExtremesSw.Stop();
-        result.FindExtremesMs = findExtremesSw.ElapsedMilliseconds;
-
-        var start = farthest.First;
-        var end = farthest.Second;
-        result.StartPoint = [start.X, start.Y, start.Z];
-        result.EndPoint = [end.X, end.Y, end.Z];
-        result.FarthestDistance = System.Math.Round(System.Math.Sqrt(farthest.DistanceSquared), 3);
-
-        var createSw = Stopwatch.StartNew();
-        var pointList = new PointList { start, end };
-
-        Vector direction = BuildDiagonalOffsetDirection(start, end);
-
-#pragma warning disable CS0618 // Tekla 2021 API constructor is required in current workflow.
-        var attributes = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-        var normalizedAttributes = string.IsNullOrWhiteSpace(attributesFile) ? "standard" : attributesFile.Trim();
-        attributes.LoadAttributes(normalizedAttributes);
-
-        var dim = new StraightDimensionSetHandler().CreateDimensionSet(
-            targetView,
-            pointList,
-            direction,
-            distance,
-            attributes);
-        createSw.Stop();
-        result.CreateMs = createSw.ElapsedMilliseconds;
-
-        if (dim == null)
-        {
-            result.Error = "CreateDimensionSet returned null.";
-            result.TotalMs = total.ElapsedMilliseconds;
-            return result;
-        }
-
-        var commitSw = Stopwatch.StartNew();
-        activeDrawing.CommitChanges("(MCP) PlaceControlDiagonals");
-        commitSw.Stop();
-
-        result.Created = true;
-        result.DimensionId = dim.GetIdentifier().ID;
-        result.CommitMs = commitSw.ElapsedMilliseconds;
-        result.TotalMs = total.ElapsedMilliseconds;
-        return result;
     }
 
     private static Vector? TryParseVector(string? s)
@@ -395,5 +397,167 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             return new Vector(0, 1, 0);
 
         return new Vector(-dy / len, dx / len, 0);
+    }
+
+    private static List<Point> CollectDimensionSegmentPoints(View targetView, out int dimensionsScanned)
+    {
+        var points = new List<Point>();
+        dimensionsScanned = 0;
+
+        var segmentObjects = targetView.GetAllObjects(typeof(StraightDimension));
+        while (segmentObjects.MoveNext())
+        {
+            if (segmentObjects.Current is not StraightDimension segment)
+                continue;
+
+            dimensionsScanned++;
+            points.Add(new Point(segment.StartPoint.X, segment.StartPoint.Y, segment.StartPoint.Z));
+            points.Add(new Point(segment.EndPoint.X, segment.EndPoint.Y, segment.EndPoint.Z));
+        }
+
+        if (points.Count >= 2)
+            return points;
+
+        points.Clear();
+        dimensionsScanned = 0;
+
+        var dimObjects = targetView.GetAllObjects(typeof(StraightDimensionSet));
+        while (dimObjects.MoveNext())
+        {
+            if (dimObjects.Current is not StraightDimensionSet dimSet)
+                continue;
+
+            dimensionsScanned++;
+            var segEnum = dimSet.GetObjects();
+            while (segEnum.MoveNext())
+            {
+                if (segEnum.Current is not StraightDimension segment)
+                    continue;
+
+                points.Add(new Point(segment.StartPoint.X, segment.StartPoint.Y, segment.StartPoint.Z));
+                points.Add(new Point(segment.EndPoint.X, segment.EndPoint.Y, segment.EndPoint.Z));
+            }
+        }
+
+        return points;
+    }
+
+    private static bool TryFindSecondaryDiagonal(
+        IReadOnlyList<Point> hull,
+        Point firstA,
+        Point firstB,
+        out (Point Start, Point End) pair)
+    {
+        if (TryFindSecondaryDiagonalInternal(hull, firstA, firstB, requireDistinctEndpoints: true, out pair))
+            return true;
+
+        return TryFindSecondaryDiagonalInternal(hull, firstA, firstB, requireDistinctEndpoints: false, out pair);
+    }
+
+    private static bool TryFindSecondaryDiagonalInternal(
+        IReadOnlyList<Point> hull,
+        Point firstA,
+        Point firstB,
+        bool requireDistinctEndpoints,
+        out (Point Start, Point End) pair)
+    {
+        pair = default;
+        var firstLen = System.Math.Sqrt(ConvexHull.DistanceSquared(firstA, firstB));
+        if (firstLen < 1e-9)
+            return false;
+
+        var hasCandidate = false;
+        var bestScore = double.MinValue;
+        for (var i = 0; i < hull.Count; i++)
+        {
+            for (var j = i + 1; j < hull.Count; j++)
+            {
+                var a = hull[i];
+                var b = hull[j];
+
+                if (IsSamePair(a, b, firstA, firstB))
+                    continue;
+
+                if (requireDistinctEndpoints
+                    && (SamePointXY(a, firstA) || SamePointXY(a, firstB) || SamePointXY(b, firstA) || SamePointXY(b, firstB)))
+                {
+                    continue;
+                }
+
+                var lenSquared = ConvexHull.DistanceSquared(a, b);
+                if (lenSquared < 1e-9)
+                    continue;
+
+                var len = System.Math.Sqrt(lenSquared);
+                var dotAbs = System.Math.Abs(((firstB.X - firstA.X) * (b.X - a.X) + (firstB.Y - firstA.Y) * (b.Y - a.Y)) / (firstLen * len));
+                if (dotAbs > 0.98)
+                    continue;
+
+                var crossingBonus = SegmentsProperlyIntersect(firstA, firstB, a, b) ? 1_000_000_000d : 0d;
+                var score = crossingBonus + lenSquared;
+                if (!hasCandidate || score > bestScore)
+                {
+                    hasCandidate = true;
+                    bestScore = score;
+                    pair = (a, b);
+                }
+            }
+        }
+
+        return hasCandidate;
+    }
+
+    private static bool IsRectangleLikeHull(IReadOnlyList<Point> hull)
+    {
+        if (hull.Count != 4)
+            return false;
+
+        for (var i = 0; i < 4; i++)
+        {
+            var prev = hull[(i + 3) % 4];
+            var curr = hull[i];
+            var next = hull[(i + 1) % 4];
+
+            var vx1 = curr.X - prev.X;
+            var vy1 = curr.Y - prev.Y;
+            var vx2 = next.X - curr.X;
+            var vy2 = next.Y - curr.Y;
+
+            var len1 = System.Math.Sqrt(vx1 * vx1 + vy1 * vy1);
+            var len2 = System.Math.Sqrt(vx2 * vx2 + vy2 * vy2);
+            if (len1 < 1e-9 || len2 < 1e-9)
+                return false;
+
+            var cos = System.Math.Abs((vx1 * vx2 + vy1 * vy2) / (len1 * len2));
+            if (cos > 0.2)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool SegmentsProperlyIntersect(Point a1, Point a2, Point b1, Point b2)
+    {
+        var o1 = Orientation(a1, a2, b1);
+        var o2 = Orientation(a1, a2, b2);
+        var o3 = Orientation(b1, b2, a1);
+        var o4 = Orientation(b1, b2, a2);
+        return o1 * o2 < 0 && o3 * o4 < 0;
+    }
+
+    private static double Orientation(Point a, Point b, Point c)
+    {
+        return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+    }
+
+    private static bool IsSamePair(Point a1, Point a2, Point b1, Point b2)
+    {
+        return (SamePointXY(a1, b1) && SamePointXY(a2, b2))
+            || (SamePointXY(a1, b2) && SamePointXY(a2, b1));
+    }
+
+    private static bool SamePointXY(Point left, Point right)
+    {
+        return left.X.Equals(right.X) && left.Y.Equals(right.Y);
     }
 }

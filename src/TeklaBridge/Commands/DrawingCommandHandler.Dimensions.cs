@@ -109,11 +109,16 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             created = result.Created,
+            createdCount = result.CreatedCount,
             viewId = result.ViewId,
             viewType = result.ViewType,
+            rectangleLike = result.RectangleLike,
+            requestedDiagonalCount = result.RequestedDiagonalCount,
             partsScanned = result.PartsScanned,
+            sourceDimensionsScanned = result.SourceDimensionsScanned,
             candidatePoints = result.CandidatePoints,
             dimensionId = result.DimensionId,
+            dimensionIds = result.DimensionIds,
             startPoint = result.StartPoint,
             endPoint = result.EndPoint,
             farthestDistance = result.FarthestDistance,
