@@ -23,14 +23,14 @@
 |---|---|
 | `list_drawings` / `find_drawings` / `find_drawings_by_properties` | Поиск чертежей |
 | `open_drawing` / `close_drawing` | Открыть / закрыть |
-| `export_drawings_pdf` | Экспорт в PDF |
-| `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж через Open API |
-| `get_drawing_context` / `select_drawing_objects` / `filter_drawing_objects` | Контекст и выделение |
+| `export_drawings_to_pdf` | Экспорт в PDF |
+| `create_general_arrangement_drawing` / `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж |
+| `get_drawing_context` / `get_sheet_objects_debug` / `select_drawing_objects` / `filter_drawing_objects` | Контекст, диагностика и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
-| `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
+| `move_view` / `set_view_scale` / `place_views` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` | Расстановка марок |
-| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` | Размеры |
+| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры (`place_control_diagonals` пока experimental) |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
@@ -53,6 +53,7 @@
 - Cumulative тип: сохранить стиль в Tekla UI → `create_dimension(..., attributesFile="cumulative")`
 - `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
+- `place_control_diagonals`: перевести с bbox-экстремумов на реальные крайние точки видимого контура (без "точек в воздухе")
 
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)

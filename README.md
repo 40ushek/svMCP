@@ -180,12 +180,14 @@ src/
 | `create_single_part_drawing` | Создать Single Part drawing через Tekla Open API |
 | `create_assembly_drawing` | Создать Assembly drawing через Tekla Open API |
 | `get_drawing_context` | Активный чертёж и выделенные объекты |
+| `get_sheet_objects_debug` | Dev/debug: все объекты листа, их bbox и кандидаты reserved areas |
 | `select_drawing_objects` | Выделить объекты чертежа по ID модельных объектов |
 | `filter_drawing_objects` | Фильтр объектов чертежа по типу (Mark, Part, DimensionBase…) |
 | `set_mark_content` | Изменить содержимое и шрифт марок |
 | `get_drawing_views` | Все виды активного чертежа: позиция, масштаб, размер, размеры листа |
 | `move_view` | Переместить вид на листе (абсолютно или на смещение) |
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
+| `place_views` | Запустить встроенную авторасстановку видов Tekla (`PlaceViews`) |
 | `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
 | `get_drawing_marks` | Прочитать марки: позиция, bbox/OBB, `resolvedGeometry`, перекрытия, leader lines, содержимое PropertyElement; фильтрация по виду |
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
@@ -195,10 +197,15 @@ src/
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
+| `place_control_diagonals` | Экспериментальный tool: поставить контрольный диагональный размер в целевом виде и вернуть тайминги этапов |
 | `get_part_geometry_in_view` | Получить геометрию детали (bbox, start/end, оси) в локальной СК вида |
+| `get_all_parts_geometry_in_view` | Пакетно получить геометрию всех деталей вида за один вызов |
 | `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
 | `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок внутри каждого вида — минимальные локальные сдвиги |
 | `arrange_marks` | Полная автоматическая расстановка марок внутри каждого вида вокруг anchor point |
+| `draw_debug_overlay` | Dev/debug: отрисовать временный overlay (line/polygon/text/cross) в чертеже |
+| `clear_debug_overlay` | Dev/debug: очистить overlay слой целиком или по группе |
+| `draw_selected_mark_part_axis_geometry` | Dev/debug: показать ось детали и геометрию для выбранных марок |
 
 Раскладка марок сейчас устроена так:
 - единица обработки — один `View`, а не весь drawing sheet
@@ -215,6 +222,11 @@ src/
 |---|---|
 | `C:\temp\teklabridge_log.txt` | Детали последней ошибки (JSON) |
 | `C:\temp\tekla_channel.txt` | Результат фикса IPC channel names (сколько каналов исправлено) |
+| `%TEMP%\svmcp-perf.log` | Профилирование по слоям `mcp/transport/bridge/api` |
+
+Профилирование:
+- `SVMCP_PERF=1` — включить запись таймингов
+- `SVMCP_PERF_LOG=<path>` — путь к файлу логов (по умолчанию `%TEMP%\svmcp-perf.log`)
 
 ---
 
