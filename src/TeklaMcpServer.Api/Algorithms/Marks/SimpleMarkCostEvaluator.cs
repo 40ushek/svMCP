@@ -22,6 +22,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
 
         score += candidate.Priority * options.CandidatePriorityWeight;
         score += Distance(candidate.X, candidate.Y, item.CurrentX, item.CurrentY) * options.CurrentPositionWeight;
+        score += Distance(candidate.X, candidate.Y, item.AnchorX, item.AnchorY) * options.AnchorDistanceWeight;
         score += CalculatePreferredSidePenalty(candidate, item, options);
 
         if (item.HasLeaderLine)

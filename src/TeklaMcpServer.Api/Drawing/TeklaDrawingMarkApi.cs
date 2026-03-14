@@ -268,7 +268,16 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
                 var resolver = new MarkOverlapResolver();
                 var resolve = Stopwatch.StartNew();
-                var resolved = resolver.Resolve(placements, new MarkLayoutOptions { Gap = margin }, out var iterations);
+                var resolved = resolver.ResolvePlacedMarks(
+                    placements,
+                    new MarkLayoutOptions
+                    {
+                        Gap = margin,
+                        MaxResolverIterations = 24,
+                        // Keep marks close to their object anchor in post-fix mode.
+                        MaxDistanceFromAnchor = 140.0
+                    },
+                    out var iterations);
                 resolve.Stop();
                 var resolvedById = resolved.ToDictionary(x => x.Id);
 
@@ -276,8 +285,10 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById));
                 apply.Stop();
                 totalIterations += iterations;
-                totalRemainingOverlaps += resolver.CountOverlaps(resolved);
-                PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={iterations}");
+                
+                var finalViewOverlaps = GetMarks(view.GetIdentifier().ID).Overlaps.Count;
+                totalRemainingOverlaps += finalViewOverlaps;
+                PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={iterations} finalOverlaps={finalViewOverlaps}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -297,6 +308,82 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
         {
             PerfTrace.Write("api-mark", "resolve_mark_overlaps_total", total.ElapsedMilliseconds, $"margin={margin.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    private List<int> NudgeOverlapsInView(View view, double margin)
+    {
+        var viewId = view.GetIdentifier().ID;
+        var snapshot = GetMarks(viewId);
+        if (snapshot.Overlaps.Count == 0)
+            return new List<int>();
+
+        var marksById = new Dictionary<int, Mark>();
+        var markEnum = view.GetAllObjects(typeof(Mark));
+        while (markEnum.MoveNext())
+        {
+            if (markEnum.Current is Mark mark)
+                marksById[mark.GetIdentifier().ID] = mark;
+        }
+
+        var attemptsById = new Dictionary<int, int>();
+        var moved = new HashSet<int>();
+
+        foreach (var overlap in snapshot.Overlaps)
+        {
+            if (TryNudgeOne(overlap.IdB))
+                continue;
+
+            _ = TryNudgeOne(overlap.IdA);
+        }
+
+        return moved.ToList();
+
+        bool TryNudgeOne(int markId)
+        {
+            if (!marksById.TryGetValue(markId, out var mark))
+                return false;
+
+            var markInfo = snapshot.Marks.FirstOrDefault(x => x.Id == markId);
+            if (markInfo == null)
+                return false;
+
+            var attempt = attemptsById.TryGetValue(markId, out var count) ? count : 0;
+            attemptsById[markId] = attempt + 1;
+
+            var width = Math.Max(markInfo.BboxMaxX - markInfo.BboxMinX, 1.0);
+            var step = Math.Max(width + margin, 40.0) * (1.0 + ((attempt / 2) * 0.6));
+            var direction = attempt % 2 == 0 ? 1.0 : -1.0;
+
+            var moveX = 1.0;
+            var moveY = 0.0;
+            if (markInfo.Axis?.IsReliable == true)
+            {
+                moveX = -markInfo.Axis.Dy;
+                moveY = markInfo.Axis.Dx;
+                var length = Math.Sqrt((moveX * moveX) + (moveY * moveY));
+                if (length >= 0.001)
+                {
+                    moveX /= length;
+                    moveY /= length;
+                }
+            }
+
+            var before = mark.InsertionPoint;
+            mark.InsertionPoint = new Point(
+                before.X + (moveX * step * direction),
+                before.Y + (moveY * step * direction),
+                before.Z);
+
+            if (!mark.Modify())
+                return false;
+
+            var after = mark.InsertionPoint;
+            if (Math.Abs(after.X - before.X) < 0.05 && Math.Abs(after.Y - before.Y) < 0.05)
+                return false;
+
+            moved.Add(markId);
+            return true;
         }
     }
 
@@ -335,7 +422,10 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                     new MarkLayoutOptions
                     {
                         Gap = gap,
-                        CurrentPositionWeight = 0.3,
+                        CurrentPositionWeight = 1.2,
+                        AnchorDistanceWeight = 2.5,
+                        MaxDistanceFromAnchor = 140.0,
+                        CandidateDistanceMultipliers = new[] { 1.0, 1.25, 2.0 },
                         LeaderLengthWeight = 15.0,
                     });
                 arrange.Stop();

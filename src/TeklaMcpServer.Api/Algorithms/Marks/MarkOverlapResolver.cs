@@ -7,6 +7,8 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class MarkOverlapResolver
 {
+    private const double MovementEpsilon = 0.001;
+
     public List<MarkLayoutPlacement> Resolve(
         IReadOnlyList<MarkLayoutPlacement> placements,
         MarkLayoutOptions options,
@@ -63,6 +65,76 @@ public sealed class MarkOverlapResolver
                 b.Y += moveY * split.MoveB;
 
                 movedAny = true;
+            }
+
+            if (!movedAny)
+                break;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Post-process resolver for already placed marks.
+    /// It only nudges marks participating in current overlap components and
+    /// keeps movement local/minimal (MTV + gap).
+    /// </summary>
+    public List<MarkLayoutPlacement> ResolvePlacedMarks(
+        IReadOnlyList<MarkLayoutPlacement> placements,
+        MarkLayoutOptions options,
+        out int iterationsUsed)
+    {
+        var result = placements
+            .Select(p => new MarkLayoutPlacement
+            {
+                Id = p.Id,
+                X = p.X,
+                Y = p.Y,
+                Width = p.Width,
+                Height = p.Height,
+                AnchorX = p.AnchorX,
+                AnchorY = p.AnchorY,
+                HasLeaderLine = p.HasLeaderLine,
+                HasAxis = p.HasAxis,
+                AxisDx = p.AxisDx,
+                AxisDy = p.AxisDy,
+                CanMove = p.CanMove,
+                LocalCorners = p.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
+            })
+            .ToList();
+
+        iterationsUsed = 0;
+
+        for (var iteration = 0; iteration < options.MaxResolverIterations; iteration++)
+        {
+            var componentPairs = GetComponentPairs(result);
+            if (componentPairs.Count == 0)
+            {
+                iterationsUsed = iteration;
+                break;
+            }
+
+            iterationsUsed = iteration + 1;
+            var movedAny = false;
+
+            foreach (var pair in componentPairs.OrderByDescending(x => x.Depth))
+            {
+                var a = result[pair.IndexA];
+                var b = result[pair.IndexB];
+                if (!TryGetSeparation(a, b, out var axisX, out var axisY, out var depth, out _, out _))
+                    continue;
+
+                var split = GetSimpleSplit(a, b);
+                if (split.Total <= 0)
+                    continue;
+
+                var push = depth + options.Gap;
+                var moveX = axisX * push;
+                var moveY = axisY * push;
+
+                var movedA = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
+                var movedB = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
+                movedAny |= movedA || movedB;
             }
 
             if (!movedAny)
@@ -275,6 +347,160 @@ public sealed class MarkOverlapResolver
             return (0.0, 1.0, 1.0);
 
         return (0.0, 0.0, 0.0);
+    }
+
+    private static (double MoveA, double MoveB, double Total) GetSimpleSplit(
+        MarkLayoutPlacement a,
+        MarkLayoutPlacement b)
+    {
+        if (a.CanMove && b.CanMove)
+        {
+            if (a.HasLeaderLine && !b.HasLeaderLine)
+                return (0.35, 0.65, 1.0);
+
+            if (!a.HasLeaderLine && b.HasLeaderLine)
+                return (0.65, 0.35, 1.0);
+
+            return (0.5, 0.5, 1.0);
+        }
+
+        if (a.CanMove)
+            return (1.0, 0.0, 1.0);
+
+        if (b.CanMove)
+            return (0.0, 1.0, 1.0);
+
+        return (0.0, 0.0, 0.0);
+    }
+
+    private static bool MoveWithAnchorClamp(
+        MarkLayoutPlacement placement,
+        double dx,
+        double dy,
+        MarkLayoutOptions options)
+    {
+        if (!placement.CanMove)
+            return false;
+
+        var constrainedDx = dx;
+        var constrainedDy = dy;
+
+        // Keep baseline marks attached to their member direction:
+        // no sideways jumps that make ownership ambiguous.
+        if (!placement.HasLeaderLine && placement.HasAxis)
+        {
+            var axisDx = placement.AxisDx;
+            var axisDy = placement.AxisDy;
+            if (TryNormalize(ref axisDx, ref axisDy))
+            {
+                var alongAxis = Dot(constrainedDx, constrainedDy, axisDx, axisDy);
+                constrainedDx = axisDx * alongAxis;
+                constrainedDy = axisDy * alongAxis;
+            }
+        }
+
+        var nextX = placement.X + constrainedDx;
+        var nextY = placement.Y + constrainedDy;
+
+        if (options.MaxDistanceFromAnchor > 0)
+        {
+            var effectiveMaxDistance = options.MaxDistanceFromAnchor;
+            if (!placement.HasLeaderLine && placement.HasAxis)
+                effectiveMaxDistance = Math.Min(effectiveMaxDistance, 60.0);
+
+            var fromAnchorX = nextX - placement.AnchorX;
+            var fromAnchorY = nextY - placement.AnchorY;
+            var dist = Math.Sqrt((fromAnchorX * fromAnchorX) + (fromAnchorY * fromAnchorY));
+            if (dist > effectiveMaxDistance && dist > MovementEpsilon)
+            {
+                var scale = effectiveMaxDistance / dist;
+                nextX = placement.AnchorX + (fromAnchorX * scale);
+                nextY = placement.AnchorY + (fromAnchorY * scale);
+            }
+        }
+
+        var moved = Math.Abs(nextX - placement.X) > MovementEpsilon || Math.Abs(nextY - placement.Y) > MovementEpsilon;
+        placement.X = nextX;
+        placement.Y = nextY;
+        return moved;
+    }
+
+    private static List<(int IndexA, int IndexB, double Depth)> GetComponentPairs(IReadOnlyList<MarkLayoutPlacement> placements)
+    {
+        var edges = new List<(int A, int B, double Depth)>();
+        var adjacency = new Dictionary<int, List<int>>();
+
+        for (var i = 0; i < placements.Count; i++)
+        {
+            for (var j = i + 1; j < placements.Count; j++)
+            {
+                if (!TryGetSeparation(placements[i], placements[j], out _, out _, out var depth, out _, out _))
+                    continue;
+
+                edges.Add((i, j, depth));
+                if (!adjacency.TryGetValue(i, out var ai))
+                {
+                    ai = new List<int>();
+                    adjacency[i] = ai;
+                }
+
+                if (!adjacency.TryGetValue(j, out var aj))
+                {
+                    aj = new List<int>();
+                    adjacency[j] = aj;
+                }
+
+                ai.Add(j);
+                aj.Add(i);
+            }
+        }
+
+        if (edges.Count == 0)
+            return new List<(int IndexA, int IndexB, double Depth)>();
+
+        var componentByNode = BuildComponentMap(adjacency);
+        return edges
+            .Where(e => componentByNode.TryGetValue(e.A, out var ca) &&
+                        componentByNode.TryGetValue(e.B, out var cb) &&
+                        ca == cb)
+            .Select(e => (e.A, e.B, e.Depth))
+            .ToList();
+    }
+
+    private static Dictionary<int, int> BuildComponentMap(Dictionary<int, List<int>> adjacency)
+    {
+        var result = new Dictionary<int, int>();
+        var componentId = 0;
+
+        foreach (var node in adjacency.Keys)
+        {
+            if (result.ContainsKey(node))
+                continue;
+
+            var stack = new Stack<int>();
+            stack.Push(node);
+            result[node] = componentId;
+
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+                if (!adjacency.TryGetValue(current, out var neighbors))
+                    continue;
+
+                foreach (var neighbor in neighbors)
+                {
+                    if (result.ContainsKey(neighbor))
+                        continue;
+
+                    result[neighbor] = componentId;
+                    stack.Push(neighbor);
+                }
+            }
+
+            componentId++;
+        }
+
+        return result;
     }
 
     private static double Distance(double x1, double y1, double x2, double y2)

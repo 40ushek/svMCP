@@ -25,12 +25,13 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var candidates = item.HasLeaderLine
             ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
             : item.HasAxis
-                ? BuildAxisCandidates(item, Math.Max(baseOffsetX, baseOffsetY), options.CandidateDistanceMultipliers)
+                ? BuildAxisCandidates(item, Math.Min(baseOffsetX, baseOffsetY), options.CandidateDistanceMultipliers)
             : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
-        var filtered = item.HasBounds
-            ? candidates.Where(c => IsWithinBounds(c, item)).ToList()
-            : candidates;
+        var filtered = candidates
+            .Where(c => IsWithinAnchorDistance(c, item, options))
+            .Where(c => !item.HasBounds || IsWithinBounds(c, item))
+            .ToList();
 
         return RemoveNearDuplicates(filtered);
     }
@@ -170,6 +171,25 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var hh = item.Height / 2.0;
         return c.X - hw >= item.BoundsMinX && c.X + hw <= item.BoundsMaxX &&
                c.Y - hh >= item.BoundsMinY && c.Y + hh <= item.BoundsMaxY;
+    }
+
+    private static bool IsWithinAnchorDistance(MarkCandidate candidate, MarkLayoutItem item, MarkLayoutOptions options)
+    {
+        if (options.MaxDistanceFromAnchor <= 0)
+            return true;
+
+        var maxDistance = options.MaxDistanceFromAnchor;
+        if (!item.HasLeaderLine)
+        {
+            // Non-leader marks must remain close to their object to preserve readability.
+            var geometryLimited = (Math.Min(item.Width, item.Height) * 1.25) + options.Gap;
+            if (geometryLimited > 0)
+                maxDistance = Math.Min(maxDistance, geometryLimited);
+        }
+
+        var dx = candidate.X - item.AnchorX;
+        var dy = candidate.Y - item.AnchorY;
+        return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
     }
 
     private static IReadOnlyList<MarkCandidate> RemoveNearDuplicates(IEnumerable<MarkCandidate> candidates)

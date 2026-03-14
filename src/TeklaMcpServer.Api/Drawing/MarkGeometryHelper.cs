@@ -26,6 +26,9 @@ public sealed class MarkGeometryInfo
     public List<double[]> Corners { get; set; } = new();
 }
 
+// NOTE: Critical for drawing mark polygon geometry used by debug and overlap logic.
+// Do not change this code without prior warning and approval.
+// Do not delete or replace behavior without a 1:1 validated equivalent.
 public static class MarkGeometryHelper
 {
     private const double Epsilon = 1e-9;

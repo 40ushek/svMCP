@@ -197,4 +197,79 @@ public sealed class MarkLayoutAxisTests
 
         Assert.Equal(0, resolver.CountOverlaps(placements));
     }
+
+    [Fact]
+    public void ResolvePlacedMarks_MovesOnlyConflictingComponent()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1, X = 0, Y = 0, Width = 80, Height = 40, AnchorX = 0, AnchorY = 0, CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2, X = 20, Y = 0, Width = 80, Height = 40, AnchorX = 20, AnchorY = 0, CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 3, X = 300, Y = 300, Width = 80, Height = 40, AnchorX = 300, AnchorY = 300, CanMove = true
+            }
+        };
+
+        var resolved = resolver.ResolvePlacedMarks(
+            placements,
+            new MarkLayoutOptions { Gap = 2.0, MaxResolverIterations = 20 },
+            out _);
+
+        var first = resolved.Single(x => x.Id == 1);
+        var second = resolved.Single(x => x.Id == 2);
+        var third = resolved.Single(x => x.Id == 3);
+
+        Assert.Equal(0, resolver.CountOverlaps(resolved));
+        Assert.True(
+            System.Math.Abs(first.X) > 0.01 ||
+            System.Math.Abs(first.Y) > 0.01);
+        Assert.True(
+            System.Math.Abs(second.X - 20) > 0.01 ||
+            System.Math.Abs(second.Y) > 0.01);
+        Assert.Equal(300, third.X, 6);
+        Assert.Equal(300, third.Y, 6);
+    }
+
+    [Fact]
+    public void ResolvePlacedMarks_RespectsMaxDistanceFromAnchor()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1, X = 0, Y = 0, Width = 120, Height = 40, AnchorX = 0, AnchorY = 0, CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2, X = 10, Y = 0, Width = 120, Height = 40, AnchorX = 10, AnchorY = 0, CanMove = true
+            }
+        };
+
+        var resolved = resolver.ResolvePlacedMarks(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxResolverIterations = 20,
+                MaxDistanceFromAnchor = 18.0
+            },
+            out _);
+
+        foreach (var mark in resolved)
+        {
+            var dx = mark.X - mark.AnchorX;
+            var dy = mark.Y - mark.AnchorY;
+            var distance = System.Math.Sqrt((dx * dx) + (dy * dy));
+            Assert.True(distance <= 18.001);
+        }
+    }
 }

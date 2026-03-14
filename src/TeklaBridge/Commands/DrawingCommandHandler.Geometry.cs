@@ -39,7 +39,7 @@ internal sealed partial class DrawingCommandHandler
                 return HandleDrawDebugOverlay(GetDebugOverlayApi(), args);
 
             case "draw_selected_mark_part_axis_geometry":
-                return HandleDrawSelectedMarkPartAxisGeometry(GetDebugOverlayApi());
+                return HandleDrawSelectedMarkPartAxisGeometry(GetPartGeometryApi(), GetDebugOverlayApi());
 
             case "clear_debug_overlay":
                 return HandleClearDebugOverlay(GetDebugOverlayApi(), args);
@@ -136,7 +136,7 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private bool HandleDrawSelectedMarkPartAxisGeometry(TeklaDrawingDebugOverlayApi debugOverlayApi)
+    private bool HandleDrawSelectedMarkPartAxisGeometry(TeklaDrawingPartGeometryApi partGeometryApi, TeklaDrawingDebugOverlayApi debugOverlayApi)
     {
         if (!EnsureActiveDrawing())
             return true;
@@ -157,88 +157,138 @@ internal sealed partial class DrawingCommandHandler
                 selectedMarks.Add(selectedMark);
         }
 
-        if (selectedMarks.Count == 0)
+        if (selectedMarks.Count != 1)
         {
-            WriteError("No marks selected");
+            WriteError($"Expected exactly 1 selected mark, got {selectedMarks.Count}");
             return true;
         }
+
+        var mark = selectedMarks[0];
+        var view = mark.GetView();
+        if (view == null)
+        {
+            WriteError($"Selected mark {mark.GetIdentifier().ID} has no owner view");
+            return true;
+        }
+
+        int? modelId = null;
+        var related = mark.GetRelatedObjects();
+        while (related.MoveNext())
+        {
+            if (related.Current is Tekla.Structures.Drawing.ModelObject drawingModelObject)
+            {
+                modelId = drawingModelObject.ModelIdentifier.ID;
+                break;
+            }
+        }
+
+        if (!modelId.HasValue)
+        {
+            WriteError($"Selected mark {mark.GetIdentifier().ID} has no related model object");
+            return true;
+        }
+
+        var geometry = partGeometryApi.GetPartGeometryInView(view.GetIdentifier().ID, modelId.Value);
+        if (!geometry.Success)
+        {
+            WriteError(geometry.Error ?? "Failed to read part geometry in view");
+            return true;
+        }
+
+        if (geometry.StartPoint.Length < 2 || geometry.EndPoint.Length < 2)
+        {
+            WriteError($"Related model object {modelId.Value} does not expose a usable start/end axis in view {view.GetIdentifier().ID}");
+            return true;
+        }
+
+        var axisDx = geometry.EndPoint[0] - geometry.StartPoint[0];
+        var axisDy = geometry.EndPoint[1] - geometry.StartPoint[1];
+        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+        if (axisLength < 0.001)
+        {
+            WriteError($"Related model object {modelId.Value} axis is too short in view {view.GetIdentifier().ID}");
+            return true;
+        }
+
+        var bbox = mark.GetAxisAlignedBoundingBox();
+        var objectAligned = mark.GetObjectAlignedBoundingBox();
+        var centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+        var centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+        var halfWidth = objectAligned.Width / 2.0;
+        var halfHeight = objectAligned.Height / 2.0;
+        var ux = axisDx / axisLength;
+        var uy = axisDy / axisLength;
+        var vx = -uy;
+        var vy = ux;
+
+        var p1 = new[] { Round2(centerX - (ux * halfWidth) - (vx * halfHeight)), Round2(centerY - (uy * halfWidth) - (vy * halfHeight)) };
+        var p2 = new[] { Round2(centerX + (ux * halfWidth) - (vx * halfHeight)), Round2(centerY + (uy * halfWidth) - (vy * halfHeight)) };
+        var p3 = new[] { Round2(centerX + (ux * halfWidth) + (vx * halfHeight)), Round2(centerY + (uy * halfWidth) + (vy * halfHeight)) };
+        var p4 = new[] { Round2(centerX - (ux * halfWidth) + (vx * halfHeight)), Round2(centerY - (uy * halfWidth) + (vy * halfHeight)) };
+
+        var axisHalf = Math.Min(objectAligned.Width * 0.6, 250.0);
+        var axisStart = new[] { Round2(centerX - (ux * axisHalf)), Round2(centerY - (uy * axisHalf)) };
+        var axisEnd = new[] { Round2(centerX + (ux * axisHalf)), Round2(centerY + (uy * axisHalf)) };
+        var angleDeg = Round2(Math.Atan2(uy, ux) * (180.0 / Math.PI));
 
         var request = new DrawingDebugOverlayRequest
         {
             Group = "selected-mark-part-axis-geometry",
             ClearGroupFirst = true,
-            Shapes = new List<DrawingDebugShape>()
-        };
-
-        var markResults = new List<object>();
-
-        foreach (var mark in selectedMarks)
-        {
-            var view = mark.GetView();
-            if (view == null)
-                continue;
-
-            var viewId = view.GetIdentifier().ID;
-            var geometry = MarkGeometryHelper.Build(mark, _model, viewId);
-            if (geometry.Corners.Count < 4)
-                continue;
-            var centerX = geometry.CenterX;
-            var centerY = geometry.CenterY;
-            var polygonPoints = geometry.Corners
-                .Select(p => new[] { Round2(p[0]), Round2(p[1]) })
-                .ToList();
-
-            request.Shapes.Add(new DrawingDebugShape
+            Shapes = new List<DrawingDebugShape>
             {
-                Kind = "polygon",
-                ViewId = viewId,
-                Points = polygonPoints,
-                Color = "Green",
-                LineType = "DashDot"
-            });
-            request.Shapes.Add(new DrawingDebugShape
-            {
-                Kind = "cross",
-                ViewId = viewId,
-                X1 = Round2(centerX),
-                Y1 = Round2(centerY),
-                Size = 30,
-                Color = "Yellow"
-            });
-
-            if (geometry.HasAxis)
-            {
-                var ux = geometry.AxisDx;
-                var uy = geometry.AxisDy;
-                var axisHalf = Math.Min(geometry.Width * 0.6, 250.0);
-                request.Shapes.Add(new DrawingDebugShape
+                new()
+                {
+                    Kind = "polygon",
+                    ViewId = view.GetIdentifier().ID,
+                    Points = new List<double[]> { p1, p2, p3, p4 },
+                    Color = "Green",
+                    LineType = "DashDot"
+                },
+                new()
                 {
                     Kind = "line",
-                    ViewId = viewId,
-                    X1 = Round2(centerX - (ux * axisHalf)),
-                    Y1 = Round2(centerY - (uy * axisHalf)),
-                    X2 = Round2(centerX + (ux * axisHalf)),
-                    Y2 = Round2(centerY + (uy * axisHalf)),
+                    ViewId = view.GetIdentifier().ID,
+                    X1 = axisStart[0],
+                    Y1 = axisStart[1],
+                    X2 = axisEnd[0],
+                    Y2 = axisEnd[1],
                     Color = "Cyan",
                     LineType = "Solid"
-                });
+                },
+                new()
+                {
+                    Kind = "cross",
+                    ViewId = view.GetIdentifier().ID,
+                    X1 = Round2(centerX),
+                    Y1 = Round2(centerY),
+                    Size = 30,
+                    Color = "Yellow"
+                },
+                new()
+                {
+                    Kind = "text",
+                    ViewId = view.GetIdentifier().ID,
+                    X1 = Round2(centerX + 35),
+                    Y1 = Round2(centerY + 25),
+                    Text = $"partAxis={angleDeg} deg",
+                    Color = "Yellow",
+                    TextHeight = 1.5
+                }
             }
-
-            markResults.Add(new
-            {
-                markId = mark.GetIdentifier().ID,
-                viewId,
-                centerX = Round2(centerX),
-                centerY = Round2(centerY),
-                angleDeg = Round2(geometry.AngleDeg),
-                geometrySource = geometry.Source
-            });
-        }
+        };
 
         var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
         WriteJson(new
         {
-            marks = markResults,
+            markId = mark.GetIdentifier().ID,
+            viewId = view.GetIdentifier().ID,
+            modelId = modelId.Value,
+            centerX = Round2(centerX),
+            centerY = Round2(centerY),
+            objectWidth = Round2(objectAligned.Width),
+            objectHeight = Round2(objectAligned.Height),
+            partAxisAngleDeg = angleDeg,
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,
             createdCount = overlayResult.CreatedCount,

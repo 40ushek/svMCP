@@ -72,22 +72,56 @@ internal sealed partial class DrawingCommandHandler
         var total = Stopwatch.StartNew();
 
         var arrangeSw = Stopwatch.StartNew();
-        var arrange = api.ArrangeMarks(gap);
+        var firstArrange = api.ArrangeMarks(gap);
         arrangeSw.Stop();
+
+        var arrangePasses = 1;
+        var arrangeMovedTotal = firstArrange.MarksMovedCount;
+        var arrangeIterationsTotal = firstArrange.Iterations;
+        var reportedRemaining = firstArrange.RemainingOverlaps;
+
+        var verifySw = Stopwatch.StartNew();
+        var initialActualOverlaps = api.GetMarks(null).Overlaps.Count;
+        var actualRemaining = initialActualOverlaps;
+        verifySw.Stop();
 
         var resolvePasses = 0;
         var resolveMovedTotal = 0;
         var resolveIterationsTotal = 0;
-        var finalRemaining = arrange.RemainingOverlaps;
+        var stopReason = actualRemaining <= 0 ? "no_overlaps_after_arrange" : "max_passes_reached";
 
         var resolveSw = Stopwatch.StartNew();
-        while (finalRemaining > 0 && resolvePasses < maxPasses)
+        while (actualRemaining > 0 && resolvePasses < maxPasses)
         {
-            var resolve = api.ResolveMarkOverlaps(margin);
+            var overlapsBeforePass = actualRemaining;
+            var passMargin = margin + (resolvePasses * 1.5);
+            var resolve = api.ResolveMarkOverlaps(passMargin);
             resolvePasses++;
             resolveMovedTotal += resolve.MarksMovedCount;
             resolveIterationsTotal += resolve.Iterations;
-            finalRemaining = resolve.RemainingOverlaps;
+            reportedRemaining = resolve.RemainingOverlaps;
+
+            verifySw.Start();
+            actualRemaining = api.GetMarks(null).Overlaps.Count;
+            verifySw.Stop();
+
+            if (actualRemaining <= 0)
+            {
+                stopReason = "resolved";
+                break;
+            }
+
+            if (resolve.MarksMovedCount <= 0)
+            {
+                stopReason = "no_marks_moved";
+                break;
+            }
+
+            if (actualRemaining >= overlapsBeforePass)
+            {
+                stopReason = "no_progress";
+                break;
+            }
         }
         resolveSw.Stop();
 
@@ -95,28 +129,36 @@ internal sealed partial class DrawingCommandHandler
             "bridge-mark",
             "arrange_marks_no_collisions",
             total.ElapsedMilliseconds,
-            $"gap={gap.ToString(System.Globalization.CultureInfo.InvariantCulture)} margin={margin.ToString(System.Globalization.CultureInfo.InvariantCulture)} maxPasses={maxPasses} arrangeMoved={arrange.MarksMovedCount} arrangeOverlaps={arrange.RemainingOverlaps} resolvePasses={resolvePasses} resolveMoved={resolveMovedTotal} finalOverlaps={finalRemaining} arrangeMs={arrangeSw.ElapsedMilliseconds} resolveMs={resolveSw.ElapsedMilliseconds}");
+            $"gap={gap.ToString(System.Globalization.CultureInfo.InvariantCulture)} margin={margin.ToString(System.Globalization.CultureInfo.InvariantCulture)} maxPasses={maxPasses} arrangePasses={arrangePasses} arrangeMoved={arrangeMovedTotal} resolvePasses={resolvePasses} resolveMoved={resolveMovedTotal} reportedRemaining={reportedRemaining} actualRemaining={actualRemaining} stopReason={stopReason} arrangeMs={arrangeSw.ElapsedMilliseconds} resolveMs={resolveSw.ElapsedMilliseconds} verifyMs={verifySw.ElapsedMilliseconds}");
 
         WriteJson(new
         {
             arrange = new
             {
-                marksMovedCount = arrange.MarksMovedCount,
-                movedIds = arrange.MovedIds,
-                iterations = arrange.Iterations,
-                remainingOverlaps = arrange.RemainingOverlaps
+                passes = arrangePasses,
+                marksMovedCount = arrangeMovedTotal,
+                movedIds = firstArrange.MovedIds,
+                iterations = arrangeIterationsTotal,
+                remainingOverlaps = reportedRemaining
             },
             resolve = new
             {
                 passes = resolvePasses,
                 movedCount = resolveMovedTotal,
                 iterations = resolveIterationsTotal,
-                finalRemainingOverlaps = finalRemaining
+                finalRemainingOverlaps = reportedRemaining
+            },
+            verify = new
+            {
+                initialOverlaps = initialActualOverlaps,
+                finalOverlaps = actualRemaining,
+                stopReason
             },
             timings = new
             {
                 arrangeMs = arrangeSw.ElapsedMilliseconds,
                 resolveMs = resolveSw.ElapsedMilliseconds,
+                verifyMs = verifySw.ElapsedMilliseconds,
                 totalMs = total.ElapsedMilliseconds
             }
         });

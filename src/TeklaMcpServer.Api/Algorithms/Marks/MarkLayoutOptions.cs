@@ -24,6 +24,14 @@ public sealed class MarkLayoutOptions
 
     public double CurrentPositionWeight { get; set; } = 0.15;
 
+    public double AnchorDistanceWeight { get; set; } = 0.0;
+
+    /// <summary>
+    /// Maximum allowed distance from mark anchor to generated candidate center.
+    /// Set <= 0 to disable.
+    /// </summary>
+    public double MaxDistanceFromAnchor { get; set; } = 0.0;
+
     public double LeaderLengthWeight { get; set; } = 0.05;
 
     public double CandidatePriorityWeight { get; set; } = 0.25;
