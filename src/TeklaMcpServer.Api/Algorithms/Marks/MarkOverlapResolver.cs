@@ -59,12 +59,12 @@ public sealed class MarkOverlapResolver
                 var push = separationDepth + options.Gap;
                 var moveX = separationAxisX * push;
                 var moveY = separationAxisY * push;
-                a.X -= moveX * split.MoveA;
-                a.Y -= moveY * split.MoveA;
-                b.X += moveX * split.MoveB;
-                b.Y += moveY * split.MoveB;
 
-                movedAny = true;
+                // Use MoveWithAnchorClamp so baseline marks (HasAxis && !HasLeaderLine)
+                // are only pushed along their part axis, never perpendicular to it.
+                var movedA2 = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
+                var movedB2 = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
+                movedAny = movedA2 || movedB2;
             }
 
             if (!movedAny)
