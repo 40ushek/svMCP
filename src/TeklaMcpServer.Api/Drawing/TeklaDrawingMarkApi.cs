@@ -51,7 +51,7 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
 
                     var bbox = mark.GetAxisAlignedBoundingBox();
                     var obb = mark.GetObjectAlignedBoundingBox();
-                    var geometry = MarkGeometryHelper.Build(mark, _model);
+                    var geometry = MarkGeometryHelper.Build(mark, _model, vid);
                     var ins  = mark.InsertionPoint;
                     var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
                     var info = new DrawingMarkInfo
@@ -189,14 +189,27 @@ public sealed class TeklaDrawingMarkApi : IDrawingMarkApi
                 }
             }
 
-            // Detect pairwise AABB overlaps
+            // Detect overlaps using the actual resolved mark polygons when available.
             var overlaps = new List<MarkOverlap>();
             for (int i = 0; i < marks.Count; i++)
             for (int j = i + 1; j < marks.Count; j++)
             {
                 var a = marks[i]; var b = marks[j];
-                if (a.BboxMaxX > b.BboxMinX && b.BboxMaxX > a.BboxMinX &&
-                    a.BboxMaxY > b.BboxMinY && b.BboxMaxY > a.BboxMinY)
+                var overlapsDetected =
+                    a.ResolvedGeometry?.Corners is { Count: >= 3 } aCorners &&
+                    b.ResolvedGeometry?.Corners is { Count: >= 3 } bCorners
+                        ? MarkGeometryHelper.PolygonsIntersect(aCorners, bCorners)
+                        : MarkGeometryHelper.RectanglesOverlap(
+                            a.ResolvedGeometry?.MinX ?? a.BboxMinX,
+                            a.ResolvedGeometry?.MinY ?? a.BboxMinY,
+                            a.ResolvedGeometry?.MaxX ?? a.BboxMaxX,
+                            a.ResolvedGeometry?.MaxY ?? a.BboxMaxY,
+                            b.ResolvedGeometry?.MinX ?? b.BboxMinX,
+                            b.ResolvedGeometry?.MinY ?? b.BboxMinY,
+                            b.ResolvedGeometry?.MaxX ?? b.BboxMaxX,
+                            b.ResolvedGeometry?.MaxY ?? b.BboxMaxY);
+
+                if (overlapsDetected)
                     overlaps.Add(new MarkOverlap { IdA = a.Id, IdB = b.Id });
             }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
@@ -27,7 +28,9 @@ public sealed class MarkGeometryInfo
 
 public static class MarkGeometryHelper
 {
-    public static MarkGeometryInfo Build(Mark mark, Model model)
+    private const double Epsilon = 1e-9;
+
+    public static MarkGeometryInfo Build(Mark mark, Model model, int? viewId = null)
     {
         var bbox = mark.GetAxisAlignedBoundingBox();
         var objectAligned = mark.GetObjectAlignedBoundingBox();
@@ -37,7 +40,7 @@ public static class MarkGeometryHelper
         if (mark.Placing is LeaderLinePlacing)
             return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBox", true);
 
-        if (mark.Placing is BaseLinePlacing && TryGetRelatedPartAxisInView(mark, model, out var axisDx, out var axisDy))
+        if (mark.Placing is BaseLinePlacing && TryGetRelatedPartAxisInView(mark, model, viewId, out var axisDx, out var axisDy))
             return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, axisDx, axisDy, "RelatedPartAxis", true);
 
         if (mark.Placing is BaseLinePlacing baseLinePlacing)
@@ -130,35 +133,19 @@ public static class MarkGeometryHelper
         };
     }
 
-    private static bool TryGetRelatedPartAxisInView(Mark mark, Model model, out double axisDx, out double axisDy)
+    private static bool TryGetRelatedPartAxisInView(Mark mark, Model model, int? explicitViewId, out double axisDx, out double axisDy)
     {
         axisDx = 0.0;
         axisDy = 0.0;
 
-        var ownerView = mark.GetView();
-        if (ownerView == null)
-            return false;
-
-        var activeDrawing = new DrawingHandler().GetActiveDrawing();
-        if (activeDrawing == null)
-            return false;
-
-        var viewId = 0;
-        var views = activeDrawing.GetSheet().GetViews();
-        while (views.MoveNext())
+        var viewId = explicitViewId.GetValueOrDefault();
+        if (viewId == 0)
         {
-            if (views.Current is not Tekla.Structures.Drawing.View drawingView)
-                continue;
+            var ownerView = mark.GetView();
+            if (ownerView == null)
+                return false;
 
-            if (!ReferenceEquals(drawingView, ownerView))
-                continue;
-
-            var getIdentifier = drawingView.GetType().GetMethod("GetIdentifier", BindingFlags.Instance | BindingFlags.Public);
-            var identifier = getIdentifier?.Invoke(drawingView, null);
-            var idProperty = identifier?.GetType().GetProperty("ID", BindingFlags.Instance | BindingFlags.Public);
-            if (idProperty?.GetValue(identifier) is int resolvedViewId)
-                viewId = resolvedViewId;
-            break;
+            viewId = TryGetIdentifierId(ownerView);
         }
 
         if (viewId == 0)
@@ -188,4 +175,83 @@ public static class MarkGeometryHelper
 
         return false;
     }
+
+    private static int TryGetIdentifierId(object drawingObject)
+    {
+        var getIdentifier = drawingObject.GetType().GetMethod("GetIdentifier", BindingFlags.Instance | BindingFlags.Public);
+        var identifier = getIdentifier?.Invoke(drawingObject, null);
+        var idProperty = identifier?.GetType().GetProperty("ID", BindingFlags.Instance | BindingFlags.Public);
+        return idProperty?.GetValue(identifier) as int? ?? 0;
+    }
+
+    public static bool PolygonsIntersect(IReadOnlyList<double[]> first, IReadOnlyList<double[]> second)
+    {
+        if (first.Count < 3 || second.Count < 3)
+            return false;
+
+        return !HasSeparatingAxis(first, second) && !HasSeparatingAxis(second, first);
+    }
+
+    public static bool RectanglesOverlap(
+        double firstMinX,
+        double firstMinY,
+        double firstMaxX,
+        double firstMaxY,
+        double secondMinX,
+        double secondMinY,
+        double secondMaxX,
+        double secondMaxY)
+    {
+        return firstMaxX > secondMinX &&
+               secondMaxX > firstMinX &&
+               firstMaxY > secondMinY &&
+               secondMaxY > firstMinY;
+    }
+
+    private static bool HasSeparatingAxis(IReadOnlyList<double[]> polygonA, IReadOnlyList<double[]> polygonB)
+    {
+        for (var i = 0; i < polygonA.Count; i++)
+        {
+            var current = polygonA[i];
+            var next = polygonA[(i + 1) % polygonA.Count];
+            var edgeX = next[0] - current[0];
+            var edgeY = next[1] - current[1];
+
+            if (Math.Abs(edgeX) < Epsilon && Math.Abs(edgeY) < Epsilon)
+                continue;
+
+            var axisX = -edgeY;
+            var axisY = edgeX;
+            ProjectPolygon(polygonA, axisX, axisY, out var aMin, out var aMax);
+            ProjectPolygon(polygonB, axisX, axisY, out var bMin, out var bMax);
+
+            if (aMax <= bMin + Epsilon || bMax <= aMin + Epsilon)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void ProjectPolygon(
+        IReadOnlyList<double[]> polygon,
+        double axisX,
+        double axisY,
+        out double min,
+        out double max)
+    {
+        var firstProjection = Dot(polygon[0][0], polygon[0][1], axisX, axisY);
+        min = firstProjection;
+        max = firstProjection;
+
+        foreach (var point in polygon.Skip(1))
+        {
+            var projection = Dot(point[0], point[1], axisX, axisY);
+            if (projection < min)
+                min = projection;
+            if (projection > max)
+                max = projection;
+        }
+    }
+
+    private static double Dot(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 }
