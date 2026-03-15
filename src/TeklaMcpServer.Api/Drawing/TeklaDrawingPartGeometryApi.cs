@@ -51,7 +51,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 if (modelObj == null) continue;
 
                 var modelId = id.ID;
-                double[] startPt = [], endPt = [], axisX = [], axisY = [];
+                double[] startPt = [], endPt = [], axisX = [], axisY = [], csOrigin = [];
 
                 string typeName = modelObj.GetType().Name;
                 string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
@@ -62,6 +62,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     startPt  = ToArray(beam.StartPoint);
                     endPt    = ToArray(beam.EndPoint);
                     var cs   = beam.GetCoordinateSystem();
+                    csOrigin = ToArray(cs.Origin);
                     axisX    = ToArray(cs.AxisX);
                     axisY    = ToArray(cs.AxisY);
                     name     = beam.Name;
@@ -74,6 +75,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 {
                     var cs   = part.GetCoordinateSystem();
                     startPt  = ToArray(cs.Origin);
+                    csOrigin = ToArray(cs.Origin);
                     axisX    = ToArray(cs.AxisX);
                     axisY    = ToArray(cs.AxisY);
                     name     = part.Name;
@@ -92,6 +94,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     ModelId    = modelId,
                     StartPoint = startPt,
                     EndPoint   = endPt,
+                    CoordinateSystemOrigin = csOrigin,
                     AxisX      = axisX,
                     AxisY      = axisY,
                     BboxMin    = bboxMin,
@@ -153,12 +156,14 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
             double[] endPt   = [];
             double[] axisX   = [];
             double[] axisY   = [];
+            double[] csOrigin = [];
 
             if (modelObj is Beam beam)
             {
                 startPt = ToArray(beam.StartPoint);
                 endPt   = ToArray(beam.EndPoint);
                 var cs  = beam.GetCoordinateSystem();
+                csOrigin = ToArray(cs.Origin);
                 axisX   = ToArray(cs.AxisX);
                 axisY   = ToArray(cs.AxisY);
             }
@@ -166,6 +171,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
             {
                 var cs = part.GetCoordinateSystem();
                 startPt = ToArray(cs.Origin);
+                csOrigin = ToArray(cs.Origin);
                 axisX   = ToArray(cs.AxisX);
                 axisY   = ToArray(cs.AxisY);
             }
@@ -189,6 +195,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 ModelId    = modelId,
                 StartPoint = startPt,
                 EndPoint   = endPt,
+                CoordinateSystemOrigin = csOrigin,
                 AxisX      = axisX,
                 AxisY      = axisY,
                 BboxMin    = bboxMin,

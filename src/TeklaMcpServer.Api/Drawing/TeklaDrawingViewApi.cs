@@ -4,6 +4,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Diagnostics;
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -104,10 +105,12 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
         long probeMs = 0;
         long arrangeMs = 0;
         long postAdjustMs = 0;
+        long projectionMs = 0;
         long finalCommitMs = 0;
         var viewsCount = 0;
         var candidateAttempts = 0;
         double? selectedScale = null;
+        ProjectionAlignmentResult? projectionResult = null;
 
         if (margin < 0)
             throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
@@ -283,6 +286,20 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
+        var projectionSw = Stopwatch.StartNew();
+        var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
+        projectionResult = projectionAlignmentService.Apply(
+            activeDrawing,
+            currentViews,
+            offsetById,
+            sheetW,
+            sheetH,
+            margin,
+            reservedAreas,
+            arranged);
+        projectionSw.Stop();
+        projectionMs = projectionSw.ElapsedMilliseconds;
+
         var commitSw = Stopwatch.StartNew();
         activeDrawing.CommitChanges();
         commitSw.Stop();
@@ -301,7 +318,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             "api-view",
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
-            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "n/a")} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} finalCommitMs={finalCommitMs}");
+            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "n/a")} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
     }
 

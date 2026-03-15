@@ -66,6 +66,9 @@ public sealed class TeklaDrawingGridApi : IDrawingGridApi
 
             axes.Add(new GridAxisInfo
             {
+                Guid       = gl.ModelIdentifier != null && gl.ModelIdentifier.GUID != Guid.Empty
+                    ? gl.ModelIdentifier.GUID.ToString()
+                    : null,
                 Label      = label,
                 Direction  = direction,
                 Coordinate = coordinate,

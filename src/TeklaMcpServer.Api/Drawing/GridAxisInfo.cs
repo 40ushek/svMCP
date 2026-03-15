@@ -2,6 +2,7 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class GridAxisInfo
 {
+    public string? Guid     { get; set; }
     public string Label     { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty; // "X" (vertical line) | "Y" (horizontal line) | "other"
     public double StartX    { get; set; }

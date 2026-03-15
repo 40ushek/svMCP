@@ -13,6 +13,9 @@ public sealed class PartGeometryInViewResult
     /// <summary>Part axis end point in view coordinate system (mm).</summary>
     public double[] EndPoint { get; set; } = [];
 
+    /// <summary>Part coordinate system origin in view coordinate system (mm).</summary>
+    public double[] CoordinateSystemOrigin { get; set; } = [];
+
     /// <summary>Part local X axis direction in view coordinate system.</summary>
     public double[] AxisX { get; set; } = [];
 
