@@ -8,5 +8,4 @@ public interface IDrawingViewApi
     MoveViewResult     MoveView(int viewId, double dx, double dy, bool absolute);
     SetViewScaleResult SetViewScale(IEnumerable<int> viewIds, double scale);
     FitViewsResult     FitViewsToSheet(double margin, double gap, double titleBlockHeight);
-    bool               PlaceViews();
 }

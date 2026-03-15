@@ -254,24 +254,6 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Trigger Tekla's built-in view placement for views that were auto-generated and not yet manually positioned. Only affects views still under automatic placement control — views moved manually or via move_view/fit_views_to_sheet are ignored. Use fit_views_to_sheet for full rearrangement.")]
-    public static string PlaceViews()
-    {
-        var json = RunBridge("place_views");
-        try
-        {
-            var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err))
-                return $"Error: {err.GetString()}";
-            var ok = doc.RootElement.TryGetProperty("success", out var s) && s.GetBoolean();
-            return ok ? "Views placed successfully." : "PlaceViews returned false (no changes made).";
-        }
-        catch
-        {
-            return $"Bridge error: {json}";
-        }
-    }
-
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,

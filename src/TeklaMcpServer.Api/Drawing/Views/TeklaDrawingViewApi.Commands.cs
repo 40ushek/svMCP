@@ -71,20 +71,4 @@ public sealed partial class TeklaDrawingViewApi
 
         return new SetViewScaleResult { UpdatedCount = updated.Count, UpdatedIds = updated, Scale = scale };
     }
-
-    public bool PlaceViews()
-    {
-        var activeDrawing = new DrawingHandler().GetActiveDrawing();
-        if (activeDrawing == null)
-            throw new DrawingNotOpenException();
-
-        var iterations = 0;
-        while (iterations < 10 && activeDrawing.PlaceViews())
-            iterations++;
-
-        if (iterations > 0)
-            activeDrawing.CommitChanges();
-
-        return iterations > 0;
-    }
 }
