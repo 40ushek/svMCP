@@ -62,7 +62,7 @@
   - **FrontView ↔ TopView**: выравнивание по X — одна и та же деталь/ось на одной вертикали
 - Алгоритм: `get_part_geometry_in_view` / `get_grid_axes` для опорного объекта → пересчёт из локальных координат вида в лист-координаты с учётом `Origin`, `Scale` и post-correction рамки вида → `move_view`
 - Опорный объект зависит от типа чертежа:
-  - **AssemblyDrawing**: чертёж → `ASSEMBLY_POS` → `Assembly.GetMainPart()` → `Part.CoordinateSystem.Origin` (мировые координаты) → проецировать в каждый вид через `TransformationPlane(view.DisplayCoordinateSystem)` → view-local координаты → лист
+  - **AssemblyDrawing**: из чертежа получить `GUID`/идентификатор объекта модели → в модели получить сборку и её главную деталь (`Assembly.GetMainPart()`) → взять СК главной детали как общий якорь → проецировать её в каждый вид через `TransformationPlane(view.DisplayCoordinateSystem)` → view-local координаты → лист. `ASSEMBLY_POS` оставить как fallback, если прямой `GUID`/ID недоступен
   - **GADrawing**: общая ось (`get_grid_axes`) — использовать `GUID` оси как основной ключ идентификации между видами, если API/объект его стабильно даёт; fallback: `Label + Direction`
 - Замечание: для `GADrawing` важно использовать именно стабильный идентификатор модельной оси. Если `GUID` окажется view-specific для drawing-объекта, оставлять сопоставление по `Label + Direction`
 - Реализация: отдельный класс/метод, вызывается из `fit_views_to_sheet` после расстановки
