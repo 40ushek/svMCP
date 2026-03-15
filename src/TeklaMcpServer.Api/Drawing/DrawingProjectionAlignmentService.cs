@@ -95,7 +95,10 @@ internal sealed class DrawingProjectionAlignmentService
             return;
         }
 
-        if (!TryGetPartAnchorSheet(front, mainPartId, out var frontAnchorX, out var frontAnchorY, out reason))
+        var posById = BuildPositionLookup(views, arrangedViews);
+        posById.TryGetValue(front.GetIdentifier().ID, out var frontPos);
+
+        if (!TryGetPartAnchorSheet(front, mainPartId, frontPos.X, frontPos.Y, out var frontAnchorX, out var frontAnchorY, out reason))
         {
             TraceSkip(result, reason);
             return;
@@ -103,10 +106,10 @@ internal sealed class DrawingProjectionAlignmentService
 
         var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
         if (top != null)
-            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById);
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
-            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById);
     }
 
     private void ApplyAssemblyMove(
@@ -121,9 +124,12 @@ internal sealed class DrawingProjectionAlignmentService
         double sheetHeight,
         double margin,
         IReadOnlyList<ReservedRect> reservedAreas,
-        IList<ArrangedView>? arrangedViews)
+        IList<ArrangedView>? arrangedViews,
+        IReadOnlyDictionary<int, (double X, double Y)> posById)
     {
-        if (!TryGetPartAnchorSheet(target, mainPartId, out var targetAnchorX, out var targetAnchorY, out var reason))
+        posById.TryGetValue(target.GetIdentifier().ID, out var targetPos);
+
+        if (!TryGetPartAnchorSheet(target, mainPartId, targetPos.X, targetPos.Y, out var targetAnchorX, out var targetAnchorY, out var reason))
         {
             TraceSkip(result, reason);
             return;
@@ -131,7 +137,7 @@ internal sealed class DrawingProjectionAlignmentService
 
         var dx = alignX ? frontAnchorX - targetAnchorX : 0.0;
         var dy = alignX ? 0.0 : frontAnchorY - targetAnchorY;
-        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0);
     }
 
     private void ApplyGaAlignment(
@@ -442,7 +448,7 @@ internal sealed class DrawingProjectionAlignmentService
         return true;
     }
 
-    private bool TryGetPartAnchorSheet(DrawingView view, int modelId, out double anchorX, out double anchorY, out string reason)
+    private bool TryGetPartAnchorSheet(DrawingView view, int modelId, double originX, double originY, out double anchorX, out double anchorY, out string reason)
     {
         anchorX = 0;
         anchorY = 0;
@@ -465,8 +471,8 @@ internal sealed class DrawingProjectionAlignmentService
 
         var state = new ProjectionViewState(
             view.GetIdentifier().ID,
-            view.Origin?.X ?? 0,
-            view.Origin?.Y ?? 0,
+            originX,
+            originY,
             view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
             view.Width,
             view.Height,
@@ -525,7 +531,11 @@ internal sealed class DrawingProjectionAlignmentService
         origin.X += dx;
         origin.Y += dy;
         view.Origin = origin;
-        view.Modify();
+        if (!view.Modify())
+        {
+            TraceSkip(result, $"projection-skip:modify-failed:view={view.GetIdentifier().ID}");
+            return false;
+        }
         UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, origin.X, origin.Y);
         result.AppliedMoves++;
         return true;
