@@ -67,6 +67,38 @@ public sealed class DrawingReservedAreaReaderTests
         Assert.Equal(0, bounds.MaxY, 6);
     }
 
+    [Fact]
+    public void BuildLayoutTableGeometryInfo_ForEmptySegment_MarksTableAsInactive()
+    {
+        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(123, CreateSegment());
+
+        Assert.Equal(123, info.TableId);
+        Assert.False(info.HasGeometry);
+        Assert.Equal(0, info.PrimitiveCount);
+        Assert.Null(info.Bounds);
+    }
+
+    [Fact]
+    public void BuildLayoutTableGeometryInfo_ForTableFrame_ReturnsBoundsAndPrimitiveCount()
+    {
+        var segment = CreateSegment();
+        segment.Primitives.Add(new LinePrimitive(new Vector2(10, 20), new Vector2(110, 20)));
+        segment.Primitives.Add(new LinePrimitive(new Vector2(110, 20), new Vector2(110, 70)));
+        segment.Primitives.Add(new LinePrimitive(new Vector2(110, 70), new Vector2(10, 70)));
+        segment.Primitives.Add(new LinePrimitive(new Vector2(10, 70), new Vector2(10, 20)));
+
+        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(456, segment);
+
+        Assert.Equal(456, info.TableId);
+        Assert.True(info.HasGeometry);
+        Assert.Equal(4, info.PrimitiveCount);
+        Assert.NotNull(info.Bounds);
+        Assert.Equal(10, info.Bounds!.MinX, 6);
+        Assert.Equal(20, info.Bounds.MinY, 6);
+        Assert.Equal(110, info.Bounds.MaxX, 6);
+        Assert.Equal(70, info.Bounds.MaxY, 6);
+    }
+
     private static Segment CreateSegment()
     {
         return new Segment(1, new Pen(1, 1, 1), new SolidColorBrush(1), 0, 0, 0);

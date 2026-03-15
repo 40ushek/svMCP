@@ -6,8 +6,6 @@ using TeklaMcpServer.Api.Diagnostics;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.DrawingPresentationModel;
-using Tekla.Structures.DrawingPresentationModelInterface;
-using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -39,7 +37,7 @@ internal static class DrawingReservedAreaReader
                 reserved.Add(new ReservedRect(usableMinX, usableMinY, usableMaxX, manualTop));
         }
 
-        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY);
+        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY, ReadLayoutTableGeometries());
 
         var sheet = drawing.GetSheet();
         var sheetId = sheet.GetIdentifier().ID;
@@ -92,51 +90,59 @@ internal static class DrawingReservedAreaReader
         double usableMinX,
         double usableMinY,
         double usableMaxX,
-        double usableMaxY)
+        double usableMaxY,
+        IReadOnlyList<LayoutTableGeometryInfo> tableGeometries)
     {
-        List<int>? tableIds;
-        try
+        foreach (var table in tableGeometries)
         {
-            tableIds = TableLayout.GetCurrentTables();
-        }
-        catch (Exception ex)
-        {
-            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=get_current_tables_failed error={ex.GetType().Name}");
-            return;
-        }
+            if (!table.HasGeometry || table.Bounds == null)
+                continue;
 
-        if (tableIds == null || tableIds.Count == 0)
-            return;
+            var minX = Clamp(table.Bounds.MinX, usableMinX, usableMaxX);
+            var minY = Clamp(table.Bounds.MinY, usableMinY, usableMaxY);
+            var maxX = Clamp(table.Bounds.MaxX, usableMinX, usableMaxX);
+            var maxY = Clamp(table.Bounds.MaxY, usableMinY, usableMaxY);
 
-        try
+            if (maxX - minX < MinObstacleSize || maxY - minY < MinObstacleSize)
+                continue;
+
+            var widthRatio = (maxX - minX) / (usableMaxX - usableMinX);
+            var heightRatio = (maxY - minY) / (usableMaxY - usableMinY);
+            if (widthRatio >= FullSheetCoverageRatio && heightRatio >= FullSheetCoverageRatio)
+                continue;
+
+            reserved.Add(new ReservedRect(minX, minY, maxX, maxY));
+        }
+    }
+
+    internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries()
+    {
+        // Disabled for now: layout-handler calls can block in the bridge runtime context.
+        // Returning no table geometries keeps view arrangement responsive and predictable.
+        PerfTrace.Write("api-view", "reserved_tables_skip", 0, "reason=disabled_unstable_layout_handler");
+        return Array.Empty<LayoutTableGeometryInfo>();
+    }
+
+    internal static LayoutTableGeometryInfo BuildLayoutTableGeometryInfo(int tableId, Segment? segment)
+    {
+        var primitiveCount = CountPrimitives(segment);
+        if (!TryGetSegmentBounds(segment, out var bounds))
         {
-            using var connection = new PresentationConnection();
-            foreach (var tableId in tableIds)
+            return new LayoutTableGeometryInfo
             {
-                var segment = connection.Service.GetObjectPresentation(tableId);
-                if (!TryGetSegmentBounds(segment, out var rawBounds))
-                    continue;
-
-                var minX = Clamp(rawBounds.MinX, usableMinX, usableMaxX);
-                var minY = Clamp(rawBounds.MinY, usableMinY, usableMaxY);
-                var maxX = Clamp(rawBounds.MaxX, usableMinX, usableMaxX);
-                var maxY = Clamp(rawBounds.MaxY, usableMinY, usableMaxY);
-
-                if (maxX - minX < MinObstacleSize || maxY - minY < MinObstacleSize)
-                    continue;
-
-                var widthRatio = (maxX - minX) / (usableMaxX - usableMinX);
-                var heightRatio = (maxY - minY) / (usableMaxY - usableMinY);
-                if (widthRatio >= FullSheetCoverageRatio && heightRatio >= FullSheetCoverageRatio)
-                    continue;
-
-                reserved.Add(new ReservedRect(minX, minY, maxX, maxY));
-            }
+                TableId = tableId,
+                PrimitiveCount = primitiveCount,
+                HasGeometry = false
+            };
         }
-        catch (Exception ex)
+
+        return new LayoutTableGeometryInfo
         {
-            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=presentation_model_failed error={ex.GetType().Name}");
-        }
+            TableId = tableId,
+            PrimitiveCount = primitiveCount,
+            HasGeometry = true,
+            Bounds = bounds
+        };
     }
 
     internal static bool TryGetSegmentBounds(Segment? segment, out ReservedRect bounds)
@@ -265,6 +271,40 @@ internal static class DrawingReservedAreaReader
                 IncludeEstimatedTextBox(ref acc, text);
                 return;
         }
+    }
+
+    private static int CountPrimitives(PrimitiveBase? primitive)
+    {
+        if (primitive == null)
+            return 0;
+
+        switch (primitive)
+        {
+            case Segment segment:
+                return segment.Primitives.Sum(CountPrimitives);
+            case PrimitiveGroup group:
+                return group.Primitives.Sum(CountPrimitives);
+            case PolygonPrimitive polygon:
+                var count = CountPrimitives(polygon.OuterLoop);
+                if (polygon.InnerLoops != null)
+                    count += polygon.InnerLoops.Sum(CountPrimitives);
+                return count;
+            case LoopPrimitive loop:
+                return loop.Segments.Sum(CountPathablePrimitives);
+            case PathPrimitive path:
+                return path.Segments.Sum(CountPathablePrimitives);
+            default:
+                return 1;
+        }
+    }
+
+    private static int CountPathablePrimitives(IPathable pathable)
+    {
+        return pathable switch
+        {
+            PrimitiveBase primitive => CountPrimitives(primitive),
+            _ => 1
+        };
     }
 
     private static void AccumulatePathableBounds(IPathable pathable, ref BoundsAccumulator acc)
@@ -399,4 +439,12 @@ internal static class DrawingReservedAreaReader
         public double MaxX;
         public double MaxY;
     }
+}
+
+public sealed class LayoutTableGeometryInfo
+{
+    public int TableId { get; set; }
+    public int PrimitiveCount { get; set; }
+    public bool HasGeometry { get; set; }
+    public ReservedRect? Bounds { get; set; }
 }
