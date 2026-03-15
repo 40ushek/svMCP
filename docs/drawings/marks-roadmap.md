@@ -17,7 +17,7 @@
 - `StartPoint` / `EndPoint` — вектор базовой линии в координатах вида (мм модели), но **ненадёжны** для части меток (`length = 0` или ~2 мм)
 - Движение: **только вдоль вектора** оси детали
 - Overlap resolution: см. текущую реализацию ниже
-- Overlap detection: проецировать центры и полуразмеры обеих меток на единичный вектор, сравнивать 1D интервалы
+- Overlap detection: в текущем коде используется polygon intersection по `resolvedGeometry.corners`, а если полигона нет — fallback на AABB; 1D-проекции применяются только внутри axis-aware resolution для параллельных baseline-меток
 
 ---
 
@@ -57,8 +57,9 @@
   - `Beam` → `StartPoint/EndPoint`
   - `Part` → `CoordinateSystem.AxisX`
   - Координаты читаются при активной `TransformationPlane(view.DisplayCoordinateSystem)` → ось в системе вида
-- Если успешно: используется реальная ось детали + `ComputeAxisAlignedExtents` пересчитывает AABB из OBB с учётом угла
-- Fallback: `BaseLinePlacing.StartPoint/EndPoint`, но `isReliable = false` если `length < 0.001`
+- Если успешно: используется реальная ось детали, а baseline polygon/OBB строится в `MarkGeometryHelper.BuildFromAxis(...)`
+- Fallback 1: `BaseLinePlacing.StartPoint/EndPoint`, если длина baseline axis валидна
+- Fallback 2: `MarkAngleFallback`, затем `ObjectAlignedBoundingBoxFallback`, если baseline axis ненадёжна; в этих ветках `isReliable = false`
 
 **Канонический источник оси (зафиксировано после рефакторинга):**
 - Для baseline layout canonical axis = `geometry.AxisDx/geometry.AxisDy` из `MarkGeometryHelper.Build()`
@@ -81,12 +82,8 @@
 - Смешанные конфликты `BaseLinePlacing` ↔ `LeaderLinePlacing` пока не оптимальны:
   baseline-метка ограничена осью, leader-line свободна в 2D — специального резолвера нет
 - `GetObjectAlignedBoundingBox()` используется для геометрии OBB, но точность зависит от Tekla API
-- **Bug: `BuildFromAxis` неверно вычисляет OBB когда текст метки повёрнут на 90° к оси детали**
-  - `objectAligned.Width/Height` от Tekla задаются относительно направления **текста**, не оси детали
-  - Если `angle=90` или `270` (текст перпендикулярен оси), `BuildFromAxis` кладёт Width вдоль оси — ширина и высота меняются местами
-  - Пример: деталь горизонтальная, `angle=270` → текст вертикальный (Width=378мм вертикально), но `BuildFromAxis` строит горизонтальный прямоугольник 378×111 — неверно
-  - Следствие: resolver не детектирует реальный конфликт (AABB двух вертикальных меток показывает зазор 0.2мм)
-  - **Фикс**: перед `BuildFromAxis` определять угол между текстом метки и осью детали; если ~90° — менять местами `objectWidth` и `objectHeight`
+- Перпендикулярный baseline text (`angle ~ 90°/270°`) уже учтён:
+  `MarkGeometryHelper` теперь меняет местами `objectWidth/objectHeight`, если текст ближе к перпендикуляру, чем к параллели относительно оси детали
 - В hot path layout/debug не должно быть безусловной файловой диагностики (`C:\temp\...`) — только через существующий trace/logging механизм или под явным debug flag
 
 **Контракт axis-candidates (зафиксировано):**
