@@ -298,18 +298,26 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             var normalizedAttributes = string.IsNullOrWhiteSpace(attributesFile) ? "standard" : attributesFile.Trim();
             attributes.LoadAttributes(normalizedAttributes);
 
+            // When both diagonals intersect their texts land at almost the same
+            // point (near the assembly centre). In that case use a larger offset
+            // for the second diagonal so the lines sit at different distances
+            // and the texts are clearly separated.
+            var diagonalsIntersect = pairs.Count == 2
+                && SegmentsProperlyIntersect(pairs[0].Start, pairs[0].End, pairs[1].Start, pairs[1].End);
+
             var dimIds = new List<int>();
             for (var i = 0; i < pairs.Count; i++)
             {
                 var pair = pairs[i];
                 var pointList = new PointList { pair.Start, pair.End };
                 var direction = BuildDiagonalOffsetDirection(pair.Start, pair.End);
+                var actualDistance = (i == 1 && diagonalsIntersect) ? distance * 2.0 : distance;
 
                 var dim = new StraightDimensionSetHandler().CreateDimensionSet(
                     targetView,
                     pointList,
                     direction,
-                    distance,
+                    actualDistance,
                     attributes);
                 if (dim == null)
                     continue;

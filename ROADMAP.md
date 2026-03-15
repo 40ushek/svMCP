@@ -54,6 +54,7 @@
 - `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
 - `place_control_diagonals`: перевести с bbox-экстремумов на реальные крайние точки видимого контура (без "точек в воздухе")
+- `place_control_diagonals`: текст второй диагонали ставится на `distance * 2` только когда диагонали пересекаются (иначе тексты и так не накладываются)
 
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)
