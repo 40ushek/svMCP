@@ -26,7 +26,10 @@
 - `mark.GetAxisAlignedBoundingBox()` → мм модели (view-local)
 - `view.Width / Height` → мм листа
 - `view.Attributes.Scale` → масштаб вида (модель / лист)
-- Весь layout работает в **мм листа**: делить model coords на scale при сборе, умножать обратно при записи в `InsertionPoint`
+- Текущий mark layout работает в **мм модели (view-local)**:
+  - геометрия меток (`GetAxisAlignedBoundingBox`, `ObjectAlignedBoundingBox`, `InsertionPoint`, `LeaderLinePlacing.StartPoint`) читается и применяется в координатах вида / model mm
+  - явной конвертации mark geometry в мм листа в текущем pipeline нет
+  - `view.Width / Height` остаются в мм листа и используются только как отдельный контекст размеров вида; смешивать их напрямую с mark coordinates нельзя
 
 ---
 
@@ -57,6 +60,15 @@
 - Если успешно: используется реальная ось детали + `ComputeAxisAlignedExtents` пересчитывает AABB из OBB с учётом угла
 - Fallback: `BaseLinePlacing.StartPoint/EndPoint`, но `isReliable = false` если `length < 0.001`
 
+**Канонический источник оси (зафиксировано после рефакторинга):**
+- Для baseline layout canonical axis = `geometry.AxisDx/geometry.AxisDy` из `MarkGeometryHelper.Build()`
+- `TeklaDrawingMarkLayoutAdapter` не должен вычислять отдельную "свою" ось, кроме аварийного fallback
+- `resolvedGeometry.axisDx/axisDy` в `get_drawing_marks` и ось, по которой реально двигается `InsertionPoint`, должны описывать один и тот же вектор
+- Любое изменение этого правила требует одновременно обновить:
+  - layout adapter
+  - debug/API output
+  - unit tests на axis semantics
+
 **Overlap resolver для BaseLinePlacing (обновлено):**
 - Оси нормализуются перед вычислением dot product
 - **Параллельные оси** (`|dot| >= 0.95`): проецируем на усреднённый вектор, раздвигаем вдоль него
@@ -75,6 +87,16 @@
   - Пример: деталь горизонтальная, `angle=270` → текст вертикальный (Width=378мм вертикально), но `BuildFromAxis` строит горизонтальный прямоугольник 378×111 — неверно
   - Следствие: resolver не детектирует реальный конфликт (AABB двух вертикальных меток показывает зазор 0.2мм)
   - **Фикс**: перед `BuildFromAxis` определять угол между текстом метки и осью детали; если ~90° — менять местами `objectWidth` и `objectHeight`
+- В hot path layout/debug не должно быть безусловной файловой диагностики (`C:\temp\...`) — только через существующий trace/logging механизм или под явным debug flag
+
+**Контракт axis-candidates (зафиксировано):**
+- `SimpleMarkCandidateGenerator` для `HasAxis = true` генерирует кандидаты вдоль оси, проходящей через `CurrentX/CurrentY`
+- Ограничение по `MaxDistanceFromAnchor` остаётся относительно `AnchorX/AnchorY`
+- В текущем drawing pipeline для baseline marks ожидается `Anchor == Current` на этапе initial collection
+- Если pipeline когда-либо начнёт собирать baseline marks с `Anchor != Current`, нужно отдельно пересмотреть:
+  - candidate generation
+  - scoring по anchor distance
+  - tests в `MarkLayoutAxisTests`
 
 ---
 
@@ -85,6 +107,12 @@
 2. ~~Для непараллельных baseline-меток добавить более точный fallback~~ — **реализовано** через `TryResolveAlongIndependentAxes`
 3. ~~Перевести baseline geometry с `StartPoint/EndPoint` на более надежную модель~~ — **реализовано** через `TryGetRelatedPartAxisInView`
 4. ~~Использовать drawing debug overlay для отрисовки bbox/оси~~ — **реализован** `draw_debug_overlay` / `clear_debug_overlay`
+5. Добрать unit tests на axis semantics:
+   - baseline mark с `Anchor != Current`
+   - горизонтальная балка
+   - вертикальная стойка
+   - ортогональные и противоположные оси
+   - поведение при `MaxDistanceFromAnchor`
 
 ### Конвертация BaseLinePlacing → LeaderLinePlacing
 - Если два `BaseLinePlacing` не могут разойтись вдоль вектора (элемент короткий), конвертировать одну метку в `LeaderLinePlacing` с лидерной линией к середине элемента
