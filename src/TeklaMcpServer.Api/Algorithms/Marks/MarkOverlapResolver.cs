@@ -121,8 +121,14 @@ public sealed class MarkOverlapResolver
             {
                 var a = result[pair.IndexA];
                 var b = result[pair.IndexB];
-                if (!TryGetSeparation(a, b, out var axisX, out var axisY, out var depth, out _, out _))
+                if (!TryGetSeparation(a, b, out var axisX, out var axisY, out var depth, out var overlapX, out var overlapY))
                     continue;
+
+                if (TryResolveAlongAxis(a, b, axisX, axisY, depth, overlapX, overlapY, options, out var movedAlongAxis))
+                {
+                    movedAny |= movedAlongAxis;
+                    continue;
+                }
 
                 var split = GetSimpleSplit(a, b);
                 if (split.Total <= 0)
@@ -219,11 +225,17 @@ public sealed class MarkOverlapResolver
         var push = axisOverlap + options.Gap;
         var direction = centerB >= centerA ? 1.0 : -1.0;
 
-        a.X -= axisDx * direction * push * split.MoveA;
-        a.Y -= axisDy * direction * push * split.MoveA;
-        b.X += axisDx * direction * push * split.MoveB;
-        b.Y += axisDy * direction * push * split.MoveB;
-        movedAny = true;
+        var movedA = MoveWithAnchorClamp(
+            a,
+            -axisDx * direction * push * split.MoveA,
+            -axisDy * direction * push * split.MoveA,
+            options);
+        var movedB = MoveWithAnchorClamp(
+            b,
+            +axisDx * direction * push * split.MoveB,
+            +axisDy * direction * push * split.MoveB,
+            options);
+        movedAny = movedA || movedB;
         return true;
     }
 
@@ -641,4 +653,3 @@ public sealed class MarkOverlapResolver
         return MarkGeometryHelper.TranslateLocalCorners(placement.LocalCorners, placement.X, placement.Y);
     }
 }
-
