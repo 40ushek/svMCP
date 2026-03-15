@@ -73,15 +73,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var anchorLocalY = centerLocalY;
                 var hasLeaderLine = false;
 
-                // For baseline marks, the layout axis MUST be in drawing (sheet) coordinates,
-                // not in view CS. MarkGeometryHelper.Build uses the part axis in view CS
-                // (from TryGetRelatedPartAxisInView), which can be rotated 90° relative to
-                // the drawing sheet if the view itself is rotated. Using view-CS axis for
-                // InsertionPoint movement causes marks to slide perpendicular to the beam.
-                //
-                // mark.Attributes.Angle is the text rotation angle in drawing coordinates.
-                // For a baseline mark the text is always oriented along the part axis in drawing
-                // space, so this angle gives the correct layout axis direction.
+                // Canonical baseline movement axis comes from MarkGeometryHelper so
+                // collision geometry and movement stay aligned. Only fall back to
+                // mark angle when geometry could not resolve a usable axis.
                 var hasAxis = false;
                 var axisDx = 0.0;
                 var axisDy = 0.0;

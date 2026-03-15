@@ -30,6 +30,60 @@ public sealed class MarkLayoutAxisTests
     }
 
     [Fact]
+    public void GenerateCandidates_ForAxisBoundMarkWithDifferentAnchor_UsesCurrentPositionAxis()
+    {
+        var generator = new SimpleMarkCandidateGenerator();
+        var item = new MarkLayoutItem
+        {
+            Id = 1,
+            AnchorX = 70,
+            AnchorY = 180,
+            CurrentX = 100,
+            CurrentY = 200,
+            Width = 40,
+            Height = 20,
+            HasAxis = true,
+            AxisDx = 1,
+            AxisDy = 0
+        };
+
+        var candidates = generator.GenerateCandidates(item, new MarkLayoutOptions());
+
+        Assert.All(candidates, candidate => Assert.Equal(200, candidate.Y, 6));
+        Assert.Contains(candidates, candidate => candidate.X > 100);
+        Assert.Contains(candidates, candidate => candidate.X < 100);
+    }
+
+    [Fact]
+    public void GenerateCandidates_ForAxisBoundMark_RespectsAnchorDistanceLimit()
+    {
+        var generator = new SimpleMarkCandidateGenerator();
+        var item = new MarkLayoutItem
+        {
+            Id = 1,
+            AnchorX = 90,
+            AnchorY = 200,
+            CurrentX = 100,
+            CurrentY = 200,
+            Width = 40,
+            Height = 20,
+            HasAxis = true,
+            AxisDx = 1,
+            AxisDy = 0
+        };
+
+        var candidates = generator.GenerateCandidates(item, new MarkLayoutOptions
+        {
+            MaxDistanceFromAnchor = 25.0
+        });
+
+        Assert.All(candidates, candidate => Assert.Equal(200, candidate.Y, 6));
+        Assert.DoesNotContain(candidates, candidate => candidate.X > 100);
+        Assert.Contains(candidates, candidate => candidate.X < 100);
+        Assert.Contains(candidates, candidate => candidate.X == 100 && candidate.Y == 200);
+    }
+
+    [Fact]
     public void Resolve_ForParallelAxisMarks_MovesOnlyAlongAxis()
     {
         var resolver = new MarkOverlapResolver();
