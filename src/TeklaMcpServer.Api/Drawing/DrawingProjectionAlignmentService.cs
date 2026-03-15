@@ -41,24 +41,32 @@ internal sealed class DrawingProjectionAlignmentService
         IList<ArrangedView>? arrangedViews = null)
     {
         var result = new ProjectionAlignmentResult();
-        var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
-        if (front == null)
-        {
-            TraceSkip(result, "projection-skip:no-front-view");
-            return result;
-        }
 
         switch (drawing)
         {
             case AssemblyDrawing assemblyDrawing:
+            {
                 result.Mode = "assembly";
+                var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
+                if (front == null)
+                {
+                    TraceSkip(result, "projection-skip:no-front-view");
+                    return result;
+                }
                 ApplyAssemblyAlignment(result, assemblyDrawing, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 break;
+            }
 
             case GADrawing:
+            {
                 result.Mode = "ga";
-                ApplyGaAlignment(result, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
+                if (front != null)
+                    ApplyGaAlignment(result, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                else
+                    ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 break;
+            }
 
             default:
                 TraceSkip(result, $"projection-skip:unsupported-drawing-type:{drawing.GetType().Name}");
@@ -186,6 +194,108 @@ internal sealed class DrawingProjectionAlignmentService
         var dx = alignX ? delta : 0.0;
         var dy = alignX ? 0.0 : delta;
         TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+    }
+
+    private void ApplyGaNeighborAlignment(
+        ProjectionAlignmentResult result,
+        IReadOnlyList<DrawingView> views,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        IList<ArrangedView>? arrangedViews)
+    {
+        const double RowGroupThreshold = 60.0;  // mm on sheet — views within this ΔY are "same row"
+        const double ColGroupThreshold = 80.0;  // mm on sheet — views within this ΔX are "same column"
+        const double MaxAllowedMove    = 30.0;  // mm on sheet — skip if required shift exceeds this
+
+        var axesCache = new Dictionary<int, IReadOnlyList<GridAxisInfo>>();
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            var r = _gridApi.GetGridAxes(id);
+            if (r.Success)
+                axesCache[id] = r.Axes;
+        }
+
+        // Align Y for views in the same horizontal row.
+        // Reference = leftmost view in the pair.
+        var byX = views.OrderBy(v => v.Origin?.X ?? 0).ToList();
+        for (var i = 0; i < byX.Count; i++)
+        {
+            var refView = byX[i];
+            var refId   = refView.GetIdentifier().ID;
+            if (!axesCache.TryGetValue(refId, out var refAxes)) continue;
+
+            for (var j = i + 1; j < byX.Count; j++)
+            {
+                var target   = byX[j];
+                var targetId = target.GetIdentifier().ID;
+                if (!axesCache.TryGetValue(targetId, out var targetAxes)) continue;
+
+                if (Math.Abs((refView.Origin?.Y ?? 0) - (target.Origin?.Y ?? 0)) > RowGroupThreshold) continue;
+
+                if (!DrawingProjectionAlignmentMath.TrySelectCommonAxis(refAxes, targetAxes, "Y", out var refAxis, out var targetAxis))
+                {
+                    TraceSkip(result, $"projection-skip:ga-neighbor-no-common-y-axis:views={refId}/{targetId}");
+                    continue;
+                }
+
+                var refState    = BuildViewState(refView, frameOffsetsById);
+                var targetState = BuildViewState(target, frameOffsetsById);
+                var refSheetY    = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(refState,    refAxis.Coordinate,    "Y");
+                var targetSheetY = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(targetState, targetAxis.Coordinate, "Y");
+                var dy = refSheetY - targetSheetY;
+
+                if (Math.Abs(dy) > MaxAllowedMove)
+                {
+                    TraceSkip(result, $"projection-skip:ga-neighbor-y-move-too-large:view={targetId}:dy={dy:F1}");
+                    continue;
+                }
+
+                TryMoveView(result, target, 0, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+            }
+        }
+
+        // Align X for views in the same vertical column.
+        // Reference = bottom-most view in the pair.
+        var byY = views.OrderBy(v => v.Origin?.Y ?? 0).ToList();
+        for (var i = 0; i < byY.Count; i++)
+        {
+            var refView = byY[i];
+            var refId   = refView.GetIdentifier().ID;
+            if (!axesCache.TryGetValue(refId, out var refAxes)) continue;
+
+            for (var j = i + 1; j < byY.Count; j++)
+            {
+                var target   = byY[j];
+                var targetId = target.GetIdentifier().ID;
+                if (!axesCache.TryGetValue(targetId, out var targetAxes)) continue;
+
+                if (Math.Abs((refView.Origin?.X ?? 0) - (target.Origin?.X ?? 0)) > ColGroupThreshold) continue;
+
+                if (!DrawingProjectionAlignmentMath.TrySelectCommonAxis(refAxes, targetAxes, "X", out var refAxis, out var targetAxis))
+                {
+                    TraceSkip(result, $"projection-skip:ga-neighbor-no-common-x-axis:views={refId}/{targetId}");
+                    continue;
+                }
+
+                var refState    = BuildViewState(refView, frameOffsetsById);
+                var targetState = BuildViewState(target, frameOffsetsById);
+                var refSheetX    = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(refState,    refAxis.Coordinate,    "X");
+                var targetSheetX = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(targetState, targetAxis.Coordinate, "X");
+                var dx = refSheetX - targetSheetX;
+
+                if (Math.Abs(dx) > MaxAllowedMove)
+                {
+                    TraceSkip(result, $"projection-skip:ga-neighbor-x-move-too-large:view={targetId}:dx={dx:F1}");
+                    continue;
+                }
+
+                TryMoveView(result, target, dx, 0, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+            }
+        }
     }
 
     private bool TryGetAssemblyMainPartId(AssemblyDrawing drawing, out int mainPartId, out string reason)

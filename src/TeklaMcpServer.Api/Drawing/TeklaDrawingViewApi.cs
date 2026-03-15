@@ -161,7 +161,7 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             maxModelW / System.Math.Max(availW - borderEst, 1),
             maxModelH / System.Math.Max(availH - borderEst, 1));
 
-        var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 125, 150, 175, 200, 250, 500, 1000 };
+        var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 100, 125, 150, 175, 200, 250, 300 };
         var candidates     = System.Array.FindAll(standardScales, s => s >= minDenom);
         if (candidates.Length == 0) candidates = new[] { standardScales[standardScales.Length - 1] };
         init.Stop();
