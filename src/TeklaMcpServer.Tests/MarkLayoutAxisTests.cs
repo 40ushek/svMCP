@@ -212,6 +212,134 @@ public sealed class MarkLayoutAxisTests
     }
 
     [Fact]
+    public void Resolve_ForAxisBoundMarksWithDifferentAnchor_StaysOnAxisAndRespectsAnchorLimit()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 100,
+                Y = 200,
+                Width = 80,
+                Height = 20,
+                AnchorX = 90,
+                AnchorY = 200,
+                HasAxis = true,
+                AxisDx = 1,
+                AxisDy = 0,
+                CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 120,
+                Y = 200,
+                Width = 80,
+                Height = 20,
+                AnchorX = 110,
+                AnchorY = 200,
+                HasAxis = true,
+                AxisDx = 1,
+                AxisDy = 0,
+                CanMove = true
+            }
+        };
+
+        var resolved = resolver.Resolve(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxResolverIterations = 24,
+                MaxDistanceFromAnchor = 40.0
+            },
+            out _);
+
+        var first = resolved.Single(x => x.Id == 1);
+        var second = resolved.Single(x => x.Id == 2);
+
+        Assert.Equal(0, resolver.CountOverlaps(resolved));
+        Assert.Equal(200, first.Y, 6);
+        Assert.Equal(200, second.Y, 6);
+        Assert.True(first.X < 100);
+        Assert.True(second.X > 120);
+
+        foreach (var mark in resolved)
+        {
+            var dx = mark.X - mark.AnchorX;
+            var dy = mark.Y - mark.AnchorY;
+            var distance = System.Math.Sqrt((dx * dx) + (dy * dy));
+            Assert.True(distance <= 40.001);
+        }
+    }
+
+    [Fact]
+    public void Resolve_ForOppositeAxisBoundMarksWithDifferentAnchor_StaysOnAxisAndRespectsAnchorLimit()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 100,
+                Y = 200,
+                Width = 80,
+                Height = 20,
+                AnchorX = 90,
+                AnchorY = 200,
+                HasAxis = true,
+                AxisDx = 1,
+                AxisDy = 0,
+                CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 120,
+                Y = 200,
+                Width = 80,
+                Height = 20,
+                AnchorX = 110,
+                AnchorY = 200,
+                HasAxis = true,
+                AxisDx = -1,
+                AxisDy = 0,
+                CanMove = true
+            }
+        };
+
+        var resolved = resolver.Resolve(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxResolverIterations = 24,
+                MaxDistanceFromAnchor = 40.0
+            },
+            out _);
+
+        var first = resolved.Single(x => x.Id == 1);
+        var second = resolved.Single(x => x.Id == 2);
+
+        Assert.Equal(0, resolver.CountOverlaps(resolved));
+        Assert.Equal(200, first.Y, 6);
+        Assert.Equal(200, second.Y, 6);
+        Assert.True(first.X < 100);
+        Assert.True(second.X > 120);
+
+        foreach (var mark in resolved)
+        {
+            var dx = mark.X - mark.AnchorX;
+            var dy = mark.Y - mark.AnchorY;
+            var distance = System.Math.Sqrt((dx * dx) + (dy * dy));
+            Assert.True(distance <= 40.001);
+        }
+    }
+
+    [Fact]
     public void CountOverlaps_ForPerpendicularFramesWithoutPolygonIntersection_ReturnsZero()
     {
         var resolver = new MarkOverlapResolver();
