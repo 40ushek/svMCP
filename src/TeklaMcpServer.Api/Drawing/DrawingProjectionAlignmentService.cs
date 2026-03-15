@@ -312,7 +312,11 @@ internal sealed class DrawingProjectionAlignmentService
                 }
 
                 if (TryMoveView(result, target, 0, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0))
+                {
                     posById[targetId] = (targetPos.X, targetPos.Y + dy);
+                    var movedState = BuildViewStateFromPos(target, targetPos.X, targetPos.Y + dy, frameOffsetsById);
+                    frameCenterById[targetId] = (movedState.OriginX + movedState.FrameOffsetSheetX, movedState.OriginY + movedState.FrameOffsetSheetY);
+                }
             }
         }
 
@@ -356,7 +360,11 @@ internal sealed class DrawingProjectionAlignmentService
                 }
 
                 if (TryMoveView(result, target, dx, 0, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0))
+                {
                     posById[targetId] = (targetPos.X + dx, targetPos.Y);
+                    var movedState = BuildViewStateFromPos(target, targetPos.X + dx, targetPos.Y, frameOffsetsById);
+                    frameCenterById[targetId] = (movedState.OriginX + movedState.FrameOffsetSheetX, movedState.OriginY + movedState.FrameOffsetSheetY);
+                }
             }
         }
     }
@@ -509,6 +517,11 @@ internal sealed class DrawingProjectionAlignmentService
         }
 
         var origin = view.Origin;
+        if (origin == null)
+        {
+            TraceSkip(result, $"projection-skip:view-origin-missing:view={view.GetIdentifier().ID}");
+            return false;
+        }
         origin.X += dx;
         origin.Y += dy;
         view.Origin = origin;
