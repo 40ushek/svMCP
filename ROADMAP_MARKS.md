@@ -108,11 +108,12 @@
 3. ~~Перевести baseline geometry с `StartPoint/EndPoint` на более надежную модель~~ — **реализовано** через `TryGetRelatedPartAxisInView`
 4. ~~Использовать drawing debug overlay для отрисовки bbox/оси~~ — **реализован** `draw_debug_overlay` / `clear_debug_overlay`
 5. Добрать unit tests на axis semantics:
-   - baseline mark с `Anchor != Current`
-   - горизонтальная балка
-   - вертикальная стойка
-   - ортогональные и противоположные оси
-   - поведение при `MaxDistanceFromAnchor`
+   - ~~baseline mark с `Anchor != Current`~~ — **покрыто** (`GenerateCandidates`, `Resolve`, `ResolvePlacedMarks`)
+   - ~~горизонтальная балка~~ — **покрыто**
+   - ~~вертикальная стойка~~ — **покрыто**
+   - ~~ортогональные и противоположные оси (`Resolve`)~~ — **покрыто**
+   - ~~поведение при `MaxDistanceFromAnchor`~~ — **покрыто**
+   - `ResolvePlacedMarks` для противоположных осей — low priority, не блокер
 
 ### Конвертация BaseLinePlacing → LeaderLinePlacing
 - Если два `BaseLinePlacing` не могут разойтись вдоль вектора (элемент короткий), конвертировать одну метку в `LeaderLinePlacing` с лидерной линией к середине элемента
