@@ -154,7 +154,6 @@ internal static class TeklaDrawingMarkLayoutAdapter
         IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById)
     {
         var movedIds = new List<int>();
-        var debugLines = new System.Collections.Generic.List<string>();
 
         foreach (var entry in entries)
         {
@@ -164,21 +163,12 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var dx = placement.X - entry.CenterX;
             var dy = placement.Y - entry.CenterY;
-            var rawDx = dx;
-            var rawDy = dy;
             if (entry.Item.HasAxis && !entry.Item.HasLeaderLine)
             {
                 var distanceAlongAxis = (dx * entry.Item.AxisDx) + (dy * entry.Item.AxisDy);
                 dx = entry.Item.AxisDx * distanceAlongAxis;
                 dy = entry.Item.AxisDy * distanceAlongAxis;
             }
-
-            debugLines.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "id={0} hasAxis={1} hasLeader={2} axisDx={3:F4} axisDy={4:F4} rawDx={5:F2} rawDy={6:F2} projDx={7:F2} projDy={8:F2} placementX={9:F2} placementY={10:F2} centerX={11:F2} centerY={12:F2}",
-                id, entry.Item.HasAxis, entry.Item.HasLeaderLine,
-                entry.Item.AxisDx, entry.Item.AxisDy,
-                rawDx, rawDy, dx, dy,
-                placement.X, placement.Y, entry.CenterX, entry.CenterY));
 
             if (Math.Abs(dx) < 0.001 && Math.Abs(dy) < 0.001)
                 continue;
@@ -210,8 +200,6 @@ internal static class TeklaDrawingMarkLayoutAdapter
             entry.CenterY = actualCenterY;
             movedIds.Add(id);
         }
-
-        try { System.IO.File.WriteAllLines(@"C:\temp\apply_placements_debug.txt", debugLines); } catch { }
 
         return movedIds;
     }

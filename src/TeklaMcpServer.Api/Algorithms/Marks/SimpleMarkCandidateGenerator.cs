@@ -97,19 +97,21 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var priority = 1;
         foreach (var multiplier in multipliers.OrderBy(m => m))
         {
-            // Generate from AnchorX/Y (fixed part position) so that
-            // IsWithinAnchorDistance can correctly bound the final position.
+            // Axis-bound marks slide along the axis passing through their current center.
+            // In the drawing pipeline baseline marks are collected with Anchor == Current,
+            // so using CurrentX/Y preserves production behavior and keeps the axis-candidate
+            // contract consistent for standalone tests as well.
             var distance = Math.Max(baseOffset * multiplier, 2.0);
             result.Add(new MarkCandidate
             {
-                X = item.AnchorX + (item.AxisDx * distance),
-                Y = item.AnchorY + (item.AxisDy * distance),
+                X = item.CurrentX + (item.AxisDx * distance),
+                Y = item.CurrentY + (item.AxisDy * distance),
                 Priority = priority++
             });
             result.Add(new MarkCandidate
             {
-                X = item.AnchorX - (item.AxisDx * distance),
-                Y = item.AnchorY - (item.AxisDy * distance),
+                X = item.CurrentX - (item.AxisDx * distance),
+                Y = item.CurrentY - (item.AxisDy * distance),
                 Priority = priority++
             });
         }
