@@ -46,16 +46,16 @@ public static class MarkGeometryHelper
         if (mark.Placing is BaseLinePlacing baseLinePlacing)
         {
             if (TryGetRelatedPartAxisInView(mark, model, viewId, out var partAxisDx, out var partAxisDy))
-                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, partAxisDx, partAxisDy, "RelatedPartAxis", true);
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, partAxisDx, partAxisDy, mark.Attributes.Angle, "RelatedPartAxis", true);
 
             if (TryGetBaselineAxis(baseLinePlacing, out var placingAxisDx, out var placingAxisDy))
-                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, placingAxisDx, placingAxisDy, "BaseLinePlacingAxisFallback", true);
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, placingAxisDx, placingAxisDy, mark.Attributes.Angle, "BaseLinePlacingAxisFallback", true);
 
             var rad = mark.Attributes.Angle * Math.PI / 180.0;
             var angleDx = Math.Cos(rad);
             var angleDy = Math.Sin(rad);
             if (Math.Abs(angleDx) >= 0.001 || Math.Abs(angleDy) >= 0.001)
-                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, angleDx, angleDy, "MarkAngleFallback", false);
+                return BuildFromAxis(centerX, centerY, objectAligned.Width, objectAligned.Height, angleDx, angleDy, mark.Attributes.Angle, "MarkAngleFallback", false);
         }
 
         return BuildFromObjectAlignedBox(objectAligned, "ObjectAlignedBoundingBoxFallback", false);
@@ -114,13 +114,20 @@ public static class MarkGeometryHelper
         double objectHeight,
         double axisDx,
         double axisDy,
+        double textAngleDeg,
         string source,
         bool isReliable)
     {
         var vx = -axisDy;
         var vy = axisDx;
-        var halfWidth = objectWidth / 2.0;
-        var halfHeight = objectHeight / 2.0;
+        var (widthAlongAxis, heightPerpendicularToAxis) = ResolveDimensionsForAxis(
+            objectWidth,
+            objectHeight,
+            axisDx,
+            axisDy,
+            textAngleDeg);
+        var halfWidth = widthAlongAxis / 2.0;
+        var halfHeight = heightPerpendicularToAxis / 2.0;
 
         var p1 = new[] { centerX - (axisDx * halfWidth) - (vx * halfHeight), centerY - (axisDy * halfWidth) - (vy * halfHeight) };
         var p2 = new[] { centerX + (axisDx * halfWidth) - (vx * halfHeight), centerY + (axisDy * halfWidth) - (vy * halfHeight) };
@@ -136,8 +143,8 @@ public static class MarkGeometryHelper
         {
             CenterX = centerX,
             CenterY = centerY,
-            Width = objectWidth,
-            Height = objectHeight,
+            Width = widthAlongAxis,
+            Height = heightPerpendicularToAxis,
             MinX = minX,
             MinY = minY,
             MaxX = maxX,
@@ -150,6 +157,24 @@ public static class MarkGeometryHelper
             Source = source,
             Corners = new List<double[]> { p1, p2, p3, p4 }
         };
+    }
+
+    internal static (double WidthAlongAxis, double HeightPerpendicularToAxis) ResolveDimensionsForAxis(
+        double objectWidth,
+        double objectHeight,
+        double axisDx,
+        double axisDy,
+        double textAngleDeg)
+    {
+        var axisAngleDeg = Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI);
+        var normalizedDelta = NormalizeAngleDelta180(textAngleDeg - axisAngleDeg);
+
+        // Tekla reports OBB width/height relative to text direction.
+        // When the text is closer to perpendicular than parallel to the part axis,
+        // swap dimensions so width stays along the axis used by layout/debug geometry.
+        return normalizedDelta > 45.0
+            ? (objectHeight, objectWidth)
+            : (objectWidth, objectHeight);
     }
 
     private static bool TryGetRelatedPartAxisInView(Mark mark, Model model, int? explicitViewId, out double axisDx, out double axisDy)
@@ -378,6 +403,17 @@ public static class MarkGeometryHelper
     private static double GetCenterX(IReadOnlyList<double[]> polygon) => polygon.Average(point => point[0]);
 
     private static double GetCenterY(IReadOnlyList<double[]> polygon) => polygon.Average(point => point[1]);
+
+    private static double NormalizeAngleDelta180(double angleDeg)
+    {
+        var normalized = angleDeg % 180.0;
+        if (normalized < 0)
+            normalized += 180.0;
+
+        return normalized > 90.0
+            ? 180.0 - normalized
+            : normalized;
+    }
 
     private static double Dot(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 }
