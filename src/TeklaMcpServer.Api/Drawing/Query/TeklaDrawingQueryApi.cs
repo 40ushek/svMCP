@@ -70,6 +70,14 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
     public OpenDrawingResult OpenDrawing(Guid drawingGuid)
     {
         var drawingHandler = new DrawingHandler();
+
+        // Save and close the currently active drawing before switching to avoid data loss.
+        // CommitChanges() only updates Tekla's in-memory state; CloseActiveDrawing(save:true)
+        // is required to persist changes to disk.
+        var activeDrawing = drawingHandler.GetActiveDrawing();
+        if (activeDrawing != null)
+            drawingHandler.CloseActiveDrawing(true);
+
         var drawingEnumerator = drawingHandler.GetDrawings();
         Tekla.Structures.Drawing.Drawing? targetDrawing = null;
 
@@ -118,7 +126,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         }
 
         var drawingInfo = ToDrawingInfo(activeDrawing);
-        var closed = drawingHandler.CloseActiveDrawing();
+        var closed = drawingHandler.CloseActiveDrawing(true);
         return new CloseDrawingResult
         {
             HasActiveDrawing = true,
