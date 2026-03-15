@@ -566,6 +566,7 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     private static bool SamePointXY(Point left, Point right)
     {
-        return left.X.Equals(right.X) && left.Y.Equals(right.Y);
+        return System.Math.Abs(left.X - right.X) <= 1.0
+            && System.Math.Abs(left.Y - right.Y) <= 1.0;
     }
 }

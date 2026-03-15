@@ -64,6 +64,12 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var centerLocalY = geometry.CenterY;
                 var widthLocal = geometry.MaxX - geometry.MinX;
                 var heightLocal = geometry.MaxY - geometry.MinY;
+
+                // Skip marks with zero-size geometry — these are "ghost" marks that Tekla
+                // created but cannot render (empty content, part not visible in view, etc.).
+                // Their bbox and corners are degenerate; including them causes layout crashes.
+                if (widthLocal < 0.1 && heightLocal < 0.1)
+                    continue;
                 // LocalCorners are geometry.Corners expressed relative to the mark center.
                 // They are the authoritative collision shape used by MarkLayoutEngine.Intersects.
                 var localCorners = geometry.Corners
