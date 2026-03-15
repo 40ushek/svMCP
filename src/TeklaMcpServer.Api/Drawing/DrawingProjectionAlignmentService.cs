@@ -38,7 +38,8 @@ internal sealed class DrawingProjectionAlignmentService
         double sheetHeight,
         double margin,
         IReadOnlyList<ReservedRect> reservedAreas,
-        IList<ArrangedView>? arrangedViews = null)
+        IList<ArrangedView>? arrangedViews = null,
+        IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes = null)
     {
         var result = new ProjectionAlignmentResult();
 
@@ -64,7 +65,7 @@ internal sealed class DrawingProjectionAlignmentService
                 if (front != null)
                     ApplyGaAlignment(result, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 else
-                    ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                    ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 break;
             }
 
@@ -204,37 +205,51 @@ internal sealed class DrawingProjectionAlignmentService
         double sheetHeight,
         double margin,
         IReadOnlyList<ReservedRect> reservedAreas,
-        IList<ArrangedView>? arrangedViews)
+        IList<ArrangedView>? arrangedViews,
+        IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes)
     {
         const double RowGroupThreshold = 60.0;  // mm on sheet — views within this ΔY are "same row"
         const double ColGroupThreshold = 80.0;  // mm on sheet — views within this ΔX are "same column"
         const double MaxAllowedMove    = 30.0;  // mm on sheet — skip if required shift exceeds this
 
+        // Use arranged positions as source of truth — view.Origin may be stale before CommitChanges().
+        var posById = BuildPositionLookup(views, arrangedViews);
+
+        // Use pre-loaded axes (fetched in committed state) when available; fall back to live API.
         var axesCache = new Dictionary<int, IReadOnlyList<GridAxisInfo>>();
         foreach (var view in views)
         {
             var id = view.GetIdentifier().ID;
-            var r = _gridApi.GetGridAxes(id);
-            if (r.Success)
-                axesCache[id] = r.Axes;
+            if (preloadedAxes != null && preloadedAxes.TryGetValue(id, out var cached))
+            {
+                axesCache[id] = cached;
+            }
+            else
+            {
+                var r = _gridApi.GetGridAxes(id);
+                if (r.Success)
+                    axesCache[id] = r.Axes;
+            }
         }
 
         // Align Y for views in the same horizontal row.
         // Reference = leftmost view in the pair.
-        var byX = views.OrderBy(v => v.Origin?.X ?? 0).ToList();
+        var byX = views.OrderBy(v => posById.TryGetValue(v.GetIdentifier().ID, out var p) ? p.X : 0).ToList();
         for (var i = 0; i < byX.Count; i++)
         {
             var refView = byX[i];
             var refId   = refView.GetIdentifier().ID;
             if (!axesCache.TryGetValue(refId, out var refAxes)) continue;
+            if (!posById.TryGetValue(refId, out var refPos)) continue;
 
             for (var j = i + 1; j < byX.Count; j++)
             {
                 var target   = byX[j];
                 var targetId = target.GetIdentifier().ID;
                 if (!axesCache.TryGetValue(targetId, out var targetAxes)) continue;
+                if (!posById.TryGetValue(targetId, out var targetPos)) continue;
 
-                if (Math.Abs((refView.Origin?.Y ?? 0) - (target.Origin?.Y ?? 0)) > RowGroupThreshold) continue;
+                if (Math.Abs(refPos.Y - targetPos.Y) > RowGroupThreshold) continue;
 
                 if (!DrawingProjectionAlignmentMath.TrySelectCommonAxis(refAxes, targetAxes, "Y", out var refAxis, out var targetAxis))
                 {
@@ -242,8 +257,8 @@ internal sealed class DrawingProjectionAlignmentService
                     continue;
                 }
 
-                var refState    = BuildViewState(refView, frameOffsetsById);
-                var targetState = BuildViewState(target, frameOffsetsById);
+                var refState    = BuildViewStateFromPos(refView,    refPos.X,    refPos.Y,    frameOffsetsById);
+                var targetState = BuildViewStateFromPos(target,     targetPos.X, targetPos.Y, frameOffsetsById);
                 var refSheetY    = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(refState,    refAxis.Coordinate,    "Y");
                 var targetSheetY = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(targetState, targetAxis.Coordinate, "Y");
                 var dy = refSheetY - targetSheetY;
@@ -254,26 +269,29 @@ internal sealed class DrawingProjectionAlignmentService
                     continue;
                 }
 
-                TryMoveView(result, target, 0, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                if (TryMoveView(result, target, 0, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0))
+                    posById[targetId] = (targetPos.X, targetPos.Y + dy);
             }
         }
 
         // Align X for views in the same vertical column.
         // Reference = bottom-most view in the pair.
-        var byY = views.OrderBy(v => v.Origin?.Y ?? 0).ToList();
+        var byY = views.OrderBy(v => posById.TryGetValue(v.GetIdentifier().ID, out var p) ? p.Y : 0).ToList();
         for (var i = 0; i < byY.Count; i++)
         {
             var refView = byY[i];
             var refId   = refView.GetIdentifier().ID;
             if (!axesCache.TryGetValue(refId, out var refAxes)) continue;
+            if (!posById.TryGetValue(refId, out var refPos)) continue;
 
             for (var j = i + 1; j < byY.Count; j++)
             {
                 var target   = byY[j];
                 var targetId = target.GetIdentifier().ID;
                 if (!axesCache.TryGetValue(targetId, out var targetAxes)) continue;
+                if (!posById.TryGetValue(targetId, out var targetPos)) continue;
 
-                if (Math.Abs((refView.Origin?.X ?? 0) - (target.Origin?.X ?? 0)) > ColGroupThreshold) continue;
+                if (Math.Abs(refPos.X - targetPos.X) > ColGroupThreshold) continue;
 
                 if (!DrawingProjectionAlignmentMath.TrySelectCommonAxis(refAxes, targetAxes, "X", out var refAxis, out var targetAxis))
                 {
@@ -281,8 +299,8 @@ internal sealed class DrawingProjectionAlignmentService
                     continue;
                 }
 
-                var refState    = BuildViewState(refView, frameOffsetsById);
-                var targetState = BuildViewState(target, frameOffsetsById);
+                var refState    = BuildViewStateFromPos(refView,    refPos.X,    refPos.Y,    frameOffsetsById);
+                var targetState = BuildViewStateFromPos(target,     targetPos.X, targetPos.Y, frameOffsetsById);
                 var refSheetX    = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(refState,    refAxis.Coordinate,    "X");
                 var targetSheetX = DrawingProjectionAlignmentMath.LocalCoordinateToSheet(targetState, targetAxis.Coordinate, "X");
                 var dx = refSheetX - targetSheetX;
@@ -293,9 +311,56 @@ internal sealed class DrawingProjectionAlignmentService
                     continue;
                 }
 
-                TryMoveView(result, target, dx, 0, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                if (TryMoveView(result, target, dx, 0, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0))
+                    posById[targetId] = (targetPos.X + dx, targetPos.Y);
             }
         }
+    }
+
+    private static Dictionary<int, (double X, double Y)> BuildPositionLookup(
+        IReadOnlyList<DrawingView> views,
+        IList<ArrangedView>? arrangedViews)
+    {
+        var dict = new Dictionary<int, (double X, double Y)>();
+        if (arrangedViews != null)
+        {
+            foreach (var a in arrangedViews)
+                dict[a.Id] = (a.OriginX, a.OriginY);
+        }
+        // Fallback to view.Origin for any view not found in arranged list.
+        foreach (var v in views)
+        {
+            var id = v.GetIdentifier().ID;
+            if (!dict.ContainsKey(id))
+                dict[id] = (v.Origin?.X ?? 0, v.Origin?.Y ?? 0);
+        }
+        return dict;
+    }
+
+    private static ProjectionViewState BuildViewStateFromPos(
+        DrawingView view,
+        double originX,
+        double originY,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById)
+    {
+        var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+        var frameOffsetSheetX = 0.0;
+        var frameOffsetSheetY = 0.0;
+        if (frameOffsetsById.TryGetValue(view.GetIdentifier().ID, out var frameOffset))
+        {
+            frameOffsetSheetX = frameOffset.X / scale;
+            frameOffsetSheetY = frameOffset.Y / scale;
+        }
+
+        return new ProjectionViewState(
+            view.GetIdentifier().ID,
+            originX,
+            originY,
+            scale,
+            view.Width,
+            view.Height,
+            frameOffsetSheetX,
+            frameOffsetSheetY);
     }
 
     private bool TryGetAssemblyMainPartId(AssemblyDrawing drawing, out int mainPartId, out string reason)
@@ -362,7 +427,7 @@ internal sealed class DrawingProjectionAlignmentService
         return true;
     }
 
-    private void TryMoveView(
+    private bool TryMoveView(
         ProjectionAlignmentResult result,
         DrawingView view,
         double dx,
@@ -372,25 +437,31 @@ internal sealed class DrawingProjectionAlignmentService
         double sheetHeight,
         double margin,
         IReadOnlyList<ReservedRect> reservedAreas,
-        IList<ArrangedView>? arrangedViews)
+        IList<ArrangedView>? arrangedViews,
+        double? knownOriginX = null,
+        double? knownOriginY = null,
+        double boundsMarginOverride = double.NaN)
     {
         if (Math.Abs(dx) < MoveEpsilon && Math.Abs(dy) < MoveEpsilon)
-            return;
+            return false;
 
-        var state = BuildViewState(view, frameOffsetsById);
+        var effectiveMargin = double.IsNaN(boundsMarginOverride) ? margin : boundsMarginOverride;
+        var state = knownOriginX.HasValue
+            ? BuildViewStateFromPos(view, knownOriginX.Value, knownOriginY ?? (view.Origin?.Y ?? 0), frameOffsetsById)
+            : BuildViewState(view, frameOffsetsById);
         var candidateState = DrawingProjectionAlignmentMath.TranslateOrigin(state, dx, dy);
         var candidateRect = DrawingProjectionAlignmentMath.GetFrameRect(candidateState);
 
-        if (!DrawingProjectionAlignmentMath.IsWithinUsableArea(candidateRect, margin, sheetWidth, sheetHeight))
+        if (!DrawingProjectionAlignmentMath.IsWithinUsableArea(candidateRect, effectiveMargin, sheetWidth, sheetHeight))
         {
-            TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}");
-            return;
+            TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}:rect=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}]:sheet={sheetWidth}x{sheetHeight}:margin={margin}:scale={state.Scale}:w={state.Width:F1}:h={state.Height:F1}:offX={state.FrameOffsetSheetX:F2}:offY={state.FrameOffsetSheetY:F2}");
+            return false;
         }
 
         if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
         {
             TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
-            return;
+            return false;
         }
 
         var origin = view.Origin;
@@ -400,6 +471,7 @@ internal sealed class DrawingProjectionAlignmentService
         view.Modify();
         UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, origin.X, origin.Y);
         result.AppliedMoves++;
+        return true;
     }
 
     private static ProjectionViewState BuildViewState(

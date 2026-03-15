@@ -249,6 +249,14 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             }
         }
 
+        // Pre-fetch grid axes in committed state (before arrange).
+        // GetGridAxes reads drawing objects that are not accessible when views are modified but not committed.
+        var gridApi = new TeklaDrawingGridApi();
+        var preloadedAxes = currentViews
+            .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
+            .Where(x => x.Result.Success)
+            .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
+
         // ── Arrange (naive: assumes Origin = frame center) ────────────────────
         var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
@@ -296,7 +304,8 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
             sheetH,
             margin,
             reservedAreas,
-            arranged);
+            arranged,
+            preloadedAxes);
         projectionSw.Stop();
         projectionMs = projectionSw.ElapsedMilliseconds;
 
@@ -308,11 +317,14 @@ public sealed class TeklaDrawingViewApi : IDrawingViewApi
 
         var result = new FitViewsResult
         {
-            OptimalScale = optimalScale.Value,
-            SheetWidth   = sheetW,
-            SheetHeight  = sheetH,
-            Arranged     = arranged.Count,
-            Views        = arranged
+            OptimalScale          = optimalScale.Value,
+            SheetWidth            = sheetW,
+            SheetHeight           = sheetH,
+            Arranged              = arranged.Count,
+            Views                 = arranged,
+            ProjectionApplied     = projectionResult?.AppliedMoves ?? 0,
+            ProjectionSkipped     = projectionResult?.SkippedMoves ?? 0,
+            ProjectionDiagnostics = projectionResult?.Diagnostics.Count > 0 ? projectionResult.Diagnostics : null
         };
         PerfTrace.Write(
             "api-view",

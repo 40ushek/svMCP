@@ -28,11 +28,14 @@ public sealed class SetViewScaleResult
 
 public sealed class FitViewsResult
 {
-    public double              OptimalScale { get; set; }
-    public double              SheetWidth   { get; set; }
-    public double              SheetHeight  { get; set; }
-    public int                 Arranged     { get; set; }
-    public List<ArrangedView>  Views        { get; set; } = new();
+    public double              OptimalScale        { get; set; }
+    public double              SheetWidth          { get; set; }
+    public double              SheetHeight         { get; set; }
+    public int                 Arranged            { get; set; }
+    public List<ArrangedView>  Views               { get; set; } = new();
+    public int                 ProjectionApplied     { get; set; }
+    public int                 ProjectionSkipped     { get; set; }
+    public List<string>?       ProjectionDiagnostics { get; set; }
 }
 
 public sealed class ArrangedView

@@ -142,7 +142,10 @@ internal sealed partial class DrawingCommandHandler
                 viewType = v.ViewType,
                 originX = v.OriginX,
                 originY = v.OriginY
-            })
+            }),
+            projectionApplied = result.ProjectionApplied,
+            projectionSkipped = result.ProjectionSkipped,
+            projectionDiagnostics = result.ProjectionDiagnostics
         });
     }
 }
