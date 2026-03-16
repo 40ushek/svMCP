@@ -63,6 +63,18 @@ internal static class DrawingProjectionAlignmentMath
         return false;
     }
 
+    public static bool IntersectsAnyView(ProjectionRect candidate, IReadOnlyList<ProjectionViewState>? otherViews)
+    {
+        if (otherViews == null) return false;
+        foreach (var v in otherViews)
+        {
+            var rect = GetFrameRect(v);
+            if (Intersects(candidate, rect))
+                return true;
+        }
+        return false;
+    }
+
     public static bool TrySelectCommonAxis(
         IReadOnlyList<GridAxisInfo> frontAxes,
         IReadOnlyList<GridAxisInfo> targetAxes,
@@ -120,6 +132,14 @@ internal static class DrawingProjectionAlignmentMath
             || area.MaxX <= rect.MinX
             || rect.MaxY <= area.MinY
             || area.MaxY <= rect.MinY);
+    }
+
+    private static bool Intersects(ProjectionRect a, ProjectionRect b)
+    {
+        return !(a.MaxX <= b.MinX
+            || b.MaxX <= a.MinX
+            || a.MaxY <= b.MinY
+            || b.MaxY <= a.MinY);
     }
 
     private static string BuildFallbackKey(GridAxisInfo axis)

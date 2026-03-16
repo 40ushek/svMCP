@@ -38,12 +38,24 @@ internal sealed partial class DrawingProjectionAlignmentService
             return;
         }
 
+        var allStates = views
+            .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
+            .ToList();
+
         var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
         if (top != null)
-            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById);
+        {
+            var topId = top.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != topId).ToList();
+            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, others);
+        }
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
-            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById);
+        {
+            var sectionId = section.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != sectionId).ToList();
+            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, others);
+        }
     }
 
     private void ApplyAssemblyMove(
@@ -59,7 +71,8 @@ internal sealed partial class DrawingProjectionAlignmentService
         double margin,
         IReadOnlyList<ReservedRect> reservedAreas,
         IList<ArrangedView>? arrangedViews,
-        IReadOnlyDictionary<int, (double X, double Y)> posById)
+        IReadOnlyDictionary<int, (double X, double Y)> posById,
+        IReadOnlyList<ProjectionViewState>? otherViewStates = null)
     {
         posById.TryGetValue(target.GetIdentifier().ID, out var targetPos);
 
@@ -71,7 +84,7 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         var dx = alignX ? frontAnchorX - targetAnchorX : 0.0;
         var dy = alignX ? 0.0 : frontAnchorY - targetAnchorY;
-        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0);
+        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0, otherViewStates: otherViewStates);
     }
 
     private bool TryGetAssemblyMainPartId(AssemblyDrawing drawing, out int mainPartId, out string reason)

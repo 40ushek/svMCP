@@ -187,3 +187,26 @@
 - Проверить на реальных `AssemblyDrawing` и `GADrawing`
 - Перенести краткий итог в основной `ROADMAP.md`, если потребуется
 - Временный файл удалить
+
+---
+
+## Статус реализации и известные проблемы
+
+Всё из этапов 1–4 реализовано и работает в production.
+
+### Баг: перекрытие видов после проекционного сдвига ✅ исправлен
+
+**Симптом:** TopView после `fit_views_to_sheet` полностью перекрывал FrontView.
+
+**Причина:** `TryMoveView` проверял только выход за границы листа и пересечение с reserved areas, но не проверял пересечение с другими видами.
+
+**Исправление** (март 2026):
+- `DrawingProjectionAlignmentMath`: добавлен `IntersectsAnyView(ProjectionRect, IReadOnlyList<ProjectionViewState>)` и `Intersects(ProjectionRect, ProjectionRect)`
+- `DrawingProjectionAlignmentService.Helpers`: `TryMoveView` получил параметр `otherViewStates`; перед применением сдвига вызывается `IntersectsAnyView` — при коллизии движение отменяется
+- `DrawingProjectionAlignmentService.Assembly`: для каждого вида формируется список остальных видов (`others`) и передаётся в `ApplyAssemblyMove`
+
+**Побочный эффект:** если пакер разместил TopView так, что любое выравнивание по X вызывало бы коллизию — проекционная связь не применяется (`projection-skip:view-overlap`). Это корректное поведение: лучше не выравнивать, чем перекрыть.
+
+### Важно: TeklaBridge — персистентный процесс
+
+TeklaBridge запускается с флагом `--loop` (`PersistentBridge`) и живёт между вызовами. **DLL загружается один раз при старте процесса.** После обновления `TeklaMcpServer.Api.dll` на диске нужно убить процесс `TeklaBridge.exe` — иначе работает старый код из памяти.

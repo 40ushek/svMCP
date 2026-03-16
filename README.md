@@ -220,7 +220,7 @@ src/
 - legacy `PlaceViews()` удалён из MCP/bridge слоя и больше не является поддерживаемым tool
 - основной путь авторасстановки видов — `fit_views_to_sheet`
 - post-processing проекционной связи выполняется внутри `DrawingProjectionAlignmentService`
-- reserved areas таблиц через `TableLayout`/`LayoutManager` в runtime сейчас **отключены**, потому что эти вызовы могут зависать в bridge-контексте; `DrawingReservedAreaReader` оставляет только безопасный no-op и внутренние helper'ы для bbox по `tableId`
+- reserved areas таблиц: `DrawingReservedAreaReader.ReadLayoutTableGeometries()` использует `TableLayout.GetCurrentTables()` → `PresentationConnection.GetObjectPresentation()` → `LayoutManager.CloseEditor()`. Tekla открывает Layout Editor как побочный эффект и сразу закрывает его — виды не размещаются поверх штампа и динамических таблиц (parts list с переменной высотой)
 
 ## Диагностика
 

@@ -106,7 +106,8 @@ internal sealed partial class DrawingProjectionAlignmentService
         IList<ArrangedView>? arrangedViews,
         double? knownOriginX = null,
         double? knownOriginY = null,
-        double boundsMarginOverride = double.NaN)
+        double boundsMarginOverride = double.NaN,
+        IReadOnlyList<ProjectionViewState>? otherViewStates = null)
     {
         if (Math.Abs(dx) < MoveEpsilon && Math.Abs(dy) < MoveEpsilon)
             return false;
@@ -127,6 +128,12 @@ internal sealed partial class DrawingProjectionAlignmentService
         if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
         {
             TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
+            return false;
+        }
+
+        if (DrawingProjectionAlignmentMath.IntersectsAnyView(candidateRect, otherViewStates))
+        {
+            TraceSkip(result, $"projection-skip:view-overlap:view={view.GetIdentifier().ID}");
             return false;
         }
 

@@ -6,6 +6,8 @@ using TeklaMcpServer.Api.Diagnostics;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.DrawingPresentationModel;
+using Tekla.Structures.DrawingPresentationModelInterface;
+using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -117,10 +119,42 @@ internal static class DrawingReservedAreaReader
 
     internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries()
     {
-        // Disabled for now: layout-handler calls can block in the bridge runtime context.
-        // Returning no table geometries keeps view arrangement responsive and predictable.
-        PerfTrace.Write("api-view", "reserved_tables_skip", 0, "reason=disabled_unstable_layout_handler");
-        return Array.Empty<LayoutTableGeometryInfo>();
+        List<int>? tableIds;
+        try
+        {
+            tableIds = TableLayout.GetCurrentTables();
+        }
+        catch (Exception ex)
+        {
+            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=get_current_tables_failed error={ex.GetType().Name}");
+            return Array.Empty<LayoutTableGeometryInfo>();
+        }
+
+        if (tableIds == null || tableIds.Count == 0)
+            return Array.Empty<LayoutTableGeometryInfo>();
+
+        var result = new List<LayoutTableGeometryInfo>();
+        try
+        {
+            using var connection = new PresentationConnection();
+            foreach (var tableId in tableIds)
+            {
+                var segment = connection.Service.GetObjectPresentation(tableId);
+                result.Add(BuildLayoutTableGeometryInfo(tableId, segment));
+            }
+        }
+        catch (Exception ex)
+        {
+            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=presentation_model_failed error={ex.GetType().Name}");
+            return Array.Empty<LayoutTableGeometryInfo>();
+        }
+        finally
+        {
+            try { LayoutManager.CloseEditor(); }
+            catch { }
+        }
+
+        return result;
     }
 
     internal static LayoutTableGeometryInfo BuildLayoutTableGeometryInfo(int tableId, Segment? segment)

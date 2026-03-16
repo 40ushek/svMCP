@@ -79,7 +79,7 @@
 - **Вертикальные соседи** (|ΔoriginX| < 80mm на листе): выравниваются по X через общую Direction="X" ось
 - Опорный вид: левый в паре (для Y), нижний в паре (для X)
 - Ограничение: если требуемый сдвиг > 30mm на листе — пропуск (не ломать компоновку)
-- Безопасность: проверка выхода за usable area и пересечения с reserved областями
+- Безопасность: проверка выхода за usable area, пересечения с reserved областями, и **пересечения с другими видами** (`IntersectsAnyView`) — проекционный сдвиг отменяется если после него вид перекроет другой вид
 
 #### Масштабы `fit_views_to_sheet` ✅
 Стандартный ряд: `1:1, 1:2, 1:5, 1:10, 1:15, 1:20, 1:25, 1:30, 1:40, 1:50, 1:60, 1:70, 1:75, 1:80, 1:100, 1:125, 1:150, 1:175, 1:200, 1:250, 1:300`
@@ -92,7 +92,7 @@
 ### Виды
 - Добрать regression tests на `fit_views_to_sheet` для реальных sheet scenarios: reserved areas, tight packing, projection alignment после arrange
 - При необходимости упростить orchestration в `TeklaDrawingViewApi.Layout.cs` и `DrawingProjectionAlignmentService`
-- Если тема таблиц снова станет приоритетной: делать отдельный in-process путь получения `tableId`; текущий bridge/runtime path сознательно отключён как нестабильный
+- ~~Если тема таблиц снова станет приоритетной~~ **Таблицы работают** — см. ниже
 
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок
@@ -118,33 +118,19 @@
 - **IPC-прокси**: объекты из `GetAllObjects()` — transparent proxies. `is Beam` всегда `false`. Использовать `GetType().Name`
 - **BoltGrade**: не доступен через свойства, нужен `GetReportProperty("BOLT_GRADE")`
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
-- **Шаблонные объекты (штамп, таблицы) — исследование частично подтверждено, но runtime path отключён:**
-  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона. Но через internal API доступно:
-  - `LayoutTable`: `FileName`, `XOffset`, `YOffset`, `Scale`, `TableCorner`, `RefCorner`, `OverlapVithViews` — placement metadata для каждой таблицы
-  - `TableLayout`: `GetCurrentTables()`, `GetMarginsAndSpaces()` — список таблиц и отступы layout
-  - `LayoutManager`: `GetDrawingFrames()`, `GetDrawingSize()` — фреймы и размер чертежа
-  - `LayoutAttributes`: скрытые поля `InternalLayout`, `InternalTableLayoutId`; `LoadAttributes()` загружает layout через `DRAWING_LOAD_LAYOUT_ATTRIBUTES`
+- **Шаблонные объекты (штамп, таблицы) — ✅ РАБОТАЕТ через `PresentationConnection` + `LayoutManager.CloseEditor()`:**
 
-  **Что НЕ найдено**: `GetTableRect()` / `GetTitleBlockRect()`. В `LayoutTable` и `dotGrLayTable_t` нет `Width`/`Height`/`BoundingBox`. `REPORT_TEMPLATE` в managed-слое бросает `NotImplementedException`.
+  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона, но через internal API работает следующая цепочка в `DrawingReservedAreaReader.ReadLayoutTableGeometries()`:
+  1. `TableLayout.GetCurrentTables()` → список `tableId` на текущем чертеже
+  2. `new PresentationConnection()` → побочный эффект: Tekla открывает Layout Editor (чтобы отрисовать таблицы)
+  3. `connection.Service.GetObjectPresentation(tableId)` → `Segment` с примитивами рендеринга → `TryGetSegmentBounds()` → точный bbox таблицы включая динамическую высоту (parts list)
+  4. `LayoutManager.CloseEditor()` в `finally` → редактор закрывается автоматически, пользователь не видит мигания
 
-  **Главное ограничение**: таблицы динамические — высота parts list зависит от количества строк модели, итоговая геометрия определяется только после генерации содержимого. Для фиксированных штампов (title block) статическое размещение можно приблизительно вычислить из `XOffset`/`YOffset`/`RefCorner`, но не высоту.
+  **Результат**: `fit_views_to_sheet` получает реальные reserved areas таблиц и не размещает виды поверх штампа/списка деталей.
 
-  Что подтвердилось:
-  - если уже есть `tableId`, bbox таблицы можно построить через presentation model (`GetObjectPresentation(tableId)` -> `Segment.Primitives` -> `min/max`)
-  - helper'ы для этого сохранены в `DrawingReservedAreaReader`
-
-  Что не работает в текущем bridge/runtime:
-  - `TableLayout.GetCurrentTables()`
-  - `LayoutManager.OpenEditor()`
-
-  Поэтому runtime-поиск таблиц в `DrawingReservedAreaReader` сейчас сознательно отключён, чтобы `fit_views_to_sheet` не мог зависнуть. Если тема снова понадобится, правильный следующий шаг — in-process plugin/helper внутри Tekla, а не повторные вызовы `TableLayout` из bridge.
-
-  Из `LayoutAttributes` через рефлексию доступны поля: `_tableLayoutId` (int, напр. 8562), `_layout` (string, имя файла layout, напр. `"MPD_multizone_wall"`), `_sheetSize`, `_DrawingType`. `LayoutTable.Select()` с любым ID возвращает `false` из внешнего процесса — данные из БД не загружаются.
-
-  При возврате к теме плагина проверять в таком порядке:
-  1. `TableLayout.GetCurrentTables()` + `LayoutTable.Select()` — placement metadata по каждой таблице
-  2. `GetObjectPresentation(tableId)` — bbox уже можно считать внутренними helper'ами без template files
-  3. `LayoutManager.GetDrawingFrames()` — возвращает `List<Tuple<bool,double,double,double,double,int>>`, по декомпиляции `UnmarshalFrames()` ожидает ровно 2 entry; скорее frame metadata листа, не прямоугольники таблиц — **гипотеза, не доказано**
+  Дополнительно об API таблиц (для справки):
+  - `LayoutTable`: `FileName`, `XOffset`, `YOffset`, `Scale`, `TableCorner`, `RefCorner`, `OverlapVithViews` — placement metadata (без размеров)
+  - `LayoutManager`: `GetDrawingFrames()` — frame metadata листа (гипотеза: не прямоугольники таблиц, не проверено)
 
 ---
 
