@@ -9,6 +9,7 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed partial class DrawingProjectionAlignmentService
 {
     private const double MoveEpsilon = 0.01;
+    private const double ProjectionViewGap = 5.0; // mm gap when repositioning to clear a conflicting view
 
     private readonly Model _model;
     private readonly TeklaDrawingPartGeometryApi _partGeometryApi;

@@ -43,6 +43,45 @@ internal sealed partial class DrawingProjectionAlignmentService
             .ToList();
 
         var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
+
+        // If TopView exists, ensure there is room for it above FrontView.
+        // If FrontView is too high on the sheet, shift FrontView and SectionViews down first.
+        if (top != null)
+        {
+            var topState = allStates.First(s => s.ViewId == top.GetIdentifier().ID);
+            var frontState = allStates.First(s => s.ViewId == front.GetIdentifier().ID);
+            var topFrameHeight = DrawingProjectionAlignmentMath.GetFrameRect(topState).MaxY - DrawingProjectionAlignmentMath.GetFrameRect(topState).MinY;
+            var frontFrameMaxY = DrawingProjectionAlignmentMath.GetFrameRect(frontState).MaxY;
+            var needed = topFrameHeight + ProjectionViewGap;
+            var available = (sheetHeight - margin) - frontFrameMaxY;
+
+            if (needed > available)
+            {
+                var shiftDown = needed - available;
+                var nonTopViews = views.Where(v => v.GetIdentifier().ID != top.GetIdentifier().ID).ToList();
+                var shifted = true;
+                foreach (var v in nonTopViews)
+                {
+                    posById.TryGetValue(v.GetIdentifier().ID, out var p);
+                    var others = allStates.Where(s => s.ViewId != v.GetIdentifier().ID && s.ViewId != top.GetIdentifier().ID).ToList();
+                    if (!TryMoveView(result, v, 0, -shiftDown, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, p.X, p.Y, boundsMarginOverride: 0, otherViewStates: others))
+                    {
+                        shifted = false;
+                        break;
+                    }
+                    posById[v.GetIdentifier().ID] = (p.X, p.Y - shiftDown);
+                }
+
+                if (shifted)
+                {
+                    frontAnchorY -= shiftDown;
+                    allStates = views
+                        .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
+                        .ToList();
+                }
+            }
+        }
+
         if (top != null)
         {
             var topId = top.GetIdentifier().ID;
