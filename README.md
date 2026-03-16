@@ -187,8 +187,7 @@ src/
 | `get_drawing_views` | Все виды активного чертежа: позиция, масштаб, размер, размеры листа |
 | `move_view` | Переместить вид на листе (абсолютно или на смещение) |
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
-| `place_views` | Запустить встроенную авторасстановку видов Tekla (`PlaceViews`) |
-| `fit_views_to_sheet` | Авторасстановка видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий |
+| `fit_views_to_sheet` | Основной путь авторасстановки видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий и post-alignment по проекционной связи |
 | `get_drawing_marks` | Прочитать марки: позиция, bbox/OBB, `resolvedGeometry`, перекрытия, leader lines, содержимое PropertyElement; фильтрация по виду |
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
 | `delete_all_marks` | Удалить все марки на активном чертеже |
@@ -203,6 +202,7 @@ src/
 | `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
 | `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок внутри каждого вида — минимальные локальные сдвиги |
 | `arrange_marks` | Полная автоматическая расстановка марок внутри каждого вида вокруг anchor point |
+| `arrange_marks_no_collisions` | Комбинированный проход: `arrange_marks` + повторные `resolve_mark_overlaps` до стабилизации |
 | `draw_debug_overlay` | Dev/debug: отрисовать временный overlay (line/polygon/text/cross) в чертеже |
 | `clear_debug_overlay` | Dev/debug: очистить overlay слой целиком или по группе |
 | `draw_selected_mark_part_axis_geometry` | Dev/debug: показать ось детали и геометрию для выбранных марок |
@@ -215,6 +215,12 @@ src/
 - `arrange_marks` использует `MarkLayoutEngine`: candidate generation, scoring, greedy placement и затем локальный overlap resolver
 - для leader-line marks якорь берется из `LeaderLinePlacing.StartPoint` в координатах вида; `StartPoint` не меняется, двигается только `InsertionPoint`
 - геометрия метки теперь централизована в `MarkGeometryHelper`: `LeaderLinePlacing` берет `ObjectAlignedBoundingBox`, `BaseLinePlacing` пытается брать ось связанной детали в текущем виде, fallback — `ObjectAlignedBoundingBox`
+
+Раскладка видов сейчас устроена так:
+- legacy `PlaceViews()` удалён из MCP/bridge слоя и больше не является поддерживаемым tool
+- основной путь авторасстановки видов — `fit_views_to_sheet`
+- post-processing проекционной связи выполняется внутри `DrawingProjectionAlignmentService`
+- reserved areas таблиц через `TableLayout`/`LayoutManager` в runtime сейчас **отключены**, потому что эти вызовы могут зависать в bridge-контексте; `DrawingReservedAreaReader` оставляет только безопасный no-op и внутренние helper'ы для bbox по `tableId`
 
 ## Диагностика
 

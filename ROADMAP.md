@@ -27,9 +27,9 @@
 | `create_general_arrangement_drawing` / `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж |
 | `get_drawing_context` / `get_sheet_objects_debug` / `select_drawing_objects` / `filter_drawing_objects` | Контекст, диагностика и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
-| `move_view` / `set_view_scale` / `place_views` / `fit_views_to_sheet` | Управление видами |
+| `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
-| `resolve_mark_overlaps` / `arrange_marks` | Расстановка марок |
+| `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
 | `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры (`place_control_diagonals` пока experimental) |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
@@ -39,6 +39,8 @@
 - Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
 - TS2021 + TS2025 поддержка
 - `MarkGeometryHelper`: единая точка расчета геометрии меток для diagnostics/debug overlay
+- `Drawing/` разнесён по подпапкам `Views`, `Marks`, `Geometry`, `Dimensions`, `Interaction`, `Query`, `Parsing`, `Creation`, `Parts`, `DebugOverlay`
+- Legacy `place_views` удалён; основной путь расстановки видов — `fit_views_to_sheet`
 
 **Геометрические утилиты**
 - `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется)
@@ -87,6 +89,11 @@
 - COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
 - Использовать `MarkGeometryHelper` внутри resolver/arrange, чтобы debug и layout считали одну и ту же геометрию
 
+### Виды
+- Добрать regression tests на `fit_views_to_sheet` для реальных sheet scenarios: reserved areas, tight packing, projection alignment после arrange
+- При необходимости упростить orchestration в `TeklaDrawingViewApi.Layout.cs` и `DrawingProjectionAlignmentService`
+- Если тема таблиц снова станет приоритетной: делать отдельный in-process путь получения `tableId`; текущий bridge/runtime path сознательно отключён как нестабильный
+
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок
 
@@ -111,7 +118,7 @@
 - **IPC-прокси**: объекты из `GetAllObjects()` — transparent proxies. `is Beam` всегда `false`. Использовать `GetType().Name`
 - **BoltGrade**: не доступен через свойства, нужен `GetReportProperty("BOLT_GRADE")`
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
-- **Шаблонные объекты (штамп, таблицы) — частичный доступ через DrawingInternal:**
+- **Шаблонные объекты (штамп, таблицы) — исследование частично подтверждено, но runtime path отключён:**
   `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона. Но через internal API доступно:
   - `LayoutTable`: `FileName`, `XOffset`, `YOffset`, `Scale`, `TableCorner`, `RefCorner`, `OverlapVithViews` — placement metadata для каждой таблицы
   - `TableLayout`: `GetCurrentTables()`, `GetMarginsAndSpaces()` — список таблиц и отступы layout
@@ -122,14 +129,22 @@
 
   **Главное ограничение**: таблицы динамические — высота parts list зависит от количества строк модели, итоговая геометрия определяется только после генерации содержимого. Для фиксированных штампов (title block) статическое размещение можно приблизительно вычислить из `XOffset`/`YOffset`/`RefCorner`, но не высоту.
 
-  `TableLayout` и `LayoutManager` требуют запуска внутри процесса Tekla — из TeklaBridge (Remoting) не работают. Решение — in-process plugin (см. ниже).
+  Что подтвердилось:
+  - если уже есть `tableId`, bbox таблицы можно построить через presentation model (`GetObjectPresentation(tableId)` -> `Segment.Primitives` -> `min/max`)
+  - helper'ы для этого сохранены в `DrawingReservedAreaReader`
+
+  Что не работает в текущем bridge/runtime:
+  - `TableLayout.GetCurrentTables()`
+  - `LayoutManager.OpenEditor()`
+
+  Поэтому runtime-поиск таблиц в `DrawingReservedAreaReader` сейчас сознательно отключён, чтобы `fit_views_to_sheet` не мог зависнуть. Если тема снова понадобится, правильный следующий шаг — in-process plugin/helper внутри Tekla, а не повторные вызовы `TableLayout` из bridge.
 
   Из `LayoutAttributes` через рефлексию доступны поля: `_tableLayoutId` (int, напр. 8562), `_layout` (string, имя файла layout, напр. `"MPD_multizone_wall"`), `_sheetSize`, `_DrawingType`. `LayoutTable.Select()` с любым ID возвращает `false` из внешнего процесса — данные из БД не загружаются.
 
-  При реализации плагина проверять в таком порядке:
+  При возврате к теме плагина проверять в таком порядке:
   1. `TableLayout.GetCurrentTables()` + `LayoutTable.Select()` — placement metadata по каждой таблице
-  2. `LayoutManager.GetDrawingFrames()` — возвращает `List<Tuple<bool,double,double,double,double,int>>`, по декомпиляции `UnmarshalFrames()` ожидает ровно 2 entry; скорее frame metadata листа, не прямоугольники таблиц — **гипотеза, не доказано**
-  3. Сравнение на реальном drawing с таблицами и штампом даст факт
+  2. `GetObjectPresentation(tableId)` — bbox уже можно считать внутренними helper'ами без template files
+  3. `LayoutManager.GetDrawingFrames()` — возвращает `List<Tuple<bool,double,double,double,double,int>>`, по декомпиляции `UnmarshalFrames()` ожидает ровно 2 entry; скорее frame metadata листа, не прямоугольники таблиц — **гипотеза, не доказано**
 
 ---
 

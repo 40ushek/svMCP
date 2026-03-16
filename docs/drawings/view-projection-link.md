@@ -18,14 +18,23 @@
 - Не переписывать `FrontViewDrawingArrangeStrategy` и другие стратегии раскладки
 - Не смешивать этап выбора масштаба и этап проекционного выравнивания
 
+Статус на текущий момент:
+- решение реализовано и используется в `fit_views_to_sheet`
+- документ сохранён как design note / maintenance reference
+- актуальные файлы ниже уже соответствуют разнесённой структуре `Drawing/Views`
+
 ---
 
 ## Затронутые модули
 
-- `src/TeklaMcpServer.Api/Drawing/TeklaDrawingViewApi.cs`
-- новый helper/service в `src/TeklaMcpServer.Api/Drawing/`
-- возможно расширение `src/TeklaMcpServer.Api/Drawing/TeklaDrawingGridApi.cs`
-- возможно небольшой рефакторинг моделей результата в `src/TeklaMcpServer.Api/Drawing/`
+- `src/TeklaMcpServer.Api/Drawing/Views/TeklaDrawingViewApi.Layout.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentService.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentService.Assembly.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentService.Ga.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentService.Helpers.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentModels.cs`
+- `src/TeklaMcpServer.Api/Drawing/Views/DrawingProjectionAlignmentMath.cs`
+- `src/TeklaMcpServer.Api/Drawing/Geometry/TeklaDrawingGridApi.cs`
 - тесты в `src/TeklaMcpServer.Tests/`
 
 ---
@@ -144,9 +153,9 @@
 
 ## Предлагаемый порядок файловых изменений
 
-1. `TeklaDrawingViewApi.cs`
-2. новый service/helper для projection alignment
-3. `TeklaDrawingGridApi.cs`, если нужен `GUID` оси
+1. `Drawing/Views/TeklaDrawingViewApi.Layout.cs`
+2. `Drawing/Views/DrawingProjectionAlignmentService*.cs`
+3. `Drawing/Geometry/TeklaDrawingGridApi.cs`, если нужен `GUID` оси
 4. модели/DTO только если реально не хватает данных
 5. тесты
 
