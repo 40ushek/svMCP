@@ -43,7 +43,10 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             System.Math.Max(leftColH, rightColH),
             front.Height + topH + bottomH);
 
-        return neededW <= availW && neededH <= availH;
+        // Small safety pad guards against Tekla lazy-update: view.Height may grow slightly
+        // after the final CommitChanges, so borderline cases should use a larger scale.
+        const double safetyPad = 5.0;
+        return neededW <= availW - safetyPad && neededH <= availH - safetyPad;
     }
 
     private static (List<View> left, List<View> right) ClassifySections(List<View> sections)

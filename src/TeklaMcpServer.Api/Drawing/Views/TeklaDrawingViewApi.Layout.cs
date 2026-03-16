@@ -208,9 +208,17 @@ public sealed partial class TeklaDrawingViewApi
                 if (!offsetById.TryGetValue(arranged[i].Id, out var off))
                     continue;
 
+                var corrX = off.X / optimalScale.Value;
+                var corrY = off.Y / optimalScale.Value;
+                // Skip implausibly large corrections: they indicate a bad frame-offset
+                // estimate (e.g. from probe-scale extrapolation on distant-origin views)
+                // and would displace the view far from where the packer intended.
+                if (System.Math.Abs(corrX) > v.Width || System.Math.Abs(corrY) > v.Height)
+                    continue;
+
                 var o = v.Origin;
-                o.X = arranged[i].OriginX - off.X / optimalScale.Value;
-                o.Y = arranged[i].OriginY - off.Y / optimalScale.Value;
+                o.X = arranged[i].OriginX - corrX;
+                o.Y = arranged[i].OriginY - corrY;
                 v.Origin = o;
                 v.Modify();
                 arranged[i] = new ArrangedView

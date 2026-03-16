@@ -70,6 +70,14 @@ internal sealed partial class DrawingProjectionAlignmentService
                         break;
                     }
                     posById[v.GetIdentifier().ID] = (p.X, p.Y - shiftDown);
+                    // Keep allStates fresh so subsequent iterations check actual positions.
+                    var vid = v.GetIdentifier().ID;
+                    for (var si = 0; si < allStates.Count; si++)
+                        if (allStates[si].ViewId == vid)
+                        {
+                            allStates[si] = BuildViewStateFromPos(v, p.X, p.Y - shiftDown, frameOffsetsById);
+                            break;
+                        }
                 }
 
                 if (shifted)
@@ -86,14 +94,14 @@ internal sealed partial class DrawingProjectionAlignmentService
         {
             var topId = top.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != topId).ToList();
-            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, others);
+            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
         {
             var sectionId = section.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != sectionId).ToList();
-            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, others);
+            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
     }
 
@@ -111,9 +119,11 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyList<ReservedRect> reservedAreas,
         IList<ArrangedView>? arrangedViews,
         IReadOnlyDictionary<int, (double X, double Y)> posById,
+        List<ProjectionViewState>? allStates = null,
         IReadOnlyList<ProjectionViewState>? otherViewStates = null)
     {
-        posById.TryGetValue(target.GetIdentifier().ID, out var targetPos);
+        var targetId = target.GetIdentifier().ID;
+        posById.TryGetValue(targetId, out var targetPos);
 
         if (!TryGetPartAnchorSheet(target, mainPartId, targetPos.X, targetPos.Y, out var targetAnchorX, out var targetAnchorY, out var reason))
         {
@@ -123,7 +133,19 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         var dx = alignX ? frontAnchorX - targetAnchorX : 0.0;
         var dy = alignX ? 0.0 : frontAnchorY - targetAnchorY;
-        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0, otherViewStates: otherViewStates);
+        if (TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0, otherViewStates: otherViewStates)
+            && allStates != null)
+        {
+            // Keep allStates fresh so subsequent moves use the actual new position.
+            var newX = targetPos.X + dx;
+            var newY = targetPos.Y + dy;
+            for (var si = 0; si < allStates.Count; si++)
+                if (allStates[si].ViewId == targetId)
+                {
+                    allStates[si] = BuildViewStateFromPos(target, newX, newY, frameOffsetsById);
+                    break;
+                }
+        }
     }
 
     private bool TryGetAssemblyMainPartId(AssemblyDrawing drawing, out int mainPartId, out string reason)
