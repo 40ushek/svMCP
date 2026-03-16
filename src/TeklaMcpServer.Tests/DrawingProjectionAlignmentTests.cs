@@ -73,6 +73,30 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Fact]
+    public void IntersectsAnyView_ReturnsTrueForOverlap()
+    {
+        var candidate = new ProjectionRect(40, 40, 90, 90);
+        var otherViews = new List<ProjectionViewState>
+        {
+            new(viewId: 21, originX: 60, originY: 60, scale: 1, width: 30, height: 30, frameOffsetSheetX: 0, frameOffsetSheetY: 0)
+        };
+
+        Assert.True(DrawingProjectionAlignmentMath.IntersectsAnyView(candidate, otherViews));
+    }
+
+    [Fact]
+    public void IntersectsAnyView_ReturnsFalseWhenSeparated()
+    {
+        var candidate = new ProjectionRect(40, 40, 90, 90);
+        var otherViews = new List<ProjectionViewState>
+        {
+            new(viewId: 22, originX: 150, originY: 150, scale: 1, width: 20, height: 20, frameOffsetSheetX: 0, frameOffsetSheetY: 0)
+        };
+
+        Assert.False(DrawingProjectionAlignmentMath.IntersectsAnyView(candidate, otherViews));
+    }
+
+    [Fact]
     public void IsWithinUsableArea_ReturnsFalseOutsideSheetMargin()
     {
         var rect = new ProjectionRect(5, 20, 60, 80);
@@ -156,5 +180,15 @@ public sealed class DrawingProjectionAlignmentTests
         var matched = DrawingProjectionAlignmentMath.TrySelectCommonAxis(frontAxes, targetAxes, "X", out _, out _);
 
         Assert.False(matched);
+    }
+
+    [Theory]
+    [InlineData(100, true)]
+    [InlineData(125, true)]
+    [InlineData(80, false)]
+    [InlineData(50, false)]
+    public void ShouldSkipProjectionAlignment_UsesScaleCutoff(double scale, bool expected)
+    {
+        Assert.Equal(expected, TeklaDrawingViewApi.ShouldSkipProjectionAlignment(scale));
     }
 }

@@ -119,9 +119,12 @@ internal static class DrawingReservedAreaReader
 
     internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries()
     {
+        var editorOpened = false;
         List<int>? tableIds;
         try
         {
+            LayoutManager.OpenEditor();
+            editorOpened = true;
             tableIds = TableLayout.GetCurrentTables();
         }
         catch (Exception ex)
@@ -140,7 +143,15 @@ internal static class DrawingReservedAreaReader
             foreach (var tableId in tableIds)
             {
                 var segment = connection.Service.GetObjectPresentation(tableId);
-                result.Add(BuildLayoutTableGeometryInfo(tableId, segment));
+                var info = BuildLayoutTableGeometryInfo(tableId, segment);
+                result.Add(info);
+                PerfTrace.Write(
+                    "api-view",
+                    "reserved_table_geometry",
+                    0,
+                    info.HasGeometry && info.Bounds != null
+                        ? $"tableId={info.TableId} primitives={info.PrimitiveCount} hasGeometry=true minX={info.Bounds.MinX:F3} minY={info.Bounds.MinY:F3} maxX={info.Bounds.MaxX:F3} maxY={info.Bounds.MaxY:F3}"
+                        : $"tableId={info.TableId} primitives={info.PrimitiveCount} hasGeometry=false");
             }
         }
         catch (Exception ex)
@@ -150,10 +161,14 @@ internal static class DrawingReservedAreaReader
         }
         finally
         {
-            try { LayoutManager.CloseEditor(); }
-            catch { }
+            if (editorOpened)
+            {
+                try { LayoutManager.CloseEditor(); }
+                catch { }
+            }
         }
 
+        PerfTrace.Write("api-view", "reserved_tables_summary", 0, $"count={result.Count} active={result.Count(x => x.HasGeometry)}");
         return result;
     }
 

@@ -109,33 +109,21 @@ internal sealed partial class DrawingProjectionAlignmentService
         double boundsMarginOverride = double.NaN,
         IReadOnlyList<ProjectionViewState>? otherViewStates = null)
     {
-        if (Math.Abs(dx) < MoveEpsilon && Math.Abs(dy) < MoveEpsilon)
+        if (!CanMoveView(
+                result,
+                view,
+                dx,
+                dy,
+                frameOffsetsById,
+                sheetWidth,
+                sheetHeight,
+                margin,
+                reservedAreas,
+                knownOriginX,
+                knownOriginY,
+                boundsMarginOverride,
+                otherViewStates))
             return false;
-
-        var effectiveMargin = double.IsNaN(boundsMarginOverride) ? margin : boundsMarginOverride;
-        var state = knownOriginX.HasValue
-            ? BuildViewStateFromPos(view, knownOriginX.Value, knownOriginY ?? (view.Origin?.Y ?? 0), frameOffsetsById)
-            : BuildViewState(view, frameOffsetsById);
-        var candidateState = DrawingProjectionAlignmentMath.TranslateOrigin(state, dx, dy);
-        var candidateRect = DrawingProjectionAlignmentMath.GetFrameRect(candidateState);
-
-        if (!DrawingProjectionAlignmentMath.IsWithinUsableArea(candidateRect, effectiveMargin, sheetWidth, sheetHeight))
-        {
-            TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}:rect=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}]:sheet={sheetWidth}x{sheetHeight}:margin={margin}:scale={state.Scale}:w={state.Width:F1}:h={state.Height:F1}:offX={state.FrameOffsetSheetX:F2}:offY={state.FrameOffsetSheetY:F2}");
-            return false;
-        }
-
-        if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
-        {
-            TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
-            return false;
-        }
-
-        if (DrawingProjectionAlignmentMath.IntersectsAnyView(candidateRect, otherViewStates))
-        {
-            TraceSkip(result, $"projection-skip:view-overlap:view={view.GetIdentifier().ID}");
-            return false;
-        }
 
         var origin = view.Origin;
         if (origin == null)
@@ -155,6 +143,55 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, origin.X, origin.Y);
         result.AppliedMoves++;
+        return true;
+    }
+
+    private bool CanMoveView(
+        ProjectionAlignmentResult? result,
+        DrawingView view,
+        double dx,
+        double dy,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        double? knownOriginX = null,
+        double? knownOriginY = null,
+        double boundsMarginOverride = double.NaN,
+        IReadOnlyList<ProjectionViewState>? otherViewStates = null)
+    {
+        if (Math.Abs(dx) < MoveEpsilon && Math.Abs(dy) < MoveEpsilon)
+            return true;
+
+        var effectiveMargin = double.IsNaN(boundsMarginOverride) ? margin : boundsMarginOverride;
+        var state = knownOriginX.HasValue
+            ? BuildViewStateFromPos(view, knownOriginX.Value, knownOriginY ?? (view.Origin?.Y ?? 0), frameOffsetsById)
+            : BuildViewState(view, frameOffsetsById);
+        var candidateState = DrawingProjectionAlignmentMath.TranslateOrigin(state, dx, dy);
+        var candidateRect = DrawingProjectionAlignmentMath.GetFrameRect(candidateState);
+
+        if (!DrawingProjectionAlignmentMath.IsWithinUsableArea(candidateRect, effectiveMargin, sheetWidth, sheetHeight))
+        {
+            if (result != null)
+                TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}:rect=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}]:sheet={sheetWidth}x{sheetHeight}:margin={margin}:scale={state.Scale}:w={state.Width:F1}:h={state.Height:F1}:offX={state.FrameOffsetSheetX:F2}:offY={state.FrameOffsetSheetY:F2}");
+            return false;
+        }
+
+        if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
+        {
+            if (result != null)
+                TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
+            return false;
+        }
+
+        if (DrawingProjectionAlignmentMath.IntersectsAnyView(candidateRect, otherViewStates))
+        {
+            if (result != null)
+                TraceSkip(result, $"projection-skip:view-overlap:view={view.GetIdentifier().ID}");
+            return false;
+        }
+
         return true;
     }
 
@@ -201,6 +238,19 @@ internal sealed partial class DrawingProjectionAlignmentService
             };
             return;
         }
+    }
+
+    private static void RestoreViewOrigin(DrawingView view, double originX, double originY, IList<ArrangedView>? arrangedViews)
+    {
+        var origin = view.Origin;
+        if (origin == null)
+            return;
+
+        origin.X = originX;
+        origin.Y = originY;
+        view.Origin = origin;
+        if (view.Modify())
+            UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, originX, originY);
     }
 
     private static void TraceSkip(ProjectionAlignmentResult result, string reason)

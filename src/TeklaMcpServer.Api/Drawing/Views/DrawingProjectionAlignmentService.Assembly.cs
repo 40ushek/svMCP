@@ -59,25 +59,81 @@ internal sealed partial class DrawingProjectionAlignmentService
             {
                 var shiftDown = needed - available;
                 var nonTopViews = views.Where(v => v.GetIdentifier().ID != top.GetIdentifier().ID).ToList();
-                var shifted = true;
+                var previewStates = allStates.ToDictionary(s => s.ViewId);
+                var canShift = true;
                 foreach (var v in nonTopViews)
                 {
-                    posById.TryGetValue(v.GetIdentifier().ID, out var p);
-                    var others = allStates.Where(s => s.ViewId != v.GetIdentifier().ID && s.ViewId != top.GetIdentifier().ID).ToList();
-                    if (!TryMoveView(result, v, 0, -shiftDown, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, p.X, p.Y, boundsMarginOverride: 0, otherViewStates: others))
+                    var viewId = v.GetIdentifier().ID;
+                    posById.TryGetValue(viewId, out var p);
+                    var others = previewStates.Values.Where(s => s.ViewId != viewId && s.ViewId != top.GetIdentifier().ID).ToList();
+                    if (!CanMoveView(
+                            null,
+                            v,
+                            0,
+                            -shiftDown,
+                            frameOffsetsById,
+                            sheetWidth,
+                            sheetHeight,
+                            margin,
+                            reservedAreas,
+                            p.X,
+                            p.Y,
+                            boundsMarginOverride: 0,
+                            otherViewStates: others))
                     {
-                        shifted = false;
+                        canShift = false;
                         break;
                     }
-                    posById[v.GetIdentifier().ID] = (p.X, p.Y - shiftDown);
-                    // Keep allStates fresh so subsequent iterations check actual positions.
-                    var vid = v.GetIdentifier().ID;
-                    for (var si = 0; si < allStates.Count; si++)
-                        if (allStates[si].ViewId == vid)
+
+                    previewStates[viewId] = BuildViewStateFromPos(v, p.X, p.Y - shiftDown, frameOffsetsById);
+                }
+
+                var shifted = true;
+                var moved = new List<(DrawingView View, double X, double Y)>();
+                if (canShift)
+                {
+                    foreach (var v in nonTopViews)
+                    {
+                        posById.TryGetValue(v.GetIdentifier().ID, out var p);
+                        var others = allStates.Where(s => s.ViewId != v.GetIdentifier().ID && s.ViewId != top.GetIdentifier().ID).ToList();
+                        if (!TryMoveView(result, v, 0, -shiftDown, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, p.X, p.Y, boundsMarginOverride: 0, otherViewStates: others))
                         {
-                            allStates[si] = BuildViewStateFromPos(v, p.X, p.Y - shiftDown, frameOffsetsById);
+                            shifted = false;
                             break;
                         }
+
+                        moved.Add((v, p.X, p.Y));
+                        posById[v.GetIdentifier().ID] = (p.X, p.Y - shiftDown);
+                        // Keep allStates fresh so subsequent iterations check actual positions.
+                        var vid = v.GetIdentifier().ID;
+                        for (var si = 0; si < allStates.Count; si++)
+                            if (allStates[si].ViewId == vid)
+                            {
+                                allStates[si] = BuildViewStateFromPos(v, p.X, p.Y - shiftDown, frameOffsetsById);
+                                break;
+                            }
+                    }
+                }
+                else
+                {
+                    shifted = false;
+                }
+
+                if (!shifted)
+                {
+                    for (var i = moved.Count - 1; i >= 0; i--)
+                    {
+                        var item = moved[i];
+                        RestoreViewOrigin(item.View, item.X, item.Y, arrangedViews);
+                        posById[item.View.GetIdentifier().ID] = (item.X, item.Y);
+                        var vid = item.View.GetIdentifier().ID;
+                        for (var si = 0; si < allStates.Count; si++)
+                            if (allStates[si].ViewId == vid)
+                            {
+                                allStates[si] = BuildViewStateFromPos(item.View, item.X, item.Y, frameOffsetsById);
+                                break;
+                            }
+                    }
                 }
 
                 if (shifted)

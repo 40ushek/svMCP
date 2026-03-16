@@ -40,13 +40,24 @@ internal sealed partial class DrawingProjectionAlignmentService
         }
 
         var posById = BuildPositionLookup(views, arrangedViews);
+        var allStates = views
+            .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
+            .ToList();
 
         var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
         if (top != null)
-            ApplyGaMove(result, front, top, frontAxes, requiredDirection: "X", alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById);
+        {
+            var topId = top.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != topId).ToList();
+            ApplyGaMove(result, front, top, frontAxes, requiredDirection: "X", alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
+        }
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
-            ApplyGaMove(result, front, section, frontAxes, requiredDirection: "Y", alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById);
+        {
+            var sectionId = section.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != sectionId).ToList();
+            ApplyGaMove(result, front, section, frontAxes, requiredDirection: "Y", alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
+        }
     }
 
     private void ApplyGaMove(
@@ -63,7 +74,9 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyList<ReservedRect> reservedAreas,
         IList<ArrangedView>? arrangedViews,
         IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes,
-        IReadOnlyDictionary<int, (double X, double Y)> posById)
+        Dictionary<int, (double X, double Y)> posById,
+        List<ProjectionViewState> allStates,
+        IReadOnlyList<ProjectionViewState>? otherViewStates)
     {
         var targetId = target.GetIdentifier().ID;
         IReadOnlyList<GridAxisInfo> targetAxes;
@@ -99,7 +112,16 @@ internal sealed partial class DrawingProjectionAlignmentService
         var delta = frontCoordinate - targetCoordinate;
         var dx = alignX ? delta : 0.0;
         var dy = alignX ? 0.0 : delta;
-        TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0);
+        if (TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0, otherViewStates: otherViewStates))
+        {
+            posById[targetId] = (targetPos.X + dx, targetPos.Y + dy);
+            for (var i = 0; i < allStates.Count; i++)
+                if (allStates[i].ViewId == targetId)
+                {
+                    allStates[i] = BuildViewStateFromPos(target, targetPos.X + dx, targetPos.Y + dy, frameOffsetsById);
+                    break;
+                }
+        }
     }
 
     private void ApplyGaNeighborAlignment(

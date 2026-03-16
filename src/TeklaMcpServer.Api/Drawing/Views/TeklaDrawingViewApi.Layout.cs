@@ -11,6 +11,11 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingViewApi
 {
+    internal const double ProjectionAlignmentScaleCutoff = 100.0;
+
+    internal static bool ShouldSkipProjectionAlignment(double optimalScale)
+        => optimalScale >= ProjectionAlignmentScaleCutoff;
+
     public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
     {
         var total = Stopwatch.StartNew();
@@ -235,17 +240,29 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         var projectionSw = Stopwatch.StartNew();
-        var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
-        projectionResult = projectionAlignmentService.Apply(
-            activeDrawing,
-            currentViews,
-            offsetById,
-            sheetW,
-            sheetH,
-            margin,
-            reservedAreas,
-            arranged,
-            preloadedAxes);
+        if (ShouldSkipProjectionAlignment(optimalScale.Value))
+        {
+            projectionResult = new ProjectionAlignmentResult
+            {
+                Mode = "disabled-scale",
+                SkippedMoves = 1
+            };
+            projectionResult.Diagnostics.Add($"projection-skip:scale-too-small:1:{optimalScale.Value.ToString(CultureInfo.InvariantCulture)}");
+        }
+        else
+        {
+            var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
+            projectionResult = projectionAlignmentService.Apply(
+                activeDrawing,
+                currentViews,
+                offsetById,
+                sheetW,
+                sheetH,
+                margin,
+                reservedAreas,
+                arranged,
+                preloadedAxes);
+        }
         projectionSw.Stop();
         projectionMs = projectionSw.ElapsedMilliseconds;
 
