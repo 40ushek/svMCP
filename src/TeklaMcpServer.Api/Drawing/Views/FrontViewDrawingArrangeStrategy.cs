@@ -239,16 +239,15 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var topSlotH = top != null ? topHeight + gap : 0;
         var bottomSlotH = bottom != null ? bottomHeight + gap : 0;
 
-        if (!TryCreateCenteredRect(
+        if (!TryFindFrontViewRect(
                 frontWidth,
                 frontHeight,
                 freeArea.minX + leftSlotW,
                 freeArea.maxX - rightSlotW,
                 freeArea.minY + bottomSlotH,
                 freeArea.maxY - topSlotH,
+                blocked,
                 out var frontRect))
-            return false;
-        if (IntersectsAny(frontRect, blocked))
             return false;
 
         planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
@@ -330,9 +329,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
         var frontWidth = DrawingArrangeContextSizing.GetWidth(context, front);
         var frontHeight = DrawingArrangeContextSizing.GetHeight(context, front);
-        if (!TryCreateCenteredRect(frontWidth, frontHeight, freeMinX, freeMaxX, freeMinY, freeMaxY, out var frontRect))
-            return false;
-        if (IntersectsAny(frontRect, blocked))
+        if (!TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX, freeMinY, freeMaxY, blocked, out var frontRect))
             return false;
 
         planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
@@ -553,6 +550,61 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             RelativePlacement.Left => BuildLeft().Concat(BuildTop()).Concat(BuildBottom()).Concat(BuildRight()),
             _ => System.Array.Empty<ReservedRect>()
         };
+    }
+
+    /// <summary>
+    /// Tries to place a view of the given size within [minX..maxX, minY..maxY] without
+    /// overlapping any blocked area. Tries 9 positions (center, right, left) × (center, top, bottom)
+    /// in order of visual preference, returning the first non-overlapping placement.
+    /// </summary>
+    internal static bool TryFindFrontViewRect(
+        double width,
+        double height,
+        double minX,
+        double maxX,
+        double minY,
+        double maxY,
+        IReadOnlyList<ReservedRect> blocked,
+        out ReservedRect placement)
+    {
+        if (width <= 0 || height <= 0 || maxX - minX < width || maxY - minY < height)
+        {
+            placement = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        var cx = minX + (maxX - minX - width) / 2.0;
+        var cy = minY + (maxY - minY - height) / 2.0;
+        var rx = maxX - width;
+        var lx = minX;
+        var ty = maxY - height;
+        var by = minY;
+
+        // Try center first (most balanced), then shifts to avoid reserved corners
+        var candidates = new[]
+        {
+            new ReservedRect(cx, cy, cx + width, cy + height),
+            new ReservedRect(rx, cy, rx + width, cy + height),
+            new ReservedRect(lx, cy, lx + width, cy + height),
+            new ReservedRect(cx, ty, cx + width, ty + height),
+            new ReservedRect(rx, ty, rx + width, ty + height),
+            new ReservedRect(lx, ty, lx + width, ty + height),
+            new ReservedRect(cx, by, cx + width, by + height),
+            new ReservedRect(rx, by, rx + width, by + height),
+            new ReservedRect(lx, by, lx + width, by + height),
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (!IntersectsAny(candidate, blocked))
+            {
+                placement = candidate;
+                return true;
+            }
+        }
+
+        placement = new ReservedRect(0, 0, 0, 0);
+        return false;
     }
 
     internal static bool TryCreateCenteredRect(

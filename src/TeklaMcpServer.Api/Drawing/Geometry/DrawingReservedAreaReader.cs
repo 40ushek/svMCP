@@ -117,6 +117,9 @@ internal static class DrawingReservedAreaReader
         double usableMaxY,
         IReadOnlyList<LayoutTableGeometryInfo> tableGeometries)
     {
+        var usableW = usableMaxX - usableMinX;
+        var usableH = usableMaxY - usableMinY;
+
         foreach (var table in tableGeometries)
         {
             if (table.OverlapWithViews)
@@ -125,10 +128,22 @@ internal static class DrawingReservedAreaReader
             if (!table.HasGeometry || table.Bounds == null)
                 continue;
 
-            var minX = Clamp(table.Bounds.MinX, usableMinX, usableMaxX);
-            var minY = Clamp(table.Bounds.MinY, usableMinY, usableMaxY);
-            var maxX = Clamp(table.Bounds.MaxX, usableMinX, usableMaxX);
-            var maxY = Clamp(table.Bounds.MaxY, usableMinY, usableMaxY);
+            // If the canvas bounds significantly exceed the sheet (A0 template on smaller sheet),
+            // canvas markers encode the full template canvas rather than the rendered area.
+            // Fall back to content bounds (primitive accumulation skipping canvas markers).
+            var src = table.Bounds;
+            if ((src.MaxX > usableMaxX + usableW * 0.5 || src.MaxY > usableMaxY + usableH * 0.5)
+                && table.ContentBounds != null)
+            {
+                src = table.ContentBounds;
+                PerfTrace.Write("api-view", "reserved_table_use_content_bounds", 0,
+                    $"tableId={table.TableId} name={table.Name} canvasMaxX={table.Bounds.MaxX:F1} contentMaxX={src.MaxX:F1}");
+            }
+
+            var minX = Clamp(src.MinX, usableMinX, usableMaxX);
+            var minY = Clamp(src.MinY, usableMinY, usableMaxY);
+            var maxX = Clamp(src.MaxX, usableMinX, usableMaxX);
+            var maxY = Clamp(src.MaxY, usableMinY, usableMaxY);
 
             if (maxX - minX < MinObstacleSize || maxY - minY < MinObstacleSize)
                 continue;
@@ -214,34 +229,59 @@ internal static class DrawingReservedAreaReader
             };
         }
 
+        TryGetContentBounds(segment, out var contentBounds);
         return new LayoutTableGeometryInfo
         {
             TableId = tableId,
             Name = name,
             OverlapWithViews = overlapWithViews,
             HasGeometry = true,
-            Bounds = bounds
+            Bounds = bounds,
+            ContentBounds = contentBounds
         };
     }
 
     /// <summary>
-    /// Gets table bounds from canvas marker primitives (Primitives[0] = min, Primitives[2] = max),
-    /// falling back to full primitive accumulation if markers are absent.
+    /// Gets table bounds from Tekla canvas marker primitives.
+    /// This marker-based path is the canonical svMCP contract for layout-table bounds:
+    /// `Primitives[0]` = min-corner marker, `Primitives[2]` = max-corner marker.
+    /// Generic primitive accumulation is only a safety fallback.
     /// </summary>
     internal static bool TryGetSegmentBounds(Segment? segment, out ReservedRect bounds)
     {
         if (segment == null) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
 
-        // Primary: canvas marker primitives (set by Tekla template engine)
-        // Primitives[0] = LinePrimitive → canvas min corner
-        // Primitives[2] = LinePrimitive → canvas max corner
+        // Canonical path: canvas marker primitives emitted by the Tekla template engine.
+        // Primitives[0] = LinePrimitive -> canvas min corner
+        // Primitives[2] = LinePrimitive -> canvas max corner
         if (TryGetCanvasBounds(segment, out bounds))
             return true;
 
-        // Fallback: accumulate all primitive bounding boxes
+        // Safety fallback only. Do not treat this as the primary source of truth.
         var acc = new BoundsAccumulator();
         AccumulatePrimitiveBounds(segment, ref acc);
         if (!acc.HasValue) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
+        bounds = new ReservedRect(acc.MinX, acc.MinY, acc.MaxX, acc.MaxY);
+        return true;
+    }
+
+    /// <summary>
+    /// Accumulates bounds from content primitives, skipping canvas-marker primitives [0..2].
+    /// Used as fallback when canvas markers report an oversized (A0-template) canvas.
+    /// </summary>
+    private static bool TryGetContentBounds(Segment? segment, out ReservedRect bounds)
+    {
+        bounds = new ReservedRect(0, 0, 0, 0);
+        if (segment == null) return false;
+
+        var primitives = segment.Primitives;
+        if (primitives == null || primitives.Count <= 3) return false;
+
+        var acc = new BoundsAccumulator();
+        for (var i = 3; i < primitives.Count; i++)
+            AccumulatePrimitiveBounds(primitives[i], ref acc);
+
+        if (!acc.HasValue) return false;
         bounds = new ReservedRect(acc.MinX, acc.MinY, acc.MaxX, acc.MaxY);
         return true;
     }
@@ -444,5 +484,6 @@ public sealed class LayoutTableGeometryInfo
     public string Name            { get; set; } = "";
     public bool   OverlapWithViews { get; set; }
     public bool   HasGeometry     { get; set; }
-    public ReservedRect? Bounds   { get; set; }
+    public ReservedRect? Bounds        { get; set; }
+    public ReservedRect? ContentBounds { get; set; }  // primitive-based, skipping canvas markers [0..2]
 }
