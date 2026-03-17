@@ -281,4 +281,19 @@ public static partial class ModelTools
             return string.Concat("Bridge error: ", json);
         }
     }
+
+    [McpServerTool, Description("Debug: read reserved areas (tables, title block) as detected by the layout algorithm. Returns both raw per-table geometry and merged reserved rects used for view placement.")]
+    public static string GetDrawingReservedAreas()
+    {
+        var json = RunBridge("get_drawing_reserved_areas");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return string.Concat("Bridge error: ", json);
+        }
+    }
 }

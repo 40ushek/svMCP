@@ -45,3 +45,12 @@ public sealed class ArrangedView
     public double OriginX  { get; set; }
     public double OriginY  { get; set; }
 }
+
+public sealed class DrawingReservedAreasResult
+{
+    public double SheetWidth  { get; set; }
+    public double SheetHeight { get; set; }
+    public double Margin      { get; set; }
+    public IReadOnlyList<LayoutTableGeometryInfo> RawTables   { get; set; } = System.Array.Empty<LayoutTableGeometryInfo>();
+    public IReadOnlyList<ReservedRect>            MergedAreas { get; set; } = System.Array.Empty<ReservedRect>();
+}

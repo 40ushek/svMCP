@@ -23,6 +23,9 @@ internal sealed partial class DrawingCommandHandler
             case "fit_views_to_sheet":
                 return HandleFitViewsToSheet(api, args);
 
+            case "get_drawing_reserved_areas":
+                return HandleGetDrawingReservedAreas();
+
             default:
                 return false;
         }
@@ -71,7 +74,38 @@ internal sealed partial class DrawingCommandHandler
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
         var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
-        WriteFitViewsToSheetResult(result);
+        var reserved = api.GetReservedAreas(request.Margin);
+        WriteFitViewsToSheetResult(result, reserved);
+        return true;
+    }
+
+    private bool HandleGetDrawingReservedAreas()
+    {
+        var result = new TeklaDrawingViewApi().GetReservedAreas(margin: 10.0);
+        WriteJson(new
+        {
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            margin = result.Margin,
+            rawTableCount = result.RawTables.Count,
+            rawTables = result.RawTables.Select(t => new
+            {
+                tableId = t.TableId,
+                hasGeometry = t.HasGeometry,
+                minX = t.Bounds?.MinX,
+                minY = t.Bounds?.MinY,
+                maxX = t.Bounds?.MaxX,
+                maxY = t.Bounds?.MaxY
+            }),
+            mergedCount = result.MergedAreas.Count,
+            mergedAreas = result.MergedAreas.Select(r => new
+            {
+                minX = r.MinX,
+                minY = r.MinY,
+                maxX = r.MaxX,
+                maxY = r.MaxY
+            })
+        });
         return true;
     }
 
@@ -118,7 +152,7 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
-    private void WriteFitViewsToSheetResult(FitViewsResult result)
+    private void WriteFitViewsToSheetResult(FitViewsResult result, DrawingReservedAreasResult? reserved = null)
     {
         WriteJson(new
         {
@@ -135,7 +169,28 @@ internal sealed partial class DrawingCommandHandler
             }),
             projectionApplied = result.ProjectionApplied,
             projectionSkipped = result.ProjectionSkipped,
-            projectionDiagnostics = result.ProjectionDiagnostics
+            projectionDiagnostics = result.ProjectionDiagnostics,
+            reservedAreas = reserved == null ? null : new
+            {
+                rawTableCount = reserved.RawTables.Count,
+                rawTables = reserved.RawTables.Select(t => new
+                {
+                    tableId = t.TableId,
+                    hasGeometry = t.HasGeometry,
+                    minX = t.Bounds?.MinX,
+                    minY = t.Bounds?.MinY,
+                    maxX = t.Bounds?.MaxX,
+                    maxY = t.Bounds?.MaxY
+                }),
+                mergedCount = reserved.MergedAreas.Count,
+                mergedAreas = reserved.MergedAreas.Select(r => new
+                {
+                    minX = r.MinX,
+                    minY = r.MinY,
+                    maxX = r.MaxX,
+                    maxY = r.MaxY
+                })
+            }
         });
     }
 }

@@ -28,4 +28,22 @@ public sealed partial class TeklaDrawingViewApi
 
         return result;
     }
+
+    public DrawingReservedAreasResult GetReservedAreas(double margin)
+    {
+        var drawing = new DrawingHandler().GetActiveDrawing()
+            ?? throw new DrawingNotOpenException();
+
+        var rawTables = DrawingReservedAreaReader.ReadLayoutTableGeometries();
+        var merged = DrawingReservedAreaReader.Read(drawing, margin, 0.0);
+
+        return new DrawingReservedAreasResult
+        {
+            SheetWidth = drawing.Layout.SheetSize.Width,
+            SheetHeight = drawing.Layout.SheetSize.Height,
+            Margin = margin,
+            RawTables = rawTables,
+            MergedAreas = merged
+        };
+    }
 }

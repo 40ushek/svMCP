@@ -252,10 +252,10 @@ internal static class DrawingReservedAreaReader
 
     private static bool IntersectsOrTouches(ReservedRect left, ReservedRect right)
     {
-        return left.MinX <= right.MaxX
-            && left.MaxX >= right.MinX
-            && left.MinY <= right.MaxY
-            && left.MaxY >= right.MinY;
+        return left.MinX < right.MaxX
+            && left.MaxX > right.MinX
+            && left.MinY < right.MaxY
+            && left.MaxY > right.MinY;
     }
 
     private static void AccumulatePrimitiveBounds(PrimitiveBase primitive, ref BoundsAccumulator acc)
