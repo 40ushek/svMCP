@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
@@ -286,6 +287,13 @@ public sealed partial class TeklaDrawingViewApi
         finalCommitMs = commitSw.ElapsedMilliseconds;
         selectedScale = optimalScale;
 
+        // Center the view group horizontally in the usable area.
+        // After packing, views may be biased toward one edge when reserved areas
+        // only occupy a corner; shift the whole group toward the center of the sheet.
+        var finalViews = EnumerateViews(activeDrawing).ToList();
+        arranged = TryCenterGroupX(activeDrawing, finalViews, arranged,
+            effectiveMargin, sheetW - effectiveMargin, reservedAreas);
+
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
         var mergedForOutput = DrawingReservedAreaReader.Read(activeDrawing, effectiveMargin, 0.0,
@@ -319,5 +327,93 @@ public sealed partial class TeklaDrawingViewApi
             total.ElapsedMilliseconds,
             $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
+    }
+
+    /// <summary>
+    /// After packing, the view group may be biased toward one side (e.g. right edge)
+    /// because reserved areas only block a corner. This method shifts the whole group
+    /// toward the center of the usable area, both horizontally and vertically,
+    /// as far as possible without overlapping any reserved area.
+    /// </summary>
+    private static List<ArrangedView> TryCenterGroupX(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        List<View> views,
+        List<ArrangedView> arranged,
+        double usableMinX, double usableMaxX,
+        IReadOnlyList<ReservedRect> reserved)
+    {
+        if (views.Count == 0) return arranged;
+
+        // Use actual bounding boxes (sheet mm) — same source as the packer uses.
+        // IAxisAlignedBoundingBox gives the real visual extent including frame borders.
+        var rects = new List<ReservedRect>(views.Count);
+        foreach (var v in views)
+        {
+            if (v is not IAxisAlignedBoundingBox bounded) return arranged; // can't compute safely
+            var box = bounded.GetAxisAlignedBoundingBox();
+            if (box == null) return arranged;
+            rects.Add(new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y));
+        }
+
+        var groupMinX = rects.Min(r => r.MinX);
+        var groupMaxX = rects.Max(r => r.MaxX);
+        var groupW    = groupMaxX - groupMinX;
+
+        // Desired shift: center the group in the usable X range
+        var targetMinX = usableMinX + (usableMaxX - usableMinX - groupW) / 2.0;
+        var dx = targetMinX - groupMinX;
+
+        // Clamp to usable bounds
+        dx = dx < 0
+            ? System.Math.Max(dx, usableMinX - groupMinX)
+            : System.Math.Min(dx, usableMaxX - groupMaxX);
+
+        if (System.Math.Abs(dx) < 1.0) return arranged;
+
+        // Binary-search for the largest feasible shift magnitude (avoid reserved overlaps)
+        double lo = 0, hi = System.Math.Abs(dx);
+        var sign = System.Math.Sign(dx);
+        while (hi - lo > 0.5)
+        {
+            var mid = (lo + hi) / 2.0;
+            var feasible = true;
+            foreach (var r in rects)
+            {
+                var shifted = new ReservedRect(r.MinX + sign * mid, r.MinY, r.MaxX + sign * mid, r.MaxY);
+                foreach (var res in reserved)
+                {
+                    if (shifted.MinX < res.MaxX && shifted.MaxX > res.MinX &&
+                        shifted.MinY < res.MaxY && shifted.MaxY > res.MinY)
+                    { feasible = false; break; }
+                }
+                if (!feasible) break;
+            }
+            if (feasible) lo = mid; else hi = mid;
+        }
+
+        if (lo < 1.0) return arranged;
+        dx = sign * lo;
+
+        // Apply shift to views in the drawing
+        foreach (var v in views)
+        {
+            var o = v.Origin;
+            o.X += dx;
+            v.Origin = o;
+            v.Modify();
+        }
+        activeDrawing.CommitChanges();
+
+        PerfTrace.Write("api-view", "center_group_x", 0,
+            $"dx={dx:F1} groupMinX={groupMinX:F1} groupMaxX={groupMaxX:F1} usable={usableMinX:F1}-{usableMaxX:F1}");
+
+        // Return updated positions
+        return arranged.Select(a => new ArrangedView
+        {
+            Id       = a.Id,
+            ViewType = a.ViewType,
+            OriginX  = a.OriginX + dx,
+            OriginY  = a.OriginY
+        }).ToList();
     }
 }
