@@ -222,6 +222,7 @@ src/
 - post-processing проекционной связи выполняется внутри `DrawingProjectionAlignmentService`
 - reserved areas таблиц: `DrawingReservedAreaReader.ReadLayoutTableGeometries()` использует `TableLayout.GetCurrentTables()` → `PresentationConnection.GetObjectPresentation()` → canvas-маркеры (`Segment.Primitives[0/2]`) → точный bbox. Таблицы с `OverlapVithViews=true` пропускаются.
 - отступы листа: `TableLayout.GetMarginsAndSpaces()` возвращает реальные margins (обычно 5–10мм), используются как `sheetMargin` в ответе
+- канонический источник границ layout-таблиц — именно canvas-маркеры `Segment.Primitives[0/2]`; общая аккумуляция примитивов допускается только как fallback
 
 ## Диагностика
 

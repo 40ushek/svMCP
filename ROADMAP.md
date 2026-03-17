@@ -132,6 +132,7 @@
   **Ключевые находки по API таблиц:**
   - `LayoutTable.OverlapVithViews` — если `true`, таблица не создаёт reserved area (виды могут перекрывать декоративные элементы углов и зон)
   - Размеры таблицы **не хранятся** в `LayoutTable` — нужно читать из `Segment.Primitives[0/2]` (canvas-маркеры, паттерн из `QRpresentation.cs`): `Primitives[0]` = `LinePrimitive` с min-corner, `Primitives[2]` = `LinePrimitive` с max-corner. Это даёт точные boundaries без накопления всех примитивов.
+  - Marker-based path (`Segment.Primitives[0/2]`) считается каноническим контрактом svMCP для table bounds и не должен подменяться общей аккумуляцией примитивов по умолчанию.
   - `TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right)` — реальные отступы листа (на A3 = 10мм по умолчанию)
   - `LayoutManager.GetDrawingFrames()` — фреймы листа для складок/рамки, не прямоугольники таблиц
   - Примитивы шаблона (`GetObjectPresentation`) возвращаются в полных координатах шаблона (до 722мм для A0-шаблона). На A3 canvas-маркеры дают правильные границы видимой части.

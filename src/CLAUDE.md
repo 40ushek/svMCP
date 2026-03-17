@@ -279,6 +279,12 @@ modelObject.GetReportProperty("WEIGHT", ref weight);
 var drawings = new DrawingHandler().GetDrawings(); // DrawingEnumerator
 ```
 
+### Layout Table Bounds Contract
+
+- For drawing layout tables, the canonical source of visible table bounds is `Segment.Primitives[0/2]` from the presentation model.
+- Contract: `Primitives[0]` = min-corner marker, `Primitives[2]` = max-corner marker.
+- Do not replace this marker-based path with generic primitive accumulation unless canvas markers are proven unavailable for the specific runtime/template.
+
 ## Key Dependencies
 
 | Package | Version | Purpose |
