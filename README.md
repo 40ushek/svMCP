@@ -220,7 +220,8 @@ src/
 - legacy `PlaceViews()` удалён из MCP/bridge слоя и больше не является поддерживаемым tool
 - основной путь авторасстановки видов — `fit_views_to_sheet`
 - post-processing проекционной связи выполняется внутри `DrawingProjectionAlignmentService`
-- reserved areas таблиц: `DrawingReservedAreaReader.ReadLayoutTableGeometries()` использует `TableLayout.GetCurrentTables()` → `PresentationConnection.GetObjectPresentation()` → `LayoutManager.CloseEditor()`. Tekla открывает Layout Editor как побочный эффект и сразу закрывает его — виды не размещаются поверх штампа и динамических таблиц (parts list с переменной высотой)
+- reserved areas таблиц: `DrawingReservedAreaReader.ReadLayoutTableGeometries()` использует `TableLayout.GetCurrentTables()` → `PresentationConnection.GetObjectPresentation()` → canvas-маркеры (`Segment.Primitives[0/2]`) → точный bbox. Таблицы с `OverlapVithViews=true` пропускаются.
+- отступы листа: `TableLayout.GetMarginsAndSpaces()` возвращает реальные margins (обычно 5–10мм), используются как `sheetMargin` в ответе
 
 ## Диагностика
 

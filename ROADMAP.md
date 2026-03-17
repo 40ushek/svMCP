@@ -129,9 +129,12 @@
 
   **Результат**: `fit_views_to_sheet` получает реальные reserved areas таблиц и не размещает виды поверх штампа/списка деталей.
 
-  Дополнительно об API таблиц (для справки):
-  - `LayoutTable`: `FileName`, `XOffset`, `YOffset`, `Scale`, `TableCorner`, `RefCorner`, `OverlapVithViews` — placement metadata (без размеров)
-  - `LayoutManager`: `GetDrawingFrames()` — frame metadata листа (гипотеза: не прямоугольники таблиц, не проверено)
+  **Ключевые находки по API таблиц:**
+  - `LayoutTable.OverlapVithViews` — если `true`, таблица не создаёт reserved area (виды могут перекрывать декоративные элементы углов и зон)
+  - Размеры таблицы **не хранятся** в `LayoutTable` — нужно читать из `Segment.Primitives[0/2]` (canvas-маркеры, паттерн из `QRpresentation.cs`): `Primitives[0]` = `LinePrimitive` с min-corner, `Primitives[2]` = `LinePrimitive` с max-corner. Это даёт точные boundaries без накопления всех примитивов.
+  - `TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right)` — реальные отступы листа (на A3 = 10мм по умолчанию)
+  - `LayoutManager.GetDrawingFrames()` — фреймы листа для складок/рамки, не прямоугольники таблиц
+  - Примитивы шаблона (`GetObjectPresentation`) возвращаются в полных координатах шаблона (до 722мм для A0-шаблона). На A3 canvas-маркеры дают правильные границы видимой части.
 
 ---
 
