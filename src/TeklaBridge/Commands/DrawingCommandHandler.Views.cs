@@ -74,7 +74,7 @@ internal sealed partial class DrawingCommandHandler
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
         var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight);
-        var reserved = api.GetReservedAreas(request.Margin);
+        var reserved = api.GetReservedAreas(result.Margin);
         WriteFitViewsToSheetResult(result, reserved);
         return true;
     }

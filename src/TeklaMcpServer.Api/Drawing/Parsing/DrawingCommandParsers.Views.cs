@@ -50,11 +50,11 @@ public static partial class DrawingCommandParsers
 
     public static FitViewsToSheetRequest ParseFitViewsToSheetRequest(string[] args)
     {
-        var request = new FitViewsToSheetRequest { Margin = 10.0, Gap = 8.0, TitleBlockHeight = 0.0 };
+        var request = new FitViewsToSheetRequest { Margin = null, Gap = 8.0, TitleBlockHeight = 0.0 };
 
         if (args.Length > 1 &&
             double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var margin))
-            request.Margin = margin;
+            request.Margin = margin > 0 ? margin : (double?)null;  // 0 from MCP = auto (null)
 
         if (args.Length > 2 &&
             double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var gap))

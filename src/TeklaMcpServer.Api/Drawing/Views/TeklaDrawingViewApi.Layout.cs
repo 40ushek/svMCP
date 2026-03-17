@@ -16,7 +16,8 @@ public sealed partial class TeklaDrawingViewApi
     internal static bool ShouldSkipProjectionAlignment(double optimalScale)
         => optimalScale >= ProjectionAlignmentScaleCutoff;
 
-    public FitViewsResult FitViewsToSheet(double margin, double gap, double titleBlockHeight)
+    /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
+    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -32,16 +33,15 @@ public sealed partial class TeklaDrawingViewApi
         double? selectedScale = null;
         ProjectionAlignmentResult? projectionResult = null;
 
-        if (margin < 0)
+        if (margin.HasValue && margin.Value < 0)
             throw new System.ArgumentOutOfRangeException(nameof(margin), "margin must be >= 0.");
         if (gap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(gap), "gap must be >= 0.");
         if (titleBlockHeight < 0)
             throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
-        // Use margin from drawing layout if not explicitly specified (margin == 0)
-        if (margin == 0)
-            margin = DrawingReservedAreaReader.TryReadSheetMargin() ?? 10.0;
+        // null → auto-read from drawing layout
+        var effectiveMargin = margin ?? DrawingReservedAreaReader.TryReadSheetMargin() ?? 10.0;
 
         var init = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -72,14 +72,14 @@ public sealed partial class TeklaDrawingViewApi
         var reservedRead = Stopwatch.StartNew();
         IReadOnlyList<ReservedRect> reservedAreas = DrawingReservedAreaReader.Read(
             activeDrawing,
-            margin,
+            effectiveMargin,
             titleBlockHeight,
             viewIds);
         reservedRead.Stop();
         reservedMs = reservedRead.ElapsedMilliseconds;
 
-        var availW = sheetW - (2 * margin);
-        var availH = sheetH - (2 * margin);
+        var availW = sheetW - (2 * effectiveMargin);
+        var availH = sheetH - (2 * effectiveMargin);
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
@@ -128,7 +128,7 @@ public sealed partial class TeklaDrawingViewApi
                     return (w: v.Width, h: v.Height);
                 })
                 .ToList();
-            var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap, reservedAreas, effectiveFrameSizes);
+            var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
 
             if (_arrangementSelector.EstimateFit(ctx, actualFrames))
             {
@@ -209,7 +209,7 @@ public sealed partial class TeklaDrawingViewApi
 
         var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap, reservedAreas, TryGetFrameSizesFromBoundingBoxes(currentViews)));
+            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, TryGetFrameSizesFromBoundingBoxes(currentViews)));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
@@ -270,7 +270,7 @@ public sealed partial class TeklaDrawingViewApi
                 offsetById,
                 sheetW,
                 sheetH,
-                margin,
+                effectiveMargin,
                 reservedAreas,
                 arranged,
                 preloadedAxes);
@@ -289,6 +289,7 @@ public sealed partial class TeklaDrawingViewApi
             OptimalScale = optimalScale.Value,
             SheetWidth = sheetW,
             SheetHeight = sheetH,
+            Margin = effectiveMargin,
             Arranged = arranged.Count,
             Views = arranged,
             ProjectionApplied = projectionResult?.AppliedMoves ?? 0,

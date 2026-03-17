@@ -328,7 +328,7 @@ public sealed class MoveDimensionParseResult
 
 public sealed class FitViewsToSheetRequest
 {
-    public double Margin { get; set; }
+    public double? Margin { get; set; }  // null = auto-read from drawing layout
     public double Gap { get; set; }
     public double TitleBlockHeight { get; set; }
 }
