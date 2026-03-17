@@ -64,6 +64,33 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
 
         return offsets;
     }
+
+    private static Dictionary<int, (double Width, double Height)> TryGetFrameSizesFromBoundingBoxes(
+        IReadOnlyList<View> views)
+    {
+        var sizes = new Dictionary<int, (double Width, double Height)>(views.Count);
+        foreach (var view in views)
+        {
+            if (view is not IAxisAlignedBoundingBox bounded)
+            {
+                sizes.Clear();
+                return sizes;
+            }
+
+            var box = bounded.GetAxisAlignedBoundingBox();
+            if (box == null)
+            {
+                sizes.Clear();
+                return sizes;
+            }
+
+            sizes[view.GetIdentifier().ID] = (
+                box.MaxPoint.X - box.MinPoint.X,
+                box.MaxPoint.Y - box.MinPoint.Y);
+        }
+
+        return sizes;
+    }
 }
 
 public sealed class DrawingNotOpenException : System.Exception

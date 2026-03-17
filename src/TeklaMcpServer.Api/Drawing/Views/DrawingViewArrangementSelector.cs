@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -18,8 +19,8 @@ public sealed class DrawingViewArrangementSelector
     {
         return new DrawingViewArrangementSelector(new IDrawingViewArrangeStrategy[]
         {
-            new GaDrawingMaxRectsArrangeStrategy(),
             new FrontViewDrawingArrangeStrategy(),
+            new GaDrawingMaxRectsArrangeStrategy(),
             new ShelfPackingDrawingArrangeStrategy()
         });
     }
@@ -27,12 +28,14 @@ public sealed class DrawingViewArrangementSelector
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
         var strategy = SelectStrategy(context);
+        PerfTrace.Write("api-view", "arrange_strategy_estimate", 0, $"strategy={strategy.GetType().Name}");
         return strategy.EstimateFit(context, frames);
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
     {
         var strategy = SelectStrategy(context);
+        PerfTrace.Write("api-view", "arrange_strategy_apply", 0, $"strategy={strategy.GetType().Name}");
         return strategy.Arrange(context);
     }
 

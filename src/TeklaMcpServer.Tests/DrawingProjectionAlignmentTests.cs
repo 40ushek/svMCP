@@ -183,10 +183,11 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Theory]
-    [InlineData(100, true)]
     [InlineData(125, true)]
-    [InlineData(80, false)]
-    [InlineData(50, false)]
+    [InlineData(100, true)]
+    [InlineData(60, true)]
+    [InlineData(50, true)]
+    [InlineData(40, false)]
     public void ShouldSkipProjectionAlignment_UsesScaleCutoff(double scale, bool expected)
     {
         Assert.Equal(expected, TeklaDrawingViewApi.ShouldSkipProjectionAlignment(scale));

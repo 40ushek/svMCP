@@ -133,6 +133,7 @@ internal static class DrawingReservedAreaReader
             return Array.Empty<LayoutTableGeometryInfo>();
         }
 
+
         if (tableIds == null || tableIds.Count == 0)
             return Array.Empty<LayoutTableGeometryInfo>();
 

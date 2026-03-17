@@ -203,6 +203,7 @@ internal static class Program
             {
                 error = ex.Message,
                 type = ex.GetType().Name,
+                stack = ex.StackTrace,
                 xs_system = Environment.GetEnvironmentVariable("XS_SYSTEM"),
                 teklaLog = teklaLog.ToString().Trim()
             });
@@ -391,12 +392,10 @@ internal static class Program
                     }
             }
 
-            File.WriteAllText(@"C:\temp\tekla_channel.txt",
-                $"TS2025 fix: installedVersion={installedVersion}, fixed {fixedCount} channel(s):\n{log}");
         }
         catch (Exception ex)
         {
-            File.WriteAllText(@"C:\temp\tekla_channel.txt", "TS2025 channel fix error: " + ex.Message);
+            _ = ex;
         }
     }
 

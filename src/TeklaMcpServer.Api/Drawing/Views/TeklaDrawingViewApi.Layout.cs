@@ -115,8 +115,16 @@ public sealed partial class TeklaDrawingViewApi
             activeDrawing.CommitChanges();
 
             var reread = EnumerateViews(activeDrawing).ToList();
-            var actualFrames = reread.Select(v => (w: v.Width, h: v.Height)).ToList();
-            var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap, reservedAreas);
+            var effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(reread);
+            var actualFrames = reread
+                .Select(v =>
+                {
+                    if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                        return (w: size.Width, h: size.Height);
+                    return (w: v.Width, h: v.Height);
+                })
+                .ToList();
+            var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, margin, gap, reservedAreas, effectiveFrameSizes);
 
             if (_arrangementSelector.EstimateFit(ctx, actualFrames))
             {
@@ -197,7 +205,7 @@ public sealed partial class TeklaDrawingViewApi
 
         var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap, reservedAreas));
+            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, margin, gap, reservedAreas, TryGetFrameSizesFromBoundingBoxes(currentViews)));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
