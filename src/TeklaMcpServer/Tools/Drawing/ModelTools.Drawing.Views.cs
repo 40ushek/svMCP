@@ -256,7 +256,7 @@ public static partial class ModelTools
 
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
-        [Description("Margin from sheet edges in mm. Default: 10")] double margin = 10,
+        [Description("Margin from sheet edges in mm. Default: 0 = auto-read from drawing layout")] double margin = 0,
         [Description("Gap between views in mm. Default: 8")] double gap = 8,
         [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0)
     {

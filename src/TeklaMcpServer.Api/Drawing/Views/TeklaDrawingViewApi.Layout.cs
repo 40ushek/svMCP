@@ -39,6 +39,10 @@ public sealed partial class TeklaDrawingViewApi
         if (titleBlockHeight < 0)
             throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
+        // Use margin from drawing layout if not explicitly specified (margin == 0)
+        if (margin == 0)
+            margin = DrawingReservedAreaReader.TryReadSheetMargin() ?? 10.0;
+
         var init = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
