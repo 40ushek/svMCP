@@ -61,6 +61,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "draw_debug_overlay":
             case "draw_selected_mark_part_axis_geometry":
             case "clear_debug_overlay":
+            case "debug_draw_table_primitives":
                 return TryHandleGeometryCommands(command, args);
 
             case "arrange_marks":

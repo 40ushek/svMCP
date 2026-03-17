@@ -69,4 +69,14 @@ public static partial class ModelTools
     {
         return RunBridge("clear_debug_overlay", group ?? string.Empty);
     }
+
+    [McpServerTool, Description(
+        "Debug tool: draw the internal layout-table primitives schematically on the active drawing. " +
+        "Blue lines = spanning horizontal dividers, cyan = short/vertical lines, yellow rectangles = text fields. " +
+        "Use get_drawing_reserved_areas to get tableId values.")]
+    public static string DebugDrawTablePrimitives(
+        [Description("Table ID from get_drawing_reserved_areas rawTables")] int tableId)
+    {
+        return RunBridge("debug_draw_table_primitives", tableId.ToString());
+    }
 }

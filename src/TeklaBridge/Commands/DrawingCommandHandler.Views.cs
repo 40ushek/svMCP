@@ -97,6 +97,16 @@ internal sealed partial class DrawingCommandHandler
                 maxX = t.Bounds?.MaxX,
                 maxY = t.Bounds?.MaxY
             }),
+            filteredTableCount = result.FilteredTables.Count,
+            filteredTables = result.FilteredTables.Select(t => new
+            {
+                tableId = t.TableId,
+                hasGeometry = t.HasGeometry,
+                minX = t.Bounds?.MinX,
+                minY = t.Bounds?.MinY,
+                maxX = t.Bounds?.MaxX,
+                maxY = t.Bounds?.MaxY
+            }),
             mergedCount = result.MergedAreas.Count,
             mergedAreas = result.MergedAreas.Select(r => new
             {
@@ -104,6 +114,27 @@ internal sealed partial class DrawingCommandHandler
                 minY = r.MinY,
                 maxX = r.MaxX,
                 maxY = r.MaxY
+            }),
+            layoutTables = result.LayoutTables.Select(t => new
+            {
+                id = t.Id,
+                name = t.Name,
+                fileName = t.FileName,
+                scale = t.Scale,
+                xOffset = t.XOffset,
+                yOffset = t.YOffset,
+                tableCorner = t.TableCorner,
+                refCorner = t.RefCorner,
+                overlapWithViews = t.OverlapWithViews
+            }),
+            drawingFrames = result.DrawingFrames.Select(f => new
+            {
+                active = f.Active,
+                x = f.X,
+                y = f.Y,
+                w = f.W,
+                h = f.H,
+                corner = f.Corner
             })
         });
         return true;
@@ -182,6 +213,16 @@ internal sealed partial class DrawingCommandHandler
                     maxX = t.Bounds?.MaxX,
                     maxY = t.Bounds?.MaxY
                 }),
+                filteredTableCount = reserved.FilteredTables.Count,
+                filteredTables = reserved.FilteredTables.Select(t => new
+                {
+                    tableId = t.TableId,
+                    hasGeometry = t.HasGeometry,
+                    minX = t.Bounds?.MinX,
+                    minY = t.Bounds?.MinY,
+                    maxX = t.Bounds?.MaxX,
+                    maxY = t.Bounds?.MaxY
+                }),
                 mergedCount = reserved.MergedAreas.Count,
                 mergedAreas = reserved.MergedAreas.Select(r => new
                 {
@@ -189,6 +230,27 @@ internal sealed partial class DrawingCommandHandler
                     minY = r.MinY,
                     maxX = r.MaxX,
                     maxY = r.MaxY
+                }),
+                layoutTables = reserved.LayoutTables.Select(t => new
+                {
+                    id = t.Id,
+                    name = t.Name,
+                    fileName = t.FileName,
+                    scale = t.Scale,
+                    xOffset = t.XOffset,
+                    yOffset = t.YOffset,
+                    tableCorner = t.TableCorner,
+                    refCorner = t.RefCorner,
+                    overlapWithViews = t.OverlapWithViews
+                }),
+                drawingFrames = reserved.DrawingFrames.Select(f => new
+                {
+                    active = f.Active,
+                    x = f.X,
+                    y = f.Y,
+                    w = f.W,
+                    h = f.H,
+                    corner = f.Corner
                 })
             }
         });
