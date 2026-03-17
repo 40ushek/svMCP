@@ -54,7 +54,7 @@ public static partial class DrawingCommandParsers
 
         if (args.Length > 1 &&
             double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var margin))
-            request.Margin = margin > 0 ? margin : (double?)null;  // 0 from MCP = auto (null)
+            request.Margin = margin == 0 ? (double?)null : margin;  // 0 from MCP = auto (null); negative passes through to API validation
 
         if (args.Length > 2 &&
             double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var gap))
