@@ -101,9 +101,11 @@ internal static class DrawingReservedAreaReader
                 double top = 0, bottom = 0, left = 0, right = 0;
                 TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right);
                 // Return the smallest margin so views don't go outside the sheet frame
-                // Use max so views are kept within the tightest required clearance on every side.
-                // (min would let views violate wider margins on asymmetric layouts.)
-                var margin = Math.Max(Math.Max(top, bottom), Math.Max(left, right));
+                // Use min: GetMarginsAndSpaces returns both edge margins AND table-placement spaces.
+                // Spaces can be 100+ mm (e.g. parts-list column width), so taking max would be wrong.
+                // Min reliably picks the actual sheet-edge margin (typically 5–10 mm).
+                // Known limitation: asymmetric margins (e.g. left=10, bottom=20) will use 10 for all sides.
+                var margin = Math.Min(Math.Min(top, bottom), Math.Min(left, right));
                 return margin > 0 ? margin : (double?)null;
             }
             finally { LayoutManager.CloseEditor(); }
