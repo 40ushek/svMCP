@@ -40,8 +40,9 @@ public sealed partial class TeklaDrawingViewApi
         if (titleBlockHeight < 0)
             throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
-        // null → auto-read from drawing layout
-        var effectiveMargin = margin ?? DrawingReservedAreaReader.TryReadSheetMargin() ?? 10.0;
+        // null → auto-read from drawing layout; read tables in the same editor-open pass
+        var (autoMargin, layoutTables) = DrawingReservedAreaReader.ReadLayoutInfo();
+        var effectiveMargin = margin ?? autoMargin ?? 10.0;
 
         var init = Stopwatch.StartNew();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -74,7 +75,8 @@ public sealed partial class TeklaDrawingViewApi
             activeDrawing,
             effectiveMargin,
             titleBlockHeight,
-            viewIds);
+            viewIds,
+            layoutTables);
         reservedRead.Stop();
         reservedMs = reservedRead.ElapsedMilliseconds;
 
@@ -284,6 +286,11 @@ public sealed partial class TeklaDrawingViewApi
         finalCommitMs = commitSw.ElapsedMilliseconds;
         selectedScale = optimalScale;
 
+        // Build reserved-areas output using already-read layoutTables (no extra editor open).
+        // Read() without excludeViewIds to include view bounding boxes in the merged output.
+        var mergedForOutput = DrawingReservedAreaReader.Read(activeDrawing, effectiveMargin, 0.0,
+            preloadedTables: layoutTables);
+
         var result = new FitViewsResult
         {
             OptimalScale = optimalScale.Value,
@@ -294,7 +301,16 @@ public sealed partial class TeklaDrawingViewApi
             Views = arranged,
             ProjectionApplied = projectionResult?.AppliedMoves ?? 0,
             ProjectionSkipped = projectionResult?.SkippedMoves ?? 0,
-            ProjectionDiagnostics = projectionResult?.Diagnostics.Count > 0 ? projectionResult.Diagnostics : null
+            ProjectionDiagnostics = projectionResult?.Diagnostics.Count > 0 ? projectionResult.Diagnostics : null,
+            ReservedAreas = new DrawingReservedAreasResult
+            {
+                SheetWidth  = sheetW,
+                SheetHeight = sheetH,
+                Margin      = effectiveMargin,
+                SheetMargin = autoMargin,
+                Tables      = layoutTables,
+                MergedAreas = mergedForOutput
+            }
         };
 
         PerfTrace.Write(

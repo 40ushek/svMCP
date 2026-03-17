@@ -20,7 +20,8 @@ internal static class DrawingReservedAreaReader
         Tekla.Structures.Drawing.Drawing drawing,
         double margin,
         double titleBlockHeight,
-        IReadOnlyCollection<int>? excludeViewIds = null)
+        IReadOnlyCollection<int>? excludeViewIds = null,
+        IReadOnlyList<LayoutTableGeometryInfo>? preloadedTables = null)
     {
         var reserved = new List<ReservedRect>();
         var size = drawing.Layout.SheetSize;
@@ -39,7 +40,8 @@ internal static class DrawingReservedAreaReader
                 reserved.Add(new ReservedRect(usableMinX, usableMinY, usableMaxX, manualTop));
         }
 
-        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY, ReadLayoutTableGeometries());
+        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY,
+            preloadedTables ?? ReadLayoutTableGeometries());
 
         var sheet = drawing.GetSheet();
         var sheetId = sheet.GetIdentifier().ID;
@@ -88,30 +90,87 @@ internal static class DrawingReservedAreaReader
     }
 
     /// <summary>
-    /// Reads the drawing sheet margins from TableLayout.GetMarginsAndSpaces().
-    /// Returns null if the call fails (caller should use a default).
+    /// Reads sheet margin and layout table geometries in a single LayoutManager.OpenEditor() call.
+    /// Use this instead of calling TryReadSheetMargin() and ReadLayoutTableGeometries() separately.
     /// </summary>
-    public static double? TryReadSheetMargin()
+    internal static (double? SheetMargin, IReadOnlyList<LayoutTableGeometryInfo> Tables) ReadLayoutInfo()
     {
+        try { LayoutManager.OpenEditor(); }
+        catch (Exception ex)
+        {
+            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=open_editor_failed error={ex.GetType().Name}");
+            return (null, Array.Empty<LayoutTableGeometryInfo>());
+        }
+
         try
         {
-            LayoutManager.OpenEditor();
+            double? sheetMargin = null;
             try
             {
                 double top = 0, bottom = 0, left = 0, right = 0;
                 TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right);
-                // Return the smallest margin so views don't go outside the sheet frame
                 // Use min: GetMarginsAndSpaces returns both edge margins AND table-placement spaces.
                 // Spaces can be 100+ mm (e.g. parts-list column width), so taking max would be wrong.
-                // Min reliably picks the actual sheet-edge margin (typically 5–10 mm).
-                // Known limitation: asymmetric margins (e.g. left=10, bottom=20) will use 10 for all sides.
-                var margin = Math.Min(Math.Min(top, bottom), Math.Min(left, right));
-                return margin > 0 ? margin : (double?)null;
+                var m = Math.Min(Math.Min(top, bottom), Math.Min(left, right));
+                sheetMargin = m > 0 ? m : (double?)null;
             }
-            finally { LayoutManager.CloseEditor(); }
+            catch { }
+
+            List<int>? tableIds;
+            try { tableIds = TableLayout.GetCurrentTables(); }
+            catch (Exception ex)
+            {
+                PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=get_current_tables_failed error={ex.GetType().Name}");
+                return (sheetMargin, Array.Empty<LayoutTableGeometryInfo>());
+            }
+
+            if (tableIds == null || tableIds.Count == 0)
+                return (sheetMargin, Array.Empty<LayoutTableGeometryInfo>());
+
+            var result = new List<LayoutTableGeometryInfo>();
+            try
+            {
+                using var connection = new PresentationConnection();
+                foreach (var tableId in tableIds)
+                {
+                    var lt = new LayoutTable { Id = tableId };
+                    var ltSelected = lt.Select();
+                    var overlapWithViews = ltSelected && lt.OverlapVithViews;
+                    var tableName = ltSelected ? (lt.Name ?? "") : "";
+                    var segment = connection.Service.GetObjectPresentation(tableId);
+                    var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
+                    result.Add(info);
+                    PerfTrace.Write(
+                        "api-view",
+                        "reserved_table_geometry",
+                        0,
+                        info.HasGeometry && info.Bounds != null
+                            ? $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
+                            : $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=false");
+                }
+            }
+            catch (Exception ex)
+            {
+                PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=presentation_model_failed error={ex.GetType().Name}");
+                return (sheetMargin, Array.Empty<LayoutTableGeometryInfo>());
+            }
+
+            PerfTrace.Write("api-view", "reserved_tables_summary", 0,
+                $"count={result.Count} reserved={result.Count(x => x.HasGeometry && !x.OverlapWithViews)}");
+            return (sheetMargin, result);
         }
-        catch { return null; }
+        finally
+        {
+            try { LayoutManager.CloseEditor(); } catch { }
+        }
     }
+
+    /// <summary>
+    /// Reads the drawing sheet margins from TableLayout.GetMarginsAndSpaces().
+    /// Returns null if the call fails (caller should use a default).
+    /// Prefer ReadLayoutInfo() when table geometries are also needed, to avoid a second editor open.
+    /// </summary>
+    public static double? TryReadSheetMargin() => ReadLayoutInfo().SheetMargin;
 
     private static void AddLayoutTableReservedAreas(
         List<ReservedRect> reserved,
@@ -162,71 +221,7 @@ internal static class DrawingReservedAreaReader
     }
 
     internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries()
-    {
-        try
-        {
-            LayoutManager.OpenEditor();
-        }
-        catch (Exception ex)
-        {
-            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=open_editor_failed error={ex.GetType().Name}");
-            return Array.Empty<LayoutTableGeometryInfo>();
-        }
-
-        try
-        {
-            List<int>? tableIds;
-            try
-            {
-                tableIds = TableLayout.GetCurrentTables();
-            }
-            catch (Exception ex)
-            {
-                PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=get_current_tables_failed error={ex.GetType().Name}");
-                return Array.Empty<LayoutTableGeometryInfo>();
-            }
-
-            if (tableIds == null || tableIds.Count == 0)
-                return Array.Empty<LayoutTableGeometryInfo>();
-
-            var result = new List<LayoutTableGeometryInfo>();
-            try
-            {
-                using var connection = new PresentationConnection();
-                foreach (var tableId in tableIds)
-                {
-                    var lt = new LayoutTable { Id = tableId };
-                    var ltSelected = lt.Select();
-                    var overlapWithViews = ltSelected && lt.OverlapVithViews;
-                    var tableName = ltSelected ? (lt.Name ?? "") : "";
-
-                    var segment = connection.Service.GetObjectPresentation(tableId);
-                    var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
-                    result.Add(info);
-                    PerfTrace.Write(
-                        "api-view",
-                        "reserved_table_geometry",
-                        0,
-                        info.HasGeometry && info.Bounds != null
-                            ? $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
-                            : $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=false");
-                }
-            }
-            catch (Exception ex)
-            {
-                PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=presentation_model_failed error={ex.GetType().Name}");
-                return Array.Empty<LayoutTableGeometryInfo>();
-            }
-
-            PerfTrace.Write("api-view", "reserved_tables_summary", 0,
-                $"count={result.Count} reserved={result.Count(x => x.HasGeometry && !x.OverlapWithViews)}");
-            return result;
-        }
-        finally
-        {
-            try { LayoutManager.CloseEditor(); } catch { }
-        }
-    }
+        => ReadLayoutInfo().Tables;
 
     internal static LayoutTableGeometryInfo BuildLayoutTableGeometryInfo(
         int tableId, string name, Segment? segment, bool overlapWithViews = false)

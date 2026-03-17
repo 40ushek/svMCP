@@ -37,6 +37,7 @@ public sealed class FitViewsResult
     public int                 ProjectionApplied     { get; set; }
     public int                 ProjectionSkipped     { get; set; }
     public List<string>?       ProjectionDiagnostics { get; set; }
+    public DrawingReservedAreasResult? ReservedAreas { get; set; }
 }
 
 public sealed class ArrangedView

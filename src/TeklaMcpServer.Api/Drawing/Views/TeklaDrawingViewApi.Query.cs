@@ -36,9 +36,8 @@ public sealed partial class TeklaDrawingViewApi
         var drawing = new DrawingHandler().GetActiveDrawing()
             ?? throw new DrawingNotOpenException();
 
-        var tables = DrawingReservedAreaReader.ReadLayoutTableGeometries();
-        var sheetMargin = DrawingReservedAreaReader.TryReadSheetMargin();
-        var merged = DrawingReservedAreaReader.Read(drawing, margin, 0.0);
+        var (sheetMargin, tables) = DrawingReservedAreaReader.ReadLayoutInfo();
+        var merged = DrawingReservedAreaReader.Read(drawing, margin, 0.0, preloadedTables: tables);
 
         return new DrawingReservedAreasResult
         {
