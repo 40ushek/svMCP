@@ -48,35 +48,10 @@ public sealed class ArrangedView
 
 public sealed class DrawingReservedAreasResult
 {
-    public double SheetWidth  { get; set; }
-    public double SheetHeight { get; set; }
-    public double Margin      { get; set; }
-    public IReadOnlyList<LayoutTableGeometryInfo> RawTables      { get; set; } = System.Array.Empty<LayoutTableGeometryInfo>();
-    public IReadOnlyList<LayoutTableGeometryInfo> FilteredTables { get; set; } = System.Array.Empty<LayoutTableGeometryInfo>();
-    public IReadOnlyList<ReservedRect>            MergedAreas    { get; set; } = System.Array.Empty<ReservedRect>();
-    public List<LayoutTableInfo>  LayoutTables  { get; set; } = new();
-    public List<DrawingFrameInfo> DrawingFrames { get; set; } = new();
-}
-
-public sealed class LayoutTableInfo
-{
-    public int    Id              { get; set; }
-    public string Name            { get; set; } = "";
-    public string FileName        { get; set; } = "";
-    public double Scale           { get; set; }
-    public double XOffset         { get; set; }
-    public double YOffset         { get; set; }
-    public int    TableCorner     { get; set; }
-    public int    RefCorner       { get; set; }
-    public bool   OverlapWithViews { get; set; }
-}
-
-public sealed class DrawingFrameInfo
-{
-    public bool   Active { get; set; }
-    public double X      { get; set; }
-    public double Y      { get; set; }
-    public double W      { get; set; }
-    public double H      { get; set; }
-    public int    Corner { get; set; }
+    public double  SheetWidth   { get; set; }
+    public double  SheetHeight  { get; set; }
+    public double  Margin       { get; set; }
+    public double? SheetMargin  { get; set; }
+    public IReadOnlyList<LayoutTableGeometryInfo> Tables      { get; set; } = System.Array.Empty<LayoutTableGeometryInfo>();
+    public IReadOnlyList<ReservedRect>            MergedAreas { get; set; } = System.Array.Empty<ReservedRect>();
 }

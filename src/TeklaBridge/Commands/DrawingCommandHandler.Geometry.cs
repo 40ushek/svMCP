@@ -44,9 +44,6 @@ internal sealed partial class DrawingCommandHandler
             case "clear_debug_overlay":
                 return HandleClearDebugOverlay(GetDebugOverlayApi(), args);
 
-            case "debug_draw_table_primitives":
-                return HandleDebugDrawTablePrimitives(GetDebugOverlayApi(), args);
-
             default:
                 return false;
         }
@@ -365,28 +362,6 @@ internal sealed partial class DrawingCommandHandler
             }),
             error = result.Error
         });
-    }
-
-    private bool HandleDebugDrawTablePrimitives(TeklaDrawingDebugOverlayApi overlayApi, string[] args)
-    {
-        if (args.Length < 2 || !int.TryParse(args[1], out var tableId))
-        {
-            WriteError("debug_draw_table_primitives requires tableId argument");
-            return true;
-        }
-
-        var viewApi = new TeklaDrawingViewApi();
-        var request = viewApi.BuildTablePrimitiveOverlay(tableId);
-        var result  = overlayApi.DrawOverlay(System.Text.Json.JsonSerializer.Serialize(request,
-            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase }));
-        WriteJson(new
-        {
-            group        = result.Group,
-            clearedCount = result.ClearedCount,
-            createdCount = result.CreatedCount,
-            createdIds   = result.CreatedIds
-        });
-        return true;
     }
 
     private static double Round2(double value) => Math.Round(value, 2);

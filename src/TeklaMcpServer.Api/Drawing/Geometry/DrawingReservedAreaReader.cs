@@ -15,9 +15,6 @@ internal static class DrawingReservedAreaReader
 {
     private const double MinObstacleSize = 1.0;
     private const double FullSheetCoverageRatio = 0.95;
-    // Lines wider than this (mm) that are nearly horizontal are table row-dividers;
-    // exclude them from content-X accumulation so we get true column extent.
-    private const double SpanningLineThreshold = 20.0;
 
     public static IReadOnlyList<ReservedRect> Read(
         Tekla.Structures.Drawing.Drawing drawing,
@@ -42,7 +39,7 @@ internal static class DrawingReservedAreaReader
                 reserved.Add(new ReservedRect(usableMinX, usableMinY, usableMaxX, manualTop));
         }
 
-        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY, ReadLayoutTableGeometries(usableMaxX, usableMaxY));
+        AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY, ReadLayoutTableGeometries());
 
         var sheet = drawing.GetSheet();
         var sheetId = sheet.GetIdentifier().ID;
@@ -90,6 +87,28 @@ internal static class DrawingReservedAreaReader
         return MergeOverlaps(reserved);
     }
 
+    /// <summary>
+    /// Reads the drawing sheet margins from TableLayout.GetMarginsAndSpaces().
+    /// Returns null if the call fails (caller should use a default).
+    /// </summary>
+    public static double? TryReadSheetMargin()
+    {
+        try
+        {
+            LayoutManager.OpenEditor();
+            try
+            {
+                double top = 0, bottom = 0, left = 0, right = 0;
+                TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right);
+                // Return the smallest margin so views don't go outside the sheet frame
+                var margin = Math.Min(Math.Min(top, bottom), Math.Min(left, right));
+                return margin > 0 ? margin : (double?)null;
+            }
+            finally { LayoutManager.CloseEditor(); }
+        }
+        catch { return null; }
+    }
+
     private static void AddLayoutTableReservedAreas(
         List<ReservedRect> reserved,
         double usableMinX,
@@ -100,6 +119,9 @@ internal static class DrawingReservedAreaReader
     {
         foreach (var table in tableGeometries)
         {
+            if (table.OverlapWithViews)
+                continue;
+
             if (!table.HasGeometry || table.Bounds == null)
                 continue;
 
@@ -120,8 +142,7 @@ internal static class DrawingReservedAreaReader
         }
     }
 
-    internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries(
-        double visibleMaxX = double.MaxValue, double visibleMaxY = double.MaxValue)
+    internal static IReadOnlyList<LayoutTableGeometryInfo> ReadLayoutTableGeometries()
     {
         var editorOpened = false;
         List<int>? tableIds;
@@ -137,7 +158,6 @@ internal static class DrawingReservedAreaReader
             return Array.Empty<LayoutTableGeometryInfo>();
         }
 
-
         if (tableIds == null || tableIds.Count == 0)
             return Array.Empty<LayoutTableGeometryInfo>();
 
@@ -147,16 +167,21 @@ internal static class DrawingReservedAreaReader
             using var connection = new PresentationConnection();
             foreach (var tableId in tableIds)
             {
+                var lt = new LayoutTable { Id = tableId };
+                var ltSelected = lt.Select();
+                var overlapWithViews = ltSelected && lt.OverlapVithViews;
+                var tableName = ltSelected ? (lt.Name ?? "") : "";
+
                 var segment = connection.Service.GetObjectPresentation(tableId);
-                var info = BuildLayoutTableGeometryInfo(tableId, segment, visibleMaxX, visibleMaxY);
+                var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
                 result.Add(info);
                 PerfTrace.Write(
                     "api-view",
                     "reserved_table_geometry",
                     0,
                     info.HasGeometry && info.Bounds != null
-                        ? $"tableId={info.TableId} primitives={info.PrimitiveCount} hasGeometry=true minX={info.Bounds.MinX:F3} minY={info.Bounds.MinY:F3} maxX={info.Bounds.MaxX:F3} maxY={info.Bounds.MaxY:F3}"
-                        : $"tableId={info.TableId} primitives={info.PrimitiveCount} hasGeometry=false");
+                        ? $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
+                        : $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=false");
             }
         }
         catch (Exception ex)
@@ -167,27 +192,24 @@ internal static class DrawingReservedAreaReader
         finally
         {
             if (editorOpened)
-            {
-                try { LayoutManager.CloseEditor(); }
-                catch { }
-            }
+                try { LayoutManager.CloseEditor(); } catch { }
         }
 
-        PerfTrace.Write("api-view", "reserved_tables_summary", 0, $"count={result.Count} active={result.Count(x => x.HasGeometry)}");
+        PerfTrace.Write("api-view", "reserved_tables_summary", 0,
+            $"count={result.Count} reserved={result.Count(x => x.HasGeometry && !x.OverlapWithViews)}");
         return result;
     }
 
     internal static LayoutTableGeometryInfo BuildLayoutTableGeometryInfo(
-        int tableId, Segment? segment,
-        double visibleMaxX = double.MaxValue, double visibleMaxY = double.MaxValue)
+        int tableId, string name, Segment? segment, bool overlapWithViews = false)
     {
-        var primitiveCount = CountPrimitives(segment);
-        if (!TryGetSegmentBounds(segment, out var bounds, visibleMaxX, visibleMaxY))
+        if (!TryGetSegmentBounds(segment, out var bounds))
         {
             return new LayoutTableGeometryInfo
             {
                 TableId = tableId,
-                PrimitiveCount = primitiveCount,
+                Name = name,
+                OverlapWithViews = overlapWithViews,
                 HasGeometry = false
             };
         }
@@ -195,40 +217,32 @@ internal static class DrawingReservedAreaReader
         return new LayoutTableGeometryInfo
         {
             TableId = tableId,
-            PrimitiveCount = primitiveCount,
+            Name = name,
+            OverlapWithViews = overlapWithViews,
             HasGeometry = true,
             Bounds = bounds
         };
     }
 
-    internal static bool TryGetSegmentBounds(Segment? segment, out ReservedRect bounds,
-        double visibleMaxX = double.MaxValue, double visibleMaxY = double.MaxValue)
+    /// <summary>
+    /// Gets table bounds from canvas marker primitives (Primitives[0] = min, Primitives[2] = max),
+    /// falling back to full primitive accumulation if markers are absent.
+    /// </summary>
+    internal static bool TryGetSegmentBounds(Segment? segment, out ReservedRect bounds)
     {
         if (segment == null) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
 
-        // Try canvas marker primitives first (pattern from QRpresentation):
+        // Primary: canvas marker primitives (set by Tekla template engine)
         // Primitives[0] = LinePrimitive → canvas min corner
         // Primitives[2] = LinePrimitive → canvas max corner
         if (TryGetCanvasBounds(segment, out bounds))
             return true;
 
-        // Fallback: accumulate from all primitives
-        var fullAcc    = new BoundsAccumulator();
-        var textAcc    = new BoundsAccumulator();
-        var visibleAcc = new BoundsAccumulator();
-        AccumulatePrimitiveBounds(segment, ref fullAcc, skipSpanning: false);
-        AccumulateTextBounds(segment, ref textAcc, visibleMaxX, visibleMaxY);
-        AccumulateVisibleNonSpanningBounds(segment, ref visibleAcc, visibleMaxX, visibleMaxY);
-
-        if (!fullAcc.HasValue) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
-
-        const double xPad = 5.0;
-        double minX, maxX;
-        if (textAcc.HasValue)       { minX = textAcc.MinX;    maxX = textAcc.MaxX    + xPad; }
-        else if (visibleAcc.HasValue) { minX = visibleAcc.MinX; maxX = visibleAcc.MaxX + xPad; }
-        else                          { minX = fullAcc.MinX;    maxX = fullAcc.MaxX;           }
-
-        bounds = new ReservedRect(minX, fullAcc.MinY, maxX, fullAcc.MaxY);
+        // Fallback: accumulate all primitive bounding boxes
+        var acc = new BoundsAccumulator();
+        AccumulatePrimitiveBounds(segment, ref acc);
+        if (!acc.HasValue) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
+        bounds = new ReservedRect(acc.MinX, acc.MinY, acc.MaxX, acc.MaxY);
         return true;
     }
 
@@ -255,65 +269,12 @@ internal static class DrawingReservedAreaReader
         return true;
     }
 
-    // Accumulate all non-spanning primitives where BOTH endpoints are within the visible area.
-    // This catches vertical column dividers in tables that have no TextPrimitive content.
-    private static void AccumulateVisibleNonSpanningBounds(PrimitiveBase primitive, ref BoundsAccumulator acc,
-        double visibleMaxX, double visibleMaxY)
-    {
-        switch (primitive)
-        {
-            case Segment seg:
-                foreach (var c in seg.Primitives)   AccumulateVisibleNonSpanningBounds(c, ref acc, visibleMaxX, visibleMaxY);
-                return;
-            case PrimitiveGroup grp:
-                foreach (var c in grp.Primitives)   AccumulateVisibleNonSpanningBounds(c, ref acc, visibleMaxX, visibleMaxY);
-                return;
-            case LinePrimitive line:
-                if (IsSpanningHorizontal(line)) return;
-                if (line.StartPoint.X <= visibleMaxX && line.EndPoint.X <= visibleMaxX
-                    && line.StartPoint.Y <= visibleMaxY && line.EndPoint.Y <= visibleMaxY)
-                {
-                    Include(ref acc, line.StartPoint);
-                    Include(ref acc, line.EndPoint);
-                }
-                return;
-            case TextPrimitive text:
-                if (text.Position.X <= visibleMaxX && text.Position.Y <= visibleMaxY)
-                    IncludeEstimatedTextBox(ref acc, text);
-                return;
-        }
-    }
-
-    // Accumulate TextPrimitive positions — but only for text whose start is within the visible sheet area.
-    private static void AccumulateTextBounds(PrimitiveBase primitive, ref BoundsAccumulator acc,
-        double visibleMaxX, double visibleMaxY)
-    {
-        switch (primitive)
-        {
-            case Segment seg:
-                foreach (var c in seg.Primitives)   AccumulateTextBounds(c, ref acc, visibleMaxX, visibleMaxY);
-                return;
-            case PrimitiveGroup grp:
-                foreach (var c in grp.Primitives)   AccumulateTextBounds(c, ref acc, visibleMaxX, visibleMaxY);
-                return;
-            case TextPrimitive text:
-                // Only include text that starts within the visible sheet area
-                if (text.Position.X <= visibleMaxX && text.Position.Y <= visibleMaxY)
-                    IncludeEstimatedTextBox(ref acc, text);
-                return;
-        }
-    }
-
     private static IReadOnlyList<ReservedRect> MergeOverlaps(List<ReservedRect> source)
     {
         if (source.Count <= 1)
             return source;
 
-        var pending = source
-            .OrderBy(r => r.MinX)
-            .ThenBy(r => r.MinY)
-            .ToList();
-
+        var pending = source.OrderBy(r => r.MinX).ThenBy(r => r.MinY).ToList();
         var merged = new List<ReservedRect>();
         foreach (var rect in pending)
         {
@@ -324,9 +285,7 @@ internal static class DrawingReservedAreaReader
                 mergedAny = false;
                 for (var i = merged.Count - 1; i >= 0; i--)
                 {
-                    if (!IntersectsOrTouches(current, merged[i]))
-                        continue;
-
+                    if (!Intersects(current, merged[i])) continue;
                     current = new ReservedRect(
                         System.Math.Min(current.MinX, merged[i].MinX),
                         System.Math.Min(current.MinY, merged[i].MinY),
@@ -336,148 +295,70 @@ internal static class DrawingReservedAreaReader
                     mergedAny = true;
                 }
             }
-
             merged.Add(current);
         }
-
         return merged;
     }
 
-    private static bool IntersectsOrTouches(ReservedRect left, ReservedRect right)
-    {
-        return left.MinX < right.MaxX
-            && left.MaxX > right.MinX
-            && left.MinY < right.MaxY
-            && left.MaxY > right.MinY;
-    }
+    private static bool Intersects(ReservedRect a, ReservedRect b) =>
+        a.MinX < b.MaxX && a.MaxX > b.MinX && a.MinY < b.MaxY && a.MaxY > b.MinY;
 
-    private static void AccumulatePrimitiveBounds(PrimitiveBase primitive, ref BoundsAccumulator acc, bool skipSpanning)
+    private static void AccumulatePrimitiveBounds(PrimitiveBase primitive, ref BoundsAccumulator acc)
     {
         switch (primitive)
         {
-            case Segment nestedSegment:
-                foreach (var child in nestedSegment.Primitives)
-                    AccumulatePrimitiveBounds(child, ref acc, skipSpanning);
+            case Segment seg:
+                foreach (var c in seg.Primitives) AccumulatePrimitiveBounds(c, ref acc);
                 return;
-
-            case PrimitiveGroup group:
-                foreach (var child in group.Primitives)
-                    AccumulatePrimitiveBounds(child, ref acc, skipSpanning);
+            case PrimitiveGroup grp:
+                foreach (var c in grp.Primitives) AccumulatePrimitiveBounds(c, ref acc);
                 return;
-
             case LinePrimitive line:
-                if (skipSpanning && IsSpanningHorizontal(line))
-                    return;
                 Include(ref acc, line.StartPoint);
                 Include(ref acc, line.EndPoint);
                 return;
-
             case PathPrimitive path:
-                foreach (var segment in path.Segments)
-                    AccumulatePathableBounds(segment, ref acc, skipSpanning);
+                foreach (var s in path.Segments) AccumulatePathable(s, ref acc);
                 return;
-
             case LoopPrimitive loop:
-                foreach (var segment in loop.Segments)
-                    AccumulatePathableBounds(segment, ref acc, skipSpanning);
+                foreach (var s in loop.Segments) AccumulatePathable(s, ref acc);
                 return;
-
             case PolygonPrimitive polygon:
-                AccumulatePrimitiveBounds(polygon.OuterLoop, ref acc, skipSpanning);
+                AccumulatePrimitiveBounds(polygon.OuterLoop, ref acc);
                 if (polygon.InnerLoops != null)
-                {
-                    foreach (var inner in polygon.InnerLoops)
-                        AccumulatePrimitiveBounds(inner, ref acc, skipSpanning);
-                }
+                    foreach (var inner in polygon.InnerLoops) AccumulatePrimitiveBounds(inner, ref acc);
                 return;
-
             case ArcPrimitive arc:
                 IncludeArcBounds(ref acc, arc);
                 return;
-
             case CirclePrimitive circle:
                 Include(ref acc, circle.CenterPoint.X - circle.Radius, circle.CenterPoint.Y - circle.Radius);
                 Include(ref acc, circle.CenterPoint.X + circle.Radius, circle.CenterPoint.Y + circle.Radius);
                 return;
-
             case PointPrimitive point:
                 Include(ref acc, point.Position);
                 return;
-
             case BitmapPrimitive bitmap:
                 IncludeRotatedBox(ref acc, bitmap.Position, bitmap.Width, bitmap.Height, bitmap.Angle.Radians);
                 return;
-
             case SymbolPrimitive symbol:
                 IncludeRotatedBox(ref acc, symbol.Position, symbol.Width, symbol.Height, symbol.Angle);
                 return;
-
             case TextPrimitive text:
                 IncludeEstimatedTextBox(ref acc, text);
                 return;
         }
     }
 
-    private static bool IsSpanningHorizontal(LinePrimitive line)
-    {
-        var dx = Math.Abs(line.EndPoint.X - line.StartPoint.X);
-        var dy = Math.Abs(line.EndPoint.Y - line.StartPoint.Y);
-        return dx > SpanningLineThreshold && dy < 1.0;
-    }
-
-    private static int CountPrimitives(PrimitiveBase? primitive)
-    {
-        if (primitive == null)
-            return 0;
-
-        switch (primitive)
-        {
-            case Segment segment:
-                return segment.Primitives.Sum(CountPrimitives);
-            case PrimitiveGroup group:
-                return group.Primitives.Sum(CountPrimitives);
-            case PolygonPrimitive polygon:
-                var count = CountPrimitives(polygon.OuterLoop);
-                if (polygon.InnerLoops != null)
-                    count += polygon.InnerLoops.Sum(CountPrimitives);
-                return count;
-            case LoopPrimitive loop:
-                return loop.Segments.Sum(CountPathablePrimitives);
-            case PathPrimitive path:
-                return path.Segments.Sum(CountPathablePrimitives);
-            default:
-                return 1;
-        }
-    }
-
-    private static int CountPathablePrimitives(IPathable pathable)
-    {
-        return pathable switch
-        {
-            PrimitiveBase primitive => CountPrimitives(primitive),
-            _ => 1
-        };
-    }
-
-    private static void AccumulatePathableBounds(IPathable pathable, ref BoundsAccumulator acc, bool skipSpanning)
+    private static void AccumulatePathable(IPathable pathable, ref BoundsAccumulator acc)
     {
         switch (pathable)
         {
-            case ArcPrimitive arc:
-                IncludeArcBounds(ref acc, arc);
-                break;
+            case ArcPrimitive arc: IncludeArcBounds(ref acc, arc); break;
             case PathPrimitive path:
-                foreach (var segment in path.Segments)
-                    AccumulatePathableBounds(segment, ref acc, skipSpanning);
+                foreach (var s in path.Segments) AccumulatePathable(s, ref acc);
                 break;
             default:
-                if (skipSpanning)
-                {
-                    var dx = Math.Abs(pathable.EndPoint.X - pathable.StartPoint.X);
-                    var dy = Math.Abs(pathable.EndPoint.Y - pathable.StartPoint.Y);
-                    if (dx > SpanningLineThreshold && dy < 1.0)
-                        break;
-                }
                 Include(ref acc, pathable.StartPoint);
                 Include(ref acc, pathable.EndPoint);
                 break;
@@ -489,53 +370,30 @@ internal static class DrawingReservedAreaReader
         var geometry = arc.GetArc();
         Include(ref acc, arc.StartPoint);
         Include(ref acc, arc.EndPoint);
-
         var start = NormalizeRadians(geometry.StartAngle.Radians);
         var end = NormalizeRadians(start + geometry.DeltaAngle.Radians);
-        var radius = geometry.Circle.Radius;
-        var center = geometry.Circle.Center;
-
-        IncludeArcCardinal(ref acc, center, radius, start, end, 0.0);
-        IncludeArcCardinal(ref acc, center, radius, start, end, Math.PI / 2.0);
-        IncludeArcCardinal(ref acc, center, radius, start, end, Math.PI);
-        IncludeArcCardinal(ref acc, center, radius, start, end, Math.PI * 1.5);
-    }
-
-    private static void IncludeArcCardinal(
-        ref BoundsAccumulator acc,
-        Vector2 center,
-        double radius,
-        double start,
-        double end,
-        double angle)
-    {
-        var normalizedAngle = NormalizeRadians(angle);
-        if (!AngleWithinSweep(normalizedAngle, start, end))
-            return;
-
-        Include(
-            ref acc,
-            center.X + radius * Math.Cos(normalizedAngle),
-            center.Y + radius * Math.Sin(normalizedAngle));
+        var r = geometry.Circle.Radius;
+        var c = geometry.Circle.Center;
+        foreach (var angle in new[] { 0.0, Math.PI / 2, Math.PI, Math.PI * 1.5 })
+        {
+            var a = NormalizeRadians(angle);
+            if (AngleWithinSweep(a, start, end))
+                Include(ref acc, c.X + r * Math.Cos(a), c.Y + r * Math.Sin(a));
+        }
     }
 
     private static bool AngleWithinSweep(double angle, double start, double end)
     {
-        while (end < start)
-            end += Math.PI * 2.0;
-        while (angle < start)
-            angle += Math.PI * 2.0;
-
+        while (end < start) end += Math.PI * 2;
+        while (angle < start) angle += Math.PI * 2;
         return angle <= end;
     }
 
-    private static double NormalizeRadians(double angle)
+    private static double NormalizeRadians(double a)
     {
-        var full = Math.PI * 2.0;
-        angle %= full;
-        if (angle < 0)
-            angle += full;
-        return angle;
+        var full = Math.PI * 2;
+        a %= full;
+        return a < 0 ? a + full : a;
     }
 
     private static void IncludeEstimatedTextBox(ref BoundsAccumulator acc, TextPrimitive text)
@@ -546,64 +404,45 @@ internal static class DrawingReservedAreaReader
         IncludeRotatedBox(ref acc, text.Position, width, text.Height, text.Angle);
     }
 
-    private static void IncludeRotatedBox(ref BoundsAccumulator acc, Vector2 origin, double width, double height, double angleRadians)
+    private static void IncludeRotatedBox(ref BoundsAccumulator acc, Vector2 o, double w, double h, double angle)
     {
-        var cos = Math.Cos(angleRadians);
-        var sin = Math.Sin(angleRadians);
-
-        Include(ref acc, origin.X, origin.Y);
-        Include(ref acc, origin.X + width * cos, origin.Y + width * sin);
-        Include(ref acc, origin.X - height * sin, origin.Y + height * cos);
-        Include(ref acc, origin.X + width * cos - height * sin, origin.Y + width * sin + height * cos);
+        var cos = Math.Cos(angle); var sin = Math.Sin(angle);
+        Include(ref acc, o.X, o.Y);
+        Include(ref acc, o.X + w * cos, o.Y + w * sin);
+        Include(ref acc, o.X - h * sin, o.Y + h * cos);
+        Include(ref acc, o.X + w * cos - h * sin, o.Y + w * sin + h * cos);
     }
 
-    private static void Include(ref BoundsAccumulator acc, Vector2 point)
-    {
-        Include(ref acc, point.X, point.Y);
-    }
+    private static void Include(ref BoundsAccumulator acc, Vector2 p) => Include(ref acc, p.X, p.Y);
 
     private static void Include(ref BoundsAccumulator acc, double x, double y)
     {
         if (!acc.HasValue)
         {
-            acc = new BoundsAccumulator
-            {
-                HasValue = true,
-                MinX = x,
-                MinY = y,
-                MaxX = x,
-                MaxY = y
-            };
+            acc = new BoundsAccumulator { HasValue = true, MinX = x, MinY = y, MaxX = x, MaxY = y };
             return;
         }
-
         if (x < acc.MinX) acc.MinX = x;
         if (y < acc.MinY) acc.MinY = y;
         if (x > acc.MaxX) acc.MaxX = x;
         if (y > acc.MaxY) acc.MaxY = y;
     }
 
-    private static double Clamp(double value, double min, double max)
-    {
-        if (value < min) return min;
-        if (value > max) return max;
-        return value;
-    }
+    private static double Clamp(double v, double min, double max) =>
+        v < min ? min : v > max ? max : v;
 
     private struct BoundsAccumulator
     {
         public bool HasValue;
-        public double MinX;
-        public double MinY;
-        public double MaxX;
-        public double MaxY;
+        public double MinX, MinY, MaxX, MaxY;
     }
 }
 
 public sealed class LayoutTableGeometryInfo
 {
-    public int TableId { get; set; }
-    public int PrimitiveCount { get; set; }
-    public bool HasGeometry { get; set; }
-    public ReservedRect? Bounds { get; set; }
+    public int    TableId         { get; set; }
+    public string Name            { get; set; } = "";
+    public bool   OverlapWithViews { get; set; }
+    public bool   HasGeometry     { get; set; }
+    public ReservedRect? Bounds   { get; set; }
 }

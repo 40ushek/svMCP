@@ -84,24 +84,17 @@ internal sealed partial class DrawingCommandHandler
         var result = new TeklaDrawingViewApi().GetReservedAreas(margin: 10.0);
         WriteJson(new
         {
-            sheetWidth = result.SheetWidth,
+            sheetWidth  = result.SheetWidth,
             sheetHeight = result.SheetHeight,
-            margin = result.Margin,
-            rawTableCount = result.RawTables.Count,
-            rawTables = result.RawTables.Select(t => new
+            margin      = result.Margin,
+            sheetMargin = result.SheetMargin,
+            tableCount  = result.Tables.Count,
+            tables = result.Tables.Select(t => new
             {
-                tableId = t.TableId,
-                hasGeometry = t.HasGeometry,
-                minX = t.Bounds?.MinX,
-                minY = t.Bounds?.MinY,
-                maxX = t.Bounds?.MaxX,
-                maxY = t.Bounds?.MaxY
-            }),
-            filteredTableCount = result.FilteredTables.Count,
-            filteredTables = result.FilteredTables.Select(t => new
-            {
-                tableId = t.TableId,
-                hasGeometry = t.HasGeometry,
+                tableId          = t.TableId,
+                name             = t.Name,
+                overlapWithViews = t.OverlapWithViews,
+                hasGeometry      = t.HasGeometry,
                 minX = t.Bounds?.MinX,
                 minY = t.Bounds?.MinY,
                 maxX = t.Bounds?.MaxX,
@@ -110,31 +103,7 @@ internal sealed partial class DrawingCommandHandler
             mergedCount = result.MergedAreas.Count,
             mergedAreas = result.MergedAreas.Select(r => new
             {
-                minX = r.MinX,
-                minY = r.MinY,
-                maxX = r.MaxX,
-                maxY = r.MaxY
-            }),
-            layoutTables = result.LayoutTables.Select(t => new
-            {
-                id = t.Id,
-                name = t.Name,
-                fileName = t.FileName,
-                scale = t.Scale,
-                xOffset = t.XOffset,
-                yOffset = t.YOffset,
-                tableCorner = t.TableCorner,
-                refCorner = t.RefCorner,
-                overlapWithViews = t.OverlapWithViews
-            }),
-            drawingFrames = result.DrawingFrames.Select(f => new
-            {
-                active = f.Active,
-                x = f.X,
-                y = f.Y,
-                w = f.W,
-                h = f.H,
-                corner = f.Corner
+                minX = r.MinX, minY = r.MinY, maxX = r.MaxX, maxY = r.MaxY
             })
         });
         return true;
@@ -203,21 +172,14 @@ internal sealed partial class DrawingCommandHandler
             projectionDiagnostics = result.ProjectionDiagnostics,
             reservedAreas = reserved == null ? null : new
             {
-                rawTableCount = reserved.RawTables.Count,
-                rawTables = reserved.RawTables.Select(t => new
+                sheetMargin = reserved.SheetMargin,
+                tableCount  = reserved.Tables.Count,
+                tables = reserved.Tables.Select(t => new
                 {
-                    tableId = t.TableId,
-                    hasGeometry = t.HasGeometry,
-                    minX = t.Bounds?.MinX,
-                    minY = t.Bounds?.MinY,
-                    maxX = t.Bounds?.MaxX,
-                    maxY = t.Bounds?.MaxY
-                }),
-                filteredTableCount = reserved.FilteredTables.Count,
-                filteredTables = reserved.FilteredTables.Select(t => new
-                {
-                    tableId = t.TableId,
-                    hasGeometry = t.HasGeometry,
+                    tableId          = t.TableId,
+                    name             = t.Name,
+                    overlapWithViews = t.OverlapWithViews,
+                    hasGeometry      = t.HasGeometry,
                     minX = t.Bounds?.MinX,
                     minY = t.Bounds?.MinY,
                     maxX = t.Bounds?.MaxX,
@@ -226,31 +188,7 @@ internal sealed partial class DrawingCommandHandler
                 mergedCount = reserved.MergedAreas.Count,
                 mergedAreas = reserved.MergedAreas.Select(r => new
                 {
-                    minX = r.MinX,
-                    minY = r.MinY,
-                    maxX = r.MaxX,
-                    maxY = r.MaxY
-                }),
-                layoutTables = reserved.LayoutTables.Select(t => new
-                {
-                    id = t.Id,
-                    name = t.Name,
-                    fileName = t.FileName,
-                    scale = t.Scale,
-                    xOffset = t.XOffset,
-                    yOffset = t.YOffset,
-                    tableCorner = t.TableCorner,
-                    refCorner = t.RefCorner,
-                    overlapWithViews = t.OverlapWithViews
-                }),
-                drawingFrames = reserved.DrawingFrames.Select(f => new
-                {
-                    active = f.Active,
-                    x = f.X,
-                    y = f.Y,
-                    w = f.W,
-                    h = f.H,
-                    corner = f.Corner
+                    minX = r.MinX, minY = r.MinY, maxX = r.MaxX, maxY = r.MaxY
                 })
             }
         });
