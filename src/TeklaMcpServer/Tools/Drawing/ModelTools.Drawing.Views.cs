@@ -261,12 +261,12 @@ public static partial class ModelTools
         [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0,
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false)
     {
-        var json = RunBridge(
-            "fit_views_to_sheet",
-            margin.ToString(CultureInfo.InvariantCulture),
-            gap.ToString(CultureInfo.InvariantCulture),
-            titleBlockHeight.ToString(CultureInfo.InvariantCulture),
-            keepScale ? "keepscale" : string.Empty);
+        var marginStr         = margin.ToString(CultureInfo.InvariantCulture);
+        var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
+        var titleBlockStr     = titleBlockHeight.ToString(CultureInfo.InvariantCulture);
+        var json = keepScale
+            ? RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr, "keepscale")
+            : RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr);
         try
         {
             var doc = JsonDocument.Parse(json);

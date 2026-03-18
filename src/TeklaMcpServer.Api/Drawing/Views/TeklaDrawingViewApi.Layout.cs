@@ -124,7 +124,12 @@ public sealed partial class TeklaDrawingViewApi
                 })
                 .ToList();
             var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
-            if (!_arrangementSelector.EstimateFit(keepCtx, keepFrames))
+            var keepFitSw = Stopwatch.StartNew();
+            var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+            keepFitSw.Stop();
+            candidateFitMs = keepFitSw.ElapsedMilliseconds;
+            candidateAttempts = 1;
+            if (!fits)
                 throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use keepScale=false to allow rescaling.");
 
             // ShouldSkipProjectionAlignment skips when scale >= cutoff (100), meaning all views
@@ -132,7 +137,6 @@ public sealed partial class TeklaDrawingViewApi
             // is skipped only when every view is at or above the cutoff — the one correct
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
-            candidateAttempts = 0;
         }
         else
         {
@@ -332,6 +336,7 @@ public sealed partial class TeklaDrawingViewApi
         var result = new FitViewsResult
         {
             OptimalScale = optimalScale.Value,
+            ScalePreserved = keepScale,
             SheetWidth = sheetW,
             SheetHeight = sheetH,
             Margin = effectiveMargin,

@@ -156,6 +156,7 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             optimalScale = result.OptimalScale,
+            scalePreserved = result.ScalePreserved,
             sheetWidth = result.SheetWidth,
             sheetHeight = result.SheetHeight,
             arranged = result.Arranged,
