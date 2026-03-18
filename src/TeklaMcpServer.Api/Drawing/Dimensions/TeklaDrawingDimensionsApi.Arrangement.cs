@@ -17,4 +17,15 @@ public sealed partial class TeklaDrawingDimensionsApi
             .Select(group => DimensionGroupArrangementPlanner.BuildPlan(group, targetGap))
             .ToList();
     }
+
+    internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
+    {
+        return GetDimensionGroups(viewId)
+            .Select(group =>
+            {
+                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(group, targetGap);
+                return DimensionDistanceAdjustmentTranslator.BuildPlan(group, axisPlan);
+            })
+            .ToList();
+    }
 }
