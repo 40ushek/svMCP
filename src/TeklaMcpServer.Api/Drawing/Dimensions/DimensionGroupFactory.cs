@@ -5,6 +5,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal static class DimensionGroupFactory
 {
+    public static List<DimensionGroup> BuildGroups(GetDimensionsResult result) => BuildGroups(result.Dimensions);
+
     public static List<DimensionGroup> BuildGroups(IEnumerable<DrawingDimensionInfo> dimensions)
     {
         return dimensions

@@ -8,6 +8,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    internal List<DimensionGroup> GetDimensionGroups(int? viewId) => DimensionGroupFactory.BuildGroups(GetDimensions(viewId));
+
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();

@@ -62,6 +62,27 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(70, group.Bounds.MaxY, 3);
     }
 
+    [Fact]
+    public void BuildGroups_AcceptsGetDimensionsResult()
+    {
+        var result = new GetDimensionsResult
+        {
+            Total = 2,
+            Dimensions =
+            [
+                CreateDimension(1, 10, "FrontView", "horizontal", 40, 0, 10, 100, 10, 5, 8, 105, 12),
+                CreateDimension(2, 10, "FrontView", "horizontal", 45, 0, 20, 120, 20, 15, 18, 125, 22)
+            ]
+        };
+
+        var groups = DimensionGroupFactory.BuildGroups(result);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(10, group.ViewId);
+        Assert.Equal("horizontal", group.Orientation);
+        Assert.Equal(2, group.Members.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,
