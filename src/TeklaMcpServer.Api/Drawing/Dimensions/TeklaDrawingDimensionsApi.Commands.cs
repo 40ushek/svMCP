@@ -6,12 +6,108 @@ using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.DrawingPresentationModel;
+using Tekla.Structures.DrawingPresentationModelInterface;
 using Tekla.Structures.Geometry3d;
+using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    public DimensionTextPlacementDebugResult GetDimensionTextPlacementDebug(int? viewId, int? dimensionId)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            DrawingObjectEnumerator dimObjects;
+            if (viewId.HasValue)
+            {
+                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value);
+                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
+            }
+            else
+            {
+                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+            }
+
+            var result = new DimensionTextPlacementDebugResult
+            {
+                ViewId = viewId
+            };
+            using var presentationConnection = TryCreatePresentationConnection();
+
+            while (dimObjects.MoveNext())
+            {
+                if (dimObjects.Current is not StraightDimensionSet dimSet)
+                    continue;
+
+                var currentDimensionId = dimSet.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentDimensionId != dimensionId.Value)
+                    continue;
+
+                var segments = EnumerateSegments(dimSet);
+                var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
+                var info = new DimensionTextPlacementDebugInfo
+                {
+                    DimensionId = currentDimensionId,
+                    DimensionType = TryGetDimensionType(dimSet),
+                    TextPlacing = TryGetDimensionTextPlacing(dimSet),
+                    ShortDimension = TryGetShortDimension(dimSet),
+                    PlacingDirectionSign = TryGetDimensionPlacingDirectionSign(dimSet),
+                    LeftTagLineOffset = TryGetTagLineOffset(dimSet, left: true),
+                    RightTagLineOffset = TryGetTagLineOffset(dimSet, left: false)
+                };
+
+                foreach (var segment in segments)
+                {
+                    var segmentInfo = BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext);
+                    var expectedText = string.Empty;
+                    if (segment.GetView() is Tekla.Structures.Drawing.View ownerView)
+                        expectedText = TryGetMeasuredValueText(segment, dimSet, ownerView) ?? string.Empty;
+
+                    var candidateList = new List<RelatedTextCandidateDebugInfo>();
+                    CollectRelatedTextDebug(candidateList, segment.GetRelatedObjects(), "segment", expectedText, segmentInfo.DimensionLine);
+                    CollectRelatedTextDebug(candidateList, dimSet.GetRelatedObjects(), "dimensionSet", expectedText, segmentInfo.DimensionLine);
+                    CollectNestedTextDebug(candidateList, segment, "segment.objects", expectedText, segmentInfo.DimensionLine);
+                    CollectNestedTextDebug(candidateList, dimSet, "dimensionSet.objects", expectedText, segmentInfo.DimensionLine);
+                    CollectPresentationTextDebug(candidateList, presentationConnection, segment.GetIdentifier().ID, "presentation:segment", expectedText, segmentInfo.DimensionLine);
+                    CollectPresentationTextDebug(candidateList, presentationConnection, currentDimensionId, "presentation:dimensionSet", expectedText, segmentInfo.DimensionLine);
+
+                    var selectedSource = candidateList.Any(static candidate => candidate.MatchesExpected)
+                        ? "runtime"
+                        : "fallback";
+
+                    info.Segments.Add(new DimensionSegmentTextPlacementDebugInfo
+                    {
+                        SegmentId = segment.GetIdentifier().ID,
+                        ExpectedText = expectedText,
+                        DimensionLine = segmentInfo.DimensionLine,
+                        SelectedSource = selectedSource,
+                        RelatedTextCandidates = candidateList
+                            .OrderBy(static candidate => candidate.Score)
+                            .ToList()
+                    });
+                }
+
+                result.Dimensions.Add(info);
+            }
+
+            result.Total = result.Dimensions.Count;
+            return result;
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     public DrawDimensionTextBoxesResult DrawDimensionTextBoxes(int? viewId, int? dimensionId, string color, string group)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -107,6 +203,179 @@ public sealed partial class TeklaDrawingDimensionsApi
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
+    }
+
+    private static void CollectRelatedTextDebug(
+        List<RelatedTextCandidateDebugInfo> target,
+        DrawingObjectEnumerator relatedObjects,
+        string owner,
+        string expectedText,
+        DrawingLineInfo? dimensionLine)
+    {
+        while (relatedObjects.MoveNext())
+        {
+            if (!TryCreateRelatedTextCandidate(relatedObjects.Current, FrameTypes.None, out var candidateText, out var polygon))
+                continue;
+
+            var center = GetPolygonCenter(polygon);
+            target.Add(new RelatedTextCandidateDebugInfo
+            {
+                Owner = owner,
+                Type = relatedObjects.Current.GetType().FullName ?? relatedObjects.Current.GetType().Name,
+                Text = candidateText ?? string.Empty,
+                MatchesExpected = MatchesDimensionText(candidateText, expectedText),
+                Score = dimensionLine == null ? double.MaxValue : ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine),
+                CenterX = System.Math.Round(center.X, 3),
+                CenterY = System.Math.Round(center.Y, 3)
+            });
+        }
+    }
+
+    private static void CollectNestedTextDebug(
+        List<RelatedTextCandidateDebugInfo> target,
+        object ownerObject,
+        string owner,
+        string expectedText,
+        DrawingLineInfo? dimensionLine)
+    {
+        foreach (var candidate in EnumerateNestedDrawingObjects(ownerObject))
+        {
+            if (!TryCreateRelatedTextCandidate(candidate, FrameTypes.None, out var candidateText, out var polygon))
+                continue;
+
+            var center = GetPolygonCenter(polygon);
+            target.Add(new RelatedTextCandidateDebugInfo
+            {
+                Owner = owner,
+                Type = candidate?.GetType().FullName ?? candidate?.GetType().Name ?? string.Empty,
+                Text = candidateText ?? string.Empty,
+                MatchesExpected = MatchesDimensionText(candidateText, expectedText),
+                Score = dimensionLine == null ? double.MaxValue : ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine),
+                CenterX = System.Math.Round(center.X, 3),
+                CenterY = System.Math.Round(center.Y, 3)
+            });
+        }
+    }
+
+    private static PresentationConnection? TryCreatePresentationConnection()
+    {
+        try
+        {
+            return new PresentationConnection();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void CollectPresentationTextDebug(
+        List<RelatedTextCandidateDebugInfo> target,
+        PresentationConnection? connection,
+        int objectId,
+        string owner,
+        string expectedText,
+        DrawingLineInfo? dimensionLine)
+    {
+        if (connection == null)
+            return;
+
+        Segment? segment;
+        try
+        {
+            segment = connection.Service.GetObjectPresentation(objectId);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (segment == null)
+            return;
+
+        foreach (var textPrimitive in EnumeratePresentationTextPrimitives(segment))
+        {
+            var centerX = textPrimitive.Position.X;
+            var centerY = textPrimitive.Position.Y;
+            var score = dimensionLine == null
+                ? double.MaxValue
+                : ScorePresentationTextAgainstDimensionLine(textPrimitive, dimensionLine);
+
+            target.Add(new RelatedTextCandidateDebugInfo
+            {
+                Owner = owner,
+                Type = nameof(TextPrimitive),
+                Text = textPrimitive.Text ?? string.Empty,
+                MatchesExpected = MatchesDimensionText(textPrimitive.Text, expectedText),
+                Score = score,
+                CenterX = System.Math.Round(centerX, 3),
+                CenterY = System.Math.Round(centerY, 3)
+            });
+        }
+    }
+
+    private static IEnumerable<TextPrimitive> EnumeratePresentationTextPrimitives(Segment segment)
+    {
+        foreach (var primitive in segment.Primitives)
+        {
+            foreach (var textPrimitive in EnumeratePresentationTextPrimitives(primitive))
+                yield return textPrimitive;
+        }
+    }
+
+    private static IEnumerable<TextPrimitive> EnumeratePresentationTextPrimitives(PrimitiveBase primitive)
+    {
+        switch (primitive)
+        {
+            case TextPrimitive textPrimitive:
+                yield return textPrimitive;
+                yield break;
+            case Segment nestedSegment:
+                foreach (var nestedPrimitive in nestedSegment.Primitives)
+                foreach (var nestedTextPrimitive in EnumeratePresentationTextPrimitives(nestedPrimitive))
+                    yield return nestedTextPrimitive;
+                yield break;
+            case PrimitiveGroup group:
+                foreach (var groupedPrimitive in group.Primitives)
+                foreach (var groupedTextPrimitive in EnumeratePresentationTextPrimitives(groupedPrimitive))
+                    yield return groupedTextPrimitive;
+                yield break;
+        }
+    }
+
+    private static double ScorePresentationTextAgainstDimensionLine(
+        TextPrimitive textPrimitive,
+        DrawingLineInfo dimensionLine)
+    {
+        if (!TryNormalizeDirection(
+                dimensionLine.EndX - dimensionLine.StartX,
+                dimensionLine.EndY - dimensionLine.StartY,
+                out var axis))
+        {
+            return double.MaxValue;
+        }
+
+        var lineCenterX = (dimensionLine.StartX + dimensionLine.EndX) / 2.0;
+        var lineCenterY = (dimensionLine.StartY + dimensionLine.EndY) / 2.0;
+        var normalX = -axis.Y;
+        var normalY = axis.X;
+        var alongDelta = System.Math.Abs(((textPrimitive.Position.X - lineCenterX) * axis.X) + ((textPrimitive.Position.Y - lineCenterY) * axis.Y));
+        var normalDelta = System.Math.Abs(((textPrimitive.Position.X - lineCenterX) * normalX) + ((textPrimitive.Position.Y - lineCenterY) * normalY));
+        return (normalDelta * 1000.0) + alongDelta;
+    }
+
+    private static string TryGetShortDimension(StraightDimensionSet dimSet)
+    {
+        try
+        {
+            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
+                return attributes.ShortDimension.ToString();
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
     }
 
     public MoveDimensionResult MoveDimension(int dimensionId, double delta)
@@ -208,7 +477,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         var viewEnum = activeDrawing.GetSheet().GetViews();
         while (viewEnum.MoveNext())
         {
-            if (viewEnum.Current is not View view)
+            if (viewEnum.Current is not Tekla.Structures.Drawing.View view)
                 continue;
 
             var dimEnum = view.GetAllObjects(new[] { typeof(StraightDimensionSet) });

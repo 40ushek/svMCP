@@ -19,6 +19,9 @@ internal sealed partial class DrawingCommandHandler
             case "draw_dimension_text_boxes":
                 return HandleDrawDimensionTextBoxes(api, args);
 
+            case "get_dimension_text_placement_debug":
+                return HandleGetDimensionTextPlacementDebug(api, args);
+
             case "get_dimension_groups_debug":
                 return HandleGetDimensionGroupsDebug(api, args);
 
@@ -76,6 +79,63 @@ internal sealed partial class DrawingCommandHandler
             createdIds = result.CreatedIds,
             dimensionCount = result.DimensionCount,
             segmentCount = result.SegmentCount
+        });
+        return true;
+    }
+
+    private bool HandleGetDimensionTextPlacementDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        int? dimensionId = null;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDimensionId))
+            {
+                WriteError("dimensionId must be an integer.");
+                return true;
+            }
+
+            dimensionId = parsedDimensionId;
+        }
+
+        var result = api.GetDimensionTextPlacementDebug(viewId, dimensionId);
+        WriteJson(new
+        {
+            viewId = result.ViewId,
+            total = result.Total,
+            dimensions = result.Dimensions.Select(d => new
+            {
+                dimensionId = d.DimensionId,
+                dimensionType = d.DimensionType,
+                textPlacing = d.TextPlacing,
+                shortDimension = d.ShortDimension,
+                placingDirectionSign = d.PlacingDirectionSign,
+                leftTagLineOffset = d.LeftTagLineOffset,
+                rightTagLineOffset = d.RightTagLineOffset,
+                segments = d.Segments.Select(s => new
+                {
+                    segmentId = s.SegmentId,
+                    expectedText = s.ExpectedText,
+                    dimensionLine = s.DimensionLine == null ? null : new
+                    {
+                        startX = s.DimensionLine.StartX,
+                        startY = s.DimensionLine.StartY,
+                        endX = s.DimensionLine.EndX,
+                        endY = s.DimensionLine.EndY
+                    },
+                    selectedSource = s.SelectedSource,
+                    relatedTextCandidates = s.RelatedTextCandidates.Select(c => new
+                    {
+                        owner = c.Owner,
+                        type = c.Type,
+                        text = c.Text,
+                        matchesExpected = c.MatchesExpected,
+                        score = c.Score,
+                        centerX = c.CenterX,
+                        centerY = c.CenterY
+                    })
+                })
+            })
         });
         return true;
     }

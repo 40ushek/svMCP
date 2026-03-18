@@ -49,11 +49,36 @@ Current read model already exposes:
 - segment `leadLineMain`
 - segment `leadLineSecond`
 
+Experimental validation helpers now exist:
+
+- `draw_dimension_text_boxes`
+- `get_dimension_text_placement_debug`
+
+These are debug-only tools for live drawing validation and are not yet the
+public `textBounds` contract.
+
 Live validation already confirmed on the current assembly drawing:
 
 - `viewScale` is read from the owning view
 - a paper gap of `5` becomes a drawing gap of `125` at `viewScale = 25`
 - spacing/debug now report both values explicitly
+
+Live validation also confirmed an important current limitation:
+
+- native dimension value text can be moved manually in Tekla
+- the moved text position is not currently observable through the accessible
+  Tekla Open API surface we have validated so far
+- checked sources:
+  - `StraightDimension.GetRelatedObjects()`
+  - `StraightDimensionSet.GetRelatedObjects()`
+  - recursive `GetObjects()` traversal where available
+  - drawing presentation model text primitives
+  - reflected public/nonpublic members on `StraightDimension`,
+    `StraightDimensionSet` and related attributes
+- consequence:
+  - debug text polygons can only use runtime text objects when Tekla exposes
+    them
+  - otherwise they must fall back to synthetic placement
 
 ## Design Principles
 
@@ -83,11 +108,25 @@ Done:
 - read API split into `Query / Commands / Arrangement`
 - `get_drawing_dimensions` returns richer set-level and segment-level geometry
 - compile-validated measured-value spike exists through `StraightDimension.Value.GetUnformattedString()`
+- debug overlay path exists for text-polygon validation on live drawings
+- synthetic text-polygon placement already imports several `dim` ideas:
+  - frame size coefficients
+  - format-aware measured text
+  - side selection from `TopDirection` and placing direction
+  - tag-line offsets
+  - `dim`-style along-line fallback anchor
 
 Still missing:
 
-- runtime-validated text geometry if Tekla exposes it reliably
+- runtime-validated text geometry for native dimension value text
 - stronger extraction of domain type semantics from Tekla attributes where needed
+
+Current finding:
+
+- for ordinary native dimensions, the remaining mismatch is not just a formula
+  issue
+- the main blocker is that manual along-line drag of native dimension value
+  text is not currently exposed by the validated Tekla API surface
 
 ### Phase 2: Internal Line-Based Grouping
 
@@ -126,6 +165,8 @@ Debug output, when reintroduced, should explain:
 - why dimensions were grouped together
 - which line geometry drove spacing
 - what move is considered safe
+- when text geometry comes from runtime-observed text and when it comes from
+  synthetic fallback
 
 Not acceptable for public debug:
 
@@ -174,3 +215,6 @@ The redesign is ready to expose again when:
   diagonal-control cases without invented public labels
 - line-based grouping and spacing are covered by unit tests and verified on a
   live drawing
+- text geometry status is explicit:
+  - runtime-observed when Tekla exposes native text objects/position
+  - synthetic fallback when Tekla does not expose them

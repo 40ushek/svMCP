@@ -88,6 +88,45 @@ public sealed class DrawDimensionTextBoxesResult
     public int SegmentCount { get; set; }
 }
 
+public sealed class DimensionTextPlacementDebugResult
+{
+    public int? ViewId { get; set; }
+    public int Total { get; set; }
+    public List<DimensionTextPlacementDebugInfo> Dimensions { get; set; } = new();
+}
+
+public sealed class DimensionTextPlacementDebugInfo
+{
+    public int DimensionId { get; set; }
+    public string DimensionType { get; set; } = string.Empty;
+    public string TextPlacing { get; set; } = string.Empty;
+    public string ShortDimension { get; set; } = string.Empty;
+    public int PlacingDirectionSign { get; set; }
+    public double LeftTagLineOffset { get; set; }
+    public double RightTagLineOffset { get; set; }
+    public List<DimensionSegmentTextPlacementDebugInfo> Segments { get; set; } = new();
+}
+
+public sealed class DimensionSegmentTextPlacementDebugInfo
+{
+    public int SegmentId { get; set; }
+    public string ExpectedText { get; set; } = string.Empty;
+    public DrawingLineInfo? DimensionLine { get; set; }
+    public string SelectedSource { get; set; } = string.Empty;
+    public List<RelatedTextCandidateDebugInfo> RelatedTextCandidates { get; set; } = new();
+}
+
+public sealed class RelatedTextCandidateDebugInfo
+{
+    public string Owner { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public bool MatchesExpected { get; set; }
+    public double Score { get; set; }
+    public double CenterX { get; set; }
+    public double CenterY { get; set; }
+}
+
 public sealed class DeleteDimensionResult
 {
     public bool HasActiveDrawing { get; set; }

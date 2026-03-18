@@ -49,6 +49,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_dimensions":
             case "draw_dimension_text_boxes":
+            case "get_dimension_text_placement_debug":
             case "get_dimension_groups_debug":
             case "get_dimension_arrangement_debug":
             case "move_dimension":

@@ -12,6 +12,23 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 {
     private const double AxisSummaryToleranceRatio = 0.10;
+    private static readonly IReadOnlyDictionary<FrameTypes, (double WidthFactor, double HeightFactor)> FrameSizeCoefficientsBasedOnHeightAndWidth =
+        new Dictionary<FrameTypes, (double WidthFactor, double HeightFactor)>
+        {
+            [FrameTypes.Circle] = (1.15, 1.15),
+            [FrameTypes.Hexagon] = (1.28, 1.25),
+            [FrameTypes.Diamond] = (1.55, 1.55),
+            [FrameTypes.Triangle] = (2.28, 1.47)
+        };
+
+    private static readonly IReadOnlyDictionary<FrameTypes, (double WidthFactor, double HeightFactor)> FrameSizeCoefficientsBasedOnWidth =
+        new Dictionary<FrameTypes, (double WidthFactor, double HeightFactor)>
+        {
+            [FrameTypes.Line] = (0.6, 1.4),
+            [FrameTypes.Rectangular] = (0.9, 1.55),
+            [FrameTypes.Round] = (1.75, 1.55),
+            [FrameTypes.Sharpened] = (1.75, 1.55)
+        };
 
     private readonly struct DimensionLineContext
     {
@@ -31,6 +48,26 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         public (double X, double Y) Direction { get; }
         public int TopDirection { get; }
         public DrawingLineInfo ReferenceLine { get; }
+    }
+
+    private readonly struct DimensionTextPlacementContext
+    {
+        public DimensionTextPlacementContext(
+            string textPlacing,
+            int sideSign,
+            double leftTagLineOffset,
+            double rightTagLineOffset)
+        {
+            TextPlacing = textPlacing;
+            SideSign = sideSign;
+            LeftTagLineOffset = leftTagLineOffset;
+            RightTagLineOffset = rightTagLineOffset;
+        }
+
+        public string TextPlacing { get; }
+        public int SideSign { get; }
+        public double LeftTagLineOffset { get; }
+        public double RightTagLineOffset { get; }
     }
 
     public TeklaDrawingDimensionsApi() { }
@@ -177,8 +214,15 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return CreateBoundsFromPolygon(polygon);
     }
 
-    internal static string? TryGetMeasuredValueText(StraightDimension segment)
+    internal static string? TryGetMeasuredValueText(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        View view)
     {
+        var formattedValue = TryGetMeasuredValueTextFromTemporaryDimension(segment, dimSet, view);
+        if (!string.IsNullOrWhiteSpace(formattedValue))
+            return formattedValue;
+
         try
         {
             return segment.Value?.GetUnformattedString();
@@ -223,6 +267,149 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
+    private static string? TryGetMeasuredValueTextFromTemporaryDimension(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        View view)
+    {
+        if (!TryGetDimensionFormat(dimSet, out var format))
+            return null;
+
+        var distance = System.Math.Sqrt(
+            System.Math.Pow(segment.EndPoint.X - segment.StartPoint.X, 2) +
+            System.Math.Pow(segment.EndPoint.Y - segment.StartPoint.Y, 2));
+        if (distance <= 1e-6)
+            return null;
+
+        StraightDimensionSet? temporaryDimensionSet = null;
+        StraightDimension? temporarySegment = null;
+        try
+        {
+#pragma warning disable CS0618
+            var temporaryAttributes = new StraightDimensionSet.StraightDimensionSetAttributes();
+#pragma warning restore CS0618
+            temporaryAttributes.Format = format;
+
+            var pointList = new PointList
+            {
+                new Point(0.0, 0.0, 0.0),
+                new Point(distance, 0.0, 0.0)
+            };
+
+            temporaryDimensionSet = new StraightDimensionSetHandler().CreateDimensionSet(
+                view,
+                pointList,
+                new Vector(0.0, 0.1, 0.0),
+                0.0,
+                temporaryAttributes);
+            if (temporaryDimensionSet == null)
+                return null;
+
+            var objects = temporaryDimensionSet.GetObjects();
+            while (objects.MoveNext())
+            {
+                if (objects.Current is StraightDimension straightDimension)
+                {
+                    temporarySegment = straightDimension;
+                    break;
+                }
+            }
+
+            if (temporarySegment == null)
+                return null;
+
+            var rawValue = temporarySegment.Value?.GetUnformattedString();
+            return NormalizeTemporaryDimensionValue(rawValue, format.Unit, distance < 0.0);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (temporarySegment != null)
+            {
+                try
+                {
+                    temporarySegment.Delete();
+                }
+                catch
+                {
+                }
+            }
+
+            if (temporaryDimensionSet != null)
+            {
+                try
+                {
+                    temporaryDimensionSet.Delete();
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    internal static string NormalizeTemporaryDimensionValue(
+        string? rawValue,
+        DimensionSetBaseAttributes.DimensionValueUnits dimensionUnits,
+        bool negative)
+    {
+        if (string.IsNullOrEmpty(rawValue))
+            return string.Empty;
+
+        var nonNullRawValue = rawValue!;
+        var normalized = nonNullRawValue.Length > 4
+            ? nonNullRawValue.Substring(2, nonNullRawValue.Length - 4)
+            : "0";
+
+        if (negative)
+            normalized = "-" + normalized;
+
+        if (dimensionUnits == DimensionSetBaseAttributes.DimensionValueUnits.Inch
+            && !normalized.Contains('"')
+            && (normalized.Contains('-') || normalized.Contains('\\') || !normalized.Contains('\'')))
+        {
+            normalized += "\"";
+        }
+
+        return normalized;
+    }
+
+    private static bool TryGetDimensionFormat(
+        StraightDimensionSet dimSet,
+        out DimensionSetBaseAttributes.DimensionFormatAttributes format)
+    {
+        format = default!;
+        try
+        {
+            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
+            {
+                format = attributes.Format;
+                return true;
+            }
+
+            var attributesProperty = dimSet.GetType()
+                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .Where(static property => property.Name == "Attributes")
+                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
+                .FirstOrDefault();
+            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
+            var formatProperty = reflectedAttributes?.GetType().GetProperty("Format");
+            if (formatProperty?.GetValue(reflectedAttributes, null) is DimensionSetBaseAttributes.DimensionFormatAttributes reflectedFormat)
+            {
+                format = reflectedFormat;
+                return true;
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
+
     private static Text.TextAttributes? TryCreateDimensionTextAttributes(StraightDimensionSet dimSet)
     {
         try
@@ -249,6 +436,30 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
+    private static string TryGetDimensionTextPlacing(StraightDimensionSet dimSet)
+    {
+        try
+        {
+            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
+                return attributes.Text.TextPlacing.ToString();
+
+            var attributesProperty = dimSet.GetType()
+                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .Where(static property => property.Name == "Attributes")
+                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
+                .FirstOrDefault();
+            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
+            var textProperty = reflectedAttributes?.GetType().GetProperty("Text");
+            var textAttributes = textProperty?.GetValue(reflectedAttributes, null);
+            var textPlacingProperty = textAttributes?.GetType().GetProperty("TextPlacing");
+            return textPlacingProperty?.GetValue(textAttributes, null)?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private static FrameTypes MapDimensionFrameType(DimensionSetBaseAttributes.FrameTypes frameType)
     {
         return frameType switch
@@ -262,41 +473,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         };
     }
 
-    private static (double Width, double Height)? TryMeasureTextSize(
-        View view,
-        string textValue,
-        Text.TextAttributes textAttributes)
-    {
-        Text? text = null;
-        try
-        {
-            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
-            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
-            if (!text.Insert())
-                return null;
-
-            var objectAlignedBoundingBox = text.GetObjectAlignedBoundingBox();
-            return (objectAlignedBoundingBox.Width, objectAlignedBoundingBox.Height);
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            if (text != null)
-            {
-                try
-                {
-                    text.Delete();
-                }
-                catch
-                {
-                }
-            }
-        }
-    }
-
     internal static List<double[]>? TryCreateTextPolygon(
         StraightDimension segment,
         StraightDimensionSet dimSet,
@@ -305,22 +481,39 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (dimensionLine == null)
             return null;
 
-        var textValue = TryGetMeasuredValueText(segment);
-        if (string.IsNullOrWhiteSpace(textValue))
+        if (segment.GetView() is not View view)
             return null;
 
-        if (segment.GetView() is not View view)
+        var textValue = TryGetMeasuredValueText(segment, dimSet, view);
+        if (string.IsNullOrWhiteSpace(textValue))
             return null;
 
         var textAttributes = TryCreateDimensionTextAttributes(dimSet);
         if (textAttributes == null)
             return null;
 
-        var size = TryMeasureTextSize(view, textValue!, textAttributes);
+        var placementContext = CreateDimensionTextPlacementContext(segment, dimSet);
+
+        var runtimePolygon = TryCreateTextPolygonFromRuntimeTextObjects(segment, dimSet, textValue!, dimensionLine, textAttributes.Frame.Type);
+        if (runtimePolygon != null)
+            return runtimePolygon;
+
+        var effectiveDimensionLine = ApplyDimensionTextLineOffsets(
+            dimensionLine,
+            placementContext.LeftTagLineOffset,
+            placementContext.RightTagLineOffset);
+
+        var size = TryMeasureTextSizeForFallback(view, textValue!, textAttributes);
         if (!size.HasValue)
             return null;
 
-        return CreateOrientedTextPolygon(dimensionLine, size.Value.Width, size.Value.Height);
+        var correctedSize = ApplyFrameSizeCorrection(size.Value.Width, size.Value.Height, textAttributes.Frame.Type);
+        var fallbackPolygon = CreateDimStyleTextPolygon(
+            effectiveDimensionLine,
+            correctedSize.Width,
+            correctedSize.Height,
+            TryGetViewScale(view));
+        return ApplyDimensionTextPlacement(segment, fallbackPolygon, placementContext, effectiveDimensionLine, 0.0);
     }
 
     private static DrawingBoundsInfo CreateBoundsFromPolygon(IReadOnlyList<double[]> polygon)
@@ -366,6 +559,572 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return corners
             .Select(static corner => new[] { System.Math.Round(corner.X, 3), System.Math.Round(corner.Y, 3) })
             .ToList();
+    }
+
+    internal static List<double[]>? CreateDimStyleTextPolygon(
+        DrawingLineInfo dimensionLine,
+        double widthAlongLine,
+        double heightPerpendicularToLine,
+        double viewScale)
+    {
+        var polygon = CreateOrientedTextPolygon(dimensionLine, widthAlongLine, heightPerpendicularToLine);
+        if (polygon == null || polygon.Count == 0)
+            return polygon;
+
+        if (viewScale <= 1e-6)
+            return polygon;
+
+        if (!TryGetDimStyleLineVector(dimensionLine, out var lineVector))
+            return polygon;
+
+        var alongLineOffset = viewScale / 4.0;
+        return OffsetPolygon(polygon, lineVector.X * alongLineOffset, lineVector.Y * alongLineOffset);
+    }
+
+    private static List<double[]>? ApplyDimensionTextPlacement(
+        StraightDimension? segment,
+        List<double[]>? polygon,
+        DimensionTextPlacementContext placementContext,
+        DrawingLineInfo dimensionLine,
+        double viewScale)
+    {
+        if (polygon == null || polygon.Count == 0)
+            return polygon;
+
+        var placedPolygon = polygon;
+
+        if (string.Equals(placementContext.TextPlacing, "AboveDimensionLine", System.StringComparison.OrdinalIgnoreCase)
+            && segment != null
+            && TryGetUpDirection(segment, out var upDirection))
+        {
+            var height = GetPolygonSpanAlongDirection(placedPolygon, upDirection.X, upDirection.Y);
+            if (height > 1e-6)
+            {
+                var offsetFactor = placementContext.SideSign == 0 ? 1 : placementContext.SideSign;
+                placedPolygon = OffsetPolygon(
+                placedPolygon,
+                upDirection.X * (height / 2.0) * offsetFactor,
+                upDirection.Y * (height / 2.0) * offsetFactor);
+            }
+        }
+
+        return placedPolygon;
+    }
+
+    internal static bool TryGetDimStyleLineVector(
+        DrawingLineInfo dimensionLine,
+        out (double X, double Y) lineVector)
+    {
+        lineVector = default;
+        var useStartToEnd = !ComparePointsLeftToRight(
+            (dimensionLine.StartX, dimensionLine.StartY),
+            (dimensionLine.EndX, dimensionLine.EndY));
+        var rawX = useStartToEnd
+            ? dimensionLine.EndX - dimensionLine.StartX
+            : dimensionLine.StartX - dimensionLine.EndX;
+        var rawY = useStartToEnd
+            ? dimensionLine.EndY - dimensionLine.StartY
+            : dimensionLine.StartY - dimensionLine.EndY;
+        return TryNormalizeDirection(rawX, rawY, out lineVector);
+    }
+
+    internal static bool ComparePointsLeftToRight((double X, double Y) left, (double X, double Y) right)
+    {
+        if (!(left.X >= right.X && left.Y >= right.Y))
+            return left.X > right.X && left.Y < right.Y;
+
+        return true;
+    }
+
+    private static double TryGetViewScale(View view)
+    {
+        try
+        {
+            return view.Attributes?.Scale > 0 ? view.Attributes.Scale : 1.0;
+        }
+        catch
+        {
+            return 1.0;
+        }
+    }
+
+    private static DimensionTextPlacementContext CreateDimensionTextPlacementContext(
+        StraightDimension segment,
+        StraightDimensionSet dimSet)
+    {
+        var sideSign = 1;
+        if (TryGetUpDirection(segment, out var upDirection))
+            sideSign = ResolveDimensionTextSideSign(
+                GetTopDirection(upDirection.X, upDirection.Y),
+                TryGetDimensionPlacingDirectionSign(dimSet));
+
+        return new DimensionTextPlacementContext(
+            TryGetDimensionTextPlacing(dimSet),
+            sideSign == 0 ? 1 : sideSign,
+            TryGetTagLineOffset(dimSet, left: true),
+            TryGetTagLineOffset(dimSet, left: false));
+    }
+
+    internal static int ResolveDimensionTextSideSign(int topDirection, int placingDirectionSign)
+    {
+        var normalizedTopDirection = topDirection == 0 ? 1 : System.Math.Sign(topDirection);
+        var normalizedPlacingDirection = placingDirectionSign == 0 ? 1 : System.Math.Sign(placingDirectionSign);
+        return normalizedTopDirection * normalizedPlacingDirection;
+    }
+
+    private static int TryGetDimensionPlacingDirectionSign(StraightDimensionSet dimSet)
+    {
+        try
+        {
+            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
+            {
+                var positive = attributes.Placing.Direction.Positive;
+                var negative = attributes.Placing.Direction.Negative;
+                return negative && !positive ? -1 : 1;
+            }
+
+            var attributesProperty = dimSet.GetType()
+                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .Where(static property => property.Name == "Attributes")
+                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
+                .FirstOrDefault();
+            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
+            var placingProperty = reflectedAttributes?.GetType().GetProperty("Placing");
+            var placingAttributes = placingProperty?.GetValue(reflectedAttributes, null);
+            var directionProperty = placingAttributes?.GetType().GetProperty("Direction");
+            var directionAttributes = directionProperty?.GetValue(placingAttributes, null);
+            var positiveProperty = directionAttributes?.GetType().GetProperty("Positive");
+            var negativeProperty = directionAttributes?.GetType().GetProperty("Negative");
+            var positiveReflected = positiveProperty?.GetValue(directionAttributes, null) as bool?;
+            var negativeReflected = negativeProperty?.GetValue(directionAttributes, null) as bool?;
+            return negativeReflected == true && positiveReflected != true ? -1 : 1;
+        }
+        catch
+        {
+            return 1;
+        }
+    }
+
+    private static double TryGetTagLineOffset(StraightDimensionSet dimSet, bool left)
+    {
+        try
+        {
+            var offset = left ? dimSet.LeftTagLineOffset : dimSet.RightTagLineOffset;
+            return offset > 1e-6 ? offset : 0.0;
+        }
+        catch
+        {
+            return 0.0;
+        }
+    }
+
+    internal static DrawingLineInfo ApplyDimensionTextLineOffsets(
+        DrawingLineInfo dimensionLine,
+        double startOffset,
+        double endOffset)
+    {
+        if (startOffset <= 1e-6 && endOffset <= 1e-6)
+            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
+
+        if (!TryNormalizeDirection(
+                dimensionLine.EndX - dimensionLine.StartX,
+                dimensionLine.EndY - dimensionLine.StartY,
+                out var axis))
+        {
+            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
+        }
+
+        var length = System.Math.Sqrt(
+            System.Math.Pow(dimensionLine.EndX - dimensionLine.StartX, 2) +
+            System.Math.Pow(dimensionLine.EndY - dimensionLine.StartY, 2));
+        var clampedStartOffset = System.Math.Max(0.0, startOffset);
+        var clampedEndOffset = System.Math.Max(0.0, endOffset);
+        if ((clampedStartOffset + clampedEndOffset) >= length - 1e-6)
+            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
+
+        return CreateLineInfo(
+            dimensionLine.StartX + (axis.X * clampedStartOffset),
+            dimensionLine.StartY + (axis.Y * clampedStartOffset),
+            dimensionLine.EndX - (axis.X * clampedEndOffset),
+            dimensionLine.EndY - (axis.Y * clampedEndOffset));
+    }
+
+    private static List<double[]>? TryCreateTextPolygonFromRuntimeTextObjects(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        string expectedText,
+        DrawingLineInfo dimensionLine,
+        FrameTypes frameType)
+    {
+        var polygon = TrySelectTextPolygon(segment.GetRelatedObjects(), expectedText, dimensionLine, frameType);
+        if (polygon != null)
+            return polygon;
+
+        polygon = TrySelectTextPolygon(dimSet.GetRelatedObjects(), expectedText, dimensionLine, frameType);
+        if (polygon != null)
+            return polygon;
+
+        polygon = TrySelectTextPolygon(segment, expectedText, dimensionLine, frameType);
+        if (polygon != null)
+            return polygon;
+
+        return TrySelectTextPolygon(dimSet, expectedText, dimensionLine, frameType);
+    }
+
+    private static List<double[]>? TrySelectTextPolygon(
+        DrawingObjectEnumerator relatedObjects,
+        string expectedText,
+        DrawingLineInfo dimensionLine,
+        FrameTypes frameType)
+    {
+        var exactMatches = new List<(double Score, List<double[]> Polygon)>();
+        var fallbackMatches = new List<(double Score, List<double[]> Polygon)>();
+        while (relatedObjects.MoveNext())
+        {
+            if (!TryCreateRelatedTextCandidate(relatedObjects.Current, frameType, out var candidateText, out var polygon))
+                continue;
+            var score = ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine);
+            if (MatchesDimensionText(candidateText, expectedText))
+            {
+                exactMatches.Add((score, polygon));
+                continue;
+            }
+
+            fallbackMatches.Add((score, polygon));
+        }
+
+        if (exactMatches.Count > 0)
+            return exactMatches.OrderBy(static candidate => candidate.Score).First().Polygon;
+
+        return fallbackMatches.Count == 1
+            ? fallbackMatches[0].Polygon
+            : null;
+    }
+
+    private static List<double[]>? TrySelectTextPolygon(
+        DrawingObject owner,
+        string expectedText,
+        DrawingLineInfo dimensionLine,
+        FrameTypes frameType)
+    {
+        var exactMatches = new List<(double Score, List<double[]> Polygon)>();
+        var fallbackMatches = new List<(double Score, List<double[]> Polygon)>();
+
+        foreach (var candidate in EnumerateNestedDrawingObjects(owner))
+        {
+            if (!TryCreateRelatedTextCandidate(candidate, frameType, out var candidateText, out var polygon))
+                continue;
+
+            var score = ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine);
+            if (MatchesDimensionText(candidateText, expectedText))
+            {
+                exactMatches.Add((score, polygon));
+                continue;
+            }
+
+            fallbackMatches.Add((score, polygon));
+        }
+
+        if (exactMatches.Count > 0)
+            return exactMatches.OrderBy(static candidate => candidate.Score).First().Polygon;
+
+        return fallbackMatches.Count == 1
+            ? fallbackMatches[0].Polygon
+            : null;
+    }
+
+    private static IEnumerable<object?> EnumerateNestedDrawingObjects(object owner)
+    {
+        if (!TryGetChildObjects(owner, out var children))
+        {
+            yield break;
+        }
+
+        while (children.MoveNext())
+        {
+            var child = children.Current;
+            yield return child;
+
+            if (child != null)
+            {
+                foreach (var nestedChild in EnumerateNestedDrawingObjects(child))
+                    yield return nestedChild;
+            }
+        }
+    }
+
+    private static bool TryGetChildObjects(object owner, out DrawingObjectEnumerator children)
+    {
+        children = null!;
+
+        try
+        {
+            var getObjectsMethod = owner.GetType().GetMethod(
+                "GetObjects",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public,
+                binder: null,
+                types: System.Type.EmptyTypes,
+                modifiers: null);
+            if (getObjectsMethod?.Invoke(owner, null) is not DrawingObjectEnumerator enumerator)
+                return false;
+
+            children = enumerator;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TryCreateRelatedTextCandidate(
+        object? relatedObject,
+        FrameTypes frameType,
+        out string? textValue,
+        out List<double[]> polygon)
+    {
+        textValue = null;
+        polygon = [];
+        if (relatedObject == null)
+            return false;
+
+        try
+        {
+            if (relatedObject is Text text)
+            {
+                textValue = text.TextString;
+                polygon = CreatePolygonFromObjectAlignedBox(text.GetObjectAlignedBoundingBox(), frameType);
+                return true;
+            }
+
+            var type = relatedObject.GetType();
+            var textProperty = type.GetProperty(
+                "TextString",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            var looksLikeText = textProperty != null
+                || type.Name.IndexOf("Text", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!looksLikeText)
+                return false;
+
+            var objectAlignedMethod = type.GetMethod(
+                "GetObjectAlignedBoundingBox",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            if (objectAlignedMethod?.Invoke(relatedObject, null) is not RectangleBoundingBox objectAlignedBoundingBox)
+                return false;
+
+            textValue = textProperty?.GetValue(relatedObject, null)?.ToString();
+            polygon = CreatePolygonFromObjectAlignedBox(objectAlignedBoundingBox, frameType);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool MatchesDimensionText(string? candidateText, string expectedText)
+    {
+        if (string.IsNullOrWhiteSpace(candidateText))
+            return false;
+
+        static string NormalizeComparableText(string value) =>
+            value.Replace("\r", string.Empty)
+                .Replace("\n", string.Empty)
+                .Replace(" ", string.Empty)
+                .Trim();
+
+        return string.Equals(
+            NormalizeComparableText(candidateText!),
+            NormalizeComparableText(expectedText),
+            System.StringComparison.Ordinal);
+    }
+
+    private static double ScoreTextPolygonAgainstDimensionLine(
+        IReadOnlyList<double[]> polygon,
+        DrawingLineInfo dimensionLine)
+    {
+        if (!TryNormalizeDirection(
+                dimensionLine.EndX - dimensionLine.StartX,
+                dimensionLine.EndY - dimensionLine.StartY,
+                out var axis))
+        {
+            return double.MaxValue;
+        }
+
+        var center = GetPolygonCenter(polygon);
+        var lineCenterX = (dimensionLine.StartX + dimensionLine.EndX) / 2.0;
+        var lineCenterY = (dimensionLine.StartY + dimensionLine.EndY) / 2.0;
+        var normalX = -axis.Y;
+        var normalY = axis.X;
+        var alongDelta = System.Math.Abs(((center.X - lineCenterX) * axis.X) + ((center.Y - lineCenterY) * axis.Y));
+        var normalDelta = System.Math.Abs(((center.X - lineCenterX) * normalX) + ((center.Y - lineCenterY) * normalY));
+        return (normalDelta * 1000.0) + alongDelta;
+    }
+
+    private static (double X, double Y) GetPolygonCenter(IReadOnlyList<double[]> polygon)
+    {
+        if (polygon.Count == 0)
+            return (0.0, 0.0);
+
+        return (
+            polygon.Average(static point => point[0]),
+            polygon.Average(static point => point[1]));
+    }
+
+    private static double GetPolygonSpanAlongDirection(
+        IReadOnlyList<double[]> polygon,
+        double axisX,
+        double axisY)
+    {
+        if (!TryNormalizeDirection(axisX, axisY, out var normalizedAxis))
+            return 0.0;
+
+        var min = double.MaxValue;
+        var max = double.MinValue;
+        foreach (var point in polygon)
+        {
+            var projection = (point[0] * normalizedAxis.X) + (point[1] * normalizedAxis.Y);
+            min = System.Math.Min(min, projection);
+            max = System.Math.Max(max, projection);
+        }
+
+        return max > min ? max - min : 0.0;
+    }
+
+    private static List<double[]> OffsetPolygon(
+        IReadOnlyList<double[]> polygon,
+        double offsetX,
+        double offsetY)
+    {
+        return polygon
+            .Select(point => new[]
+            {
+                System.Math.Round(point[0] + offsetX, 3),
+                System.Math.Round(point[1] + offsetY, 3)
+            })
+            .ToList();
+    }
+
+    private static (double Width, double Height)? TryMeasureTextSizeForFallback(
+        View view,
+        string textValue,
+        Text.TextAttributes textAttributes)
+    {
+        Text? text = null;
+        try
+        {
+            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
+            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
+            if (!text.Insert())
+                return null;
+
+            var objectAlignedBoundingBox = text.GetObjectAlignedBoundingBox();
+            return (objectAlignedBoundingBox.Width, objectAlignedBoundingBox.Height);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (text != null)
+            {
+                try
+                {
+                    text.Delete();
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    internal static (double Width, double Height) ApplyFrameSizeCorrection(
+        double width,
+        double height,
+        FrameTypes frameType)
+    {
+        if (width <= 1e-6 || height <= 1e-6)
+            return (width, height);
+
+        if (FrameSizeCoefficientsBasedOnWidth.TryGetValue(frameType, out var widthBased))
+            return (width + (height * widthBased.WidthFactor), height * widthBased.HeightFactor);
+
+        if (FrameSizeCoefficientsBasedOnHeightAndWidth.TryGetValue(frameType, out var diagonalBased))
+        {
+            var diagonal = System.Math.Sqrt((width * width) + (height * height));
+            return (diagonal * diagonalBased.WidthFactor, diagonal * diagonalBased.HeightFactor);
+        }
+
+        return (width, height);
+    }
+
+    internal static List<double[]> ApplyFrameSizeCorrectionToPolygon(
+        IReadOnlyList<double[]> polygon,
+        FrameTypes frameType)
+    {
+        if (polygon.Count != 4)
+            return polygon.Select(static point => new[] { point[0], point[1] }).ToList();
+
+        var lowerLeft = polygon[0];
+        var upperLeft = polygon[1];
+        var upperRight = polygon[2];
+        var lowerRight = polygon[3];
+
+        var width = System.Math.Sqrt(
+            System.Math.Pow(lowerRight[0] - lowerLeft[0], 2) +
+            System.Math.Pow(lowerRight[1] - lowerLeft[1], 2));
+        var height = System.Math.Sqrt(
+            System.Math.Pow(upperLeft[0] - lowerLeft[0], 2) +
+            System.Math.Pow(upperLeft[1] - lowerLeft[1], 2));
+
+        var correctedSize = ApplyFrameSizeCorrection(width, height, frameType);
+        if (System.Math.Abs(correctedSize.Width - width) <= 1e-6
+            && System.Math.Abs(correctedSize.Height - height) <= 1e-6)
+        {
+            return polygon
+                .Select(static point => new[] { System.Math.Round(point[0], 3), System.Math.Round(point[1], 3) })
+                .ToList();
+        }
+
+        if (!TryNormalizeDirection(lowerRight[0] - lowerLeft[0], lowerRight[1] - lowerLeft[1], out var widthAxis)
+            || !TryNormalizeDirection(upperLeft[0] - lowerLeft[0], upperLeft[1] - lowerLeft[1], out var heightAxis))
+        {
+            return polygon
+                .Select(static point => new[] { System.Math.Round(point[0], 3), System.Math.Round(point[1], 3) })
+                .ToList();
+        }
+
+        var centerX = (lowerLeft[0] + upperLeft[0] + upperRight[0] + lowerRight[0]) / 4.0;
+        var centerY = (lowerLeft[1] + upperLeft[1] + upperRight[1] + lowerRight[1]) / 4.0;
+        var halfWidth = correctedSize.Width / 2.0;
+        var halfHeight = correctedSize.Height / 2.0;
+
+        var correctedPolygon = new[]
+        {
+            new[] { centerX - (widthAxis.X * halfWidth) - (heightAxis.X * halfHeight), centerY - (widthAxis.Y * halfWidth) - (heightAxis.Y * halfHeight) },
+            new[] { centerX - (widthAxis.X * halfWidth) + (heightAxis.X * halfHeight), centerY - (widthAxis.Y * halfWidth) + (heightAxis.Y * halfHeight) },
+            new[] { centerX + (widthAxis.X * halfWidth) + (heightAxis.X * halfHeight), centerY + (widthAxis.Y * halfWidth) + (heightAxis.Y * halfHeight) },
+            new[] { centerX + (widthAxis.X * halfWidth) - (heightAxis.X * halfHeight), centerY + (widthAxis.Y * halfWidth) - (heightAxis.Y * halfHeight) }
+        };
+
+        return correctedPolygon
+            .Select(static point => new[] { System.Math.Round(point[0], 3), System.Math.Round(point[1], 3) })
+            .ToList();
+    }
+
+    private static List<double[]> CreatePolygonFromObjectAlignedBox(
+        RectangleBoundingBox objectAlignedBoundingBox,
+        FrameTypes frameType)
+    {
+        return ApplyFrameSizeCorrectionToPolygon(
+        [
+            [System.Math.Round(objectAlignedBoundingBox.LowerLeft.X, 3), System.Math.Round(objectAlignedBoundingBox.LowerLeft.Y, 3)],
+            [System.Math.Round(objectAlignedBoundingBox.UpperLeft.X, 3), System.Math.Round(objectAlignedBoundingBox.UpperLeft.Y, 3)],
+            [System.Math.Round(objectAlignedBoundingBox.UpperRight.X, 3), System.Math.Round(objectAlignedBoundingBox.UpperRight.Y, 3)],
+            [System.Math.Round(objectAlignedBoundingBox.LowerRight.X, 3), System.Math.Round(objectAlignedBoundingBox.LowerRight.Y, 3)]
+        ], frameType);
     }
 
     private static bool TryGetUpDirection(StraightDimension segment, out (double X, double Y) direction)

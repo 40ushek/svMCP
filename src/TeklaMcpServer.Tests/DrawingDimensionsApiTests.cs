@@ -1,5 +1,6 @@
 using System.Text.Json;
 using TeklaMcpServer.Api.Drawing;
+using Tekla.Structures.Drawing;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
@@ -169,5 +170,141 @@ public sealed class DrawingDimensionsApiTests
             p => { Assert.Equal(50, p.X, 3); Assert.Equal(30, p.Y, 3); Assert.Equal(1, p.Order); },
             p => { Assert.Equal(0, p.X, 3); Assert.Equal(20, p.Y, 3); Assert.Equal(2, p.Order); },
             p => { Assert.Equal(0, p.X, 3); Assert.Equal(10, p.Y, 3); Assert.Equal(3, p.Order); });
+    }
+
+    [Fact]
+    public void ApplyFrameSizeCorrection_UsesLegacyWidthBasedCoefficients()
+    {
+        var corrected = TeklaDrawingDimensionsApi.ApplyFrameSizeCorrection(100, 20, FrameTypes.Rectangular);
+
+        Assert.Equal(118, corrected.Width, 3);
+        Assert.Equal(31, corrected.Height, 3);
+    }
+
+    [Fact]
+    public void ApplyFrameSizeCorrection_UsesLegacyDiagonalBasedCoefficients()
+    {
+        var corrected = TeklaDrawingDimensionsApi.ApplyFrameSizeCorrection(100, 20, FrameTypes.Circle);
+        var diagonal = Math.Sqrt((100 * 100) + (20 * 20));
+
+        Assert.Equal(diagonal * 1.15, corrected.Width, 3);
+        Assert.Equal(diagonal * 1.15, corrected.Height, 3);
+    }
+
+    [Fact]
+    public void ApplyFrameSizeCorrectionToPolygon_PreservesCenterWhileExpandingBox()
+    {
+        var corrected = TeklaDrawingDimensionsApi.ApplyFrameSizeCorrectionToPolygon(
+        [
+            [0d, 0d],
+            [0d, 20d],
+            [100d, 20d],
+            [100d, 0d]
+        ], FrameTypes.Line);
+
+        Assert.Collection(
+            corrected,
+            p => { Assert.Equal(-6, p[0], 3); Assert.Equal(-4, p[1], 3); },
+            p => { Assert.Equal(-6, p[0], 3); Assert.Equal(24, p[1], 3); },
+            p => { Assert.Equal(106, p[0], 3); Assert.Equal(24, p[1], 3); },
+            p => { Assert.Equal(106, p[0], 3); Assert.Equal(-4, p[1], 3); });
+    }
+
+    [Fact]
+    public void NormalizeTemporaryDimensionValue_StripsLegacyWrapper()
+    {
+        var normalized = TeklaDrawingDimensionsApi.NormalizeTemporaryDimensionValue(
+            "[[1250]]",
+            DimensionSetBaseAttributes.DimensionValueUnits.Millimeter,
+            negative: false);
+
+        Assert.Equal("1250", normalized);
+    }
+
+    [Fact]
+    public void NormalizeTemporaryDimensionValue_AppendsInchSuffixWhenNeeded()
+    {
+        var normalized = TeklaDrawingDimensionsApi.NormalizeTemporaryDimensionValue(
+            "[[1-1\\\\2]]",
+            DimensionSetBaseAttributes.DimensionValueUnits.Inch,
+            negative: false);
+
+        Assert.Equal("1-1\\\\2\"", normalized);
+    }
+
+    [Theory]
+    [InlineData(1, 1, 1)]
+    [InlineData(-1, 1, -1)]
+    [InlineData(1, -1, -1)]
+    [InlineData(-1, -1, 1)]
+    [InlineData(0, 1, 1)]
+    public void ResolveDimensionTextSideSign_UsesTopDirectionAndPlacingDirection(
+        int topDirection,
+        int placingDirectionSign,
+        int expected)
+    {
+        var sideSign = TeklaDrawingDimensionsApi.ResolveDimensionTextSideSign(topDirection, placingDirectionSign);
+
+        Assert.Equal(expected, sideSign);
+    }
+
+    [Fact]
+    public void ApplyDimensionTextLineOffsets_TrimsLineSpanUsingNativeOffsets()
+    {
+        var trimmed = TeklaDrawingDimensionsApi.ApplyDimensionTextLineOffsets(
+            new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 100, EndY = 0 },
+            startOffset: 20,
+            endOffset: 10);
+
+        Assert.Equal(20, trimmed.StartX, 3);
+        Assert.Equal(0, trimmed.StartY, 3);
+        Assert.Equal(90, trimmed.EndX, 3);
+        Assert.Equal(0, trimmed.EndY, 3);
+    }
+
+    [Fact]
+    public void TryGetDimStyleLineVector_UsesLegacyOrientationRule()
+    {
+        var ok = TeklaDrawingDimensionsApi.TryGetDimStyleLineVector(
+            new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 100, EndY = 0 },
+            out var lineVector);
+
+        Assert.True(ok);
+        Assert.Equal(1, lineVector.X, 6);
+        Assert.Equal(0, lineVector.Y, 6);
+    }
+
+    [Fact]
+    public void CreateDimStyleTextPolygon_ShiftsCenterByQuarterScaleAlongLine()
+    {
+        var polygon = TeklaDrawingDimensionsApi.CreateDimStyleTextPolygon(
+            new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 100, EndY = 0 },
+            widthAlongLine: 20,
+            heightPerpendicularToLine: 10,
+            viewScale: 8);
+
+        Assert.NotNull(polygon);
+        Assert.Collection(
+            polygon!,
+            p => { Assert.Equal(42, p[0], 3); Assert.Equal(-5, p[1], 3); },
+            p => { Assert.Equal(62, p[0], 3); Assert.Equal(-5, p[1], 3); },
+            p => { Assert.Equal(62, p[0], 3); Assert.Equal(5, p[1], 3); },
+            p => { Assert.Equal(42, p[0], 3); Assert.Equal(5, p[1], 3); });
+    }
+
+    [Theory]
+    [InlineData(10, 10, true)]
+    [InlineData(10, -10, true)]
+    [InlineData(-10, 10, false)]
+    public void ComparePointsLeftToRight_MatchesLegacyDimRule(
+        double leftX,
+        double leftY,
+        bool expected)
+    {
+        var result = TeklaDrawingDimensionsApi.ComparePointsLeftToRight(
+            (leftX, leftY),
+            (0, 0));
+
+        Assert.Equal(expected, result);
     }
 }
