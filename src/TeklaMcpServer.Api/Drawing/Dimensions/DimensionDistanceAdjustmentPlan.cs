@@ -31,16 +31,44 @@ internal static class DimensionDistanceAdjustmentTranslator
             ViewType = group.ViewType,
             Orientation = group.Orientation
         };
+        var membersById = group.Members.ToDictionary(static member => member.DimensionId);
 
         foreach (var proposal in axisPlan.Proposals)
         {
             if (group.Orientation is "horizontal" or "vertical")
             {
+                if (!membersById.TryGetValue(proposal.DimensionId, out var member))
+                {
+                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                    {
+                        DimensionId = proposal.DimensionId,
+                        AxisShift = proposal.AxisShift,
+                        DistanceDelta = 0,
+                        CanApply = false,
+                        Reason = "Dimension group member was not found for distance translation."
+                    });
+                    continue;
+                }
+
+                if (System.Math.Abs(member.Distance) <= 1e-9)
+                {
+                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                    {
+                        DimensionId = proposal.DimensionId,
+                        AxisShift = proposal.AxisShift,
+                        DistanceDelta = 0,
+                        CanApply = false,
+                        Reason = "Distance mapping is ambiguous for zero-distance dimensions."
+                    });
+                    continue;
+                }
+
+                var sign = System.Math.Sign(member.Distance);
                 plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
                 {
                     DimensionId = proposal.DimensionId,
                     AxisShift = proposal.AxisShift,
-                    DistanceDelta = proposal.AxisShift,
+                    DistanceDelta = proposal.AxisShift * sign,
                     CanApply = true
                 });
                 continue;
