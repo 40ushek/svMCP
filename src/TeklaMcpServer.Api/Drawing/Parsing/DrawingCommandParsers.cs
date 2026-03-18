@@ -313,6 +313,12 @@ public sealed class MoveDimensionRequest
     public double Delta { get; set; }
 }
 
+public sealed class ArrangeDimensionsRequest
+{
+    public int? ViewId { get; set; }
+    public double TargetGap { get; set; }
+}
+
 public sealed class MoveDimensionParseResult
 {
     public bool IsValid { get; private set; }
@@ -323,6 +329,19 @@ public sealed class MoveDimensionParseResult
         new() { IsValid = true, Request = request };
 
     public static MoveDimensionParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class ArrangeDimensionsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public ArrangeDimensionsRequest Request { get; private set; } = new();
+
+    public static ArrangeDimensionsParseResult Success(ArrangeDimensionsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static ArrangeDimensionsParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

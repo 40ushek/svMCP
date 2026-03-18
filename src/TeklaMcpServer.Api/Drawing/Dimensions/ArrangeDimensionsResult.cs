@@ -2,14 +2,14 @@ using System.Collections.Generic;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class ArrangeDimensionApplied
+public sealed class ArrangeDimensionApplied
 {
     public int DimensionId { get; set; }
     public double DistanceDelta { get; set; }
     public double NewDistance { get; set; }
 }
 
-internal sealed class ArrangeDimensionsResult
+public sealed class ArrangeDimensionsResult
 {
     public int AppliedCount { get; set; }
     public int SkippedCount { get; set; }

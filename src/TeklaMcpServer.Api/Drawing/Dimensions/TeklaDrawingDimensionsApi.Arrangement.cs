@@ -8,6 +8,14 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    public ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
+    {
+        if (targetGap < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
+
+        return ApplyDimensionDistanceAdjustments(viewId, targetGap);
+    }
+
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
     {
         return GetDimensionGroups(viewId)

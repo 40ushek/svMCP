@@ -14,6 +14,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_dimensions":
                 return HandleGetDrawingDimensions(api, args);
 
+            case "arrange_dimensions":
+                return HandleArrangeDimensions(api, args);
+
             case "move_dimension":
                 return HandleMoveDimension(api, args);
 
@@ -50,6 +53,20 @@ internal sealed partial class DrawingCommandHandler
 
         var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
         WriteMoveDimensionResult(result);
+        return true;
+    }
+
+    private bool HandleArrangeDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseArrangeDimensionsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.ArrangeDimensions(parseResult.Request.ViewId, parseResult.Request.TargetGap);
+        WriteArrangeDimensionsResult(result);
         return true;
     }
 
@@ -184,6 +201,22 @@ internal sealed partial class DrawingCommandHandler
             moved = result.Moved,
             dimensionId = result.DimensionId,
             newDistance = result.NewDistance
+        });
+    }
+
+    private void WriteArrangeDimensionsResult(ArrangeDimensionsResult result)
+    {
+        WriteJson(new
+        {
+            appliedCount = result.AppliedCount,
+            skippedCount = result.SkippedCount,
+            applied = result.Applied.Select(a => new
+            {
+                dimensionId = a.DimensionId,
+                distanceDelta = a.DistanceDelta,
+                newDistance = a.NewDistance
+            }),
+            skipReasons = result.SkipReasons
         });
     }
 
