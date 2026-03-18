@@ -27,7 +27,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         {
             ViewFilteredTotal = dimensions.Total,
             GroupCount = groups.Count,
-            TargetGap = targetGap
+            TargetGapPaper = targetGap
         };
 
         foreach (var group in groups)
@@ -157,6 +157,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                 DirectionY = stack.Direction?.Y,
                 TopDirection = stack.TopDirection,
                 ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine),
+                TargetGapPaper = plan.TargetGapPaper,
+                TargetGapDrawing = plan.TargetGapDrawing,
                 ProposalCount = plan.Proposals.Count,
                 HasApplicableChanges = plan.HasApplicableChanges
             };

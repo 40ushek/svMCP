@@ -98,6 +98,8 @@ public sealed class DimensionArrangementDebugPlanInfo
     public double? DirectionY { get; set; }
     public int TopDirection { get; set; }
     public DrawingLineInfo? ReferenceLine { get; set; }
+    public double TargetGapPaper { get; set; }
+    public double TargetGapDrawing { get; set; }
     public int ProposalCount { get; set; }
     public bool HasApplicableChanges { get; set; }
     public List<DimensionArrangementDebugProposal> Proposals { get; } = [];
@@ -107,7 +109,7 @@ public sealed class DimensionArrangementDebugResult
 {
     public int ViewFilteredTotal { get; set; }
     public int GroupCount { get; set; }
-    public double TargetGap { get; set; }
+    public double TargetGapPaper { get; set; }
     public List<DimensionArrangementDebugGroupInfo> Groups { get; } = [];
     public List<DimensionArrangementDebugStackInfo> Stacks { get; } = [];
     public List<DimensionArrangementDebugSpacingInfo> Spacing { get; } = [];

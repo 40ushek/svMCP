@@ -165,15 +165,15 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
-    private static (int? ViewId, string ViewType) GetOwnerViewInfo(DrawingObject drawingObject)
+    private static (int? ViewId, string ViewType, double ViewScale) GetOwnerViewInfo(DrawingObject drawingObject)
     {
         var ownerView = drawingObject.GetView();
         if (ownerView == null)
-            return (null, string.Empty);
+            return (null, string.Empty, 1.0);
 
         return ownerView is View view
-            ? (view.GetIdentifier().ID, view.ViewType.ToString())
-            : (ownerView.GetIdentifier().ID, ownerView.GetType().Name);
+            ? (view.GetIdentifier().ID, view.ViewType.ToString(), view.Attributes?.Scale > 0 ? view.Attributes.Scale : 1.0)
+            : (ownerView.GetIdentifier().ID, ownerView.GetType().Name, 1.0);
     }
 
     private static string TryGetDimensionType(StraightDimensionSet dimSet)

@@ -282,6 +282,7 @@ internal sealed partial class DrawingCommandHandler
                 viewId = d.ViewId,
                 viewType = d.ViewType,
                 orientation = d.Orientation,
+                viewScale = d.ViewScale,
                 distance = d.Distance,
                 directionX = d.DirectionX,
                 directionY = d.DirectionY,
@@ -383,7 +384,7 @@ internal sealed partial class DrawingCommandHandler
         {
             viewFilteredTotal = result.ViewFilteredTotal,
             groupCount = result.GroupCount,
-            targetGap = result.TargetGap,
+            targetGapPaper = result.TargetGapPaper,
             groups = result.Groups.Select(group => new
             {
                 viewId = group.ViewId,
@@ -462,6 +463,8 @@ internal sealed partial class DrawingCommandHandler
                 directionY = plan.DirectionY,
                 topDirection = plan.TopDirection,
                 referenceLine = SerializeLine(plan.ReferenceLine),
+                targetGapPaper = plan.TargetGapPaper,
+                targetGapDrawing = plan.TargetGapDrawing,
                 proposalCount = plan.ProposalCount,
                 hasApplicableChanges = plan.HasApplicableChanges,
                 proposals = plan.Proposals.Select(proposal => new

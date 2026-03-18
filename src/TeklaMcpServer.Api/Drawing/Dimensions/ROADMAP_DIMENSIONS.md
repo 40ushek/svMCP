@@ -35,6 +35,7 @@ Current read model already exposes:
 - dimension set id and Tekla object type
 - Tekla `dimensionType`
 - `viewId` / `viewType`
+- `viewScale`
 - `distance`
 - cheap summary `orientation`
 - set `bounds`
@@ -48,6 +49,12 @@ Current read model already exposes:
 - segment `leadLineMain`
 - segment `leadLineSecond`
 
+Live validation already confirmed on the current assembly drawing:
+
+- `viewScale` is read from the owning view
+- a paper gap of `5` becomes a drawing gap of `125` at `viewScale = 25`
+- spacing/debug now report both values explicitly
+
 ## Design Principles
 
 - Do not invent public pseudo-types like `mixed_with_diagonals`.
@@ -60,6 +67,10 @@ Current read model already exposes:
   - compatible `topDirection`
   - compatible `referenceLine` / lead-line geometry
 - Prefer line geometry over bbox for spacing and overlap reasoning.
+- Target arrangement gaps in paper units first, then convert to drawing units via
+  `viewScale`.
+- Do not compare dimension text/line spacing directly in raw drawing units across
+  different view scales.
 
 ## Phases
 
@@ -108,6 +119,7 @@ Spacing must be computed from:
 - distance between parallel reference lines
 - ordering of items along the dimension direction
 - lead-line relations where needed
+- requested paper gap multiplied by `viewScale` for the owning view
 
 Debug output, when reintroduced, should explain:
 
@@ -129,6 +141,9 @@ First release of the redesigned arrange engine should support only:
 - parallel non-diagonal groups
 - confirmed `Distance <-> move` mapping
 - same-view operation
+- paper-gap contract:
+  - input gap is specified in paper units
+  - effective drawing gap = `paperGap * viewScale`
 
 Out of scope for first release:
 
@@ -153,6 +168,8 @@ The redesign is ready to expose again when:
   `dim` concepts without extra Tekla reads
 - grouping no longer depends primarily on `orientation`
 - spacing no longer depends primarily on bbox intervals
+- target gap semantics are consistent with drawing text readability:
+  paper gap in, drawing gap via `viewScale`
 - current assembly drawings produce intuitive horizontal / vertical /
   diagonal-control cases without invented public labels
 - line-based grouping and spacing are covered by unit tests and verified on a

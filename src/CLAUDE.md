@@ -184,12 +184,16 @@ direction = `"-dy,dx,0"` (перпендикуляр к диагонали)
 
 - `Drawing/Dimensions` уже разнесён на `Query / Commands / Arrangement`
 - `get_drawing_dimensions` сейчас отдаёт line-based read model:
-  - set-level: `dimensionType`, `viewId`, `viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, `bounds`
+  - set-level: `dimensionType`, `viewId`, `viewType`, `viewScale`, `orientation`, `direction`, `topDirection`, `referenceLine`, `bounds`
   - segment-level: `bounds`, `textBounds`, `dimensionLine`, `leadLineMain`, `leadLineSecond`
 - `TextBounds` пока intentionally conservative: `null`, без fake geometry
 - measured value пока не торчит в публичный JSON; compile-spike подтверждён через `StraightDimension.Value.GetUnformattedString()`
 - dimensions arrangement сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
 - публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
+- контракт для будущего arrange:
+  - входной gap задаётся в бумажных единицах
+  - внутри он переводится в drawing units как `paperGap * viewScale`
+  - `move_dimension` по-прежнему двигает `StraightDimensionSet.Distance` в drawing/sheet units
 
 ## Critical Tekla API Patterns
 

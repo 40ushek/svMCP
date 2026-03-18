@@ -55,7 +55,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     private static DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)
     {
-        var (ownerViewId, ownerViewType) = GetOwnerViewInfo(dimSet);
+        var (ownerViewId, ownerViewType, ownerViewScale) = GetOwnerViewInfo(dimSet);
         var info = new DrawingDimensionInfo
         {
             Id = dimSet.GetIdentifier().ID,
@@ -63,6 +63,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             DimensionType = TryGetDimensionType(dimSet),
             ViewId = ownerViewId,
             ViewType = ownerViewType,
+            ViewScale = ownerViewScale,
             Distance = dimSet.Distance,
             Bounds = TryGetBounds(dimSet)
         };

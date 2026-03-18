@@ -53,6 +53,7 @@ public sealed class DrawingDimensionInfo
     public string                     DimensionType { get; set; } = string.Empty;
     public int?                       ViewId        { get; set; }
     public string                     ViewType      { get; set; } = string.Empty;
+    public double                     ViewScale     { get; set; }
     public string                     Orientation   { get; set; } = string.Empty;
     public double                     Distance      { get; set; }
     public double                     DirectionX    { get; set; }

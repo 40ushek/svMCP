@@ -17,6 +17,8 @@ internal sealed class DimensionDistanceAdjustmentPlan
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
+    public double TargetGapPaper { get; set; }
+    public double TargetGapDrawing { get; set; }
     public List<DimensionDistanceAdjustmentProposal> Proposals { get; } = [];
     public bool HasApplicableChanges => Proposals.Any(static proposal => proposal.CanApply);
 }
@@ -29,7 +31,9 @@ internal static class DimensionDistanceAdjustmentTranslator
         {
             ViewId = stack.ViewId,
             ViewType = stack.ViewType,
-            Orientation = stack.Orientation
+            Orientation = stack.Orientation,
+            TargetGapPaper = axisPlan.TargetGapPaper,
+            TargetGapDrawing = axisPlan.TargetGapDrawing
         };
 
         var unitsById = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack)
@@ -108,7 +112,9 @@ internal static class DimensionDistanceAdjustmentTranslator
         {
             ViewId = group.ViewId,
             ViewType = group.ViewType,
-            Orientation = group.Orientation
+            Orientation = group.Orientation,
+            TargetGapPaper = axisPlan.TargetGapPaper,
+            TargetGapDrawing = axisPlan.TargetGapDrawing
         };
         var membersById = group.Members.ToDictionary(static member => member.DimensionId);
 
