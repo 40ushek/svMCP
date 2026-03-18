@@ -192,7 +192,7 @@ src/
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
 | `delete_all_marks` | Удалить все марки на активном чертеже |
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
-| `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, distance, `viewId/viewType`, orientation, bbox set/segments, `textBounds` |
+| `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, `dimensionType`, distance, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, bbox set/segments, `dimensionLine`, `leadLineMain/Second`, `textBounds` |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
@@ -225,9 +225,10 @@ src/
 - канонический источник границ layout-таблиц — именно canvas-маркеры `Segment.Primitives[0/2]`; общая аккумуляция примитивов допускается только как fallback
 
 Размеры сейчас устроены так:
-- `get_drawing_dimensions` уже возвращает расширенную read model: `viewId`, `viewType`, `orientation`, bbox dimension set и bbox сегментов
+- `get_drawing_dimensions` уже возвращает line-based read model: `dimensionType`, `viewId/viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, bbox set/segments и `dimensionLine/leadLineMain/leadLineSecond`
 - `TextBounds` пока остаётся `null`, пока Tekla-side text geometry не подтверждена runtime-spike'ом
-- внутри `Drawing/Dimensions` уже есть foundation для будущего `arrange_dimensions`: `DimensionGroup`, spacing analysis, arrangement planner и `AxisShift -> DistanceDelta` translator для `horizontal/vertical`
+- блок `Drawing/Dimensions` сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
+- публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
 
 ## Диагностика
 
