@@ -7,30 +7,34 @@ namespace TeklaMcpServer.Tests;
 public sealed class DimensionGroupFactoryTests
 {
     [Fact]
-    public void BuildGroups_GroupsByViewAndOrientation()
+    public void BuildGroups_GroupsByViewTypeDirectionAndTopSide()
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "horizontal", 40, 0, 10, 100, 10, 5, 8, 105, 12),
-            CreateDimension(2, 10, "FrontView", "horizontal", 45, 0, 20, 120, 20, 15, 18, 125, 22),
-            CreateDimension(3, 10, "FrontView", "vertical", 30, 30, 0, 30, 80, 25, 0, 35, 85),
-            CreateDimension(4, 11, "TopView", "horizontal", 20, 0, 35, 90, 35, 35, 33, 95, 40)
+            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12),
+            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 120, 15, 18, 125, 22),
+            CreateDimension(3, 10, "FrontView", "PartLongitudinal", "horizontal", 30, 1, 0, 1, 0, 1, 0, 100, 25, 28, 105, 32),
+            CreateDimension(4, 11, "TopView", "PartLongitudinal", "horizontal", 20, 1, 0, -1, 0, -1, -10, 90, 35, 33, 95, 40)
         ]);
 
         Assert.Equal(3, groups.Count);
 
-        var frontHorizontal = groups.Single(g => g.ViewId == 10 && g.Orientation == "horizontal");
-        Assert.Equal(2, frontHorizontal.Members.Count);
-        Assert.Equal(45, frontHorizontal.MaximumDistance, 3);
+        var frontTop = groups.Single(g =>
+            g.ViewId == 10 &&
+            g.ViewType == "FrontView" &&
+            g.DimensionType == "PartLongitudinal" &&
+            g.TopDirection == -1);
+        Assert.Equal(2, frontTop.Members.Count);
+        Assert.Equal(45, frontTop.MaximumDistance, 3);
     }
 
     [Fact]
-    public void BuildGroups_SortsHorizontalMembersByMinY()
+    public void BuildGroups_SortsMembersByReferenceLineOffset()
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "horizontal", 40, 0, 35, 100, 35, 25, 35, 105, 42),
-            CreateDimension(2, 10, "FrontView", "horizontal", 45, 0, 15, 100, 15, 5, 15, 105, 22)
+            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 25, 35, 105, 42),
+            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 100, 5, 15, 105, 22)
         ]);
 
         var group = Assert.Single(groups);
@@ -45,7 +49,7 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "vertical", 12, 5, 10, 5, 60, 10, 10, 15, 70)
+            CreateDimension(1, 10, "FrontView", "PartTransversal", "vertical", 12, 0, 1, 1, 1, 0, 5, 5, 10, 10, 15, 70)
         ]);
 
         var group = Assert.Single(groups);
@@ -54,7 +58,7 @@ public sealed class DimensionGroupFactoryTests
         Assert.NotNull(group.Bounds);
         Assert.Equal(0, group.Direction!.Value.X, 6);
         Assert.Equal(1, group.Direction!.Value.Y, 6);
-        Assert.Equal(5, group.ReferenceLine!.StartX, 3);
+        Assert.Equal(17, group.ReferenceLine!.StartX, 3);
         Assert.Equal(10, group.ReferenceLine.StartY, 3);
         Assert.Equal(10, group.Bounds!.MinX, 3);
         Assert.Equal(10, group.Bounds.MinY, 3);
@@ -70,8 +74,8 @@ public sealed class DimensionGroupFactoryTests
             Total = 2,
             Dimensions =
             [
-                CreateDimension(1, 10, "FrontView", "horizontal", 40, 0, 10, 100, 10, 5, 8, 105, 12),
-                CreateDimension(2, 10, "FrontView", "horizontal", 45, 0, 20, 120, 20, 15, 18, 125, 22)
+                CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12),
+                CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 120, 15, 18, 125, 22)
             ]
         };
 
@@ -79,7 +83,7 @@ public sealed class DimensionGroupFactoryTests
 
         var group = Assert.Single(groups);
         Assert.Equal(10, group.ViewId);
-        Assert.Equal("horizontal", group.Orientation);
+        Assert.Equal("PartLongitudinal", group.DimensionType);
         Assert.Equal(2, group.Members.Count);
     }
 
@@ -87,30 +91,52 @@ public sealed class DimensionGroupFactoryTests
         int id,
         int? viewId,
         string viewType,
+        string dimensionType,
         string orientation,
         double distance,
-        double startX,
+        double directionX,
+        double directionY,
+        int topDirection,
+        double upX,
+        double upY,
         double startY,
+        double startX,
         double endX,
-        double endY,
         double boundsMinX,
         double boundsMinY,
         double boundsMaxX,
         double boundsMaxY)
     {
+        var endY = orientation == "vertical" ? 60.0 : startY;
+        var offsetStartX = startX + (upX * distance);
+        var offsetStartY = startY + (upY * distance);
+        var offsetEndX = endX + (upX * distance);
+        var offsetEndY = endY + (upY * distance);
+
         return new DrawingDimensionInfo
         {
             Id = id,
             ViewId = viewId,
             ViewType = viewType,
+            DimensionType = dimensionType,
             Orientation = orientation,
             Distance = distance,
+            DirectionX = directionX,
+            DirectionY = directionY,
+            TopDirection = topDirection,
             Bounds = new DrawingBoundsInfo
             {
                 MinX = boundsMinX,
                 MinY = boundsMinY,
                 MaxX = boundsMaxX,
                 MaxY = boundsMaxY
+            },
+            ReferenceLine = new DrawingLineInfo
+            {
+                StartX = offsetStartX,
+                StartY = offsetStartY,
+                EndX = offsetEndX,
+                EndY = offsetEndY
             },
             Segments =
             [
@@ -119,7 +145,32 @@ public sealed class DimensionGroupFactoryTests
                     StartX = startX,
                     StartY = startY,
                     EndX = endX,
-                    EndY = endY
+                    EndY = endY,
+                    Distance = distance,
+                    DirectionX = directionX,
+                    DirectionY = directionY,
+                    TopDirection = topDirection,
+                    DimensionLine = new DrawingLineInfo
+                    {
+                        StartX = offsetStartX,
+                        StartY = offsetStartY,
+                        EndX = offsetEndX,
+                        EndY = offsetEndY
+                    },
+                    LeadLineMain = new DrawingLineInfo
+                    {
+                        StartX = startX,
+                        StartY = startY,
+                        EndX = offsetStartX,
+                        EndY = offsetStartY
+                    },
+                    LeadLineSecond = new DrawingLineInfo
+                    {
+                        StartX = endX,
+                        StartY = endY,
+                        EndX = offsetEndX,
+                        EndY = offsetEndY
+                    }
                 }
             ]
         };

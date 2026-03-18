@@ -7,8 +7,6 @@ public interface IDrawingDimensionsApi
     /// Each dimension set contains one or more segments with computed distances (mm).
     /// </summary>
     GetDimensionsResult GetDimensions(int? viewId);
-    DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap);
-    ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap);
     MoveDimensionResult MoveDimension(int dimensionId, double delta);
     CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);

@@ -60,6 +60,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         {
             Id = dimSet.GetIdentifier().ID,
             Type = dimSet.GetType().Name,
+            DimensionType = TryGetDimensionType(dimSet),
             ViewId = ownerViewId,
             ViewType = ownerViewType,
             Distance = dimSet.Distance,
@@ -72,18 +73,52 @@ public sealed partial class TeklaDrawingDimensionsApi
             if (segEnum.Current is not StraightDimension segment)
                 continue;
 
-            info.Segments.Add(BuildSegmentInfo(segment));
+            info.Segments.Add(BuildSegmentInfo(segment, dimSet.Distance));
         }
 
         info.Bounds ??= CombineBounds(info.Segments.Select(static s => s.Bounds));
         info.Orientation = DetermineDimensionOrientation(info.Segments);
+        var representative = info.Segments
+            .Where(static s => s.DimensionLine != null)
+            .OrderByDescending(static s => s.DimensionLine!.Length)
+            .FirstOrDefault()
+            ?? info.Segments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
+        if (representative != null)
+        {
+            info.DirectionX = representative.DirectionX;
+            info.DirectionY = representative.DirectionY;
+            info.TopDirection = representative.TopDirection;
+            info.ReferenceLine = TryCreateReferenceLine(representative);
+        }
+
         return info;
     }
 
-    private static DimensionSegmentInfo BuildSegmentInfo(StraightDimension segment)
+    private static DimensionSegmentInfo BuildSegmentInfo(StraightDimension segment, double distance)
     {
         var start = segment.StartPoint;
         var end = segment.EndPoint;
+        TryNormalizeDirection(end.X - start.X, end.Y - start.Y, out var measuredDirection);
+        var hasUpDirection = TryGetUpDirection(segment, out var upDirection);
+
+        DrawingLineInfo? dimensionLine = null;
+        DrawingLineInfo? leadLineMain = null;
+        DrawingLineInfo? leadLineSecond = null;
+        var topDirection = 0;
+        if (hasUpDirection)
+        {
+            var offsetX = upDirection.X * distance;
+            var offsetY = upDirection.Y * distance;
+            var offsetStartX = start.X + offsetX;
+            var offsetStartY = start.Y + offsetY;
+            var offsetEndX = end.X + offsetX;
+            var offsetEndY = end.Y + offsetY;
+
+            dimensionLine = CreateLineInfo(offsetStartX, offsetStartY, offsetEndX, offsetEndY);
+            leadLineMain = CreateLineInfo(start.X, start.Y, offsetStartX, offsetStartY);
+            leadLineSecond = CreateLineInfo(end.X, end.Y, offsetEndX, offsetEndY);
+            topDirection = GetTopDirection(upDirection.X, upDirection.Y);
+        }
 
         return new DimensionSegmentInfo
         {
@@ -92,8 +127,16 @@ public sealed partial class TeklaDrawingDimensionsApi
             StartY = System.Math.Round(start.Y, 1),
             EndX = System.Math.Round(end.X, 1),
             EndY = System.Math.Round(end.Y, 1),
-            Bounds = TryGetBounds(segment) ?? CreateBoundsFromSegmentPoints(start, end),
-            TextBounds = TryGetTextBounds(segment)
+            Distance = System.Math.Round(distance, 3),
+            DirectionX = measuredDirection.X,
+            DirectionY = measuredDirection.Y,
+            TopDirection = topDirection,
+            Bounds = TryGetBounds(segment)
+                ?? (dimensionLine != null ? CreateBoundsFromLine(dimensionLine) : CreateBoundsFromSegmentPoints(start, end)),
+            TextBounds = TryGetTextBounds(segment),
+            DimensionLine = dimensionLine,
+            LeadLineMain = leadLineMain,
+            LeadLineSecond = leadLineSecond
         };
     }
 }

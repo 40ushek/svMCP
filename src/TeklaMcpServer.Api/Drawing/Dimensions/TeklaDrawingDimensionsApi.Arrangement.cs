@@ -8,7 +8,7 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
-    public DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
+    internal DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
     {
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
@@ -96,7 +96,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
-    public ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
+    internal ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
     {
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");

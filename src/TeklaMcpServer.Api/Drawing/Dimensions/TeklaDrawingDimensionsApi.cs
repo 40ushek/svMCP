@@ -21,6 +21,14 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         MaxY = System.Math.Round(maxY, 3)
     };
 
+    internal static DrawingLineInfo CreateLineInfo(double startX, double startY, double endX, double endY) => new()
+    {
+        StartX = System.Math.Round(startX, 3),
+        StartY = System.Math.Round(startY, 3),
+        EndX = System.Math.Round(endX, 3),
+        EndY = System.Math.Round(endY, 3)
+    };
+
     internal static DrawingBoundsInfo? CombineBounds(IEnumerable<DrawingBoundsInfo?> bounds)
     {
         var present = bounds.Where(static b => b != null).Cast<DrawingBoundsInfo>().ToList();
@@ -92,6 +100,12 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         System.Math.Max(start.X, end.X),
         System.Math.Max(start.Y, end.Y));
 
+    internal static DrawingBoundsInfo CreateBoundsFromLine(DrawingLineInfo line) => CreateBoundsInfo(
+        System.Math.Min(line.StartX, line.EndX),
+        System.Math.Min(line.StartY, line.EndY),
+        System.Math.Max(line.StartX, line.EndX),
+        System.Math.Max(line.StartY, line.EndY));
+
     private static DrawingBoundsInfo? TryGetTextBounds(StraightDimension segment)
     {
         _ = segment;
@@ -121,6 +135,83 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return ownerView is View view
             ? (view.GetIdentifier().ID, view.ViewType.ToString())
             : (ownerView.GetIdentifier().ID, ownerView.GetType().Name);
+    }
+
+    private static string TryGetDimensionType(StraightDimensionSet dimSet)
+    {
+        try
+        {
+            var attributesProperty = dimSet.GetType().GetProperty("Attributes");
+            var attributes = attributesProperty?.GetValue(dimSet, null);
+            var dimensionTypeProperty = attributes?.GetType().GetProperty("DimensionType");
+            var value = dimensionTypeProperty?.GetValue(attributes, null);
+            return value?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool TryGetUpDirection(StraightDimension segment, out (double X, double Y) direction)
+    {
+        direction = default;
+        try
+        {
+            var property = segment.GetType().GetProperty("UpDirection");
+            var value = property?.GetValue(segment, null);
+            if (value == null)
+                return false;
+
+            var xProperty = value.GetType().GetProperty("X");
+            var yProperty = value.GetType().GetProperty("Y");
+            if (xProperty?.GetValue(value, null) is not double x || yProperty?.GetValue(value, null) is not double y)
+                return false;
+
+            return TryNormalizeDirection(x, y, out direction);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static bool TryNormalizeDirection(double x, double y, out (double X, double Y) direction)
+    {
+        direction = default;
+        var length = System.Math.Sqrt((x * x) + (y * y));
+        if (length <= 1e-6)
+            return false;
+
+        direction = (System.Math.Round(x / length, 6), System.Math.Round(y / length, 6));
+        return true;
+    }
+
+    internal static (double X, double Y) CanonicalizeDirection(double x, double y)
+    {
+        if (x < -1e-6 || (System.Math.Abs(x) <= 1e-6 && y < -1e-6))
+            return (-x, -y);
+
+        return (x, y);
+    }
+
+    internal static int GetTopDirection(double upX, double upY)
+    {
+        if (upY < -1e-6 || (System.Math.Abs(upY) <= 1e-6 && upX > 1e-6))
+            return -1;
+
+        return 1;
+    }
+
+    internal static DrawingLineInfo? TryCreateReferenceLine(DimensionSegmentInfo segment)
+    {
+        return segment.DimensionLine == null
+            ? null
+            : CreateLineInfo(
+                segment.DimensionLine.StartX,
+                segment.DimensionLine.StartY,
+                segment.DimensionLine.EndX,
+                segment.DimensionLine.EndY);
     }
 
     private static Vector? TryParseVector(string? s)

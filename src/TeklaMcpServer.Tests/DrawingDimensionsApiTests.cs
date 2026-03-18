@@ -62,11 +62,16 @@ public sealed class DrawingDimensionsApiTests
                 {
                     Id = 10,
                     Type = "StraightDimensionSet",
+                    DimensionType = "PartLongitudinal",
                     ViewId = 20,
                     ViewType = "FrontView",
                     Orientation = "horizontal",
                     Distance = 12.5,
+                    DirectionX = 1,
+                    DirectionY = 0,
+                    TopDirection = -1,
                     Bounds = new DrawingBoundsInfo { MinX = 1, MinY = 2, MaxX = 6, MaxY = 8 },
+                    ReferenceLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
                     Segments =
                     [
                         new DimensionSegmentInfo
@@ -76,8 +81,15 @@ public sealed class DrawingDimensionsApiTests
                             StartY = 2,
                             EndX = 6,
                             EndY = 2,
+                            Distance = 12.5,
+                            DirectionX = 1,
+                            DirectionY = 0,
+                            TopDirection = -1,
                             Bounds = new DrawingBoundsInfo { MinX = 1, MinY = 2, MaxX = 6, MaxY = 2 },
-                            TextBounds = null
+                            TextBounds = null,
+                            DimensionLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
+                            LeadLineMain = new DrawingLineInfo { StartX = 1, StartY = 2, EndX = 1, EndY = 14.5 },
+                            LeadLineSecond = new DrawingLineInfo { StartX = 6, StartY = 2, EndX = 6, EndY = 14.5 }
                         }
                     ]
                 }
@@ -88,10 +100,16 @@ public sealed class DrawingDimensionsApiTests
 
         Assert.Contains("\"Id\":10", json);
         Assert.Contains("\"Distance\":12.5", json);
+        Assert.Contains("\"DimensionType\":\"PartLongitudinal\"", json);
         Assert.Contains("\"ViewId\":20", json);
         Assert.Contains("\"ViewType\":\"FrontView\"", json);
         Assert.Contains("\"Orientation\":\"horizontal\"", json);
+        Assert.Contains("\"DirectionX\":1", json);
+        Assert.Contains("\"TopDirection\":-1", json);
+        Assert.Contains("\"ReferenceLine\":", json);
         Assert.Contains("\"Bounds\":", json);
+        Assert.Contains("\"DimensionLine\":", json);
+        Assert.Contains("\"LeadLineMain\":", json);
         Assert.Contains("\"TextBounds\":null", json);
     }
 }

@@ -69,16 +69,25 @@ internal static class DimensionGroupSpacingAnalyzer
 
     private static AxisInterval? TryGetInterval(DimensionGroupMember member, DimensionGroup group)
     {
+        if (group.Direction.HasValue && member.ReferenceLine != null)
+        {
+            var normal = (-group.Direction.Value.Y, group.Direction.Value.X);
+            var start = Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normal.Item1, normal.Item2);
+            var end = Project(member.ReferenceLine.EndX, member.ReferenceLine.EndY, normal.Item1, normal.Item2);
+            return new AxisInterval(System.Math.Min(start, end), System.Math.Max(start, end));
+        }
+
         var bounds = member.Bounds;
         if (bounds == null)
             return null;
 
-        return group.Orientation switch
-        {
-            "horizontal" => new AxisInterval(bounds.MinY, bounds.MaxY),
-            "vertical" => new AxisInterval(bounds.MinX, bounds.MaxX),
-            _ => TryGetProjectedInterval(bounds, group.Direction)
-        };
+        if (group.Orientation == "horizontal" && member.ReferenceLine != null)
+            return new AxisInterval(member.ReferenceLine.StartY, member.ReferenceLine.StartY);
+
+        if (group.Orientation == "vertical" && member.ReferenceLine != null)
+            return new AxisInterval(member.ReferenceLine.StartX, member.ReferenceLine.StartX);
+
+        return TryGetProjectedInterval(bounds, group.Direction);
     }
 
     private static AxisInterval? TryGetProjectedInterval(DrawingBoundsInfo bounds, (double X, double Y)? direction)

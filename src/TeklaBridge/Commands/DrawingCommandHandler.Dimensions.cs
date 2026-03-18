@@ -14,12 +14,6 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_dimensions":
                 return HandleGetDrawingDimensions(api, args);
 
-            case "get_dimension_arrangement_debug":
-                return HandleGetDimensionArrangementDebug(api, args);
-
-            case "arrange_dimensions":
-                return HandleArrangeDimensions(api, args);
-
             case "move_dimension":
                 return HandleMoveDimension(api, args);
 
@@ -56,34 +50,6 @@ internal sealed partial class DrawingCommandHandler
 
         var result = api.MoveDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
         WriteMoveDimensionResult(result);
-        return true;
-    }
-
-    private bool HandleArrangeDimensions(TeklaDrawingDimensionsApi api, string[] args)
-    {
-        var parseResult = DrawingCommandParsers.ParseArrangeDimensionsRequest(args);
-        if (!parseResult.IsValid)
-        {
-            WriteError(parseResult.Error);
-            return true;
-        }
-
-        var result = api.ArrangeDimensions(parseResult.Request.ViewId, parseResult.Request.TargetGap);
-        WriteArrangeDimensionsResult(result);
-        return true;
-    }
-
-    private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)
-    {
-        var parseResult = DrawingCommandParsers.ParseGetDimensionArrangementDebugRequest(args);
-        if (!parseResult.IsValid)
-        {
-            WriteError(parseResult.Error);
-            return true;
-        }
-
-        var result = api.GetDimensionArrangementDebug(parseResult.Request.ViewId, parseResult.Request.TargetGap);
-        WriteDimensionArrangementDebugResult(result);
         return true;
     }
 
@@ -185,6 +151,21 @@ internal sealed partial class DrawingCommandHandler
             };
         }
 
+        static object? SerializeLine(DrawingLineInfo? line)
+        {
+            if (line == null)
+                return null;
+
+            return new
+            {
+                startX = line.StartX,
+                startY = line.StartY,
+                endX = line.EndX,
+                endY = line.EndY,
+                length = line.Length
+            };
+        }
+
         WriteJson(new
         {
             total = result.Total,
@@ -192,11 +173,16 @@ internal sealed partial class DrawingCommandHandler
             {
                 id = d.Id,
                 type = d.Type,
+                dimensionType = d.DimensionType,
                 viewId = d.ViewId,
                 viewType = d.ViewType,
                 orientation = d.Orientation,
                 distance = d.Distance,
+                directionX = d.DirectionX,
+                directionY = d.DirectionY,
+                topDirection = d.TopDirection,
                 bounds = SerializeBounds(d.Bounds),
+                referenceLine = SerializeLine(d.ReferenceLine),
                 segments = d.Segments.Select(s => new
                 {
                     id = s.Id,
@@ -204,8 +190,15 @@ internal sealed partial class DrawingCommandHandler
                     startY = s.StartY,
                     endX = s.EndX,
                     endY = s.EndY,
+                    distance = s.Distance,
+                    directionX = s.DirectionX,
+                    directionY = s.DirectionY,
+                    topDirection = s.TopDirection,
                     bounds = SerializeBounds(s.Bounds),
-                    textBounds = SerializeBounds(s.TextBounds)
+                    textBounds = SerializeBounds(s.TextBounds),
+                    dimensionLine = SerializeLine(s.DimensionLine),
+                    leadLineMain = SerializeLine(s.LeadLineMain),
+                    leadLineSecond = SerializeLine(s.LeadLineSecond)
                 })
             })
         });
@@ -218,88 +211,6 @@ internal sealed partial class DrawingCommandHandler
             moved = result.Moved,
             dimensionId = result.DimensionId,
             newDistance = result.NewDistance
-        });
-    }
-
-    private void WriteArrangeDimensionsResult(ArrangeDimensionsResult result)
-    {
-        WriteJson(new
-        {
-            appliedCount = result.AppliedCount,
-            skippedCount = result.SkippedCount,
-            applied = result.Applied.Select(a => new
-            {
-                dimensionId = a.DimensionId,
-                distanceDelta = a.DistanceDelta,
-                newDistance = a.NewDistance
-            }),
-            skipReasons = result.SkipReasons
-        });
-    }
-
-    private void WriteDimensionArrangementDebugResult(DimensionArrangementDebugResult result)
-    {
-        static object? SerializeBounds(DrawingBoundsInfo? bounds)
-        {
-            if (bounds == null)
-                return null;
-
-            return new
-            {
-                minX = bounds.MinX,
-                minY = bounds.MinY,
-                maxX = bounds.MaxX,
-                maxY = bounds.MaxY,
-                width = bounds.Width,
-                height = bounds.Height
-            };
-        }
-
-        WriteJson(new
-        {
-            viewFilteredTotal = result.ViewFilteredTotal,
-            groupCount = result.GroupCount,
-            targetGap = result.TargetGap,
-            groups = result.Groups.Select(g => new
-            {
-                viewId = g.ViewId,
-                viewType = g.ViewType,
-                orientation = g.Orientation,
-                memberCount = g.MemberCount,
-                maximumDistance = g.MaximumDistance,
-                bounds = SerializeBounds(g.Bounds)
-            }),
-            spacing = result.Spacing.Select(s => new
-            {
-                viewId = s.ViewId,
-                viewType = s.ViewType,
-                orientation = s.Orientation,
-                hasOverlaps = s.HasOverlaps,
-                minimumDistance = s.MinimumDistance,
-                pairs = s.Pairs.Select(p => new
-                {
-                    firstDimensionId = p.FirstDimensionId,
-                    secondDimensionId = p.SecondDimensionId,
-                    distance = p.Distance,
-                    isOverlap = p.IsOverlap
-                })
-            }),
-            plans = result.Plans.Select(p => new
-            {
-                viewId = p.ViewId,
-                viewType = p.ViewType,
-                orientation = p.Orientation,
-                proposalCount = p.ProposalCount,
-                hasApplicableChanges = p.HasApplicableChanges,
-                proposals = p.Proposals.Select(x => new
-                {
-                    dimensionId = x.DimensionId,
-                    axisShift = x.AxisShift,
-                    distanceDelta = x.DistanceDelta,
-                    canApply = x.CanApply,
-                    reason = x.Reason
-                })
-            })
         });
     }
 

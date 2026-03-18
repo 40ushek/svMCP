@@ -150,7 +150,7 @@ src/
 | `resolve_mark_overlaps` | Resolve mark text overlaps per view |
 | `arrange_marks` | Full mark auto-layout per view |
 | `arrange_marks_no_collisions` | Run arrange + repeated overlap cleanup until stable |
-| `get_drawing_dimensions` | Read drawing dimensions with `viewId/viewType`, orientation, set/segment bounds and nullable `textBounds` |
+| `get_drawing_dimensions` | Read drawing dimensions with `dimensionType`, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, set/segment bounds and nullable `textBounds` |
 | `move_dimension` | Move a dimension by delta |
 | `create_dimension` | Create a `StraightDimensionSet` |
 | `delete_dimension` | Delete a `StraightDimensionSet` |
@@ -183,17 +183,13 @@ direction = `"-dy,dx,0"` (перпендикуляр к диагонали)
 ### Текущее состояние dimensions API
 
 - `Drawing/Dimensions` уже разнесён на `Query / Commands / Arrangement`
-- read model для `get_drawing_dimensions` расширен additively:
-  - set-level: `viewId`, `viewType`, `orientation`, `bounds`
-  - segment-level: `bounds`, `textBounds`
+- `get_drawing_dimensions` сейчас отдаёт line-based read model:
+  - set-level: `dimensionType`, `viewId`, `viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, `bounds`
+  - segment-level: `bounds`, `textBounds`, `dimensionLine`, `leadLineMain`, `leadLineSecond`
 - `TextBounds` пока intentionally conservative: `null`, без fake geometry
 - measured value пока не торчит в публичный JSON; compile-spike подтверждён через `StraightDimension.Value.GetUnformattedString()`
-- internal arrangement foundation уже есть:
-  - `DimensionGroup`
-  - `DimensionGroupFactory`
-  - spacing analysis
-  - arrangement planner
-  - `AxisShift -> DistanceDelta` translator для `horizontal/vertical`
+- dimensions arrangement сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
+- публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
 
 ## Critical Tekla API Patterns
 
