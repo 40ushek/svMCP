@@ -2,18 +2,67 @@
 
 ## Goal
 
-Rebuild `Drawing/Dimensions` around the geometry model proven in
-`D:\repos\svMCP\dim`:
+Rebuild `Drawing/Dimensions` around the domain model already proven in
+`D:\repos\svMCP\dim`.
+
+For `Dimensions`, the legacy `dim` project is the canonical source for:
+
+- domain vocabulary
+- geometry invariants
+- grouping semantics
+- line-first arrangement logic
+
+The current `src` implementation should adapt Tekla Open API data into that
+model, not invent a parallel model around API DTOs.
+
+## Canonical Domain Model
+
+The target internal model should follow `dim` and be centered on:
+
+- `DimensionItem`
+- `DimensionGroup`
+- `DimensionOperations`
+
+The core geometry/state of a dimension item is:
 
 - `DimensionType`
 - `Direction`
 - `TopDirection`
-- `ReferenceLine`
 - `LeadLineMain`
 - `LeadLineSecond`
+- `PointList`
+- `StartPoint`
+- `EndPoint`
+- `CenterPoint`
+- `LengthList`
+- `RealLengthList`
 
-The arrangement track should be line-first, not orientation-first and not
-bbox-first.
+The core geometry/state of a dimension group is:
+
+- `DimensionType`
+- shared `Direction`
+- shared/compatible `TopDirection`
+- compatible lead-line geometry
+- `MaximumDistance`
+- ordered `DimensionList`
+
+This is the model to preserve and extend.
+
+## Architectural Decision
+
+`DrawingDimensionInfo` and related read DTOs are public transport contracts.
+They are not the domain model.
+
+Target layering:
+
+`Tekla Open API snapshot -> DimensionItem/DimensionGroup domain -> arrangement/move/debug -> public DTOs/tools`
+
+Not acceptable as the long-term center of the module:
+
+- DTO-first modeling
+- bbox-first grouping
+- orientation-first grouping
+- public semantics derived mainly from convenience summaries
 
 ## Current State
 
@@ -25,49 +74,29 @@ Publicly supported today:
 - `delete_dimension`
 - `place_control_diagonals`
 
-Temporarily withdrawn during redesign:
-
-- `arrange_dimensions`
-- `get_dimension_arrangement_debug`
-
-Current read model already exposes:
-
-- dimension set id and Tekla object type
-- Tekla `dimensionType`
-- `viewId` / `viewType`
-- `viewScale`
-- `distance`
-- cheap summary `orientation`
-- set `bounds`
-- set `direction`
-- set `topDirection`
-- set `referenceLine`
-- segment start/end points
-- segment `bounds`
-- segment `textBounds` (still conservative: `null`)
-- segment `dimensionLine`
-- segment `leadLineMain`
-- segment `leadLineSecond`
-
-Experimental validation helpers now exist:
+Debug/validation helpers currently available:
 
 - `draw_dimension_text_boxes`
 - `get_dimension_text_placement_debug`
 
-These are debug-only tools for live drawing validation and are not yet the
-public `textBounds` contract.
+These helpers are for live validation only. They do not define the long-term
+domain model.
 
-Live validation already confirmed on the current assembly drawing:
+## Confirmed Findings
 
-- `viewScale` is read from the owning view
-- a paper gap of `5` becomes a drawing gap of `125` at `viewScale = 25`
-- spacing/debug now report both values explicitly
+Confirmed on the current implementation and live drawings:
 
-Live validation also confirmed an important current limitation:
+- `viewScale` is read correctly from the owning view
+- paper-gap semantics are valid:
+  - paper gap in
+  - drawing gap via `viewScale`
+- line-based grouping/spacing foundation already exists
 
-- native dimension value text can be moved manually in Tekla
-- the moved text position is not currently observable through the accessible
-  Tekla Open API surface we have validated so far
+Confirmed limitation for native dimension value text:
+
+- native dimension text can be moved manually in Tekla
+- the moved text point is not currently observable through the validated Tekla
+  Open API surface we have checked so far
 - checked sources:
   - `StraightDimension.GetRelatedObjects()`
   - `StraightDimensionSet.GetRelatedObjects()`
@@ -75,146 +104,242 @@ Live validation also confirmed an important current limitation:
   - drawing presentation model text primitives
   - reflected public/nonpublic members on `StraightDimension`,
     `StraightDimensionSet` and related attributes
-- consequence:
-  - debug text polygons can only use runtime text objects when Tekla exposes
-    them
-  - otherwise they must fall back to synthetic placement
+
+Consequence:
+
+- text polygon debug may use runtime text geometry when Tekla exposes it
+- otherwise text geometry remains synthetic fallback
+- this limitation must not distort the main domain redesign
 
 ## Design Principles
 
-- Do not invent public pseudo-types like `mixed_with_diagonals`.
-- Do not use `angled` as a catch-all domain bucket.
-- Treat `orientation` only as a cheap summary, not as the main grouping key.
-- Build groups from:
-  - same view
-  - same Tekla `dimensionType`
-  - parallel `direction`
-  - compatible `topDirection`
-  - compatible `referenceLine` / lead-line geometry
-- Prefer line geometry over bbox for spacing and overlap reasoning.
-- Target arrangement gaps in paper units first, then convert to drawing units via
-  `viewScale`.
-- Do not compare dimension text/line spacing directly in raw drawing units across
-  different view scales.
+- `dim` is the canonical domain reference.
+- Prefer porting domain logic from `dim` over inventing new abstractions.
+- Keep Tekla API adaptation separate from domain semantics.
+- Keep debug geometry separate from arrangement semantics.
+- Prefer line geometry over bbox for grouping and spacing.
+- Treat `orientation` as a summary only, never as the main grouping key.
+- Keep Tekla raw type and domain type separate when they diverge.
+
+## Target Internal Types
+
+### 1. Raw Snapshot Layer
+
+Purpose:
+
+- read Tekla API safely
+- normalize runtime data into stable internal snapshots
+
+Examples:
+
+- `TeklaDimensionSetSnapshot`
+- `TeklaDimensionSegmentSnapshot`
+
+This layer may contain:
+
+- Tekla ids
+- view metadata
+- raw measured points
+- raw distance
+- raw Tekla dimension type
+- raw text metadata if available
+
+### 2. Domain Layer
+
+Purpose:
+
+- represent dimensions the way `dim` does
+
+Canonical internal entities:
+
+- `DimensionItem`
+- `DimensionGroup`
+
+Rules:
+
+- `DimensionItem` is the main logical unit
+- a logical item may represent one segment or a chained dimension sequence
+- grouping must operate on `DimensionItem`, not directly on transport DTOs
+
+### 3. Operations Layer
+
+Purpose:
+
+- pure domain operations over items/groups
+
+Canonical direction:
+
+- port/translate `DimensionOperations` ideas from `dim`
+
+Examples:
+
+- grouping
+- alignment
+- combination
+- play adjustment
+- diagonal/control selection
+
+### 4. Public API Layer
+
+Purpose:
+
+- expose stable MCP-facing read/write contracts
+
+Rules:
+
+- DTOs are projections from the domain model
+- DTO structure must not dictate domain structure
+
+## Domain Semantics To Preserve From `dim`
+
+The following semantics are the main migration target:
+
+- group by `DimensionType`
+- group by parallel `Direction`
+- require compatible `TopDirection`
+- use `LeadLineMain` / `LeadLineSecond` as core placement geometry
+- preserve `LengthList` and `RealLengthList` distinction
+- support center-point based behavior where needed
+- keep `MaximumDistance` as a real geometric concept, not just a display metric
+
+## Explicit Non-Goals
+
+Do not center the redesign on:
+
+- `Bounds`
+- `TextBounds`
+- `Orientation`
+- `Absolute` / `Relative` / `RelativeAndAbsolute` as the main domain taxonomy
+
+Those may remain useful, but only as:
+
+- Tekla metadata
+- summaries
+- fallbacks
+- debug aids
 
 ## Phases
 
-### Phase 1: Read Model Aligned with `dim`
+### Phase 1: Make `dim` the Explicit Canonical Model
 
-Status: in progress.
+Status: next priority.
 
-Done:
+Done when:
 
-- read API split into `Query / Commands / Arrangement`
-- `get_drawing_dimensions` returns richer set-level and segment-level geometry
-- compile-validated measured-value spike exists through `StraightDimension.Value.GetUnformattedString()`
-- debug overlay path exists for text-polygon validation on live drawings
-- synthetic text-polygon placement already imports several `dim` ideas:
-  - frame size coefficients
-  - format-aware measured text
-  - side selection from `TopDirection` and placing direction
-  - tag-line offsets
-  - `dim`-style along-line fallback anchor
+- roadmap and code comments clearly state that `dim` is the canonical domain
+  reference
+- target internal entities are explicitly defined around `DimensionItem` /
+  `DimensionGroup`
+- current DTO-first compromises are documented as temporary
 
-Still missing:
+### Phase 2: Introduce a Real `DimensionItem`
 
-- runtime-validated text geometry for native dimension value text
-- stronger extraction of domain type semantics from Tekla attributes where needed
+Status: not started.
 
-Current finding:
+Implement an internal `DimensionItem` modeled after `dim`.
 
-- for ordinary native dimensions, the remaining mismatch is not just a formula
-  issue
-- the main blocker is that manual along-line drag of native dimension value
-  text is not currently exposed by the validated Tekla API surface
+It should carry at least:
 
-### Phase 2: Internal Line-Based Grouping
+- ids
+- `DimensionType`
+- `Direction`
+- `TopDirection`
+- `LeadLineMain`
+- `LeadLineSecond`
+- `PointList`
+- `LengthList`
+- `RealLengthList`
+- `CenterPoint`
+- source snapshot reference if needed
 
-Status: in progress.
+Done when:
 
-`DimensionGroup` should represent a family of dimensions sharing:
+- grouping no longer depends on `DimensionGroupMember` as the primary internal
+  concept
+- Tekla snapshot data can be projected into `DimensionItem`
 
-- `ViewId`
-- `ViewType`
-- Tekla `DimensionType`
+### Phase 3: Rebuild Grouping Around `DimensionItem`
+
+Status: not started.
+
+Replace DTO/member-first grouping with `dim`-style grouping semantics.
+
+Grouping must be based on:
+
+- same view
+- compatible domain `DimensionType`
 - parallel `Direction`
 - compatible `TopDirection`
-- overlapping / related `ReferenceLine` extents
+- compatible lead-line geometry
+- value compatibility where required by the scenario
 
-`DimensionGroupMember` should carry:
+Done when:
 
-- dimension id
-- original distance
-- reference line
-- lead lines
-- bounds as fallback only
+- `DimensionGroupFactory` effectively becomes a `DimensionItem -> DimensionGroup`
+  builder
+- grouping logic is explainable in `dim` terms
 
-### Phase 3: Line-Based Spacing / Debug
+### Phase 4: Port `DimensionOperations` Concepts
 
-Status: foundation in progress, public debug withdrawn.
+Status: partially present, needs redesign.
 
-Spacing must be computed from:
+The current arrangement/spacings code should be aligned with `dim` operations,
+especially for:
 
-- distance between parallel reference lines
-- ordering of items along the dimension direction
-- lead-line relations where needed
-- requested paper gap multiplied by `viewScale` for the owning view
+- align
+- combine
+- play-aware adjustment
+- same-line/near-line grouping transitions
 
-Debug output, when reintroduced, should explain:
+Done when:
 
-- why dimensions were grouped together
-- which line geometry drove spacing
-- what move is considered safe
-- when text geometry comes from runtime-observed text and when it comes from
-  synthetic fallback
+- arrangement logic talks in terms of items/groups, not transport DTO hacks
+- line-first spacing is expressed with domain entities
 
-Not acceptable for public debug:
+### Phase 5: Reproject Public Read API
 
-- internal invented classification labels
-- bbox-only overlap heuristics presented as dimension semantics
+Status: deferred until phases 2-4 stabilize.
 
-### Phase 4: Safe Arrange Engine
+`get_drawing_dimensions` should be generated from the domain model.
 
-Status: deferred until phases 1-3 are stable.
+The public response may still expose:
 
-First release of the redesigned arrange engine should support only:
+- Tekla dimension type
+- orientation
+- bounds
+- text debug info
 
-- parallel non-diagonal groups
-- confirmed `Distance <-> move` mapping
-- same-view operation
-- paper-gap contract:
-  - input gap is specified in paper units
-  - effective drawing gap = `paperGap * viewScale`
+But those are projections, not the model itself.
 
-Out of scope for first release:
+### Phase 6: Text Geometry As A Separate Track
 
-- diagonal control dimensions
-- broad catch-all handling of every remaining set
-- cross-view/global orchestration
+Status: secondary.
 
-### Phase 5: Return Public Arrange Tools
+Text geometry remains important, but must stay outside the core redesign.
 
-Return `arrange_dimensions` and `get_dimension_arrangement_debug` only when:
+Rules:
 
-- grouping is line-based
-- spacing is line-based
-- runtime move mapping is validated on live drawings
-- debug output uses understandable drafting terminology
+- native runtime text geometry is used when Tekla exposes it
+- otherwise text geometry remains synthetic
+- text geometry must not define grouping semantics
 
 ## Acceptance Criteria
 
-The redesign is ready to expose again when:
+The redesign is on track when:
 
-- `get_drawing_dimensions` contains the geometry needed to reproduce the
-  `dim` concepts without extra Tekla reads
-- grouping no longer depends primarily on `orientation`
-- spacing no longer depends primarily on bbox intervals
-- target gap semantics are consistent with drawing text readability:
-  paper gap in, drawing gap via `viewScale`
-- current assembly drawings produce intuitive horizontal / vertical /
-  diagonal-control cases without invented public labels
-- line-based grouping and spacing are covered by unit tests and verified on a
-  live drawing
+- internal code centers on `DimensionItem` and `DimensionGroup`
+- current DTO-first grouping layer is reduced or removed
+- grouping is explainable directly from `dim`
+- arrangement logic consumes domain entities, not raw API DTOs
+- `orientation` is only a summary
+- bbox logic is only fallback/debug
+- public APIs are projections from the domain model
+
+The redesign is ready to expose further arrange functionality when:
+
+- grouping is line-first and `dim`-aligned
+- spacing is line-first and `dim`-aligned
+- move mapping is validated on live drawings
 - text geometry status is explicit:
   - runtime-observed when Tekla exposes native text objects/position
   - synthetic fallback when Tekla does not expose them
