@@ -21,16 +21,27 @@ Implemented today:
 - `create_dimension`
 - `delete_dimension`
 - `place_control_diagonals`
+- additive read-model expansion for `get_drawing_dimensions`
+- internal `DimensionGroup` model
+- internal spacing analysis
+- internal arrangement planner
+- internal `AxisShift -> DistanceDelta` translator for `horizontal/vertical`
 
-Current read model is intentionally thin:
+Current read model already includes:
 
 - dimension set id
 - type
+- `viewId`
+- `viewType`
 - `StraightDimensionSet.Distance`
-- raw segment start/end points
+- `orientation`
+- dimension-set `bounds`
+- segment start/end points
+- segment `bounds`
+- segment `textBounds` (currently `null` until Tekla text geometry is validated)
 
-This is enough for manual scripts and control diagonals, but not enough for
-dimension arrangement algorithms.
+This is already enough to prototype grouping, overlap detection, spacing analysis
+and distance-adjustment planning without extra Tekla reads.
 
 ## Placement In Codebase
 
@@ -54,6 +65,8 @@ Do not move this into `Drawing/Geometry` for now.
 Dimension geometry is a consumer-oriented layer, not generic sheet geometry.
 
 ## Phase 1: Rich Read API
+
+Status: substantially complete.
 
 Extend `get_drawing_dimensions` first.
 
@@ -81,6 +94,8 @@ Primary purpose:
 - provide enough data for future arrangement algorithms
 
 ## Phase 1.5: Internal Grouping Model
+
+Status: complete as internal foundation.
 
 Before arrangement logic, introduce an internal dimension-group layer in
 `Drawing/Dimensions`.
@@ -120,7 +135,17 @@ Primary operations:
 - compute max distance band
 - determine whether groups can align / combine
 
+Implemented now:
+
+- `DimensionGroup`
+- `DimensionGroupMember`
+- `DimensionReferenceLine`
+- `DimensionGroupFactory`
+- internal `GetDimensionGroups(int? viewId)` usage-path
+
 ## Phase 2: Debug / Inspection Tools
+
+Status: not started.
 
 Before writing editing commands, add tools for observing dimensions.
 
@@ -142,6 +167,8 @@ Reason:
 
 ## Phase 3: Atomic Editing Operations
 
+Status: partially prepared, not exposed.
+
 Add manipulation APIs that do one thing each:
 
 - `set_dimension_distance`
@@ -154,7 +181,20 @@ Principle:
 
 - prefer explicit atomic operations over one “smart” mutation command
 
+Prepared now:
+
+- internal spacing analysis
+- internal arrangement planner
+- internal `AxisShift -> DistanceDelta` translation layer for `horizontal/vertical`
+
+Still missing before public editing workflow:
+
+- runtime apply-path over real `StraightDimensionSet.Distance`
+- public command surface
+
 ## Phase 4: Arrangement Algorithms
+
+Status: foundation in progress.
 
 Only after phases 1-3.
 
@@ -169,6 +209,17 @@ Expected first algorithm scope:
 - straight dimensions only
 - move by distance/offset first
 - no cross-view orchestration initially
+
+Implemented now:
+
+- same-group spacing analysis with signed distances
+- overlap detection (`Distance < 0`)
+- sequential move planning with cumulative shift propagation
+
+Next step:
+
+- connect planner output to runtime `MoveDimension` apply-path
+- expose first narrow `arrange_dimensions` workflow for `horizontal/vertical`
 
 Defer to a later roadmap item:
 
@@ -218,14 +269,20 @@ Current spike status:
 
 ## Implementation Order
 
+Done:
+
 1. Expand DTOs for dimensions
-2. Spike measured-value access for `StraightDimension` / `StraightDimensionSet`
+2. Spike measured-value access for `StraightDimension`
 3. Extend `GetDimensions()` to populate richer geometry/properties
 4. Expose richer JSON through bridge/tool layer
 5. Add internal `DimensionGroup` model
-6. Add debug overlay for dimensions and groups
-7. Add atomic edit commands
-8. Add `arrange_dimensions`
+6. Add spacing analysis / planner / distance-translation foundation
+
+Next:
+
+7. Add debug overlay for dimensions and groups
+8. Add runtime apply-path for distance adjustments
+9. Add `arrange_dimensions`
 
 ## Non-Goals For The First Iteration
 
@@ -245,3 +302,8 @@ Phase 1 is complete when:
 - measured value is either implemented after the spike or explicitly omitted from DTOs for now
 - output is sufficient to prototype overlap detection without extra Tekla calls
 - internal data is sufficient to build `DimensionGroup` without more Tekla reads
+
+Current assessment:
+
+- all acceptance criteria above are effectively met except runtime-confirmed text geometry
+- `measured value` is still intentionally omitted from DTOs, but direct access path is compile-validated

@@ -30,7 +30,7 @@
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
-| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры (`place_control_diagonals` пока experimental) |
+| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich read API уже есть, `place_control_diagonals` пока experimental |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
@@ -51,6 +51,13 @@
 ## К реализации
 
 ### Размеры
+- `get_drawing_dimensions` уже расширен: `viewId/viewType`, `orientation`, bbox dimension set и segment bounds
+- internal foundation уже сделан:
+  - `DimensionGroup`
+  - spacing analysis
+  - arrangement planner
+  - `AxisShift -> DistanceDelta` translator для `horizontal/vertical`
+- следующий шаг: связать planner с runtime apply-path и вывести первый `arrange_dimensions`
 - `add_dimension_point` — добавить точку в цепочку. Workaround: `delete` + `create` с новым набором точек
 - Cumulative тип: сохранить стиль в Tekla UI → `create_dimension(..., attributesFile="cumulative")`
 - `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
