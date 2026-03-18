@@ -207,6 +207,27 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(3, group.Members.Count);
     }
 
+    [Fact]
+    public void BuildGroups_DoesNotMergeSharedPointAcrossDifferentLineBands()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Relative", "horizontal", 60, 1, 0, -1, 0, -1, 0, 100, 220, 100, 0, 220, 5);
+
+        first.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1400, EndX = 100, EndY = -1400 };
+        first.Segments[0].DimensionLine = first.ReferenceLine;
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1400 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1400 };
+
+        second.ReferenceLine = new DrawingLineInfo { StartX = 100, StartY = -2000, EndX = 220, EndY = -2000 };
+        second.Segments[0].DimensionLine = second.ReferenceLine;
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -2000 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 220, StartY = 0, EndX = 220, EndY = -2000 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second]);
+
+        Assert.Equal(2, groups.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,

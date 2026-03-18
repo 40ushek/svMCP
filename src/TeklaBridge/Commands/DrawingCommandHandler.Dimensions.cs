@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Reflection;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaBridge.Commands;
@@ -13,6 +14,9 @@ internal sealed partial class DrawingCommandHandler
         {
             case "get_drawing_dimensions":
                 return HandleGetDrawingDimensions(api, args);
+
+            case "get_dimension_groups_debug":
+                return HandleGetDimensionGroupsDebug(api, args);
 
             case "move_dimension":
                 return HandleMoveDimension(api, args);
@@ -36,6 +40,72 @@ internal sealed partial class DrawingCommandHandler
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
         var result = api.GetDimensions(viewId);
         WriteGetDimensionsResult(result);
+        return true;
+    }
+
+    private bool HandleGetDimensionGroupsDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionGroups", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (method == null)
+        {
+            WriteError("Internal GetDimensionGroups() was not found.");
+            return true;
+        }
+
+        var groups = method.Invoke(api, new object?[] { viewId }) as System.Collections.IEnumerable;
+        if (groups == null)
+        {
+            WriteError("Internal GetDimensionGroups() returned null.");
+            return true;
+        }
+
+        static object? SerializeLine(DrawingLineInfo? line)
+        {
+            if (line == null)
+                return null;
+
+            return new
+            {
+                startX = line.StartX,
+                startY = line.StartY,
+                endX = line.EndX,
+                endY = line.EndY,
+                length = line.Length
+            };
+        }
+
+        static object? SerializeBounds(DrawingBoundsInfo? bounds)
+        {
+            if (bounds == null)
+                return null;
+
+            return new
+            {
+                minX = bounds.MinX,
+                minY = bounds.MinY,
+                maxX = bounds.MaxX,
+                maxY = bounds.MaxY,
+                width = bounds.Width,
+                height = bounds.Height
+            };
+        }
+
+        var payload = groups.Cast<object>().Select(group => new
+        {
+            viewId = group.GetType().GetProperty("ViewId")?.GetValue(group),
+            viewType = group.GetType().GetProperty("ViewType")?.GetValue(group),
+            dimensionType = group.GetType().GetProperty("DimensionType")?.GetValue(group),
+            orientation = group.GetType().GetProperty("Orientation")?.GetValue(group),
+            topDirection = group.GetType().GetProperty("TopDirection")?.GetValue(group),
+            direction = SerializeDirection(group.GetType().GetProperty("Direction")?.GetValue(group)),
+            referenceLine = SerializeLine(group.GetType().GetProperty("ReferenceLine")?.GetValue(group) as DrawingLineInfo),
+            bounds = SerializeBounds(group.GetType().GetProperty("Bounds")?.GetValue(group) as DrawingBoundsInfo),
+            maximumDistance = group.GetType().GetProperty("MaximumDistance")?.GetValue(group),
+            members = SerializeMembers(group.GetType().GetProperty("Members")?.GetValue(group) as System.Collections.IEnumerable)
+        });
+
+        WriteJson(new { groups = payload });
         return true;
     }
 
@@ -233,5 +303,76 @@ internal sealed partial class DrawingCommandHandler
             deleted = result.Deleted,
             dimensionId = result.DimensionId
         });
+    }
+
+    private static object? SerializeDirection(object? direction)
+    {
+        if (direction == null)
+            return null;
+
+        var type = direction.GetType();
+        var xField = type.GetField("Item1");
+        var yField = type.GetField("Item2");
+        var xProp = type.GetProperty("X");
+        var yProp = type.GetProperty("Y");
+        var x = xProp?.GetValue(direction) ?? xField?.GetValue(direction);
+        var y = yProp?.GetValue(direction) ?? yField?.GetValue(direction);
+        return new { x, y };
+    }
+
+    private static object SerializeMembers(System.Collections.IEnumerable? members)
+    {
+        if (members == null)
+            return System.Array.Empty<object>();
+
+        return members.Cast<object>().Select(member => new
+        {
+            dimensionId = member.GetType().GetProperty("DimensionId")?.GetValue(member),
+            segmentId = member.GetType().GetProperty("SegmentId")?.GetValue(member),
+            startX = member.GetType().GetProperty("StartX")?.GetValue(member),
+            startY = member.GetType().GetProperty("StartY")?.GetValue(member),
+            endX = member.GetType().GetProperty("EndX")?.GetValue(member),
+            endY = member.GetType().GetProperty("EndY")?.GetValue(member),
+            distance = member.GetType().GetProperty("Distance")?.GetValue(member),
+            directionX = member.GetType().GetProperty("DirectionX")?.GetValue(member),
+            directionY = member.GetType().GetProperty("DirectionY")?.GetValue(member),
+            topDirection = member.GetType().GetProperty("TopDirection")?.GetValue(member),
+            sortKey = member.GetType().GetProperty("SortKey")?.GetValue(member),
+            bounds = SerializeBounds(member.GetType().GetProperty("Bounds")?.GetValue(member) as DrawingBoundsInfo),
+            referenceLine = SerializeLine(member.GetType().GetProperty("ReferenceLine")?.GetValue(member) as DrawingLineInfo),
+            leadLineMain = SerializeLine(member.GetType().GetProperty("LeadLineMain")?.GetValue(member) as DrawingLineInfo),
+            leadLineSecond = SerializeLine(member.GetType().GetProperty("LeadLineSecond")?.GetValue(member) as DrawingLineInfo)
+        });
+
+        static object? SerializeLine(DrawingLineInfo? line)
+        {
+            if (line == null)
+                return null;
+
+            return new
+            {
+                startX = line.StartX,
+                startY = line.StartY,
+                endX = line.EndX,
+                endY = line.EndY,
+                length = line.Length
+            };
+        }
+
+        static object? SerializeBounds(DrawingBoundsInfo? bounds)
+        {
+            if (bounds == null)
+                return null;
+
+            return new
+            {
+                minX = bounds.MinX,
+                minY = bounds.MinY,
+                maxX = bounds.MaxX,
+                maxY = bounds.MaxY,
+                width = bounds.Width,
+                height = bounds.Height
+            };
+        }
     }
 }

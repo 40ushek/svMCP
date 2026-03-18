@@ -8,6 +8,7 @@ internal static class DimensionGroupFactory
     private const double ParallelDotTolerance = 0.995;
     private const double ExtentOverlapTolerance = 3.0;
     private const double LineCollinearityTolerance = 3.0;
+    private const double LineBandTolerance = 3.0;
     private const double SharedPointTolerance = 0.5;
 
     public static List<DimensionGroup> BuildGroups(GetDimensionsResult result) => BuildGroups(result.Dimensions);
@@ -132,6 +133,9 @@ internal static class DimensionGroupFactory
         if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
             return false;
 
+        if (!HaveCompatibleLineBand(left, right, leftDirection ?? rightDirection))
+            return false;
+
         if (HaveSharedMeasuredPoint(left, right))
             return true;
 
@@ -139,6 +143,22 @@ internal static class DimensionGroupFactory
             return false;
 
         return HaveCompatibleExtents(left, right, leftDirection ?? rightDirection);
+    }
+
+    private static bool HaveCompatibleLineBand(
+        DimensionGroupMember left,
+        DimensionGroupMember right,
+        (double X, double Y)? direction)
+    {
+        if (!direction.HasValue)
+            return true;
+
+        var leftOffset = TryGetLineOffset(left.ReferenceLine, direction.Value);
+        var rightOffset = TryGetLineOffset(right.ReferenceLine, direction.Value);
+        if (!leftOffset.HasValue || !rightOffset.HasValue)
+            return true;
+
+        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= LineBandTolerance;
     }
 
     private static bool HaveSharedMeasuredPoint(DimensionGroupMember left, DimensionGroupMember right)
@@ -284,6 +304,16 @@ internal static class DimensionGroupFactory
     {
         return System.Math.Abs(leftX - rightX) <= SharedPointTolerance
             && System.Math.Abs(leftY - rightY) <= SharedPointTolerance;
+    }
+
+    private static double? TryGetLineOffset(DrawingLineInfo? line, (double X, double Y) direction)
+    {
+        if (line == null)
+            return null;
+
+        var normalX = -direction.Y;
+        var normalY = direction.X;
+        return System.Math.Round(Project(line.StartX, line.StartY, normalX, normalY), 3);
     }
 
     private static double DistancePointToInfiniteLine(double pointX, double pointY, DrawingLineInfo line)
