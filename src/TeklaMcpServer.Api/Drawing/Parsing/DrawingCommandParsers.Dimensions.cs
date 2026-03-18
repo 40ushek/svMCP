@@ -112,6 +112,33 @@ public static partial class DrawingCommandParsers
         });
     }
 
+    public static GetDimensionArrangementDebugParseResult ParseGetDimensionArrangementDebugRequest(string[] args)
+    {
+        int? viewId = null;
+        if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+        {
+            if (!int.TryParse(args[1], out var parsedViewId))
+                return GetDimensionArrangementDebugParseResult.Fail("viewId must be an integer");
+            viewId = parsedViewId;
+        }
+
+        var targetGap = 5.0;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap))
+                return GetDimensionArrangementDebugParseResult.Fail("targetGap must be a number");
+
+            if (targetGap < 0)
+                return GetDimensionArrangementDebugParseResult.Fail("targetGap must be >= 0");
+        }
+
+        return GetDimensionArrangementDebugParseResult.Success(new GetDimensionArrangementDebugRequest
+        {
+            ViewId = viewId,
+            TargetGap = targetGap
+        });
+    }
+
     public static DeleteDimensionParseResult ParseDeleteDimensionRequest(string[] args)
     {
         if (args.Length < 2 || !int.TryParse(args[1], out var dimensionId))

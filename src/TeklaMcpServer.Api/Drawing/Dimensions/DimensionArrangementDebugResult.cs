@@ -1,0 +1,60 @@
+using System.Collections.Generic;
+
+namespace TeklaMcpServer.Api.Drawing;
+
+public sealed class DimensionArrangementDebugGroupInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public int MemberCount { get; set; }
+    public double MaximumDistance { get; set; }
+    public DrawingBoundsInfo? Bounds { get; set; }
+}
+
+public sealed class DimensionArrangementDebugSpacingPair
+{
+    public int FirstDimensionId { get; set; }
+    public int SecondDimensionId { get; set; }
+    public double Distance { get; set; }
+    public bool IsOverlap { get; set; }
+}
+
+public sealed class DimensionArrangementDebugSpacingInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public bool HasOverlaps { get; set; }
+    public double? MinimumDistance { get; set; }
+    public List<DimensionArrangementDebugSpacingPair> Pairs { get; } = [];
+}
+
+public sealed class DimensionArrangementDebugProposal
+{
+    public int DimensionId { get; set; }
+    public double AxisShift { get; set; }
+    public double DistanceDelta { get; set; }
+    public bool CanApply { get; set; }
+    public string Reason { get; set; } = string.Empty;
+}
+
+public sealed class DimensionArrangementDebugPlanInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public int ProposalCount { get; set; }
+    public bool HasApplicableChanges { get; set; }
+    public List<DimensionArrangementDebugProposal> Proposals { get; } = [];
+}
+
+public sealed class DimensionArrangementDebugResult
+{
+    public int ViewFilteredTotal { get; set; }
+    public int GroupCount { get; set; }
+    public double TargetGap { get; set; }
+    public List<DimensionArrangementDebugGroupInfo> Groups { get; } = [];
+    public List<DimensionArrangementDebugSpacingInfo> Spacing { get; } = [];
+    public List<DimensionArrangementDebugPlanInfo> Plans { get; } = [];
+}

@@ -6,10 +6,11 @@ public interface IDrawingDimensionsApi
     /// Returns all StraightDimensionSet objects from the active drawing (or a specific view).
     /// Each dimension set contains one or more segments with computed distances (mm).
     /// </summary>
-    GetDimensionsResult    GetDimensions(int? viewId);
+    GetDimensionsResult GetDimensions(int? viewId);
+    DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap);
     ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap);
-    MoveDimensionResult    MoveDimension(int dimensionId, double delta);
-    CreateDimensionResult  CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
+    MoveDimensionResult MoveDimension(int dimensionId, double delta);
+    CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);
     PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile);
 }

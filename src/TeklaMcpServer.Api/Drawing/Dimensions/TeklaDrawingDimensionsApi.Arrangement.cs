@@ -8,6 +8,94 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    public DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
+    {
+        if (targetGap < 0)
+            throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
+
+        var dimensions = GetDimensions(viewId);
+        var groups = DimensionGroupFactory.BuildGroups(dimensions);
+        var spacing = groups.Select(DimensionGroupSpacingAnalyzer.Analyze).ToList();
+        var plans = groups.Select(group =>
+        {
+            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(group, targetGap);
+            return DimensionDistanceAdjustmentTranslator.BuildPlan(group, axisPlan);
+        }).ToList();
+
+        var result = new DimensionArrangementDebugResult
+        {
+            ViewFilteredTotal = dimensions.Total,
+            GroupCount = groups.Count,
+            TargetGap = targetGap
+        };
+
+        foreach (var group in groups)
+        {
+            result.Groups.Add(new DimensionArrangementDebugGroupInfo
+            {
+                ViewId = group.ViewId,
+                ViewType = group.ViewType,
+                Orientation = group.Orientation,
+                MemberCount = group.Members.Count,
+                MaximumDistance = group.MaximumDistance,
+                Bounds = group.Bounds
+            });
+        }
+
+        foreach (var analysis in spacing)
+        {
+            var info = new DimensionArrangementDebugSpacingInfo
+            {
+                ViewId = analysis.ViewId,
+                ViewType = analysis.ViewType,
+                Orientation = analysis.Orientation,
+                HasOverlaps = analysis.HasOverlaps,
+                MinimumDistance = analysis.MinimumDistance
+            };
+
+            foreach (var pair in analysis.Pairs)
+            {
+                info.Pairs.Add(new DimensionArrangementDebugSpacingPair
+                {
+                    FirstDimensionId = pair.FirstDimensionId,
+                    SecondDimensionId = pair.SecondDimensionId,
+                    Distance = pair.Distance,
+                    IsOverlap = pair.IsOverlap
+                });
+            }
+
+            result.Spacing.Add(info);
+        }
+
+        foreach (var plan in plans)
+        {
+            var info = new DimensionArrangementDebugPlanInfo
+            {
+                ViewId = plan.ViewId,
+                ViewType = plan.ViewType,
+                Orientation = plan.Orientation,
+                ProposalCount = plan.Proposals.Count,
+                HasApplicableChanges = plan.HasApplicableChanges
+            };
+
+            foreach (var proposal in plan.Proposals)
+            {
+                info.Proposals.Add(new DimensionArrangementDebugProposal
+                {
+                    DimensionId = proposal.DimensionId,
+                    AxisShift = proposal.AxisShift,
+                    DistanceDelta = proposal.DistanceDelta,
+                    CanApply = proposal.CanApply,
+                    Reason = proposal.Reason
+                });
+            }
+
+            result.Plans.Add(info);
+        }
+
+        return result;
+    }
+
     public ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
     {
         if (targetGap < 0)

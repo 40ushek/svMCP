@@ -17,6 +17,7 @@ clearly reusable by other drawing modules.
 Implemented today:
 
 - `get_drawing_dimensions`
+- `get_dimension_arrangement_debug`
 - `move_dimension`
 - `create_dimension`
 - `delete_dimension`
@@ -81,6 +82,10 @@ Target output per dimension set:
   - horizontal
   - vertical
   - angled
+- terminology follow-up:
+  - current `angled` is only a temporary catch-all for non-axis-aligned / composite dimension sets
+  - rename it to a clearer public label such as `complex` or `composite`
+  - avoid implying that these are necessarily true diagonal/sloped dimensions
 - direction / normal vector if available
 - segment start/end points
 - segment bbox
@@ -145,13 +150,14 @@ Implemented now:
 
 ## Phase 2: Debug / Inspection Tools
 
-Status: not started.
+Status: partially started.
 
 Before writing editing commands, add tools for observing dimensions.
 
 Candidate tools:
 
 - `get_dimension_debug`
+- `get_dimension_arrangement_debug`
 - `draw_dimension_debug_overlay`
 - optional tool to show:
   - dimension line bbox
@@ -165,9 +171,18 @@ Reason:
 - overlay will also make Phase 3 editing APIs much easier to verify
 - overlay should also be able to visualize `DimensionGroup` / `ReferenceLine`
 
+Implemented now:
+
+- read-only `get_dimension_arrangement_debug`
+- returns:
+  - grouped dimensions by `viewId/viewType/orientation`
+  - spacing analysis
+  - current planner proposals
+- useful for validating live drawings before enabling broader runtime moves
+
 ## Phase 3: Atomic Editing Operations
 
-Status: partially prepared, not exposed.
+Status: partially prepared.
 
 Add manipulation APIs that do one thing each:
 
@@ -192,6 +207,14 @@ Still missing before public editing workflow:
 - runtime apply-path over real `StraightDimensionSet.Distance`
 - public command surface
 
+Current public state:
+
+- `arrange_dimensions` is exposed narrowly
+- current runtime scope remains intentionally limited to `horizontal/vertical`
+- non-axis-aligned / composite sets are still skipped
+- live debug confirms the current assembly-drawing bottleneck is usually not lone `horizontal/vertical` dimensions
+- the real unresolved runtime case is overlapping `complex/angled` groups
+
 ## Phase 4: Arrangement Algorithms
 
 Status: foundation in progress.
@@ -215,11 +238,16 @@ Implemented now:
 - same-group spacing analysis with signed distances
 - overlap detection (`Distance < 0`)
 - sequential move planning with cumulative shift propagation
+- live debug on real drawings shows:
+  - lone `horizontal/vertical` groups often produce no proposals
+  - the dense overlap problems are concentrated in the current `angled` catch-all bucket
 
 Next step:
 
-- connect planner output to runtime `MoveDimension` apply-path
-- expose first narrow `arrange_dimensions` workflow for `horizontal/vertical`
+- add debug overlay for dimensions / groups
+- expand arrangement beyond same-orientation-only groups where useful
+- decide how `complex/angled` groups should be moved safely at runtime
+- replace temporary `angled` label with clearer public terminology
 
 Defer to a later roadmap item:
 
@@ -281,8 +309,9 @@ Done:
 Next:
 
 7. Add debug overlay for dimensions and groups
-8. Add runtime apply-path for distance adjustments
-9. Add `arrange_dimensions`
+8. Define safe runtime strategy for current `complex/angled` dimension sets
+9. Expand `arrange_dimensions` beyond the first narrow runtime scope
+10. Replace temporary `angled` naming with clearer public orientation/classification terminology
 
 ## Non-Goals For The First Iteration
 

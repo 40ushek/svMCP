@@ -7,6 +7,32 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
+    [McpServerTool, Description("Inspect dimension arrangement internals on the active drawing: groups, spacing analysis and current planner proposals. Read-only debug tool.")]
+    public static string GetDimensionArrangementDebug(
+        [Description("Optional drawing view ID. Omit to inspect dimensions across the active drawing sheet.")] int? viewId = null,
+        [Description("Target gap between neighboring dimensions in mm used by the planner. Default: 5.")] double targetGap = 5.0)
+    {
+        if (targetGap < 0)
+            return "Error: 'targetGap' must be >= 0.";
+
+        var json = RunBridge(
+            "get_dimension_arrangement_debug",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            targetGap.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Arrange straight dimensions by increasing their spacing within one drawing view or the whole active drawing. Current narrow scope: straight horizontal/vertical dimensions only; angled dimensions are skipped with explicit reasons.")]
     public static string ArrangeDimensions(
         [Description("Optional drawing view ID. Omit to arrange dimensions across the active drawing sheet.")] int? viewId = null,
