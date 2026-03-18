@@ -3,6 +3,11 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class DimensionGroupMember
 {
     public int DimensionId { get; set; }
+    public int SegmentId { get; set; }
+    public double StartX { get; set; }
+    public double StartY { get; set; }
+    public double EndX { get; set; }
+    public double EndY { get; set; }
     public double Distance { get; set; }
     public double SortKey { get; set; }
     public double DirectionX { get; set; }

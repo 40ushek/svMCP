@@ -87,6 +87,126 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(2, group.Members.Count);
     }
 
+    [Fact]
+    public void BuildGroups_DoesNotMergeParallelDimensionsWithoutCollinearLeadLines()
+    {
+        var groups = DimensionGroupFactory.BuildGroups(
+        [
+            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
+            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 20, 120, 20, 15, 120, 25)
+        ]);
+
+        Assert.Equal(2, groups.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_MergesParallelDimensionsWhenLeadLinesAreCollinear()
+    {
+        var groups = DimensionGroupFactory.BuildGroups(
+        [
+            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
+            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 100, 200, 100, 15, 200, 25)
+        ]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_DoesNotSplitOnlyBecauseTeklaDimensionTypeDiffers()
+    {
+        var groups = DimensionGroupFactory.BuildGroups(
+        [
+            CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
+            CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 45, 1, 0, -1, 0, -1, 100, 200, 100, 15, 200, 25)
+        ]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_SplitsSingleSetIntoLineLevelMembers()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5);
+        dimension.Segments.Add(new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 0,
+            StartY = 20,
+            EndX = 100,
+            EndY = 20,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = 60,
+                EndX = 100,
+                EndY = 60
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = 20,
+                EndX = 0,
+                EndY = 60
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 20,
+                EndX = 100,
+                EndY = 60
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 0,
+                MinY = 60,
+                MaxX = 100,
+                MaxY = 60
+            }
+        });
+
+        var groups = DimensionGroupFactory.BuildGroups([dimension]);
+
+        Assert.Equal(2, groups.Count);
+        Assert.All(groups, group => Assert.Single(group.Members));
+        Assert.Contains(groups, group => Assert.Equal(1002, Assert.Single(group.Members).SegmentId));
+    }
+
+    [Fact]
+    public void BuildGroups_MergesChainSegmentsThatShareMeasuredPoint()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 220, 100, 0, 220, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 55 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 220, StartY = 0, EndX = 220, EndY = 55 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_MergesTransitiveChainOfSegments()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 220, 100, 0, 220, 5);
+        var third = CreateDimension(3, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 220, 360, 220, 0, 360, 5);
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second, third]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(3, group.Members.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,

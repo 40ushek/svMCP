@@ -7,25 +7,18 @@ internal static class DimensionGroupFactory
 {
     private const double ParallelDotTolerance = 0.995;
     private const double ExtentOverlapTolerance = 3.0;
+    private const double LineCollinearityTolerance = 3.0;
+    private const double SharedPointTolerance = 0.5;
 
     public static List<DimensionGroup> BuildGroups(GetDimensionsResult result) => BuildGroups(result.Dimensions);
 
     public static List<DimensionGroup> BuildGroups(IEnumerable<DrawingDimensionInfo> dimensions)
     {
-        var groups = new List<DimensionGroup>();
+        var members = dimensions
+            .SelectMany(CreateMembers)
+            .ToList();
 
-        foreach (var dimension in dimensions)
-        {
-            var group = groups.FirstOrDefault(existing => CanAddToGroup(existing, dimension));
-            if (group == null)
-            {
-                group = CreateGroup(dimension);
-                groups.Add(group);
-                continue;
-            }
-
-            AddDimension(group, dimension);
-        }
+        var groups = BuildConnectedGroups(members);
 
         foreach (var group in groups)
         {
@@ -36,99 +29,169 @@ internal static class DimensionGroupFactory
         return groups;
     }
 
-    private static DimensionGroup CreateGroup(DrawingDimensionInfo dimension)
+    private static List<DimensionGroup> BuildConnectedGroups(IReadOnlyList<DimensionGroupMember> members)
     {
+        var groups = new List<DimensionGroup>();
+        var visited = new bool[members.Count];
+
+        for (var i = 0; i < members.Count; i++)
+        {
+            if (visited[i])
+                continue;
+
+            var component = new List<DimensionGroupMember>();
+            var queue = new Queue<int>();
+            queue.Enqueue(i);
+            visited[i] = true;
+
+            while (queue.Count > 0)
+            {
+                var index = queue.Dequeue();
+                var current = members[index];
+                component.Add(current);
+
+                for (var candidateIndex = 0; candidateIndex < members.Count; candidateIndex++)
+                {
+                    if (visited[candidateIndex])
+                        continue;
+
+                    if (!CanGroupMembersTogether(current, members[candidateIndex]))
+                        continue;
+
+                    visited[candidateIndex] = true;
+                    queue.Enqueue(candidateIndex);
+                }
+            }
+
+            groups.Add(CreateGroup(component));
+        }
+
+        return groups;
+    }
+
+    private static IEnumerable<DimensionGroupMember> CreateMembers(DrawingDimensionInfo dimension)
+    {
+        var segmentMembers = dimension.Segments
+            .Select(segment => CreateMember(dimension, segment))
+            .Where(static member => member != null)
+            .Cast<DimensionGroupMember>()
+            .ToList();
+
+        if (segmentMembers.Count > 0)
+            return segmentMembers;
+
+        return new[] { CreateFallbackMember(dimension) };
+    }
+
+    private static DimensionGroup CreateGroup(IReadOnlyList<DimensionGroupMember> members)
+    {
+        var member = members[0];
+        var dimension = member.Dimension;
         var group = new DimensionGroup
         {
             ViewId = dimension.ViewId,
             ViewType = dimension.ViewType ?? string.Empty,
-            DimensionType = dimension.DimensionType ?? string.Empty,
-            Orientation = DetermineGroupOrientation(dimension),
-            TopDirection = dimension.TopDirection,
-            Direction = TryGetDimensionDirection(dimension),
-            ReferenceLine = dimension.ReferenceLine == null
-                ? null
-                : TeklaDrawingDimensionsApi.CreateLineInfo(
-                    dimension.ReferenceLine.StartX,
-                    dimension.ReferenceLine.StartY,
-                    dimension.ReferenceLine.EndX,
-                    dimension.ReferenceLine.EndY)
+            DimensionType = ResolveGroupDimensionType(members),
+            Orientation = DetermineGroupOrientation(member),
+            TopDirection = member.TopDirection,
+            Direction = TryGetMemberDirection(member),
+            ReferenceLine = CopyLine(member.ReferenceLine)
         };
 
-        AddDimension(group, dimension);
+        foreach (var groupMember in members)
+            AddMember(group, groupMember);
+
         return group;
     }
 
-    private static void AddDimension(DimensionGroup group, DrawingDimensionInfo dimension)
+    private static void AddMember(DimensionGroup group, DimensionGroupMember member)
     {
-        var member = new DimensionGroupMember
-        {
-            DimensionId = dimension.Id,
-            Distance = dimension.Distance,
-            DirectionX = dimension.DirectionX,
-            DirectionY = dimension.DirectionY,
-            TopDirection = dimension.TopDirection,
-            Bounds = dimension.Bounds ?? TeklaDrawingDimensionsApi.CombineBounds(dimension.Segments.Select(static s => s.Bounds)),
-            ReferenceLine = CopyLine(dimension.ReferenceLine),
-            LeadLineMain = CopyPrimaryLeadLine(dimension),
-            LeadLineSecond = CopySecondaryLeadLine(dimension),
-            Dimension = dimension
-        };
-
         member.SortKey = DetermineSortKey(member, group.Direction);
         group.Members.Add(member);
 
         if (group.Direction == null)
-            group.Direction = TryGetDimensionDirection(dimension);
+            group.Direction = TryGetMemberDirection(member);
 
         if (group.ReferenceLine == null && member.ReferenceLine != null)
             group.ReferenceLine = CopyLine(member.ReferenceLine);
     }
 
-    private static bool CanAddToGroup(DimensionGroup group, DrawingDimensionInfo dimension)
+    private static bool CanGroupMembersTogether(DimensionGroupMember left, DimensionGroupMember right)
     {
-        if (group.ViewId != dimension.ViewId)
+        if (left.Dimension.ViewId != right.Dimension.ViewId)
             return false;
 
-        if (!string.Equals(group.ViewType, dimension.ViewType ?? string.Empty, System.StringComparison.Ordinal))
+        if (!string.Equals(left.Dimension.ViewType ?? string.Empty, right.Dimension.ViewType ?? string.Empty, System.StringComparison.Ordinal))
             return false;
 
-        if (!string.Equals(group.DimensionType, dimension.DimensionType ?? string.Empty, System.StringComparison.Ordinal))
+        if (left.TopDirection != 0 && right.TopDirection != 0 && left.TopDirection != right.TopDirection)
             return false;
 
-        if (group.TopDirection != 0 && dimension.TopDirection != 0 && group.TopDirection != dimension.TopDirection)
+        var leftDirection = TryGetMemberDirection(left);
+        var rightDirection = TryGetMemberDirection(right);
+        if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
             return false;
 
-        var groupDirection = group.Direction;
-        var dimensionDirection = TryGetDimensionDirection(dimension);
-        if (groupDirection.HasValue && dimensionDirection.HasValue && !AreParallel(groupDirection.Value, dimensionDirection.Value))
+        if (HaveSharedMeasuredPoint(left, right))
+            return true;
+
+        if (!HaveCompatibleLeadLines(left, right))
             return false;
 
-        return HaveCompatibleExtents(group, dimension, groupDirection ?? dimensionDirection);
+        return HaveCompatibleExtents(left, right, leftDirection ?? rightDirection);
+    }
+
+    private static bool HaveSharedMeasuredPoint(DimensionGroupMember left, DimensionGroupMember right)
+    {
+        return PointsEqual(left.StartX, left.StartY, right.StartX, right.StartY) ||
+               PointsEqual(left.StartX, left.StartY, right.EndX, right.EndY) ||
+               PointsEqual(left.EndX, left.EndY, right.StartX, right.StartY) ||
+               PointsEqual(left.EndX, left.EndY, right.EndX, right.EndY);
+    }
+
+    private static bool HaveCompatibleLeadLines(DimensionGroupMember left, DimensionGroupMember right)
+    {
+        var leftLeadLines = new[] { CopyLine(left.LeadLineMain), CopyLine(left.LeadLineSecond) }
+            .Where(static line => line != null)
+            .Cast<DrawingLineInfo>()
+            .ToList();
+        var rightLeadLines = new[] { CopyLine(right.LeadLineMain), CopyLine(right.LeadLineSecond) }
+            .Where(static line => line != null)
+            .Cast<DrawingLineInfo>()
+            .ToList();
+
+        if (leftLeadLines.Count == 0 || rightLeadLines.Count == 0)
+            return true;
+
+        return leftLeadLines.Any(leftLine => rightLeadLines.Any(rightLine => AreCollinear(leftLine, rightLine)));
     }
 
     private static bool HaveCompatibleExtents(
-        DimensionGroup group,
-        DrawingDimensionInfo dimension,
+        DimensionGroupMember left,
+        DimensionGroupMember right,
         (double X, double Y)? direction)
     {
         if (!direction.HasValue)
             return true;
 
-        var groupExtent = TryGetExtent(group.Members.Select(static m => m.ReferenceLine), direction.Value)
-            ?? TryGetExtent(group.Members.Select(static m => m.Bounds), direction.Value);
-        var dimensionExtent = TryGetExtent(
-            dimension.ReferenceLine == null ? [] : new[] { dimension.ReferenceLine },
+        var leftExtent = TryGetExtent(
+            left.ReferenceLine == null ? [] : new[] { left.ReferenceLine },
             direction.Value)
             ?? TryGetExtent(
-                dimension.Bounds == null ? [] : new[] { dimension.Bounds },
+                left.Bounds == null ? [] : new[] { left.Bounds },
+                direction.Value);
+        var rightExtent = TryGetExtent(
+            right.ReferenceLine == null ? [] : new[] { right.ReferenceLine },
+            direction.Value)
+            ?? TryGetExtent(
+                right.Bounds == null ? [] : new[] { right.Bounds },
                 direction.Value);
 
-        if (groupExtent == null || dimensionExtent == null)
+        if (leftExtent == null || rightExtent == null)
             return true;
 
-        return groupExtent.Value.Max + ExtentOverlapTolerance >= dimensionExtent.Value.Min
-            && dimensionExtent.Value.Max + ExtentOverlapTolerance >= groupExtent.Value.Min;
+        return leftExtent.Value.Max + ExtentOverlapTolerance >= rightExtent.Value.Min
+            && rightExtent.Value.Max + ExtentOverlapTolerance >= leftExtent.Value.Min;
     }
 
     private static (double Min, double Max)? TryGetExtent(IEnumerable<DrawingLineInfo?> lines, (double X, double Y) direction)
@@ -180,16 +243,6 @@ internal static class DimensionGroupFactory
         return System.Math.Round(bounds.MinX + bounds.MinY, 3);
     }
 
-    private static DrawingLineInfo? CopyPrimaryLeadLine(DrawingDimensionInfo dimension)
-    {
-        return CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineMain != null)?.LeadLineMain);
-    }
-
-    private static DrawingLineInfo? CopySecondaryLeadLine(DrawingDimensionInfo dimension)
-    {
-        return CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineSecond != null)?.LeadLineSecond);
-    }
-
     private static DrawingLineInfo? CopyLine(DrawingLineInfo? line)
     {
         if (line == null)
@@ -198,9 +251,9 @@ internal static class DimensionGroupFactory
         return TeklaDrawingDimensionsApi.CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
-    private static (double X, double Y)? TryGetDimensionDirection(DrawingDimensionInfo dimension)
+    private static (double X, double Y)? TryGetMemberDirection(DimensionGroupMember member)
     {
-        if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(dimension.DirectionX, dimension.DirectionY, out var direction))
+        if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(member.DirectionX, member.DirectionY, out var direction))
             return null;
 
         return TeklaDrawingDimensionsApi.CanonicalizeDirection(direction.X, direction.Y);
@@ -212,9 +265,42 @@ internal static class DimensionGroupFactory
         return dot >= ParallelDotTolerance;
     }
 
-    private static string DetermineGroupOrientation(DrawingDimensionInfo dimension)
+    private static bool AreCollinear(DrawingLineInfo left, DrawingLineInfo right)
     {
-        if (TeklaDrawingDimensionsApi.TryNormalizeDirection(dimension.DirectionX, dimension.DirectionY, out var direction))
+        if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(left.EndX - left.StartX, left.EndY - left.StartY, out var leftDirection) ||
+            !TeklaDrawingDimensionsApi.TryNormalizeDirection(right.EndX - right.StartX, right.EndY - right.StartY, out var rightDirection))
+        {
+            return false;
+        }
+
+        if (!AreParallel(leftDirection, rightDirection))
+            return false;
+
+        return DistancePointToInfiniteLine(right.StartX, right.StartY, left) <= LineCollinearityTolerance
+            && DistancePointToInfiniteLine(right.EndX, right.EndY, left) <= LineCollinearityTolerance;
+    }
+
+    private static bool PointsEqual(double leftX, double leftY, double rightX, double rightY)
+    {
+        return System.Math.Abs(leftX - rightX) <= SharedPointTolerance
+            && System.Math.Abs(leftY - rightY) <= SharedPointTolerance;
+    }
+
+    private static double DistancePointToInfiniteLine(double pointX, double pointY, DrawingLineInfo line)
+    {
+        var dx = line.EndX - line.StartX;
+        var dy = line.EndY - line.StartY;
+        var length = System.Math.Sqrt((dx * dx) + (dy * dy));
+        if (length <= 1e-6)
+            return double.MaxValue;
+
+        var cross = System.Math.Abs(((pointX - line.StartX) * dy) - ((pointY - line.StartY) * dx));
+        return cross / length;
+    }
+
+    private static string DetermineGroupOrientation(DimensionGroupMember member)
+    {
+        if (TeklaDrawingDimensionsApi.TryNormalizeDirection(member.DirectionX, member.DirectionY, out var direction))
         {
             if (System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01)
                 return "horizontal";
@@ -223,8 +309,66 @@ internal static class DimensionGroupFactory
                 return "vertical";
         }
 
-        return string.IsNullOrWhiteSpace(dimension.Orientation) ? string.Empty : dimension.Orientation;
+        return string.IsNullOrWhiteSpace(member.Dimension.Orientation) ? string.Empty : member.Dimension.Orientation;
+    }
+
+    private static string ResolveGroupDimensionType(IReadOnlyList<DimensionGroupMember> members)
+    {
+        var types = members
+            .Select(static member => member.Dimension.DimensionType)
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(System.StringComparer.Ordinal)
+            .ToList();
+
+        return types.Count == 1 ? types[0] : string.Empty;
     }
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
+
+    private static DimensionGroupMember CreateFallbackMember(DrawingDimensionInfo dimension)
+    {
+        return new DimensionGroupMember
+        {
+            DimensionId = dimension.Id,
+            SegmentId = 0,
+            StartX = 0,
+            StartY = 0,
+            EndX = 0,
+            EndY = 0,
+            Distance = dimension.Distance,
+            DirectionX = dimension.DirectionX,
+            DirectionY = dimension.DirectionY,
+            TopDirection = dimension.TopDirection,
+            Bounds = dimension.Bounds ?? TeklaDrawingDimensionsApi.CombineBounds(dimension.Segments.Select(static s => s.Bounds)),
+            ReferenceLine = CopyLine(dimension.ReferenceLine),
+            LeadLineMain = null,
+            LeadLineSecond = null,
+            Dimension = dimension
+        };
+    }
+
+    private static DimensionGroupMember? CreateMember(DrawingDimensionInfo dimension, DimensionSegmentInfo segment)
+    {
+        if (segment.DimensionLine == null)
+            return null;
+
+        return new DimensionGroupMember
+        {
+            DimensionId = dimension.Id,
+            SegmentId = segment.Id,
+            StartX = segment.StartX,
+            StartY = segment.StartY,
+            EndX = segment.EndX,
+            EndY = segment.EndY,
+            Distance = segment.Distance,
+            DirectionX = segment.DirectionX,
+            DirectionY = segment.DirectionY,
+            TopDirection = segment.TopDirection,
+            Bounds = segment.Bounds ?? (segment.DimensionLine != null ? TeklaDrawingDimensionsApi.CreateBoundsFromLine(segment.DimensionLine) : null),
+            ReferenceLine = CopyLine(segment.DimensionLine),
+            LeadLineMain = CopyLine(segment.LeadLineMain),
+            LeadLineSecond = CopyLine(segment.LeadLineSecond),
+            Dimension = dimension
+        };
+    }
 }

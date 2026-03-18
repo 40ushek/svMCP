@@ -18,7 +18,21 @@ internal sealed class DimensionGroup
 
     public void SortMembers()
     {
-        Members.Sort(static (left, right) => left.SortKey.CompareTo(right.SortKey));
+        Members.Sort(static (left, right) =>
+        {
+            if (left.LeadLineMain != null && right.LeadLineMain != null)
+            {
+                var byX = left.LeadLineMain.StartX.CompareTo(right.LeadLineMain.StartX);
+                if (byX != 0)
+                    return byX;
+
+                var byY = left.LeadLineMain.StartY.CompareTo(right.LeadLineMain.StartY);
+                if (byY != 0)
+                    return byY;
+            }
+
+            return left.SortKey.CompareTo(right.SortKey);
+        });
     }
 
     public void RefreshMetrics()

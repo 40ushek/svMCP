@@ -11,6 +11,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 {
+    private const double AxisSummaryToleranceRatio = 0.10;
+
     public TeklaDrawingDimensionsApi() { }
 
     internal static DrawingBoundsInfo CreateBoundsInfo(double minX, double minY, double maxX, double maxY) => new()
@@ -42,6 +44,21 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             present.Max(static b => b.MaxY));
     }
 
+    internal static string DetermineDimensionOrientation(
+        double directionX,
+        double directionY,
+        DrawingLineInfo? referenceLine,
+        IReadOnlyList<DimensionSegmentInfo> segments)
+    {
+        if (referenceLine != null)
+            return DetermineLineOrientation(referenceLine.StartX, referenceLine.StartY, referenceLine.EndX, referenceLine.EndY);
+
+        if (TryNormalizeDirection(directionX, directionY, out var normalizedDirection))
+            return DetermineDirectionOrientation(normalizedDirection.X, normalizedDirection.Y);
+
+        return DetermineDimensionOrientation(segments);
+    }
+
     internal static string DetermineDimensionOrientation(IReadOnlyList<DimensionSegmentInfo> segments)
     {
         var hasHorizontal = false;
@@ -55,13 +72,13 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             if (dx <= 1e-6 && dy <= 1e-6)
                 continue;
 
-            if (dy <= dx * 0.01)
+            if (dy <= dx * AxisSummaryToleranceRatio)
             {
                 hasHorizontal = true;
                 continue;
             }
 
-            if (dx <= dy * 0.01)
+            if (dx <= dy * AxisSummaryToleranceRatio)
             {
                 hasVertical = true;
                 continue;
@@ -80,6 +97,28 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             return "vertical";
 
         return string.Empty;
+    }
+
+    private static string DetermineLineOrientation(double startX, double startY, double endX, double endY)
+    {
+        if (!TryNormalizeDirection(endX - startX, endY - startY, out var direction))
+            return string.Empty;
+
+        return DetermineDirectionOrientation(direction.X, direction.Y);
+    }
+
+    private static string DetermineDirectionOrientation(double directionX, double directionY)
+    {
+        var dx = System.Math.Abs(directionX);
+        var dy = System.Math.Abs(directionY);
+
+        if (dy <= dx * AxisSummaryToleranceRatio)
+            return "horizontal";
+
+        if (dx <= dy * AxisSummaryToleranceRatio)
+            return "vertical";
+
+        return "angled";
     }
 
     private static DrawingBoundsInfo? TryGetBounds(DrawingObject drawingObject)
@@ -141,7 +180,14 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
     {
         try
         {
-            var attributesProperty = dimSet.GetType().GetProperty("Attributes");
+            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes straightAttributes)
+                return straightAttributes.DimensionType.ToString();
+
+            var attributesProperty = dimSet.GetType()
+                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .Where(static property => property.Name == "Attributes")
+                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
+                .FirstOrDefault();
             var attributes = attributesProperty?.GetValue(dimSet, null);
             var dimensionTypeProperty = attributes?.GetType().GetProperty("DimensionType");
             var value = dimensionTypeProperty?.GetValue(attributes, null);
@@ -156,6 +202,16 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
     private static bool TryGetUpDirection(StraightDimension segment, out (double X, double Y) direction)
     {
         direction = default;
+        try
+        {
+            var upDirection = segment.UpDirection;
+            if (TryNormalizeDirection(upDirection.X, upDirection.Y, out direction))
+                return true;
+        }
+        catch
+        {
+        }
+
         try
         {
             var property = segment.GetType().GetProperty("UpDirection");
@@ -212,6 +268,31 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
                 segment.DimensionLine.StartY,
                 segment.DimensionLine.EndX,
                 segment.DimensionLine.EndY);
+    }
+
+    internal static (double X, double Y) CreateReferencePoint(
+        double pointX,
+        double pointY,
+        (double X, double Y) upDirection,
+        double distance)
+    {
+        return (
+            System.Math.Round(pointX + (upDirection.X * distance), 3),
+            System.Math.Round(pointY + (upDirection.Y * distance), 3));
+    }
+
+    internal static (double X, double Y) ProjectPointToReferenceLine(
+        double pointX,
+        double pointY,
+        double lineOriginX,
+        double lineOriginY,
+        double lineDirectionX,
+        double lineDirectionY)
+    {
+        var projection = ((pointX - lineOriginX) * lineDirectionX) + ((pointY - lineOriginY) * lineDirectionY);
+        return (
+            System.Math.Round(lineOriginX + (projection * lineDirectionX), 3),
+            System.Math.Round(lineOriginY + (projection * lineDirectionY), 3));
     }
 
     private static Vector? TryParseVector(string? s)

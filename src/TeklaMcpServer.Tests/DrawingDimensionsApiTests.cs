@@ -51,6 +51,18 @@ public sealed class DrawingDimensionsApiTests
     }
 
     [Fact]
+    public void ProjectPointToReferenceLine_UsesReferenceDirectionInsteadOfMeasuredPointLine()
+    {
+        var referenceStart = TeklaDrawingDimensionsApi.CreateReferencePoint(10, 20, (0, 1), 30);
+        var projected = TeklaDrawingDimensionsApi.ProjectPointToReferenceLine(40, 60, referenceStart.X, referenceStart.Y, 1, 0);
+
+        Assert.Equal(10, referenceStart.X, 3);
+        Assert.Equal(50, referenceStart.Y, 3);
+        Assert.Equal(40, projected.X, 3);
+        Assert.Equal(50, projected.Y, 3);
+    }
+
+    [Fact]
     public void GetDimensionsDto_SerializesOldAndNewFields()
     {
         var result = new GetDimensionsResult
