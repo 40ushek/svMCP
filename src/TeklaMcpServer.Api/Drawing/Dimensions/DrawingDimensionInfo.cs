@@ -78,6 +78,16 @@ public sealed class MoveDimensionResult
     public double NewDistance  { get; set; }
 }
 
+public sealed class DrawDimensionTextBoxesResult
+{
+    public string Group { get; set; } = string.Empty;
+    public int ClearedCount { get; set; }
+    public int CreatedCount { get; set; }
+    public List<int> CreatedIds { get; set; } = new();
+    public int DimensionCount { get; set; }
+    public int SegmentCount { get; set; }
+}
+
 public sealed class DeleteDimensionResult
 {
     public bool HasActiveDrawing { get; set; }

@@ -145,12 +145,16 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         System.Math.Max(line.StartX, line.EndX),
         System.Math.Max(line.StartY, line.EndY));
 
-    private static DrawingBoundsInfo? TryGetTextBounds(StraightDimension segment)
+    private static DrawingBoundsInfo? TryGetTextBounds(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        DrawingLineInfo? dimensionLine)
     {
-        _ = segment;
-        // Phase 1 keeps text geometry explicit but conservative:
-        // do not fabricate text boxes until Tekla exposes them reliably.
-        return null;
+        var polygon = TryCreateTextPolygon(segment, dimSet, dimensionLine);
+        if (polygon == null || polygon.Count == 0)
+            return null;
+
+        return CreateBoundsFromPolygon(polygon);
     }
 
     internal static string? TryGetMeasuredValueText(StraightDimension segment)
@@ -197,6 +201,135 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         {
             return string.Empty;
         }
+    }
+
+    private static Text.TextAttributes? TryCreateDimensionTextAttributes(StraightDimensionSet dimSet)
+    {
+        try
+        {
+            if (dimSet.Attributes is not StraightDimensionSet.StraightDimensionSetAttributes attributes)
+                return null;
+
+            var textAttributes = new Text.TextAttributes
+            {
+                PreferredPlacing = PreferredTextPlacingTypes.AlongLinePlacingType(),
+                Font = attributes.Text.Font
+            };
+
+            textAttributes.Frame.Type = (FrameTypes)attributes.Text.Frame;
+
+            return textAttributes;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static (double Width, double Height)? TryMeasureTextSize(
+        View view,
+        string textValue,
+        Text.TextAttributes textAttributes)
+    {
+        Text? text = null;
+        try
+        {
+            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
+            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
+            if (!text.Insert())
+                return null;
+
+            var objectAlignedBoundingBox = text.GetObjectAlignedBoundingBox();
+            return (objectAlignedBoundingBox.Width, objectAlignedBoundingBox.Height);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (text != null)
+            {
+                try
+                {
+                    text.Delete();
+                }
+                catch
+                {
+                }
+            }
+        }
+    }
+
+    internal static List<double[]>? TryCreateTextPolygon(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        DrawingLineInfo? dimensionLine)
+    {
+        if (dimensionLine == null)
+            return null;
+
+        var textValue = TryGetMeasuredValueText(segment);
+        if (string.IsNullOrWhiteSpace(textValue))
+            return null;
+
+        if (segment.GetView() is not View view)
+            return null;
+
+        var textAttributes = TryCreateDimensionTextAttributes(dimSet);
+        if (textAttributes == null)
+            return null;
+
+        var size = TryMeasureTextSize(view, textValue!, textAttributes);
+        if (!size.HasValue)
+            return null;
+
+        return CreateOrientedTextPolygon(dimensionLine, size.Value.Width, size.Value.Height);
+    }
+
+    private static DrawingBoundsInfo CreateBoundsFromPolygon(IReadOnlyList<double[]> polygon)
+    {
+        return CreateBoundsInfo(
+            polygon.Min(static point => point[0]),
+            polygon.Min(static point => point[1]),
+            polygon.Max(static point => point[0]),
+            polygon.Max(static point => point[1]));
+    }
+
+    private static List<double[]>? CreateOrientedTextPolygon(
+        DrawingLineInfo dimensionLine,
+        double widthAlongLine,
+        double heightPerpendicularToLine)
+    {
+        if (widthAlongLine <= 1e-6 || heightPerpendicularToLine <= 1e-6)
+            return null;
+
+        if (!TryNormalizeDirection(
+                dimensionLine.EndX - dimensionLine.StartX,
+                dimensionLine.EndY - dimensionLine.StartY,
+                out var axis))
+        {
+            return null;
+        }
+
+        var centerX = (dimensionLine.StartX + dimensionLine.EndX) / 2.0;
+        var centerY = (dimensionLine.StartY + dimensionLine.EndY) / 2.0;
+        var normalX = -axis.Y;
+        var normalY = axis.X;
+        var halfWidth = widthAlongLine / 2.0;
+        var halfHeight = heightPerpendicularToLine / 2.0;
+
+        var corners = new[]
+        {
+            (X: centerX - (axis.X * halfWidth) - (normalX * halfHeight), Y: centerY - (axis.Y * halfWidth) - (normalY * halfHeight)),
+            (X: centerX + (axis.X * halfWidth) - (normalX * halfHeight), Y: centerY + (axis.Y * halfWidth) - (normalY * halfHeight)),
+            (X: centerX + (axis.X * halfWidth) + (normalX * halfHeight), Y: centerY + (axis.Y * halfWidth) + (normalY * halfHeight)),
+            (X: centerX - (axis.X * halfWidth) + (normalX * halfHeight), Y: centerY - (axis.Y * halfWidth) + (normalY * halfHeight))
+        };
+
+        return corners
+            .Select(static corner => new[] { System.Math.Round(corner.X, 3), System.Math.Round(corner.Y, 3) })
+            .ToList();
     }
 
     private static bool TryGetUpDirection(StraightDimension segment, out (double X, double Y) direction)

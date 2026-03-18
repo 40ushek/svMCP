@@ -74,7 +74,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             if (segEnum.Current is not StraightDimension segment)
                 continue;
 
-            info.Segments.Add(BuildSegmentInfo(segment, dimSet.Distance));
+            info.Segments.Add(BuildSegmentInfo(segment, dimSet, dimSet.Distance));
         }
 
         info.Bounds ??= CombineBounds(info.Segments.Select(static s => s.Bounds));
@@ -102,7 +102,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         return info;
     }
 
-    private static DimensionSegmentInfo BuildSegmentInfo(StraightDimension segment, double distance)
+    private static DimensionSegmentInfo BuildSegmentInfo(StraightDimension segment, StraightDimensionSet dimSet, double distance)
     {
         var start = segment.StartPoint;
         var end = segment.EndPoint;
@@ -148,7 +148,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             TopDirection = topDirection,
             Bounds = TryGetBounds(segment)
                 ?? (dimensionLine != null ? CreateBoundsFromLine(dimensionLine) : CreateBoundsFromSegmentPoints(start, end)),
-            TextBounds = TryGetTextBounds(segment),
+            TextBounds = TryGetTextBounds(segment, dimSet, dimensionLine),
             DimensionLine = dimensionLine,
             LeadLineMain = leadLineMain,
             LeadLineSecond = leadLineSecond

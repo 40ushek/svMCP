@@ -23,6 +23,36 @@ public static partial class ModelTools
         catch { return $"Bridge error: {json}"; }
     }
 
+    [McpServerTool, Description(
+        "Draw debug polygon rectangles around dimension text in the active drawing. " +
+        "Uses measured text geometry and the dimension line direction to draw overlay polygons around each text box. " +
+        "Optionally limit to a specific viewId or dimensionId.")]
+    public static string DrawDimensionTextBoxes(
+        [Description("Optional drawing view ID. Omit to scan the whole sheet.")] int? viewId = null,
+        [Description("Optional StraightDimensionSet ID to limit drawing to one dimension.")] int? dimensionId = null,
+        [Description("Overlay color. Default: Yellow")] string color = "Yellow",
+        [Description("Overlay group name. Default: dimension-text-boxes")] string group = "dimension-text-boxes")
+    {
+        var json = RunBridge(
+            "draw_dimension_text_boxes",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            dimensionId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            color ?? "Yellow",
+            group ?? "dimension-text-boxes");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

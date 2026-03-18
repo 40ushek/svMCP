@@ -16,6 +16,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_dimensions":
                 return HandleGetDrawingDimensions(api, args);
 
+            case "draw_dimension_text_boxes":
+                return HandleDrawDimensionTextBoxes(api, args);
+
             case "get_dimension_groups_debug":
                 return HandleGetDimensionGroupsDebug(api, args);
 
@@ -44,6 +47,36 @@ internal sealed partial class DrawingCommandHandler
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
         var result = api.GetDimensions(viewId);
         WriteGetDimensionsResult(result);
+        return true;
+    }
+
+    private bool HandleDrawDimensionTextBoxes(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        int? dimensionId = null;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDimensionId))
+            {
+                WriteError("dimensionId must be an integer.");
+                return true;
+            }
+
+            dimensionId = parsedDimensionId;
+        }
+
+        var color = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) ? args[3] : "Yellow";
+        var group = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? args[4] : "dimension-text-boxes";
+        var result = api.DrawDimensionTextBoxes(viewId, dimensionId, color, group);
+        WriteJson(new
+        {
+            group = result.Group,
+            clearedCount = result.ClearedCount,
+            createdCount = result.CreatedCount,
+            createdIds = result.CreatedIds,
+            dimensionCount = result.DimensionCount,
+            segmentCount = result.SegmentCount
+        });
         return true;
     }
 

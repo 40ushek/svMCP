@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
@@ -11,6 +12,105 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    public DrawDimensionTextBoxesResult DrawDimensionTextBoxes(int? viewId, int? dimensionId, string color, string group)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            DrawingObjectEnumerator dimObjects;
+            if (viewId.HasValue)
+            {
+                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value);
+                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
+            }
+            else
+            {
+                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+            }
+
+            var normalizedGroup = string.IsNullOrWhiteSpace(group) ? "dimension-text-boxes" : group.Trim();
+            var normalizedColor = string.IsNullOrWhiteSpace(color) ? "Yellow" : color.Trim();
+            var request = new DrawingDebugOverlayRequest
+            {
+                Group = normalizedGroup,
+                ClearGroupFirst = true
+            };
+
+            var dimensionIds = new HashSet<int>();
+            var segmentCount = 0;
+            while (dimObjects.MoveNext())
+            {
+                if (dimObjects.Current is not StraightDimensionSet dimSet)
+                    continue;
+
+                var currentDimensionId = dimSet.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentDimensionId != dimensionId.Value)
+                    continue;
+
+                var ownerView = dimSet.GetView();
+                var ownerViewId = ownerView?.GetIdentifier().ID;
+                var segmentObjects = dimSet.GetObjects();
+                while (segmentObjects.MoveNext())
+                {
+                    if (segmentObjects.Current is not StraightDimension segment)
+                        continue;
+
+                    var info = BuildSegmentInfo(segment, dimSet, dimSet.Distance);
+                    var polygon = TryCreateTextPolygon(segment, dimSet, info.DimensionLine);
+                    if (polygon == null || polygon.Count < 4)
+                        continue;
+
+                    request.Shapes.Add(new DrawingDebugShape
+                    {
+                        Kind = "polygon",
+                        ViewId = ownerViewId,
+                        Points = polygon,
+                        Color = normalizedColor,
+                        LineType = "DashDot"
+                    });
+
+                    segmentCount++;
+                    dimensionIds.Add(currentDimensionId);
+                }
+            }
+
+            var overlayApi = new TeklaDrawingDebugOverlayApi();
+            if (request.Shapes.Count == 0)
+            {
+                var cleared = overlayApi.ClearOverlay(normalizedGroup);
+                return new DrawDimensionTextBoxesResult
+                {
+                    Group = normalizedGroup,
+                    ClearedCount = cleared.ClearedCount,
+                    CreatedCount = 0,
+                    DimensionCount = 0,
+                    SegmentCount = 0
+                };
+            }
+
+            var overlayResult = overlayApi.DrawOverlay(JsonSerializer.Serialize(request));
+            return new DrawDimensionTextBoxesResult
+            {
+                Group = overlayResult.Group,
+                ClearedCount = overlayResult.ClearedCount,
+                CreatedCount = overlayResult.CreatedCount,
+                CreatedIds = overlayResult.CreatedIds,
+                DimensionCount = dimensionIds.Count,
+                SegmentCount = segmentCount
+            };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     public MoveDimensionResult MoveDimension(int dimensionId, double delta)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
