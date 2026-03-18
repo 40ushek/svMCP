@@ -187,7 +187,7 @@ internal static class DimensionGroupSpacingAnalyzer
             {
                 var members = group.ToList();
                 var offsets = members
-                    .Select(member => TryGetMemberOffset(member, stack.Direction))
+                    .Select(member => TryGetMemberOffset(member, stack.Direction, stack.TopDirection))
                     .Where(static value => value.HasValue)
                     .Select(static value => value!.Value)
                     .ToList();
@@ -301,17 +301,19 @@ internal static class DimensionGroupSpacingAnalyzer
 
         var normalX = -group.Direction.Value.Y;
         var normalY = group.Direction.Value.X;
-        return System.Math.Round(Project(group.ReferenceLine.StartX, group.ReferenceLine.StartY, normalX, normalY), 3);
+        var rawOffset = Project(group.ReferenceLine.StartX, group.ReferenceLine.StartY, normalX, normalY);
+        return System.Math.Round(rawOffset * GetOffsetSign(group.TopDirection), 3);
     }
 
-    private static double? TryGetMemberOffset(DimensionGroupMember member, (double X, double Y)? direction)
+    private static double? TryGetMemberOffset(DimensionGroupMember member, (double X, double Y)? direction, int stackTopDirection)
     {
         if (!direction.HasValue || member.ReferenceLine == null)
             return null;
 
         var normalX = -direction.Value.Y;
         var normalY = direction.Value.X;
-        return System.Math.Round(Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normalX, normalY), 3);
+        var rawOffset = Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normalX, normalY);
+        return System.Math.Round(rawOffset * GetOffsetSign(stackTopDirection), 3);
     }
 
     private static int GetRepresentativeDimensionId(DimensionGroup group)
@@ -340,6 +342,8 @@ internal static class DimensionGroupSpacingAnalyzer
 
         return 0;
     }
+
+    private static int GetOffsetSign(int topDirection) => topDirection == 0 ? 1 : topDirection;
 
     private static bool AreParallel((double X, double Y) left, (double X, double Y) right)
     {

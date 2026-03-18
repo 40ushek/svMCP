@@ -10,12 +10,12 @@ public sealed class DimensionGroupSpacingAnalyzerTests
     {
         var first = CreateGroup(
         [
-            CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10)
+            CreateMember(1, 10, -20, 100, -10, 0, -10, 100, -10)
         ], "horizontal", "PartLongitudinal", (1, 0), -1);
 
         var second = CreateGroup(
         [
-            CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
+            CreateMember(2, 10, -40, 100, -30, 0, -25, 100, -25)
         ], "horizontal", "Relative", (1, 0), -1);
 
         var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([first, second]);
@@ -27,6 +27,29 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         Assert.Equal(1, pair.FirstDimensionId);
         Assert.Equal(2, pair.SecondDimensionId);
         Assert.Equal(15, pair.Distance, 3);
+    }
+
+    [Fact]
+    public void BuildMoveUnits_UsesTopDirectionForBottomHorizontalStackOrdering()
+    {
+        var first = CreateGroup(
+        [
+            CreateMember(1, 10, -20, 100, -10, 0, -10, 100, -10)
+        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+
+        var second = CreateGroup(
+        [
+            CreateMember(2, 10, -40, 100, -30, 0, -25, 100, -25)
+        ], "horizontal", "Relative", (1, 0), -1);
+
+        var stack = Assert.Single(DimensionGroupSpacingAnalyzer.BuildStacks([first, second]));
+        var units = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack);
+
+        Assert.Equal(2, units.Count);
+        Assert.Equal(1, units[0].DimensionId);
+        Assert.Equal(2, units[1].DimensionId);
+        Assert.Equal(10, units[0].MinOffset, 3);
+        Assert.Equal(25, units[1].MinOffset, 3);
     }
 
     [Fact]
