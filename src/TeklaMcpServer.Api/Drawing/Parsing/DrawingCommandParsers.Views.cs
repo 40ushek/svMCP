@@ -64,8 +64,10 @@ public static partial class DrawingCommandParsers
             double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var titleBlockHeight))
             request.TitleBlockHeight = titleBlockHeight;
 
-        if (args.Length > 4 && string.Equals(args[4], "keepscale", StringComparison.OrdinalIgnoreCase))
-            request.KeepScale = true;
+        // keepscale can appear at any position (positional args are numeric, so no ambiguity)
+        for (int i = 1; i < args.Length; i++)
+            if (string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
+            { request.KeepScale = true; break; }
 
         return request;
     }

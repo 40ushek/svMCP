@@ -113,8 +113,24 @@ public sealed partial class TeklaDrawingViewApi
 
         if (keepScale)
         {
-            // Skip scale optimisation — arrange views at their current scales.
-            optimalScale = currentScale;
+            // Validate that views fit at their current scales before committing to arrange.
+            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews);
+            var keepFrames = currentViews
+                .Select(v =>
+                {
+                    if (keepFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                        return (w: size.Width, h: size.Height);
+                    return (w: v.Width, h: v.Height);
+                })
+                .ToList();
+            var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
+            if (!_arrangementSelector.EstimateFit(keepCtx, keepFrames))
+                throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use keepScale=false to allow rescaling.");
+
+            // Use the minimum view scale as a conservative representative for downstream
+            // decisions (e.g. ShouldSkipProjectionAlignment). Mixed-scale drawings have no
+            // single "optimal scale", so the smallest scale is the safest approximation.
+            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Min();
             candidateAttempts = 0;
         }
         else
