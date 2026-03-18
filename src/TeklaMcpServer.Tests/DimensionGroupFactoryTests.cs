@@ -228,6 +228,135 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(2, groups.Count);
     }
 
+    [Fact]
+    public void BuildGroups_MergesSharedPointAcrossLocalBandStepWithinSameDimension()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var secondSegment = new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 100,
+            StartY = 0,
+            EndX = 220,
+            EndY = 0,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = -1500,
+                EndX = 220,
+                EndY = -1500
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = -1500
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 220,
+                StartY = 0,
+                EndX = 220,
+                EndY = -1500
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 100,
+                MinY = -1500,
+                MaxX = 220,
+                MaxY = -1500
+            }
+        };
+
+        dimension.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 100, EndY = -1440 };
+        dimension.Segments[0].DimensionLine = dimension.ReferenceLine;
+        dimension.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        dimension.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1440 };
+        dimension.Segments.Add(secondSegment);
+
+        var groups = DimensionGroupFactory.BuildGroups([dimension]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_DoesNotMergeSharedPointAcrossFarBandStepWithinSameDimension()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var secondSegment = new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 100,
+            StartY = 0,
+            EndX = 220,
+            EndY = 0,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = -2000,
+                EndX = 220,
+                EndY = -2000
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = -2000
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 220,
+                StartY = 0,
+                EndX = 220,
+                EndY = -2000
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 100,
+                MinY = -2000,
+                MaxX = 220,
+                MaxY = -2000
+            }
+        };
+
+        dimension.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 100, EndY = -1440 };
+        dimension.Segments[0].DimensionLine = dimension.ReferenceLine;
+        dimension.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        dimension.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1440 };
+        dimension.Segments.Add(secondSegment);
+
+        var groups = DimensionGroupFactory.BuildGroups([dimension]);
+
+        Assert.Equal(2, groups.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_MergesNearbySegmentsOnSameLineBandWithinSameDimension()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "RelativeAndAbsolute", "vertical", 40, 0, 1, 1, -1, 0, 0, 0, 0, 0, 10, 60);
+        dimension.Segments.Clear();
+
+        dimension.Segments.Add(CreateVerticalSegment(1001, 0, -1172.5, 0, 838.5, -200));
+        dimension.Segments.Add(CreateVerticalSegment(1002, 0, 912.5, 3250, 1052.5, -200));
+        dimension.Segments.Add(CreateVerticalSegment(1003, 0, 1112.5, 0, 1172.5, -200));
+
+        var groups = DimensionGroupFactory.BuildGroups([dimension]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(3, group.Members.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,
@@ -314,6 +443,56 @@ public sealed class DimensionGroupFactoryTests
                     }
                 }
             ]
+        };
+    }
+
+    private static DimensionSegmentInfo CreateVerticalSegment(
+        int id,
+        double startX,
+        double startY,
+        double endX,
+        double endY,
+        double referenceX)
+    {
+        return new DimensionSegmentInfo
+        {
+            Id = id,
+            StartX = startX,
+            StartY = startY,
+            EndX = endX,
+            EndY = endY,
+            Distance = 40,
+            DirectionX = 0,
+            DirectionY = 1,
+            TopDirection = 1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = referenceX,
+                StartY = startY,
+                EndX = referenceX,
+                EndY = endY
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = startX,
+                StartY = startY,
+                EndX = referenceX,
+                EndY = startY
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = endX,
+                StartY = endY,
+                EndX = referenceX,
+                EndY = endY
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = referenceX,
+                MinY = System.Math.Min(startY, endY),
+                MaxX = referenceX,
+                MaxY = System.Math.Max(startY, endY)
+            }
         };
     }
 }

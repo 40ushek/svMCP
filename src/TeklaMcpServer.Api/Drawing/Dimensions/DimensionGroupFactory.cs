@@ -9,6 +9,8 @@ internal static class DimensionGroupFactory
     private const double ExtentOverlapTolerance = 3.0;
     private const double LineCollinearityTolerance = 3.0;
     private const double LineBandTolerance = 3.0;
+    private const double ChainBandTolerance = 250.0;
+    private const double ChainExtentGapTolerance = 80.0;
     private const double SharedPointTolerance = 0.5;
 
     public static List<DimensionGroup> BuildGroups(GetDimensionsResult result) => BuildGroups(result.Dimensions);
@@ -133,16 +135,69 @@ internal static class DimensionGroupFactory
         if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
             return false;
 
+        var sharedMeasuredPoint = HaveSharedMeasuredPoint(left, right);
+        if (sharedMeasuredPoint && HaveCompatibleChainTransition(left, right, leftDirection ?? rightDirection))
+            return true;
+
+        if (HaveCompatibleSameLineChain(left, right, leftDirection ?? rightDirection))
+            return true;
+
         if (!HaveCompatibleLineBand(left, right, leftDirection ?? rightDirection))
             return false;
 
-        if (HaveSharedMeasuredPoint(left, right))
+        if (sharedMeasuredPoint)
             return true;
 
         if (!HaveCompatibleLeadLines(left, right))
             return false;
 
         return HaveCompatibleExtents(left, right, leftDirection ?? rightDirection);
+    }
+
+    private static bool HaveCompatibleChainTransition(
+        DimensionGroupMember left,
+        DimensionGroupMember right,
+        (double X, double Y)? direction)
+    {
+        if (left.DimensionId != right.DimensionId)
+            return false;
+
+        if (!direction.HasValue)
+            return false;
+
+        var leftOffset = TryGetLineOffset(left.ReferenceLine, direction.Value);
+        var rightOffset = TryGetLineOffset(right.ReferenceLine, direction.Value);
+        if (!leftOffset.HasValue || !rightOffset.HasValue)
+            return true;
+
+        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= ChainBandTolerance;
+    }
+
+    private static bool HaveCompatibleSameLineChain(
+        DimensionGroupMember left,
+        DimensionGroupMember right,
+        (double X, double Y)? direction)
+    {
+        if (left.DimensionId != right.DimensionId)
+            return false;
+
+        if (!direction.HasValue)
+            return false;
+
+        if (!HaveCompatibleLineBand(left, right, direction))
+            return false;
+
+        var leftExtent = TryGetExtent(
+            left.ReferenceLine == null ? [] : new[] { left.ReferenceLine },
+            direction.Value);
+        var rightExtent = TryGetExtent(
+            right.ReferenceLine == null ? [] : new[] { right.ReferenceLine },
+            direction.Value);
+        if (!leftExtent.HasValue || !rightExtent.HasValue)
+            return false;
+
+        return leftExtent.Value.Max + ChainExtentGapTolerance >= rightExtent.Value.Min
+            && rightExtent.Value.Max + ChainExtentGapTolerance >= leftExtent.Value.Min;
     }
 
     private static bool HaveCompatibleLineBand(
