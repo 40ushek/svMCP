@@ -80,6 +80,46 @@ Primary purpose:
 - support debug overlays
 - provide enough data for future arrangement algorithms
 
+## Phase 1.5: Internal Grouping Model
+
+Before arrangement logic, introduce an internal dimension-group layer in
+`Drawing/Dimensions`.
+
+Purpose:
+
+- group dimensions by view and orientation
+- preserve direction / normal information
+- hold a stable member order inside a group
+- carry lead/reference line geometry
+- expose group-level max distance / bounds for later algorithms
+
+This is an internal model only:
+
+- no new MCP tool
+- no public JSON contract yet
+
+Suggested internal shape:
+
+- `DimensionGroup`
+  - `ViewId`
+  - `Orientation`
+  - `Direction`
+  - `Bounds`
+  - `ReferenceLine`
+  - `MaximumDistance`
+  - `Members`
+- `DimensionGroupMember`
+  - dimension set info
+  - sort key
+  - member bounds
+
+Primary operations:
+
+- sort members in geometric order
+- compute group bounds
+- compute max distance band
+- determine whether groups can align / combine
+
 ## Phase 2: Debug / Inspection Tools
 
 Before writing editing commands, add tools for observing dimensions.
@@ -98,6 +138,7 @@ Reason:
 
 - overlay is needed to validate the richer read model from Phase 1
 - overlay will also make Phase 3 editing APIs much easier to verify
+- overlay should also be able to visualize `DimensionGroup` / `ReferenceLine`
 
 ## Phase 3: Atomic Editing Operations
 
@@ -176,9 +217,10 @@ After the low-level API is stable:
 2. Spike measured-value access for `StraightDimension` / `StraightDimensionSet`
 3. Extend `GetDimensions()` to populate richer geometry/properties
 4. Expose richer JSON through bridge/tool layer
-5. Add debug overlay for dimensions
-6. Add atomic edit commands
-7. Add `arrange_dimensions`
+5. Add internal `DimensionGroup` model
+6. Add debug overlay for dimensions and groups
+7. Add atomic edit commands
+8. Add `arrange_dimensions`
 
 ## Non-Goals For The First Iteration
 
@@ -197,3 +239,4 @@ Phase 1 is complete when:
 - segment geometry is stable enough to compare dimensions spatially
 - measured value is either implemented after the spike or explicitly omitted from DTOs for now
 - output is sufficient to prototype overlap detection without extra Tekla calls
+- internal data is sufficient to build `DimensionGroup` without more Tekla reads

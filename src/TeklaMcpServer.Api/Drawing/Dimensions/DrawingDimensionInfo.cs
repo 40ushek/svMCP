@@ -2,21 +2,37 @@ using System.Collections.Generic;
 
 namespace TeklaMcpServer.Api.Drawing;
 
+public sealed class DrawingBoundsInfo
+{
+    public double MinX { get; set; }
+    public double MinY { get; set; }
+    public double MaxX { get; set; }
+    public double MaxY { get; set; }
+    public double Width => MaxX - MinX;
+    public double Height => MaxY - MinY;
+}
+
 public sealed class DimensionSegmentInfo
 {
-    public int    Id     { get; set; }
-    public double StartX { get; set; }
-    public double StartY { get; set; }
-    public double EndX   { get; set; }
-    public double EndY   { get; set; }
+    public int                Id         { get; set; }
+    public double             StartX     { get; set; }
+    public double             StartY     { get; set; }
+    public double             EndX       { get; set; }
+    public double             EndY       { get; set; }
+    public DrawingBoundsInfo? Bounds     { get; set; }
+    public DrawingBoundsInfo? TextBounds { get; set; }
 }
 
 public sealed class DrawingDimensionInfo
 {
-    public int                         Id       { get; set; }
-    public string                      Type     { get; set; } = string.Empty;
-    public double                      Distance { get; set; }
-    public List<DimensionSegmentInfo>  Segments { get; set; } = new();
+    public int                        Id          { get; set; }
+    public string                     Type        { get; set; } = string.Empty;
+    public int?                       ViewId      { get; set; }
+    public string                     ViewType    { get; set; } = string.Empty;
+    public string                     Orientation { get; set; } = string.Empty;
+    public double                     Distance    { get; set; }
+    public DrawingBoundsInfo?         Bounds      { get; set; }
+    public List<DimensionSegmentInfo> Segments    { get; set; } = new();
 }
 
 public sealed class GetDimensionsResult

@@ -135,6 +135,22 @@ internal sealed partial class DrawingCommandHandler
 
     private void WriteGetDimensionsResult(GetDimensionsResult result)
     {
+        static object? SerializeBounds(DrawingBoundsInfo? bounds)
+        {
+            if (bounds == null)
+                return null;
+
+            return new
+            {
+                minX = bounds.MinX,
+                minY = bounds.MinY,
+                maxX = bounds.MaxX,
+                maxY = bounds.MaxY,
+                width = bounds.Width,
+                height = bounds.Height
+            };
+        }
+
         WriteJson(new
         {
             total = result.Total,
@@ -142,14 +158,20 @@ internal sealed partial class DrawingCommandHandler
             {
                 id = d.Id,
                 type = d.Type,
+                viewId = d.ViewId,
+                viewType = d.ViewType,
+                orientation = d.Orientation,
                 distance = d.Distance,
+                bounds = SerializeBounds(d.Bounds),
                 segments = d.Segments.Select(s => new
                 {
                     id = s.Id,
                     startX = s.StartX,
                     startY = s.StartY,
                     endX = s.EndX,
-                    endY = s.EndY
+                    endY = s.EndY,
+                    bounds = SerializeBounds(s.Bounds),
+                    textBounds = SerializeBounds(s.TextBounds)
                 })
             })
         });

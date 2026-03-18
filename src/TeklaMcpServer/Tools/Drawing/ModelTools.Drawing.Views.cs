@@ -85,7 +85,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Get all StraightDimensionSet objects from the active drawing (or a specific view). Each set contains segments with computed distance values (mm) and start/end points in model coordinates.")]
+    [McpServerTool, Description("Get all StraightDimensionSet objects from the active drawing (or a specific view). The response keeps the old segment points/distance fields and also includes view ownership, orientation, and bounding boxes for sets and segments.")]
     public static string GetDrawingDimensions(
         [Description("View ID to read dimensions from (from get_drawing_views). Omit to get all dimensions on the drawing.")] int? viewId = null)
     {

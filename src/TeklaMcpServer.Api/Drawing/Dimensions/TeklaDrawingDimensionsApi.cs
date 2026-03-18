@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures;
@@ -7,350 +6,111 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
-using ModelPart = Tekla.Structures.Model.Part;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
+public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 {
     private readonly Model _model;
 
     public TeklaDrawingDimensionsApi(Model model) => _model = model;
 
-    public GetDimensionsResult GetDimensions(int? viewId)
+    internal static DrawingBoundsInfo CreateBoundsInfo(double minX, double minY, double maxX, double maxY) => new()
     {
-        var activeDrawing = new DrawingHandler().GetActiveDrawing();
-        if (activeDrawing == null)
-            throw new DrawingNotOpenException();
+        MinX = System.Math.Round(minX, 3),
+        MinY = System.Math.Round(minY, 3),
+        MaxX = System.Math.Round(maxX, 3),
+        MaxY = System.Math.Round(maxY, 3)
+    };
 
-        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = false;
-        try
-        {
+    internal static DrawingBoundsInfo? CombineBounds(IEnumerable<DrawingBoundsInfo?> bounds)
+    {
+        var present = bounds.Where(static b => b != null).Cast<DrawingBoundsInfo>().ToList();
+        if (present.Count == 0)
+            return null;
 
-            DrawingObjectEnumerator dimObjects;
-            if (viewId.HasValue)
-            {
-                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
-                    ?? throw new ViewNotFoundException(viewId.Value);
-                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
-            }
-            else
-            {
-                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-            }
-
-            var dimensions = new List<DrawingDimensionInfo>();
-
-            while (dimObjects.MoveNext())
-            {
-                if (dimObjects.Current is not StraightDimensionSet dimSet) continue;
-
-                var info = new DrawingDimensionInfo
-                {
-                    Id       = dimSet.GetIdentifier().ID,
-                    Type     = dimSet.GetType().Name,
-                    Distance = dimSet.Distance
-                };
-
-                // Iterate individual StraightDimension segments within this set
-                var segEnum = dimSet.GetObjects();
-                while (segEnum.MoveNext())
-                {
-                    if (segEnum.Current is not StraightDimension seg) continue;
-
-                    var start = seg.StartPoint;
-                    var end   = seg.EndPoint;
-
-                    info.Segments.Add(new DimensionSegmentInfo
-                    {
-                        Id     = seg.GetIdentifier().ID,
-                        StartX = Math.Round(start.X, 1),
-                        StartY = Math.Round(start.Y, 1),
-                        EndX   = Math.Round(end.X, 1),
-                        EndY   = Math.Round(end.Y, 1)
-                    });
-                }
-
-                dimensions.Add(info);
-            }
-
-            return new GetDimensionsResult { Total = dimensions.Count, Dimensions = dimensions };
-        }
-        finally
-        {
-            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
-        }
+        return CreateBoundsInfo(
+            present.Min(static b => b.MinX),
+            present.Min(static b => b.MinY),
+            present.Max(static b => b.MaxX),
+            present.Max(static b => b.MaxY));
     }
 
-    public MoveDimensionResult MoveDimension(int dimensionId, double delta)
+    internal static string DetermineDimensionOrientation(IReadOnlyList<DimensionSegmentInfo> segments)
     {
-        var activeDrawing = new DrawingHandler().GetActiveDrawing();
-        if (activeDrawing == null)
-            throw new DrawingNotOpenException();
+        var hasHorizontal = false;
+        var hasVertical = false;
+        var hasAngled = false;
 
-        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = false;
-        try
+        foreach (var segment in segments)
         {
-
-            // Find the StraightDimensionSet by ID across all sheet objects
-            StraightDimensionSet? dimSet = null;
-            var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-            while (allDims.MoveNext())
-            {
-                if (allDims.Current is StraightDimensionSet ds && ds.GetIdentifier().ID == dimensionId)
-                {
-                    dimSet = ds;
-                    break;
-                }
-            }
-
-            if (dimSet == null)
-                throw new System.Exception($"DimensionSet {dimensionId} not found");
-
-            dimSet.Distance += delta;
-            dimSet.Modify();
-            activeDrawing.CommitChanges();
-            return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = dimSet.Distance };
-        }
-        finally
-        {
-            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
-        }
-    }
-
-    public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile)
-    {
-        var activeDrawing = new DrawingHandler().GetActiveDrawing();
-        if (activeDrawing == null)
-            throw new DrawingNotOpenException();
-
-        var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId)
-            ?? throw new ViewNotFoundException(viewId);
-
-        // Build point list — points array is flat [x0,y0,z0, x1,y1,z1, ...]
-        if (points == null || points.Length < 6 || points.Length % 3 != 0)
-            return new CreateDimensionResult { Error = "points must be a flat array [x0,y0,z0, x1,y1,z1, ...] with at least 2 points" };
-
-        var pointList = new PointList();
-        for (int i = 0; i + 2 < points.Length; i += 3)
-            pointList.Add(new Point(points[i], points[i + 1], points[i + 2]));
-
-        // Direction vector perpendicular to the dimension line
-        // horizontal → line goes left-right → offset vector points up (0,1,0)
-        // vertical   → line goes up-down   → offset vector points right (1,0,0)
-        Vector dirVector = (direction ?? "horizontal").ToLowerInvariant() switch
-        {
-            "vertical" or "v"   => new Vector(1, 0, 0),
-            "horizontal" or "h" => new Vector(0, 1, 0),
-            _ => TryParseVector(direction) ?? new Vector(0, 1, 0)
-        };
-
-#pragma warning disable CS0618 // Tekla 2021 API still uses this constructor in current workflow.
-        var attr = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-        if (!string.IsNullOrWhiteSpace(attributesFile))
-            attr.LoadAttributes(attributesFile);
-
-        var dim = new StraightDimensionSetHandler().CreateDimensionSet(
-            view, pointList, dirVector, distance, attr);
-
-        if (dim == null)
-            return new CreateDimensionResult { Error = "CreateDimensionSet returned null" };
-
-        activeDrawing.CommitChanges("(MCP) CreateDimension");
-
-        return new CreateDimensionResult
-        {
-            Created     = true,
-            DimensionId = dim.GetIdentifier().ID,
-            ViewId      = viewId,
-            PointCount  = pointList.Count
-        };
-    }
-
-    public DeleteDimensionResult DeleteDimension(int dimensionId)
-    {
-        var drawingHandler = new DrawingHandler();
-        var activeDrawing = drawingHandler.GetActiveDrawing();
-        if (activeDrawing == null)
-        {
-            return new DeleteDimensionResult
-            {
-                HasActiveDrawing = false,
-                Deleted = false,
-                DimensionId = dimensionId
-            };
-        }
-
-        var deleted = false;
-        var viewEnum = activeDrawing.GetSheet().GetViews();
-        while (viewEnum.MoveNext())
-        {
-            if (viewEnum.Current is not View view)
+            var dx = System.Math.Abs(segment.EndX - segment.StartX);
+            var dy = System.Math.Abs(segment.EndY - segment.StartY);
+            if (dx <= 1e-6 && dy <= 1e-6)
                 continue;
 
-            var dimEnum = view.GetAllObjects(new[] { typeof(StraightDimensionSet) });
-            while (dimEnum.MoveNext())
+            if (dy <= dx * 0.01)
             {
-                if (dimEnum.Current is not StraightDimensionSet dimensionSet)
-                    continue;
-                if (dimensionSet.GetIdentifier().ID != dimensionId)
-                    continue;
-
-                dimensionSet.Delete();
-                activeDrawing.CommitChanges();
-                deleted = true;
-                break;
+                hasHorizontal = true;
+                continue;
             }
 
-            if (deleted)
-                break;
+            if (dx <= dy * 0.01)
+            {
+                hasVertical = true;
+                continue;
+            }
+
+            hasAngled = true;
         }
 
-        return new DeleteDimensionResult
-        {
-            HasActiveDrawing = true,
-            Deleted = deleted,
-            DimensionId = dimensionId
-        };
+        if (hasAngled || (hasHorizontal && hasVertical))
+            return "angled";
+
+        if (hasHorizontal)
+            return "horizontal";
+
+        if (hasVertical)
+            return "vertical";
+
+        return string.Empty;
     }
 
-    public PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile)
+    private static DrawingBoundsInfo? TryGetBounds(DrawingObject drawingObject)
     {
-        var total = Stopwatch.StartNew();
-        var result = new PlaceControlDiagonalsResult();
-        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = false;
+        if (drawingObject is not IAxisAlignedBoundingBox bounded)
+            return null;
 
-        try
-        {
-            var drawingHandler = new DrawingHandler();
-            var activeDrawing = drawingHandler.GetActiveDrawing();
-            if (activeDrawing == null)
-                throw new DrawingNotOpenException();
+        var box = bounded.GetAxisAlignedBoundingBox();
+        if (box == null)
+            return null;
 
-            var selectViewSw = Stopwatch.StartNew();
-            var targetView = ResolveTargetView(activeDrawing, viewId);
-            selectViewSw.Stop();
+        return CreateBoundsInfo(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+    }
 
-            result.ViewId = targetView.GetIdentifier().ID;
-            result.ViewType = targetView.ViewType.ToString();
-            result.SelectViewMs = selectViewSw.ElapsedMilliseconds;
+    private static DrawingBoundsInfo CreateBoundsFromSegmentPoints(Point start, Point end) => CreateBoundsInfo(
+        System.Math.Min(start.X, end.X),
+        System.Math.Min(start.Y, end.Y),
+        System.Math.Max(start.X, end.X),
+        System.Math.Max(start.Y, end.Y));
 
-            var readGeometrySw = Stopwatch.StartNew();
-            var sourcePoints = CollectDimensionSegmentPoints(targetView, out var dimensionsScanned);
-            readGeometrySw.Stop();
-            result.ReadGeometryMs = readGeometrySw.ElapsedMilliseconds;
-            result.PartsScanned = dimensionsScanned;
-            result.SourceDimensionsScanned = dimensionsScanned;
-            result.CandidatePoints = sourcePoints.Count;
+    private static DrawingBoundsInfo? TryGetTextBounds(StraightDimension segment)
+    {
+        _ = segment;
+        // Phase 1 keeps text geometry explicit but conservative:
+        // do not fabricate text boxes until Tekla exposes them reliably.
+        return null;
+    }
 
-            if (sourcePoints.Count < 2)
-            {
-                result.Error = "Not enough dimension points. Add dimensions on the target view first.";
-                result.TotalMs = total.ElapsedMilliseconds;
-                return result;
-            }
+    private static (int? ViewId, string ViewType) GetOwnerViewInfo(DrawingObject drawingObject)
+    {
+        var ownerView = drawingObject.GetView();
+        if (ownerView == null)
+            return (null, string.Empty);
 
-            var findExtremesSw = Stopwatch.StartNew();
-            var hull = ConvexHull.Compute(sourcePoints).ToList();
-            if (hull.Count < 2)
-            {
-                findExtremesSw.Stop();
-                result.FindExtremesMs = findExtremesSw.ElapsedMilliseconds;
-                result.Error = "Convex hull has fewer than 2 points.";
-                result.TotalMs = total.ElapsedMilliseconds;
-                return result;
-            }
-
-            var primary = FarthestPointPair.Find(hull);
-            var rectangleLike = IsRectangleLikeHull(hull);
-            var requestedDiagonalCount = rectangleLike ? 1 : 2;
-
-            var pairs = new List<(Point Start, Point End)>
-            {
-                (primary.First, primary.Second)
-            };
-
-            if (requestedDiagonalCount > 1
-                && TryFindSecondaryDiagonal(hull, primary.First, primary.Second, out var secondary))
-            {
-                pairs.Add(secondary);
-            }
-
-            findExtremesSw.Stop();
-            result.FindExtremesMs = findExtremesSw.ElapsedMilliseconds;
-            result.RectangleLike = rectangleLike;
-            result.RequestedDiagonalCount = requestedDiagonalCount;
-
-            var start = primary.First;
-            var end = primary.Second;
-            result.StartPoint = [start.X, start.Y, start.Z];
-            result.EndPoint = [end.X, end.Y, end.Z];
-            result.FarthestDistance = System.Math.Round(System.Math.Sqrt(primary.DistanceSquared), 3);
-
-            var createSw = Stopwatch.StartNew();
-#pragma warning disable CS0618 // Tekla 2021 API constructor is required in current workflow.
-            var attributes = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-            var normalizedAttributes = string.IsNullOrWhiteSpace(attributesFile) ? "standard" : attributesFile.Trim();
-            attributes.LoadAttributes(normalizedAttributes);
-
-            // When both diagonals intersect their texts land at almost the same
-            // point (near the assembly centre). In that case use a larger offset
-            // for the second diagonal so the lines sit at different distances
-            // and the texts are clearly separated.
-            var diagonalsIntersect = pairs.Count == 2
-                && SegmentsProperlyIntersect(pairs[0].Start, pairs[0].End, pairs[1].Start, pairs[1].End);
-
-            var dimIds = new List<int>();
-            for (var i = 0; i < pairs.Count; i++)
-            {
-                var pair = pairs[i];
-                var pointList = new PointList { pair.Start, pair.End };
-                var direction = BuildDiagonalOffsetDirection(pair.Start, pair.End);
-                var actualDistance = (i == 1 && diagonalsIntersect) ? distance * 2.0 : distance;
-
-                var dim = new StraightDimensionSetHandler().CreateDimensionSet(
-                    targetView,
-                    pointList,
-                    direction,
-                    actualDistance,
-                    attributes);
-                if (dim == null)
-                    continue;
-
-                dimIds.Add(dim.GetIdentifier().ID);
-            }
-
-            createSw.Stop();
-            result.CreateMs = createSw.ElapsedMilliseconds;
-
-            if (dimIds.Count == 0)
-            {
-                result.Error = "CreateDimensionSet returned null for all requested diagonals.";
-                result.TotalMs = total.ElapsedMilliseconds;
-                return result;
-            }
-
-            var commitSw = Stopwatch.StartNew();
-            activeDrawing.CommitChanges("(MCP) PlaceControlDiagonals");
-            commitSw.Stop();
-
-            result.Created = true;
-            result.CreatedCount = dimIds.Count;
-            result.DimensionId = dimIds[0];
-            result.DimensionIds = dimIds.ToArray();
-            result.CommitMs = commitSw.ElapsedMilliseconds;
-            result.TotalMs = total.ElapsedMilliseconds;
-            return result;
-        }
-        finally
-        {
-            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
-        }
+        return ownerView is View view
+            ? (view.GetIdentifier().ID, view.ViewType.ToString())
+            : (ownerView.GetIdentifier().ID, ownerView.GetType().Name);
     }
 
     private static Vector? TryParseVector(string? s)
@@ -364,7 +124,10 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             double.TryParse(parts[0], out var x) &&
             double.TryParse(parts[1], out var y) &&
             double.TryParse(parts[2], out var z))
+        {
             return new Vector(x, y, z);
+        }
+
         return null;
     }
 
@@ -546,14 +309,14 @@ public sealed class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     private static bool SegmentsProperlyIntersect(Point a1, Point a2, Point b1, Point b2)
     {
-        var o1 = Orientation(a1, a2, b1);
-        var o2 = Orientation(a1, a2, b2);
-        var o3 = Orientation(b1, b2, a1);
-        var o4 = Orientation(b1, b2, a2);
+        var o1 = GeometricOrientation(a1, a2, b1);
+        var o2 = GeometricOrientation(a1, a2, b2);
+        var o3 = GeometricOrientation(b1, b2, a1);
+        var o4 = GeometricOrientation(b1, b2, a2);
         return o1 * o2 < 0 && o3 * o4 < 0;
     }
 
-    private static double Orientation(Point a, Point b, Point c)
+    private static double GeometricOrientation(Point a, Point b, Point c)
     {
         return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
     }
