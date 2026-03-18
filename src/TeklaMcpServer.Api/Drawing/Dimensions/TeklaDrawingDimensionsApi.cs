@@ -13,6 +13,26 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 {
     private const double AxisSummaryToleranceRatio = 0.10;
 
+    private readonly struct DimensionLineContext
+    {
+        public DimensionLineContext(
+            (double X, double Y) upDirection,
+            (double X, double Y) direction,
+            int topDirection,
+            DrawingLineInfo referenceLine)
+        {
+            UpDirection = upDirection;
+            Direction = direction;
+            TopDirection = topDirection;
+            ReferenceLine = referenceLine;
+        }
+
+        public (double X, double Y) UpDirection { get; }
+        public (double X, double Y) Direction { get; }
+        public int TopDirection { get; }
+        public DrawingLineInfo ReferenceLine { get; }
+    }
+
     public TeklaDrawingDimensionsApi() { }
 
     internal static DrawingBoundsInfo CreateBoundsInfo(double minX, double minY, double maxX, double maxY) => new()
@@ -216,7 +236,10 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
                 Font = attributes.Text.Font
             };
 
-            textAttributes.Frame.Type = (FrameTypes)attributes.Text.Frame;
+            textAttributes.Frame.Type = MapDimensionFrameType(attributes.Text.Frame);
+            textAttributes.PlacingAttributes.IsFixed = true;
+            textAttributes.PlacingAttributes.PlacingQuarter.TopLeft = true;
+            textAttributes.UseWordWrapping = false;
 
             return textAttributes;
         }
@@ -224,6 +247,19 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         {
             return null;
         }
+    }
+
+    private static FrameTypes MapDimensionFrameType(DimensionSetBaseAttributes.FrameTypes frameType)
+    {
+        return frameType switch
+        {
+            DimensionSetBaseAttributes.FrameTypes.None => FrameTypes.None,
+            DimensionSetBaseAttributes.FrameTypes.Rectangle => FrameTypes.Rectangular,
+            DimensionSetBaseAttributes.FrameTypes.RoundedRectangle => FrameTypes.Round,
+            DimensionSetBaseAttributes.FrameTypes.SharpenedRectangle => FrameTypes.Sharpened,
+            DimensionSetBaseAttributes.FrameTypes.Underline => FrameTypes.Line,
+            _ => FrameTypes.None
+        };
     }
 
     private static (double Width, double Height)? TryMeasureTextSize(
@@ -392,6 +428,31 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return 1;
     }
 
+    internal static DrawingLineInfo? TryCreateCommonReferenceLine(
+        IReadOnlyList<(double X, double Y)> points,
+        (double X, double Y) upDirection,
+        double distance,
+        out (double X, double Y) direction)
+    {
+        direction = default;
+        if (points.Count == 0)
+            return null;
+
+        var rawDirection = CanonicalizeDirection(-upDirection.Y, upDirection.X);
+        if (!TryNormalizeDirection(rawDirection.X, rawDirection.Y, out var normalizedDirection))
+            return null;
+
+        direction = normalizedDirection;
+
+        var offsetProjection = points.Max(point => Project(point.X, point.Y, upDirection.X, upDirection.Y)) + distance;
+        var minAlongProjection = points.Min(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
+        var maxAlongProjection = points.Max(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
+
+        var start = CreatePointOnDimensionLine(minAlongProjection, offsetProjection, normalizedDirection, upDirection);
+        var end = CreatePointOnDimensionLine(maxAlongProjection, offsetProjection, normalizedDirection, upDirection);
+        return CreateLineInfo(start.X, start.Y, end.X, end.Y);
+    }
+
     internal static DrawingLineInfo? TryCreateReferenceLine(DimensionSegmentInfo segment)
     {
         return segment.DimensionLine == null
@@ -426,6 +487,17 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return (
             System.Math.Round(lineOriginX + (projection * lineDirectionX), 3),
             System.Math.Round(lineOriginY + (projection * lineDirectionY), 3));
+    }
+
+    internal static (double X, double Y) CreatePointOnDimensionLine(
+        double alongProjection,
+        double offsetProjection,
+        (double X, double Y) direction,
+        (double X, double Y) upDirection)
+    {
+        return (
+            System.Math.Round((direction.X * alongProjection) + (upDirection.X * offsetProjection), 3),
+            System.Math.Round((direction.Y * alongProjection) + (upDirection.Y * offsetProjection), 3));
     }
 
     internal static List<DrawingPointInfo> BuildMeasuredPointList(

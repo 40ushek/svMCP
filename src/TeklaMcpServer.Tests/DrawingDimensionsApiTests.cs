@@ -63,6 +63,27 @@ public sealed class DrawingDimensionsApiTests
     }
 
     [Fact]
+    public void TryCreateCommonReferenceLine_UsesSharedOffsetForWholeDimensionSet()
+    {
+        var referenceLine = TeklaDrawingDimensionsApi.TryCreateCommonReferenceLine(
+            [
+                (0d, 0d),
+                (100d, 0d),
+                (100d, 40d),
+                (200d, 40d)
+            ],
+            (0d, -1d),
+            25d,
+            out var direction);
+
+        Assert.NotNull(referenceLine);
+        Assert.Equal(1, direction.X, 6);
+        Assert.Equal(0, direction.Y, 6);
+        Assert.Equal(-25, referenceLine!.StartY, 3);
+        Assert.Equal(-25, referenceLine.EndY, 3);
+    }
+
+    [Fact]
     public void GetDimensionsDto_SerializesOldAndNewFields()
     {
         var result = new GetDimensionsResult

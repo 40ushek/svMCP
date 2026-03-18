@@ -55,13 +55,11 @@ public sealed partial class TeklaDrawingDimensionsApi
 
                 var ownerView = dimSet.GetView();
                 var ownerViewId = ownerView?.GetIdentifier().ID;
-                var segmentObjects = dimSet.GetObjects();
-                while (segmentObjects.MoveNext())
+                var segments = EnumerateSegments(dimSet);
+                var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
+                foreach (var segment in segments)
                 {
-                    if (segmentObjects.Current is not StraightDimension segment)
-                        continue;
-
-                    var info = BuildSegmentInfo(segment, dimSet, dimSet.Distance);
+                    var info = BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext);
                     var polygon = TryCreateTextPolygon(segment, dimSet, info.DimensionLine);
                     if (polygon == null || polygon.Count < 4)
                         continue;

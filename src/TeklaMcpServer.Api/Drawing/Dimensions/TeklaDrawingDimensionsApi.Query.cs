@@ -56,6 +56,8 @@ public sealed partial class TeklaDrawingDimensionsApi
     private static DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)
     {
         var (ownerViewId, ownerViewType, ownerViewScale) = GetOwnerViewInfo(dimSet);
+        var segments = EnumerateSegments(dimSet);
+        var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
         var info = new DrawingDimensionInfo
         {
             Id = dimSet.GetIdentifier().ID,
@@ -68,27 +70,33 @@ public sealed partial class TeklaDrawingDimensionsApi
             Bounds = TryGetBounds(dimSet)
         };
 
-        var segEnum = dimSet.GetObjects();
-        while (segEnum.MoveNext())
+        foreach (var segment in segments)
         {
-            if (segEnum.Current is not StraightDimension segment)
-                continue;
-
-            info.Segments.Add(BuildSegmentInfo(segment, dimSet, dimSet.Distance));
+            info.Segments.Add(BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext));
         }
 
         info.Bounds ??= CombineBounds(info.Segments.Select(static s => s.Bounds));
-        var representative = info.Segments
-            .Where(static s => s.DimensionLine != null)
-            .OrderByDescending(static s => s.DimensionLine!.Length)
-            .FirstOrDefault()
-            ?? info.Segments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
-        if (representative != null)
+        if (lineContext.HasValue)
         {
-            info.DirectionX = representative.DirectionX;
-            info.DirectionY = representative.DirectionY;
-            info.TopDirection = representative.TopDirection;
-            info.ReferenceLine = TryCreateReferenceLine(representative);
+            info.DirectionX = lineContext.Value.Direction.X;
+            info.DirectionY = lineContext.Value.Direction.Y;
+            info.TopDirection = lineContext.Value.TopDirection;
+            info.ReferenceLine = lineContext.Value.ReferenceLine;
+        }
+        else
+        {
+            var representative = info.Segments
+                .Where(static s => s.DimensionLine != null)
+                .OrderByDescending(static s => s.DimensionLine!.Length)
+                .FirstOrDefault()
+                ?? info.Segments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
+            if (representative != null)
+            {
+                info.DirectionX = representative.DirectionX;
+                info.DirectionY = representative.DirectionY;
+                info.TopDirection = representative.TopDirection;
+                info.ReferenceLine = TryCreateReferenceLine(representative);
+            }
         }
 
         info.MeasuredPoints = BuildMeasuredPointList(info.Segments, info.DirectionX, info.DirectionY);
@@ -102,12 +110,17 @@ public sealed partial class TeklaDrawingDimensionsApi
         return info;
     }
 
-    private static DimensionSegmentInfo BuildSegmentInfo(StraightDimension segment, StraightDimensionSet dimSet, double distance)
+    private static DimensionSegmentInfo BuildSegmentInfo(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        double distance,
+        DimensionLineContext? lineContext = null)
     {
         var start = segment.StartPoint;
         var end = segment.EndPoint;
         var segmentDirection = default((double X, double Y));
-        var hasUpDirection = TryGetUpDirection(segment, out var upDirection);
+        var upDirection = lineContext?.UpDirection ?? default;
+        var hasUpDirection = lineContext.HasValue || TryGetUpDirection(segment, out upDirection);
 
         DrawingLineInfo? dimensionLine = null;
         DrawingLineInfo? leadLineMain = null;
@@ -115,8 +128,16 @@ public sealed partial class TeklaDrawingDimensionsApi
         var topDirection = 0;
         if (hasUpDirection)
         {
-            segmentDirection = CanonicalizeDirection(-upDirection.Y, upDirection.X);
-            var referenceStart = CreateReferencePoint(start.X, start.Y, upDirection, distance);
+            segmentDirection = lineContext?.Direction ?? CanonicalizeDirection(-upDirection.Y, upDirection.X);
+            var referenceStart = lineContext?.ReferenceLine != null
+                ? ProjectPointToReferenceLine(
+                    start.X,
+                    start.Y,
+                    lineContext.Value.ReferenceLine.StartX,
+                    lineContext.Value.ReferenceLine.StartY,
+                    segmentDirection.X,
+                    segmentDirection.Y)
+                : CreateReferencePoint(start.X, start.Y, upDirection, distance);
             var referenceEnd = ProjectPointToReferenceLine(
                 end.X,
                 end.Y,
@@ -128,7 +149,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             dimensionLine = CreateLineInfo(referenceStart.X, referenceStart.Y, referenceEnd.X, referenceEnd.Y);
             leadLineMain = CreateLineInfo(start.X, start.Y, referenceStart.X, referenceStart.Y);
             leadLineSecond = CreateLineInfo(end.X, end.Y, referenceEnd.X, referenceEnd.Y);
-            topDirection = GetTopDirection(upDirection.X, upDirection.Y);
+            topDirection = lineContext?.TopDirection ?? GetTopDirection(upDirection.X, upDirection.Y);
         }
         else
         {
@@ -153,5 +174,46 @@ public sealed partial class TeklaDrawingDimensionsApi
             LeadLineMain = leadLineMain,
             LeadLineSecond = leadLineSecond
         };
+    }
+
+    private static List<StraightDimension> EnumerateSegments(StraightDimensionSet dimSet)
+    {
+        var segments = new List<StraightDimension>();
+        var segEnum = dimSet.GetObjects();
+        while (segEnum.MoveNext())
+        {
+            if (segEnum.Current is StraightDimension segment)
+                segments.Add(segment);
+        }
+
+        return segments;
+    }
+
+    private static DimensionLineContext? TryCreateDimensionLineContext(
+        IReadOnlyList<StraightDimension> segments,
+        double distance)
+    {
+        if (segments.Count == 0)
+            return null;
+
+        if (!TryGetUpDirection(segments[0], out var upDirection))
+            return null;
+
+        var points = new List<(double X, double Y)>(segments.Count * 2);
+        foreach (var segment in segments)
+        {
+            points.Add((segment.StartPoint.X, segment.StartPoint.Y));
+            points.Add((segment.EndPoint.X, segment.EndPoint.Y));
+        }
+
+        var referenceLine = TryCreateCommonReferenceLine(points, upDirection, distance, out var direction);
+        if (referenceLine == null)
+            return null;
+
+        return new DimensionLineContext(
+            upDirection,
+            direction,
+            GetTopDirection(upDirection.X, upDirection.Y),
+            referenceLine);
     }
 }
