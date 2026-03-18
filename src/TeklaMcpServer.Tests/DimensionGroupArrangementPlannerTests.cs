@@ -7,6 +7,29 @@ namespace TeklaMcpServer.Tests;
 public sealed class DimensionGroupArrangementPlannerTests
 {
     [Fact]
+    public void BuildPlan_ForStack_MergesMultipleGroupsOfSameDimensionIdIntoSingleMoveUnit()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 10, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 20, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 25, 0, 100, 0));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(5, proposal.AxisShift, 3);
+    }
+
+    [Fact]
     public void BuildPlan_ReturnsNoChanges_WhenGapIsAlreadyEnough()
     {
         var group = CreateGroup(
@@ -89,6 +112,66 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         group.Members.AddRange(members);
         group.SortMembers();
+        group.RefreshMetrics();
+        return group;
+    }
+
+    private static DimensionGroup CreateReferenceLineGroup(
+        int dimensionId,
+        string orientation,
+        int topDirection,
+        (double X, double Y) direction,
+        double lineOffset,
+        double startAlong,
+        double endAlong,
+        double distance)
+    {
+        DrawingLineInfo line;
+        if (System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01)
+        {
+            line = new DrawingLineInfo
+            {
+                StartX = startAlong,
+                StartY = lineOffset,
+                EndX = endAlong,
+                EndY = lineOffset
+            };
+        }
+        else
+        {
+            line = new DrawingLineInfo
+            {
+                StartX = lineOffset,
+                StartY = startAlong,
+                EndX = lineOffset,
+                EndY = endAlong
+            };
+        }
+
+        var member = new DimensionGroupMember
+        {
+            DimensionId = dimensionId,
+            Distance = distance,
+            DirectionX = direction.X,
+            DirectionY = direction.Y,
+            TopDirection = topDirection,
+            ReferenceLine = line,
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line),
+            Dimension = new DrawingDimensionInfo
+            {
+                Id = dimensionId
+            }
+        };
+
+        var group = new DimensionGroup
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = orientation,
+            TopDirection = topDirection,
+            Direction = direction
+        };
+        group.Members.Add(member);
         group.RefreshMetrics();
         return group;
     }

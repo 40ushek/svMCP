@@ -295,6 +295,155 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             System.Math.Round(lineOriginY + (projection * lineDirectionY), 3));
     }
 
+    internal static List<DrawingPointInfo> BuildMeasuredPointList(
+        IReadOnlyList<DimensionSegmentInfo> segments,
+        double directionX,
+        double directionY)
+    {
+        var nodes = new Dictionary<(double X, double Y), HashSet<(double X, double Y)>>();
+
+        foreach (var segment in segments)
+        {
+            var start = (System.Math.Round(segment.StartX, 3), System.Math.Round(segment.StartY, 3));
+            var end = (System.Math.Round(segment.EndX, 3), System.Math.Round(segment.EndY, 3));
+
+            if (!nodes.TryGetValue(start, out var startNeighbours))
+            {
+                startNeighbours = [];
+                nodes[start] = startNeighbours;
+            }
+
+            if (!nodes.TryGetValue(end, out var endNeighbours))
+            {
+                endNeighbours = [];
+                nodes[end] = endNeighbours;
+            }
+
+            startNeighbours.Add(end);
+            endNeighbours.Add(start);
+        }
+
+        if (nodes.Count == 0)
+            return [];
+
+        var orderedKeys = OrderMeasuredPointKeys(nodes, directionX, directionY);
+        return orderedKeys
+            .Select((point, index) => new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = index
+            })
+            .ToList();
+    }
+
+    internal static int FindMeasuredPointOrder(
+        IReadOnlyList<DrawingPointInfo> points,
+        double x,
+        double y,
+        double tolerance = 0.5)
+    {
+        for (var i = 0; i < points.Count; i++)
+        {
+            if (System.Math.Abs(points[i].X - x) <= tolerance &&
+                System.Math.Abs(points[i].Y - y) <= tolerance)
+            {
+                return points[i].Order;
+            }
+        }
+
+        return -1;
+    }
+
+    private static List<(double X, double Y)> OrderMeasuredPointKeys(
+        Dictionary<(double X, double Y), HashSet<(double X, double Y)>> nodes,
+        double directionX,
+        double directionY)
+    {
+        var result = new List<(double X, double Y)>();
+        var visitedEdges = new HashSet<((double X, double Y) A, (double X, double Y) B)>();
+        var remaining = new HashSet<(double X, double Y)>(nodes.Keys);
+        var hasDirection = TryNormalizeDirection(directionX, directionY, out var direction);
+        var directionValue = hasDirection ? CanonicalizeDirection(direction.X, direction.Y) : (1d, 0d);
+
+        while (remaining.Count > 0)
+        {
+            var start = SelectMeasuredChainStart(remaining, nodes, directionValue);
+            TraverseMeasuredChain(start, nodes, directionValue, visitedEdges, result, remaining);
+        }
+
+        return result;
+    }
+
+    private static (double X, double Y) SelectMeasuredChainStart(
+        IEnumerable<(double X, double Y)> candidates,
+        IReadOnlyDictionary<(double X, double Y), HashSet<(double X, double Y)>> nodes,
+        (double X, double Y) direction)
+    {
+        var endpoints = candidates
+            .Where(point => nodes.TryGetValue(point, out var neighbours) && neighbours.Count <= 1)
+            .ToList();
+
+        var source = endpoints.Count > 0 ? endpoints : candidates.ToList();
+        return source
+            .OrderByDescending(point => Project(point.X, point.Y, direction.X, direction.Y))
+            .ThenBy(point => point.X)
+            .ThenBy(point => point.Y)
+            .First();
+    }
+
+    private static void TraverseMeasuredChain(
+        (double X, double Y) start,
+        IReadOnlyDictionary<(double X, double Y), HashSet<(double X, double Y)>> nodes,
+        (double X, double Y) direction,
+        HashSet<((double X, double Y) A, (double X, double Y) B)> visitedEdges,
+        List<(double X, double Y)> ordered,
+        HashSet<(double X, double Y)> remaining)
+    {
+        var current = start;
+        (double X, double Y)? previous = null;
+
+        while (true)
+        {
+            if (remaining.Remove(current))
+                ordered.Add(current);
+
+            if (!nodes.TryGetValue(current, out var neighbours) || neighbours.Count == 0)
+                break;
+
+            var nextCandidates = neighbours
+                .Where(candidate => !visitedEdges.Contains(NormalizeEdge(current, candidate)))
+                .OrderByDescending(candidate => Project(candidate.X, candidate.Y, direction.X, direction.Y))
+                .ThenBy(candidate => previous.HasValue && candidate.Equals(previous.Value) ? 1 : 0)
+                .ThenBy(candidate => candidate.X)
+                .ThenBy(candidate => candidate.Y)
+                .ToList();
+
+            if (nextCandidates.Count == 0)
+                break;
+
+            var next = nextCandidates[0];
+            var edge = NormalizeEdge(current, next);
+            if (visitedEdges.Contains(edge))
+                break;
+
+            visitedEdges.Add(edge);
+            previous = current;
+            current = next;
+        }
+    }
+
+    private static ((double X, double Y) A, (double X, double Y) B) NormalizeEdge(
+        (double X, double Y) first,
+        (double X, double Y) second)
+    {
+        return first.X < second.X || (System.Math.Abs(first.X - second.X) <= 1e-6 && first.Y <= second.Y)
+            ? (first, second)
+            : (second, first);
+    }
+
+    private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
+
     private static Vector? TryParseVector(string? s)
     {
         if (string.IsNullOrWhiteSpace(s))

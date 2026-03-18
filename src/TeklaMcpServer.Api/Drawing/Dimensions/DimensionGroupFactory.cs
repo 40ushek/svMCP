@@ -81,9 +81,120 @@ internal static class DimensionGroupFactory
             .ToList();
 
         if (segmentMembers.Count > 0)
-            return segmentMembers;
+            return MergeMembersIntoChains(dimension, segmentMembers);
 
         return new[] { CreateFallbackMember(dimension) };
+    }
+
+    private static IReadOnlyList<DimensionGroupMember> MergeMembersIntoChains(
+        DrawingDimensionInfo dimension,
+        IReadOnlyList<DimensionGroupMember> rawMembers)
+    {
+        if (rawMembers.Count <= 1 || dimension.MeasuredPoints.Count == 0)
+            return rawMembers.ToList();
+
+        var chains = new List<List<DimensionGroupMember>>();
+        var visited = new bool[rawMembers.Count];
+
+        for (var i = 0; i < rawMembers.Count; i++)
+        {
+            if (visited[i])
+                continue;
+
+            var component = new List<DimensionGroupMember>();
+            var queue = new Queue<int>();
+            queue.Enqueue(i);
+            visited[i] = true;
+
+            while (queue.Count > 0)
+            {
+                var currentIndex = queue.Dequeue();
+                var current = rawMembers[currentIndex];
+                component.Add(current);
+
+                for (var candidateIndex = 0; candidateIndex < rawMembers.Count; candidateIndex++)
+                {
+                    if (visited[candidateIndex])
+                        continue;
+
+                    if (!CanChainMembersWithinDimension(current, rawMembers[candidateIndex]))
+                        continue;
+
+                    visited[candidateIndex] = true;
+                    queue.Enqueue(candidateIndex);
+                }
+            }
+
+            chains.Add(component);
+        }
+
+        return chains.Select(chain => CreateChainMember(dimension, chain)).ToList();
+    }
+
+    private static bool CanChainMembersWithinDimension(DimensionGroupMember left, DimensionGroupMember right)
+    {
+        if (left.DimensionId != right.DimensionId)
+            return false;
+
+        var leftDirection = TryGetMemberDirection(left);
+        var rightDirection = TryGetMemberDirection(right);
+        if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
+            return false;
+
+        if (left.TopDirection != 0 && right.TopDirection != 0 && left.TopDirection != right.TopDirection)
+            return false;
+
+        return HaveAdjacentMeasuredPointOrders(left, right) || HaveSharedMeasuredPoint(left, right);
+    }
+
+    private static DimensionGroupMember CreateChainMember(
+        DrawingDimensionInfo dimension,
+        IReadOnlyList<DimensionGroupMember> chain)
+    {
+        var orderedChain = chain
+            .OrderBy(member => System.Math.Min(member.StartPointOrder, member.EndPointOrder))
+            .ThenBy(member => System.Math.Max(member.StartPointOrder, member.EndPointOrder))
+            .ToList();
+
+        var first = orderedChain[0];
+        var last = orderedChain[orderedChain.Count - 1];
+        var minOrder = orderedChain.Min(member => System.Math.Min(member.StartPointOrder, member.EndPointOrder));
+        var maxOrder = orderedChain.Max(member => System.Math.Max(member.StartPointOrder, member.EndPointOrder));
+
+        var startPoint = dimension.MeasuredPoints.FirstOrDefault(point => point.Order == minOrder);
+        var endPoint = dimension.MeasuredPoints.FirstOrDefault(point => point.Order == maxOrder);
+        var representativeLine = orderedChain
+            .Select(static member => member.ReferenceLine)
+            .Where(static line => line != null)
+            .Cast<DrawingLineInfo>()
+            .OrderByDescending(static line => line.Length)
+            .FirstOrDefault();
+
+        return new DimensionGroupMember
+        {
+            DimensionId = dimension.Id,
+            SegmentId = first.SegmentId,
+            StartX = startPoint?.X ?? first.StartX,
+            StartY = startPoint?.Y ?? first.StartY,
+            EndX = endPoint?.X ?? last.EndX,
+            EndY = endPoint?.Y ?? last.EndY,
+            StartPointOrder = minOrder,
+            EndPointOrder = maxOrder,
+            Distance = dimension.Distance,
+            DirectionX = first.DirectionX,
+            DirectionY = first.DirectionY,
+            TopDirection = first.TopDirection,
+            Bounds = CombineMemberBounds(orderedChain),
+            ReferenceLine = dimension.ReferenceLine != null ? CopyLine(dimension.ReferenceLine) : CopyLine(representativeLine),
+            LeadLineMain = CopyLine(first.LeadLineMain),
+            LeadLineSecond = CopyLine(last.LeadLineSecond),
+            Dimension = dimension
+        };
+    }
+
+    private static DrawingBoundsInfo? CombineMemberBounds(IEnumerable<DimensionGroupMember> members)
+    {
+        return TeklaDrawingDimensionsApi.CombineBounds(members.Select(static member => member.Bounds));
     }
 
     private static DimensionGroup CreateGroup(IReadOnlyList<DimensionGroupMember> members)
@@ -165,6 +276,9 @@ internal static class DimensionGroupFactory
         if (!direction.HasValue)
             return false;
 
+        if (!HaveAdjacentMeasuredPointOrders(left, right) && !HaveSharedMeasuredPoint(left, right))
+            return false;
+
         var leftOffset = TryGetLineOffset(left.ReferenceLine, direction.Value);
         var rightOffset = TryGetLineOffset(right.ReferenceLine, direction.Value);
         if (!leftOffset.HasValue || !rightOffset.HasValue)
@@ -222,6 +336,22 @@ internal static class DimensionGroupFactory
                PointsEqual(left.StartX, left.StartY, right.EndX, right.EndY) ||
                PointsEqual(left.EndX, left.EndY, right.StartX, right.StartY) ||
                PointsEqual(left.EndX, left.EndY, right.EndX, right.EndY);
+    }
+
+    private static bool HaveAdjacentMeasuredPointOrders(DimensionGroupMember left, DimensionGroupMember right)
+    {
+        if (left.StartPointOrder < 0 || left.EndPointOrder < 0 || right.StartPointOrder < 0 || right.EndPointOrder < 0)
+            return false;
+
+        var leftMin = System.Math.Min(left.StartPointOrder, left.EndPointOrder);
+        var leftMax = System.Math.Max(left.StartPointOrder, left.EndPointOrder);
+        var rightMin = System.Math.Min(right.StartPointOrder, right.EndPointOrder);
+        var rightMax = System.Math.Max(right.StartPointOrder, right.EndPointOrder);
+
+        return leftMax == rightMin
+            || rightMax == leftMin
+            || leftMin == rightMin
+            || leftMax == rightMax;
     }
 
     private static bool HaveCompatibleLeadLines(DimensionGroupMember left, DimensionGroupMember right)
@@ -445,6 +575,8 @@ internal static class DimensionGroupFactory
             StartY = segment.StartY,
             EndX = segment.EndX,
             EndY = segment.EndY,
+            StartPointOrder = TeklaDrawingDimensionsApi.FindMeasuredPointOrder(dimension.MeasuredPoints, segment.StartX, segment.StartY),
+            EndPointOrder = TeklaDrawingDimensionsApi.FindMeasuredPointOrder(dimension.MeasuredPoints, segment.EndX, segment.EndY),
             Distance = segment.Distance,
             DirectionX = segment.DirectionX,
             DirectionY = segment.DirectionY,

@@ -6,6 +6,68 @@ namespace TeklaMcpServer.Tests;
 public sealed class DimensionGroupSpacingAnalyzerTests
 {
     [Fact]
+    public void AnalyzeStacks_BuildsHorizontalStackFromParallelOverlappingGroups()
+    {
+        var first = CreateGroup(
+        [
+            CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10)
+        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+
+        var second = CreateGroup(
+        [
+            CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
+        ], "horizontal", "Relative", (1, 0), -1);
+
+        var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([first, second]);
+
+        var analysis = Assert.Single(analyses);
+        Assert.False(analysis.HasOverlaps);
+        Assert.Equal(15, analysis.MinimumDistance, 3);
+        var pair = Assert.Single(analysis.Pairs);
+        Assert.Equal(1, pair.FirstDimensionId);
+        Assert.Equal(2, pair.SecondDimensionId);
+        Assert.Equal(15, pair.Distance, 3);
+    }
+
+    [Fact]
+    public void AnalyzeStacks_DoesNotMergeGroupsWithDifferentTopDirections()
+    {
+        var horizontalTop = CreateGroup(
+        [
+            CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10)
+        ], "horizontal", "PartLongitudinal", (1, 0), 1);
+
+        var horizontalBottom = CreateGroup(
+        [
+            CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
+        ], "horizontal", "Relative", (1, 0), -1);
+
+        var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([horizontalTop, horizontalBottom]);
+
+        Assert.Equal(2, analyses.Count);
+        Assert.All(analyses, analysis => Assert.Empty(analysis.Pairs));
+    }
+
+    [Fact]
+    public void AnalyzeStacks_DoesNotMergeGroupsWithoutDirectionExtentOverlap()
+    {
+        var left = CreateGroup(
+        [
+            CreateMember(1, 0, 10, 100, 20, 0, 10, 100, 10)
+        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+
+        var farRight = CreateGroup(
+        [
+            CreateMember(2, 300, 30, 400, 40, 300, 25, 400, 25)
+        ], "horizontal", "Relative", (1, 0), -1);
+
+        var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([left, farRight]);
+
+        Assert.Equal(2, analyses.Count);
+        Assert.All(analyses, analysis => Assert.Empty(analysis.Pairs));
+    }
+
+    [Fact]
     public void Analyze_UsesReferenceLineSpacingForHorizontalGroup()
     {
         var group = CreateGroup(

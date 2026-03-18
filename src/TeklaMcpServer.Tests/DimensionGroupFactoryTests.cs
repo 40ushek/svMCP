@@ -346,6 +346,15 @@ public sealed class DimensionGroupFactoryTests
     {
         var dimension = CreateDimension(1, 10, "FrontView", "RelativeAndAbsolute", "vertical", 40, 0, 1, 1, -1, 0, 0, 0, 0, 0, 10, 60);
         dimension.Segments.Clear();
+        dimension.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 1172.5, Order = 0 },
+            new DrawingPointInfo { X = 0, Y = 1112.5, Order = 1 },
+            new DrawingPointInfo { X = 3250, Y = 1052.5, Order = 2 },
+            new DrawingPointInfo { X = 0, Y = 912.5, Order = 3 },
+            new DrawingPointInfo { X = 0, Y = 838.5, Order = 4 },
+            new DrawingPointInfo { X = 0, Y = -1172.5, Order = 5 }
+        ];
 
         dimension.Segments.Add(CreateVerticalSegment(1001, 0, -1172.5, 0, 838.5, -200));
         dimension.Segments.Add(CreateVerticalSegment(1002, 0, 912.5, 3250, 1052.5, -200));
@@ -354,7 +363,79 @@ public sealed class DimensionGroupFactoryTests
         var groups = DimensionGroupFactory.BuildGroups([dimension]);
 
         var group = Assert.Single(groups);
-        Assert.Equal(3, group.Members.Count);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(0, member.StartX, 3);
+        Assert.Equal(1172.5, member.StartY, 3);
+        Assert.Equal(0, member.EndX, 3);
+        Assert.Equal(-1172.5, member.EndY, 3);
+    }
+
+    [Fact]
+    public void BuildGroups_UsesMeasuredPointOrderForSameDimensionBandTransition()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        dimension.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 0, Order = 0 },
+            new DrawingPointInfo { X = 100, Y = 0, Order = 1 },
+            new DrawingPointInfo { X = 220, Y = 0, Order = 2 }
+        ];
+
+        var secondSegment = new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 100,
+            StartY = 0,
+            EndX = 220,
+            EndY = 0,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = -1500,
+                EndX = 220,
+                EndY = -1500
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = -1500
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 220,
+                StartY = 0,
+                EndX = 220,
+                EndY = -1500
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 100,
+                MinY = -1500,
+                MaxX = 220,
+                MaxY = -1500
+            }
+        };
+
+        dimension.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 100, EndY = -1440 };
+        dimension.Segments[0].DimensionLine = dimension.ReferenceLine;
+        dimension.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        dimension.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1440 };
+        dimension.Segments.Add(secondSegment);
+
+        var groups = DimensionGroupFactory.BuildGroups([dimension]);
+
+        var group = Assert.Single(groups);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(0, member.StartX, 3);
+        Assert.Equal(0, member.StartY, 3);
+        Assert.Equal(220, member.EndX, 3);
+        Assert.Equal(0, member.EndY, 3);
     }
 
     private static DrawingDimensionInfo CreateDimension(

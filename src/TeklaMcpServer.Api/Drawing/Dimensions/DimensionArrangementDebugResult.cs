@@ -56,6 +56,29 @@ public sealed class DimensionArrangementDebugSpacingInfo
     public List<DimensionArrangementDebugSpacingPair> Pairs { get; } = [];
 }
 
+public sealed class DimensionArrangementDebugStackMemberInfo
+{
+    public int DimensionId { get; set; }
+    public string DimensionType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public double Distance { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+}
+
+public sealed class DimensionArrangementDebugStackInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public double? DirectionX { get; set; }
+    public double? DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public List<string> GroupingBasis { get; } = [];
+    public List<DimensionArrangementDebugStackMemberInfo> Members { get; } = [];
+}
+
 public sealed class DimensionArrangementDebugProposal
 {
     public int DimensionId { get; set; }
@@ -86,6 +109,7 @@ public sealed class DimensionArrangementDebugResult
     public int GroupCount { get; set; }
     public double TargetGap { get; set; }
     public List<DimensionArrangementDebugGroupInfo> Groups { get; } = [];
+    public List<DimensionArrangementDebugStackInfo> Stacks { get; } = [];
     public List<DimensionArrangementDebugSpacingInfo> Spacing { get; } = [];
     public List<DimensionArrangementDebugPlanInfo> Plans { get; } = [];
 }

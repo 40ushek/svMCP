@@ -84,6 +84,11 @@ public sealed class DrawingDimensionsApiTests
                     TopDirection = -1,
                     Bounds = new DrawingBoundsInfo { MinX = 1, MinY = 2, MaxX = 6, MaxY = 8 },
                     ReferenceLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
+                    MeasuredPoints =
+                    [
+                        new DrawingPointInfo { X = 1, Y = 2, Order = 0 },
+                        new DrawingPointInfo { X = 6, Y = 2, Order = 1 }
+                    ],
                     Segments =
                     [
                         new DimensionSegmentInfo
@@ -119,9 +124,29 @@ public sealed class DrawingDimensionsApiTests
         Assert.Contains("\"DirectionX\":1", json);
         Assert.Contains("\"TopDirection\":-1", json);
         Assert.Contains("\"ReferenceLine\":", json);
+        Assert.Contains("\"MeasuredPoints\":", json);
         Assert.Contains("\"Bounds\":", json);
         Assert.Contains("\"DimensionLine\":", json);
         Assert.Contains("\"LeadLineMain\":", json);
         Assert.Contains("\"TextBounds\":null", json);
+    }
+
+    [Fact]
+    public void BuildMeasuredPointList_OrdersChainPointsAlongTraversedPath()
+    {
+        var points = TeklaDrawingDimensionsApi.BuildMeasuredPointList(
+        [
+            new DimensionSegmentInfo { StartX = 0, StartY = 10, EndX = 0, EndY = 20 },
+            new DimensionSegmentInfo { StartX = 50, StartY = 30, EndX = 0, EndY = 20 },
+            new DimensionSegmentInfo { StartX = 50, StartY = 30, EndX = 50, EndY = 40 }
+        ], 0, 1);
+
+        Assert.Equal(4, points.Count);
+        Assert.Collection(
+            points,
+            p => { Assert.Equal(50, p.X, 3); Assert.Equal(40, p.Y, 3); Assert.Equal(0, p.Order); },
+            p => { Assert.Equal(50, p.X, 3); Assert.Equal(30, p.Y, 3); Assert.Equal(1, p.Order); },
+            p => { Assert.Equal(0, p.X, 3); Assert.Equal(20, p.Y, 3); Assert.Equal(2, p.Order); },
+            p => { Assert.Equal(0, p.X, 3); Assert.Equal(10, p.Y, 3); Assert.Equal(3, p.Order); });
     }
 }

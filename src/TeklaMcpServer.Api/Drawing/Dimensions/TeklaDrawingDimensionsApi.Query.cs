@@ -90,6 +90,8 @@ public sealed partial class TeklaDrawingDimensionsApi
             info.ReferenceLine = TryCreateReferenceLine(representative);
         }
 
+        info.MeasuredPoints = BuildMeasuredPointList(info.Segments, info.DirectionX, info.DirectionY);
+
         info.Orientation = DetermineDimensionOrientation(
             info.DirectionX,
             info.DirectionY,

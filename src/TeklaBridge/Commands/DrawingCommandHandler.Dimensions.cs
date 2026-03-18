@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using TeklaMcpServer.Api.Drawing;
+using System.Globalization;
 
 namespace TeklaBridge.Commands;
 
@@ -17,6 +18,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_dimension_groups_debug":
                 return HandleGetDimensionGroupsDebug(api, args);
+
+            case "get_dimension_arrangement_debug":
+                return HandleGetDimensionArrangementDebug(api, args);
 
             case "move_dimension":
                 return HandleMoveDimension(api, args);
@@ -106,6 +110,37 @@ internal sealed partial class DrawingCommandHandler
         });
 
         WriteJson(new { groups = payload });
+        return true;
+    }
+
+    private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var targetGap = 50.0;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)
+            {
+                WriteError("targetGap must be a non-negative number.");
+                return true;
+            }
+        }
+
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionArrangementDebug", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (method == null)
+        {
+            WriteError("Internal GetDimensionArrangementDebug() was not found.");
+            return true;
+        }
+
+        var result = method.Invoke(api, new object?[] { viewId, targetGap }) as DimensionArrangementDebugResult;
+        if (result == null)
+        {
+            WriteError("Internal GetDimensionArrangementDebug() returned null.");
+            return true;
+        }
+
+        WriteDimensionArrangementDebugResult(result);
         return true;
     }
 
@@ -253,6 +288,12 @@ internal sealed partial class DrawingCommandHandler
                 topDirection = d.TopDirection,
                 bounds = SerializeBounds(d.Bounds),
                 referenceLine = SerializeLine(d.ReferenceLine),
+                measuredPoints = d.MeasuredPoints.Select(p => new
+                {
+                    x = p.X,
+                    y = p.Y,
+                    order = p.Order
+                }),
                 segments = d.Segments.Select(s => new
                 {
                     id = s.Id,
@@ -302,6 +343,136 @@ internal sealed partial class DrawingCommandHandler
         {
             deleted = result.Deleted,
             dimensionId = result.DimensionId
+        });
+    }
+
+    private void WriteDimensionArrangementDebugResult(DimensionArrangementDebugResult result)
+    {
+        static object? SerializeLine(DrawingLineInfo? line)
+        {
+            if (line == null)
+                return null;
+
+            return new
+            {
+                startX = line.StartX,
+                startY = line.StartY,
+                endX = line.EndX,
+                endY = line.EndY,
+                length = line.Length
+            };
+        }
+
+        static object? SerializeBounds(DrawingBoundsInfo? bounds)
+        {
+            if (bounds == null)
+                return null;
+
+            return new
+            {
+                minX = bounds.MinX,
+                minY = bounds.MinY,
+                maxX = bounds.MaxX,
+                maxY = bounds.MaxY,
+                width = bounds.Width,
+                height = bounds.Height
+            };
+        }
+
+        WriteJson(new
+        {
+            viewFilteredTotal = result.ViewFilteredTotal,
+            groupCount = result.GroupCount,
+            targetGap = result.TargetGap,
+            groups = result.Groups.Select(group => new
+            {
+                viewId = group.ViewId,
+                viewType = group.ViewType,
+                dimensionType = group.DimensionType,
+                orientation = group.Orientation,
+                directionX = group.DirectionX,
+                directionY = group.DirectionY,
+                topDirection = group.TopDirection,
+                referenceLine = SerializeLine(group.ReferenceLine),
+                memberCount = group.MemberCount,
+                maximumDistance = group.MaximumDistance,
+                bounds = SerializeBounds(group.Bounds),
+                groupingBasis = group.GroupingBasis,
+                members = group.Members.Select(member => new
+                {
+                    dimensionId = member.DimensionId,
+                    distance = member.Distance,
+                    sortKey = member.SortKey,
+                    directionX = member.DirectionX,
+                    directionY = member.DirectionY,
+                    topDirection = member.TopDirection,
+                    bounds = SerializeBounds(member.Bounds),
+                    referenceLine = SerializeLine(member.ReferenceLine),
+                    leadLineMain = SerializeLine(member.LeadLineMain),
+                    leadLineSecond = SerializeLine(member.LeadLineSecond)
+                })
+            }),
+            stacks = result.Stacks.Select(stack => new
+            {
+                viewId = stack.ViewId,
+                viewType = stack.ViewType,
+                dimensionType = stack.DimensionType,
+                orientation = stack.Orientation,
+                directionX = stack.DirectionX,
+                directionY = stack.DirectionY,
+                topDirection = stack.TopDirection,
+                referenceLine = SerializeLine(stack.ReferenceLine),
+                groupingBasis = stack.GroupingBasis,
+                members = stack.Members.Select(member => new
+                {
+                    dimensionId = member.DimensionId,
+                    dimensionType = member.DimensionType,
+                    orientation = member.Orientation,
+                    distance = member.Distance,
+                    referenceLine = SerializeLine(member.ReferenceLine)
+                })
+            }),
+            spacing = result.Spacing.Select(info => new
+            {
+                viewId = info.ViewId,
+                viewType = info.ViewType,
+                dimensionType = info.DimensionType,
+                orientation = info.Orientation,
+                directionX = info.DirectionX,
+                directionY = info.DirectionY,
+                topDirection = info.TopDirection,
+                referenceLine = SerializeLine(info.ReferenceLine),
+                hasOverlaps = info.HasOverlaps,
+                minimumDistance = info.MinimumDistance,
+                pairs = info.Pairs.Select(pair => new
+                {
+                    firstDimensionId = pair.FirstDimensionId,
+                    secondDimensionId = pair.SecondDimensionId,
+                    distance = pair.Distance,
+                    isOverlap = pair.IsOverlap
+                })
+            }),
+            plans = result.Plans.Select(plan => new
+            {
+                viewId = plan.ViewId,
+                viewType = plan.ViewType,
+                dimensionType = plan.DimensionType,
+                orientation = plan.Orientation,
+                directionX = plan.DirectionX,
+                directionY = plan.DirectionY,
+                topDirection = plan.TopDirection,
+                referenceLine = SerializeLine(plan.ReferenceLine),
+                proposalCount = plan.ProposalCount,
+                hasApplicableChanges = plan.HasApplicableChanges,
+                proposals = plan.Proposals.Select(proposal => new
+                {
+                    dimensionId = proposal.DimensionId,
+                    axisShift = proposal.AxisShift,
+                    distanceDelta = proposal.DistanceDelta,
+                    canApply = proposal.CanApply,
+                    reason = proposal.Reason
+                })
+            })
         });
     }
 

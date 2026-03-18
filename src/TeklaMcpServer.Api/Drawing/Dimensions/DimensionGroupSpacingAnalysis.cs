@@ -3,6 +3,25 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
+internal sealed class DimensionGroupLineStack
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string Orientation { get; set; } = string.Empty;
+    public int TopDirection { get; set; }
+    public (double X, double Y)? Direction { get; set; }
+    public List<DimensionGroup> Groups { get; } = [];
+}
+
+internal sealed class DimensionStackMoveUnit
+{
+    public int DimensionId { get; set; }
+    public double Distance { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public double MinOffset { get; set; }
+    public double MaxOffset { get; set; }
+}
+
 internal sealed class DimensionGroupPairSpacing
 {
     public int FirstDimensionId { get; set; }
@@ -15,7 +34,13 @@ internal sealed class DimensionGroupSpacingAnalysis
 {
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
+    public double? DirectionX { get; set; }
+    public double? DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public int GroupCount { get; set; }
     public bool HasOverlaps { get; set; }
     public double? MinimumDistance { get; set; }
     public List<DimensionGroupPairSpacing> Pairs { get; } = [];
@@ -23,6 +48,63 @@ internal sealed class DimensionGroupSpacingAnalysis
 
 internal static class DimensionGroupSpacingAnalyzer
 {
+    public static List<DimensionGroupLineStack> BuildStacks(IEnumerable<DimensionGroup> groups)
+    {
+        var groupList = groups.ToList();
+        var stacks = new List<DimensionGroupLineStack>();
+        var visited = new bool[groupList.Count];
+
+        for (var i = 0; i < groupList.Count; i++)
+        {
+            if (visited[i])
+                continue;
+
+            var stack = new DimensionGroupLineStack
+            {
+                ViewId = groupList[i].ViewId,
+                ViewType = groupList[i].ViewType,
+                Orientation = groupList[i].Orientation,
+                TopDirection = groupList[i].TopDirection,
+                Direction = groupList[i].Direction
+            };
+
+            var queue = new Queue<int>();
+            queue.Enqueue(i);
+            visited[i] = true;
+
+            while (queue.Count > 0)
+            {
+                var index = queue.Dequeue();
+                var current = groupList[index];
+                stack.Groups.Add(current);
+
+                for (var candidateIndex = 0; candidateIndex < groupList.Count; candidateIndex++)
+                {
+                    if (visited[candidateIndex])
+                        continue;
+
+                    if (!CanStackGroupsTogether(current, groupList[candidateIndex]))
+                        continue;
+
+                    visited[candidateIndex] = true;
+                    queue.Enqueue(candidateIndex);
+                }
+            }
+
+            stack.Groups.Sort(static (left, right) => CompareOffsets(left, right));
+            stacks.Add(stack);
+        }
+
+        return stacks;
+    }
+
+    public static List<DimensionGroupSpacingAnalysis> AnalyzeStacks(IEnumerable<DimensionGroup> groups)
+    {
+        return BuildStacks(groups)
+            .Select(AnalyzeStack)
+            .ToList();
+    }
+
     public static DimensionGroupSpacingAnalysis Analyze(DimensionGroup group)
     {
         var analysis = new DimensionGroupSpacingAnalysis
@@ -57,6 +139,78 @@ internal static class DimensionGroupSpacingAnalyzer
         return analysis;
     }
 
+    internal static DimensionGroupSpacingAnalysis AnalyzeStack(DimensionGroupLineStack stack)
+    {
+        var units = BuildMoveUnits(stack);
+        var analysis = new DimensionGroupSpacingAnalysis
+        {
+            ViewId = stack.ViewId,
+            ViewType = stack.ViewType,
+            DimensionType = ResolveStackDimensionType(stack),
+            Orientation = stack.Orientation,
+            DirectionX = stack.Direction?.X,
+            DirectionY = stack.Direction?.Y,
+            TopDirection = stack.TopDirection,
+            ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine),
+            GroupCount = stack.Groups.Count
+        };
+
+        for (var i = 0; i < units.Count - 1; i++)
+        {
+            var current = units[i];
+            var next = units[i + 1];
+            var distance = System.Math.Round(next.MinOffset - current.MaxOffset, 3);
+
+            analysis.Pairs.Add(new DimensionGroupPairSpacing
+            {
+                FirstDimensionId = current.DimensionId,
+                SecondDimensionId = next.DimensionId,
+                Distance = distance
+            });
+        }
+
+        if (analysis.Pairs.Count > 0)
+        {
+            analysis.MinimumDistance = analysis.Pairs.Min(static pair => pair.Distance);
+            analysis.HasOverlaps = analysis.Pairs.Any(static pair => pair.IsOverlap);
+        }
+
+        return analysis;
+    }
+
+    public static List<DimensionStackMoveUnit> BuildMoveUnits(DimensionGroupLineStack stack)
+    {
+        return stack.Groups
+            .SelectMany(static group => group.Members)
+            .GroupBy(static member => member.DimensionId)
+            .Select(group =>
+            {
+                var members = group.ToList();
+                var offsets = members
+                    .Select(member => TryGetMemberOffset(member, stack.Direction))
+                    .Where(static value => value.HasValue)
+                    .Select(static value => value!.Value)
+                    .ToList();
+
+                if (offsets.Count == 0)
+                    return null;
+
+                var representative = members.FirstOrDefault(static member => member.ReferenceLine != null) ?? members[0];
+                return new DimensionStackMoveUnit
+                {
+                    DimensionId = group.Key,
+                    Distance = representative.Distance,
+                    ReferenceLine = CopyLine(representative.ReferenceLine),
+                    MinOffset = offsets.Min(),
+                    MaxOffset = offsets.Max()
+                };
+            })
+            .Where(static unit => unit != null)
+            .Cast<DimensionStackMoveUnit>()
+            .OrderBy(static unit => unit.MinOffset)
+            .ToList();
+    }
+
     internal static List<(DimensionGroupMember Member, double Min, double Max)> GetOrderedIntervals(DimensionGroup group)
     {
         return group.Members
@@ -65,6 +219,26 @@ internal static class DimensionGroupSpacingAnalyzer
             .Select(static item => (item.Member, item.Interval!.Value.Min, item.Interval.Value.Max))
             .OrderBy(static item => item.Min)
             .ToList();
+    }
+
+    private static bool CanStackGroupsTogether(DimensionGroup left, DimensionGroup right)
+    {
+        if (left.ViewId != right.ViewId)
+            return false;
+
+        if (!string.Equals(left.ViewType, right.ViewType, System.StringComparison.Ordinal))
+            return false;
+
+        if (left.TopDirection != 0 && right.TopDirection != 0 && left.TopDirection != right.TopDirection)
+            return false;
+
+        if (!left.Direction.HasValue || !right.Direction.HasValue)
+            return false;
+
+        if (!AreParallel(left.Direction.Value, right.Direction.Value))
+            return false;
+
+        return HaveCompatibleDirectionExtents(left, right, left.Direction.Value);
     }
 
     private static AxisInterval? TryGetInterval(DimensionGroupMember member, DimensionGroup group)
@@ -78,6 +252,107 @@ internal static class DimensionGroupSpacingAnalyzer
             return null;
 
         return TryGetProjectedInterval(bounds, group.Direction);
+    }
+
+    private static bool HaveCompatibleDirectionExtents(DimensionGroup left, DimensionGroup right, (double X, double Y) direction)
+    {
+        var leftExtent = TryGetGroupExtent(left, direction);
+        var rightExtent = TryGetGroupExtent(right, direction);
+        if (!leftExtent.HasValue || !rightExtent.HasValue)
+            return false;
+
+        const double overlapTolerance = 3.0;
+        return leftExtent.Value.Max + overlapTolerance >= rightExtent.Value.Min
+            && rightExtent.Value.Max + overlapTolerance >= leftExtent.Value.Min;
+    }
+
+    private static (double Min, double Max)? TryGetGroupExtent(DimensionGroup group, (double X, double Y) direction)
+    {
+        if (group.ReferenceLine != null)
+        {
+            var projections = new[]
+            {
+                Project(group.ReferenceLine.StartX, group.ReferenceLine.StartY, direction.X, direction.Y),
+                Project(group.ReferenceLine.EndX, group.ReferenceLine.EndY, direction.X, direction.Y)
+            };
+
+            return (projections.Min(), projections.Max());
+        }
+
+        var bounds = group.Bounds;
+        if (bounds == null)
+            return null;
+
+        var values = new[]
+        {
+            Project(bounds.MinX, bounds.MinY, direction.X, direction.Y),
+            Project(bounds.MinX, bounds.MaxY, direction.X, direction.Y),
+            Project(bounds.MaxX, bounds.MinY, direction.X, direction.Y),
+            Project(bounds.MaxX, bounds.MaxY, direction.X, direction.Y)
+        };
+
+        return (values.Min(), values.Max());
+    }
+
+    private static double? TryGetGroupOffset(DimensionGroup group)
+    {
+        if (!group.Direction.HasValue || group.ReferenceLine == null)
+            return null;
+
+        var normalX = -group.Direction.Value.Y;
+        var normalY = group.Direction.Value.X;
+        return System.Math.Round(Project(group.ReferenceLine.StartX, group.ReferenceLine.StartY, normalX, normalY), 3);
+    }
+
+    private static double? TryGetMemberOffset(DimensionGroupMember member, (double X, double Y)? direction)
+    {
+        if (!direction.HasValue || member.ReferenceLine == null)
+            return null;
+
+        var normalX = -direction.Value.Y;
+        var normalY = direction.Value.X;
+        return System.Math.Round(Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normalX, normalY), 3);
+    }
+
+    private static int GetRepresentativeDimensionId(DimensionGroup group)
+    {
+        return group.Members.Count == 0 ? 0 : group.Members[0].DimensionId;
+    }
+
+    private static string ResolveStackDimensionType(DimensionGroupLineStack stack)
+    {
+        var types = stack.Groups
+            .Select(static group => group.DimensionType)
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(System.StringComparer.Ordinal)
+            .ToList();
+
+        return types.Count == 1 ? types[0] : string.Empty;
+    }
+
+    private static int CompareOffsets(DimensionGroup left, DimensionGroup right)
+    {
+        var leftOffset = TryGetGroupOffset(left);
+        var rightOffset = TryGetGroupOffset(right);
+
+        if (leftOffset.HasValue && rightOffset.HasValue)
+            return leftOffset.Value.CompareTo(rightOffset.Value);
+
+        return 0;
+    }
+
+    private static bool AreParallel((double X, double Y) left, (double X, double Y) right)
+    {
+        var dot = System.Math.Abs((left.X * right.X) + (left.Y * right.Y));
+        return dot >= 0.995;
+    }
+
+    private static DrawingLineInfo? CopyLine(DrawingLineInfo? line)
+    {
+        if (line == null)
+            return null;
+
+        return TeklaDrawingDimensionsApi.CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
     private static AxisInterval? TryGetReferenceLineInterval(DimensionGroupMember member, (double X, double Y)? groupDirection)

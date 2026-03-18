@@ -8,6 +8,8 @@ internal sealed class DimensionGroupMember
     public double StartY { get; set; }
     public double EndX { get; set; }
     public double EndY { get; set; }
+    public int StartPointOrder { get; set; } = -1;
+    public int EndPointOrder { get; set; } = -1;
     public double Distance { get; set; }
     public double SortKey { get; set; }
     public double DirectionX { get; set; }

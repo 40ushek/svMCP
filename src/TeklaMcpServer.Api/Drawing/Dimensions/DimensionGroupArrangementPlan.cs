@@ -20,6 +20,53 @@ internal sealed class DimensionGroupArrangementPlan
 
 internal static class DimensionGroupArrangementPlanner
 {
+    public static DimensionGroupArrangementPlan BuildPlan(DimensionGroupLineStack stack, double targetGap)
+    {
+        var plan = new DimensionGroupArrangementPlan
+        {
+            ViewId = stack.ViewId,
+            ViewType = stack.ViewType,
+            Orientation = stack.Orientation,
+            TargetGap = targetGap
+        };
+
+        var units = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack);
+        if (units.Count < 2)
+            return plan;
+
+        var previousMax = units[0].MaxOffset;
+        var cumulativeShift = 0.0;
+
+        for (var i = 1; i < units.Count; i++)
+        {
+            var current = units[i];
+            var shiftedMin = current.MinOffset + cumulativeShift;
+            var shiftedMax = current.MaxOffset + cumulativeShift;
+            var requiredMin = previousMax + targetGap;
+
+            if (shiftedMin < requiredMin)
+            {
+                var extraShift = System.Math.Round(requiredMin - shiftedMin, 3);
+                cumulativeShift += extraShift;
+                shiftedMin += extraShift;
+                shiftedMax += extraShift;
+            }
+
+            if (cumulativeShift > 1e-9)
+            {
+                plan.Proposals.Add(new DimensionMoveProposal
+                {
+                    DimensionId = current.DimensionId,
+                    AxisShift = cumulativeShift
+                });
+            }
+
+            previousMax = shiftedMax;
+        }
+
+        return plan;
+    }
+
     public static DimensionGroupArrangementPlan BuildPlan(DimensionGroup group, double targetGap)
     {
         var plan = new DimensionGroupArrangementPlan

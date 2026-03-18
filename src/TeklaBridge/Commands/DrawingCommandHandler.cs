@@ -49,6 +49,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "get_drawing_dimensions":
             case "get_dimension_groups_debug":
+            case "get_dimension_arrangement_debug":
             case "move_dimension":
             case "create_dimension":
             case "delete_dimension":

@@ -15,11 +15,12 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var dimensions = GetDimensions(viewId);
         var groups = DimensionGroupFactory.BuildGroups(dimensions);
-        var spacing = groups.Select(DimensionGroupSpacingAnalyzer.Analyze).ToList();
-        var plans = groups.Select(group =>
+        var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
+        var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
+        var plans = stacks.Select(stack =>
         {
-            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(group, targetGap);
-            return DimensionDistanceAdjustmentTranslator.BuildPlan(group, axisPlan);
+            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+            return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
         }).ToList();
 
         var result = new DimensionArrangementDebugResult
@@ -72,20 +73,58 @@ public sealed partial class TeklaDrawingDimensionsApi
             result.Groups.Add(info);
         }
 
-        foreach (var pair in groups.Zip(spacing, (group, analysis) => (group, analysis)))
+        foreach (var stack in stacks)
         {
-            var group = pair.group;
-            var analysis = pair.analysis;
+            var info = new DimensionArrangementDebugStackInfo
+            {
+                ViewId = stack.ViewId,
+                ViewType = stack.ViewType,
+                DimensionType = ResolveStackDimensionType(stack),
+                Orientation = stack.Orientation,
+                DirectionX = stack.Direction?.X,
+                DirectionY = stack.Direction?.Y,
+                TopDirection = stack.TopDirection,
+                ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine)
+            };
+
+            info.GroupingBasis.Add("same view");
+            info.GroupingBasis.Add("parallel direction");
+            info.GroupingBasis.Add("compatible topDirection");
+            info.GroupingBasis.Add("overlapping extents along dimension line");
+
+            foreach (var group in stack.Groups)
+            {
+                foreach (var member in group.Members
+                             .GroupBy(static member => member.DimensionId)
+                             .Select(static grouped => grouped.First())
+                             .OrderBy(static member => member.SortKey))
+                {
+                    info.Members.Add(new DimensionArrangementDebugStackMemberInfo
+                    {
+                        DimensionId = member.DimensionId,
+                        DimensionType = member.Dimension.DimensionType,
+                        Orientation = member.Dimension.Orientation,
+                        Distance = member.Distance,
+                        ReferenceLine = CopyLine(member.ReferenceLine)
+                    });
+                }
+            }
+
+            result.Stacks.Add(info);
+        }
+
+        foreach (var analysis in spacing)
+        {
             var info = new DimensionArrangementDebugSpacingInfo
             {
                 ViewId = analysis.ViewId,
                 ViewType = analysis.ViewType,
-                DimensionType = group.DimensionType,
+                DimensionType = analysis.DimensionType,
                 Orientation = analysis.Orientation,
-                DirectionX = group.Direction?.X,
-                DirectionY = group.Direction?.Y,
-                TopDirection = group.TopDirection,
-                ReferenceLine = CopyLine(group.ReferenceLine),
+                DirectionX = analysis.DirectionX,
+                DirectionY = analysis.DirectionY,
+                TopDirection = analysis.TopDirection,
+                ReferenceLine = CopyLine(analysis.ReferenceLine),
                 HasOverlaps = analysis.HasOverlaps,
                 MinimumDistance = analysis.MinimumDistance
             };
@@ -104,20 +143,20 @@ public sealed partial class TeklaDrawingDimensionsApi
             result.Spacing.Add(info);
         }
 
-        foreach (var pair in groups.Zip(plans, (group, plan) => (group, plan)))
+        foreach (var pair in stacks.Zip(plans, (stack, plan) => (stack, plan)))
         {
-            var group = pair.group;
+            var stack = pair.stack;
             var plan = pair.plan;
             var info = new DimensionArrangementDebugPlanInfo
             {
                 ViewId = plan.ViewId,
                 ViewType = plan.ViewType,
-                DimensionType = group.DimensionType,
+                DimensionType = ResolveStackDimensionType(stack),
                 Orientation = plan.Orientation,
-                DirectionX = group.Direction?.X,
-                DirectionY = group.Direction?.Y,
-                TopDirection = group.TopDirection,
-                ReferenceLine = CopyLine(group.ReferenceLine),
+                DirectionX = stack.Direction?.X,
+                DirectionY = stack.Direction?.Y,
+                TopDirection = stack.TopDirection,
+                ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine),
                 ProposalCount = plan.Proposals.Count,
                 HasApplicableChanges = plan.HasApplicableChanges
             };
@@ -148,6 +187,17 @@ public sealed partial class TeklaDrawingDimensionsApi
         return CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
+    private static string ResolveStackDimensionType(DimensionGroupLineStack stack)
+    {
+        var types = stack.Groups
+            .Select(static group => group.DimensionType)
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(System.StringComparer.Ordinal)
+            .ToList();
+
+        return types.Count == 1 ? types[0] : string.Empty;
+    }
+
     internal ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
     {
         if (targetGap < 0)
@@ -158,25 +208,23 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
     {
-        return GetDimensionGroups(viewId)
-            .Select(DimensionGroupSpacingAnalyzer.Analyze)
-            .ToList();
+        return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetDimensionGroups(viewId));
     }
 
     internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
     {
-        return GetDimensionGroups(viewId)
-            .Select(group => DimensionGroupArrangementPlanner.BuildPlan(group, targetGap))
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetDimensionGroups(viewId))
+            .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap))
             .ToList();
     }
 
     internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
-        return GetDimensionGroups(viewId)
-            .Select(group =>
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetDimensionGroups(viewId))
+            .Select(stack =>
             {
-                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(group, targetGap);
-                return DimensionDistanceAdjustmentTranslator.BuildPlan(group, axisPlan);
+                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+                return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
             })
             .ToList();
     }

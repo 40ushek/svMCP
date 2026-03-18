@@ -21,6 +21,13 @@ public sealed class DrawingLineInfo
     public double Length => System.Math.Sqrt(((EndX - StartX) * (EndX - StartX)) + ((EndY - StartY) * (EndY - StartY)));
 }
 
+public sealed class DrawingPointInfo
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public int Order { get; set; }
+}
+
 public sealed class DimensionSegmentInfo
 {
     public int                Id            { get; set; }
@@ -53,6 +60,7 @@ public sealed class DrawingDimensionInfo
     public int                        TopDirection  { get; set; }
     public DrawingBoundsInfo?         Bounds        { get; set; }
     public DrawingLineInfo?           ReferenceLine { get; set; }
+    public List<DrawingPointInfo>     MeasuredPoints { get; set; } = new();
     public List<DimensionSegmentInfo> Segments      { get; set; } = new();
 }
 
