@@ -31,49 +31,93 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         foreach (var group in groups)
         {
-            result.Groups.Add(new DimensionArrangementDebugGroupInfo
+            var info = new DimensionArrangementDebugGroupInfo
             {
                 ViewId = group.ViewId,
                 ViewType = group.ViewType,
+                DimensionType = group.DimensionType,
                 Orientation = group.Orientation,
+                DirectionX = group.Direction?.X,
+                DirectionY = group.Direction?.Y,
+                TopDirection = group.TopDirection,
+                ReferenceLine = CopyLine(group.ReferenceLine),
                 MemberCount = group.Members.Count,
                 MaximumDistance = group.MaximumDistance,
                 Bounds = group.Bounds
-            });
+            };
+
+            info.GroupingBasis.Add("same view");
+            info.GroupingBasis.Add("same Tekla dimensionType");
+            info.GroupingBasis.Add("parallel direction");
+            info.GroupingBasis.Add("compatible topDirection");
+            info.GroupingBasis.Add("compatible reference-line extents");
+
+            foreach (var member in group.Members)
+            {
+                info.Members.Add(new DimensionArrangementDebugMemberInfo
+                {
+                    DimensionId = member.DimensionId,
+                    Distance = member.Distance,
+                    SortKey = member.SortKey,
+                    DirectionX = member.DirectionX,
+                    DirectionY = member.DirectionY,
+                    TopDirection = member.TopDirection,
+                    Bounds = member.Bounds,
+                    ReferenceLine = CopyLine(member.ReferenceLine),
+                    LeadLineMain = CopyLine(member.LeadLineMain),
+                    LeadLineSecond = CopyLine(member.LeadLineSecond)
+                });
+            }
+
+            result.Groups.Add(info);
         }
 
-        foreach (var analysis in spacing)
+        foreach (var pair in groups.Zip(spacing, (group, analysis) => (group, analysis)))
         {
+            var group = pair.group;
+            var analysis = pair.analysis;
             var info = new DimensionArrangementDebugSpacingInfo
             {
                 ViewId = analysis.ViewId,
                 ViewType = analysis.ViewType,
+                DimensionType = group.DimensionType,
                 Orientation = analysis.Orientation,
+                DirectionX = group.Direction?.X,
+                DirectionY = group.Direction?.Y,
+                TopDirection = group.TopDirection,
+                ReferenceLine = CopyLine(group.ReferenceLine),
                 HasOverlaps = analysis.HasOverlaps,
                 MinimumDistance = analysis.MinimumDistance
             };
 
-            foreach (var pair in analysis.Pairs)
+            foreach (var spacingPair in analysis.Pairs)
             {
                 info.Pairs.Add(new DimensionArrangementDebugSpacingPair
                 {
-                    FirstDimensionId = pair.FirstDimensionId,
-                    SecondDimensionId = pair.SecondDimensionId,
-                    Distance = pair.Distance,
-                    IsOverlap = pair.IsOverlap
+                    FirstDimensionId = spacingPair.FirstDimensionId,
+                    SecondDimensionId = spacingPair.SecondDimensionId,
+                    Distance = spacingPair.Distance,
+                    IsOverlap = spacingPair.IsOverlap
                 });
             }
 
             result.Spacing.Add(info);
         }
 
-        foreach (var plan in plans)
+        foreach (var pair in groups.Zip(plans, (group, plan) => (group, plan)))
         {
+            var group = pair.group;
+            var plan = pair.plan;
             var info = new DimensionArrangementDebugPlanInfo
             {
                 ViewId = plan.ViewId,
                 ViewType = plan.ViewType,
+                DimensionType = group.DimensionType,
                 Orientation = plan.Orientation,
+                DirectionX = group.Direction?.X,
+                DirectionY = group.Direction?.Y,
+                TopDirection = group.TopDirection,
+                ReferenceLine = CopyLine(group.ReferenceLine),
                 ProposalCount = plan.Proposals.Count,
                 HasApplicableChanges = plan.HasApplicableChanges
             };
@@ -94,6 +138,14 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         return result;
+    }
+
+    private static DrawingLineInfo? CopyLine(DrawingLineInfo? line)
+    {
+        if (line == null)
+            return null;
+
+        return CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
     internal ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)

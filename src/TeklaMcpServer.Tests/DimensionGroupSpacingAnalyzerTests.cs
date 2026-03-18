@@ -58,6 +58,24 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         Assert.Equal(15, analysis.MinimumDistance.Value, 3);
     }
 
+    [Fact]
+    public void Analyze_UsesReferenceLineGeometryEvenWithoutOrientationSpecificHints()
+    {
+        var group = CreateGroup(
+        [
+            CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10),
+            CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
+        ], string.Empty, "PartLongitudinal", default, -1);
+
+        group.Direction = null;
+
+        var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
+
+        Assert.False(analysis.HasOverlaps);
+        Assert.NotNull(analysis.MinimumDistance);
+        Assert.Equal(15, analysis.MinimumDistance.Value, 3);
+    }
+
     private static DimensionGroup CreateGroup(
         DimensionGroupMember[] members,
         string orientation,

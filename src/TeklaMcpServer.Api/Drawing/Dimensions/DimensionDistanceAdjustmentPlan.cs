@@ -35,7 +35,7 @@ internal static class DimensionDistanceAdjustmentTranslator
 
         foreach (var proposal in axisPlan.Proposals)
         {
-            if (group.Orientation is "horizontal" or "vertical")
+            if (IsSupportedForDistanceTranslation(group, out var unsupportedReason))
             {
                 if (!membersById.TryGetValue(proposal.DimensionId, out var member))
                 {
@@ -46,6 +46,19 @@ internal static class DimensionDistanceAdjustmentTranslator
                         DistanceDelta = 0,
                         CanApply = false,
                         Reason = "Dimension group member was not found for distance translation."
+                    });
+                    continue;
+                }
+
+                if (member.ReferenceLine == null)
+                {
+                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                    {
+                        DimensionId = proposal.DimensionId,
+                        AxisShift = proposal.AxisShift,
+                        DistanceDelta = 0,
+                        CanApply = false,
+                        Reason = "Distance mapping requires a reference line."
                     });
                     continue;
                 }
@@ -80,10 +93,43 @@ internal static class DimensionDistanceAdjustmentTranslator
                 AxisShift = proposal.AxisShift,
                 DistanceDelta = 0,
                 CanApply = false,
-                Reason = "Distance mapping is not defined for angled dimensions yet."
+                Reason = unsupportedReason
             });
         }
 
         return plan;
+    }
+
+    private static bool IsSupportedForDistanceTranslation(DimensionGroup group, out string reason)
+    {
+        if (!group.Direction.HasValue)
+        {
+            reason = "Distance mapping requires a normalized group direction.";
+            return false;
+        }
+
+        var direction = group.Direction.Value;
+        var isHorizontal = System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01;
+        var isVertical = System.Math.Abs(direction.X) <= System.Math.Abs(direction.Y) * 0.01;
+        if (!isHorizontal && !isVertical)
+        {
+            reason = "Distance mapping is only defined for axis-aligned parallel groups.";
+            return false;
+        }
+
+        if (group.TopDirection == 0)
+        {
+            reason = "Distance mapping requires a consistent top direction.";
+            return false;
+        }
+
+        if (!group.Members.Any(static member => member.ReferenceLine != null))
+        {
+            reason = "Distance mapping requires reference-line geometry.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 }

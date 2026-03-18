@@ -6,10 +6,31 @@ public sealed class DimensionArrangementDebugGroupInfo
 {
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
+    public double? DirectionX { get; set; }
+    public double? DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
     public int MemberCount { get; set; }
     public double MaximumDistance { get; set; }
     public DrawingBoundsInfo? Bounds { get; set; }
+    public List<string> GroupingBasis { get; } = [];
+    public List<DimensionArrangementDebugMemberInfo> Members { get; } = [];
+}
+
+public sealed class DimensionArrangementDebugMemberInfo
+{
+    public int DimensionId { get; set; }
+    public double Distance { get; set; }
+    public double SortKey { get; set; }
+    public double DirectionX { get; set; }
+    public double DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingBoundsInfo? Bounds { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public DrawingLineInfo? LeadLineMain { get; set; }
+    public DrawingLineInfo? LeadLineSecond { get; set; }
 }
 
 public sealed class DimensionArrangementDebugSpacingPair
@@ -24,7 +45,12 @@ public sealed class DimensionArrangementDebugSpacingInfo
 {
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
+    public double? DirectionX { get; set; }
+    public double? DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
     public bool HasOverlaps { get; set; }
     public double? MinimumDistance { get; set; }
     public List<DimensionArrangementDebugSpacingPair> Pairs { get; } = [];
@@ -43,7 +69,12 @@ public sealed class DimensionArrangementDebugPlanInfo
 {
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
+    public double? DirectionX { get; set; }
+    public double? DirectionY { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
     public int ProposalCount { get; set; }
     public bool HasApplicableChanges { get; set; }
     public List<DimensionArrangementDebugProposal> Proposals { get; } = [];

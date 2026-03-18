@@ -69,25 +69,38 @@ internal static class DimensionGroupSpacingAnalyzer
 
     private static AxisInterval? TryGetInterval(DimensionGroupMember member, DimensionGroup group)
     {
-        if (group.Direction.HasValue && member.ReferenceLine != null)
-        {
-            var normal = (-group.Direction.Value.Y, group.Direction.Value.X);
-            var start = Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normal.Item1, normal.Item2);
-            var end = Project(member.ReferenceLine.EndX, member.ReferenceLine.EndY, normal.Item1, normal.Item2);
-            return new AxisInterval(System.Math.Min(start, end), System.Math.Max(start, end));
-        }
+        var referenceInterval = TryGetReferenceLineInterval(member, group.Direction);
+        if (referenceInterval != null)
+            return referenceInterval;
 
         var bounds = member.Bounds;
         if (bounds == null)
             return null;
 
-        if (group.Orientation == "horizontal" && member.ReferenceLine != null)
-            return new AxisInterval(member.ReferenceLine.StartY, member.ReferenceLine.StartY);
-
-        if (group.Orientation == "vertical" && member.ReferenceLine != null)
-            return new AxisInterval(member.ReferenceLine.StartX, member.ReferenceLine.StartX);
-
         return TryGetProjectedInterval(bounds, group.Direction);
+    }
+
+    private static AxisInterval? TryGetReferenceLineInterval(DimensionGroupMember member, (double X, double Y)? groupDirection)
+    {
+        var line = member.ReferenceLine;
+        if (line == null)
+            return null;
+
+        var direction = groupDirection;
+        if (!direction.HasValue)
+        {
+            var dx = line.EndX - line.StartX;
+            var dy = line.EndY - line.StartY;
+            if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(dx, dy, out var lineDirection))
+                return null;
+
+            direction = TeklaDrawingDimensionsApi.CanonicalizeDirection(lineDirection.X, lineDirection.Y);
+        }
+
+        var normal = (-direction.Value.Y, direction.Value.X);
+        var start = Project(line.StartX, line.StartY, normal.Item1, normal.Item2);
+        var end = Project(line.EndX, line.EndY, normal.Item1, normal.Item2);
+        return new AxisInterval(System.Math.Min(start, end), System.Math.Max(start, end));
     }
 
     private static AxisInterval? TryGetProjectedInterval(DrawingBoundsInfo bounds, (double X, double Y)? direction)

@@ -12,9 +12,16 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         {
             ViewId = 10,
             ViewType = "FrontView",
-            Orientation = "horizontal"
+            Orientation = "horizontal",
+            Direction = (1, 0),
+            TopDirection = -1
         };
-        group.Members.Add(new DimensionGroupMember { DimensionId = 42, Distance = 8 });
+        group.Members.Add(new DimensionGroupMember
+        {
+            DimensionId = 42,
+            Distance = 8,
+            ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 10, EndX = 100, EndY = 10 }
+        });
         var axisPlan = new DimensionGroupArrangementPlan
         {
             ViewId = 10,
@@ -39,9 +46,16 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         {
             ViewId = 10,
             ViewType = "FrontView",
-            Orientation = "horizontal"
+            Orientation = "horizontal",
+            Direction = (1, 0),
+            TopDirection = -1
         };
-        group.Members.Add(new DimensionGroupMember { DimensionId = 42, Distance = -8 });
+        group.Members.Add(new DimensionGroupMember
+        {
+            DimensionId = 42,
+            Distance = -8,
+            ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 10, EndX = 100, EndY = 10 }
+        });
         var axisPlan = new DimensionGroupArrangementPlan
         {
             ViewId = 10,
@@ -65,9 +79,16 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         {
             ViewId = 10,
             ViewType = "FrontView",
-            Orientation = "horizontal"
+            Orientation = "horizontal",
+            Direction = (1, 0),
+            TopDirection = -1
         };
-        group.Members.Add(new DimensionGroupMember { DimensionId = 42, Distance = 0 });
+        group.Members.Add(new DimensionGroupMember
+        {
+            DimensionId = 42,
+            Distance = 0,
+            ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 10, EndX = 100, EndY = 10 }
+        });
         var axisPlan = new DimensionGroupArrangementPlan
         {
             ViewId = 10,
@@ -91,7 +112,9 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         {
             ViewId = 10,
             ViewType = "FrontView",
-            Orientation = "angled"
+            Orientation = "angled",
+            Direction = (0.707, 0.707),
+            TopDirection = -1
         };
         var axisPlan = new DimensionGroupArrangementPlan
         {
@@ -107,6 +130,34 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         var proposal = Assert.Single(plan.Proposals);
         Assert.False(proposal.CanApply);
         Assert.Equal(0, proposal.DistanceDelta, 3);
-        Assert.Contains("angled", proposal.Reason);
+        Assert.Contains("axis-aligned", proposal.Reason);
+    }
+
+    [Fact]
+    public void BuildPlan_KeepsGroupsWithoutReferenceLineUnsupported()
+    {
+        var group = new DimensionGroup
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            Direction = (1, 0),
+            TopDirection = -1
+        };
+        group.Members.Add(new DimensionGroupMember { DimensionId = 42, Distance = 8 });
+        var axisPlan = new DimensionGroupArrangementPlan
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TargetGap = 5
+        };
+        axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
+
+        var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(group, axisPlan);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.False(proposal.CanApply);
+        Assert.Contains("reference line", proposal.Reason);
     }
 }
