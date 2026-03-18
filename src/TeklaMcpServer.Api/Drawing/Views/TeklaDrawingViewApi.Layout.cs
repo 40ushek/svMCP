@@ -18,7 +18,8 @@ public sealed partial class TeklaDrawingViewApi
         => optimalScale >= ProjectionAlignmentScaleCutoff;
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
-    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight)
+    /// <param name="keepScale">When true, skip scale optimisation and arrange views at their current scales.</param>
+    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, bool keepScale = false)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -110,61 +111,72 @@ public sealed partial class TeklaDrawingViewApi
         double? optimalScale = null;
         var currentViews = views;
 
-        foreach (var s in candidates)
+        if (keepScale)
         {
-            candidateAttempts++;
-            var candidateSw = Stopwatch.StartNew();
-            foreach (var v in currentViews)
+            // Skip scale optimisation — arrange views at their current scales.
+            optimalScale = currentScale;
+            candidateAttempts = 0;
+        }
+        else
+        {
+            foreach (var s in candidates)
             {
-                v.Attributes.Scale = s;
-                v.Modify();
-            }
-
-            activeDrawing.CommitChanges();
-
-            var reread = EnumerateViews(activeDrawing).ToList();
-            var effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(reread);
-            var actualFrames = reread
-                .Select(v =>
+                candidateAttempts++;
+                var candidateSw = Stopwatch.StartNew();
+                foreach (var v in currentViews)
                 {
-                    if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                        return (w: size.Width, h: size.Height);
-                    return (w: v.Width, h: v.Height);
-                })
-                .ToList();
-            var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                    v.Attributes.Scale = s;
+                    v.Modify();
+                }
 
-            if (_arrangementSelector.EstimateFit(ctx, actualFrames))
-            {
-                optimalScale = s;
+                activeDrawing.CommitChanges();
+
+                var reread = EnumerateViews(activeDrawing).ToList();
+                var effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(reread);
+                var actualFrames = reread
+                    .Select(v =>
+                    {
+                        if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                            return (w: size.Width, h: size.Height);
+                        return (w: v.Width, h: v.Height);
+                    })
+                    .ToList();
+                var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+
+                if (_arrangementSelector.EstimateFit(ctx, actualFrames))
+                {
+                    optimalScale = s;
+                    currentViews = reread;
+                    candidateSw.Stop();
+                    candidateFitMs += candidateSw.ElapsedMilliseconds;
+                    break;
+                }
+
                 currentViews = reread;
                 candidateSw.Stop();
                 candidateFitMs += candidateSw.ElapsedMilliseconds;
-                break;
             }
 
-            currentViews = reread;
-            candidateSw.Stop();
-            candidateFitMs += candidateSw.ElapsedMilliseconds;
-        }
-
-        if (!optimalScale.HasValue)
-        {
-            foreach (var v in EnumerateViews(activeDrawing))
+            if (!optimalScale.HasValue)
             {
-                if (originalScales.TryGetValue(v.GetIdentifier().ID, out var orig))
+                foreach (var v in EnumerateViews(activeDrawing))
                 {
-                    v.Attributes.Scale = orig;
-                    v.Modify();
+                    if (originalScales.TryGetValue(v.GetIdentifier().ID, out var orig))
+                    {
+                        v.Attributes.Scale = orig;
+                        v.Modify();
+                    }
                 }
-            }
 
-            activeDrawing.CommitChanges();
-            throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
+                activeDrawing.CommitChanges();
+                throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
+            }
         }
 
-        var offsetById = TryGetFrameOffsetsFromBoundingBoxes(currentViews, optimalScale.Value);
-        if (offsetById.Count != currentViews.Count)
+        var offsetById = keepScale
+            ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
+            : TryGetFrameOffsetsFromBoundingBoxes(currentViews, optimalScale.Value);
+        if (!keepScale && offsetById.Count != currentViews.Count)
         {
             var originsAtOptimal = currentViews
                 .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))

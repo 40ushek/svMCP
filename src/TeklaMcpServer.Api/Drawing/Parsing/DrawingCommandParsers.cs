@@ -331,6 +331,7 @@ public sealed class FitViewsToSheetRequest
     public double? Margin { get; set; }  // null = auto-read from drawing layout
     public double Gap { get; set; }
     public double TitleBlockHeight { get; set; }
+    public bool KeepScale { get; set; }
 }
 
 public sealed class DeleteDimensionRequest
