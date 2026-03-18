@@ -7,7 +7,7 @@ internal sealed partial class DrawingCommandHandler
 {
     private bool TryHandleDimensionCommands(string command, string[] args)
     {
-        var api = new TeklaDrawingDimensionsApi(_model);
+        var api = new TeklaDrawingDimensionsApi();
 
         switch (command)
         {

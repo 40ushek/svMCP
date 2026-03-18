@@ -11,9 +11,7 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 {
-    private readonly Model _model;
-
-    public TeklaDrawingDimensionsApi(Model model) => _model = model;
+    public TeklaDrawingDimensionsApi() { }
 
     internal static DrawingBoundsInfo CreateBoundsInfo(double minX, double minY, double maxX, double maxY) => new()
     {
@@ -100,6 +98,18 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         // Phase 1 keeps text geometry explicit but conservative:
         // do not fabricate text boxes until Tekla exposes them reliably.
         return null;
+    }
+
+    internal static string? TryGetMeasuredValueText(StraightDimension segment)
+    {
+        try
+        {
+            return segment.Value?.GetUnformattedString();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static (int? ViewId, string ViewType) GetOwnerViewInfo(DrawingObject drawingObject)

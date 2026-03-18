@@ -211,6 +211,11 @@ After the low-level API is stable:
 - `TextBounds`
 - `Value` only after a dedicated spike confirms Tekla exposes per-segment measured values reliably
 
+Current spike status:
+
+- direct access path is compile-validated via `StraightDimension.Value.GetUnformattedString()`
+- public DTO is still intentionally unchanged until runtime behavior/formatting is validated
+
 ## Implementation Order
 
 1. Expand DTOs for dimensions
