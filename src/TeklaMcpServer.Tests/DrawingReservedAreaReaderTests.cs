@@ -70,16 +70,15 @@ public sealed class DrawingReservedAreaReaderTests
     [Fact]
     public void BuildLayoutTableGeometryInfo_ForEmptySegment_MarksTableAsInactive()
     {
-        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(123, CreateSegment());
+        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(123, "t", CreateSegment());
 
         Assert.Equal(123, info.TableId);
         Assert.False(info.HasGeometry);
-        Assert.Equal(0, info.PrimitiveCount);
         Assert.Null(info.Bounds);
     }
 
     [Fact]
-    public void BuildLayoutTableGeometryInfo_ForTableFrame_ReturnsBoundsAndPrimitiveCount()
+    public void BuildLayoutTableGeometryInfo_ForTableFrame_ReturnsBounds()
     {
         var segment = CreateSegment();
         segment.Primitives.Add(new LinePrimitive(new Vector2(10, 20), new Vector2(110, 20)));
@@ -87,11 +86,10 @@ public sealed class DrawingReservedAreaReaderTests
         segment.Primitives.Add(new LinePrimitive(new Vector2(110, 70), new Vector2(10, 70)));
         segment.Primitives.Add(new LinePrimitive(new Vector2(10, 70), new Vector2(10, 20)));
 
-        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(456, segment);
+        var info = DrawingReservedAreaReader.BuildLayoutTableGeometryInfo(456, "t", segment);
 
         Assert.Equal(456, info.TableId);
         Assert.True(info.HasGeometry);
-        Assert.Equal(4, info.PrimitiveCount);
         Assert.NotNull(info.Bounds);
         Assert.Equal(10, info.Bounds!.MinX, 6);
         Assert.Equal(20, info.Bounds.MinY, 6);

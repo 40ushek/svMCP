@@ -18,7 +18,8 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
         Assert.False(analysis.HasOverlaps);
-        Assert.Equal(10, analysis.MinimumDistance, 3);
+        Assert.NotNull(analysis.MinimumDistance);
+        Assert.Equal(10, analysis.MinimumDistance.Value, 3);
         var pair = Assert.Single(analysis.Pairs);
         Assert.Equal(1, pair.FirstDimensionId);
         Assert.Equal(2, pair.SecondDimensionId);
@@ -37,7 +38,8 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
         Assert.True(analysis.HasOverlaps);
-        Assert.Equal(-5, analysis.MinimumDistance, 3);
+        Assert.NotNull(analysis.MinimumDistance);
+        Assert.Equal(-5, analysis.MinimumDistance.Value, 3);
         Assert.True(Assert.Single(analysis.Pairs).IsOverlap);
     }
 
@@ -53,7 +55,8 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
         Assert.False(analysis.HasOverlaps);
-        Assert.Equal(10, analysis.MinimumDistance, 3);
+        Assert.NotNull(analysis.MinimumDistance);
+        Assert.Equal(10, analysis.MinimumDistance.Value, 3);
     }
 
     private static DimensionGroup CreateGroup(DimensionGroupMember[] members, string orientation)

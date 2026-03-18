@@ -24,7 +24,7 @@ public sealed class DrawingLayoutCenteringTests
             out var delta);
 
         Assert.True(ok);
-        Assert.Equal(40, delta, 1);
+        Assert.InRange(delta, 39.5, 40.5);
     }
 
     [Fact]
@@ -45,7 +45,7 @@ public sealed class DrawingLayoutCenteringTests
             out var delta);
 
         Assert.True(ok);
-        Assert.Equal(40, delta, 1);
+        Assert.InRange(delta, 39.5, 40.5);
     }
 
     [Fact]

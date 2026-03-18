@@ -32,18 +32,13 @@ internal static class DimensionGroupSpacingAnalyzer
             Orientation = group.Orientation
         };
 
-        var intervals = group.Members
-            .Select(member => (Member: member, Interval: TryGetInterval(member, group)))
-            .Where(static item => item.Interval != null)
-            .Select(static item => (item.Member, Interval: item.Interval!.Value))
-            .OrderBy(static item => item.Interval.Min)
-            .ToList();
+        var intervals = GetOrderedIntervals(group);
 
         for (var i = 0; i < intervals.Count - 1; i++)
         {
             var current = intervals[i];
             var next = intervals[i + 1];
-            var distance = System.Math.Round(next.Interval.Min - current.Interval.Max, 3);
+            var distance = System.Math.Round(next.Min - current.Max, 3);
 
             analysis.Pairs.Add(new DimensionGroupPairSpacing
             {
@@ -60,6 +55,16 @@ internal static class DimensionGroupSpacingAnalyzer
         }
 
         return analysis;
+    }
+
+    internal static List<(DimensionGroupMember Member, double Min, double Max)> GetOrderedIntervals(DimensionGroup group)
+    {
+        return group.Members
+            .Select(member => (Member: member, Interval: TryGetInterval(member, group)))
+            .Where(static item => item.Interval != null)
+            .Select(static item => (item.Member, item.Interval!.Value.Min, item.Interval.Value.Max))
+            .OrderBy(static item => item.Min)
+            .ToList();
     }
 
     private static AxisInterval? TryGetInterval(DimensionGroupMember member, DimensionGroup group)

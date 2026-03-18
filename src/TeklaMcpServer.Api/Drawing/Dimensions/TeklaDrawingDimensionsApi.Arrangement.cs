@@ -10,4 +10,11 @@ public sealed partial class TeklaDrawingDimensionsApi
             .Select(DimensionGroupSpacingAnalyzer.Analyze)
             .ToList();
     }
+
+    internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
+    {
+        return GetDimensionGroups(viewId)
+            .Select(group => DimensionGroupArrangementPlanner.BuildPlan(group, targetGap))
+            .ToList();
+    }
 }
