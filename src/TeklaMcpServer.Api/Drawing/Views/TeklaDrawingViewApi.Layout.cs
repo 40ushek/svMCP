@@ -127,10 +127,11 @@ public sealed partial class TeklaDrawingViewApi
             if (!_arrangementSelector.EstimateFit(keepCtx, keepFrames))
                 throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use keepScale=false to allow rescaling.");
 
-            // Use the minimum view scale as a conservative representative for downstream
-            // decisions (e.g. ShouldSkipProjectionAlignment). Mixed-scale drawings have no
-            // single "optimal scale", so the smallest scale is the safest approximation.
-            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Min();
+            // ShouldSkipProjectionAlignment skips when scale >= cutoff (100), meaning all views
+            // are small enough that alignment corrections are negligible. Use Max() so projection
+            // is skipped only when every view is at or above the cutoff — the one correct
+            // condition under which alignment adds no value for any view on the sheet.
+            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
             candidateAttempts = 0;
         }
         else
