@@ -20,6 +20,14 @@ internal static class DimensionGroupFactory
         DimensionGroupingPolicy? groupingPolicy = null,
         DimensionReductionPolicy? reductionPolicy = null)
     {
+        return BuildGroupsWithReductionDebug(dimensions, groupingPolicy, reductionPolicy).ReducedGroups;
+    }
+
+    public static DimensionReductionDebugResult BuildGroupsWithReductionDebug(
+        IEnumerable<DrawingDimensionInfo> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null,
+        DimensionReductionPolicy? reductionPolicy = null)
+    {
         groupingPolicy ??= DimensionGroupingPolicy.Default;
         reductionPolicy ??= DimensionReductionPolicy.Default;
 
@@ -33,7 +41,7 @@ internal static class DimensionGroupFactory
             group.RawItemCount = group.DimensionList.Count;
         }
 
-        return DimensionOperations.EliminateRedundantItems(groups, reductionPolicy);
+        return DimensionOperations.EliminateRedundantItemsWithDebug(groups, reductionPolicy);
     }
 
     private static List<DimensionGroup> BuildConnectedGroups(

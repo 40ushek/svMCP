@@ -185,65 +185,33 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionGroupsDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionGroups", BindingFlags.Instance | BindingFlags.NonPublic);
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionGroupReductionDebug", BindingFlags.Instance | BindingFlags.NonPublic);
         if (method == null)
         {
-            WriteError("Internal GetDimensionGroups() was not found.");
+            WriteError("Internal GetDimensionGroupReductionDebug() was not found.");
             return true;
         }
 
-        var groups = method.Invoke(api, new object?[] { viewId }) as System.Collections.IEnumerable;
+        var result = method.Invoke(api, new object?[] { viewId });
+        if (result == null)
+        {
+            WriteError("Internal GetDimensionGroupReductionDebug() returned null.");
+            return true;
+        }
+
+        var resultType = result.GetType();
+        var groups = resultType.GetProperty("Groups")?.GetValue(result) as System.Collections.IEnumerable;
         if (groups == null)
         {
-            WriteError("Internal GetDimensionGroups() returned null.");
+            WriteError("Reduction debug groups were not found.");
             return true;
-        }
-
-        static object? SerializeLine(DrawingLineInfo? line)
-        {
-            if (line == null)
-                return null;
-
-            return new
-            {
-                startX = line.StartX,
-                startY = line.StartY,
-                endX = line.EndX,
-                endY = line.EndY,
-                length = line.Length
-            };
-        }
-
-        static object? SerializeBounds(DrawingBoundsInfo? bounds)
-        {
-            if (bounds == null)
-                return null;
-
-            return new
-            {
-                minX = bounds.MinX,
-                minY = bounds.MinY,
-                maxX = bounds.MaxX,
-                maxY = bounds.MaxY,
-                width = bounds.Width,
-                height = bounds.Height
-            };
         }
 
         var payload = groups.Cast<object>().Select(group => new
         {
-            viewId = group.GetType().GetProperty("ViewId")?.GetValue(group),
-            viewType = group.GetType().GetProperty("ViewType")?.GetValue(group),
-            dimensionType = group.GetType().GetProperty("DimensionType")?.GetValue(group),
-            sourceKind = group.GetType().GetProperty("SourceKind")?.GetValue(group),
-            geometryKind = group.GetType().GetProperty("GeometryKind")?.GetValue(group),
-            orientation = group.GetType().GetProperty("Orientation")?.GetValue(group),
-            topDirection = group.GetType().GetProperty("TopDirection")?.GetValue(group),
-            direction = SerializeDirection(group.GetType().GetProperty("Direction")?.GetValue(group)),
-            referenceLine = SerializeLine(group.GetType().GetProperty("ReferenceLine")?.GetValue(group) as DrawingLineInfo),
-            bounds = SerializeBounds(group.GetType().GetProperty("Bounds")?.GetValue(group) as DrawingBoundsInfo),
-            maximumDistance = group.GetType().GetProperty("MaximumDistance")?.GetValue(group),
-            members = SerializeMembers(group.GetType().GetProperty("Members")?.GetValue(group) as System.Collections.IEnumerable)
+            rawGroup = SerializeGroup(group.GetType().GetProperty("RawGroup")?.GetValue(group)),
+            reducedGroup = SerializeGroup(group.GetType().GetProperty("ReducedGroup")?.GetValue(group)),
+            reduction = SerializeReductionItems(group.GetType().GetProperty("Items")?.GetValue(group) as System.Collections.IEnumerable)
         });
 
         WriteJson(new { groups = payload });
@@ -691,5 +659,78 @@ internal sealed partial class DrawingCommandHandler
                 height = bounds.Height
             };
         }
+    }
+
+    private static object? SerializeGroup(object? group)
+    {
+        if (group == null)
+            return null;
+
+        return new
+        {
+            viewId = group.GetType().GetProperty("ViewId")?.GetValue(group),
+            viewType = group.GetType().GetProperty("ViewType")?.GetValue(group),
+            dimensionType = group.GetType().GetProperty("DimensionType")?.GetValue(group),
+            sourceKind = group.GetType().GetProperty("SourceKind")?.GetValue(group),
+            geometryKind = group.GetType().GetProperty("GeometryKind")?.GetValue(group),
+            orientation = group.GetType().GetProperty("Orientation")?.GetValue(group),
+            topDirection = group.GetType().GetProperty("TopDirection")?.GetValue(group),
+            direction = SerializeDirection(group.GetType().GetProperty("Direction")?.GetValue(group)),
+            referenceLine = SerializeDebugLine(group.GetType().GetProperty("ReferenceLine")?.GetValue(group) as DrawingLineInfo),
+            bounds = SerializeDebugBounds(group.GetType().GetProperty("Bounds")?.GetValue(group) as DrawingBoundsInfo),
+            maximumDistance = group.GetType().GetProperty("MaximumDistance")?.GetValue(group),
+            rawItemCount = group.GetType().GetProperty("RawItemCount")?.GetValue(group),
+            reducedItemCount = group.GetType().GetProperty("ReducedItemCount")?.GetValue(group),
+            members = SerializeMembers(group.GetType().GetProperty("Members")?.GetValue(group) as System.Collections.IEnumerable)
+        };
+    }
+
+    private static object SerializeReductionItems(System.Collections.IEnumerable? items)
+    {
+        if (items == null)
+            return System.Array.Empty<object>();
+
+        return items.Cast<object>().Select(item => new
+        {
+            status = item.GetType().GetProperty("Status")?.GetValue(item),
+            reason = item.GetType().GetProperty("Reason")?.GetValue(item),
+            packetIndex = item.GetType().GetProperty("PacketIndex")?.GetValue(item),
+            representativeDimensionId = item.GetType().GetProperty("RepresentativeDimensionId")?.GetValue(item),
+            member = SerializeMembers(new[]
+            {
+                item.GetType().GetProperty("Item")?.GetValue(item)
+            }.Where(static value => value != null)) as object
+        });
+    }
+
+    private static object? SerializeDebugLine(DrawingLineInfo? line)
+    {
+        if (line == null)
+            return null;
+
+        return new
+        {
+            startX = line.StartX,
+            startY = line.StartY,
+            endX = line.EndX,
+            endY = line.EndY,
+            length = line.Length
+        };
+    }
+
+    private static object? SerializeDebugBounds(DrawingBoundsInfo? bounds)
+    {
+        if (bounds == null)
+            return null;
+
+        return new
+        {
+            minX = bounds.MinX,
+            minY = bounds.MinY,
+            maxX = bounds.MaxX,
+            maxY = bounds.MaxY,
+            width = bounds.Width,
+            height = bounds.Height
+        };
     }
 }

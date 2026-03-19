@@ -49,6 +49,11 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal List<DimensionGroup> GetDimensionGroups(int? viewId) => DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId));
 
+    internal DimensionReductionDebugResult GetDimensionGroupReductionDebug(int? viewId)
+    {
+        return DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
+    }
+
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var snapshots = GetDimensionSnapshots(viewId);

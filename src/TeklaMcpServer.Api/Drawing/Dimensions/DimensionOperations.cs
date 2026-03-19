@@ -9,38 +9,74 @@ internal static class DimensionOperations
         IReadOnlyList<DimensionGroup> groups,
         DimensionReductionPolicy? policy = null)
     {
+        return EliminateRedundantItemsWithDebug(groups, policy).ReducedGroups;
+    }
+
+    public static DimensionReductionDebugResult EliminateRedundantItemsWithDebug(
+        IReadOnlyList<DimensionGroup> groups,
+        DimensionReductionPolicy? policy = null)
+    {
         policy ??= DimensionReductionPolicy.Default;
-        var reducedGroups = new List<DimensionGroup>(groups.Count);
+        var result = new DimensionReductionDebugResult();
 
         foreach (var group in groups)
         {
-            var reducedItems = ReduceItems(group, policy);
+            var (reducedItems, itemDebug) = ReduceItems(group, policy);
             if (reducedItems.Count == 0)
                 continue;
+
+            var rawGroup = CloneGroup(group);
+            rawGroup.DimensionList.AddRange(group.DimensionList);
+            rawGroup.SortMembers();
+            rawGroup.RefreshMetrics();
 
             var reducedGroup = CloneGroup(group);
             reducedGroup.DimensionList.AddRange(reducedItems);
             reducedGroup.SortMembers();
             reducedGroup.RefreshMetrics();
-            reducedGroups.Add(reducedGroup);
+            result.ReducedGroups.Add(reducedGroup);
+            var debugGroup = new DimensionGroupReductionDebugInfo
+            {
+                RawGroup = rawGroup,
+                ReducedGroup = reducedGroup
+            };
+            debugGroup.Items.AddRange(itemDebug);
+            result.Groups.Add(debugGroup);
         }
 
-        return reducedGroups;
+        return result;
     }
 
-    private static List<DimensionItem> ReduceItems(
+    private static (List<DimensionItem> ReducedItems, List<DimensionReductionItemDebugInfo> ItemDebug) ReduceItems(
         DimensionGroup group,
         DimensionReductionPolicy policy)
     {
         var items = group.DimensionList;
         if (items.Count <= 1)
-            return items.ToList();
+        {
+            return (
+                items.ToList(),
+                items.Select(static item => new DimensionReductionItemDebugInfo
+                {
+                    Item = item,
+                    Status = "kept",
+                    Reason = "kept"
+                }).ToList());
+        }
 
         var ordered = items
             .OrderByDescending(GetInformationRank)
             .ThenBy(static item => item.DimensionId)
             .ThenBy(static item => item.SortKey)
             .ToList();
+        var debugByItem = items.ToDictionary(
+            static item => item,
+            static item => new DimensionReductionItemDebugInfo
+            {
+                Item = item,
+                Status = "pending",
+                Reason = string.Empty
+            });
 
         var kept = new List<DimensionItem>(ordered.Count);
         foreach (var candidate in ordered)
@@ -48,14 +84,24 @@ internal static class DimensionOperations
             if (policy.EnableEquivalentSimpleReduction &&
                 IsSimpleItem(candidate) &&
                 kept.Any(existing => AreEquivalentSimpleItems(existing, candidate, policy)))
+            {
+                debugByItem[candidate].Status = "rejected";
+                debugByItem[candidate].Reason = "equivalent_simple";
                 continue;
+            }
 
             if (policy.EnableCoverageReduction &&
                 IsSimpleItem(candidate) &&
                 kept.Any(existing => Covers(existing, candidate, policy)))
+            {
+                debugByItem[candidate].Status = "rejected";
+                debugByItem[candidate].Reason = "covered";
                 continue;
+            }
 
             kept.Add(candidate);
+            debugByItem[candidate].Status = "kept";
+            debugByItem[candidate].Reason = "kept";
         }
 
         var deduplicated = kept
@@ -63,32 +109,37 @@ internal static class DimensionOperations
             .ThenBy(static item => item.DimensionId)
             .ToList();
 
-        return policy.EnableRepresentativeSelection
-            ? SelectCommonRepresentatives(group, deduplicated, policy)
+        var reduced = policy.EnableRepresentativeSelection
+            ? SelectCommonRepresentatives(group, deduplicated, policy, debugByItem)
             : deduplicated;
+
+        return (reduced, debugByItem.Values.OrderBy(static info => info.Item.SortKey).ThenBy(static info => info.Item.DimensionId).ToList());
     }
 
     private static List<DimensionItem> SelectCommonRepresentatives(
         DimensionGroup group,
         IReadOnlyList<DimensionItem> items,
-        DimensionReductionPolicy policy)
+        DimensionReductionPolicy policy,
+        Dictionary<DimensionItem, DimensionReductionItemDebugInfo> debugByItem)
     {
         if (items.Count <= 1)
             return items.ToList();
 
         var selected = new List<DimensionItem>();
         var packetStart = 0;
+        var packetIndex = 0;
 
         for (var i = 1; i < items.Count; i++)
         {
             if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance, policy))
                 continue;
 
-            selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy));
+            selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy, packetIndex, debugByItem));
             packetStart = i;
+            packetIndex++;
         }
 
-        selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy));
+        selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy, packetIndex, debugByItem));
         return selected;
     }
 
@@ -122,7 +173,9 @@ internal static class DimensionOperations
         IReadOnlyList<DimensionItem> items,
         int startIndex,
         int endIndex,
-        DimensionReductionPolicy policy)
+        DimensionReductionPolicy policy,
+        int packetIndex,
+        Dictionary<DimensionItem, DimensionReductionItemDebugInfo> debugByItem)
     {
         var count = endIndex - startIndex + 1;
         var selectionMode = ResolveRepresentativeSelectionMode(group, policy);
@@ -133,7 +186,34 @@ internal static class DimensionOperations
             _ => endIndex - ((count - 1) / 2)
         };
 
-        return items[position];
+        var representative = items[position];
+        for (var i = startIndex; i <= endIndex; i++)
+        {
+            var item = items[i];
+            var debug = debugByItem[item];
+            debug.PacketIndex = packetIndex;
+            debug.RepresentativeDimensionId = representative.DimensionId;
+
+            if (count == 1)
+            {
+                debug.Status = "kept";
+                debug.Reason = "kept";
+                continue;
+            }
+
+            if (ReferenceEquals(item, representative))
+            {
+                debug.Status = "kept";
+                debug.Reason = "representative_packet";
+            }
+            else
+            {
+                debug.Status = "rejected";
+                debug.Reason = "representative_packet";
+            }
+        }
+
+        return representative;
     }
 
     private static DimensionRepresentativeSelectionMode ResolveRepresentativeSelectionMode(
