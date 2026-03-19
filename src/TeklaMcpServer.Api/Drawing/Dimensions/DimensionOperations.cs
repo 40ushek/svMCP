@@ -84,11 +84,11 @@ internal static class DimensionOperations
             if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance, policy))
                 continue;
 
-            selected.Add(SelectRepresentative(items, packetStart, i - 1, policy));
+            selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy));
             packetStart = i;
         }
 
-        selected.Add(SelectRepresentative(items, packetStart, items.Count - 1, policy));
+        selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy));
         return selected;
     }
 
@@ -118,13 +118,15 @@ internal static class DimensionOperations
     }
 
     private static DimensionItem SelectRepresentative(
+        DimensionGroup group,
         IReadOnlyList<DimensionItem> items,
         int startIndex,
         int endIndex,
         DimensionReductionPolicy policy)
     {
         var count = endIndex - startIndex + 1;
-        var position = policy.RepresentativeSelectionMode switch
+        var selectionMode = ResolveRepresentativeSelectionMode(group, policy);
+        var position = selectionMode switch
         {
             DimensionRepresentativeSelectionMode.FirstInPacket => startIndex,
             DimensionRepresentativeSelectionMode.LastInPacket => endIndex,
@@ -132,6 +134,22 @@ internal static class DimensionOperations
         };
 
         return items[position];
+    }
+
+    private static DimensionRepresentativeSelectionMode ResolveRepresentativeSelectionMode(
+        DimensionGroup group,
+        DimensionReductionPolicy policy)
+    {
+        if (!policy.UseGeometryAwareRepresentativeSelection)
+            return policy.RepresentativeSelectionMode;
+
+        return group.DomainDimensionType switch
+        {
+            DimensionType.Horizontal => policy.HorizontalRepresentativeSelectionMode,
+            DimensionType.Vertical => policy.VerticalRepresentativeSelectionMode,
+            DimensionType.Free => policy.FreeRepresentativeSelectionMode,
+            _ => policy.RepresentativeSelectionMode
+        };
     }
 
     private static bool Covers(

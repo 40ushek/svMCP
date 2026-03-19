@@ -17,6 +17,13 @@ internal sealed class DimensionReductionPolicy
     public bool EnableCoverageReduction { get; set; } = true;
     public bool EnableRepresentativeSelection { get; set; } = true;
     public double RepresentativePacketGapFactor { get; set; } = 1.0;
+    public bool UseGeometryAwareRepresentativeSelection { get; set; }
     public DimensionRepresentativeSelectionMode RepresentativeSelectionMode { get; set; } =
+        DimensionRepresentativeSelectionMode.CenterBiased;
+    public DimensionRepresentativeSelectionMode HorizontalRepresentativeSelectionMode { get; set; } =
+        DimensionRepresentativeSelectionMode.CenterBiased;
+    public DimensionRepresentativeSelectionMode VerticalRepresentativeSelectionMode { get; set; } =
+        DimensionRepresentativeSelectionMode.CenterBiased;
+    public DimensionRepresentativeSelectionMode FreeRepresentativeSelectionMode { get; set; } =
         DimensionRepresentativeSelectionMode.CenterBiased;
 }

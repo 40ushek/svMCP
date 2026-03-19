@@ -722,6 +722,34 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(1, member.DimensionId);
     }
 
+    [Fact]
+    public void BuildGroups_CanChooseGeometryAwareRepresentativeSelection()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "vertical", 40, 0, 1, 1, -1, 0, 0, 0, 0, 0, 40, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "vertical", 40, 0, 1, 1, -1, 0, 100, 100, 0, 100, 40, 200, 5);
+        var third = CreateDimension(3, 10, "FrontView", "Absolute", "vertical", 40, 0, 1, 1, -1, 0, 200, 200, 0, 200, 40, 300, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 40, EndY = 0 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 0, StartY = 100, EndX = 40, EndY = 100 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 100, EndX = 40, EndY = 100 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 0, StartY = 200, EndX = 40, EndY = 200 };
+        third.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 200, EndX = 40, EndY = 200 };
+        third.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 0, StartY = 300, EndX = 40, EndY = 300 };
+
+        var groups = DimensionGroupFactory.BuildGroups(
+            [first, second, third],
+            reductionPolicy: new DimensionReductionPolicy
+            {
+                UseGeometryAwareRepresentativeSelection = true,
+                HorizontalRepresentativeSelectionMode = DimensionRepresentativeSelectionMode.CenterBiased,
+                VerticalRepresentativeSelectionMode = DimensionRepresentativeSelectionMode.FirstInPacket
+            });
+
+        var group = Assert.Single(groups);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(1, member.DimensionId);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,
