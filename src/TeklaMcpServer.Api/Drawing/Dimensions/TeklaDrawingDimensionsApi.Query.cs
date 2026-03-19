@@ -57,92 +57,63 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     private static GetDimensionsResult BuildGetDimensionsResult(IReadOnlyList<DimensionGroup> groups)
     {
-        var publicGroups = groups
-            .GroupBy(static group => new
-            {
-                group.ViewId,
-                group.ViewType,
-                group.DimensionType
-            })
-            .Select(static bucket => CreatePublicGroupInfo(bucket))
-            .ToList();
-
         var result = new GetDimensionsResult
         {
-            Total = publicGroups.Sum(static group => group.Items.Count),
-            GroupCount = publicGroups.Count
+            Total = groups.Sum(static group => group.DimensionList.Count),
+            GroupCount = groups.Count
         };
 
-        result.Groups.AddRange(publicGroups);
-
-        return result;
-    }
-
-    private static DimensionGroupInfo CreatePublicGroupInfo(IEnumerable<DimensionGroup> groupBucket)
-    {
-        var groups = groupBucket.ToList();
-        var first = groups[0];
-        var directions = groups
-            .Where(static group => group.Direction.HasValue)
-            .Select(static group => group.Direction!.Value)
-            .Distinct()
-            .ToList();
-        var topDirections = groups
-            .Select(static group => group.TopDirection)
-            .Distinct()
-            .ToList();
-        var teklaTypes = groups
-            .Select(static group => group.TeklaDimensionType)
-            .Where(static value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(System.StringComparer.Ordinal)
-            .ToList();
-
-        var info = new DimensionGroupInfo
+        foreach (var group in groups)
         {
-            ViewId = first.ViewId,
-            ViewType = first.ViewType,
-            DimensionType = first.DimensionType,
-            TeklaDimensionType = teklaTypes.Count == 1 ? teklaTypes[0] : string.Empty,
-            Direction = directions.Count == 1
-                ? new DrawingVectorInfo
-                {
-                    X = directions[0].X,
-                    Y = directions[0].Y
-                }
-                : null,
-            TopDirection = topDirections.Count == 1 ? topDirections[0] : 0,
-            ReferenceLine = groups.Count == 1 ? CopyLine(first.ReferenceLine) : null,
-            LeadLineMain = groups.Count == 1 ? CopyLine(first.LeadLineMain) : null,
-            LeadLineSecond = groups.Count == 1 ? CopyLine(first.LeadLineSecond) : null,
-            MaximumDistance = System.Math.Round(groups.Max(static group => group.MaximumDistance), 3)
-        };
-
-        foreach (var item in groups.SelectMany(static group => group.DimensionList).OrderBy(static item => item.SortKey))
-        {
-            info.Items.Add(new DimensionItemInfo
+            var info = new DimensionGroupInfo
             {
-                Id = item.DimensionId,
-                SegmentIds = item.SegmentIds.ToList(),
-                ViewId = item.ViewId,
-                DimensionType = item.DimensionType,
-                TeklaDimensionType = item.TeklaDimensionType,
-                ReferenceLine = CopyLine(item.ReferenceLine),
-                StartPoint = new DrawingPointInfo { X = item.StartX, Y = item.StartY, Order = item.StartPointOrder },
-                EndPoint = new DrawingPointInfo { X = item.EndX, Y = item.EndY, Order = item.EndPointOrder },
-                CenterPoint = new DrawingPointInfo { X = item.CenterX, Y = item.CenterY, Order = -1 },
-                PointList = item.PointList.Select(static point => new DrawingPointInfo
+                ViewId = group.ViewId,
+                ViewType = group.ViewType,
+                DimensionType = group.DimensionType,
+                TeklaDimensionType = group.TeklaDimensionType,
+                Direction = group.Direction.HasValue
+                    ? new DrawingVectorInfo
+                    {
+                        X = group.Direction.Value.X,
+                        Y = group.Direction.Value.Y
+                    }
+                    : null,
+                TopDirection = group.TopDirection,
+                ReferenceLine = CopyLine(group.ReferenceLine),
+                LeadLineMain = CopyLine(group.LeadLineMain),
+                LeadLineSecond = CopyLine(group.LeadLineSecond),
+                MaximumDistance = System.Math.Round(group.MaximumDistance, 3)
+            };
+
+            foreach (var item in group.DimensionList)
+            {
+                info.Items.Add(new DimensionItemInfo
                 {
-                    X = point.X,
-                    Y = point.Y,
-                    Order = point.Order
-                }).ToList(),
-                LengthList = item.LengthList.ToList(),
-                RealLengthList = item.RealLengthList.ToList(),
-                Distance = System.Math.Round(item.Distance, 3)
-            });
+                    Id = item.DimensionId,
+                    SegmentIds = item.SegmentIds.ToList(),
+                    ViewId = item.ViewId,
+                    DimensionType = item.DimensionType,
+                    TeklaDimensionType = item.TeklaDimensionType,
+                    ReferenceLine = CopyLine(item.ReferenceLine),
+                    StartPoint = new DrawingPointInfo { X = item.StartX, Y = item.StartY, Order = item.StartPointOrder },
+                    EndPoint = new DrawingPointInfo { X = item.EndX, Y = item.EndY, Order = item.EndPointOrder },
+                    CenterPoint = new DrawingPointInfo { X = item.CenterX, Y = item.CenterY, Order = -1 },
+                    PointList = item.PointList.Select(static point => new DrawingPointInfo
+                    {
+                        X = point.X,
+                        Y = point.Y,
+                        Order = point.Order
+                    }).ToList(),
+                    LengthList = item.LengthList.ToList(),
+                    RealLengthList = item.RealLengthList.ToList(),
+                    Distance = System.Math.Round(item.Distance, 3)
+                });
+            }
+
+            result.Groups.Add(info);
         }
 
-        return info;
+        return result;
     }
 
     private DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)

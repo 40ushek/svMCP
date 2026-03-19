@@ -121,6 +121,32 @@ Consequence:
 - Treat `orientation` as a summary only, never as the main grouping key.
 - Keep Tekla raw type and domain type separate when they diverge.
 
+## Group Semantics
+
+`DimensionGroup` should mean a compatible geometric family or cluster of
+dimensions, not a filter and not an automatic merge target.
+
+The intent of grouping is to make it possible to:
+
+- cluster similar dimensions into one geometric working set
+- analyze similar/neighboring dimensions together
+- detect when some dimensions are redundant and may be rejected
+- detect when dimensions are compatible candidates for controlled combination
+- drive spacing, arrangement and conflict analysis from shared geometry
+
+Grouping must not imply:
+
+- immediate merge into one Tekla dimension set
+- loss of the original individual dimensions
+- summary bucketing by `Horizontal` / `Vertical` / `Free` as the main domain
+  model
+
+In other words:
+
+- cluster first into a geometric family for analysis and operations
+- combine only when a separate rule explicitly allows it
+- keep the `dim` meaning of a group as a geometric working set
+
 ## Target Internal Types
 
 ### 1. Raw Snapshot Layer
@@ -201,6 +227,8 @@ The following semantics are the main migration target:
 - preserve `LengthList` and `RealLengthList` distinction
 - support center-point based behavior where needed
 - keep `MaximumDistance` as a real geometric concept, not just a display metric
+- treat a group as a candidate set for analysis, elimination and optional
+  controlled combination
 
 ## Explicit Non-Goals
 
