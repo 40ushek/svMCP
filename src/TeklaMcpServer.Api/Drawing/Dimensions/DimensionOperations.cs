@@ -21,7 +21,7 @@ internal static class DimensionOperations
 
         foreach (var group in groups)
         {
-            var (reducedItems, itemDebug) = ReduceItems(group, policy);
+            var (reducedItems, itemDebug, packetDebug) = ReduceItems(group, policy);
             if (reducedItems.Count == 0)
                 continue;
 
@@ -41,13 +41,17 @@ internal static class DimensionOperations
                 ReducedGroup = reducedGroup
             };
             debugGroup.Items.AddRange(itemDebug);
+            debugGroup.Packets.AddRange(packetDebug);
             result.Groups.Add(debugGroup);
         }
 
         return result;
     }
 
-    private static (List<DimensionItem> ReducedItems, List<DimensionReductionItemDebugInfo> ItemDebug) ReduceItems(
+    private static (
+        List<DimensionItem> ReducedItems,
+        List<DimensionReductionItemDebugInfo> ItemDebug,
+        List<DimensionRepresentativePacketDebugInfo> PacketDebug) ReduceItems(
         DimensionGroup group,
         DimensionReductionPolicy policy)
     {
@@ -61,7 +65,8 @@ internal static class DimensionOperations
                     Item = item,
                     Status = "kept",
                     Reason = "kept"
-                }).ToList());
+                }).ToList(),
+                []);
         }
 
         var ordered = items
@@ -109,18 +114,23 @@ internal static class DimensionOperations
             .ThenBy(static item => item.DimensionId)
             .ToList();
 
+        List<DimensionRepresentativePacketDebugInfo> packetDebug = [];
         var reduced = policy.EnableRepresentativeSelection
-            ? SelectCommonRepresentatives(group, deduplicated, policy, debugByItem)
+            ? SelectCommonRepresentatives(group, deduplicated, policy, debugByItem, packetDebug)
             : deduplicated;
 
-        return (reduced, debugByItem.Values.OrderBy(static info => info.Item.SortKey).ThenBy(static info => info.Item.DimensionId).ToList());
+        return (
+            reduced,
+            debugByItem.Values.OrderBy(static info => info.Item.SortKey).ThenBy(static info => info.Item.DimensionId).ToList(),
+            packetDebug);
     }
 
     private static List<DimensionItem> SelectCommonRepresentatives(
         DimensionGroup group,
         IReadOnlyList<DimensionItem> items,
         DimensionReductionPolicy policy,
-        Dictionary<DimensionItem, DimensionReductionItemDebugInfo> debugByItem)
+        Dictionary<DimensionItem, DimensionReductionItemDebugInfo> debugByItem,
+        List<DimensionRepresentativePacketDebugInfo> packetDebug)
     {
         if (items.Count <= 1)
             return items.ToList();
@@ -131,26 +141,35 @@ internal static class DimensionOperations
 
         for (var i = 1; i < items.Count; i++)
         {
-            if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance, policy))
+            var split = EvaluateRepresentativePacketSplit(items[i - 1], items[i], group.MaximumDistance, policy);
+            if (!split.ShouldSplit)
                 continue;
 
             selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy, packetIndex, debugByItem));
+            packetDebug.Add(CreatePacketDebug(group, items, packetStart, i - 1, packetIndex, policy, split));
             packetStart = i;
             packetIndex++;
         }
 
         selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy, packetIndex, debugByItem));
+        packetDebug.Add(CreatePacketDebug(group, items, packetStart, items.Count - 1, packetIndex, policy, splitInfo: null));
         return selected;
     }
 
-    private static bool ShouldSplitRepresentativePacket(
+    private static RepresentativePacketSplitInfo EvaluateRepresentativePacketSplit(
         DimensionItem previous,
         DimensionItem current,
         double maximumDistance,
         DimensionReductionPolicy policy)
     {
         if (previous.LeadLineMain == null || current.LeadLineMain == null)
-            return true;
+        {
+            return new RepresentativePacketSplitInfo
+            {
+                ShouldSplit = true,
+                Threshold = maximumDistance * policy.RepresentativePacketGapFactor
+            };
+        }
 
         var previousEndToCurrentStart = GetDistance(
             previous.LeadLineMain.EndX,
@@ -164,8 +183,14 @@ internal static class DimensionOperations
             current.LeadLineMain.EndY);
 
         var threshold = maximumDistance * policy.RepresentativePacketGapFactor;
-        return previousEndToCurrentStart > threshold &&
-               previousStartToCurrentEnd > threshold;
+        return new RepresentativePacketSplitInfo
+        {
+            ShouldSplit = previousEndToCurrentStart > threshold &&
+                          previousStartToCurrentEnd > threshold,
+            PreviousEndToCurrentStart = previousEndToCurrentStart,
+            PreviousStartToCurrentEnd = previousStartToCurrentEnd,
+            Threshold = threshold
+        };
     }
 
     private static DimensionItem SelectRepresentative(
@@ -232,6 +257,38 @@ internal static class DimensionOperations
         };
     }
 
+    private static DimensionRepresentativePacketDebugInfo CreatePacketDebug(
+        DimensionGroup group,
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex,
+        int packetIndex,
+        DimensionReductionPolicy policy,
+        RepresentativePacketSplitInfo? splitInfo)
+    {
+        var selectionMode = ResolveRepresentativeSelectionMode(group, policy);
+        var count = endIndex - startIndex + 1;
+        var representativeIndex = selectionMode switch
+        {
+            DimensionRepresentativeSelectionMode.FirstInPacket => startIndex,
+            DimensionRepresentativeSelectionMode.LastInPacket => endIndex,
+            _ => endIndex - ((count - 1) / 2)
+        };
+
+        return new DimensionRepresentativePacketDebugInfo
+        {
+            PacketIndex = packetIndex,
+            StartDimensionId = items[startIndex].DimensionId,
+            EndDimensionId = items[endIndex].DimensionId,
+            ItemCount = count,
+            SelectionMode = selectionMode.ToString(),
+            RepresentativeDimensionId = items[representativeIndex].DimensionId,
+            SplitGapFromPreviousEndToCurrentStart = splitInfo?.PreviousEndToCurrentStart,
+            SplitGapFromPreviousStartToCurrentEnd = splitInfo?.PreviousStartToCurrentEnd,
+            SplitThreshold = splitInfo?.Threshold ?? (group.MaximumDistance * policy.RepresentativePacketGapFactor)
+        };
+    }
+
     private static bool Covers(
         DimensionItem keeper,
         DimensionItem candidate,
@@ -241,6 +298,9 @@ internal static class DimensionOperations
             return false;
 
         if (keeper.PointList.Count < candidate.PointList.Count)
+            return false;
+
+        if (!AreOnSameMeasuredLine(keeper, candidate, policy))
             return false;
 
         var direction = keeper.Direction ?? candidate.Direction;
@@ -270,6 +330,9 @@ internal static class DimensionOperations
             return false;
 
         if (!AreParallel(keeperDirection.Value, candidateDirection.Value))
+            return false;
+
+        if (!AreOnSameMeasuredLine(keeper, candidate, policy))
             return false;
 
         var keeperPositions = GetProjectedPositions(keeper.PointList, keeperDirection.Value);
@@ -328,6 +391,25 @@ internal static class DimensionOperations
         return Project(item.ReferenceLine.StartX, item.ReferenceLine.StartY, normal.Item1, normal.Item2);
     }
 
+    private static bool AreOnSameMeasuredLine(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionReductionPolicy policy)
+    {
+        var direction = left.Direction ?? right.Direction;
+        if (!direction.HasValue)
+            return false;
+
+        var normal = (-direction.Value.Y, direction.Value.X);
+        var leftStart = Project(left.StartX, left.StartY, normal.Item1, normal.Item2);
+        var leftEnd = Project(left.EndX, left.EndY, normal.Item1, normal.Item2);
+        var rightStart = Project(right.StartX, right.StartY, normal.Item1, normal.Item2);
+        var rightEnd = Project(right.EndX, right.EndY, normal.Item1, normal.Item2);
+
+        return System.Math.Abs(leftStart - rightStart) <= policy.MeasuredLineTolerance &&
+               System.Math.Abs(leftEnd - rightEnd) <= policy.MeasuredLineTolerance;
+    }
+
     private static bool AreParallel(
         (double X, double Y) left,
         (double X, double Y) right)
@@ -337,6 +419,14 @@ internal static class DimensionOperations
     }
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
+
+    private sealed class RepresentativePacketSplitInfo
+    {
+        public bool ShouldSplit { get; set; }
+        public double PreviousEndToCurrentStart { get; set; }
+        public double PreviousStartToCurrentEnd { get; set; }
+        public double Threshold { get; set; }
+    }
 
     private static DimensionGroup CloneGroup(DimensionGroup group)
     {

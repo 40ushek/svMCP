@@ -605,6 +605,33 @@ public sealed class DimensionGroupFactoryTests
     }
 
     [Fact]
+    public void BuildGroups_DoesNotEliminateEquivalentSimpleItemsOnDifferentMeasuredLines()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var shifted = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 20, 1, 0, -1, 0, -1, 20, 0, 100, 0, 20, 100, 25);
+
+        first.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        first.Segments[0].DimensionLine = first.ReferenceLine;
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+
+        shifted.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        shifted.Segments[0].DimensionLine = shifted.ReferenceLine;
+        shifted.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 20, EndX = 0, EndY = 40 };
+        shifted.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 20, EndX = 100, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups(
+            [first, shifted],
+            reductionPolicy: new DimensionReductionPolicy
+            {
+                EnableRepresentativeSelection = false
+            });
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
     public void BuildGroups_CanDisableEquivalentSimpleReductionViaPolicy()
     {
         var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
@@ -627,6 +654,83 @@ public sealed class DimensionGroupFactoryTests
                 EnableEquivalentSimpleReduction = false,
                 EnableRepresentativeSelection = false,
                 EnableCoverageReduction = false
+            });
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_DoesNotEliminateCoveredItemOnDifferentMeasuredLine()
+    {
+        var chain = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        chain.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 0, Order = 0 },
+            new DrawingPointInfo { X = 100, Y = 0, Order = 1 },
+            new DrawingPointInfo { X = 220, Y = 0, Order = 2 }
+        ];
+        chain.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 220, EndY = -1440 };
+        chain.Segments[0].DimensionLine = chain.ReferenceLine;
+        chain.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        chain.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1440 };
+        chain.Segments.Add(new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 100,
+            StartY = 0,
+            EndX = 220,
+            EndY = 0,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = -1500,
+                EndX = 220,
+                EndY = -1500
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = -1500
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 220,
+                StartY = 0,
+                EndX = 220,
+                EndY = -1500
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 100,
+                MinY = -1500,
+                MaxX = 220,
+                MaxY = -1500
+            }
+        });
+
+        var shiftedOverall = CreateDimension(2, 10, "FrontView", "Relative", "horizontal", 1460, 1, 0, -1, 0, -1, 20, 0, 220, 0, 20, 220, 25);
+        shiftedOverall.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 20, Order = 0 },
+            new DrawingPointInfo { X = 220, Y = 20, Order = 1 }
+        ];
+        shiftedOverall.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 220, EndY = -1440 };
+        shiftedOverall.Segments[0].DimensionLine = shiftedOverall.ReferenceLine;
+        shiftedOverall.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 20, EndX = 0, EndY = -1440 };
+        shiftedOverall.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 220, StartY = 20, EndX = 220, EndY = -1440 };
+
+        var groups = DimensionGroupFactory.BuildGroups(
+            [chain, shiftedOverall],
+            reductionPolicy: new DimensionReductionPolicy
+            {
+                EnableRepresentativeSelection = false
             });
 
         var group = Assert.Single(groups);

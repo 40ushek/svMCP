@@ -192,7 +192,22 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = method.Invoke(api, new object?[] { viewId });
+        object? result;
+        try
+        {
+            result = method.Invoke(api, new object?[] { viewId });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+            WriteJson(new
+            {
+                error = ex.InnerException.Message,
+                type = ex.InnerException.GetType().Name,
+                stack = ex.InnerException.StackTrace
+            });
+            return true;
+        }
+
         if (result == null)
         {
             WriteError("Internal GetDimensionGroupReductionDebug() returned null.");
@@ -211,11 +226,35 @@ internal sealed partial class DrawingCommandHandler
         {
             rawGroup = SerializeGroup(group.GetType().GetProperty("RawGroup")?.GetValue(group)),
             reducedGroup = SerializeGroup(group.GetType().GetProperty("ReducedGroup")?.GetValue(group)),
-            reduction = SerializeReductionItems(group.GetType().GetProperty("Items")?.GetValue(group) as System.Collections.IEnumerable)
+            reduction = SerializeReductionItems(group.GetType().GetProperty("Items")?.GetValue(group) as System.Collections.IEnumerable),
+            packets = SerializeRepresentativePackets(group.GetType().GetProperty("Packets")?.GetValue(group) as System.Collections.IEnumerable)
         });
 
         WriteJson(new { groups = payload });
         return true;
+    }
+
+    private static IEnumerable<object> SerializeRepresentativePackets(System.Collections.IEnumerable? packets)
+    {
+        if (packets == null)
+            return [];
+
+        return packets.Cast<object>().Select(packet =>
+        {
+            var type = packet.GetType();
+            return new
+            {
+                packetIndex = type.GetProperty("PacketIndex")?.GetValue(packet),
+                startDimensionId = type.GetProperty("StartDimensionId")?.GetValue(packet),
+                endDimensionId = type.GetProperty("EndDimensionId")?.GetValue(packet),
+                itemCount = type.GetProperty("ItemCount")?.GetValue(packet),
+                selectionMode = type.GetProperty("SelectionMode")?.GetValue(packet),
+                representativeDimensionId = type.GetProperty("RepresentativeDimensionId")?.GetValue(packet),
+                splitGapFromPreviousEndToCurrentStart = type.GetProperty("SplitGapFromPreviousEndToCurrentStart")?.GetValue(packet),
+                splitGapFromPreviousStartToCurrentEnd = type.GetProperty("SplitGapFromPreviousStartToCurrentEnd")?.GetValue(packet),
+                splitThreshold = type.GetProperty("SplitThreshold")?.GetValue(packet)
+            };
+        });
     }
 
     private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)
