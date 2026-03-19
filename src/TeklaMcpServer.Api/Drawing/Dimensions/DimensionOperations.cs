@@ -297,7 +297,14 @@ internal static class DimensionOperations
         for (var i = startIndex; i <= endIndex; i++)
             packet.DimensionIds.Add(items[i].DimensionId);
 
-        var combineAnalysis = AnalyzeCombineCandidate(group, items, startIndex, endIndex, policy, combinePolicy);
+        var combineAnalysis = AnalyzeCombineCandidate(
+            group,
+            items,
+            startIndex,
+            endIndex,
+            policy,
+            combinePolicy,
+            items[representativeIndex]);
         packet.IsCombineCandidate = combineAnalysis.BlockingReasons.Count == 0;
         packet.CombineConnectivityMode = combineAnalysis.ConnectivityMode;
         packet.BlockingReasons.AddRange(combineAnalysis.BlockingReasons);
@@ -312,7 +319,8 @@ internal static class DimensionOperations
         int startIndex,
         int endIndex,
         DimensionReductionPolicy policy,
-        DimensionCombinePolicy combinePolicy)
+        DimensionCombinePolicy combinePolicy,
+        DimensionItem representativeItem)
     {
         var analysis = new CombineCandidateAnalysis();
         var count = endIndex - startIndex + 1;
@@ -350,7 +358,10 @@ internal static class DimensionOperations
                 return analysis;
             }
 
-            if (current.TopDirection != 0 && first.TopDirection != 0 && current.TopDirection != first.TopDirection)
+            if (combinePolicy.RequireSameTopDirection &&
+                current.TopDirection != 0 &&
+                first.TopDirection != 0 &&
+                current.TopDirection != first.TopDirection)
             {
                 analysis.ConnectivityMode = "different_top_direction";
                 analysis.BlockingReasons.Add("different_top_direction");
@@ -362,6 +373,48 @@ internal static class DimensionOperations
                 analysis.ConnectivityMode = "different_measured_line";
                 analysis.BlockingReasons.Add("different_measured_line");
                 return analysis;
+            }
+        }
+
+        if (combinePolicy.RequireReferenceLineOffsetCompatibility)
+        {
+            var firstOffset = TryGetReferenceLineOffset(first, firstDirection.Value);
+            if (!firstOffset.HasValue)
+            {
+                analysis.ConnectivityMode = "missing_reference_line";
+                analysis.BlockingReasons.Add("missing_reference_line");
+                return analysis;
+            }
+
+            for (var i = startIndex + 1; i <= endIndex; i++)
+            {
+                var currentOffset = TryGetReferenceLineOffset(items[i], firstDirection.Value);
+                if (!currentOffset.HasValue)
+                {
+                    analysis.ConnectivityMode = "missing_reference_line";
+                    analysis.BlockingReasons.Add("missing_reference_line");
+                    return analysis;
+                }
+
+                if (System.Math.Abs(firstOffset.Value - currentOffset.Value) > combinePolicy.ReferenceLineOffsetTolerance)
+                {
+                    analysis.ConnectivityMode = "different_reference_line_band";
+                    analysis.BlockingReasons.Add("different_reference_line_band");
+                    return analysis;
+                }
+            }
+        }
+
+        if (combinePolicy.RequireDistanceCompatibility)
+        {
+            for (var i = startIndex + 1; i <= endIndex; i++)
+            {
+                if (System.Math.Abs(first.Distance - items[i].Distance) > combinePolicy.DistanceTolerance)
+                {
+                    analysis.ConnectivityMode = "distance_delta_exceeds_tolerance";
+                    analysis.BlockingReasons.Add("distance_delta_exceeds_tolerance");
+                    return analysis;
+                }
             }
         }
 
@@ -387,10 +440,18 @@ internal static class DimensionOperations
         }
 
         if (!connectivity.HasSharedPointChain && !combinePolicy.AllowAdjacentMeasuredPointOrderFallback)
+        {
             analysis.BlockingReasons.Add("requires_adjacent_order_fallback");
+            return analysis;
+        }
 
         if (analysis.BlockingReasons.Count == 0)
-            analysis.Preview = BuildCombinePreview(items, startIndex, endIndex);
+        {
+            var previewBaseItem = combinePolicy.UseRepresentativeAsPreviewBase
+                ? representativeItem
+                : first;
+            analysis.Preview = BuildCombinePreview(items, startIndex, endIndex, previewBaseItem);
+        }
 
         return analysis;
     }
@@ -398,9 +459,9 @@ internal static class DimensionOperations
     private static DimensionCombinePreviewDebugInfo BuildCombinePreview(
         IReadOnlyList<DimensionItem> items,
         int startIndex,
-        int endIndex)
+        int endIndex,
+        DimensionItem baseItem)
     {
-        var baseItem = items[startIndex];
         var preview = new DimensionCombinePreviewDebugInfo
         {
             BaseDimensionId = baseItem.DimensionId,
@@ -563,13 +624,7 @@ internal static class DimensionOperations
         if (!direction.HasValue)
             return false;
 
-        var keeperPositions = GetProjectedPositions(keeper.PointList, direction.Value);
-        var candidatePositions = GetProjectedPositions(candidate.PointList, direction.Value);
-        if (keeperPositions.Count == 0 || candidatePositions.Count == 0)
-            return false;
-
-        return candidatePositions.All(candidatePosition =>
-            keeperPositions.Any(keeperPosition => System.Math.Abs(keeperPosition - candidatePosition) <= policy.PositionTolerance));
+        return HasDimStyleEqualPositions(keeper, candidate, policy, direction.Value);
     }
 
     private static bool AreEquivalentSimpleItems(
@@ -591,27 +646,90 @@ internal static class DimensionOperations
         if (!AreOnSameMeasuredLine(keeper, candidate, policy))
             return false;
 
-        var keeperPositions = GetProjectedPositions(keeper.PointList, keeperDirection.Value);
-        var candidatePositions = GetProjectedPositions(candidate.PointList, keeperDirection.Value);
-        if (keeperPositions.Count != 2 || candidatePositions.Count != 2)
+        return HasDimStyleEqualPositions(keeper, candidate, policy, keeperDirection.Value) &&
+               HasDimStyleEqualPositions(candidate, keeper, policy, keeperDirection.Value);
+    }
+
+    private static bool HasDimStyleEqualPositions(
+        DimensionItem item,
+        DimensionItem originalItem,
+        DimensionReductionPolicy policy,
+        (double X, double Y) direction)
+    {
+        if (originalItem.LengthList.Count == 0 || item.PointList.Count < 2)
             return false;
 
-        var keeperLength = keeperPositions[1] - keeperPositions[0];
-        var candidateLength = candidatePositions[1] - candidatePositions[0];
-        if (System.Math.Abs(keeperLength - candidateLength) > policy.LengthTolerance)
+        var originLength = originalItem.LengthList[0];
+        var probeHalfLength = originalItem.GetLeadLineMainLength();
+        if (probeHalfLength <= 0)
+            probeHalfLength = item.GetLeadLineMainLength();
+        if (probeHalfLength <= 0)
+            probeHalfLength = originLength;
+
+        var normal = (direction.Y, -direction.X);
+        var matchingIndices = GetLengthMatchedPointIndices(item, originLength, policy);
+        if (matchingIndices.Count == 0)
             return false;
 
-        var sameStart = System.Math.Abs(keeperPositions[0] - candidatePositions[0]) <= policy.PositionTolerance;
-        var sameEnd = System.Math.Abs(keeperPositions[1] - candidatePositions[1]) <= policy.PositionTolerance;
-        if (!sameStart || !sameEnd)
+        foreach (var matchedIndex in matchingIndices)
+        {
+            if (matchedIndex >= item.PointList.Count)
+                continue;
+
+            if (IsPointOnPerpendicularProbe(
+                    item.PointList[0],
+                    originalItem.StartPoint,
+                    direction,
+                    normal,
+                    probeHalfLength,
+                    policy) &&
+                IsPointOnPerpendicularProbe(
+                    item.PointList[matchedIndex],
+                    originalItem.EndPoint,
+                    direction,
+                    normal,
+                    probeHalfLength,
+                    policy))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<int> GetLengthMatchedPointIndices(
+        DimensionItem item,
+        double originLength,
+        DimensionReductionPolicy policy)
+    {
+        var indices = new List<int>();
+        for (var i = 0; i < item.LengthList.Count; i++)
+        {
+            if (System.Math.Abs(item.LengthList[i] - originLength) <= policy.LengthTolerance)
+                indices.Add(i + 1);
+        }
+
+        return indices;
+    }
+
+    private static bool IsPointOnPerpendicularProbe(
+        DrawingPointInfo point,
+        DrawingPointInfo anchor,
+        (double X, double Y) direction,
+        (double X, double Y) normal,
+        double halfLength,
+        DimensionReductionPolicy policy)
+    {
+        var anchorDirection = Project(anchor.X, anchor.Y, direction.X, direction.Y);
+        var pointDirection = Project(point.X, point.Y, direction.X, direction.Y);
+        if (System.Math.Abs(anchorDirection - pointDirection) > policy.PositionTolerance)
             return false;
 
-        var keeperOffset = TryGetReferenceLineOffset(keeper, keeperDirection.Value);
-        var candidateOffset = TryGetReferenceLineOffset(candidate, keeperDirection.Value);
-        if (!keeperOffset.HasValue || !candidateOffset.HasValue)
-            return false;
-
-        return System.Math.Abs(keeperOffset.Value - candidateOffset.Value) <= policy.PositionTolerance;
+        var anchorNormal = Project(anchor.X, anchor.Y, normal.X, normal.Y);
+        var pointNormal = Project(point.X, point.Y, normal.X, normal.Y);
+        return pointNormal >= anchorNormal - halfLength - policy.PositionTolerance &&
+               pointNormal <= anchorNormal + halfLength + policy.PositionTolerance;
     }
 
     private static List<double> GetProjectedPositions(

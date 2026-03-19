@@ -103,6 +103,12 @@ Implemented in the current `src` code:
   - packet members
   - whether the packet is a potential combination candidate
   - blocking reasons when it is not
+  - current combine policy can already block by:
+    - source-kind mismatch
+    - reference-line band mismatch
+    - excessive distance delta
+    - free-dimension prohibition
+    - adjacent-order fallback prohibition
 - actual Tekla dimension merging is still deferred
 
 ## Confirmed Findings
@@ -389,6 +395,7 @@ Current status:
 - conservative combine-candidate analysis is present at packet level:
   - candidate packets are detected
   - blocking reasons are exposed
+  - packet preview is built from the selected representative item by default
   - no actual Tekla merge is performed yet
 - controlled combination from `dim` is still pending as a real action layer
 
