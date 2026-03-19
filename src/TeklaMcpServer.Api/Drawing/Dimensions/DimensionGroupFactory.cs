@@ -5,25 +5,26 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal static class DimensionGroupFactory
 {
-    private const double ParallelDotTolerance = 0.995;
-    private const double ExtentOverlapTolerance = 3.0;
-    private const double LineCollinearityTolerance = 3.0;
-    private const double LineBandTolerance = 3.0;
-    private const double ChainBandTolerance = 250.0;
-    private const double ChainExtentGapTolerance = 80.0;
-    private const double SharedPointTolerance = 0.5;
-
-    public static List<DimensionItem> BuildItems(IEnumerable<DrawingDimensionInfo> dimensions)
+    public static List<DimensionItem> BuildItems(
+        IEnumerable<DrawingDimensionInfo> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null)
     {
+        groupingPolicy ??= DimensionGroupingPolicy.Default;
         return dimensions
-            .SelectMany(CreateItems)
+            .SelectMany(dimension => CreateItems(dimension, groupingPolicy))
             .ToList();
     }
 
-    public static List<DimensionGroup> BuildGroups(IEnumerable<DrawingDimensionInfo> dimensions)
+    public static List<DimensionGroup> BuildGroups(
+        IEnumerable<DrawingDimensionInfo> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null,
+        DimensionReductionPolicy? reductionPolicy = null)
     {
-        var items = BuildItems(dimensions);
-        var groups = BuildConnectedGroups(items);
+        groupingPolicy ??= DimensionGroupingPolicy.Default;
+        reductionPolicy ??= DimensionReductionPolicy.Default;
+
+        var items = BuildItems(dimensions, groupingPolicy);
+        var groups = BuildConnectedGroups(items, groupingPolicy);
 
         foreach (var group in groups)
         {
@@ -32,10 +33,12 @@ internal static class DimensionGroupFactory
             group.RawItemCount = group.DimensionList.Count;
         }
 
-        return DimensionOperations.EliminateRedundantItems(groups);
+        return DimensionOperations.EliminateRedundantItems(groups, reductionPolicy);
     }
 
-    private static List<DimensionGroup> BuildConnectedGroups(IReadOnlyList<DimensionItem> items)
+    private static List<DimensionGroup> BuildConnectedGroups(
+        IReadOnlyList<DimensionItem> items,
+        DimensionGroupingPolicy groupingPolicy)
     {
         var groups = new List<DimensionGroup>();
         var visited = new bool[items.Count];
@@ -61,7 +64,7 @@ internal static class DimensionGroupFactory
                     if (visited[candidateIndex])
                         continue;
 
-                    if (!CanGroupItemsTogether(current, items[candidateIndex]))
+                    if (!CanGroupItemsTogether(current, items[candidateIndex], groupingPolicy))
                         continue;
 
                     visited[candidateIndex] = true;
@@ -75,7 +78,9 @@ internal static class DimensionGroupFactory
         return groups;
     }
 
-    private static IEnumerable<DimensionItem> CreateItems(DrawingDimensionInfo dimension)
+    private static IEnumerable<DimensionItem> CreateItems(
+        DrawingDimensionInfo dimension,
+        DimensionGroupingPolicy groupingPolicy)
     {
         var segmentItems = dimension.Segments
             .Select(segment => CreateItem(dimension, segment))
@@ -84,14 +89,15 @@ internal static class DimensionGroupFactory
             .ToList();
 
         if (segmentItems.Count > 0)
-            return MergeItemsIntoChains(dimension, segmentItems);
+            return MergeItemsIntoChains(dimension, segmentItems, groupingPolicy);
 
         return [CreateFallbackItem(dimension)];
     }
 
     private static IReadOnlyList<DimensionItem> MergeItemsIntoChains(
         DrawingDimensionInfo dimension,
-        IReadOnlyList<DimensionItem> rawItems)
+        IReadOnlyList<DimensionItem> rawItems,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (rawItems.Count <= 1 || dimension.MeasuredPoints.Count == 0)
             return rawItems.ToList();
@@ -120,7 +126,7 @@ internal static class DimensionGroupFactory
                     if (visited[candidateIndex])
                         continue;
 
-                    if (!CanChainItemsWithinDimension(current, rawItems[candidateIndex]))
+                    if (!CanChainItemsWithinDimension(current, rawItems[candidateIndex], groupingPolicy))
                         continue;
 
                     visited[candidateIndex] = true;
@@ -134,7 +140,10 @@ internal static class DimensionGroupFactory
         return chains.Select(chain => CreateChainItem(dimension, chain)).ToList();
     }
 
-    private static bool CanChainItemsWithinDimension(DimensionItem left, DimensionItem right)
+    private static bool CanChainItemsWithinDimension(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (left.DimensionId != right.DimensionId)
             return false;
@@ -144,13 +153,15 @@ internal static class DimensionGroupFactory
 
         var leftDirection = TryGetItemDirection(left);
         var rightDirection = TryGetItemDirection(right);
-        if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
+        if (leftDirection.HasValue &&
+            rightDirection.HasValue &&
+            !AreParallel(leftDirection.Value, rightDirection.Value, groupingPolicy))
             return false;
 
         if (left.TopDirection != 0 && right.TopDirection != 0 && left.TopDirection != right.TopDirection)
             return false;
 
-        return HaveAdjacentMeasuredPointOrders(left, right) || HaveSharedMeasuredPoint(left, right);
+        return HaveAdjacentMeasuredPointOrders(left, right) || HaveSharedMeasuredPoint(left, right, groupingPolicy);
     }
 
     private static DimensionItem CreateChainItem(
@@ -255,7 +266,10 @@ internal static class DimensionGroupFactory
             group.ReferenceLine = CopyLine(item.ReferenceLine);
     }
 
-    private static bool CanGroupItemsTogether(DimensionItem left, DimensionItem right)
+    private static bool CanGroupItemsTogether(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (left.ViewId != right.ViewId)
             return false;
@@ -271,29 +285,33 @@ internal static class DimensionGroupFactory
 
         var leftDirection = TryGetItemDirection(left);
         var rightDirection = TryGetItemDirection(right);
-        if (leftDirection.HasValue && rightDirection.HasValue && !AreParallel(leftDirection.Value, rightDirection.Value))
+        if (leftDirection.HasValue &&
+            rightDirection.HasValue &&
+            !AreParallel(leftDirection.Value, rightDirection.Value, groupingPolicy))
             return false;
 
-        var sharedMeasuredPoint = HaveSharedMeasuredPoint(left, right);
-        if (sharedMeasuredPoint && HaveCompatibleChainTransition(left, right, leftDirection ?? rightDirection))
+        var sharedMeasuredPoint = HaveSharedMeasuredPoint(left, right, groupingPolicy);
+        if (sharedMeasuredPoint && HaveCompatibleChainTransition(left, right, leftDirection ?? rightDirection, groupingPolicy))
             return true;
 
-        if (HaveCompatibleSameLineChain(left, right, leftDirection ?? rightDirection))
+        if (HaveCompatibleSameLineChain(left, right, leftDirection ?? rightDirection, groupingPolicy))
             return true;
 
-        if (!HaveCompatibleLineBand(left, right, leftDirection ?? rightDirection))
+        if (!HaveCompatibleLineBand(left, right, leftDirection ?? rightDirection, groupingPolicy))
             return false;
 
         if (sharedMeasuredPoint)
             return true;
 
-        return HaveCompatibleLeadLines(left, right) && HaveCompatibleExtents(left, right, leftDirection ?? rightDirection);
+        return HaveCompatibleLeadLines(left, right, groupingPolicy) &&
+               HaveCompatibleExtents(left, right, leftDirection ?? rightDirection, groupingPolicy);
     }
 
     private static bool HaveCompatibleChainTransition(
         DimensionItem left,
         DimensionItem right,
-        (double X, double Y)? direction)
+        (double X, double Y)? direction,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (!direction.HasValue)
             return false;
@@ -303,13 +321,14 @@ internal static class DimensionGroupFactory
         if (!leftOffset.HasValue || !rightOffset.HasValue)
             return false;
 
-        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= ChainBandTolerance;
+        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= groupingPolicy.ChainBandTolerance;
     }
 
     private static bool HaveCompatibleSameLineChain(
         DimensionItem left,
         DimensionItem right,
-        (double X, double Y)? direction)
+        (double X, double Y)? direction,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (!direction.HasValue)
             return false;
@@ -319,7 +338,7 @@ internal static class DimensionGroupFactory
         if (!leftOffset.HasValue || !rightOffset.HasValue)
             return false;
 
-        if (System.Math.Abs(leftOffset.Value - rightOffset.Value) > ChainBandTolerance)
+        if (System.Math.Abs(leftOffset.Value - rightOffset.Value) > groupingPolicy.ChainBandTolerance)
             return false;
 
         var leftExtent = TryGetExtent([left.ReferenceLine, left.LeadLineMain, left.LeadLineSecond], direction.Value);
@@ -327,14 +346,15 @@ internal static class DimensionGroupFactory
         if (!leftExtent.HasValue || !rightExtent.HasValue)
             return false;
 
-        return leftExtent.Value.Min <= rightExtent.Value.Max + ChainExtentGapTolerance &&
-               rightExtent.Value.Min <= leftExtent.Value.Max + ChainExtentGapTolerance;
+        return leftExtent.Value.Min <= rightExtent.Value.Max + groupingPolicy.ChainExtentGapTolerance &&
+               rightExtent.Value.Min <= leftExtent.Value.Max + groupingPolicy.ChainExtentGapTolerance;
     }
 
     private static bool HaveCompatibleLineBand(
         DimensionItem left,
         DimensionItem right,
-        (double X, double Y)? direction)
+        (double X, double Y)? direction,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (!direction.HasValue)
             return false;
@@ -344,17 +364,20 @@ internal static class DimensionGroupFactory
         if (!leftOffset.HasValue || !rightOffset.HasValue)
             return false;
 
-        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= LineBandTolerance;
+        return System.Math.Abs(leftOffset.Value - rightOffset.Value) <= groupingPolicy.LineBandTolerance;
     }
 
-    private static bool HaveSharedMeasuredPoint(DimensionItem left, DimensionItem right)
+    private static bool HaveSharedMeasuredPoint(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         return (left.StartPointOrder >= 0 && (left.StartPointOrder == right.StartPointOrder || left.StartPointOrder == right.EndPointOrder)) ||
                (left.EndPointOrder >= 0 && (left.EndPointOrder == right.StartPointOrder || left.EndPointOrder == right.EndPointOrder)) ||
-               PointsEqual(left.StartX, left.StartY, right.StartX, right.StartY) ||
-               PointsEqual(left.StartX, left.StartY, right.EndX, right.EndY) ||
-               PointsEqual(left.EndX, left.EndY, right.StartX, right.StartY) ||
-               PointsEqual(left.EndX, left.EndY, right.EndX, right.EndY);
+               PointsEqual(left.StartX, left.StartY, right.StartX, right.StartY, groupingPolicy) ||
+               PointsEqual(left.StartX, left.StartY, right.EndX, right.EndY, groupingPolicy) ||
+               PointsEqual(left.EndX, left.EndY, right.StartX, right.StartY, groupingPolicy) ||
+               PointsEqual(left.EndX, left.EndY, right.EndX, right.EndY, groupingPolicy);
     }
 
     private static bool HaveAdjacentMeasuredPointOrders(DimensionItem left, DimensionItem right)
@@ -367,7 +390,10 @@ internal static class DimensionGroupFactory
         return leftOrders.Any(leftOrder => rightOrders.Any(rightOrder => System.Math.Abs(leftOrder - rightOrder) <= 1));
     }
 
-    private static bool HaveCompatibleLeadLines(DimensionItem left, DimensionItem right)
+    private static bool HaveCompatibleLeadLines(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         var leftLines = new[] { left.LeadLineMain, left.LeadLineSecond }.Where(static line => line != null).Cast<DrawingLineInfo>().ToList();
         var rightLines = new[] { right.LeadLineMain, right.LeadLineSecond }.Where(static line => line != null).Cast<DrawingLineInfo>().ToList();
@@ -375,13 +401,14 @@ internal static class DimensionGroupFactory
         if (leftLines.Count == 0 || rightLines.Count == 0)
             return false;
 
-        return leftLines.Any(leftLine => rightLines.Any(rightLine => AreCollinear(leftLine, rightLine)));
+        return leftLines.Any(leftLine => rightLines.Any(rightLine => AreCollinear(leftLine, rightLine, groupingPolicy)));
     }
 
     private static bool HaveCompatibleExtents(
         DimensionItem left,
         DimensionItem right,
-        (double X, double Y)? direction)
+        (double X, double Y)? direction,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (!direction.HasValue)
             return false;
@@ -394,8 +421,8 @@ internal static class DimensionGroupFactory
         if (!leftExtent.HasValue || !rightExtent.HasValue)
             return false;
 
-        return leftExtent.Value.Min <= rightExtent.Value.Max + ExtentOverlapTolerance &&
-               rightExtent.Value.Min <= leftExtent.Value.Max + ExtentOverlapTolerance;
+        return leftExtent.Value.Min <= rightExtent.Value.Max + groupingPolicy.ExtentOverlapTolerance &&
+               rightExtent.Value.Min <= leftExtent.Value.Max + groupingPolicy.ExtentOverlapTolerance;
     }
 
     private static (double Min, double Max)? TryGetExtent(IEnumerable<DrawingLineInfo?> lines, (double X, double Y) direction)
@@ -458,29 +485,40 @@ internal static class DimensionGroupFactory
             : null;
     }
 
-    private static bool AreParallel((double X, double Y) left, (double X, double Y) right)
+    private static bool AreParallel(
+        (double X, double Y) left,
+        (double X, double Y) right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         var dot = System.Math.Abs((left.X * right.X) + (left.Y * right.Y));
-        return dot >= ParallelDotTolerance;
+        return dot >= groupingPolicy.ParallelDotTolerance;
     }
 
-    private static bool AreCollinear(DrawingLineInfo left, DrawingLineInfo right)
+    private static bool AreCollinear(
+        DrawingLineInfo left,
+        DrawingLineInfo right,
+        DimensionGroupingPolicy groupingPolicy)
     {
         if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(left.EndX - left.StartX, left.EndY - left.StartY, out var leftDirection))
             return false;
         if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(right.EndX - right.StartX, right.EndY - right.StartY, out var rightDirection))
             return false;
-        if (!AreParallel(leftDirection, rightDirection))
+        if (!AreParallel(leftDirection, rightDirection, groupingPolicy))
             return false;
 
-        return DistancePointToInfiniteLine(right.StartX, right.StartY, left) <= LineCollinearityTolerance &&
-               DistancePointToInfiniteLine(right.EndX, right.EndY, left) <= LineCollinearityTolerance;
+        return DistancePointToInfiniteLine(right.StartX, right.StartY, left) <= groupingPolicy.LineCollinearityTolerance &&
+               DistancePointToInfiniteLine(right.EndX, right.EndY, left) <= groupingPolicy.LineCollinearityTolerance;
     }
 
-    private static bool PointsEqual(double leftX, double leftY, double rightX, double rightY)
+    private static bool PointsEqual(
+        double leftX,
+        double leftY,
+        double rightX,
+        double rightY,
+        DimensionGroupingPolicy groupingPolicy)
     {
-        return System.Math.Abs(leftX - rightX) <= SharedPointTolerance &&
-               System.Math.Abs(leftY - rightY) <= SharedPointTolerance;
+        return System.Math.Abs(leftX - rightX) <= groupingPolicy.SharedPointTolerance &&
+               System.Math.Abs(leftY - rightY) <= groupingPolicy.SharedPointTolerance;
     }
 
     private static double? TryGetLineOffset(DrawingLineInfo? line, (double X, double Y) direction)
@@ -659,9 +697,10 @@ internal static class DimensionGroupFactory
 
     private static int FindMeasuredPointOrder(IEnumerable<DrawingPointInfo> points, double x, double y)
     {
+        var groupingPolicy = DimensionGroupingPolicy.Default;
         foreach (var point in points)
         {
-            if (PointsEqual(point.X, point.Y, x, y))
+            if (PointsEqual(point.X, point.Y, x, y, groupingPolicy))
                 return point.Order;
         }
 

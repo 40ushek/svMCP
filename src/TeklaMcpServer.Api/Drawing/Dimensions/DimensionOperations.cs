@@ -5,15 +5,16 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal static class DimensionOperations
 {
-    private const double PositionTolerance = 3.0;
-
-    public static List<DimensionGroup> EliminateRedundantItems(IReadOnlyList<DimensionGroup> groups)
+    public static List<DimensionGroup> EliminateRedundantItems(
+        IReadOnlyList<DimensionGroup> groups,
+        DimensionReductionPolicy? policy = null)
     {
+        policy ??= DimensionReductionPolicy.Default;
         var reducedGroups = new List<DimensionGroup>(groups.Count);
 
         foreach (var group in groups)
         {
-            var reducedItems = ReduceItems(group);
+            var reducedItems = ReduceItems(group, policy);
             if (reducedItems.Count == 0)
                 continue;
 
@@ -27,7 +28,9 @@ internal static class DimensionOperations
         return reducedGroups;
     }
 
-    private static List<DimensionItem> ReduceItems(DimensionGroup group)
+    private static List<DimensionItem> ReduceItems(
+        DimensionGroup group,
+        DimensionReductionPolicy policy)
     {
         var items = group.DimensionList;
         if (items.Count <= 1)
@@ -42,7 +45,9 @@ internal static class DimensionOperations
         var kept = new List<DimensionItem>(ordered.Count);
         foreach (var candidate in ordered)
         {
-            if (IsSimpleItem(candidate) && kept.Any(existing => Covers(existing, candidate)))
+            if (policy.EnableCoverageReduction &&
+                IsSimpleItem(candidate) &&
+                kept.Any(existing => Covers(existing, candidate, policy)))
                 continue;
 
             kept.Add(candidate);
@@ -53,12 +58,15 @@ internal static class DimensionOperations
             .ThenBy(static item => item.DimensionId)
             .ToList();
 
-        return SelectCommonRepresentatives(group, deduplicated);
+        return policy.EnableRepresentativeSelection
+            ? SelectCommonRepresentatives(group, deduplicated, policy)
+            : deduplicated;
     }
 
     private static List<DimensionItem> SelectCommonRepresentatives(
         DimensionGroup group,
-        IReadOnlyList<DimensionItem> items)
+        IReadOnlyList<DimensionItem> items,
+        DimensionReductionPolicy policy)
     {
         if (items.Count <= 1)
             return items.ToList();
@@ -68,21 +76,22 @@ internal static class DimensionOperations
 
         for (var i = 1; i < items.Count; i++)
         {
-            if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance))
+            if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance, policy))
                 continue;
 
-            selected.Add(SelectRepresentative(items, packetStart, i - 1));
+            selected.Add(SelectRepresentative(items, packetStart, i - 1, policy));
             packetStart = i;
         }
 
-        selected.Add(SelectRepresentative(items, packetStart, items.Count - 1));
+        selected.Add(SelectRepresentative(items, packetStart, items.Count - 1, policy));
         return selected;
     }
 
     private static bool ShouldSplitRepresentativePacket(
         DimensionItem previous,
         DimensionItem current,
-        double maximumDistance)
+        double maximumDistance,
+        DimensionReductionPolicy policy)
     {
         if (previous.LeadLineMain == null || current.LeadLineMain == null)
             return true;
@@ -98,28 +107,32 @@ internal static class DimensionOperations
             current.LeadLineMain.EndX,
             current.LeadLineMain.EndY);
 
-        return previousEndToCurrentStart > maximumDistance &&
-               previousStartToCurrentEnd > maximumDistance;
+        var threshold = maximumDistance * policy.RepresentativePacketGapFactor;
+        return previousEndToCurrentStart > threshold &&
+               previousStartToCurrentEnd > threshold;
     }
 
     private static DimensionItem SelectRepresentative(
         IReadOnlyList<DimensionItem> items,
         int startIndex,
-        int endIndex)
+        int endIndex,
+        DimensionReductionPolicy policy)
     {
         var count = endIndex - startIndex + 1;
-        var position = endIndex;
-
-        // `dim` chooses a representative from each nearby packet. In the current
-        // geometry-first model we keep a neutral center-biased choice; edge-vs-center
-        // strategy should later move into a configurable reduction policy.
-        if (count > 1)
-            position -= (count - 1) / 2;
+        var position = policy.RepresentativeSelectionMode switch
+        {
+            DimensionRepresentativeSelectionMode.FirstInPacket => startIndex,
+            DimensionRepresentativeSelectionMode.LastInPacket => endIndex,
+            _ => endIndex - ((count - 1) / 2)
+        };
 
         return items[position];
     }
 
-    private static bool Covers(DimensionItem keeper, DimensionItem candidate)
+    private static bool Covers(
+        DimensionItem keeper,
+        DimensionItem candidate,
+        DimensionReductionPolicy policy)
     {
         if (candidate.PointList.Count < 2 || keeper.PointList.Count < 2)
             return false;
@@ -137,7 +150,7 @@ internal static class DimensionOperations
             return false;
 
         return candidatePositions.All(candidatePosition =>
-            keeperPositions.Any(keeperPosition => System.Math.Abs(keeperPosition - candidatePosition) <= PositionTolerance));
+            keeperPositions.Any(keeperPosition => System.Math.Abs(keeperPosition - candidatePosition) <= policy.PositionTolerance));
     }
 
     private static List<double> GetProjectedPositions(

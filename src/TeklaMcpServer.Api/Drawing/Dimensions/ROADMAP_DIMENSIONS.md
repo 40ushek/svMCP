@@ -365,8 +365,10 @@ Current status:
 - current elimination is intentionally conservative:
   - simple items may be rejected when a more informative item in the same group
     already covers the same span
-- representative selection and controlled combination from `dim` are still
-  pending
+- first representative-selection step is present:
+  - nearby packets inside a group can now keep one representative item
+  - current selection is still intentionally simple and policy-driven
+- controlled combination from `dim` is still pending
 
 Done when:
 
@@ -377,7 +379,7 @@ Done when:
 
 ### Phase 5: Introduce Configurable Policies
 
-Status: next priority after basic elimination.
+Status: done in first form.
 
 Add explicit policy objects so grouping and reduction remain flexible.
 
@@ -400,6 +402,14 @@ Done when:
 - grouping and elimination no longer depend on magic constants only
 - policy changes do not require redesigning the domain model
 - different drawing scenarios can tune grouping/reduction behavior explicitly
+
+Current status:
+
+- `DimensionGroupingPolicy` is introduced and used by `DimensionGroupFactory`
+- `DimensionReductionPolicy` is introduced and used by `DimensionOperations`
+- representative selection mode is already policy-driven
+- next work is not introducing policies, but tuning them and porting more exact
+  `dim` rules on top of them
 
 ### Phase 6: Reproject Public Read API
 
