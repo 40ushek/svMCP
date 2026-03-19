@@ -11,12 +11,12 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var first = CreateGroup(
         [
             CreateMember(1, 10, -20, 100, -10, 0, -10, 100, -10)
-        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var second = CreateGroup(
         [
             CreateMember(2, 10, -40, 100, -30, 0, -25, 100, -25)
-        ], "horizontal", "Relative", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([first, second]);
 
@@ -35,12 +35,12 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var first = CreateGroup(
         [
             CreateMember(1, 10, -20, 100, -10, 0, -10, 100, -10)
-        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var second = CreateGroup(
         [
             CreateMember(2, 10, -40, 100, -30, 0, -25, 100, -25)
-        ], "horizontal", "Relative", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var stack = Assert.Single(DimensionGroupSpacingAnalyzer.BuildStacks([first, second]));
         var units = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack);
@@ -58,12 +58,12 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var horizontalTop = CreateGroup(
         [
             CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10)
-        ], "horizontal", "PartLongitudinal", (1, 0), 1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), 1);
 
         var horizontalBottom = CreateGroup(
         [
             CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
-        ], "horizontal", "Relative", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([horizontalTop, horizontalBottom]);
 
@@ -77,12 +77,12 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         var left = CreateGroup(
         [
             CreateMember(1, 0, 10, 100, 20, 0, 10, 100, 10)
-        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var farRight = CreateGroup(
         [
             CreateMember(2, 300, 30, 400, 40, 300, 25, 400, 25)
-        ], "horizontal", "Relative", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var analyses = DimensionGroupSpacingAnalyzer.AnalyzeStacks([left, farRight]);
 
@@ -97,7 +97,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         [
             CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10),
             CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
-        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
@@ -117,7 +117,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         [
             CreateMember(1, 10, 10, 100, 25, 0, 10, 100, 10),
             CreateMember(2, 10, 20, 100, 35, 0, 10, 100, 10)
-        ], "horizontal", "PartLongitudinal", (1, 0), -1);
+        ], "horizontal", "Horizontal", (1, 0), -1);
 
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
@@ -134,7 +134,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         [
             CreateMember(1, 10, 10, 20, 80, 10, 0, 10, 80),
             CreateMember(2, 30, 10, 40, 80, 25, 0, 25, 80)
-        ], "vertical", "PartTransversal", (0, 1), 1);
+        ], "vertical", DimensionType.Vertical, (0, 1), 1);
 
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 
@@ -150,7 +150,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         [
             CreateMember(1, 10, 10, 100, 20, 0, 10, 100, 10),
             CreateMember(2, 10, 30, 100, 40, 0, 25, 100, 25)
-        ], string.Empty, "PartLongitudinal", default, -1);
+        ], string.Empty, DimensionType.Horizontal, default, -1);
 
         group.Direction = null;
 
@@ -164,7 +164,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
     private static DimensionGroup CreateGroup(
         DimensionGroupMember[] members,
         string orientation,
-        string dimensionType,
+        DimensionType dimensionType,
         (double X, double Y) direction,
         int topDirection)
     {
@@ -173,7 +173,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = orientation,
-            DimensionType = dimensionType,
+            DomainDimensionType = dimensionType,
             Direction = direction,
             TopDirection = topDirection
         };

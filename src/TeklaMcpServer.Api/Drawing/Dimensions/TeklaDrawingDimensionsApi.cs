@@ -70,7 +70,17 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         public double RightTagLineOffset { get; }
     }
 
-    public TeklaDrawingDimensionsApi() { }
+    private readonly Model _model;
+
+    public TeklaDrawingDimensionsApi()
+        : this(new Model())
+    {
+    }
+
+    internal TeklaDrawingDimensionsApi(Model model)
+    {
+        _model = model ?? new Model();
+    }
 
     internal static DrawingBoundsInfo CreateBoundsInfo(double minX, double minY, double maxX, double maxY) => new()
     {

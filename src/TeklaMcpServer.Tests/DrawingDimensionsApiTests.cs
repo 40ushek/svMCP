@@ -32,6 +32,20 @@ public sealed class DrawingDimensionsApiTests
         Assert.Equal(expected, orientation);
     }
 
+    [Theory]
+    [InlineData("horizontal", 1)]
+    [InlineData("vertical", 2)]
+    [InlineData("angled", 3)]
+    [InlineData("", 0)]
+    public void ResolveDimensionGeometryKind_MapsOrientationToFreeModel(
+        string orientation,
+        int expected)
+    {
+        var geometryKind = TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(orientation);
+
+        Assert.Equal((DimensionGeometryKind)expected, geometryKind);
+    }
+
     [Fact]
     public void CombineBounds_MergesSegmentBoundsIntoSetBounds()
     {
@@ -90,45 +104,42 @@ public sealed class DrawingDimensionsApiTests
         var result = new GetDimensionsResult
         {
             Total = 1,
-            Dimensions =
+            GroupCount = 1,
+            Groups =
             [
-                new DrawingDimensionInfo
+                new DimensionGroupInfo
                 {
-                    Id = 10,
-                    Type = "StraightDimensionSet",
-                    DimensionType = "PartLongitudinal",
                     ViewId = 20,
                     ViewType = "FrontView",
-                    Orientation = "horizontal",
-                    Distance = 12.5,
-                    DirectionX = 1,
-                    DirectionY = 0,
+                    DimensionType = "Horizontal",
+                    TeklaDimensionType = "Absolute",
+                    Direction = new DrawingVectorInfo { X = 1, Y = 0 },
                     TopDirection = -1,
-                    Bounds = new DrawingBoundsInfo { MinX = 1, MinY = 2, MaxX = 6, MaxY = 8 },
                     ReferenceLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
-                    MeasuredPoints =
+                    LeadLineMain = new DrawingLineInfo { StartX = 1, StartY = 2, EndX = 1, EndY = 14.5 },
+                    LeadLineSecond = new DrawingLineInfo { StartX = 6, StartY = 2, EndX = 6, EndY = 14.5 },
+                    MaximumDistance = 12.5,
+                    Items =
                     [
-                        new DrawingPointInfo { X = 1, Y = 2, Order = 0 },
-                        new DrawingPointInfo { X = 6, Y = 2, Order = 1 }
-                    ],
-                    Segments =
-                    [
-                        new DimensionSegmentInfo
+                        new DimensionItemInfo
                         {
-                            Id = 11,
-                            StartX = 1,
-                            StartY = 2,
-                            EndX = 6,
-                            EndY = 2,
+                            Id = 10,
+                            SegmentIds = [11],
+                            ViewId = 20,
+                            DimensionType = "Horizontal",
+                            TeklaDimensionType = "Absolute",
                             Distance = 12.5,
-                            DirectionX = 1,
-                            DirectionY = 0,
-                            TopDirection = -1,
-                            Bounds = new DrawingBoundsInfo { MinX = 1, MinY = 2, MaxX = 6, MaxY = 2 },
-                            TextBounds = null,
-                            DimensionLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
-                            LeadLineMain = new DrawingLineInfo { StartX = 1, StartY = 2, EndX = 1, EndY = 14.5 },
-                            LeadLineSecond = new DrawingLineInfo { StartX = 6, StartY = 2, EndX = 6, EndY = 14.5 }
+                            ReferenceLine = new DrawingLineInfo { StartX = 1, StartY = 14.5, EndX = 6, EndY = 14.5 },
+                            StartPoint = new DrawingPointInfo { X = 1, Y = 2, Order = 0 },
+                            EndPoint = new DrawingPointInfo { X = 6, Y = 2, Order = 1 },
+                            CenterPoint = new DrawingPointInfo { X = 3.5, Y = 2, Order = -1 },
+                            PointList =
+                            [
+                                new DrawingPointInfo { X = 1, Y = 2, Order = 0 },
+                                new DrawingPointInfo { X = 6, Y = 2, Order = 1 }
+                            ],
+                            LengthList = [5],
+                            RealLengthList = [5]
                         }
                     ]
                 }
@@ -138,19 +149,19 @@ public sealed class DrawingDimensionsApiTests
         var json = JsonSerializer.Serialize(result);
 
         Assert.Contains("\"Id\":10", json);
+        Assert.Contains("\"GroupCount\":1", json);
         Assert.Contains("\"Distance\":12.5", json);
-        Assert.Contains("\"DimensionType\":\"PartLongitudinal\"", json);
+        Assert.Contains("\"DimensionType\":\"Horizontal\"", json);
         Assert.Contains("\"ViewId\":20", json);
         Assert.Contains("\"ViewType\":\"FrontView\"", json);
-        Assert.Contains("\"Orientation\":\"horizontal\"", json);
-        Assert.Contains("\"DirectionX\":1", json);
+        Assert.Contains("\"TeklaDimensionType\":\"Absolute\"", json);
+        Assert.Contains("\"Direction\":", json);
         Assert.Contains("\"TopDirection\":-1", json);
         Assert.Contains("\"ReferenceLine\":", json);
-        Assert.Contains("\"MeasuredPoints\":", json);
-        Assert.Contains("\"Bounds\":", json);
-        Assert.Contains("\"DimensionLine\":", json);
+        Assert.Contains("\"PointList\":", json);
         Assert.Contains("\"LeadLineMain\":", json);
-        Assert.Contains("\"TextBounds\":null", json);
+        Assert.Contains("\"MaximumDistance\":12.5", json);
+        Assert.Contains("\"SegmentIds\":[11]", json);
     }
 
     [Fact]

@@ -26,7 +26,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 2, AxisShift = 12.5 });
 
@@ -60,7 +60,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
 
@@ -94,7 +94,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
 
@@ -127,7 +127,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
 
@@ -154,7 +154,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "angled",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
 
@@ -183,7 +183,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TargetGap = 5
+            TargetGapPaper = 5
         };
         axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 42, AxisShift = 12.5 });
 

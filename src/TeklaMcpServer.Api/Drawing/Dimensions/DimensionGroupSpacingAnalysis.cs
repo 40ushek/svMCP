@@ -211,7 +211,7 @@ internal static class DimensionGroupSpacingAnalyzer
             .ToList();
     }
 
-    internal static List<(DimensionGroupMember Member, double Min, double Max)> GetOrderedIntervals(DimensionGroup group)
+    internal static List<(DimensionItem Member, double Min, double Max)> GetOrderedIntervals(DimensionGroup group)
     {
         return group.Members
             .Select(member => (Member: member, Interval: TryGetInterval(member, group)))
@@ -241,7 +241,7 @@ internal static class DimensionGroupSpacingAnalyzer
         return HaveCompatibleDirectionExtents(left, right, left.Direction.Value);
     }
 
-    private static AxisInterval? TryGetInterval(DimensionGroupMember member, DimensionGroup group)
+    private static AxisInterval? TryGetInterval(DimensionItem member, DimensionGroup group)
     {
         var referenceInterval = TryGetReferenceLineInterval(member, group.Direction);
         if (referenceInterval != null)
@@ -305,7 +305,7 @@ internal static class DimensionGroupSpacingAnalyzer
         return System.Math.Round(rawOffset * GetOffsetSign(group.TopDirection), 3);
     }
 
-    private static double? TryGetMemberOffset(DimensionGroupMember member, (double X, double Y)? direction, int stackTopDirection)
+    private static double? TryGetMemberOffset(DimensionItem member, (double X, double Y)? direction, int stackTopDirection)
     {
         if (!direction.HasValue || member.ReferenceLine == null)
             return null;
@@ -359,7 +359,7 @@ internal static class DimensionGroupSpacingAnalyzer
         return TeklaDrawingDimensionsApi.CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
-    private static AxisInterval? TryGetReferenceLineInterval(DimensionGroupMember member, (double X, double Y)? groupDirection)
+    private static AxisInterval? TryGetReferenceLineInterval(DimensionItem member, (double X, double Y)? groupDirection)
     {
         var line = member.ReferenceLine;
         if (line == null)

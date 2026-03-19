@@ -13,8 +13,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
 
-        var dimensions = GetDimensions(viewId);
-        var groups = DimensionGroupFactory.BuildGroups(dimensions);
+        var groups = GetDimensionGroups(viewId);
         var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
         var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
         var plans = stacks.Select(stack =>
@@ -25,7 +24,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var result = new DimensionArrangementDebugResult
         {
-            ViewFilteredTotal = dimensions.Total,
+            ViewFilteredTotal = groups.Sum(static group => group.DimensionList.Count),
             GroupCount = groups.Count,
             TargetGapPaper = targetGap
         };
@@ -48,12 +47,12 @@ public sealed partial class TeklaDrawingDimensionsApi
             };
 
             info.GroupingBasis.Add("same view");
-            info.GroupingBasis.Add("same Tekla dimensionType");
+            info.GroupingBasis.Add("same domain dimensionType");
             info.GroupingBasis.Add("parallel direction");
             info.GroupingBasis.Add("compatible topDirection");
             info.GroupingBasis.Add("compatible reference-line extents");
 
-            foreach (var member in group.Members)
+            foreach (var member in group.DimensionList)
             {
                 info.Members.Add(new DimensionArrangementDebugMemberInfo
                 {
@@ -94,7 +93,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             foreach (var group in stack.Groups)
             {
-                foreach (var member in group.Members
+                foreach (var member in group.DimensionList
                              .GroupBy(static member => member.DimensionId)
                              .Select(static grouped => grouped.First())
                              .OrderBy(static member => member.SortKey))
@@ -102,7 +101,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     info.Members.Add(new DimensionArrangementDebugStackMemberInfo
                     {
                         DimensionId = member.DimensionId,
-                        DimensionType = member.Dimension.DimensionType,
+                        DimensionType = member.DimensionType,
                         Orientation = member.Dimension.Orientation,
                         Distance = member.Distance,
                         ReferenceLine = CopyLine(member.ReferenceLine)

@@ -28,6 +28,12 @@ public sealed class DrawingPointInfo
     public int Order { get; set; }
 }
 
+public sealed class DrawingVectorInfo
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+}
+
 public sealed class DimensionSegmentInfo
 {
     public int                Id            { get; set; }
@@ -63,12 +69,48 @@ public sealed class DrawingDimensionInfo
     public DrawingLineInfo?           ReferenceLine { get; set; }
     public List<DrawingPointInfo>     MeasuredPoints { get; set; } = new();
     public List<DimensionSegmentInfo> Segments      { get; set; } = new();
+    internal DimensionSourceKind      SourceKind    { get; set; }
+    internal DimensionGeometryKind    GeometryKind  { get; set; }
+    internal DimensionType            ClassifiedDimensionType { get; set; }
+}
+
+public sealed class DimensionItemInfo
+{
+    public int Id { get; set; }
+    public List<int> SegmentIds { get; set; } = new();
+    public int? ViewId { get; set; }
+    public string DimensionType { get; set; } = string.Empty;
+    public string TeklaDimensionType { get; set; } = string.Empty;
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public DrawingPointInfo? StartPoint { get; set; }
+    public DrawingPointInfo? EndPoint { get; set; }
+    public DrawingPointInfo? CenterPoint { get; set; }
+    public List<DrawingPointInfo> PointList { get; set; } = new();
+    public List<double> LengthList { get; set; } = new();
+    public List<double> RealLengthList { get; set; } = new();
+    public double Distance { get; set; }
+}
+
+public sealed class DimensionGroupInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
+    public string TeklaDimensionType { get; set; } = string.Empty;
+    public DrawingVectorInfo? Direction { get; set; }
+    public int TopDirection { get; set; }
+    public DrawingLineInfo? ReferenceLine { get; set; }
+    public DrawingLineInfo? LeadLineMain { get; set; }
+    public DrawingLineInfo? LeadLineSecond { get; set; }
+    public double MaximumDistance { get; set; }
+    public List<DimensionItemInfo> Items { get; set; } = new();
 }
 
 public sealed class GetDimensionsResult
 {
-    public int                           Total      { get; set; }
-    public List<DrawingDimensionInfo>    Dimensions { get; set; } = new();
+    public int Total { get; set; }
+    public int GroupCount { get; set; }
+    public List<DimensionGroupInfo> Groups { get; set; } = new();
 }
 
 public sealed class MoveDimensionResult
@@ -132,4 +174,29 @@ public sealed class DeleteDimensionResult
     public bool HasActiveDrawing { get; set; }
     public bool Deleted { get; set; }
     public int DimensionId { get; set; }
+}
+
+public sealed class DimensionSourceDebugResult
+{
+    public int? ViewId { get; set; }
+    public int Total { get; set; }
+    public List<DimensionSourceDebugInfo> Dimensions { get; set; } = new();
+}
+
+public sealed class DimensionSourceDebugInfo
+{
+    public int DimensionId { get; set; }
+    public string DimensionType { get; set; } = string.Empty;
+    public string TeklaDimensionType { get; set; } = string.Empty;
+    public List<DimensionSourceCandidateInfo> Candidates { get; set; } = new();
+}
+
+public sealed class DimensionSourceCandidateInfo
+{
+    public string Owner { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public int? DrawingObjectId { get; set; }
+    public int? ModelId { get; set; }
+    public string ResolvedModelType { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
 }

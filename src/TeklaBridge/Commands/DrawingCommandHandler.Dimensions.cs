@@ -22,6 +22,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_text_placement_debug":
                 return HandleGetDimensionTextPlacementDebug(api, args);
 
+            case "get_dimension_source_debug":
+                return HandleGetDimensionSourceDebug(api, args);
+
             case "get_dimension_groups_debug":
                 return HandleGetDimensionGroupsDebug(api, args);
 
@@ -140,6 +143,45 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleGetDimensionSourceDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        int? dimensionId = null;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDimensionId))
+            {
+                WriteError("dimensionId must be an integer.");
+                return true;
+            }
+
+            dimensionId = parsedDimensionId;
+        }
+
+        var result = api.GetDimensionSourceDebug(viewId, dimensionId);
+        WriteJson(new
+        {
+            viewId = result.ViewId,
+            total = result.Total,
+            dimensions = result.Dimensions.Select(d => new
+            {
+                dimensionId = d.DimensionId,
+                dimensionType = d.DimensionType,
+                teklaDimensionType = d.TeklaDimensionType,
+                candidates = d.Candidates.Select(c => new
+                {
+                    owner = c.Owner,
+                    type = c.Type,
+                    drawingObjectId = c.DrawingObjectId,
+                    modelId = c.ModelId,
+                    resolvedModelType = c.ResolvedModelType,
+                    sourceKind = c.SourceKind
+                })
+            })
+        });
+        return true;
+    }
+
     private bool HandleGetDimensionGroupsDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
@@ -193,6 +235,8 @@ internal sealed partial class DrawingCommandHandler
             viewId = group.GetType().GetProperty("ViewId")?.GetValue(group),
             viewType = group.GetType().GetProperty("ViewType")?.GetValue(group),
             dimensionType = group.GetType().GetProperty("DimensionType")?.GetValue(group),
+            sourceKind = group.GetType().GetProperty("SourceKind")?.GetValue(group),
+            geometryKind = group.GetType().GetProperty("GeometryKind")?.GetValue(group),
             orientation = group.GetType().GetProperty("Orientation")?.GetValue(group),
             topDirection = group.GetType().GetProperty("TopDirection")?.GetValue(group),
             direction = SerializeDirection(group.GetType().GetProperty("Direction")?.GetValue(group)),
@@ -333,22 +377,6 @@ internal sealed partial class DrawingCommandHandler
 
     private void WriteGetDimensionsResult(GetDimensionsResult result)
     {
-        static object? SerializeBounds(DrawingBoundsInfo? bounds)
-        {
-            if (bounds == null)
-                return null;
-
-            return new
-            {
-                minX = bounds.MinX,
-                minY = bounds.MinY,
-                maxX = bounds.MaxX,
-                maxY = bounds.MaxY,
-                width = bounds.Width,
-                height = bounds.Height
-            };
-        }
-
         static object? SerializeLine(DrawingLineInfo? line)
         {
             if (line == null)
@@ -367,43 +395,58 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             total = result.Total,
-            dimensions = result.Dimensions.Select(d => new
+            groupCount = result.GroupCount,
+            groups = result.Groups.Select(g => new
             {
-                id = d.Id,
-                type = d.Type,
-                dimensionType = d.DimensionType,
-                viewId = d.ViewId,
-                viewType = d.ViewType,
-                orientation = d.Orientation,
-                viewScale = d.ViewScale,
-                distance = d.Distance,
-                directionX = d.DirectionX,
-                directionY = d.DirectionY,
-                topDirection = d.TopDirection,
-                bounds = SerializeBounds(d.Bounds),
-                referenceLine = SerializeLine(d.ReferenceLine),
-                measuredPoints = d.MeasuredPoints.Select(p => new
+                viewId = g.ViewId,
+                viewType = g.ViewType,
+                dimensionType = g.DimensionType,
+                teklaDimensionType = g.TeklaDimensionType,
+                direction = g.Direction == null ? null : new
                 {
-                    x = p.X,
-                    y = p.Y,
-                    order = p.Order
-                }),
-                segments = d.Segments.Select(s => new
+                    x = g.Direction.X,
+                    y = g.Direction.Y
+                },
+                topDirection = g.TopDirection,
+                referenceLine = SerializeLine(g.ReferenceLine),
+                leadLineMain = SerializeLine(g.LeadLineMain),
+                leadLineSecond = SerializeLine(g.LeadLineSecond),
+                maximumDistance = g.MaximumDistance,
+                items = g.Items.Select(item => new
                 {
-                    id = s.Id,
-                    startX = s.StartX,
-                    startY = s.StartY,
-                    endX = s.EndX,
-                    endY = s.EndY,
-                    distance = s.Distance,
-                    directionX = s.DirectionX,
-                    directionY = s.DirectionY,
-                    topDirection = s.TopDirection,
-                    bounds = SerializeBounds(s.Bounds),
-                    textBounds = SerializeBounds(s.TextBounds),
-                    dimensionLine = SerializeLine(s.DimensionLine),
-                    leadLineMain = SerializeLine(s.LeadLineMain),
-                    leadLineSecond = SerializeLine(s.LeadLineSecond)
+                    id = item.Id,
+                    segmentIds = item.SegmentIds,
+                    viewId = item.ViewId,
+                    dimensionType = item.DimensionType,
+                    teklaDimensionType = item.TeklaDimensionType,
+                    referenceLine = SerializeLine(item.ReferenceLine),
+                    startPoint = item.StartPoint == null ? null : new
+                    {
+                        x = item.StartPoint.X,
+                        y = item.StartPoint.Y,
+                        order = item.StartPoint.Order
+                    },
+                    endPoint = item.EndPoint == null ? null : new
+                    {
+                        x = item.EndPoint.X,
+                        y = item.EndPoint.Y,
+                        order = item.EndPoint.Order
+                    },
+                    centerPoint = item.CenterPoint == null ? null : new
+                    {
+                        x = item.CenterPoint.X,
+                        y = item.CenterPoint.Y,
+                        order = item.CenterPoint.Order
+                    },
+                    pointList = item.PointList.Select(p => new
+                    {
+                        x = p.X,
+                        y = p.Y,
+                        order = p.Order
+                    }),
+                    lengthList = item.LengthList,
+                    realLengthList = item.RealLengthList,
+                    distance = item.Distance
                 })
             })
         });
@@ -596,6 +639,8 @@ internal sealed partial class DrawingCommandHandler
         {
             dimensionId = member.GetType().GetProperty("DimensionId")?.GetValue(member),
             segmentId = member.GetType().GetProperty("SegmentId")?.GetValue(member),
+            sourceKind = member.GetType().GetProperty("SourceKind")?.GetValue(member),
+            geometryKind = member.GetType().GetProperty("GeometryKind")?.GetValue(member),
             startX = member.GetType().GetProperty("StartX")?.GetValue(member),
             startY = member.GetType().GetProperty("StartY")?.GetValue(member),
             endX = member.GetType().GetProperty("EndX")?.GetValue(member),

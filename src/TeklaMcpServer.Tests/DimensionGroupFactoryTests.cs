@@ -11,10 +11,10 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12),
-            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 120, 15, 18, 125, 22),
-            CreateDimension(3, 10, "FrontView", "PartLongitudinal", "horizontal", 30, 1, 0, 1, 0, 1, 0, 100, 25, 28, 105, 32),
-            CreateDimension(4, 11, "TopView", "PartLongitudinal", "horizontal", 20, 1, 0, -1, 0, -1, -10, 90, 35, 33, 95, 40)
+            CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12),
+            CreateDimension(2, 10, "FrontView", "Horizontal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 120, 15, 18, 125, 22),
+            CreateDimension(3, 10, "FrontView", "Horizontal", "horizontal", 30, 1, 0, 1, 0, 1, 0, 100, 25, 28, 105, 32),
+            CreateDimension(4, 11, "TopView", "Horizontal", "horizontal", 20, 1, 0, -1, 0, -1, -10, 90, 35, 33, 95, 40)
         ]);
 
         Assert.Equal(3, groups.Count);
@@ -22,7 +22,7 @@ public sealed class DimensionGroupFactoryTests
         var frontTop = groups.Single(g =>
             g.ViewId == 10 &&
             g.ViewType == "FrontView" &&
-            g.DimensionType == "PartLongitudinal" &&
+            g.DimensionType == "Horizontal" &&
             g.TopDirection == -1);
         Assert.Equal(2, frontTop.Members.Count);
         Assert.Equal(45, frontTop.MaximumDistance, 3);
@@ -33,8 +33,8 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 25, 35, 105, 42),
-            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 100, 5, 15, 105, 22)
+            CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 25, 35, 105, 42),
+            CreateDimension(2, 10, "FrontView", "Horizontal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 100, 5, 15, 105, 22)
         ]);
 
         var group = Assert.Single(groups);
@@ -49,7 +49,7 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "PartTransversal", "vertical", 12, 0, 1, 1, 1, 0, 5, 5, 10, 10, 15, 70)
+            CreateDimension(1, 10, "FrontView", "Vertical", "vertical", 12, 0, 1, 1, 1, 0, 5, 5, 10, 10, 15, 70)
         ]);
 
         var group = Assert.Single(groups);
@@ -67,24 +67,74 @@ public sealed class DimensionGroupFactoryTests
     }
 
     [Fact]
-    public void BuildGroups_AcceptsGetDimensionsResult()
+    public void BuildItems_CreatesDomainItemWithLeadLinesAndLengths()
     {
-        var result = new GetDimensionsResult
-        {
-            Total = 2,
-            Dimensions =
-            [
-                CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12),
-                CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 0, 120, 15, 18, 125, 22)
-            ]
-        };
+        var item = Assert.Single(DimensionGroupFactory.BuildItems(
+        [
+            CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12)
+        ]));
 
-        var groups = DimensionGroupFactory.BuildGroups(result);
+        Assert.Equal(1, item.DimensionId);
+        Assert.Equal(DimensionType.Horizontal, item.DomainDimensionType);
+        Assert.Equal("Horizontal", item.DimensionType);
+        Assert.Single(item.SegmentIds);
+        Assert.Equal(10, item.ViewId);
+        Assert.NotNull(item.ReferenceLine);
+        Assert.NotNull(item.LeadLineMain);
+        Assert.NotNull(item.LeadLineSecond);
+        Assert.Equal(2, item.PointList.Count);
+        Assert.Single(item.LengthList);
+        Assert.Single(item.RealLengthList);
+    }
 
-        var group = Assert.Single(groups);
-        Assert.Equal(10, group.ViewId);
-        Assert.Equal("PartLongitudinal", group.DimensionType);
-        Assert.Equal(2, group.Members.Count);
+    [Fact]
+    public void BuildItems_MapsRawTeklaTypeToDomainTypeUsingSourceAndGeometry()
+    {
+        var item = Assert.Single(DimensionGroupFactory.BuildItems(
+        [
+            CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12)
+        ]));
+
+        Assert.Equal("Absolute", item.TeklaDimensionType);
+        Assert.Equal(DimensionType.Horizontal, item.DomainDimensionType);
+        Assert.Equal("Horizontal", item.DimensionType);
+    }
+
+    [Fact]
+    public void BuildItems_MapsFreeGeometryToFreeWhenSourceIsPart()
+    {
+        var item = Assert.Single(DimensionGroupFactory.BuildItems(
+        [
+            CreateDimension(1, 10, "FrontView", "Relative", "angled", 40, 0.866, 0.5, -1, 0.5, -0.866, 0, 100, 5, 8, 105, 12)
+        ]));
+
+        Assert.Equal(DimensionSourceKind.Part, item.SourceKind);
+        Assert.Equal(DimensionGeometryKind.Free, item.GeometryKind);
+        Assert.Equal(DimensionType.Free, item.DomainDimensionType);
+    }
+
+    [Fact]
+    public void BuildItems_MapsFreeGeometryToFreeWhenSourceIsGrid()
+    {
+        var item = Assert.Single(DimensionGroupFactory.BuildItems(
+        [
+            CreateDimension(1, 10, "FrontView", "Relative", "angled", 40, 0.866, 0.5, -1, 0.5, -0.866, 0, 100, 5, 8, 105, 12, DimensionSourceKind.Grid)
+        ]));
+
+        Assert.Equal(DimensionSourceKind.Grid, item.SourceKind);
+        Assert.Equal(DimensionGeometryKind.Free, item.GeometryKind);
+        Assert.Equal(DimensionType.Free, item.DomainDimensionType);
+    }
+
+    [Fact]
+    public void BuildItems_ReturnsUnknownWithoutSourceProof()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12, DimensionSourceKind.Unknown);
+        dimension.ClassifiedDimensionType = DimensionType.Unknown;
+
+        var item = Assert.Single(DimensionGroupFactory.BuildItems([dimension]));
+
+        Assert.Equal(DimensionType.Unknown, item.DomainDimensionType);
     }
 
     [Fact]
@@ -92,8 +142,8 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
-            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 20, 120, 20, 15, 120, 25)
+            CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
+            CreateDimension(2, 10, "FrontView", "Horizontal", "horizontal", 45, 1, 0, -1, 0, -1, 20, 120, 20, 15, 120, 25)
         ]);
 
         Assert.Equal(2, groups.Count);
@@ -104,8 +154,8 @@ public sealed class DimensionGroupFactoryTests
     {
         var groups = DimensionGroupFactory.BuildGroups(
         [
-            CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
-            CreateDimension(2, 10, "FrontView", "PartLongitudinal", "horizontal", 45, 1, 0, -1, 0, -1, 100, 200, 100, 15, 200, 25)
+            CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5),
+            CreateDimension(2, 10, "FrontView", "Horizontal", "horizontal", 45, 1, 0, -1, 0, -1, 100, 200, 100, 15, 200, 25)
         ]);
 
         var group = Assert.Single(groups);
@@ -128,7 +178,7 @@ public sealed class DimensionGroupFactoryTests
     [Fact]
     public void BuildGroups_SplitsSingleSetIntoLineLevelMembers()
     {
-        var dimension = CreateDimension(1, 10, "FrontView", "PartLongitudinal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5);
+        var dimension = CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 0, 0, 100, 5);
         dimension.Segments.Add(new DimensionSegmentInfo
         {
             Id = 1002,
@@ -456,13 +506,18 @@ public sealed class DimensionGroupFactoryTests
         double boundsMinX,
         double boundsMinY,
         double boundsMaxX,
-        double boundsMaxY)
+        double boundsMaxY,
+        DimensionSourceKind sourceKind = DimensionSourceKind.Part)
     {
         var endY = orientation == "vertical" ? 60.0 : startY;
         var offsetStartX = startX + (upX * distance);
         var offsetStartY = startY + (upY * distance);
         var offsetEndX = endX + (upX * distance);
         var offsetEndY = endY + (upY * distance);
+        var geometryKind = TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(orientation);
+        var classifiedType = System.Enum.TryParse<DimensionType>(dimensionType, ignoreCase: true, out var explicitDomainType)
+            ? explicitDomainType
+            : DimensionGroupFactory.MapDomainDimensionType(sourceKind, geometryKind);
 
         return new DrawingDimensionInfo
         {
@@ -475,6 +530,9 @@ public sealed class DimensionGroupFactoryTests
             DirectionX = directionX,
             DirectionY = directionY,
             TopDirection = topDirection,
+            SourceKind = sourceKind,
+            GeometryKind = geometryKind,
+            ClassifiedDimensionType = classifiedType,
             Bounds = new DrawingBoundsInfo
             {
                 MinX = boundsMinX,

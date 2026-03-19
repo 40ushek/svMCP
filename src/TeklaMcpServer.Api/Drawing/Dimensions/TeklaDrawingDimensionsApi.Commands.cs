@@ -15,6 +15,65 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    public DimensionSourceDebugResult GetDimensionSourceDebug(int? viewId, int? dimensionId)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            DrawingObjectEnumerator dimObjects;
+            if (viewId.HasValue)
+            {
+                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value);
+                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
+            }
+            else
+            {
+                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+            }
+
+            var result = new DimensionSourceDebugResult
+            {
+                ViewId = viewId
+            };
+
+            while (dimObjects.MoveNext())
+            {
+                if (dimObjects.Current is not StraightDimensionSet dimSet)
+                    continue;
+
+                var currentDimensionId = dimSet.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentDimensionId != dimensionId.Value)
+                    continue;
+
+                var info = new DimensionSourceDebugInfo
+                {
+                    DimensionId = currentDimensionId,
+                    DimensionType = TryGetDimensionType(dimSet),
+                    TeklaDimensionType = TryGetDimensionType(dimSet)
+                };
+
+                CollectDimensionSourceCandidates(info.Candidates, dimSet.GetRelatedObjects(), "dimensionSet");
+                foreach (var segment in EnumerateSegments(dimSet))
+                    CollectDimensionSourceCandidates(info.Candidates, segment.GetRelatedObjects(), $"segment:{segment.GetIdentifier().ID}");
+
+                result.Dimensions.Add(info);
+            }
+
+            result.Total = result.Dimensions.Count;
+            return result;
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     public DimensionTextPlacementDebugResult GetDimensionTextPlacementDebug(int? viewId, int? dimensionId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -228,6 +287,37 @@ public sealed partial class TeklaDrawingDimensionsApi
                 CenterX = System.Math.Round(center.X, 3),
                 CenterY = System.Math.Round(center.Y, 3)
             });
+        }
+    }
+
+    private void CollectDimensionSourceCandidates(
+        List<DimensionSourceCandidateInfo> target,
+        DrawingObjectEnumerator? relatedObjects,
+        string owner)
+    {
+        if (relatedObjects == null)
+            return;
+
+        while (relatedObjects.MoveNext())
+        {
+            var current = relatedObjects.Current;
+            var candidate = new DimensionSourceCandidateInfo
+            {
+                Owner = owner,
+                Type = current?.GetType().Name ?? string.Empty,
+                SourceKind = ResolveRelatedObjectSourceKind(current).ToString()
+            };
+
+            if (current is DrawingObject drawingObject)
+                candidate.DrawingObjectId = drawingObject.GetIdentifier().ID;
+
+            if (current is Tekla.Structures.Drawing.ModelObject drawingModelObject)
+            {
+                candidate.ModelId = drawingModelObject.ModelIdentifier.ID;
+                candidate.ResolvedModelType = TrySelectRelatedModelObject(drawingModelObject)?.GetType().Name ?? string.Empty;
+            }
+
+            target.Add(candidate);
         }
     }
 
