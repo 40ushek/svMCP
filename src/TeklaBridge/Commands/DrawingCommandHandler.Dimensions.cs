@@ -255,6 +255,7 @@ internal sealed partial class DrawingCommandHandler
                 splitGapFromPreviousStartToCurrentEnd = type.GetProperty("SplitGapFromPreviousStartToCurrentEnd")?.GetValue(packet),
                 splitThreshold = type.GetProperty("SplitThreshold")?.GetValue(packet),
                 isCombineCandidate = type.GetProperty("IsCombineCandidate")?.GetValue(packet),
+                combineConnectivityMode = type.GetProperty("CombineConnectivityMode")?.GetValue(packet),
                 blockingReasons = (type.GetProperty("BlockingReasons")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray()
             };
         });

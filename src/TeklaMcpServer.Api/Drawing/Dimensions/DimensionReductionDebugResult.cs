@@ -38,5 +38,6 @@ internal sealed class DimensionRepresentativePacketDebugInfo
     public double? SplitGapFromPreviousStartToCurrentEnd { get; set; }
     public double SplitThreshold { get; set; }
     public bool IsCombineCandidate { get; set; }
+    public string CombineConnectivityMode { get; set; } = string.Empty;
     public List<string> BlockingReasons { get; } = [];
 }

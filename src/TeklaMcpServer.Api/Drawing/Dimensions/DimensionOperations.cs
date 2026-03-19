@@ -291,33 +291,36 @@ internal static class DimensionOperations
         for (var i = startIndex; i <= endIndex; i++)
             packet.DimensionIds.Add(items[i].DimensionId);
 
-        var blockingReasons = GetCombineBlockingReasons(items, startIndex, endIndex, policy);
-        packet.IsCombineCandidate = blockingReasons.Count == 0;
-        packet.BlockingReasons.AddRange(blockingReasons);
+        var combineAnalysis = AnalyzeCombineCandidate(items, startIndex, endIndex, policy);
+        packet.IsCombineCandidate = combineAnalysis.BlockingReasons.Count == 0;
+        packet.CombineConnectivityMode = combineAnalysis.ConnectivityMode;
+        packet.BlockingReasons.AddRange(combineAnalysis.BlockingReasons);
 
         return packet;
     }
 
-    private static List<string> GetCombineBlockingReasons(
+    private static CombineCandidateAnalysis AnalyzeCombineCandidate(
         IReadOnlyList<DimensionItem> items,
         int startIndex,
         int endIndex,
         DimensionReductionPolicy policy)
     {
-        var reasons = new List<string>();
+        var analysis = new CombineCandidateAnalysis();
         var count = endIndex - startIndex + 1;
         if (count <= 1)
         {
-            reasons.Add("single_item_packet");
-            return reasons;
+            analysis.ConnectivityMode = "single_item_packet";
+            analysis.BlockingReasons.Add("single_item_packet");
+            return analysis;
         }
 
         var first = items[startIndex];
         var firstDirection = first.Direction;
         if (!firstDirection.HasValue)
         {
-            reasons.Add("missing_direction");
-            return reasons;
+            analysis.ConnectivityMode = "missing_direction";
+            analysis.BlockingReasons.Add("missing_direction");
+            return analysis;
         }
 
         for (var i = startIndex + 1; i <= endIndex; i++)
@@ -326,47 +329,84 @@ internal static class DimensionOperations
             var currentDirection = current.Direction;
             if (!currentDirection.HasValue || !AreParallel(firstDirection.Value, currentDirection.Value))
             {
-                reasons.Add("inconsistent_direction");
-                break;
+                analysis.ConnectivityMode = "inconsistent_direction";
+                analysis.BlockingReasons.Add("inconsistent_direction");
+                return analysis;
             }
 
             if (current.TopDirection != 0 && first.TopDirection != 0 && current.TopDirection != first.TopDirection)
             {
-                reasons.Add("different_top_direction");
-                break;
+                analysis.ConnectivityMode = "different_top_direction";
+                analysis.BlockingReasons.Add("different_top_direction");
+                return analysis;
             }
 
             if (!AreOnSameMeasuredLine(first, current, policy))
             {
-                reasons.Add("different_measured_line");
-                break;
+                analysis.ConnectivityMode = "different_measured_line";
+                analysis.BlockingReasons.Add("different_measured_line");
+                return analysis;
             }
         }
 
-        if (!HasPacketMeasuredPointConnectivity(items, startIndex, endIndex, policy))
-            reasons.Add("no_shared_or_adjacent_measured_points");
+        var connectivity = AnalyzePacketMeasuredPointConnectivity(items, startIndex, endIndex, policy);
+        analysis.ConnectivityMode = connectivity.Mode;
+        if (!connectivity.IsConnected)
+        {
+            analysis.BlockingReasons.Add("no_shared_or_adjacent_measured_points");
+            return analysis;
+        }
 
-        return reasons;
+        if (!connectivity.HasSharedPointChain && !policy.AllowAdjacentMeasuredPointOrderCombineFallback)
+            analysis.BlockingReasons.Add("requires_adjacent_order_fallback");
+
+        return analysis;
     }
 
-    private static bool HasPacketMeasuredPointConnectivity(
+    private static PacketConnectivityAnalysis AnalyzePacketMeasuredPointConnectivity(
         IReadOnlyList<DimensionItem> items,
         int startIndex,
         int endIndex,
         DimensionReductionPolicy policy)
     {
+        var usedAdjacentFallback = false;
+        var hasSharedPointChain = true;
+
         for (var i = startIndex + 1; i <= endIndex; i++)
         {
-            if (HaveSharedMeasuredPoint(items[i - 1], items[i], policy) ||
-                HaveAdjacentMeasuredPointOrders(items[i - 1], items[i]))
+            var previous = items[i - 1];
+            var current = items[i];
+            var hasSharedPoint = HaveSharedMeasuredPoint(previous, current, policy);
+            var hasAdjacentOrder = HaveAdjacentMeasuredPointOrders(previous, current);
+
+            if (hasSharedPoint)
+                continue;
+
+            hasSharedPointChain = false;
+            if (hasAdjacentOrder)
             {
+                usedAdjacentFallback = true;
                 continue;
             }
 
-            return false;
+            return new PacketConnectivityAnalysis
+            {
+                IsConnected = false,
+                HasSharedPointChain = false,
+                UsedAdjacentOrderFallback = usedAdjacentFallback,
+                Mode = usedAdjacentFallback ? "broken_mixed_chain" : "not_connected"
+            };
         }
 
-        return true;
+        return new PacketConnectivityAnalysis
+        {
+            IsConnected = true,
+            HasSharedPointChain = hasSharedPointChain,
+            UsedAdjacentOrderFallback = usedAdjacentFallback,
+            Mode = hasSharedPointChain
+                ? "shared_point_chain"
+                : (usedAdjacentFallback ? "adjacent_order_fallback" : "connected")
+        };
     }
 
     private static bool HaveSharedMeasuredPoint(
@@ -528,6 +568,20 @@ internal static class DimensionOperations
         public double PreviousEndToCurrentStart { get; set; }
         public double PreviousStartToCurrentEnd { get; set; }
         public double Threshold { get; set; }
+    }
+
+    private sealed class CombineCandidateAnalysis
+    {
+        public string ConnectivityMode { get; set; } = string.Empty;
+        public List<string> BlockingReasons { get; } = [];
+    }
+
+    private sealed class PacketConnectivityAnalysis
+    {
+        public bool IsConnected { get; set; }
+        public bool HasSharedPointChain { get; set; }
+        public bool UsedAdjacentOrderFallback { get; set; }
+        public string Mode { get; set; } = string.Empty;
     }
 
     private static DimensionGroup CloneGroup(DimensionGroup group)
