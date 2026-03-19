@@ -12,6 +12,8 @@ internal sealed class DimensionReductionPolicy
     public static DimensionReductionPolicy Default => new();
 
     public double PositionTolerance { get; set; } = 3.0;
+    public double LengthTolerance { get; set; } = 3.0;
+    public bool EnableEquivalentSimpleReduction { get; set; } = true;
     public bool EnableCoverageReduction { get; set; } = true;
     public bool EnableRepresentativeSelection { get; set; } = true;
     public double RepresentativePacketGapFactor { get; set; } = 1.0;

@@ -580,6 +580,60 @@ public sealed class DimensionGroupFactoryTests
     }
 
     [Fact]
+    public void BuildGroups_EliminatesEquivalentSimpleDuplicateItems()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var duplicate = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+
+        first.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        first.Segments[0].DimensionLine = first.ReferenceLine;
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+
+        duplicate.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        duplicate.Segments[0].DimensionLine = duplicate.ReferenceLine;
+        duplicate.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        duplicate.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, duplicate]);
+
+        var group = Assert.Single(groups);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(1, member.DimensionId);
+        Assert.Equal(2, group.RawItemCount);
+        Assert.Equal(1, group.ReducedItemCount);
+    }
+
+    [Fact]
+    public void BuildGroups_CanDisableEquivalentSimpleReductionViaPolicy()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var duplicate = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+
+        first.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        first.Segments[0].DimensionLine = first.ReferenceLine;
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+
+        duplicate.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = 40, EndX = 100, EndY = 40 };
+        duplicate.Segments[0].DimensionLine = duplicate.ReferenceLine;
+        duplicate.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        duplicate.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups(
+            [first, duplicate],
+            reductionPolicy: new DimensionReductionPolicy
+            {
+                EnableEquivalentSimpleReduction = false,
+                EnableRepresentativeSelection = false,
+                EnableCoverageReduction = false
+            });
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
+    [Fact]
     public void BuildGroups_SelectsOneRepresentativeFromNearbyPacket()
     {
         var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);

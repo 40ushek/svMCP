@@ -45,6 +45,11 @@ internal static class DimensionOperations
         var kept = new List<DimensionItem>(ordered.Count);
         foreach (var candidate in ordered)
         {
+            if (policy.EnableEquivalentSimpleReduction &&
+                IsSimpleItem(candidate) &&
+                kept.Any(existing => AreEquivalentSimpleItems(existing, candidate, policy)))
+                continue;
+
             if (policy.EnableCoverageReduction &&
                 IsSimpleItem(candidate) &&
                 kept.Any(existing => Covers(existing, candidate, policy)))
@@ -153,6 +158,45 @@ internal static class DimensionOperations
             keeperPositions.Any(keeperPosition => System.Math.Abs(keeperPosition - candidatePosition) <= policy.PositionTolerance));
     }
 
+    private static bool AreEquivalentSimpleItems(
+        DimensionItem keeper,
+        DimensionItem candidate,
+        DimensionReductionPolicy policy)
+    {
+        if (!IsSimpleItem(keeper) || !IsSimpleItem(candidate))
+            return false;
+
+        var keeperDirection = keeper.Direction;
+        var candidateDirection = candidate.Direction;
+        if (!keeperDirection.HasValue || !candidateDirection.HasValue)
+            return false;
+
+        if (!AreParallel(keeperDirection.Value, candidateDirection.Value))
+            return false;
+
+        var keeperPositions = GetProjectedPositions(keeper.PointList, keeperDirection.Value);
+        var candidatePositions = GetProjectedPositions(candidate.PointList, keeperDirection.Value);
+        if (keeperPositions.Count != 2 || candidatePositions.Count != 2)
+            return false;
+
+        var keeperLength = keeperPositions[1] - keeperPositions[0];
+        var candidateLength = candidatePositions[1] - candidatePositions[0];
+        if (System.Math.Abs(keeperLength - candidateLength) > policy.LengthTolerance)
+            return false;
+
+        var sameStart = System.Math.Abs(keeperPositions[0] - candidatePositions[0]) <= policy.PositionTolerance;
+        var sameEnd = System.Math.Abs(keeperPositions[1] - candidatePositions[1]) <= policy.PositionTolerance;
+        if (!sameStart || !sameEnd)
+            return false;
+
+        var keeperOffset = TryGetReferenceLineOffset(keeper, keeperDirection.Value);
+        var candidateOffset = TryGetReferenceLineOffset(candidate, keeperDirection.Value);
+        if (!keeperOffset.HasValue || !candidateOffset.HasValue)
+            return false;
+
+        return System.Math.Abs(keeperOffset.Value - candidateOffset.Value) <= policy.PositionTolerance;
+    }
+
     private static List<double> GetProjectedPositions(
         IReadOnlyList<DrawingPointInfo> points,
         (double X, double Y) direction)
@@ -175,6 +219,23 @@ internal static class DimensionOperations
         var dx = leftX - rightX;
         var dy = leftY - rightY;
         return System.Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static double? TryGetReferenceLineOffset(DimensionItem item, (double X, double Y) direction)
+    {
+        if (item.ReferenceLine == null)
+            return null;
+
+        var normal = (-direction.Y, direction.X);
+        return Project(item.ReferenceLine.StartX, item.ReferenceLine.StartY, normal.Item1, normal.Item2);
+    }
+
+    private static bool AreParallel(
+        (double X, double Y) left,
+        (double X, double Y) right)
+    {
+        var dot = System.Math.Abs((left.X * right.X) + (left.Y * right.Y));
+        return dot >= 0.995;
     }
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
