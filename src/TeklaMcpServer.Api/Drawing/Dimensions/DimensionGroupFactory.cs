@@ -29,6 +29,7 @@ internal static class DimensionGroupFactory
         {
             group.SortMembers();
             group.RefreshMetrics();
+            group.RawItemCount = group.DimensionList.Count;
         }
 
         return DimensionOperations.EliminateRedundantItems(groups);

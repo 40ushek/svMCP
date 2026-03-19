@@ -51,15 +51,21 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     public GetDimensionsResult GetDimensions(int? viewId)
     {
-        var groups = GetDimensionGroups(viewId);
-        return BuildGetDimensionsResult(groups);
+        var snapshots = GetDimensionSnapshots(viewId);
+        var groups = DimensionGroupFactory.BuildGroups(snapshots);
+        return BuildGetDimensionsResult(snapshots, groups);
     }
 
-    private static GetDimensionsResult BuildGetDimensionsResult(IReadOnlyList<DimensionGroup> groups)
+    private static GetDimensionsResult BuildGetDimensionsResult(
+        IReadOnlyList<DrawingDimensionInfo> snapshots,
+        IReadOnlyList<DimensionGroup> groups)
     {
         var result = new GetDimensionsResult
         {
             Total = groups.Sum(static group => group.DimensionList.Count),
+            DrawingDimensionCount = snapshots.Count,
+            RawItemCount = groups.Sum(static group => group.RawItemCount),
+            ReducedItemCount = groups.Sum(static group => group.ReducedItemCount),
             GroupCount = groups.Count
         };
 
@@ -82,7 +88,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                 ReferenceLine = CopyLine(group.ReferenceLine),
                 LeadLineMain = CopyLine(group.LeadLineMain),
                 LeadLineSecond = CopyLine(group.LeadLineSecond),
-                MaximumDistance = System.Math.Round(group.MaximumDistance, 3)
+                MaximumDistance = System.Math.Round(group.MaximumDistance, 3),
+                RawItemCount = group.RawItemCount,
+                ReducedItemCount = group.ReducedItemCount
             };
 
             foreach (var item in group.DimensionList)

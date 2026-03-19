@@ -103,12 +103,17 @@ public sealed class DimensionGroupInfo
     public DrawingLineInfo? LeadLineMain { get; set; }
     public DrawingLineInfo? LeadLineSecond { get; set; }
     public double MaximumDistance { get; set; }
+    public int RawItemCount { get; set; }
+    public int ReducedItemCount { get; set; }
     public List<DimensionItemInfo> Items { get; set; } = new();
 }
 
 public sealed class GetDimensionsResult
 {
     public int Total { get; set; }
+    public int DrawingDimensionCount { get; set; }
+    public int RawItemCount { get; set; }
+    public int ReducedItemCount { get; set; }
     public int GroupCount { get; set; }
     public List<DimensionGroupInfo> Groups { get; set; } = new();
 }

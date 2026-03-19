@@ -20,6 +20,8 @@ internal sealed class DimensionGroup
     public DrawingLineInfo? LeadLineMain { get; set; }
     public DrawingLineInfo? LeadLineSecond { get; set; }
     public double MaximumDistance { get; set; }
+    public int RawItemCount { get; set; }
+    public int ReducedItemCount => DimensionList.Count;
     public List<DimensionItem> DimensionList { get; } = [];
     public List<DimensionItem> Members => DimensionList;
 

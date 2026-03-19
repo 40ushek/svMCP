@@ -395,6 +395,9 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             total = result.Total,
+            drawingDimensionCount = result.DrawingDimensionCount,
+            rawItemCount = result.RawItemCount,
+            reducedItemCount = result.ReducedItemCount,
             groupCount = result.GroupCount,
             groups = result.Groups.Select(g => new
             {
@@ -412,6 +415,8 @@ internal sealed partial class DrawingCommandHandler
                 leadLineMain = SerializeLine(g.LeadLineMain),
                 leadLineSecond = SerializeLine(g.LeadLineSecond),
                 maximumDistance = g.MaximumDistance,
+                rawItemCount = g.RawItemCount,
+                reducedItemCount = g.ReducedItemCount,
                 items = g.Items.Select(item => new
                 {
                     id = item.Id,

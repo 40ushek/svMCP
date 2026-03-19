@@ -13,7 +13,7 @@ internal static class DimensionOperations
 
         foreach (var group in groups)
         {
-            var reducedItems = ReduceItems(group.DimensionList);
+            var reducedItems = ReduceItems(group);
             if (reducedItems.Count == 0)
                 continue;
 
@@ -27,8 +27,9 @@ internal static class DimensionOperations
         return reducedGroups;
     }
 
-    private static List<DimensionItem> ReduceItems(IReadOnlyList<DimensionItem> items)
+    private static List<DimensionItem> ReduceItems(DimensionGroup group)
     {
+        var items = group.DimensionList;
         if (items.Count <= 1)
             return items.ToList();
 
@@ -47,10 +48,75 @@ internal static class DimensionOperations
             kept.Add(candidate);
         }
 
-        return kept
+        var deduplicated = kept
             .OrderBy(static item => item.SortKey)
             .ThenBy(static item => item.DimensionId)
             .ToList();
+
+        return SelectCommonRepresentatives(group, deduplicated);
+    }
+
+    private static List<DimensionItem> SelectCommonRepresentatives(
+        DimensionGroup group,
+        IReadOnlyList<DimensionItem> items)
+    {
+        if (items.Count <= 1)
+            return items.ToList();
+
+        var selected = new List<DimensionItem>();
+        var packetStart = 0;
+
+        for (var i = 1; i < items.Count; i++)
+        {
+            if (!ShouldSplitRepresentativePacket(items[i - 1], items[i], group.MaximumDistance))
+                continue;
+
+            selected.Add(SelectRepresentative(items, packetStart, i - 1));
+            packetStart = i;
+        }
+
+        selected.Add(SelectRepresentative(items, packetStart, items.Count - 1));
+        return selected;
+    }
+
+    private static bool ShouldSplitRepresentativePacket(
+        DimensionItem previous,
+        DimensionItem current,
+        double maximumDistance)
+    {
+        if (previous.LeadLineMain == null || current.LeadLineMain == null)
+            return true;
+
+        var previousEndToCurrentStart = GetDistance(
+            previous.LeadLineMain.EndX,
+            previous.LeadLineMain.EndY,
+            current.LeadLineMain.StartX,
+            current.LeadLineMain.StartY);
+        var previousStartToCurrentEnd = GetDistance(
+            previous.LeadLineMain.StartX,
+            previous.LeadLineMain.StartY,
+            current.LeadLineMain.EndX,
+            current.LeadLineMain.EndY);
+
+        return previousEndToCurrentStart > maximumDistance &&
+               previousStartToCurrentEnd > maximumDistance;
+    }
+
+    private static DimensionItem SelectRepresentative(
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex)
+    {
+        var count = endIndex - startIndex + 1;
+        var position = endIndex;
+
+        // `dim` chooses a representative from each nearby packet. In the current
+        // geometry-first model we keep a neutral center-biased choice; edge-vs-center
+        // strategy should later move into a configurable reduction policy.
+        if (count > 1)
+            position -= (count - 1) / 2;
+
+        return items[position];
     }
 
     private static bool Covers(DimensionItem keeper, DimensionItem candidate)
@@ -91,6 +157,13 @@ internal static class DimensionOperations
         return (item.PointList.Count * 1000) + item.SegmentIds.Count;
     }
 
+    private static double GetDistance(double leftX, double leftY, double rightX, double rightY)
+    {
+        var dx = leftX - rightX;
+        var dy = leftY - rightY;
+        return System.Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 
     private static DimensionGroup CloneGroup(DimensionGroup group)
@@ -110,7 +183,8 @@ internal static class DimensionOperations
             ReferenceLine = group.ReferenceLine,
             LeadLineMain = group.LeadLineMain,
             LeadLineSecond = group.LeadLineSecond,
-            MaximumDistance = group.MaximumDistance
+            MaximumDistance = group.MaximumDistance,
+            RawItemCount = group.RawItemCount
         };
     }
 }

@@ -579,6 +579,44 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(2, group.Members.Count);
     }
 
+    [Fact]
+    public void BuildGroups_SelectsOneRepresentativeFromNearbyPacket()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 200, 100, 0, 200, 5);
+        var third = CreateDimension(3, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 200, 300, 200, 0, 300, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 200, StartY = 0, EndX = 200, EndY = 40 };
+        third.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 200, StartY = 0, EndX = 200, EndY = 40 };
+        third.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 300, StartY = 0, EndX = 300, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second, third]);
+
+        var group = Assert.Single(groups);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(2, member.DimensionId);
+    }
+
+    [Fact]
+    public void BuildGroups_KeepsSeparateRepresentativePacketsWhenGapExceedsMaximumDistance()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 400, 500, 400, 0, 500, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 400, StartY = 0, EndX = 400, EndY = 40 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 500, StartY = 0, EndX = 500, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,
