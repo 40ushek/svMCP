@@ -82,6 +82,17 @@ Debug/validation helpers currently available:
 These helpers are for live validation only. They do not define the long-term
 domain model.
 
+Implemented in the current `src` code:
+
+- internal `DimensionItem` / `DimensionGroup` model exists
+- `get_drawing_dimensions` returns the real line-based groups, not summary
+  buckets
+- grouping is geometry-first and line-first
+- first `DimensionOperations`-style reduction step exists:
+  - simple redundant items can be rejected when a more informative item in the
+    same group already covers the same span
+- actual Tekla dimension merging is still deferred
+
 ## Confirmed Findings
 
 Confirmed on the current implementation and live drawings:
@@ -120,6 +131,8 @@ Consequence:
 - Prefer line geometry over bbox for grouping and spacing.
 - Treat `orientation` as a summary only, never as the main grouping key.
 - Keep Tekla raw type and domain type separate when they diverge.
+- Keep grouping, elimination and future merge rules configurable through
+  explicit policies instead of hard-coding one permanent formula.
 
 ## Group Semantics
 
@@ -200,12 +213,29 @@ Canonical direction:
 Examples:
 
 - grouping
+- elimination / rejection of redundant items
 - alignment
 - combination
 - play adjustment
 - diagonal/control selection
 
-### 4. Public API Layer
+### 4. Policy Layer
+
+Purpose:
+
+- make grouping and reduction rules tunable without rewriting the domain model
+
+Canonical direction:
+
+- add explicit policies for grouping, elimination and later combination
+
+Examples:
+
+- `DimensionGroupingPolicy`
+- `DimensionReductionPolicy`
+- later `DimensionMergePolicy`
+
+### 5. Public API Layer
 
 Purpose:
 
@@ -229,6 +259,8 @@ The following semantics are the main migration target:
 - keep `MaximumDistance` as a real geometric concept, not just a display metric
 - treat a group as a candidate set for analysis, elimination and optional
   controlled combination
+- keep merge decisions separate from grouping decisions
+- allow grouping and elimination tolerances to be policy-driven
 
 ## Explicit Non-Goals
 
@@ -250,7 +282,7 @@ Those may remain useful, but only as:
 
 ### Phase 1: Make `dim` the Explicit Canonical Model
 
-Status: next priority.
+Status: done.
 
 Done when:
 
@@ -262,7 +294,7 @@ Done when:
 
 ### Phase 2: Introduce a Real `DimensionItem`
 
-Status: not started.
+Status: done in first form.
 
 Implement an internal `DimensionItem` modeled after `dim`.
 
@@ -285,10 +317,13 @@ Done when:
 - grouping no longer depends on `DimensionGroupMember` as the primary internal
   concept
 - Tekla snapshot data can be projected into `DimensionItem`
+- current status:
+  - `DimensionItem` is now the main internal unit
+  - some legacy helpers still exist around it and can be reduced later
 
 ### Phase 3: Rebuild Grouping Around `DimensionItem`
 
-Status: not started.
+Status: done in first form, still tunable.
 
 Replace DTO/member-first grouping with `dim`-style grouping semantics.
 
@@ -306,27 +341,69 @@ Done when:
 - `DimensionGroupFactory` effectively becomes a `DimensionItem -> DimensionGroup`
   builder
 - grouping logic is explainable in `dim` terms
+- current status:
+  - public API now exposes the real line-based groups
+  - earlier summary bucketing has been removed from the main read path
+  - future work is about policy tuning, not reintroducing a second grouping model
 
 ### Phase 4: Port `DimensionOperations` Concepts
 
-Status: partially present, needs redesign.
+Status: in progress.
 
 The current arrangement/spacings code should be aligned with `dim` operations,
 especially for:
 
+- eliminate / reject redundant dimensions
 - align
 - combine
 - play-aware adjustment
 - same-line/near-line grouping transitions
 
+Current status:
+
+- first elimination step is present
+- current elimination is intentionally conservative:
+  - simple items may be rejected when a more informative item in the same group
+    already covers the same span
+- representative selection and controlled combination from `dim` are still
+  pending
+
 Done when:
 
 - arrangement logic talks in terms of items/groups, not transport DTO hacks
 - line-first spacing is expressed with domain entities
+- elimination, representative selection and combination rules are separated into
+  explicit operations
 
-### Phase 5: Reproject Public Read API
+### Phase 5: Introduce Configurable Policies
 
-Status: deferred until phases 2-4 stabilize.
+Status: next priority after basic elimination.
+
+Add explicit policy objects so grouping and reduction remain flexible.
+
+Initial direction:
+
+- `DimensionGroupingPolicy`
+- `DimensionReductionPolicy`
+
+These policies should control things like:
+
+- line-band tolerance
+- collinearity tolerance
+- extent overlap tolerance
+- strict vs soft `TopDirection` matching
+- shared-point requirements
+- how aggressively similar dimensions are reduced inside a group
+
+Done when:
+
+- grouping and elimination no longer depend on magic constants only
+- policy changes do not require redesigning the domain model
+- different drawing scenarios can tune grouping/reduction behavior explicitly
+
+### Phase 6: Reproject Public Read API
+
+Status: partially done, continue refining.
 
 `get_drawing_dimensions` should be generated from the domain model.
 
@@ -339,7 +416,7 @@ The public response may still expose:
 
 But those are projections, not the model itself.
 
-### Phase 6: Text Geometry As A Separate Track
+### Phase 7: Text Geometry As A Separate Track
 
 Status: secondary.
 
@@ -358,10 +435,14 @@ The redesign is on track when:
 - internal code centers on `DimensionItem` and `DimensionGroup`
 - current DTO-first grouping layer is reduced or removed
 - grouping is explainable directly from `dim`
+- grouping remains the only real grouping model
 - arrangement logic consumes domain entities, not raw API DTOs
 - `orientation` is only a summary
 - bbox logic is only fallback/debug
 - public APIs are projections from the domain model
+- elimination is a separate operation on top of groups
+- merge stays a separate operation on top of reduced groups
+- grouping and elimination rules are policy-driven rather than hard-coded
 
 The redesign is ready to expose further arrange functionality when:
 

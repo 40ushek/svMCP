@@ -488,6 +488,97 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(0, member.EndY, 3);
     }
 
+    [Fact]
+    public void BuildGroups_EliminatesSimpleItemCoveredByMoreInformativeChain()
+    {
+        var chain = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        chain.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 0, Order = 0 },
+            new DrawingPointInfo { X = 100, Y = 0, Order = 1 },
+            new DrawingPointInfo { X = 220, Y = 0, Order = 2 }
+        ];
+        chain.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 100, EndY = -1440 };
+        chain.Segments[0].DimensionLine = chain.ReferenceLine;
+        chain.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        chain.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -1440 };
+        chain.Segments.Add(new DimensionSegmentInfo
+        {
+            Id = 1002,
+            StartX = 100,
+            StartY = 0,
+            EndX = 220,
+            EndY = 0,
+            Distance = 40,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = -1500,
+                EndX = 220,
+                EndY = -1500
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = -1500
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 220,
+                StartY = 0,
+                EndX = 220,
+                EndY = -1500
+            },
+            Bounds = new DrawingBoundsInfo
+            {
+                MinX = 100,
+                MinY = -1500,
+                MaxX = 220,
+                MaxY = -1500
+            }
+        });
+
+        var overall = CreateDimension(2, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 220, 0, 0, 220, 5);
+        overall.MeasuredPoints =
+        [
+            new DrawingPointInfo { X = 0, Y = 0, Order = 0 },
+            new DrawingPointInfo { X = 220, Y = 0, Order = 1 }
+        ];
+        overall.ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -1440, EndX = 220, EndY = -1440 };
+        overall.Segments[0].DimensionLine = overall.ReferenceLine;
+        overall.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -1440 };
+        overall.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 220, StartY = 0, EndX = 220, EndY = -1440 };
+
+        var groups = DimensionGroupFactory.BuildGroups([chain, overall]);
+
+        var group = Assert.Single(groups);
+        var member = Assert.Single(group.Members);
+        Assert.Equal(1, member.DimensionId);
+        Assert.Equal(3, member.PointList.Count);
+    }
+
+    [Fact]
+    public void BuildGroups_DoesNotEliminateDistinctNeighbourItems()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 220, 100, 0, 220, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 220, StartY = 0, EndX = 220, EndY = 40 };
+
+        var groups = DimensionGroupFactory.BuildGroups([first, second]);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.Members.Count);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,

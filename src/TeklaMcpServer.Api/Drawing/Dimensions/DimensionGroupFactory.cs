@@ -31,7 +31,7 @@ internal static class DimensionGroupFactory
             group.RefreshMetrics();
         }
 
-        return groups;
+        return DimensionOperations.EliminateRedundantItems(groups);
     }
 
     private static List<DimensionGroup> BuildConnectedGroups(IReadOnlyList<DimensionItem> items)
