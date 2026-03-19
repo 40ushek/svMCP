@@ -8,11 +8,11 @@ internal sealed class DimensionCombinePolicy
     public bool AllowFreeDimensionCombine { get; set; }
     public bool RequireSameSourceKind { get; set; }
     public bool RequireSameTopDirection { get; set; } = true;
-    public bool RequireReferenceLineOffsetCompatibility { get; set; } = true;
+    public bool RequireReferenceLineOffsetCompatibility { get; set; }
     public double ReferenceLineOffsetTolerance { get; set; } = 50.0;
-    public bool RequireDistanceCompatibility { get; set; } = true;
+    public bool RequireDistanceCompatibility { get; set; }
     public double DistanceTolerance { get; set; } = 50.0;
-    public bool RequireCommonLeadLineFamily { get; set; } = true;
+    public bool RequireCommonLeadLineFamily { get; set; }
     public double LeadLineCollinearityTolerance { get; set; } = 3.0;
     public bool UseRepresentativeAsPreviewBase { get; set; } = true;
 }

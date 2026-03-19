@@ -144,51 +144,17 @@ internal static class DimensionOperations
             return [];
 
         var candidates = new List<DimensionCombineCandidateDebugInfo>();
-        var visited = new bool[items.Count];
+        var usedIndices = Enumerable.Range(0, items.Count)
+            .Select(_ => new HashSet<int>())
+            .ToList();
 
-        for (var i = 0; i < items.Count; i++)
+        for (var usedIndex = 0; usedIndex < items.Count; usedIndex++)
         {
-            if (visited[i])
+            var neighbourItemList = GetCombineNeighbourItems(items, usedIndices, policy, combinePolicy, usedIndex);
+            if (neighbourItemList.Count <= 1)
                 continue;
 
-            var clusterIndices = new List<int>();
-            var queue = new Queue<int>();
-            queue.Enqueue(i);
-            visited[i] = true;
-
-            while (queue.Count > 0)
-            {
-                var index = queue.Dequeue();
-                clusterIndices.Add(index);
-
-                for (var candidateIndex = 0; candidateIndex < items.Count; candidateIndex++)
-                {
-                    if (visited[candidateIndex])
-                        continue;
-
-                    if (!CanBelongToSameCombineCluster(items[index], items[candidateIndex], policy))
-                        continue;
-
-                    visited[candidateIndex] = true;
-                    queue.Enqueue(candidateIndex);
-                }
-            }
-
-            if (clusterIndices.Count <= 1)
-                continue;
-
-            clusterIndices.Sort();
-            var clusterItems = clusterIndices.Select(index => items[index]).ToList();
-            var baseItem = clusterItems[0];
-            var analysis = AnalyzeCombineCandidate(
-                group,
-                clusterItems,
-                0,
-                clusterItems.Count - 1,
-                policy,
-                combinePolicy,
-                baseItem);
-
+            var analysis = AnalyzeDimStyleCombineCandidate(group, neighbourItemList, policy, combinePolicy);
             var debug = new DimensionCombineCandidateDebugInfo
             {
                 IsCombineCandidate = analysis.BlockingReasons.Count == 0,
@@ -196,7 +162,7 @@ internal static class DimensionOperations
                 CombinePreview = analysis.Preview
             };
 
-            foreach (var item in clusterItems)
+            foreach (var item in neighbourItemList)
                 debug.DimensionIds.Add(item.DimensionId);
 
             debug.BlockingReasons.AddRange(analysis.BlockingReasons);
@@ -206,10 +172,47 @@ internal static class DimensionOperations
         return candidates;
     }
 
-    private static bool CanBelongToSameCombineCluster(
+    private static List<DimensionItem> GetCombineNeighbourItems(
+        IReadOnlyList<DimensionItem> items,
+        IReadOnlyList<HashSet<int>> usedIndices,
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy,
+        int seedIndex)
+    {
+        if (usedIndices[seedIndex].Contains(seedIndex))
+            return [];
+
+        var neighbourItems = new List<DimensionItem> { items[seedIndex] };
+        usedIndices[seedIndex].Add(seedIndex);
+
+        for (var i = 0; i < neighbourItems.Count; i++)
+        {
+            var neighbourItem = neighbourItems[i];
+            for (var candidateIndex = 0; candidateIndex < items.Count; candidateIndex++)
+            {
+                if (usedIndices[seedIndex].Contains(candidateIndex))
+                    continue;
+
+                var candidate = items[candidateIndex];
+                if (!CanCombineAsNeighbour(neighbourItem, candidate, policy, combinePolicy))
+                    continue;
+
+                neighbourItems.Add(candidate);
+                usedIndices[seedIndex].Add(candidateIndex);
+            }
+        }
+
+        return neighbourItems
+            .OrderBy(static item => item.SortKey)
+            .ThenBy(static item => item.DimensionId)
+            .ToList();
+    }
+
+    private static bool CanCombineAsNeighbour(
         DimensionItem left,
         DimensionItem right,
-        DimensionReductionPolicy policy)
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy)
     {
         var leftDirection = left.Direction;
         var rightDirection = right.Direction;
@@ -219,10 +222,101 @@ internal static class DimensionOperations
         if (!AreParallel(leftDirection.Value, rightDirection.Value))
             return false;
 
-        if (!AreOnSameMeasuredLine(left, right, policy))
-            return false;
+        if (HaveSharedPointForCombine(left, right, policy))
+            return true;
 
-        return HaveSharedMeasuredPoint(left, right, policy) || HaveAdjacentMeasuredPointOrders(left, right);
+        return combinePolicy.AllowAdjacentMeasuredPointOrderFallback &&
+               HaveAdjacentMeasuredPointOrders(left, right);
+    }
+
+    private static bool HaveSharedPointForCombine(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionReductionPolicy policy)
+    {
+        foreach (var leftPoint in left.PointList)
+        {
+            foreach (var rightPoint in right.PointList)
+            {
+                if (System.Math.Abs(leftPoint.X - rightPoint.X) <= policy.PositionTolerance &&
+                    System.Math.Abs(leftPoint.Y - rightPoint.Y) <= policy.PositionTolerance)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static CombineCandidateAnalysis AnalyzeDimStyleCombineCandidate(
+        DimensionGroup group,
+        IReadOnlyList<DimensionItem> items,
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy)
+    {
+        var analysis = new CombineCandidateAnalysis();
+        if (items.Count <= 1)
+        {
+            analysis.ConnectivityMode = "single_item_cluster";
+            analysis.BlockingReasons.Add("single_item_cluster");
+            return analysis;
+        }
+
+        if (group.DomainDimensionType == DimensionType.Free && !combinePolicy.AllowFreeDimensionCombine)
+        {
+            analysis.ConnectivityMode = "free_dimension_blocked";
+            analysis.BlockingReasons.Add("free_dimension_combine_disabled");
+            return analysis;
+        }
+
+        var first = items[0];
+        var firstDirection = first.Direction;
+        if (!firstDirection.HasValue)
+        {
+            analysis.ConnectivityMode = "missing_direction";
+            analysis.BlockingReasons.Add("missing_direction");
+            return analysis;
+        }
+
+        var usedAdjacentFallback = false;
+        for (var i = 1; i < items.Count; i++)
+        {
+            var current = items[i];
+            if (!current.Direction.HasValue || !AreParallel(firstDirection.Value, current.Direction.Value))
+            {
+                analysis.ConnectivityMode = "inconsistent_direction";
+                analysis.BlockingReasons.Add("inconsistent_direction");
+                return analysis;
+            }
+
+            if (combinePolicy.RequireSameTopDirection &&
+                current.TopDirection != 0 &&
+                first.TopDirection != 0 &&
+                current.TopDirection != first.TopDirection)
+            {
+                analysis.ConnectivityMode = "different_top_direction";
+                analysis.BlockingReasons.Add("different_top_direction");
+                return analysis;
+            }
+
+            if (combinePolicy.RequireSameSourceKind && current.SourceKind != first.SourceKind)
+            {
+                analysis.ConnectivityMode = "different_source_kind";
+                analysis.BlockingReasons.Add("different_source_kind");
+                return analysis;
+            }
+
+            if (!HaveSharedPointForCombine(first, current, policy))
+                usedAdjacentFallback |= HaveAdjacentMeasuredPointOrders(first, current);
+        }
+
+        analysis.ConnectivityMode = usedAdjacentFallback
+            ? "adjacent_order_neighbor_set"
+            : "shared_point_neighbor_set";
+
+        analysis.Preview = BuildCombinePreview(items, 0, items.Count - 1, first);
+        return analysis;
     }
 
     private static List<DimensionItem> SelectCommonRepresentatives(
