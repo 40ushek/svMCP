@@ -17,7 +17,6 @@ internal sealed class DimensionReductionPolicy
     public bool EnableEquivalentSimpleReduction { get; set; } = true;
     public bool EnableCoverageReduction { get; set; } = true;
     public bool EnableRepresentativeSelection { get; set; } = true;
-    public bool AllowAdjacentMeasuredPointOrderCombineFallback { get; set; } = true;
     public double RepresentativePacketGapFactor { get; set; } = 1.0;
     public bool UseGeometryAwareRepresentativeSelection { get; set; }
     public DimensionRepresentativeSelectionMode RepresentativeSelectionMode { get; set; } =

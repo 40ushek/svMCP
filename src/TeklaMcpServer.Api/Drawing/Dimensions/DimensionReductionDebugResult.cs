@@ -40,4 +40,16 @@ internal sealed class DimensionRepresentativePacketDebugInfo
     public bool IsCombineCandidate { get; set; }
     public string CombineConnectivityMode { get; set; } = string.Empty;
     public List<string> BlockingReasons { get; } = [];
+    public DimensionCombinePreviewDebugInfo? CombinePreview { get; set; }
+}
+
+internal sealed class DimensionCombinePreviewDebugInfo
+{
+    public int BaseDimensionId { get; set; }
+    public List<int> DimensionIds { get; } = [];
+    public DrawingPointInfo StartPoint { get; set; } = new();
+    public DrawingPointInfo EndPoint { get; set; } = new();
+    public List<DrawingPointInfo> PointList { get; } = [];
+    public List<double> LengthList { get; } = [];
+    public double Distance { get; set; }
 }

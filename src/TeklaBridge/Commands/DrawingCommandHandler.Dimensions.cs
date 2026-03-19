@@ -256,9 +256,45 @@ internal sealed partial class DrawingCommandHandler
                 splitThreshold = type.GetProperty("SplitThreshold")?.GetValue(packet),
                 isCombineCandidate = type.GetProperty("IsCombineCandidate")?.GetValue(packet),
                 combineConnectivityMode = type.GetProperty("CombineConnectivityMode")?.GetValue(packet),
-                blockingReasons = (type.GetProperty("BlockingReasons")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray()
+                blockingReasons = (type.GetProperty("BlockingReasons")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                combinePreview = SerializeCombinePreview(type.GetProperty("CombinePreview")?.GetValue(packet))
             };
         });
+    }
+
+    private static object? SerializeCombinePreview(object? preview)
+    {
+        if (preview == null)
+            return null;
+
+        var type = preview.GetType();
+        var startPoint = type.GetProperty("StartPoint")?.GetValue(preview);
+        var endPoint = type.GetProperty("EndPoint")?.GetValue(preview);
+
+        return new
+        {
+            baseDimensionId = type.GetProperty("BaseDimensionId")?.GetValue(preview),
+            dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            startPoint = SerializePoint(startPoint),
+            endPoint = SerializePoint(endPoint),
+            pointList = (type.GetProperty("PointList")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().Select(SerializePoint).ToArray(),
+            lengthList = (type.GetProperty("LengthList")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            distance = type.GetProperty("Distance")?.GetValue(preview)
+        };
+    }
+
+    private static object? SerializePoint(object? point)
+    {
+        if (point == null)
+            return null;
+
+        var type = point.GetType();
+        return new
+        {
+            x = type.GetProperty("X")?.GetValue(point),
+            y = type.GetProperty("Y")?.GetValue(point),
+            order = type.GetProperty("Order")?.GetValue(point)
+        };
     }
 
     private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)

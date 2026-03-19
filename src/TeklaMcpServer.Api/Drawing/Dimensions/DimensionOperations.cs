@@ -7,21 +7,24 @@ internal static class DimensionOperations
 {
     public static List<DimensionGroup> EliminateRedundantItems(
         IReadOnlyList<DimensionGroup> groups,
-        DimensionReductionPolicy? policy = null)
+        DimensionReductionPolicy? policy = null,
+        DimensionCombinePolicy? combinePolicy = null)
     {
-        return EliminateRedundantItemsWithDebug(groups, policy).ReducedGroups;
+        return EliminateRedundantItemsWithDebug(groups, policy, combinePolicy).ReducedGroups;
     }
 
     public static DimensionReductionDebugResult EliminateRedundantItemsWithDebug(
         IReadOnlyList<DimensionGroup> groups,
-        DimensionReductionPolicy? policy = null)
+        DimensionReductionPolicy? policy = null,
+        DimensionCombinePolicy? combinePolicy = null)
     {
         policy ??= DimensionReductionPolicy.Default;
+        combinePolicy ??= DimensionCombinePolicy.Default;
         var result = new DimensionReductionDebugResult();
 
         foreach (var group in groups)
         {
-            var (reducedItems, itemDebug, packetDebug) = ReduceItems(group, policy);
+            var (reducedItems, itemDebug, packetDebug) = ReduceItems(group, policy, combinePolicy);
             if (reducedItems.Count == 0)
                 continue;
 
@@ -53,7 +56,8 @@ internal static class DimensionOperations
         List<DimensionReductionItemDebugInfo> ItemDebug,
         List<DimensionRepresentativePacketDebugInfo> PacketDebug) ReduceItems(
         DimensionGroup group,
-        DimensionReductionPolicy policy)
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy)
     {
         var items = group.DimensionList;
         if (items.Count <= 1)
@@ -116,7 +120,7 @@ internal static class DimensionOperations
 
         List<DimensionRepresentativePacketDebugInfo> packetDebug = [];
         var reduced = policy.EnableRepresentativeSelection
-            ? SelectCommonRepresentatives(group, deduplicated, policy, debugByItem, packetDebug)
+            ? SelectCommonRepresentatives(group, deduplicated, policy, combinePolicy, debugByItem, packetDebug)
             : deduplicated;
 
         return (
@@ -129,6 +133,7 @@ internal static class DimensionOperations
         DimensionGroup group,
         IReadOnlyList<DimensionItem> items,
         DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy,
         Dictionary<DimensionItem, DimensionReductionItemDebugInfo> debugByItem,
         List<DimensionRepresentativePacketDebugInfo> packetDebug)
     {
@@ -146,13 +151,13 @@ internal static class DimensionOperations
                 continue;
 
             selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy, packetIndex, debugByItem));
-            packetDebug.Add(CreatePacketDebug(group, items, packetStart, i - 1, packetIndex, policy, split));
+            packetDebug.Add(CreatePacketDebug(group, items, packetStart, i - 1, packetIndex, policy, combinePolicy, split));
             packetStart = i;
             packetIndex++;
         }
 
         selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy, packetIndex, debugByItem));
-        packetDebug.Add(CreatePacketDebug(group, items, packetStart, items.Count - 1, packetIndex, policy, splitInfo: null));
+        packetDebug.Add(CreatePacketDebug(group, items, packetStart, items.Count - 1, packetIndex, policy, combinePolicy, splitInfo: null));
         return selected;
     }
 
@@ -264,6 +269,7 @@ internal static class DimensionOperations
         int endIndex,
         int packetIndex,
         DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy,
         RepresentativePacketSplitInfo? splitInfo)
     {
         var selectionMode = ResolveRepresentativeSelectionMode(group, policy);
@@ -291,19 +297,22 @@ internal static class DimensionOperations
         for (var i = startIndex; i <= endIndex; i++)
             packet.DimensionIds.Add(items[i].DimensionId);
 
-        var combineAnalysis = AnalyzeCombineCandidate(items, startIndex, endIndex, policy);
+        var combineAnalysis = AnalyzeCombineCandidate(group, items, startIndex, endIndex, policy, combinePolicy);
         packet.IsCombineCandidate = combineAnalysis.BlockingReasons.Count == 0;
         packet.CombineConnectivityMode = combineAnalysis.ConnectivityMode;
         packet.BlockingReasons.AddRange(combineAnalysis.BlockingReasons);
+        packet.CombinePreview = combineAnalysis.Preview;
 
         return packet;
     }
 
     private static CombineCandidateAnalysis AnalyzeCombineCandidate(
+        DimensionGroup group,
         IReadOnlyList<DimensionItem> items,
         int startIndex,
         int endIndex,
-        DimensionReductionPolicy policy)
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy)
     {
         var analysis = new CombineCandidateAnalysis();
         var count = endIndex - startIndex + 1;
@@ -311,6 +320,13 @@ internal static class DimensionOperations
         {
             analysis.ConnectivityMode = "single_item_packet";
             analysis.BlockingReasons.Add("single_item_packet");
+            return analysis;
+        }
+
+        if (group.DomainDimensionType == DimensionType.Free && !combinePolicy.AllowFreeDimensionCombine)
+        {
+            analysis.ConnectivityMode = "free_dimension_blocked";
+            analysis.BlockingReasons.Add("free_dimension_combine_disabled");
             return analysis;
         }
 
@@ -349,6 +365,19 @@ internal static class DimensionOperations
             }
         }
 
+        if (combinePolicy.RequireSameSourceKind)
+        {
+            for (var i = startIndex + 1; i <= endIndex; i++)
+            {
+                if (items[i].SourceKind != first.SourceKind)
+                {
+                    analysis.ConnectivityMode = "different_source_kind";
+                    analysis.BlockingReasons.Add("different_source_kind");
+                    return analysis;
+                }
+            }
+        }
+
         var connectivity = AnalyzePacketMeasuredPointConnectivity(items, startIndex, endIndex, policy);
         analysis.ConnectivityMode = connectivity.Mode;
         if (!connectivity.IsConnected)
@@ -357,10 +386,95 @@ internal static class DimensionOperations
             return analysis;
         }
 
-        if (!connectivity.HasSharedPointChain && !policy.AllowAdjacentMeasuredPointOrderCombineFallback)
+        if (!connectivity.HasSharedPointChain && !combinePolicy.AllowAdjacentMeasuredPointOrderFallback)
             analysis.BlockingReasons.Add("requires_adjacent_order_fallback");
 
+        if (analysis.BlockingReasons.Count == 0)
+            analysis.Preview = BuildCombinePreview(items, startIndex, endIndex);
+
         return analysis;
+    }
+
+    private static DimensionCombinePreviewDebugInfo BuildCombinePreview(
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex)
+    {
+        var baseItem = items[startIndex];
+        var preview = new DimensionCombinePreviewDebugInfo
+        {
+            BaseDimensionId = baseItem.DimensionId,
+            Distance = baseItem.Distance
+        };
+
+        for (var i = startIndex; i <= endIndex; i++)
+            preview.DimensionIds.Add(items[i].DimensionId);
+
+        var direction = baseItem.Direction;
+        var orderedPoints = items
+            .Skip(startIndex)
+            .Take(endIndex - startIndex + 1)
+            .SelectMany(static item => item.PointList)
+            .GroupBy(static point => point.Order >= 0
+                ? $"o:{point.Order}"
+                : $"p:{System.Math.Round(point.X, 3)}:{System.Math.Round(point.Y, 3)}")
+            .Select(static group => group.First())
+            .ToList();
+
+        if (direction.HasValue)
+        {
+            orderedPoints = orderedPoints
+                .OrderBy(point => Project(point.X, point.Y, direction.Value.X, direction.Value.Y))
+                .ThenBy(static point => point.Order)
+                .ToList();
+        }
+        else
+        {
+            orderedPoints = orderedPoints
+                .OrderBy(static point => point.Order)
+                .ThenBy(static point => point.X)
+                .ThenBy(static point => point.Y)
+                .ToList();
+        }
+
+        if (orderedPoints.Count == 0)
+            return preview;
+
+        preview.PointList.AddRange(orderedPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        preview.StartPoint = new DrawingPointInfo
+        {
+            X = orderedPoints[0].X,
+            Y = orderedPoints[0].Y,
+            Order = orderedPoints[0].Order
+        };
+        var lastPointIndex = orderedPoints.Count - 1;
+        preview.EndPoint = new DrawingPointInfo
+        {
+            X = orderedPoints[lastPointIndex].X,
+            Y = orderedPoints[lastPointIndex].Y,
+            Order = orderedPoints[lastPointIndex].Order
+        };
+
+        var startX = orderedPoints[0].X;
+        var startY = orderedPoints[0].Y;
+        for (var i = 1; i < orderedPoints.Count; i++)
+        {
+            var point = orderedPoints[i];
+            var length = System.Math.Round(
+                System.Math.Sqrt(
+                    System.Math.Pow(point.X - startX, 2) +
+                    System.Math.Pow(point.Y - startY, 2)),
+                2);
+            preview.LengthList.Add(length);
+        }
+
+        return preview;
     }
 
     private static PacketConnectivityAnalysis AnalyzePacketMeasuredPointConnectivity(
@@ -574,6 +688,7 @@ internal static class DimensionOperations
     {
         public string ConnectivityMode { get; set; } = string.Empty;
         public List<string> BlockingReasons { get; } = [];
+        public DimensionCombinePreviewDebugInfo? Preview { get; set; }
     }
 
     private sealed class PacketConnectivityAnalysis
