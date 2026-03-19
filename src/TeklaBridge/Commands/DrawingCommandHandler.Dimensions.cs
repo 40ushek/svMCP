@@ -227,7 +227,8 @@ internal sealed partial class DrawingCommandHandler
             rawGroup = SerializeGroup(group.GetType().GetProperty("RawGroup")?.GetValue(group)),
             reducedGroup = SerializeGroup(group.GetType().GetProperty("ReducedGroup")?.GetValue(group)),
             reduction = SerializeReductionItems(group.GetType().GetProperty("Items")?.GetValue(group) as System.Collections.IEnumerable),
-            packets = SerializeRepresentativePackets(group.GetType().GetProperty("Packets")?.GetValue(group) as System.Collections.IEnumerable)
+            packets = SerializeRepresentativePackets(group.GetType().GetProperty("Packets")?.GetValue(group) as System.Collections.IEnumerable),
+            combineCandidates = SerializeCombineCandidates(group.GetType().GetProperty("CombineCandidates")?.GetValue(group) as System.Collections.IEnumerable)
         });
 
         WriteJson(new { groups = payload });
@@ -262,6 +263,25 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+    private static IEnumerable<object> SerializeCombineCandidates(System.Collections.IEnumerable? candidates)
+    {
+        if (candidates == null)
+            return [];
+
+        return candidates.Cast<object>().Select(candidate =>
+        {
+            var type = candidate.GetType();
+            return new
+            {
+                dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(candidate) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                isCombineCandidate = type.GetProperty("IsCombineCandidate")?.GetValue(candidate),
+                combineConnectivityMode = type.GetProperty("CombineConnectivityMode")?.GetValue(candidate),
+                blockingReasons = (type.GetProperty("BlockingReasons")?.GetValue(candidate) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                combinePreview = SerializeCombinePreview(type.GetProperty("CombinePreview")?.GetValue(candidate))
+            };
+        });
+    }
+
     private static object? SerializeCombinePreview(object? preview)
     {
         if (preview == null)
@@ -279,6 +299,7 @@ internal sealed partial class DrawingCommandHandler
             endPoint = SerializePoint(endPoint),
             pointList = (type.GetProperty("PointList")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().Select(SerializePoint).ToArray(),
             lengthList = (type.GetProperty("LengthList")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            realLengthList = (type.GetProperty("RealLengthList")?.GetValue(preview) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             distance = type.GetProperty("Distance")?.GetValue(preview)
         };
     }

@@ -854,6 +854,75 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(1, member.DimensionId);
     }
 
+    [Fact]
+    public void BuildGroupsWithReductionDebug_BlocksPacketCombineWhenSourceKindsDiffer()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5, DimensionSourceKind.Part);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 200, 100, 0, 200, 5, DimensionSourceKind.Grid);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 200, StartY = 0, EndX = 200, EndY = 40 };
+
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(
+            [first, second],
+            combinePolicy: new DimensionCombinePolicy
+            {
+                RequireSameSourceKind = true
+            });
+
+        var packet = Assert.Single(Assert.Single(debug.Groups).Packets);
+        Assert.False(packet.IsCombineCandidate);
+        Assert.Equal("different_source_kind", packet.CombineConnectivityMode);
+        Assert.Contains("different_source_kind", packet.BlockingReasons);
+        Assert.Null(packet.CombinePreview);
+    }
+
+    [Fact]
+    public void BuildGroupsWithReductionDebug_BlocksPacketCombineWhenDistanceDeltaExceedsTolerance()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 140, 1, 0, -1, 0, -1, 0, 100, 200, 100, 0, 200, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 140 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 200, StartY = 0, EndX = 200, EndY = 140 };
+
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(
+            [first, second],
+            combinePolicy: new DimensionCombinePolicy
+            {
+                DistanceTolerance = 50.0
+            });
+
+        var packet = Assert.Single(Assert.Single(debug.Groups).Packets);
+        Assert.False(packet.IsCombineCandidate);
+        Assert.Equal("different_reference_line_band", packet.CombineConnectivityMode);
+        Assert.Contains("different_reference_line_band", packet.BlockingReasons);
+        Assert.Null(packet.CombinePreview);
+    }
+
+    [Fact]
+    public void BuildGroupsWithReductionDebug_UsesRepresentativeAsCombinePreviewBase()
+    {
+        var first = CreateDimension(1, 10, "FrontView", "Relative", "horizontal", 40, 1, 0, -1, 0, -1, 0, 0, 100, 0, 0, 100, 5);
+        var second = CreateDimension(2, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 200, 100, 0, 200, 5);
+
+        first.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = 40 };
+        first.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineMain = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = 40 };
+        second.Segments[0].LeadLineSecond = new DrawingLineInfo { StartX = 200, StartY = 0, EndX = 200, EndY = 40 };
+
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug([first, second]);
+
+        var packet = Assert.Single(Assert.Single(debug.Groups).Packets);
+        Assert.True(packet.IsCombineCandidate);
+        Assert.NotNull(packet.CombinePreview);
+        Assert.Equal(packet.RepresentativeDimensionId, packet.CombinePreview!.BaseDimensionId);
+    }
+
     private static DrawingDimensionInfo CreateDimension(
         int id,
         int? viewId,

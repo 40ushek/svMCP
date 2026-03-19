@@ -24,7 +24,7 @@ internal static class DimensionOperations
 
         foreach (var group in groups)
         {
-            var (reducedItems, itemDebug, packetDebug) = ReduceItems(group, policy, combinePolicy);
+            var (reducedItems, itemDebug, packetDebug, combineCandidateDebug) = ReduceItems(group, policy, combinePolicy);
             if (reducedItems.Count == 0)
                 continue;
 
@@ -45,6 +45,7 @@ internal static class DimensionOperations
             };
             debugGroup.Items.AddRange(itemDebug);
             debugGroup.Packets.AddRange(packetDebug);
+            debugGroup.CombineCandidates.AddRange(combineCandidateDebug);
             result.Groups.Add(debugGroup);
         }
 
@@ -54,7 +55,8 @@ internal static class DimensionOperations
     private static (
         List<DimensionItem> ReducedItems,
         List<DimensionReductionItemDebugInfo> ItemDebug,
-        List<DimensionRepresentativePacketDebugInfo> PacketDebug) ReduceItems(
+        List<DimensionRepresentativePacketDebugInfo> PacketDebug,
+        List<DimensionCombineCandidateDebugInfo> CombineCandidateDebug) ReduceItems(
         DimensionGroup group,
         DimensionReductionPolicy policy,
         DimensionCombinePolicy combinePolicy)
@@ -70,6 +72,7 @@ internal static class DimensionOperations
                     Status = "kept",
                     Reason = "kept"
                 }).ToList(),
+                [],
                 []);
         }
 
@@ -117,6 +120,7 @@ internal static class DimensionOperations
             .OrderBy(static item => item.SortKey)
             .ThenBy(static item => item.DimensionId)
             .ToList();
+        var combineCandidateDebug = BuildCombineCandidates(group, deduplicated, policy, combinePolicy);
 
         List<DimensionRepresentativePacketDebugInfo> packetDebug = [];
         var reduced = policy.EnableRepresentativeSelection
@@ -126,7 +130,99 @@ internal static class DimensionOperations
         return (
             reduced,
             debugByItem.Values.OrderBy(static info => info.Item.SortKey).ThenBy(static info => info.Item.DimensionId).ToList(),
-            packetDebug);
+            packetDebug,
+            combineCandidateDebug);
+    }
+
+    private static List<DimensionCombineCandidateDebugInfo> BuildCombineCandidates(
+        DimensionGroup group,
+        IReadOnlyList<DimensionItem> items,
+        DimensionReductionPolicy policy,
+        DimensionCombinePolicy combinePolicy)
+    {
+        if (items.Count <= 1)
+            return [];
+
+        var candidates = new List<DimensionCombineCandidateDebugInfo>();
+        var visited = new bool[items.Count];
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (visited[i])
+                continue;
+
+            var clusterIndices = new List<int>();
+            var queue = new Queue<int>();
+            queue.Enqueue(i);
+            visited[i] = true;
+
+            while (queue.Count > 0)
+            {
+                var index = queue.Dequeue();
+                clusterIndices.Add(index);
+
+                for (var candidateIndex = 0; candidateIndex < items.Count; candidateIndex++)
+                {
+                    if (visited[candidateIndex])
+                        continue;
+
+                    if (!CanBelongToSameCombineCluster(items[index], items[candidateIndex], policy))
+                        continue;
+
+                    visited[candidateIndex] = true;
+                    queue.Enqueue(candidateIndex);
+                }
+            }
+
+            if (clusterIndices.Count <= 1)
+                continue;
+
+            clusterIndices.Sort();
+            var clusterItems = clusterIndices.Select(index => items[index]).ToList();
+            var baseItem = clusterItems[0];
+            var analysis = AnalyzeCombineCandidate(
+                group,
+                clusterItems,
+                0,
+                clusterItems.Count - 1,
+                policy,
+                combinePolicy,
+                baseItem);
+
+            var debug = new DimensionCombineCandidateDebugInfo
+            {
+                IsCombineCandidate = analysis.BlockingReasons.Count == 0,
+                CombineConnectivityMode = analysis.ConnectivityMode,
+                CombinePreview = analysis.Preview
+            };
+
+            foreach (var item in clusterItems)
+                debug.DimensionIds.Add(item.DimensionId);
+
+            debug.BlockingReasons.AddRange(analysis.BlockingReasons);
+            candidates.Add(debug);
+        }
+
+        return candidates;
+    }
+
+    private static bool CanBelongToSameCombineCluster(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionReductionPolicy policy)
+    {
+        var leftDirection = left.Direction;
+        var rightDirection = right.Direction;
+        if (!leftDirection.HasValue || !rightDirection.HasValue)
+            return false;
+
+        if (!AreParallel(leftDirection.Value, rightDirection.Value))
+            return false;
+
+        if (!AreOnSameMeasuredLine(left, right, policy))
+            return false;
+
+        return HaveSharedMeasuredPoint(left, right, policy) || HaveAdjacentMeasuredPointOrders(left, right);
     }
 
     private static List<DimensionItem> SelectCommonRepresentatives(
@@ -471,11 +567,28 @@ internal static class DimensionOperations
         for (var i = startIndex; i <= endIndex; i++)
             preview.DimensionIds.Add(items[i].DimensionId);
 
+        preview.RealLengthList.AddRange(baseItem.RealLengthList);
+
+        var previewPoints = baseItem.PointList
+            .Select(static point => new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
+            })
+            .ToList();
+
+        for (var i = startIndex; i <= endIndex; i++)
+        {
+            var item = items[i];
+            if (ReferenceEquals(item, baseItem))
+                continue;
+
+            AddDimStylePreviewPointsAndLengths(item, previewPoints, preview.RealLengthList);
+        }
+
         var direction = baseItem.Direction;
-        var orderedPoints = items
-            .Skip(startIndex)
-            .Take(endIndex - startIndex + 1)
-            .SelectMany(static item => item.PointList)
+        var orderedPoints = previewPoints
             .GroupBy(static point => point.Order >= 0
                 ? $"o:{point.Order}"
                 : $"p:{System.Math.Round(point.X, 3)}:{System.Math.Round(point.Y, 3)}")
@@ -536,6 +649,38 @@ internal static class DimensionOperations
         }
 
         return preview;
+    }
+
+    private static void AddDimStylePreviewPointsAndLengths(
+        DimensionItem item,
+        List<DrawingPointInfo> pointList,
+        List<double> realLengthList)
+    {
+        foreach (var point in item.PointList)
+        {
+            if (!ContainsPoint(pointList, point))
+            {
+                pointList.Add(new DrawingPointInfo
+                {
+                    X = point.X,
+                    Y = point.Y,
+                    Order = point.Order
+                });
+
+                if (item.RealLengthList.Count > 0)
+                    realLengthList.Add(item.RealLengthList[0]);
+            }
+        }
+    }
+
+    private static bool ContainsPoint(
+        IReadOnlyList<DrawingPointInfo> points,
+        DrawingPointInfo candidate,
+        double tolerance = 0.01)
+    {
+        return points.Any(point =>
+            System.Math.Abs(point.X - candidate.X) <= tolerance &&
+            System.Math.Abs(point.Y - candidate.Y) <= tolerance);
     }
 
     private static PacketConnectivityAnalysis AnalyzePacketMeasuredPointConnectivity(
@@ -604,6 +749,44 @@ internal static class DimensionOperations
         var leftOrders = new[] { left.StartPointOrder, left.EndPointOrder };
         var rightOrders = new[] { right.StartPointOrder, right.EndPointOrder };
         return leftOrders.Any(leftOrder => rightOrders.Any(rightOrder => System.Math.Abs(leftOrder - rightOrder) <= 1));
+    }
+
+    private static bool ItemsShareCommonLeadLineFamily(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionCombinePolicy policy)
+    {
+        return AreLeadLinesOnSameInfiniteLine(left.LeadLineMain, right.LeadLineMain, policy.LeadLineCollinearityTolerance) ||
+               AreLeadLinesOnSameInfiniteLine(left.LeadLineMain, right.LeadLineSecond, policy.LeadLineCollinearityTolerance) ||
+               AreLeadLinesOnSameInfiniteLine(left.LeadLineSecond, right.LeadLineMain, policy.LeadLineCollinearityTolerance) ||
+               AreLeadLinesOnSameInfiniteLine(left.LeadLineSecond, right.LeadLineSecond, policy.LeadLineCollinearityTolerance);
+    }
+
+    private static bool AreLeadLinesOnSameInfiniteLine(
+        DrawingLineInfo? originLine,
+        DrawingLineInfo? newLine,
+        double tolerance)
+    {
+        if (originLine == null || newLine == null)
+            return false;
+
+        if (!TeklaDrawingDimensionsApi.TryNormalizeDirection(
+                originLine.EndX - originLine.StartX,
+                originLine.EndY - originLine.StartY,
+                out var originDirection) ||
+            !TeklaDrawingDimensionsApi.TryNormalizeDirection(
+                newLine.EndX - newLine.StartX,
+                newLine.EndY - newLine.StartY,
+                out var newDirection))
+        {
+            return false;
+        }
+
+        if (!AreParallel(originDirection, newDirection))
+            return false;
+
+        return DistancePointFromInfiniteLine(newLine.StartX, newLine.StartY, originLine) <= tolerance &&
+               DistancePointFromInfiniteLine(newLine.EndX, newLine.EndY, originLine) <= tolerance;
     }
 
     private static bool Covers(
@@ -754,6 +937,20 @@ internal static class DimensionOperations
         var dx = leftX - rightX;
         var dy = leftY - rightY;
         return System.Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static double DistancePointFromInfiniteLine(
+        double pointX,
+        double pointY,
+        DrawingLineInfo line)
+    {
+        var dx = line.EndX - line.StartX;
+        var dy = line.EndY - line.StartY;
+        var length = System.Math.Sqrt((dx * dx) + (dy * dy));
+        if (length <= 1e-6)
+            return double.MaxValue;
+
+        return System.Math.Abs((dy * pointX) - (dx * pointY) + (line.EndX * line.StartY) - (line.EndY * line.StartX)) / length;
     }
 
     private static double? TryGetReferenceLineOffset(DimensionItem item, (double X, double Y) direction)

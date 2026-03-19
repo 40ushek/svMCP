@@ -14,6 +14,7 @@ internal sealed class DimensionGroupReductionDebugInfo
     public DimensionGroup ReducedGroup { get; set; } = new();
     public List<DimensionReductionItemDebugInfo> Items { get; } = [];
     public List<DimensionRepresentativePacketDebugInfo> Packets { get; } = [];
+    public List<DimensionCombineCandidateDebugInfo> CombineCandidates { get; } = [];
 }
 
 internal sealed class DimensionReductionItemDebugInfo
@@ -51,5 +52,15 @@ internal sealed class DimensionCombinePreviewDebugInfo
     public DrawingPointInfo EndPoint { get; set; } = new();
     public List<DrawingPointInfo> PointList { get; } = [];
     public List<double> LengthList { get; } = [];
+    public List<double> RealLengthList { get; } = [];
     public double Distance { get; set; }
+}
+
+internal sealed class DimensionCombineCandidateDebugInfo
+{
+    public List<int> DimensionIds { get; } = [];
+    public bool IsCombineCandidate { get; set; }
+    public string CombineConnectivityMode { get; set; } = string.Empty;
+    public List<string> BlockingReasons { get; } = [];
+    public DimensionCombinePreviewDebugInfo? CombinePreview { get; set; }
 }
