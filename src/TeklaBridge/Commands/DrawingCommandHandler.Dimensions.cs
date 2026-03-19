@@ -247,12 +247,15 @@ internal sealed partial class DrawingCommandHandler
                 packetIndex = type.GetProperty("PacketIndex")?.GetValue(packet),
                 startDimensionId = type.GetProperty("StartDimensionId")?.GetValue(packet),
                 endDimensionId = type.GetProperty("EndDimensionId")?.GetValue(packet),
+                dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
                 itemCount = type.GetProperty("ItemCount")?.GetValue(packet),
                 selectionMode = type.GetProperty("SelectionMode")?.GetValue(packet),
                 representativeDimensionId = type.GetProperty("RepresentativeDimensionId")?.GetValue(packet),
                 splitGapFromPreviousEndToCurrentStart = type.GetProperty("SplitGapFromPreviousEndToCurrentStart")?.GetValue(packet),
                 splitGapFromPreviousStartToCurrentEnd = type.GetProperty("SplitGapFromPreviousStartToCurrentEnd")?.GetValue(packet),
-                splitThreshold = type.GetProperty("SplitThreshold")?.GetValue(packet)
+                splitThreshold = type.GetProperty("SplitThreshold")?.GetValue(packet),
+                isCombineCandidate = type.GetProperty("IsCombineCandidate")?.GetValue(packet),
+                blockingReasons = (type.GetProperty("BlockingReasons")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray()
             };
         });
     }

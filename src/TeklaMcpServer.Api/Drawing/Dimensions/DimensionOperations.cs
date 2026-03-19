@@ -275,7 +275,7 @@ internal static class DimensionOperations
             _ => endIndex - ((count - 1) / 2)
         };
 
-        return new DimensionRepresentativePacketDebugInfo
+        var packet = new DimensionRepresentativePacketDebugInfo
         {
             PacketIndex = packetIndex,
             StartDimensionId = items[startIndex].DimensionId,
@@ -287,6 +287,108 @@ internal static class DimensionOperations
             SplitGapFromPreviousStartToCurrentEnd = splitInfo?.PreviousStartToCurrentEnd,
             SplitThreshold = splitInfo?.Threshold ?? (group.MaximumDistance * policy.RepresentativePacketGapFactor)
         };
+
+        for (var i = startIndex; i <= endIndex; i++)
+            packet.DimensionIds.Add(items[i].DimensionId);
+
+        var blockingReasons = GetCombineBlockingReasons(items, startIndex, endIndex, policy);
+        packet.IsCombineCandidate = blockingReasons.Count == 0;
+        packet.BlockingReasons.AddRange(blockingReasons);
+
+        return packet;
+    }
+
+    private static List<string> GetCombineBlockingReasons(
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex,
+        DimensionReductionPolicy policy)
+    {
+        var reasons = new List<string>();
+        var count = endIndex - startIndex + 1;
+        if (count <= 1)
+        {
+            reasons.Add("single_item_packet");
+            return reasons;
+        }
+
+        var first = items[startIndex];
+        var firstDirection = first.Direction;
+        if (!firstDirection.HasValue)
+        {
+            reasons.Add("missing_direction");
+            return reasons;
+        }
+
+        for (var i = startIndex + 1; i <= endIndex; i++)
+        {
+            var current = items[i];
+            var currentDirection = current.Direction;
+            if (!currentDirection.HasValue || !AreParallel(firstDirection.Value, currentDirection.Value))
+            {
+                reasons.Add("inconsistent_direction");
+                break;
+            }
+
+            if (current.TopDirection != 0 && first.TopDirection != 0 && current.TopDirection != first.TopDirection)
+            {
+                reasons.Add("different_top_direction");
+                break;
+            }
+
+            if (!AreOnSameMeasuredLine(first, current, policy))
+            {
+                reasons.Add("different_measured_line");
+                break;
+            }
+        }
+
+        if (!HasPacketMeasuredPointConnectivity(items, startIndex, endIndex, policy))
+            reasons.Add("no_shared_or_adjacent_measured_points");
+
+        return reasons;
+    }
+
+    private static bool HasPacketMeasuredPointConnectivity(
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex,
+        DimensionReductionPolicy policy)
+    {
+        for (var i = startIndex + 1; i <= endIndex; i++)
+        {
+            if (HaveSharedMeasuredPoint(items[i - 1], items[i], policy) ||
+                HaveAdjacentMeasuredPointOrders(items[i - 1], items[i]))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool HaveSharedMeasuredPoint(
+        DimensionItem left,
+        DimensionItem right,
+        DimensionReductionPolicy policy)
+    {
+        return (left.StartPointOrder >= 0 && (left.StartPointOrder == right.StartPointOrder || left.StartPointOrder == right.EndPointOrder)) ||
+               (left.EndPointOrder >= 0 && (left.EndPointOrder == right.StartPointOrder || left.EndPointOrder == right.EndPointOrder)) ||
+               left.PointList.Any(leftPoint => right.PointList.Any(rightPoint =>
+                   System.Math.Abs(leftPoint.X - rightPoint.X) <= policy.PositionTolerance &&
+                   System.Math.Abs(leftPoint.Y - rightPoint.Y) <= policy.PositionTolerance));
+    }
+
+    private static bool HaveAdjacentMeasuredPointOrders(DimensionItem left, DimensionItem right)
+    {
+        if (left.StartPointOrder < 0 || left.EndPointOrder < 0 || right.StartPointOrder < 0 || right.EndPointOrder < 0)
+            return false;
+
+        var leftOrders = new[] { left.StartPointOrder, left.EndPointOrder };
+        var rightOrders = new[] { right.StartPointOrder, right.EndPointOrder };
+        return leftOrders.Any(leftOrder => rightOrders.Any(rightOrder => System.Math.Abs(leftOrder - rightOrder) <= 1));
     }
 
     private static bool Covers(

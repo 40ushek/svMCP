@@ -78,6 +78,7 @@ Debug/validation helpers currently available:
 
 - `draw_dimension_text_boxes`
 - `get_dimension_text_placement_debug`
+- `get_dimension_groups_debug`
 
 These helpers are for live validation only. They do not define the long-term
 domain model.
@@ -91,6 +92,17 @@ Implemented in the current `src` code:
 - first `DimensionOperations`-style reduction step exists:
   - simple redundant items can be rejected when a more informative item in the
     same group already covers the same span
+- exact duplicate reduction for simple items exists
+- packet-based representative selection exists for nearby items inside one group
+- reduction debug now explains what happened to each item:
+  - raw group
+  - reduced group
+  - per-item decision and reason
+  - representative packets
+- packet debug now also exposes conservative combine-candidate analysis:
+  - packet members
+  - whether the packet is a potential combination candidate
+  - blocking reasons when it is not
 - actual Tekla dimension merging is still deferred
 
 ## Confirmed Findings
@@ -365,10 +377,20 @@ Current status:
 - current elimination is intentionally conservative:
   - simple items may be rejected when a more informative item in the same group
     already covers the same span
+- exact duplicate elimination for simple items is present
 - first representative-selection step is present:
   - nearby packets inside a group can now keep one representative item
   - current selection is still intentionally simple and policy-driven
-- controlled combination from `dim` is still pending
+- reduction debug now exposes:
+  - raw vs reduced groups
+  - per-item rejection reasons such as `covered`, `equivalent_simple` and
+    `representative_packet`
+  - representative packet structure and selection data
+- conservative combine-candidate analysis is present at packet level:
+  - candidate packets are detected
+  - blocking reasons are exposed
+  - no actual Tekla merge is performed yet
+- controlled combination from `dim` is still pending as a real action layer
 
 Done when:
 
@@ -423,8 +445,17 @@ The public response may still expose:
 - orientation
 - bounds
 - text debug info
+- raw vs reduced counts
 
 But those are projections, not the model itself.
+
+Current status:
+
+- `get_drawing_dimensions` is already projected from the domain model
+- the public response exposes raw vs reduced counts so reduction does not hide
+  how many dimensions and items existed before analysis
+- deep reduction transparency stays in `get_dimension_groups_debug`, not in the
+  main read path
 
 ### Phase 7: Text Geometry As A Separate Track
 
@@ -453,6 +484,10 @@ The redesign is on track when:
 - elimination is a separate operation on top of groups
 - merge stays a separate operation on top of reduced groups
 - grouping and elimination rules are policy-driven rather than hard-coded
+- debug can explain why an item was kept, rejected or selected as a packet
+  representative
+- packet-level combine-candidate analysis is visible before any real merge
+  action exists
 
 The redesign is ready to expose further arrange functionality when:
 

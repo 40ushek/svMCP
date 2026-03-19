@@ -30,10 +30,13 @@ internal sealed class DimensionRepresentativePacketDebugInfo
     public int PacketIndex { get; set; }
     public int StartDimensionId { get; set; }
     public int EndDimensionId { get; set; }
+    public List<int> DimensionIds { get; } = [];
     public int ItemCount { get; set; }
     public string SelectionMode { get; set; } = string.Empty;
     public int RepresentativeDimensionId { get; set; }
     public double? SplitGapFromPreviousEndToCurrentStart { get; set; }
     public double? SplitGapFromPreviousStartToCurrentEnd { get; set; }
     public double SplitThreshold { get; set; }
+    public bool IsCombineCandidate { get; set; }
+    public List<string> BlockingReasons { get; } = [];
 }
