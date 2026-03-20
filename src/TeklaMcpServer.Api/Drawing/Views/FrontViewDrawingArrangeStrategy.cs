@@ -450,39 +450,34 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied,
             planned);
 
-        if (topSections.Count > 0)
-        {
-            TryPlaceHorizontalSectionStack(
-                context,
-                topSections,
-                frontRect,
-                top != null ? topRect : frontRect,
-                RelativePlacement.Top,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                gap,
-                occupied,
-                planned);
-        }
-
-        if (bottomSections.Count > 0)
-        {
-            TryPlaceHorizontalSectionStack(
-                context,
-                bottomSections,
-                frontRect,
-                bottom != null ? bottomRect : frontRect,
-                RelativePlacement.Bottom,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                gap,
-                occupied,
-                planned);
-        }
+        TryPlaceHorizontalSectionStackWithFallback(
+            context,
+            topSections,
+            frontRect,
+            top != null ? topRect : frontRect,
+            bottom != null ? bottomRect : frontRect,
+            RelativePlacement.Top,
+            freeArea.minX,
+            freeArea.maxX,
+            freeArea.minY,
+            freeArea.maxY,
+            gap,
+            occupied,
+            planned);
+        TryPlaceHorizontalSectionStackWithFallback(
+            context,
+            bottomSections,
+            frontRect,
+            bottom != null ? bottomRect : frontRect,
+            top != null ? topRect : frontRect,
+            RelativePlacement.Bottom,
+            freeArea.minX,
+            freeArea.maxX,
+            freeArea.minY,
+            freeArea.maxY,
+            gap,
+            occupied,
+            planned);
 
         // Secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
@@ -623,39 +618,34 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied,
             planned);
 
-        if (topSections.Count > 0)
-        {
-            TryPlaceHorizontalSectionStack(
-                context,
-                topSections,
-                frontRect,
-                topPlaced ? topRect : frontRect,
-                RelativePlacement.Top,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
-                context.Gap,
-                occupied,
-                planned);
-        }
-
-        if (bottomSections.Count > 0)
-        {
-            TryPlaceHorizontalSectionStack(
-                context,
-                bottomSections,
-                frontRect,
-                bottomPlaced ? bottomRect : frontRect,
-                RelativePlacement.Bottom,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
-                context.Gap,
-                occupied,
-                planned);
-        }
+        TryPlaceHorizontalSectionStackWithFallback(
+            context,
+            topSections,
+            frontRect,
+            topPlaced ? topRect : frontRect,
+            bottomPlaced ? bottomRect : frontRect,
+            RelativePlacement.Top,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied,
+            planned);
+        TryPlaceHorizontalSectionStackWithFallback(
+            context,
+            bottomSections,
+            frontRect,
+            bottomPlaced ? bottomRect : frontRect,
+            topPlaced ? topRect : frontRect,
+            RelativePlacement.Bottom,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied,
+            planned);
 
         // Deferred secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
@@ -683,7 +673,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         return views.Sum(view => DrawingArrangeContextSizing.GetWidth(context, view)) + (views.Count * gap);
     }
 
-    private static void TryPlaceVerticalSectionStack(
+    private static bool TryPlaceVerticalSectionStack(
         DrawingArrangeContext context,
         IReadOnlyList<View> sectionViews,
         ReservedRect frontRect,
@@ -698,7 +688,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         List<(View View, double X, double Y)> planned)
     {
         if (sectionViews.Count == 0)
-            return;
+            return true;
 
         var orderedSections = sectionViews
             .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
@@ -713,7 +703,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
             var minY = CenterY(frontRect) - height / 2.0;
             if (minY < freeMinY || minY + height > freeMaxY)
-                return;
+                return false;
 
             ReservedRect rect;
             if (zone == RelativePlacement.Right)
@@ -728,7 +718,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
-                return;
+                return false;
 
             proposed.Add((section, rect));
             currentAnchor = rect;
@@ -739,9 +729,11 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
             occupied.Add(item.Rect);
         }
+
+        return true;
     }
 
-    private static void TryPlaceHorizontalSectionStack(
+    private static bool TryPlaceHorizontalSectionStack(
         DrawingArrangeContext context,
         IReadOnlyList<View> horizontalSections,
         ReservedRect frontRect,
@@ -756,7 +748,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         List<(View View, double X, double Y)> planned)
     {
         if (horizontalSections.Count == 0)
-            return;
+            return true;
 
         var orderedSections = horizontalSections
             .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
@@ -771,7 +763,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
             var minX = CenterX(frontRect) - width / 2.0;
             if (minX < freeMinX || minX + width > freeMaxX)
-                return;
+                return false;
 
             ReservedRect rect;
             if (zone == RelativePlacement.Top)
@@ -786,7 +778,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
-                return;
+                return false;
 
             proposed.Add((section, rect));
             currentAnchor = rect;
@@ -797,6 +789,60 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
             occupied.Add(item.Rect);
         }
+
+        return true;
+    }
+
+    private static bool TryPlaceHorizontalSectionStackWithFallback(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<(View View, double X, double Y)> planned)
+    {
+        if (sectionViews.Count == 0)
+            return true;
+
+        if (TryPlaceHorizontalSectionStack(
+                context,
+                sectionViews,
+                frontRect,
+                preferredAnchorRect,
+                preferredZone,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                gap,
+                occupied,
+                planned))
+            return true;
+
+        var fallbackZone = preferredZone == RelativePlacement.Top
+            ? RelativePlacement.Bottom
+            : RelativePlacement.Top;
+
+        return TryPlaceHorizontalSectionStack(
+            context,
+            sectionViews,
+            frontRect,
+            fallbackAnchorRect,
+            fallbackZone,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            gap,
+            occupied,
+            planned);
     }
 
     /// <summary>
