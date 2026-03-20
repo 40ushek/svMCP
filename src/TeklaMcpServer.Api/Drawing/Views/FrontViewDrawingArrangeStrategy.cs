@@ -3,6 +3,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Diagnostics;
 
@@ -14,6 +15,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
     private readonly GaDrawingMaxRectsArrangeStrategy _maxRectsFallback = new();
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
+    private readonly CutOrientationResolver _cutOrientationResolver = new(new Model());
 
     public bool CanArrange(DrawingArrangeContext context)
     {
@@ -259,13 +261,32 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
         var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
         var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
-        var primarySection = context.Views
+        var sections = context.Views
             .Where(v => v.ViewType == View.ViewTypes.SectionView)
+            .ToList();
+        var sectionOrientations = sections.ToDictionary(
+            section => section.GetIdentifier().ID,
+            section => _cutOrientationResolver.Resolve(context.Drawing, baseView, section));
+        var primarySection = sections
+            .Where(section => sectionOrientations[section.GetIdentifier().ID].Orientation == CutOrientation.Vertical)
             .OrderByDescending(v => v.Width * v.Height)
-            .FirstOrDefault();
+            .FirstOrDefault()
+            ?? sections.OrderByDescending(v => v.Width * v.Height).FirstOrDefault();
         var secondaryViews = context.Views
             .Where(v => v != baseView && v != top && v != bottom && v != back && v != primarySection)
             .ToList();
+
+        if (sections.Count > 0)
+        {
+            var horizontalSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Horizontal);
+            var verticalSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Vertical);
+            var unknownSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Unknown);
+            PerfTrace.Write(
+                "api-view",
+                "cut_orientation_summary",
+                0,
+                $"sections={sections.Count} horizontal={horizontalSections} vertical={verticalSections} unknown={unknownSections} primary={(primarySection?.GetIdentifier().ID ?? 0)}");
+        }
 
         var scale = GetCurrentScale(context);
         if (!ShouldPreferRelaxedLayout(scale))
