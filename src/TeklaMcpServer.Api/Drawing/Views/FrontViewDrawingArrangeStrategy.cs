@@ -423,11 +423,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         }
 
         var leftAnchor = back != null ? backRect : frontRect;
-        TryPlaceVerticalSectionStack(
+        TryPlaceVerticalSectionStackWithFallback(
             context,
             leftSections,
             frontRect,
             leftAnchor,
+            frontRect,
             RelativePlacement.Left,
             freeArea.minX,
             freeArea.maxX,
@@ -436,11 +437,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             gap,
             occupied,
             planned);
-        TryPlaceVerticalSectionStack(
+        TryPlaceVerticalSectionStackWithFallback(
             context,
             rightSections,
             frontRect,
             frontRect,
+            leftAnchor,
             RelativePlacement.Right,
             freeArea.minX,
             freeArea.maxX,
@@ -591,11 +593,13 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
         }
 
-        TryPlaceVerticalSectionStack(
+        var leftPlacedAnchor = backPlaced ? backRect : frontRect;
+        TryPlaceVerticalSectionStackWithFallback(
             context,
             leftSections,
             frontRect,
-            backPlaced ? backRect : frontRect,
+            leftPlacedAnchor,
+            frontRect,
             RelativePlacement.Left,
             freeMinX,
             freeMaxX,
@@ -604,11 +608,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             context.Gap,
             occupied,
             planned);
-        TryPlaceVerticalSectionStack(
+        TryPlaceVerticalSectionStackWithFallback(
             context,
             rightSections,
             frontRect,
             frontRect,
+            leftPlacedAnchor,
             RelativePlacement.Right,
             freeMinX,
             freeMaxX,
@@ -831,6 +836,58 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             : RelativePlacement.Top;
 
         return TryPlaceHorizontalSectionStack(
+            context,
+            sectionViews,
+            frontRect,
+            fallbackAnchorRect,
+            fallbackZone,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            gap,
+            occupied,
+            planned);
+    }
+
+    private static bool TryPlaceVerticalSectionStackWithFallback(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<(View View, double X, double Y)> planned)
+    {
+        if (sectionViews.Count == 0)
+            return true;
+
+        if (TryPlaceVerticalSectionStack(
+                context,
+                sectionViews,
+                frontRect,
+                preferredAnchorRect,
+                preferredZone,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                gap,
+                occupied,
+                planned))
+            return true;
+
+        var fallbackZone = preferredZone == RelativePlacement.Left
+            ? RelativePlacement.Right
+            : RelativePlacement.Left;
+
+        return TryPlaceVerticalSectionStack(
             context,
             sectionViews,
             frontRect,
