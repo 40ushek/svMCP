@@ -124,21 +124,51 @@
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
 - **Шаблонные объекты (штамп, таблицы) — ✅ РАБОТАЕТ через `PresentationConnection` + `LayoutManager.CloseEditor()`:**
 
-  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона, но через internal API работает следующая цепочка в `DrawingReservedAreaReader.ReadLayoutTableGeometries()`:
-  1. `TableLayout.GetCurrentTables()` → список `tableId` на текущем чертеже
-  2. `new PresentationConnection()` → побочный эффект: Tekla открывает Layout Editor (чтобы отрисовать таблицы)
-  3. `connection.Service.GetObjectPresentation(tableId)` → `Segment` с примитивами рендеринга → `TryGetSegmentBounds()` → точный bbox таблицы включая динамическую высоту (parts list)
-  4. `LayoutManager.CloseEditor()` в `finally` → редактор закрывается автоматически, пользователь не видит мигания
+  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона, но через internal API работает следующая цепочка в `DrawingReservedAreaReader.ReadLayoutInfo()`:
+  1. `LayoutManager.OpenEditor()` → открывает Layout Editor для чтения метаданных
+  2. `TableLayout.GetMarginsAndSpaces()` → реальные отступы листа
+  3. `TableLayout.GetCurrentTables()` → список `tableId` на текущем чертеже
+  4. `LayoutManager.CloseEditor()` → **обязательно** закрыть ДО создания `PresentationConnection`
+  5. `new PresentationConnection()` → открывает Layout Editor сам как побочный эффект
+  6. `connection.Service.GetObjectPresentation(tableId)` → `Segment` с примитивами рендеринга → `TryGetSegmentBounds()` → точный bbox таблицы включая динамическую высоту (parts list)
+  7. `LayoutManager.CloseEditor()` в `finally` → редактор закрывается, пользователь не видит мигания
 
   **Результат**: `fit_views_to_sheet` получает реальные reserved areas таблиц и не размещает виды поверх штампа/списка деталей.
+
+  **⚠️ Критически важно: двухфазная архитектура `ReadLayoutInfo()`**
+
+  `LayoutManager.OpenEditor()` и `new PresentationConnection()` **не могут** работать в одном блоке — `PresentationConnection` сам открывает Layout Editor как побочный эффект. Если редактор уже открыт нашим кодом, `PresentationConnection` бросает `"Unable to connect to TeklaStructures process"`.
+
+  Правильная структура:
+  ```
+  // Фаза 1: метаданные (редактор открыт/закрыт явно)
+  LayoutManager.OpenEditor()
+  try { GetMarginsAndSpaces() + GetCurrentTables() }
+  finally { LayoutManager.CloseEditor() }   // ← закрыть ДО фазы 2!
+
+  // Фаза 2: геометрия (редактор открывается внутри PresentationConnection)
+  try { new PresentationConnection() → GetObjectPresentation() }
+  finally { LayoutManager.CloseEditor() }
+  ```
+
+  **⚠️ Деплой: зависимость `Tekla.Structures.GrpcContracts.dll`**
+
+  `PresentationConnection` (из `DrawingPresentationModelInterface.dll`) требует `Tekla.Structures.GrpcContracts.dll` во время загрузки. Эта DLL **не входит** в стандартные зависимости Tekla NuGet-пакетов и не копируется автоматически.
+
+  - Источник: `C:\TeklaStructures\2025.0\bin\Tekla.Structures.GrpcContracts.dll`
+  - Должна лежать рядом с `TeklaBridge.exe` в папке расширений
+  - Симптом отсутствия: `FileNotFoundException: Tekla.Structures.GrpcContracts` при первом вызове `PresentationConnection`
+  - При обновлении TeklaBridge — проверить что этот файл присутствует в деплое
 
   **Ключевые находки по API таблиц:**
   - `LayoutTable.OverlapVithViews` — если `true`, таблица не создаёт reserved area (виды могут перекрывать декоративные элементы углов и зон)
   - Размеры таблицы **не хранятся** в `LayoutTable` — нужно читать из `Segment.Primitives[0/2]` (canvas-маркеры, паттерн из `QRpresentation.cs`): `Primitives[0]` = `LinePrimitive` с min-corner, `Primitives[2]` = `LinePrimitive` с max-corner. Это даёт точные boundaries без накопления всех примитивов.
   - Marker-based path (`Segment.Primitives[0/2]`) считается каноническим контрактом svMCP для table bounds и не должен подменяться общей аккумуляцией примитивов по умолчанию.
-  - `TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right)` — реальные отступы листа (на A3 = 10мм по умолчанию)
+  - `TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right)` — реальные отступы листа (на A3 = 10мм по умолчанию). Использовать `Math.Min` — метод возвращает и отступы краёв, и spacing между таблицами (spacing может быть 100+ мм), `Math.Max` дал бы неверно большой отступ.
   - `LayoutManager.GetDrawingFrames()` — фреймы листа для складок/рамки, не прямоугольники таблиц
   - Примитивы шаблона (`GetObjectPresentation`) возвращаются в полных координатах шаблона (до 722мм для A0-шаблона). На A3 canvas-маркеры дают правильные границы видимой части.
+  - `GetCurrentTables()` возвращает IDs таблиц текущего чертежа; новый чертёж → другие IDs (переменные, не константы)
+  - `tableId` из `GetCurrentTables()` — это не ID объекта в модели, а runtime ID шаблонного объекта для текущего сеанса Layout Editor
 
 ---
 
