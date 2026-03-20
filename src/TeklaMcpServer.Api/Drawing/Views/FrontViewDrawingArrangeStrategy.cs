@@ -16,7 +16,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
 
     public bool CanArrange(DrawingArrangeContext context)
-        => context.Views.Any(v => v.ViewType == View.ViewTypes.FrontView);
+        => BaseViewSelection.Select(context.Views).View != null;
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
@@ -245,7 +245,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     {
         planned = new List<(View View, double X, double Y)>();
 
-        var front = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.FrontView);
+        var baseViewSelection = BaseViewSelection.Select(context.Views);
+        var front = baseViewSelection.View;
         if (front == null)
             return false;
 
