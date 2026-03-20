@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -91,6 +92,14 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var view in views.Where(v => v.ViewType == View.ViewTypes.SectionView))
         {
             var placementSide = resolver.Resolve(drawing, baseView, view);
+            var hasCoordinateSystems = resolver.TryGetDebugCoordinateSystems(
+                drawing,
+                baseView,
+                view,
+                out var referenceCoordinateSystem,
+                out var viewCoordinateSystem,
+                out _,
+                out _);
             result.Sections.Add(new SectionPlacementSideInfo
             {
                 Id = view.GetIdentifier().ID,
@@ -100,10 +109,26 @@ public sealed partial class TeklaDrawingViewApi
                 IsFallback = placementSide.IsFallback,
                 Scale = view.Attributes.Scale,
                 Width = view.Width,
-                Height = view.Height
+                Height = view.Height,
+                ReferenceAxisX = hasCoordinateSystems ? ToArray(referenceCoordinateSystem.AxisX) : [],
+                ReferenceAxisY = hasCoordinateSystems ? ToArray(referenceCoordinateSystem.AxisY) : [],
+                ViewAxisX = hasCoordinateSystems ? ToArray(viewCoordinateSystem.AxisX) : [],
+                ViewAxisY = hasCoordinateSystems ? ToArray(viewCoordinateSystem.AxisY) : [],
+                ViewNormal = hasCoordinateSystems ? ToArray(TryGetNormal(viewCoordinateSystem)) : []
             });
         }
 
         return result;
+    }
+
+    private static double[] ToArray(Vector? vector)
+        => vector == null ? [] : [vector.X, vector.Y, vector.Z];
+
+    private static Vector? TryGetNormal(CoordinateSystem coordinateSystem)
+    {
+        if (coordinateSystem?.AxisX == null || coordinateSystem.AxisY == null)
+            return null;
+
+        return coordinateSystem.AxisX.Cross(coordinateSystem.AxisY);
     }
 }

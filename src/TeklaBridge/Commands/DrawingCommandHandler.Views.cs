@@ -65,7 +65,12 @@ internal sealed partial class DrawingCommandHandler
                 isFallback = section.IsFallback,
                 scale = section.Scale,
                 width = section.Width,
-                height = section.Height
+                height = section.Height,
+                referenceAxisX = section.ReferenceAxisX,
+                referenceAxisY = section.ReferenceAxisY,
+                viewAxisX = section.ViewAxisX,
+                viewAxisY = section.ViewAxisY,
+                viewNormal = section.ViewNormal
             })
         });
         return true;

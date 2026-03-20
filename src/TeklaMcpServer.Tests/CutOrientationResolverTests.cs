@@ -7,14 +7,14 @@ namespace TeklaMcpServer.Tests;
 public sealed class SectionPlacementSideResolverTests
 {
     [Fact]
-    public void ResolveFromCoordinateSystems_ReturnsTopWhenViewNormalMatchesReferenceZ()
+    public void ResolveFromCoordinateSystems_ReturnsTopWhenViewNormalMatchesReferenceY()
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisY: new Vector(0, 0, 1));
         var topLikeView = CreateCoordinateSystem(
-            axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisX: new Vector(-1, 0, 0),
+            axisY: new Vector(0, -1, 0));
 
         var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, topLikeView);
 
@@ -22,11 +22,11 @@ public sealed class SectionPlacementSideResolverTests
     }
 
     [Fact]
-    public void ResolveFromCoordinateSystems_ReturnsBottomWhenViewNormalOpposesReferenceZ()
+    public void ResolveFromCoordinateSystems_ReturnsBottomWhenViewNormalOpposesReferenceY()
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisY: new Vector(0, 0, 1));
         var bottomLikeView = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
             axisY: new Vector(0, -1, 0));
@@ -41,9 +41,9 @@ public sealed class SectionPlacementSideResolverTests
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisY: new Vector(0, 0, 1));
         var rightLikeView = CreateCoordinateSystem(
-            axisX: new Vector(0, 1, 0),
+            axisX: new Vector(0, -1, 0),
             axisY: new Vector(0, 0, 1));
 
         var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, rightLikeView);
@@ -56,10 +56,10 @@ public sealed class SectionPlacementSideResolverTests
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisY: new Vector(0, 0, 1));
         var leftLikeView = CreateCoordinateSystem(
-            axisX: new Vector(0, 0, 1),
-            axisY: new Vector(0, 1, 0));
+            axisX: new Vector(0, 1, 0),
+            axisY: new Vector(0, 0, 1));
 
         var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, leftLikeView);
 
@@ -71,7 +71,7 @@ public sealed class SectionPlacementSideResolverTests
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
-            axisY: new Vector(0, 1, 0));
+            axisY: new Vector(0, 0, 1));
         var skewedView = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
             axisY: new Vector(0, 1, 1));

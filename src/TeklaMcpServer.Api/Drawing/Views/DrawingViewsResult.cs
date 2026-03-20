@@ -31,6 +31,11 @@ public sealed class SectionPlacementSideInfo
     public double Scale { get; set; }
     public double Width { get; set; }
     public double Height { get; set; }
+    public double[] ReferenceAxisX { get; set; } = [];
+    public double[] ReferenceAxisY { get; set; } = [];
+    public double[] ViewAxisX { get; set; } = [];
+    public double[] ViewAxisY { get; set; } = [];
+    public double[] ViewNormal { get; set; } = [];
 }
 
 public sealed class MoveViewResult

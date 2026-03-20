@@ -55,11 +55,33 @@ internal sealed class SectionPlacementSideResolver
         };
     }
 
+    internal bool TryGetDebugCoordinateSystems(
+        Tekla.Structures.Drawing.Drawing drawing,
+        View baseView,
+        View sectionView,
+        out CoordinateSystem reference,
+        out CoordinateSystem view,
+        out string referenceReason,
+        out string viewReason)
+    {
+        reference = null!;
+        view = null!;
+        referenceReason = string.Empty;
+        viewReason = string.Empty;
+
+        if (!TryGetReferenceCoordinateSystem(drawing, baseView, out reference, out referenceReason))
+            return false;
+
+        if (!TryGetViewCoordinateSystem(sectionView, out view, out viewReason))
+            return false;
+
+        return true;
+    }
+
     internal static SectionPlacementSide ResolveFromCoordinateSystems(CoordinateSystem reference, CoordinateSystem view)
     {
-        var referenceZ = Normalize(TryCross(reference.AxisX, reference.AxisY));
         var viewZ = Normalize(TryCross(view.AxisX, view.AxisY));
-        if (referenceZ == null || viewZ == null)
+        if (viewZ == null)
             return SectionPlacementSide.Unknown;
 
         var referenceX = Normalize(reference.AxisX);
@@ -67,17 +89,21 @@ internal sealed class SectionPlacementSideResolver
         if (referenceX == null || referenceY == null)
             return SectionPlacementSide.Unknown;
 
+        var alignedWithReferenceX = Vector.Dot(viewZ, referenceX);
+        if (Math.Abs(alignedWithReferenceX) >= AxisAlignmentThreshold)
+            return alignedWithReferenceX >= 0 ? SectionPlacementSide.Right : SectionPlacementSide.Left;
+
+        var alignedWithReferenceY = Vector.Dot(viewZ, referenceY);
+        if (Math.Abs(alignedWithReferenceY) >= AxisAlignmentThreshold)
+            return alignedWithReferenceY >= 0 ? SectionPlacementSide.Top : SectionPlacementSide.Bottom;
+
+        var referenceZ = Normalize(TryCross(reference.AxisX, reference.AxisY));
+        if (referenceZ == null)
+            return SectionPlacementSide.Unknown;
+
         var alignedWithReferenceZ = Vector.Dot(viewZ, referenceZ);
         if (Math.Abs(alignedWithReferenceZ) >= AxisAlignmentThreshold)
             return alignedWithReferenceZ >= 0 ? SectionPlacementSide.Top : SectionPlacementSide.Bottom;
-
-        var alignedWithReferenceX = Vector.Dot(viewZ, referenceX);
-        var alignedWithReferenceY = Vector.Dot(viewZ, referenceY);
-        var dominantSideAlignment = Math.Abs(alignedWithReferenceX) >= Math.Abs(alignedWithReferenceY)
-            ? alignedWithReferenceX
-            : alignedWithReferenceY;
-        if (Math.Abs(dominantSideAlignment) >= AxisAlignmentThreshold)
-            return dominantSideAlignment >= 0 ? SectionPlacementSide.Right : SectionPlacementSide.Left;
 
         return SectionPlacementSide.Unknown;
     }
