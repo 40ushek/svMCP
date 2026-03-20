@@ -20,18 +20,95 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
-        var plan   = TryCreatePlan(context, out _);
-        var maxr   = !plan && _maxRectsFallback.EstimateFit(context, frames);
-        var shelf  = !plan && !maxr && context.ReservedAreas.Count == 0 && _fallback.EstimateFit(context, frames);
-        return plan || maxr || shelf;
+        if (TryCreatePlan(context, out var planned))
+        {
+            // Plan succeeded, but it may leave some views unplanned.
+            // EstimateFit must return true only when ALL views can be placed.
+            var plannedIds = new System.Collections.Generic.HashSet<int>(
+                planned.Select(p => p.View.GetIdentifier().ID));
+            var unplannedViews = context.Views
+                .Where(v => !plannedIds.Contains(v.GetIdentifier().ID))
+                .ToList();
+
+            if (unplannedViews.Count == 0)
+                return true;
+
+            // Check if unplanned views can fit in the space left around anchors.
+            var anchorRects = planned.Select(p =>
+            {
+                var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
+                var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
+                return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+            }).ToList();
+            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
+            extendedReserved.AddRange(anchorRects);
+            var unplannedCtx = new DrawingArrangeContext(
+                context.Drawing, unplannedViews,
+                context.SheetWidth, context.SheetHeight,
+                context.Margin, context.Gap,
+                extendedReserved, context.EffectiveFrameSizes);
+            var unplannedFrames = unplannedViews
+                .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
+                .ToList();
+            return _maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames);
+        }
+
+        var maxr  = _maxRectsFallback.EstimateFit(context, frames);
+        var shelf = !maxr && context.ReservedAreas.Count == 0 && _fallback.EstimateFit(context, frames);
+        return maxr || shelf;
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)
     {
         if (TryCreatePlan(context, out var planned))
         {
+            var result = ApplyPlan(planned);
+
+            // If the plan only placed anchor views (FrontView, TopView, primary section etc.),
+            // run MaxRects for any remaining unplanned views, treating the anchor placements
+            // as additional blocked areas.  This keeps FrontView/TopView at their correct
+            // projection-aware positions while still placing secondary sections on the sheet.
+            var plannedIds = new System.Collections.Generic.HashSet<int>(
+                planned.Select(p => p.View.GetIdentifier().ID));
+            var unplanned = context.Views
+                .Where(v => !plannedIds.Contains(v.GetIdentifier().ID))
+                .ToList();
+
+            if (unplanned.Count > 0)
+            {
+                var anchorRects = planned.Select(p =>
+                {
+                    var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
+                    var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
+                    return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+                }).ToList();
+
+                var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
+                extendedReserved.AddRange(anchorRects);
+
+                var unplannedCtx = new DrawingArrangeContext(
+                    context.Drawing, unplanned,
+                    context.SheetWidth, context.SheetHeight,
+                    context.Margin, context.Gap,
+                    extendedReserved, context.EffectiveFrameSizes);
+
+                PerfTrace.Write("api-view", "front_arrange_plan", 0,
+                    $"mode=anchor-then-maxrects anchors={planned.Count} remaining={unplanned.Count}");
+                var unplannedFrames = unplanned
+                    .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
+                    .ToList();
+                if (_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
+                {
+                    var unplannedArranged = _maxRectsFallback.Arrange(unplannedCtx);
+                    return result.Concat(unplannedArranged).ToList();
+                }
+                // Sections don't fit around anchors — keep anchors only, leave sections in place.
+                PerfTrace.Write("api-view", "front_arrange_plan", 0, "mode=anchor-only sections-unfit");
+                return result;
+            }
+
             PerfTrace.Write("api-view", "front_arrange_plan", 0, $"mode=custom views={planned.Count}");
-            return ApplyPlan(planned);
+            return result;
         }
 
         var frames = context.Views.Select(v => (DrawingArrangeContextSizing.GetWidth(context, v), DrawingArrangeContextSizing.GetHeight(context, v))).ToList();
@@ -310,7 +387,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied.Add(rect);
         }
 
-        return TryPackSecondaryViews(context, secondaryViews, occupied, planned);
+        // Secondary views left unplanned — Arrange() handles them via MaxRects.
+        return true;
     }
 
     private bool TryPlanRelaxedLayout(
@@ -330,20 +408,32 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var frontWidth = DrawingArrangeContextSizing.GetWidth(context, front);
         var frontHeight = DrawingArrangeContextSizing.GetHeight(context, front);
 
-        // Try to reserve right space for section view before placing front.
-        // Without this, front occupies the right side and the section ends up packed to the
-        // left edge (outside the sheet boundary).
+        // Try placing FrontView with progressively relaxed zone constraints.
+        // Prefer positions that leave room for TopView above and primary section to the right.
+        // Cascade: (top+section reserved) → (top reserved) → (section reserved) → (full zone).
         var relaxedSectionW = primarySection != null ? DrawingArrangeContextSizing.GetWidth(context, primarySection) + context.Gap : 0;
-        ReservedRect frontRect;
-        if (relaxedSectionW > 0 &&
-            TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY, blocked, out frontRect))
+        var topSlotH = top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0;
+
+        var frontRect = new ReservedRect(0, 0, 0, 0);
+        var placed = false;
+        foreach (var (x1, x2, y1, y2) in new[]
         {
-            // found a position that leaves right slot for section — use it
+            (freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY - topSlotH),
+            (freeMinX, freeMaxX,                   freeMinY, freeMaxY - topSlotH),
+            (freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY           ),
+            (freeMinX, freeMaxX,                   freeMinY, freeMaxY           ),
+        })
+        {
+            if (x2 - x1 >= frontWidth && y2 - y1 >= frontHeight
+                && TryFindFrontViewRect(frontWidth, frontHeight, x1, x2, y1, y2, blocked, out frontRect))
+            {
+                placed = true;
+                break;
+            }
         }
-        else if (!TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX, freeMinY, freeMaxY, blocked, out frontRect))
-        {
+
+        if (!placed)
             return false;
-        }
 
         planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
         var occupied = new List<ReservedRect>(blocked) { frontRect };
@@ -352,7 +442,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         if (top != null)
         {
-            if (TryPlaceRelative(context, top, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect))
+            if (TryPlaceRelative(context, top, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect)
+                || TryFindTopViewAtSheetTop(context, top, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect))
             {
                 planned.Add((top, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
@@ -402,23 +493,70 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
         }
 
-        return TryPackSecondaryViews(context, deferred, occupied, planned);
+        // Deferred secondary views left unplanned — Arrange() handles them via MaxRects.
+        return true;
     }
 
-    private static bool TryPackSecondaryViews(
+    /// <summary>
+    /// Tries to place the TopView at the very top of the free area when the standard
+    /// above-FrontView slot is unavailable (e.g. FrontView sits high on a tall sheet).
+    /// Tries center, left, and right X positions at freeMaxY - height.
+    /// </summary>
+    private static bool TryFindTopViewAtSheetTop(
+        DrawingArrangeContext context,
+        View top,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        out ReservedRect placement)
+    {
+        var width  = DrawingArrangeContextSizing.GetWidth(context, top);
+        var height = DrawingArrangeContextSizing.GetHeight(context, top);
+        var y = freeMaxY - height;
+        if (y < freeMinY || freeMaxX - freeMinX < width)
+        {
+            placement = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        var maxX = freeMaxX - width;
+        var cx = freeMinX + (freeMaxX - freeMinX - width) / 2.0;
+        var candidates = new[]
+        {
+            new ReservedRect(System.Math.Min(cx,  maxX), y, System.Math.Min(cx,  maxX) + width, freeMaxY),
+            new ReservedRect(freeMinX,                   y, freeMinX + width,                   freeMaxY),
+            new ReservedRect(System.Math.Max(freeMinX, maxX), y, System.Math.Max(freeMinX, maxX) + width, freeMaxY),
+        };
+
+        foreach (var c in candidates)
+        {
+            if (!IntersectsAny(c, occupied))
+            {
+                placement = c;
+                return true;
+            }
+        }
+
+        placement = new ReservedRect(0, 0, 0, 0);
+        return false;
+    }
+
+    private static void PackSecondaryViewsPartial(
         DrawingArrangeContext context,
         IReadOnlyList<View> views,
         IReadOnlyList<ReservedRect> occupied,
         List<(View View, double X, double Y)> planned)
     {
         if (views.Count == 0)
-            return true;
+            return;
 
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
         var availableW = freeMaxX - freeMinX;
         var availableH = freeMaxY - freeMinY;
         if (availableW <= 0 || availableH <= 0)
-            return false;
+            return;
 
         var blocked = occupied
             .Select(rect => ToBlockedRectangle(freeMinX, freeMaxY, rect))
@@ -435,15 +573,18 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             var width = DrawingArrangeContextSizing.GetWidth(context, view);
             var height = DrawingArrangeContextSizing.GetHeight(context, view);
             if (!packer.TryInsert(width + context.Gap, height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
-                return false;
+            {
+                // Can't place this view — leave it at its current position.
+                PerfTrace.Write("api-view", "front_arrange_secondary_skip", 0,
+                    $"view={view.GetIdentifier().ID} w={width:F1} h={height:F1}");
+                continue;
+            }
 
             planned.Add((
                 view,
                 freeMinX + placement.X + width / 2.0,
                 freeMaxY - placement.Y - height / 2.0));
         }
-
-        return true;
     }
 
     private static bool TryPlaceRelative(
