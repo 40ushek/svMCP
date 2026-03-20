@@ -9,6 +9,30 @@ public sealed class DrawingViewsResult
     public List<DrawingViewInfo> Views { get; set; } = new();
 }
 
+public sealed class DrawingSectionPlacementSidesResult
+{
+    public double SheetWidth  { get; set; }
+    public double SheetHeight { get; set; }
+    public int? BaseViewId { get; set; }
+    public string BaseViewType { get; set; } = string.Empty;
+    public string BaseViewSelectionKind { get; set; } = string.Empty;
+    public string BaseViewReason { get; set; } = string.Empty;
+    public bool BaseViewIsFallback { get; set; }
+    public List<SectionPlacementSideInfo> Sections { get; set; } = new();
+}
+
+public sealed class SectionPlacementSideInfo
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string PlacementSide { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public bool IsFallback { get; set; }
+    public double Scale { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+}
+
 public sealed class MoveViewResult
 {
     public bool   Moved      { get; set; }

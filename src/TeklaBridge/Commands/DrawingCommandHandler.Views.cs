@@ -14,6 +14,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_views":
                 return HandleGetDrawingViews(api);
 
+            case "get_drawing_section_sides":
+                return HandleGetDrawingSectionSides(api);
+
             case "move_view":
                 return HandleMoveView(api, args);
 
@@ -35,6 +38,36 @@ internal sealed partial class DrawingCommandHandler
     {
         var result = api.GetViews();
         WriteGetDrawingViewsResult(result);
+        return true;
+    }
+
+    private bool HandleGetDrawingSectionSides(TeklaDrawingViewApi api)
+    {
+        var result = api.GetSectionPlacementSides();
+        WriteJson(new
+        {
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            baseView = new
+            {
+                id = result.BaseViewId,
+                viewType = result.BaseViewType,
+                selectionKind = result.BaseViewSelectionKind,
+                reason = result.BaseViewReason,
+                isFallback = result.BaseViewIsFallback
+            },
+            sections = result.Sections.Select(section => new
+            {
+                id = section.Id,
+                name = section.Name,
+                placementSide = section.PlacementSide,
+                reason = section.Reason,
+                isFallback = section.IsFallback,
+                scale = section.Scale,
+                width = section.Width,
+                height = section.Height
+            })
+        });
         return true;
     }
 
