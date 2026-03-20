@@ -276,11 +276,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var unknownSections = sections
             .Where(section => sectionOrientations[section.GetIdentifier().ID].Orientation == CutOrientation.Unknown)
             .ToList();
-        var primarySection = verticalSections
-            .OrderByDescending(v => v.Width * v.Height)
-            .FirstOrDefault();
         var deferredSections = verticalSections
-            .Where(section => section != primarySection)
             .Concat(horizontalSections)
             .Concat(unknownSections)
             .ToList();
@@ -296,22 +292,22 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 "api-view",
                 "cut_orientation_summary",
                 0,
-                $"sections={sections.Count} horizontal={horizontalSections.Count} vertical={verticalSections.Count} unknown={unknownSections.Count} primary={(primarySection?.GetIdentifier().ID ?? 0)} deferred={deferredSections.Count}");
+                $"sections={sections.Count} horizontal={horizontalSections.Count} vertical={verticalSections.Count} unknown={unknownSections.Count} deferred={deferredSections.Count}");
         }
 
         var scale = GetCurrentScale(context);
         if (!ShouldPreferRelaxedLayout(scale))
         {
-            if (TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned))
+            if (TryPlanStrictLayout(context, baseView, top, bottom, back, verticalSections, horizontalSections, secondaryViews, out planned))
                 return true;
             PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=strict result=failed");
         }
 
-        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned))
+        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, verticalSections, horizontalSections, secondaryViews, out planned))
             return true;
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
 
-        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned);
+        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, verticalSections, horizontalSections, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
         return strictRetry;
     }
@@ -325,7 +321,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         View? top,
         View? bottom,
         View? back,
-        View? primarySection,
+        IReadOnlyList<View> verticalSections,
         IReadOnlyList<View> horizontalSections,
         IReadOnlyList<View> secondaryViews,
         out List<(View View, double X, double Y)> planned)
@@ -343,16 +339,15 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var bottomHeight = bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) : 0;
         var backWidth = back != null ? DrawingArrangeContextSizing.GetWidth(context, back) : 0;
         var backHeight = back != null ? DrawingArrangeContextSizing.GetHeight(context, back) : 0;
-        var sectionWidth = primarySection != null ? DrawingArrangeContextSizing.GetWidth(context, primarySection) : 0;
-        var sectionHeight = primarySection != null ? DrawingArrangeContextSizing.GetHeight(context, primarySection) : 0;
+        var verticalStackWidth = ComputeHorizontalStackWidth(context, verticalSections, gap);
         PerfTrace.Write(
             "api-view",
             "front_arrange_strict_input",
             0,
-            $"free=({freeArea.minX:F2},{freeArea.maxX:F2},{freeArea.minY:F2},{freeArea.maxY:F2}) front=({frontWidth:F2},{frontHeight:F2}) top=({topWidth:F2},{topHeight:F2}) section=({sectionWidth:F2},{sectionHeight:F2}) back=({backWidth:F2},{backHeight:F2}) bottom=({bottomWidth:F2},{bottomHeight:F2})");
+            $"free=({freeArea.minX:F2},{freeArea.maxX:F2},{freeArea.minY:F2},{freeArea.maxY:F2}) front=({frontWidth:F2},{frontHeight:F2}) top=({topWidth:F2},{topHeight:F2}) verticalStackW=({verticalStackWidth:F2}) back=({backWidth:F2},{backHeight:F2}) bottom=({bottomWidth:F2},{bottomHeight:F2})");
 
         var leftSlotW = back != null ? backWidth + gap : 0;
-        var rightSlotW = primarySection != null ? sectionWidth + gap : 0;
+        var rightSlotW = verticalStackWidth;
         var topSlotH = top != null ? topHeight + gap : 0;
         var bottomSlotH = bottom != null ? bottomHeight + gap : 0;
         var horizontalZone = SelectHorizontalZone(top, bottom);
@@ -421,19 +416,17 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied.Add(rect);
         }
 
-        if (primarySection != null)
-        {
-            var rect = new ReservedRect(
-                frontRect.MaxX + gap,
-                CenterY(frontRect) - sectionHeight / 2.0,
-                frontRect.MaxX + gap + sectionWidth,
-                CenterY(frontRect) + sectionHeight / 2.0);
-            if (!IsWithinArea(rect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(rect, occupied))
-                return false;
-
-            planned.Add((primarySection, CenterX(rect), CenterY(rect)));
-            occupied.Add(rect);
-        }
+        TryPlaceVerticalSectionStack(
+            context,
+            verticalSections,
+            frontRect,
+            freeArea.minX,
+            freeArea.maxX,
+            freeArea.minY,
+            freeArea.maxY,
+            gap,
+            occupied,
+            planned);
 
         if (horizontalSections.Count > 0)
         {
@@ -465,7 +458,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         View? top,
         View? bottom,
         View? back,
-        View? primarySection,
+        IReadOnlyList<View> verticalSections,
         IReadOnlyList<View> horizontalSections,
         IReadOnlyList<View> secondaryViews,
         out List<(View View, double X, double Y)> planned)
@@ -478,9 +471,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var frontHeight = DrawingArrangeContextSizing.GetHeight(context, front);
 
         // Try placing FrontView with progressively relaxed zone constraints.
-        // Prefer positions that leave room for TopView above and primary section to the right.
-        // Cascade: (top+section reserved) → (top reserved) → (section reserved) → (full zone).
-        var relaxedSectionW = primarySection != null ? DrawingArrangeContextSizing.GetWidth(context, primarySection) + context.Gap : 0;
+        // Prefer positions that leave room for TopView above and vertical section stack to the right.
+        // Cascade: (top+stack reserved) → (top reserved) → (stack reserved) → (full zone).
+        var verticalStackWidth = ComputeHorizontalStackWidth(context, verticalSections, context.Gap);
         var horizontalZone = SelectHorizontalZone(top, bottom);
         var horizontalStackHeight = ComputeVerticalStackHeight(context, horizontalSections, context.Gap);
         var topSlotH = top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0;
@@ -494,9 +487,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var placed = false;
         foreach (var (x1, x2, y1, y2) in new[]
         {
-            (freeMinX, freeMaxX - relaxedSectionW, freeMinY + bottomSlotH, freeMaxY - topSlotH),
+            (freeMinX, freeMaxX - verticalStackWidth, freeMinY + bottomSlotH, freeMaxY - topSlotH),
             (freeMinX, freeMaxX,                   freeMinY + bottomSlotH, freeMaxY - topSlotH),
-            (freeMinX, freeMaxX - relaxedSectionW, freeMinY,               freeMaxY),
+            (freeMinX, freeMaxX - verticalStackWidth, freeMinY,               freeMaxY),
             (freeMinX, freeMaxX,                   freeMinY,               freeMaxY),
         })
         {
@@ -536,18 +529,17 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
         }
 
-        if (primarySection != null)
-        {
-            if (TryPlaceRelative(context, primarySection, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Right, out var rect))
-            {
-                planned.Add((primarySection, CenterX(rect), CenterY(rect)));
-                occupied.Add(rect);
-            }
-            else
-            {
-                deferred.Add(primarySection);
-            }
-        }
+        TryPlaceVerticalSectionStack(
+            context,
+            verticalSections,
+            frontRect,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied,
+            planned);
 
         if (bottom != null)
         {
@@ -614,6 +606,63 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             return 0;
 
         return views.Sum(view => DrawingArrangeContextSizing.GetHeight(context, view)) + (views.Count * gap);
+    }
+
+    private static double ComputeHorizontalStackWidth(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> views,
+        double gap)
+    {
+        if (views.Count == 0)
+            return 0;
+
+        return views.Sum(view => DrawingArrangeContextSizing.GetWidth(context, view)) + (views.Count * gap);
+    }
+
+    private static void TryPlaceVerticalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> verticalSections,
+        ReservedRect frontRect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<(View View, double X, double Y)> planned)
+    {
+        if (verticalSections.Count == 0)
+            return;
+
+        var orderedSections = verticalSections
+            .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
+            .ThenBy(view => view.GetIdentifier().ID)
+            .ToList();
+
+        var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
+        var currentAnchor = frontRect;
+        foreach (var section in orderedSections)
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, section);
+            var height = DrawingArrangeContextSizing.GetHeight(context, section);
+            var minY = CenterY(frontRect) - height / 2.0;
+            if (minY < freeMinY || minY + height > freeMaxY)
+                return;
+
+            var minX = currentAnchor.MaxX + gap;
+            var rect = new ReservedRect(minX, minY, minX + width, minY + height);
+            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
+                return;
+
+            proposed.Add((section, rect));
+            currentAnchor = rect;
+        }
+
+        foreach (var item in proposed)
+        {
+            planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
+            occupied.Add(item.Rect);
+        }
     }
 
     private static void TryPlaceHorizontalSectionStack(
