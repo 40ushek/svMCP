@@ -302,16 +302,16 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var scale = GetCurrentScale(context);
         if (!ShouldPreferRelaxedLayout(scale))
         {
-            if (TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned))
+            if (TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned))
                 return true;
             PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=strict result=failed");
         }
 
-        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned))
+        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned))
             return true;
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
 
-        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned);
+        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, horizontalSections, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
         return strictRetry;
     }
@@ -326,6 +326,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         View? bottom,
         View? back,
         View? primarySection,
+        IReadOnlyList<View> horizontalSections,
         IReadOnlyList<View> secondaryViews,
         out List<(View View, double X, double Y)> planned)
     {
@@ -354,6 +355,12 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var rightSlotW = primarySection != null ? sectionWidth + gap : 0;
         var topSlotH = top != null ? topHeight + gap : 0;
         var bottomSlotH = bottom != null ? bottomHeight + gap : 0;
+        var horizontalZone = SelectHorizontalZone(top, bottom);
+        var horizontalStackHeight = ComputeVerticalStackHeight(context, horizontalSections, gap);
+        if (horizontalZone == RelativePlacement.Top)
+            topSlotH += horizontalStackHeight;
+        else
+            bottomSlotH += horizontalStackHeight;
 
         if (!TryFindFrontViewRect(
                 frontWidth,
@@ -369,33 +376,35 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
 
         var occupied = new List<ReservedRect>(blocked) { frontRect };
+        var topRect = new ReservedRect(0, 0, 0, 0);
+        var bottomRect = new ReservedRect(0, 0, 0, 0);
 
         if (top != null)
         {
-            var rect = new ReservedRect(
+            topRect = new ReservedRect(
                 CenterX(frontRect) - topWidth / 2.0,
                 frontRect.MaxY + gap,
                 CenterX(frontRect) + topWidth / 2.0,
                 frontRect.MaxY + gap + topHeight);
-            if (!IsWithinArea(rect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(rect, occupied))
+            if (!IsWithinArea(topRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(topRect, occupied))
                 return false;
 
-            planned.Add((top, CenterX(rect), CenterY(rect)));
-            occupied.Add(rect);
+            planned.Add((top, CenterX(topRect), CenterY(topRect)));
+            occupied.Add(topRect);
         }
 
         if (bottom != null)
         {
-            var rect = new ReservedRect(
+            bottomRect = new ReservedRect(
                 CenterX(frontRect) - bottomWidth / 2.0,
                 frontRect.MinY - gap - bottomHeight,
                 CenterX(frontRect) + bottomWidth / 2.0,
                 frontRect.MinY - gap);
-            if (!IsWithinArea(rect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(rect, occupied))
+            if (!IsWithinArea(bottomRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(bottomRect, occupied))
                 return false;
 
-            planned.Add((bottom, CenterX(rect), CenterY(rect)));
-            occupied.Add(rect);
+            planned.Add((bottom, CenterX(bottomRect), CenterY(bottomRect)));
+            occupied.Add(bottomRect);
         }
 
         if (back != null)
@@ -426,6 +435,26 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied.Add(rect);
         }
 
+        if (horizontalSections.Count > 0)
+        {
+            var horizontalAnchor = horizontalZone == RelativePlacement.Top
+                ? (top != null ? topRect : frontRect)
+                : (bottom != null ? bottomRect : frontRect);
+            TryPlaceHorizontalSectionStack(
+                context,
+                horizontalSections,
+                frontRect,
+                horizontalAnchor,
+                horizontalZone,
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
+                gap,
+                occupied,
+                planned);
+        }
+
         // Secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
     }
@@ -437,6 +466,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         View? bottom,
         View? back,
         View? primarySection,
+        IReadOnlyList<View> horizontalSections,
         IReadOnlyList<View> secondaryViews,
         out List<(View View, double X, double Y)> planned)
     {
@@ -451,16 +481,23 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         // Prefer positions that leave room for TopView above and primary section to the right.
         // Cascade: (top+section reserved) → (top reserved) → (section reserved) → (full zone).
         var relaxedSectionW = primarySection != null ? DrawingArrangeContextSizing.GetWidth(context, primarySection) + context.Gap : 0;
+        var horizontalZone = SelectHorizontalZone(top, bottom);
+        var horizontalStackHeight = ComputeVerticalStackHeight(context, horizontalSections, context.Gap);
         var topSlotH = top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0;
+        var bottomSlotH = bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) + context.Gap : 0;
+        if (horizontalZone == RelativePlacement.Top)
+            topSlotH += horizontalStackHeight;
+        else
+            bottomSlotH += horizontalStackHeight;
 
         var frontRect = new ReservedRect(0, 0, 0, 0);
         var placed = false;
         foreach (var (x1, x2, y1, y2) in new[]
         {
-            (freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY - topSlotH),
-            (freeMinX, freeMaxX,                   freeMinY, freeMaxY - topSlotH),
-            (freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY           ),
-            (freeMinX, freeMaxX,                   freeMinY, freeMaxY           ),
+            (freeMinX, freeMaxX - relaxedSectionW, freeMinY + bottomSlotH, freeMaxY - topSlotH),
+            (freeMinX, freeMaxX,                   freeMinY + bottomSlotH, freeMaxY - topSlotH),
+            (freeMinX, freeMaxX - relaxedSectionW, freeMinY,               freeMaxY),
+            (freeMinX, freeMaxX,                   freeMinY,               freeMaxY),
         })
         {
             if (x2 - x1 >= frontWidth && y2 - y1 >= frontHeight
@@ -478,6 +515,10 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var occupied = new List<ReservedRect>(blocked) { frontRect };
 
         var deferred = new List<View>(secondaryViews);
+        var topRect = new ReservedRect(0, 0, 0, 0);
+        var bottomRect = new ReservedRect(0, 0, 0, 0);
+        var topPlaced = false;
+        var bottomPlaced = false;
 
         if (top != null)
         {
@@ -486,6 +527,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             {
                 planned.Add((top, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
+                topRect = rect;
+                topPlaced = true;
             }
             else
             {
@@ -512,6 +555,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             {
                 planned.Add((bottom, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
+                bottomRect = rect;
+                bottomPlaced = true;
             }
             else
             {
@@ -532,8 +577,101 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             }
         }
 
+        if (horizontalSections.Count > 0)
+        {
+            horizontalZone = SelectHorizontalZone(topPlaced ? top : null, bottomPlaced ? bottom : null);
+            var horizontalAnchor = horizontalZone == RelativePlacement.Top
+                ? (topPlaced ? topRect : frontRect)
+                : (bottomPlaced ? bottomRect : frontRect);
+            TryPlaceHorizontalSectionStack(
+                context,
+                horizontalSections,
+                frontRect,
+                horizontalAnchor,
+                horizontalZone,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                context.Gap,
+                occupied,
+                planned);
+        }
+
         // Deferred secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
+    }
+
+    private static RelativePlacement SelectHorizontalZone(View? top, View? bottom)
+        => top != null || bottom == null ? RelativePlacement.Top : RelativePlacement.Bottom;
+
+    private static double ComputeVerticalStackHeight(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> views,
+        double gap)
+    {
+        if (views.Count == 0)
+            return 0;
+
+        return views.Sum(view => DrawingArrangeContextSizing.GetHeight(context, view)) + (views.Count * gap);
+    }
+
+    private static void TryPlaceHorizontalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> horizontalSections,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<(View View, double X, double Y)> planned)
+    {
+        if (horizontalSections.Count == 0)
+            return;
+
+        var orderedSections = horizontalSections
+            .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
+            .ThenBy(view => view.GetIdentifier().ID)
+            .ToList();
+
+        var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
+        var currentAnchor = anchorRect;
+        foreach (var section in orderedSections)
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, section);
+            var height = DrawingArrangeContextSizing.GetHeight(context, section);
+            var minX = CenterX(frontRect) - width / 2.0;
+            if (minX < freeMinX || minX + width > freeMaxX)
+                return;
+
+            ReservedRect rect;
+            if (zone == RelativePlacement.Top)
+            {
+                var minY = currentAnchor.MaxY + gap;
+                rect = new ReservedRect(minX, minY, minX + width, minY + height);
+            }
+            else
+            {
+                var maxY = currentAnchor.MinY - gap;
+                rect = new ReservedRect(minX, maxY - height, minX + width, maxY);
+            }
+
+            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
+                return;
+
+            proposed.Add((section, rect));
+            currentAnchor = rect;
+        }
+
+        foreach (var item in proposed)
+        {
+            planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
+            occupied.Add(item.Rect);
+        }
     }
 
     /// <summary>
@@ -830,11 +968,13 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     }
 
     private static bool IntersectsAny(ReservedRect rect, IReadOnlyList<ReservedRect> others)
-        => others.Any(other =>
-            rect.MinX < other.MaxX &&
-            rect.MaxX > other.MinX &&
-            rect.MinY < other.MaxY &&
-            rect.MaxY > other.MinY);
+        => others.Any(other => Intersects(rect, other));
+
+    private static bool Intersects(ReservedRect a, ReservedRect b)
+        => a.MinX < b.MaxX
+           && a.MaxX > b.MinX
+           && a.MinY < b.MaxY
+           && a.MaxY > b.MinY;
 
     private static bool IsWithinArea(ReservedRect rect, double minX, double maxX, double minY, double maxY)
         => rect.MinX >= minX
