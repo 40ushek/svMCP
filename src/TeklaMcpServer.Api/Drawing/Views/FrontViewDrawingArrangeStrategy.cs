@@ -246,8 +246,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         planned = new List<(View View, double X, double Y)>();
 
         var baseViewSelection = BaseViewSelection.Select(context.Views);
-        var front = baseViewSelection.View;
-        if (front == null)
+        var baseView = baseViewSelection.View;
+        if (baseView == null)
             return false;
 
         var top = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.TopView);
@@ -258,22 +258,22 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             .OrderByDescending(v => v.Width * v.Height)
             .FirstOrDefault();
         var secondaryViews = context.Views
-            .Where(v => v != front && v != top && v != bottom && v != back && v != primarySection)
+            .Where(v => v != baseView && v != top && v != bottom && v != back && v != primarySection)
             .ToList();
 
         var scale = GetCurrentScale(context);
         if (!ShouldPreferRelaxedLayout(scale))
         {
-            if (TryPlanStrictLayout(context, front, top, bottom, back, primarySection, secondaryViews, out planned))
+            if (TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned))
                 return true;
             PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=strict result=failed");
         }
 
-        if (TryPlanRelaxedLayout(context, front, top, bottom, back, primarySection, secondaryViews, out planned))
+        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned))
             return true;
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
 
-        var strictRetry = TryPlanStrictLayout(context, front, top, bottom, back, primarySection, secondaryViews, out planned);
+        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, primarySection, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
         return strictRetry;
     }
