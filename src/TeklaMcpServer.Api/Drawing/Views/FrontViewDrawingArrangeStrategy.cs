@@ -267,25 +267,36 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var sectionOrientations = sections.ToDictionary(
             section => section.GetIdentifier().ID,
             section => _cutOrientationResolver.Resolve(context.Drawing, baseView, section));
-        var primarySection = sections
+        var verticalSections = sections
             .Where(section => sectionOrientations[section.GetIdentifier().ID].Orientation == CutOrientation.Vertical)
+            .ToList();
+        var horizontalSections = sections
+            .Where(section => sectionOrientations[section.GetIdentifier().ID].Orientation == CutOrientation.Horizontal)
+            .ToList();
+        var unknownSections = sections
+            .Where(section => sectionOrientations[section.GetIdentifier().ID].Orientation == CutOrientation.Unknown)
+            .ToList();
+        var primarySection = verticalSections
             .OrderByDescending(v => v.Width * v.Height)
-            .FirstOrDefault()
-            ?? sections.OrderByDescending(v => v.Width * v.Height).FirstOrDefault();
+            .FirstOrDefault();
+        var deferredSections = verticalSections
+            .Where(section => section != primarySection)
+            .Concat(horizontalSections)
+            .Concat(unknownSections)
+            .ToList();
         var secondaryViews = context.Views
-            .Where(v => v != baseView && v != top && v != bottom && v != back && v != primarySection)
+            .Where(v => v.ViewType != View.ViewTypes.SectionView)
+            .Where(v => v != baseView && v != top && v != bottom && v != back)
+            .Concat(deferredSections)
             .ToList();
 
         if (sections.Count > 0)
         {
-            var horizontalSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Horizontal);
-            var verticalSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Vertical);
-            var unknownSections = sectionOrientations.Values.Count(result => result.Orientation == CutOrientation.Unknown);
             PerfTrace.Write(
                 "api-view",
                 "cut_orientation_summary",
                 0,
-                $"sections={sections.Count} horizontal={horizontalSections} vertical={verticalSections} unknown={unknownSections} primary={(primarySection?.GetIdentifier().ID ?? 0)}");
+                $"sections={sections.Count} horizontal={horizontalSections.Count} vertical={verticalSections.Count} unknown={unknownSections.Count} primary={(primarySection?.GetIdentifier().ID ?? 0)} deferred={deferredSections.Count}");
         }
 
         var scale = GetCurrentScale(context);
