@@ -42,7 +42,7 @@ Could eventually contain:
 
 - policies for `BaseViewSelection`
 - policies for `ProjectionMethod`
-- rules for `CutOrientation`
+- rules for `SectionPlacementSide`
 - planner logic around `ProjectionLayoutPlan`
 - prompts, templates, feature flags
 - explanation/debug formatting
@@ -105,7 +105,7 @@ Reasons:
 Revisit this note only after:
 
 - `BaseViewSelection` is explicit
-- `CutOrientation` is explicit
+- `SectionPlacementSide` is explicit
 - `ProjectionLayoutPlan` is explicit
 - degradation paths are explicit and testable
 - planner logic is sufficiently separable from raw Tekla runtime objects
