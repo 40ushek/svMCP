@@ -28,6 +28,29 @@ public sealed class SheetObjectsDebugResult
     public int TotalObjectsScanned { get; set; }
     public List<SheetObjectDebugItem> AllObjects { get; set; } = new();
     public List<ReservedRect> ReservedAreaCandidates { get; set; } = new();
+    public LayoutTablesDiagResult LayoutTablesDiag { get; set; } = new();
+}
+
+public sealed class LayoutTablesDiagResult
+{
+    public bool OpenEditorSuccess { get; set; }
+    public string OpenEditorError { get; set; } = string.Empty;
+    public double? SheetMargin { get; set; }
+    public int TableIdCount { get; set; }
+    public List<int> TableIds { get; set; } = new();
+    public List<LayoutTableDiagItem> Tables { get; set; } = new();
+}
+
+public sealed class LayoutTableDiagItem
+{
+    public int TableId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public bool OverlapWithViews { get; set; }
+    public bool HasGeometry { get; set; }
+    public double? MinX { get; set; }
+    public double? MinY { get; set; }
+    public double? MaxX { get; set; }
+    public double? MaxY { get; set; }
 }
 
 public sealed class DrawingContextDrawingInfo

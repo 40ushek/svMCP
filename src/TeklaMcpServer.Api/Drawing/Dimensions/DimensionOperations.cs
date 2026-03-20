@@ -662,6 +662,18 @@ internal static class DimensionOperations
             preview.DimensionIds.Add(items[i].DimensionId);
 
         preview.RealLengthList.AddRange(baseItem.RealLengthList);
+        preview.StartPoint = new DrawingPointInfo
+        {
+            X = baseItem.StartX,
+            Y = baseItem.StartY,
+            Order = baseItem.StartPointOrder
+        };
+        preview.EndPoint = new DrawingPointInfo
+        {
+            X = baseItem.EndX,
+            Y = baseItem.EndY,
+            Order = baseItem.EndPointOrder
+        };
 
         var previewPoints = baseItem.PointList
             .Select(static point => new DrawingPointInfo
@@ -681,59 +693,21 @@ internal static class DimensionOperations
             AddDimStylePreviewPointsAndLengths(item, previewPoints, preview.RealLengthList);
         }
 
-        var direction = baseItem.Direction;
-        var orderedPoints = previewPoints
-            .GroupBy(static point => point.Order >= 0
-                ? $"o:{point.Order}"
-                : $"p:{System.Math.Round(point.X, 3)}:{System.Math.Round(point.Y, 3)}")
-            .Select(static group => group.First())
-            .ToList();
-
-        if (direction.HasValue)
-        {
-            orderedPoints = orderedPoints
-                .OrderBy(point => Project(point.X, point.Y, direction.Value.X, direction.Value.Y))
-                .ThenBy(static point => point.Order)
-                .ToList();
-        }
-        else
-        {
-            orderedPoints = orderedPoints
-                .OrderBy(static point => point.Order)
-                .ThenBy(static point => point.X)
-                .ThenBy(static point => point.Y)
-                .ToList();
-        }
-
-        if (orderedPoints.Count == 0)
+        if (previewPoints.Count == 0)
             return preview;
 
-        preview.PointList.AddRange(orderedPoints.Select(static point => new DrawingPointInfo
+        preview.PointList.AddRange(previewPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,
             Y = point.Y,
             Order = point.Order
         }));
 
-        preview.StartPoint = new DrawingPointInfo
+        var startX = baseItem.StartX;
+        var startY = baseItem.StartY;
+        for (var i = 1; i < previewPoints.Count; i++)
         {
-            X = orderedPoints[0].X,
-            Y = orderedPoints[0].Y,
-            Order = orderedPoints[0].Order
-        };
-        var lastPointIndex = orderedPoints.Count - 1;
-        preview.EndPoint = new DrawingPointInfo
-        {
-            X = orderedPoints[lastPointIndex].X,
-            Y = orderedPoints[lastPointIndex].Y,
-            Order = orderedPoints[lastPointIndex].Order
-        };
-
-        var startX = orderedPoints[0].X;
-        var startY = orderedPoints[0].Y;
-        for (var i = 1; i < orderedPoints.Count; i++)
-        {
-            var point = orderedPoints[i];
+            var point = previewPoints[i];
             var length = System.Math.Round(
                 System.Math.Sqrt(
                     System.Math.Pow(point.X - startX, 2) +
