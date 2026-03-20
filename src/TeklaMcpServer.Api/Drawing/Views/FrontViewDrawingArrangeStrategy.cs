@@ -329,8 +329,21 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
         var frontWidth = DrawingArrangeContextSizing.GetWidth(context, front);
         var frontHeight = DrawingArrangeContextSizing.GetHeight(context, front);
-        if (!TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX, freeMinY, freeMaxY, blocked, out var frontRect))
+
+        // Try to reserve right space for section view before placing front.
+        // Without this, front occupies the right side and the section ends up packed to the
+        // left edge (outside the sheet boundary).
+        var relaxedSectionW = primarySection != null ? DrawingArrangeContextSizing.GetWidth(context, primarySection) + context.Gap : 0;
+        ReservedRect frontRect;
+        if (relaxedSectionW > 0 &&
+            TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX - relaxedSectionW, freeMinY, freeMaxY, blocked, out frontRect))
+        {
+            // found a position that leaves right slot for section — use it
+        }
+        else if (!TryFindFrontViewRect(frontWidth, frontHeight, freeMinX, freeMaxX, freeMinY, freeMaxY, blocked, out frontRect))
+        {
             return false;
+        }
 
         planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
         var occupied = new List<ReservedRect>(blocked) { frontRect };
