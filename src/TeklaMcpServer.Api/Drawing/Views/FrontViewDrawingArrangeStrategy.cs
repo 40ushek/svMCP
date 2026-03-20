@@ -16,7 +16,10 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
 
     public bool CanArrange(DrawingArrangeContext context)
-        => BaseViewSelection.Select(context.Views).View != null;
+    {
+        var baseView = BaseViewSelection.Select(context.Views).View;
+        return baseView?.ViewType == View.ViewTypes.FrontView;
+    }
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
@@ -247,12 +250,15 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         var baseViewSelection = BaseViewSelection.Select(context.Views);
         var baseView = baseViewSelection.View;
-        if (baseView == null)
+        if (baseView?.ViewType != View.ViewTypes.FrontView)
             return false;
 
-        var top = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.TopView);
-        var bottom = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BottomView);
-        var back = context.Views.FirstOrDefault(v => v.ViewType == View.ViewTypes.BackView);
+        // TODO: when this strategy becomes truly BaseView-centric, dependent views
+        // must be selected relative to the chosen BaseView rather than by fixed
+        // FrontView topology assumptions.
+        var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
+        var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
+        var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
         var primarySection = context.Views
             .Where(v => v.ViewType == View.ViewTypes.SectionView)
             .OrderByDescending(v => v.Width * v.Height)
