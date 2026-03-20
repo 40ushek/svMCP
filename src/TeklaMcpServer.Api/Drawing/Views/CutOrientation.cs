@@ -10,80 +10,85 @@ using ModelPart = Tekla.Structures.Model.Part;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal enum CutOrientation
+internal enum SectionPlacementSide
 {
     Unknown,
-    Horizontal,
-    Vertical
+    Left,
+    Right,
+    Top,
+    Bottom
 }
 
-internal sealed class CutOrientationResult
+internal sealed class SectionPlacementSideResult
 {
-    public CutOrientation Orientation { get; set; }
+    public SectionPlacementSide PlacementSide { get; set; }
 
     public string Reason { get; set; } = string.Empty;
 
     public bool IsFallback { get; set; }
 }
 
-internal sealed class CutOrientationResolver
+internal sealed class SectionPlacementSideResolver
 {
     private const double AxisAlignmentThreshold = 0.92;
     private readonly Model _model;
 
-    public CutOrientationResolver(Model? model = null)
+    public SectionPlacementSideResolver(Model? model = null)
     {
         _model = model ?? new Model();
     }
 
-    public CutOrientationResult Resolve(Tekla.Structures.Drawing.Drawing drawing, View baseView, View sectionView)
+    public SectionPlacementSideResult Resolve(Tekla.Structures.Drawing.Drawing drawing, View baseView, View sectionView)
     {
         if (TryResolveFromCoordinateSystems(drawing, baseView, sectionView, out var fromCoordinateSystems))
             return fromCoordinateSystems;
 
         var heuristic = ResolveFromGeometryHeuristic(sectionView);
-        if (heuristic.Orientation != CutOrientation.Unknown)
+        if (heuristic.PlacementSide != SectionPlacementSide.Unknown)
             return heuristic;
 
-        return new CutOrientationResult
+        return new SectionPlacementSideResult
         {
-            Orientation = CutOrientation.Unknown,
-            Reason = "cut-orientation-unresolved",
+            PlacementSide = SectionPlacementSide.Unknown,
+            Reason = "section-placement-side-unresolved",
             IsFallback = false
         };
     }
 
-    internal static CutOrientation ResolveFromCoordinateSystems(CoordinateSystem reference, CoordinateSystem view)
+    internal static SectionPlacementSide ResolveFromCoordinateSystems(CoordinateSystem reference, CoordinateSystem view)
     {
         var referenceZ = Normalize(TryCross(reference.AxisX, reference.AxisY));
         var viewZ = Normalize(TryCross(view.AxisX, view.AxisY));
         if (referenceZ == null || viewZ == null)
-            return CutOrientation.Unknown;
-
-        var alignedWithReferenceZ = Math.Abs(Vector.Dot(viewZ, referenceZ));
-        if (alignedWithReferenceZ >= AxisAlignmentThreshold)
-            return CutOrientation.Horizontal;
+            return SectionPlacementSide.Unknown;
 
         var referenceX = Normalize(reference.AxisX);
         var referenceY = Normalize(reference.AxisY);
         if (referenceX == null || referenceY == null)
-            return CutOrientation.Unknown;
+            return SectionPlacementSide.Unknown;
 
-        var alignedWithReferenceX = Math.Abs(Vector.Dot(viewZ, referenceX));
-        var alignedWithReferenceY = Math.Abs(Vector.Dot(viewZ, referenceY));
-        if (Math.Max(alignedWithReferenceX, alignedWithReferenceY) >= AxisAlignmentThreshold)
-            return CutOrientation.Vertical;
+        var alignedWithReferenceZ = Vector.Dot(viewZ, referenceZ);
+        if (Math.Abs(alignedWithReferenceZ) >= AxisAlignmentThreshold)
+            return alignedWithReferenceZ >= 0 ? SectionPlacementSide.Top : SectionPlacementSide.Bottom;
 
-        return CutOrientation.Unknown;
+        var alignedWithReferenceX = Vector.Dot(viewZ, referenceX);
+        var alignedWithReferenceY = Vector.Dot(viewZ, referenceY);
+        var dominantSideAlignment = Math.Abs(alignedWithReferenceX) >= Math.Abs(alignedWithReferenceY)
+            ? alignedWithReferenceX
+            : alignedWithReferenceY;
+        if (Math.Abs(dominantSideAlignment) >= AxisAlignmentThreshold)
+            return dominantSideAlignment >= 0 ? SectionPlacementSide.Right : SectionPlacementSide.Left;
+
+        return SectionPlacementSide.Unknown;
     }
 
     private bool TryResolveFromCoordinateSystems(
         Tekla.Structures.Drawing.Drawing drawing,
         View baseView,
         View sectionView,
-        out CutOrientationResult result)
+        out SectionPlacementSideResult result)
     {
-        result = new CutOrientationResult();
+        result = new SectionPlacementSideResult();
 
         if (!TryGetReferenceCoordinateSystem(drawing, baseView, out var reference, out var referenceReason))
             return false;
@@ -91,28 +96,28 @@ internal sealed class CutOrientationResolver
         if (!TryGetViewCoordinateSystem(sectionView, out var section, out var sectionReason))
             return false;
 
-        var orientation = ResolveFromCoordinateSystems(reference, section);
-        if (orientation == CutOrientation.Unknown)
+        var placementSide = ResolveFromCoordinateSystems(reference, section);
+        if (placementSide == SectionPlacementSide.Unknown)
             return false;
 
-        result = new CutOrientationResult
+        result = new SectionPlacementSideResult
         {
-            Orientation = orientation,
+            PlacementSide = placementSide,
             Reason = $"{referenceReason}+{sectionReason}",
             IsFallback = false
         };
         return true;
     }
 
-    private CutOrientationResult ResolveFromGeometryHeuristic(View sectionView)
+    private SectionPlacementSideResult ResolveFromGeometryHeuristic(View sectionView)
     {
         var width = Math.Max(sectionView.Width, 0);
         var height = Math.Max(sectionView.Height, 0);
         if (width <= 0 || height <= 0)
         {
-            return new CutOrientationResult
+            return new SectionPlacementSideResult
             {
-                Orientation = CutOrientation.Unknown,
+                PlacementSide = SectionPlacementSide.Unknown,
                 Reason = "geometry-heuristic-missing-size",
                 IsFallback = true
             };
@@ -121,27 +126,27 @@ internal sealed class CutOrientationResolver
         const double ratioThreshold = 1.15;
         if (width >= height * ratioThreshold)
         {
-            return new CutOrientationResult
+            return new SectionPlacementSideResult
             {
-                Orientation = CutOrientation.Horizontal,
-                Reason = "geometry-heuristic-wide",
+                PlacementSide = SectionPlacementSide.Top,
+                Reason = "geometry-heuristic-wide->top",
                 IsFallback = true
             };
         }
 
         if (height >= width * ratioThreshold)
         {
-            return new CutOrientationResult
+            return new SectionPlacementSideResult
             {
-                Orientation = CutOrientation.Vertical,
-                Reason = "geometry-heuristic-tall",
+                PlacementSide = SectionPlacementSide.Right,
+                Reason = "geometry-heuristic-tall->right",
                 IsFallback = true
             };
         }
 
-        return new CutOrientationResult
+        return new SectionPlacementSideResult
         {
-            Orientation = CutOrientation.Unknown,
+            PlacementSide = SectionPlacementSide.Unknown,
             Reason = "geometry-heuristic-ambiguous",
             IsFallback = true
         };

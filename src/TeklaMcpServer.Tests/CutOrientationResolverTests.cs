@@ -4,10 +4,10 @@ using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
-public sealed class CutOrientationResolverTests
+public sealed class SectionPlacementSideResolverTests
 {
     [Fact]
-    public void ResolveFromCoordinateSystems_ReturnsHorizontalWhenViewNormalMatchesReferenceZ()
+    public void ResolveFromCoordinateSystems_ReturnsTopWhenViewNormalMatchesReferenceZ()
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
@@ -16,24 +16,54 @@ public sealed class CutOrientationResolverTests
             axisX: new Vector(1, 0, 0),
             axisY: new Vector(0, 1, 0));
 
-        var orientation = CutOrientationResolver.ResolveFromCoordinateSystems(reference, topLikeView);
+        var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, topLikeView);
 
-        Assert.Equal(CutOrientation.Horizontal, orientation);
+        Assert.Equal(SectionPlacementSide.Top, placementSide);
     }
 
     [Fact]
-    public void ResolveFromCoordinateSystems_ReturnsVerticalWhenViewNormalMatchesReferenceAxis()
+    public void ResolveFromCoordinateSystems_ReturnsBottomWhenViewNormalOpposesReferenceZ()
     {
         var reference = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
             axisY: new Vector(0, 1, 0));
-        var frontLikeView = CreateCoordinateSystem(
+        var bottomLikeView = CreateCoordinateSystem(
             axisX: new Vector(1, 0, 0),
+            axisY: new Vector(0, -1, 0));
+
+        var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, bottomLikeView);
+
+        Assert.Equal(SectionPlacementSide.Bottom, placementSide);
+    }
+
+    [Fact]
+    public void ResolveFromCoordinateSystems_ReturnsRightWhenViewNormalMatchesReferenceAxis()
+    {
+        var reference = CreateCoordinateSystem(
+            axisX: new Vector(1, 0, 0),
+            axisY: new Vector(0, 1, 0));
+        var rightLikeView = CreateCoordinateSystem(
+            axisX: new Vector(0, 1, 0),
             axisY: new Vector(0, 0, 1));
 
-        var orientation = CutOrientationResolver.ResolveFromCoordinateSystems(reference, frontLikeView);
+        var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, rightLikeView);
 
-        Assert.Equal(CutOrientation.Vertical, orientation);
+        Assert.Equal(SectionPlacementSide.Right, placementSide);
+    }
+
+    [Fact]
+    public void ResolveFromCoordinateSystems_ReturnsLeftWhenViewNormalOpposesReferenceAxis()
+    {
+        var reference = CreateCoordinateSystem(
+            axisX: new Vector(1, 0, 0),
+            axisY: new Vector(0, 1, 0));
+        var leftLikeView = CreateCoordinateSystem(
+            axisX: new Vector(0, 0, 1),
+            axisY: new Vector(0, 1, 0));
+
+        var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, leftLikeView);
+
+        Assert.Equal(SectionPlacementSide.Left, placementSide);
     }
 
     [Fact]
@@ -46,9 +76,9 @@ public sealed class CutOrientationResolverTests
             axisX: new Vector(1, 0, 0),
             axisY: new Vector(0, 1, 1));
 
-        var orientation = CutOrientationResolver.ResolveFromCoordinateSystems(reference, skewedView);
+        var placementSide = SectionPlacementSideResolver.ResolveFromCoordinateSystems(reference, skewedView);
 
-        Assert.Equal(CutOrientation.Unknown, orientation);
+        Assert.Equal(SectionPlacementSide.Unknown, placementSide);
     }
 
     private static CoordinateSystem CreateCoordinateSystem(Vector axisX, Vector axisY)
