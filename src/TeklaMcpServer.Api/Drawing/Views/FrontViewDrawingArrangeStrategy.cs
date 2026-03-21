@@ -326,10 +326,14 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             .Concat(bottomSections)
             .Concat(unknownSections)
             .ToList();
-        var secondaryViews = context.Views
+        var nonDetailSecondaryViews = context.Views
             .Where(v => semanticKinds[v.GetIdentifier().ID] != ViewSemanticKind.Section)
+            .Where(v => semanticKinds[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
             .Where(v => v != baseView && v != top && v != bottom && v != back)
+            .ToList();
+        var secondaryViews = nonDetailSecondaryViews
             .Concat(deferredSections)
+            .Concat(detailViews)
             .ToList();
 
         PerfTrace.Write(
