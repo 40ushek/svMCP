@@ -6,6 +6,26 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal static class DrawingProjectionAlignmentMath
 {
+    public static bool TryGetSectionAlignmentAxis(SectionPlacementSide placementSide, out bool alignX)
+    {
+        switch (placementSide)
+        {
+            case SectionPlacementSide.Top:
+            case SectionPlacementSide.Bottom:
+                alignX = true;
+                return true;
+
+            case SectionPlacementSide.Left:
+            case SectionPlacementSide.Right:
+                alignX = false;
+                return true;
+
+            default:
+                alignX = false;
+                return false;
+        }
+    }
+
     public static (double X, double Y) LocalToSheet(ProjectionViewState view, double localX, double localY)
     {
         var scale = view.Scale > 0 ? view.Scale : 1.0;

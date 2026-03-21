@@ -155,9 +155,12 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
         {
+            if (!TryGetSectionAlignmentAxis(drawing, front, section, result, out var alignSectionX))
+                continue;
+
             var sectionId = section.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != sectionId).ToList();
-            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
+            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
     }
 

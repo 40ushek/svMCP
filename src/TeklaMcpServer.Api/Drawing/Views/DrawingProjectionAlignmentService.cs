@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
 using DrawingView = Tekla.Structures.Drawing.View;
@@ -14,6 +15,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     private readonly Model _model;
     private readonly TeklaDrawingPartGeometryApi _partGeometryApi;
     private readonly TeklaDrawingGridApi _gridApi;
+    private readonly SectionPlacementSideResolver _sectionPlacementSideResolver;
 
     public DrawingProjectionAlignmentService(
         Model? model = null,
@@ -23,6 +25,7 @@ internal sealed partial class DrawingProjectionAlignmentService
         _model = model ?? new Model();
         _partGeometryApi = partGeometryApi ?? new TeklaDrawingPartGeometryApi(_model);
         _gridApi = gridApi ?? new TeklaDrawingGridApi();
+        _sectionPlacementSideResolver = new SectionPlacementSideResolver(_model);
     }
 
     public ProjectionAlignmentResult Apply(
@@ -54,12 +57,12 @@ internal sealed partial class DrawingProjectionAlignmentService
                 break;
             }
 
-            case GADrawing:
+            case GADrawing gaDrawing:
             {
                 result.Mode = "ga";
                 var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
                 if (front != null)
-                    ApplyGaAlignment(result, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
+                    ApplyGaAlignment(result, gaDrawing, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 else
                     ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 break;
@@ -71,5 +74,22 @@ internal sealed partial class DrawingProjectionAlignmentService
         }
 
         return result;
+    }
+
+    private bool TryGetSectionAlignmentAxis(
+        Tekla.Structures.Drawing.Drawing drawing,
+        DrawingView baseView,
+        DrawingView sectionView,
+        ProjectionAlignmentResult result,
+        out bool alignX)
+    {
+        var sectionSide = _sectionPlacementSideResolver.Resolve(drawing, baseView, sectionView);
+        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(sectionSide.PlacementSide, out alignX))
+            return true;
+
+        TraceSkip(
+            result,
+            $"projection-skip:section-side-unknown:reason={sectionSide.Reason}");
+        return false;
     }
 }

@@ -11,6 +11,7 @@ internal sealed partial class DrawingProjectionAlignmentService
 {
     private void ApplyGaAlignment(
         ProjectionAlignmentResult result,
+        GADrawing drawing,
         DrawingView front,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
@@ -54,9 +55,12 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
         {
+            if (!TryGetSectionAlignmentAxis(drawing, front, section, result, out var alignSectionX))
+                continue;
+
             var sectionId = section.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != sectionId).ToList();
-            ApplyGaMove(result, front, section, frontAxes, requiredDirection: "Y", alignX: false, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
+            ApplyGaMove(result, front, section, frontAxes, requiredDirection: alignSectionX ? "X" : "Y", alignX: alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
         }
     }
 

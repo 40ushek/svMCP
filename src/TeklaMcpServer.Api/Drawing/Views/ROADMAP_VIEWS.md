@@ -116,6 +116,9 @@
   planner работает с `SectionPlacementSide = Left | Right | Top | Bottom | Unknown`
 - для `SectionView` реализован `coordinate-system-first` resolver с fallback
   на геометрическую эвристику
+- projection alignment для `SectionView` должен следовать
+  `SectionPlacementSide`, а не грубому правилу по типу вида:
+  `Left/Right -> Y`, `Top/Bottom -> X`
 - текущая строгая схема для стандартных соседей всё ещё опирается на
   `FrontView`-centric topology
 - строгая и relaxed-схемы резервируют место для направленных стеков секций
@@ -192,6 +195,8 @@
 - Упаковка — резервный механизм для видов без проекционной связи.
 - Масштаб выбирается после того, как известна схема расстановки, не до.
 - `SectionPlacementSide` определяет зону размещения разреза, а не размер вида.
+- Любой post-alignment для `SectionView` обязан опираться на
+  `SectionPlacementSide`; выравнивать все секции по одной оси недопустимо.
 - Виды одного типа и ориентации принадлежат одной зоне.
 - `DetailView` не должен конкурировать с base/section каркасом за ранние
   проекционные слоты.

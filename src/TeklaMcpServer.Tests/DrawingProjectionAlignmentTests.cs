@@ -183,6 +183,23 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Theory]
+    [InlineData(SectionPlacementSide.Left, false, true)]
+    [InlineData(SectionPlacementSide.Right, false, true)]
+    [InlineData(SectionPlacementSide.Top, true, true)]
+    [InlineData(SectionPlacementSide.Bottom, true, true)]
+    [InlineData(SectionPlacementSide.Unknown, false, false)]
+    public void TryGetSectionAlignmentAxis_UsesPlacementSideSemantics(
+        SectionPlacementSide placementSide,
+        bool expectedAlignX,
+        bool expectedResolved)
+    {
+        var resolved = DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(placementSide, out var alignX);
+
+        Assert.Equal(expectedResolved, resolved);
+        Assert.Equal(expectedAlignX, alignX);
+    }
+
+    [Theory]
     [InlineData(125, true)]
     [InlineData(100, true)]
     [InlineData(60, false)]
