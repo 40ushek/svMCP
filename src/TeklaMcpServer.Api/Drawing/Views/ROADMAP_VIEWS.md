@@ -419,10 +419,12 @@ Planner должен различать:
 - если отдельная detail policy ещё не реализована, `DetailView` размещается
   после base/section placement как residual view
 - planner поддерживает явную scale-policy опцию:
-  - `uniformNonDetailScale = true` — strict-mode, все не-`DetailView`
-    стремятся к общему масштабу
-  - `uniformNonDetailScale = false` — mixed-mode, общий scale в первую
+  - `UniformAllNonDetail` — strict-mode, все не-`DetailView` стремятся к
+    общему масштабу
+  - `UniformMainWithSectionExceptions` — mixed-mode, общий scale в первую
     очередь ведёт `BaseProjected`, а `SectionView` допускаются как исключения
+  - `PreserveExistingScales` — сохранить входную смешанную scale-структуру
+    листа и только упорядочить размещение
 
 ## Policy: Oversized SectionView
 
@@ -734,9 +736,9 @@ BaseView (якорь)
 - сделать отказ масштаба объяснимым через зоны и semantic classes, а не только
   через факт невместимости
 - поддерживать явную опцию:
-  - `uniformNonDetailScale = true` — все не-`DetailView` в одном масштабе
-  - `uniformNonDetailScale = false` — допускаются исключения для oversized
-    `SectionView`
+  - `UniformAllNonDetail`
+  - `UniformMainWithSectionExceptions`
+  - `PreserveExistingScales`
 
 Тесты:
 

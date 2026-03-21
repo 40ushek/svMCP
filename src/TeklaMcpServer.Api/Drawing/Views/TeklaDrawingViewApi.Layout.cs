@@ -18,8 +18,8 @@ public sealed partial class TeklaDrawingViewApi
         => optimalScale >= ProjectionAlignmentScaleCutoff;
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
-    /// <param name="keepScale">When true, skip scale optimisation and arrange views at their current scales.</param>
-    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, bool keepScale = false, bool uniformNonDetailScale = true)
+    /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
+    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -42,6 +42,9 @@ public sealed partial class TeklaDrawingViewApi
         if (titleBlockHeight < 0)
             throw new System.ArgumentOutOfRangeException(nameof(titleBlockHeight), "titleBlockHeight must be >= 0.");
 
+        var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
+        var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
+
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -59,7 +62,7 @@ public sealed partial class TeklaDrawingViewApi
         var semanticKindById = views.ToDictionary(
             v => v.GetIdentifier().ID,
             v => ViewSemanticClassifier.Classify(v.ViewType));
-        var scaleDriverViews = uniformNonDetailScale
+        var scaleDriverViews = uniformAllNonDetail
             ? views
                 .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
                 .ToList()
@@ -129,7 +132,7 @@ public sealed partial class TeklaDrawingViewApi
         double? optimalScale = null;
         var currentViews = views;
 
-        if (keepScale)
+        if (preserveExistingScales)
         {
             // Validate that views fit at their current scales before committing to arrange.
             var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews);
@@ -168,7 +171,7 @@ public sealed partial class TeklaDrawingViewApi
                     if (semanticKind == ViewSemanticKind.Detail)
                         continue;
 
-                    if (!uniformNonDetailScale && semanticKind != ViewSemanticKind.BaseProjected)
+                    if (!uniformAllNonDetail && semanticKind != ViewSemanticKind.BaseProjected)
                         continue;
 
                     v.Attributes.Scale = s;
@@ -219,10 +222,10 @@ public sealed partial class TeklaDrawingViewApi
             }
         }
 
-        var offsetById = keepScale
+        var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
             : TryGetFrameOffsetsFromBoundingBoxes(currentViews, optimalScale.Value);
-        if (!keepScale && offsetById.Count != currentViews.Count)
+        if (!preserveExistingScales && offsetById.Count != currentViews.Count)
         {
             var originsAtOptimal = currentViews
                 .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
@@ -275,7 +278,7 @@ public sealed partial class TeklaDrawingViewApi
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
-        if (!keepScale)
+        if (!preserveExistingScales)
         {
             foreach (var detailView in currentViews.Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail))
             {
@@ -379,8 +382,8 @@ public sealed partial class TeklaDrawingViewApi
         var result = new FitViewsResult
         {
             OptimalScale = optimalScale.Value,
-            ScalePreserved = keepScale,
-            UniformNonDetailScale = uniformNonDetailScale,
+            ScalePreserved = preserveExistingScales,
+            ScalePolicy = scalePolicy.ToString(),
             SheetWidth = sheetW,
             SheetHeight = sheetH,
             Margin = effectiveMargin,
@@ -404,7 +407,7 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
-            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} uniformNonDetailScale={uniformNonDetailScale} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
     }
 

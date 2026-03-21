@@ -179,8 +179,7 @@ internal sealed partial class DrawingCommandHandler
             request.Margin,
             request.Gap,
             request.TitleBlockHeight,
-            request.KeepScale,
-            request.UniformNonDetailScale);
+            request.ScalePolicy);
         WriteFitViewsToSheetResult(result, result.ReservedAreas);
         return true;
     }
@@ -265,7 +264,7 @@ internal sealed partial class DrawingCommandHandler
         {
             optimalScale = result.OptimalScale,
             scalePreserved = result.ScalePreserved,
-            uniformNonDetailScale = result.UniformNonDetailScale,
+            scalePolicy = result.ScalePolicy,
             sheetWidth = result.SheetWidth,
             sheetHeight = result.SheetHeight,
             arranged = result.Arranged,

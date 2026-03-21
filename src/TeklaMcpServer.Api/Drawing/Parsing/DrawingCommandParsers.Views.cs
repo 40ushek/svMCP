@@ -68,19 +68,32 @@ public static partial class DrawingCommandParsers
         for (int i = 1; i < args.Length; i++)
         {
             if (string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
-                request.KeepScale = true;
+            {
+                request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
+                continue;
+            }
+
+            if (string.Equals(args[i], "preserveexistingscales", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "preservemixedscales", StringComparison.OrdinalIgnoreCase))
+            {
+                request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
+                continue;
+            }
 
             if (string.Equals(args[i], "uniformnondetailscale", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "uniformmainscale", StringComparison.OrdinalIgnoreCase))
+                string.Equals(args[i], "uniformmainscale", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "uniformallnondetail", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "strictuniformscale", StringComparison.OrdinalIgnoreCase))
             {
-                request.UniformNonDetailScale = true;
+                request.ScalePolicy = DrawingScalePolicy.UniformAllNonDetail;
                 continue;
             }
 
             if (string.Equals(args[i], "mixednondetailscale", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "allowsectionscaleexceptions", StringComparison.OrdinalIgnoreCase))
+                string.Equals(args[i], "allowsectionscaleexceptions", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
-                request.UniformNonDetailScale = false;
+                request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;
             }
         }
 
