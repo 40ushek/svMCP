@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Tekla.Structures.Drawing;
+using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
@@ -147,5 +149,23 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             out _);
 
         Assert.False(packed);
+    }
+
+    [Fact]
+    public void TryProjectViewLocalPointToSheet_UsesOriginAndScale()
+    {
+        var view = new View();
+        view.Origin = new Point(131.57, 162.19, 0);
+        view.Attributes.Scale = 25;
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryProjectViewLocalPointToSheet(
+            view,
+            new Point(7565.0, 1549.49, 0),
+            out var sheetX,
+            out var sheetY);
+
+        Assert.True(ok);
+        Assert.Equal(434.17, sheetX, 2);
+        Assert.Equal(224.17, sheetY, 2);
     }
 }

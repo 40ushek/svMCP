@@ -3,6 +3,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Diagnostics;
@@ -46,6 +47,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public View OwnerView { get; set; } = null!;
         public double? AnchorX { get; set; }
         public double? AnchorY { get; set; }
+    }
+
+    internal static bool TryProjectViewLocalPointToSheet(View view, Point? localPoint, out double sheetX, out double sheetY)
+    {
+        sheetX = 0;
+        sheetY = 0;
+
+        if (view.Origin == null || localPoint == null)
+            return false;
+
+        var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+        sheetX = view.Origin.X + (localPoint.X / scale);
+        sheetY = view.Origin.Y + (localPoint.Y / scale);
+        return true;
     }
 
     public bool CanArrange(DrawingArrangeContext context)
@@ -1329,8 +1344,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     {
                         DetailView = detailView,
                         OwnerView = ownerView,
-                        AnchorX = detailMark.LabelPoint?.X ?? detailMark.BoundaryPoint?.X ?? detailMark.CenterPoint?.X,
-                        AnchorY = detailMark.LabelPoint?.Y ?? detailMark.BoundaryPoint?.Y ?? detailMark.CenterPoint?.Y
+                        AnchorX = TryProjectViewLocalPointToSheet(ownerView, detailMark.LabelPoint, out var labelX, out _)
+                            ? labelX
+                            : TryProjectViewLocalPointToSheet(ownerView, detailMark.BoundaryPoint, out var boundaryX, out _)
+                                ? boundaryX
+                                : TryProjectViewLocalPointToSheet(ownerView, detailMark.CenterPoint, out var centerX, out _)
+                                    ? centerX
+                                    : null,
+                        AnchorY = TryProjectViewLocalPointToSheet(ownerView, detailMark.LabelPoint, out _, out var labelY)
+                            ? labelY
+                            : TryProjectViewLocalPointToSheet(ownerView, detailMark.BoundaryPoint, out _, out var boundaryY)
+                                ? boundaryY
+                                : TryProjectViewLocalPointToSheet(ownerView, detailMark.CenterPoint, out _, out var centerY)
+                                    ? centerY
+                                    : null
                     });
                     break;
                 }

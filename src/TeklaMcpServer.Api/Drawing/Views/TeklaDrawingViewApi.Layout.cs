@@ -426,10 +426,14 @@ public sealed partial class TeklaDrawingViewApi
 
                 var corrX = off.X / optimalScale.Value;
                 var corrY = off.Y / optimalScale.Value;
+                var semanticKind = semanticKindById.TryGetValue(arranged[i].Id, out var kind)
+                    ? kind
+                    : ViewSemanticKind.Other;
                 // Skip implausibly large corrections: they indicate a bad frame-offset
                 // estimate (e.g. from probe-scale extrapolation on distant-origin views)
                 // and would displace the view far from where the packer intended.
-                if (System.Math.Abs(corrX) > v.Width || System.Math.Abs(corrY) > v.Height)
+                if (semanticKind != ViewSemanticKind.Detail
+                    && (System.Math.Abs(corrX) > v.Width || System.Math.Abs(corrY) > v.Height))
                     continue;
 
                 var o = v.Origin;
