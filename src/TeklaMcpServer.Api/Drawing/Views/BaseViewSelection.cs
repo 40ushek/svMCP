@@ -28,7 +28,7 @@ internal static class BaseViewSelection
     {
         var eligibleCandidates = views
             .Select((view, index) => new BaseViewCandidate(view, index))
-            .Where(candidate => IsEligibleBaseViewType(candidate.View.ViewType))
+            .Where(candidate => ViewSemanticClassifier.IsBaseProjected(candidate.View.ViewType))
             .ToList();
 
         if (eligibleCandidates.Count == 1)
@@ -81,14 +81,6 @@ internal static class BaseViewSelection
             IsFallback = false
         };
     }
-
-    private static bool IsEligibleBaseViewType(View.ViewTypes viewType)
-        => viewType is View.ViewTypes.FrontView
-            or View.ViewTypes.TopView
-            or View.ViewTypes.BackView
-            or View.ViewTypes.BottomView
-            or View.ViewTypes.EndView
-            or View.ViewTypes.ModelView;
 
     private static double GetArea(View view)
         => System.Math.Max(view.Width, 0) * System.Math.Max(view.Height, 0);

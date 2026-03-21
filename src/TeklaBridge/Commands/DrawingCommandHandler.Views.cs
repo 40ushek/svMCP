@@ -156,6 +156,7 @@ internal sealed partial class DrawingCommandHandler
             {
                 id = v.Id,
                 viewType = v.ViewType,
+                semanticKind = v.SemanticKind,
                 name = v.Name,
                 originX = v.OriginX,
                 originY = v.OriginY,
@@ -203,7 +204,10 @@ internal sealed partial class DrawingCommandHandler
                 id = v.Id,
                 viewType = v.ViewType,
                 originX = v.OriginX,
-                originY = v.OriginY
+                originY = v.OriginY,
+                preferredPlacementSide = v.PreferredPlacementSide,
+                actualPlacementSide = v.ActualPlacementSide,
+                placementFallbackUsed = v.PlacementFallbackUsed
             }),
             projectionApplied = result.ProjectionApplied,
             projectionSkipped = result.ProjectionSkipped,

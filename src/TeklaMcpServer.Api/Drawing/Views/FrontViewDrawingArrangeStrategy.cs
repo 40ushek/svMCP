@@ -17,6 +17,29 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
     private readonly SectionPlacementSideResolver _sectionPlacementSideResolver = new(new Model());
 
+    private sealed class PlannedPlacement
+    {
+        public PlannedPlacement(
+            View view,
+            double x,
+            double y,
+            SectionPlacementSide? preferredPlacementSide = null,
+            SectionPlacementSide? actualPlacementSide = null)
+        {
+            View = view;
+            X = x;
+            Y = y;
+            PreferredPlacementSide = preferredPlacementSide;
+            ActualPlacementSide = actualPlacementSide;
+        }
+
+        public View View { get; }
+        public double X { get; }
+        public double Y { get; }
+        public SectionPlacementSide? PreferredPlacementSide { get; }
+        public SectionPlacementSide? ActualPlacementSide { get; }
+    }
+
     public bool CanArrange(DrawingArrangeContext context)
     {
         var baseView = BaseViewSelection.Select(context.Views).View;
@@ -224,7 +247,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         return true;
     }
 
-    private static List<ArrangedView> ApplyPlan(List<(View View, double X, double Y)> planned)
+    private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)
     {
         var arranged = new List<ArrangedView>(planned.Count);
         foreach (var item in planned)
@@ -239,21 +262,30 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 Id = item.View.GetIdentifier().ID,
                 ViewType = item.View.ViewType.ToString(),
                 OriginX = item.X,
-                OriginY = item.Y
+                OriginY = item.Y,
+                PreferredPlacementSide = ToPlacementSideString(item.PreferredPlacementSide),
+                ActualPlacementSide = ToPlacementSideString(item.ActualPlacementSide),
+                PlacementFallbackUsed = item.PreferredPlacementSide.HasValue
+                    && item.ActualPlacementSide.HasValue
+                    && item.PreferredPlacementSide.Value != item.ActualPlacementSide.Value
             });
         }
 
         return arranged;
     }
 
-    private bool TryCreatePlan(DrawingArrangeContext context, out List<(View View, double X, double Y)> planned)
+    private bool TryCreatePlan(DrawingArrangeContext context, out List<PlannedPlacement> planned)
     {
-        planned = new List<(View View, double X, double Y)>();
+        planned = new List<PlannedPlacement>();
 
         var baseViewSelection = BaseViewSelection.Select(context.Views);
         var baseView = baseViewSelection.View;
         if (baseView?.ViewType != View.ViewTypes.FrontView)
             return false;
+
+        var semanticKinds = context.Views.ToDictionary(
+            view => view.GetIdentifier().ID,
+            view => ViewSemanticClassifier.Classify(view.ViewType));
 
         // TODO: when this strategy becomes truly BaseView-centric, dependent views
         // must be selected relative to the chosen BaseView rather than by fixed
@@ -262,7 +294,13 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
         var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
         var sections = context.Views
-            .Where(v => v.ViewType == View.ViewTypes.SectionView)
+            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Section)
+            .ToList();
+        var detailViews = context.Views
+            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Detail)
+            .ToList();
+        var otherViews = context.Views
+            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Other)
             .ToList();
         var sectionPlacementSides = sections.ToDictionary(
             section => section.GetIdentifier().ID,
@@ -289,10 +327,16 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             .Concat(unknownSections)
             .ToList();
         var secondaryViews = context.Views
-            .Where(v => v.ViewType != View.ViewTypes.SectionView)
+            .Where(v => semanticKinds[v.GetIdentifier().ID] != ViewSemanticKind.Section)
             .Where(v => v != baseView && v != top && v != bottom && v != back)
             .Concat(deferredSections)
             .ToList();
+
+        PerfTrace.Write(
+            "api-view",
+            "view_semantic_summary",
+            0,
+            $"baseProjected={context.Views.Count(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
 
         if (sections.Count > 0)
         {
@@ -334,9 +378,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
         IReadOnlyList<View> secondaryViews,
-        out List<(View View, double X, double Y)> planned)
+        out List<PlannedPlacement> planned)
     {
-        planned = new List<(View View, double X, double Y)>();
+        planned = new List<PlannedPlacement>();
 
         var gap = context.Gap;
         var blocked = NormalizeReservedAreas(context);
@@ -373,7 +417,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 out var frontRect))
             return false;
 
-        planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
+        planned.Add(new PlannedPlacement(front, CenterX(frontRect), CenterY(frontRect)));
 
         var occupied = new List<ReservedRect>(blocked) { frontRect };
         var topRect = new ReservedRect(0, 0, 0, 0);
@@ -390,7 +434,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             if (!IsWithinArea(topRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(topRect, occupied))
                 return false;
 
-            planned.Add((top, CenterX(topRect), CenterY(topRect)));
+            planned.Add(new PlannedPlacement(top, CenterX(topRect), CenterY(topRect)));
             occupied.Add(topRect);
         }
 
@@ -404,7 +448,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             if (!IsWithinArea(bottomRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(bottomRect, occupied))
                 return false;
 
-            planned.Add((bottom, CenterX(bottomRect), CenterY(bottomRect)));
+            planned.Add(new PlannedPlacement(bottom, CenterX(bottomRect), CenterY(bottomRect)));
             occupied.Add(bottomRect);
         }
 
@@ -418,7 +462,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             if (!IsWithinArea(backRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(backRect, occupied))
                 return false;
 
-            planned.Add((back, CenterX(backRect), CenterY(backRect)));
+            planned.Add(new PlannedPlacement(back, CenterX(backRect), CenterY(backRect)));
             occupied.Add(backRect);
         }
 
@@ -496,9 +540,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
         IReadOnlyList<View> secondaryViews,
-        out List<(View View, double X, double Y)> planned)
+        out List<PlannedPlacement> planned)
     {
-        planned = new List<(View View, double X, double Y)>();
+        planned = new List<PlannedPlacement>();
 
         var blocked = NormalizeReservedAreas(context);
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
@@ -536,7 +580,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         if (!placed)
             return false;
 
-        planned.Add((front, CenterX(frontRect), CenterY(frontRect)));
+        planned.Add(new PlannedPlacement(front, CenterX(frontRect), CenterY(frontRect)));
         var occupied = new List<ReservedRect>(blocked) { frontRect };
 
         var deferred = new List<View>(secondaryViews);
@@ -552,7 +596,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             if (TryPlaceRelative(context, top, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect)
                 || TryFindTopViewAtSheetTop(context, top, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect))
             {
-                planned.Add((top, CenterX(rect), CenterY(rect)));
+                planned.Add(new PlannedPlacement(top, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
                 topRect = rect;
                 topPlaced = true;
@@ -567,7 +611,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         {
             if (TryPlaceRelative(context, bottom, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Bottom, out var rect))
             {
-                planned.Add((bottom, CenterX(rect), CenterY(rect)));
+                planned.Add(new PlannedPlacement(bottom, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
                 bottomRect = rect;
                 bottomPlaced = true;
@@ -582,7 +626,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         {
             if (TryPlaceRelative(context, back, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Left, out var rect))
             {
-                planned.Add((back, CenterX(rect), CenterY(rect)));
+                planned.Add(new PlannedPlacement(back, CenterX(rect), CenterY(rect)));
                 occupied.Add(rect);
                 backRect = rect;
                 backPlaced = true;
@@ -690,7 +734,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         double freeMaxY,
         double gap,
         List<ReservedRect> occupied,
-        List<(View View, double X, double Y)> planned)
+        List<PlannedPlacement> planned,
+        SectionPlacementSide preferredPlacementSide,
+        SectionPlacementSide actualPlacementSide)
     {
         if (sectionViews.Count == 0)
             return true;
@@ -731,7 +777,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         foreach (var item in proposed)
         {
-            planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
+            planned.Add(new PlannedPlacement(item.View, CenterX(item.Rect), CenterY(item.Rect), preferredPlacementSide, actualPlacementSide));
             occupied.Add(item.Rect);
         }
 
@@ -750,7 +796,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         double freeMaxY,
         double gap,
         List<ReservedRect> occupied,
-        List<(View View, double X, double Y)> planned)
+        List<PlannedPlacement> planned,
+        SectionPlacementSide preferredPlacementSide,
+        SectionPlacementSide actualPlacementSide)
     {
         if (horizontalSections.Count == 0)
             return true;
@@ -791,7 +839,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         foreach (var item in proposed)
         {
-            planned.Add((item.View, CenterX(item.Rect), CenterY(item.Rect)));
+            planned.Add(new PlannedPlacement(item.View, CenterX(item.Rect), CenterY(item.Rect), preferredPlacementSide, actualPlacementSide));
             occupied.Add(item.Rect);
         }
 
@@ -811,7 +859,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         double freeMaxY,
         double gap,
         List<ReservedRect> occupied,
-        List<(View View, double X, double Y)> planned)
+        List<PlannedPlacement> planned)
     {
         if (sectionViews.Count == 0)
             return true;
@@ -828,7 +876,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 freeMaxY,
                 gap,
                 occupied,
-                planned))
+                planned,
+                ToPlacementSide(preferredZone),
+                ToPlacementSide(preferredZone)))
             return true;
 
         var fallbackZone = preferredZone == RelativePlacement.Top
@@ -847,7 +897,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             freeMaxY,
             gap,
             occupied,
-            planned);
+            planned,
+            ToPlacementSide(preferredZone),
+            ToPlacementSide(fallbackZone));
     }
 
     private static bool TryPlaceVerticalSectionStackWithFallback(
@@ -863,7 +915,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         double freeMaxY,
         double gap,
         List<ReservedRect> occupied,
-        List<(View View, double X, double Y)> planned)
+        List<PlannedPlacement> planned)
     {
         if (sectionViews.Count == 0)
             return true;
@@ -880,7 +932,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 freeMaxY,
                 gap,
                 occupied,
-                planned))
+                planned,
+                ToPlacementSide(preferredZone),
+                ToPlacementSide(preferredZone)))
             return true;
 
         var fallbackZone = preferredZone == RelativePlacement.Left
@@ -899,8 +953,23 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             freeMaxY,
             gap,
             occupied,
-            planned);
+            planned,
+            ToPlacementSide(preferredZone),
+            ToPlacementSide(fallbackZone));
     }
+
+    private static SectionPlacementSide ToPlacementSide(RelativePlacement placement)
+        => placement switch
+        {
+            RelativePlacement.Left => SectionPlacementSide.Left,
+            RelativePlacement.Right => SectionPlacementSide.Right,
+            RelativePlacement.Top => SectionPlacementSide.Top,
+            RelativePlacement.Bottom => SectionPlacementSide.Bottom,
+            _ => SectionPlacementSide.Unknown
+        };
+
+    private static string ToPlacementSideString(SectionPlacementSide? side)
+        => side?.ToString() ?? string.Empty;
 
     /// <summary>
     /// Tries to place the TopView at the very top of the free area when the standard
