@@ -22,9 +22,9 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
                 yield return v;
     }
 
-    private static DrawingViewInfo ToInfo(View v)
+    private static DrawingViewInfo ToInfo(View v, IReadOnlyDictionary<int, ReservedRect>? actualRects = null)
     {
-        var hasBBox = DrawingViewSheetGeometry.TryGetBoundingRect(v, out var bbox);
+        var hasBBox = DrawingViewSheetGeometry.TryGetBoundingRect(v, actualRects, out var bbox);
         return new DrawingViewInfo
         {
             Id = v.GetIdentifier().ID,

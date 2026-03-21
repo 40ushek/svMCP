@@ -27,9 +27,10 @@ public sealed partial class TeklaDrawingViewApi
         {
         }
 
+        var actualRects = DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing);
         var result = new DrawingViewsResult { SheetWidth = sheetW, SheetHeight = sheetH };
         foreach (var v in EnumerateViews(activeDrawing))
-            result.Views.Add(ToInfo(v));
+            result.Views.Add(ToInfo(v, actualRects));
 
         return result;
     }
