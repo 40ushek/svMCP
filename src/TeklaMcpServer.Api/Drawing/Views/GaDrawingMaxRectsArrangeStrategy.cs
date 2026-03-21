@@ -6,7 +6,7 @@ using TeklaMcpServer.Api.Algorithms.Packing;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrategy
+public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
 
@@ -78,6 +78,42 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
         }
 
         return arranged;
+    }
+
+    public List<DrawingFitConflict> DiagnoseFitConflicts(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
+    {
+        var conflicts = new List<DrawingFitConflict>();
+        var availableW = context.SheetWidth - 2 * context.Margin;
+        var availableH = context.SheetHeight - 2 * context.Margin;
+        if (availableW <= 0 || availableH <= 0)
+            return conflicts;
+
+        var orderedViews = context.Views
+            .OrderByDescending(v => DrawingArrangeContextSizing.GetWidth(context, v) * DrawingArrangeContextSizing.GetHeight(context, v))
+            .ToList();
+        var packer = CreatePacker(context, availableW, availableH);
+
+        foreach (var view in orderedViews)
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, view);
+            var height = DrawingArrangeContextSizing.GetHeight(context, view);
+            if (!packer.TryInsert(width + context.Gap, height + context.Gap, MaxRectsHeuristic.BestAreaFit, out _))
+            {
+                conflicts.Add(new DrawingFitConflict
+                {
+                    ViewId = view.GetIdentifier().ID,
+                    ViewType = view.ViewType.ToString(),
+                    AttemptedZone = "Residual",
+                    Conflicts = new List<DrawingFitConflictItem>
+                    {
+                        new() { Type = "no_residual_space", Target = "maxrects" }
+                    }
+                });
+                break;
+            }
+        }
+
+        return conflicts;
     }
 
     private static MaxRectsBinPacker CreatePacker(DrawingArrangeContext context, double availableW, double availableH)

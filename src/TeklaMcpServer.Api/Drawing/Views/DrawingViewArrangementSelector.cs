@@ -39,6 +39,16 @@ public sealed class DrawingViewArrangementSelector
         return strategy.Arrange(context);
     }
 
+    public List<DrawingFitConflict> DiagnoseFitConflicts(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
+    {
+        var strategy = SelectStrategy(context);
+        if (strategy is not IDrawingViewArrangeDiagnosticsStrategy diagnosticsStrategy)
+            return new List<DrawingFitConflict>();
+
+        PerfTrace.Write("api-view", "arrange_strategy_diagnostics", 0, $"strategy={strategy.GetType().Name}");
+        return diagnosticsStrategy.DiagnoseFitConflicts(context, frames);
+    }
+
     private IDrawingViewArrangeStrategy SelectStrategy(DrawingArrangeContext context)
     {
         var strategy = _strategies.FirstOrDefault(s => s.CanArrange(context));

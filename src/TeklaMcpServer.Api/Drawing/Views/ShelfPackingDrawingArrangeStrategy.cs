@@ -6,7 +6,7 @@ using Tekla.Structures.DrawingInternal;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStrategy
+public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
     public bool CanArrange(DrawingArrangeContext context) => true;
 
@@ -49,5 +49,50 @@ public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStra
         }
 
         return arranged;
+    }
+
+    public List<DrawingFitConflict> DiagnoseFitConflicts(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
+    {
+        var conflicts = new List<DrawingFitConflict>();
+        var margin = context.Margin;
+        var gap = context.Gap;
+        var sheetW = context.SheetWidth;
+        var sheetH = context.SheetHeight;
+
+        double curX = margin;
+        double curY = sheetH - margin;
+        double rowH = 0;
+
+        foreach (var view in context.Views.OrderByDescending(v => v.Height))
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, view);
+            var height = DrawingArrangeContextSizing.GetHeight(context, view);
+
+            if (curX + width > sheetW - margin && curX > margin)
+            {
+                curX = margin;
+                curY -= rowH + gap;
+                rowH = 0;
+            }
+
+            if (curX + width > sheetW - margin || curY - height < margin)
+            {
+                conflicts.Add(new DrawingFitConflict
+                {
+                    ViewId = view.GetIdentifier().ID,
+                    ViewType = view.ViewType.ToString(),
+                    AttemptedZone = "Shelf",
+                    Conflicts = new List<DrawingFitConflictItem>
+                    {
+                        new() { Type = "outside_sheet_bounds", Target = "shelf_packing" }
+                    }
+                });
+            }
+
+            curX += width + gap;
+            if (height > rowH) rowH = height;
+        }
+
+        return conflicts;
     }
 }

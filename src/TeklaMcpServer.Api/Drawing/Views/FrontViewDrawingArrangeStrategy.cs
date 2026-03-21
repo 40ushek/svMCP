@@ -9,7 +9,7 @@ using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrategy
+public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
     internal const double RelaxedLayoutScaleCutoff = 50.0;
 
@@ -150,6 +150,76 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         return _fallback.Arrange(context);
     }
 
+    public List<DrawingFitConflict> DiagnoseFitConflicts(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
+    {
+        var conflicts = new List<DrawingFitConflict>();
+
+        var baseViewSelection = BaseViewSelection.Select(context.Views);
+        var baseView = baseViewSelection.View;
+        if (baseView?.ViewType != View.ViewTypes.FrontView)
+            return conflicts;
+
+        if (TryCreatePlan(context, out var planned))
+        {
+            var plannedIds = new System.Collections.Generic.HashSet<int>(
+                planned.Select(p => p.View.GetIdentifier().ID));
+            var unplannedViews = context.Views
+                .Where(v => !plannedIds.Contains(v.GetIdentifier().ID))
+                .ToList();
+
+            if (unplannedViews.Count == 0)
+                return conflicts;
+
+            var anchorRects = planned.Select(p =>
+            {
+                var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
+                var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
+                return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+            }).ToList();
+            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
+            extendedReserved.AddRange(anchorRects);
+            var unplannedCtx = new DrawingArrangeContext(
+                context.Drawing, unplannedViews,
+                context.SheetWidth, context.SheetHeight,
+                context.Margin, context.Gap,
+                extendedReserved, context.EffectiveFrameSizes);
+            var unplannedFrames = unplannedViews
+                .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
+                .ToList();
+
+            if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
+            {
+                foreach (var view in unplannedViews)
+                    AddConflict(conflicts, view, "Residual", "no_residual_space", target: "maxrects_fallback");
+            }
+
+            if (conflicts.Count > 0)
+                return conflicts;
+        }
+
+        var semanticKinds = context.Views.ToDictionary(
+            view => view.GetIdentifier().ID,
+            view => ViewSemanticClassifier.Classify(view.ViewType));
+
+        var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
+        var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
+        var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
+        var sections = context.Views
+            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Section)
+            .ToList();
+        var sectionPlacementSides = sections.ToDictionary(
+            section => section.GetIdentifier().ID,
+            section => _sectionPlacementSideResolver.Resolve(context.Drawing, baseView, section));
+
+        var leftSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Left).ToList();
+        var rightSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Right).ToList();
+        var topSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Top).ToList();
+        var bottomSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Bottom).ToList();
+
+        DiagnoseRelaxedLayoutConflicts(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, conflicts);
+        return conflicts;
+    }
+
     internal static bool ShouldPreferRelaxedLayout(double scale)
         => scale >= RelaxedLayoutScaleCutoff;
 
@@ -245,6 +315,431 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         placements.AddRange(resolved);
         return true;
+    }
+
+    private static void DiagnoseRelaxedLayoutConflicts(
+        DrawingArrangeContext context,
+        View front,
+        View? top,
+        View? bottom,
+        View? back,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        List<DrawingFitConflict> conflicts)
+    {
+        var blocked = NormalizeReservedAreas(context);
+        var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
+        var frontWidth = DrawingArrangeContextSizing.GetWidth(context, front);
+        var frontHeight = DrawingArrangeContextSizing.GetHeight(context, front);
+
+        var leftSlotW = (back != null ? DrawingArrangeContextSizing.GetWidth(context, back) + context.Gap : 0)
+            + ComputeHorizontalStackWidth(context, leftSections, context.Gap);
+        var rightSlotW = ComputeHorizontalStackWidth(context, rightSections, context.Gap);
+        var topSlotH = (top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0)
+            + ComputeVerticalStackHeight(context, topSections, context.Gap);
+        var bottomSlotH = (bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) + context.Gap : 0)
+            + ComputeVerticalStackHeight(context, bottomSections, context.Gap);
+
+        var frontRect = new ReservedRect(0, 0, 0, 0);
+        var placed = false;
+        foreach (var (x1, x2, y1, y2) in new[]
+        {
+            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY + bottomSlotH, freeMaxY - topSlotH),
+            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY,               freeMaxY),
+            (freeMinX,             freeMaxX,             freeMinY + bottomSlotH, freeMaxY - topSlotH),
+            (freeMinX,             freeMaxX,             freeMinY,               freeMaxY),
+        })
+        {
+            if (x2 - x1 >= frontWidth && y2 - y1 >= frontHeight
+                && TryFindFrontViewRect(frontWidth, frontHeight, x1, x2, y1, y2, blocked, out frontRect))
+            {
+                placed = true;
+                break;
+            }
+        }
+
+        if (!placed)
+        {
+            AddConflict(conflicts, front, "Center", "outside_zone_bounds");
+            return;
+        }
+
+        var occupied = new List<ReservedRect>(blocked) { frontRect };
+        var topRect = new ReservedRect(0, 0, 0, 0);
+        var bottomRect = new ReservedRect(0, 0, 0, 0);
+        var backRect = new ReservedRect(0, 0, 0, 0);
+        var topPlaced = false;
+        var bottomPlaced = false;
+        var backPlaced = false;
+
+        if (top != null)
+        {
+            if (TryPlaceRelative(context, top, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect)
+                || TryFindTopViewAtSheetTop(context, top, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect))
+            {
+                topRect = rect;
+                topPlaced = true;
+                occupied.Add(rect);
+            }
+            else
+            {
+                DiagnoseRelativePlacementFailure(conflicts, context, top, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top);
+            }
+        }
+
+        if (bottom != null)
+        {
+            if (TryPlaceRelative(context, bottom, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Bottom, out var rect))
+            {
+                bottomRect = rect;
+                bottomPlaced = true;
+                occupied.Add(rect);
+            }
+            else
+            {
+                DiagnoseRelativePlacementFailure(conflicts, context, bottom, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Bottom);
+            }
+        }
+
+        if (back != null)
+        {
+            if (TryPlaceRelative(context, back, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Left, out var rect))
+            {
+                backRect = rect;
+                backPlaced = true;
+                occupied.Add(rect);
+            }
+            else
+            {
+                DiagnoseRelativePlacementFailure(conflicts, context, back, frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Left);
+            }
+        }
+
+        DiagnoseStackPlacementFailureWithFallback(
+            conflicts,
+            context,
+            leftSections,
+            frontRect,
+            backPlaced ? backRect : frontRect,
+            frontRect,
+            RelativePlacement.Left,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied);
+
+        DiagnoseStackPlacementFailureWithFallback(
+            conflicts,
+            context,
+            rightSections,
+            frontRect,
+            frontRect,
+            backPlaced ? backRect : frontRect,
+            RelativePlacement.Right,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied);
+
+        DiagnoseHorizontalStackPlacementFailureWithFallback(
+            conflicts,
+            context,
+            topSections,
+            frontRect,
+            topPlaced ? topRect : frontRect,
+            bottomPlaced ? bottomRect : frontRect,
+            RelativePlacement.Top,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied);
+
+        DiagnoseHorizontalStackPlacementFailureWithFallback(
+            conflicts,
+            context,
+            bottomSections,
+            frontRect,
+            bottomPlaced ? bottomRect : frontRect,
+            topPlaced ? topRect : frontRect,
+            RelativePlacement.Bottom,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied);
+    }
+
+    private static void DiagnoseRelativePlacementFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+    {
+        var candidates = EnumerateRelativeCandidates(context, view, anchor, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, preferred).ToList();
+        if (candidates.Count == 0)
+        {
+            AddConflict(conflicts, view, preferred.ToString(), "outside_zone_bounds");
+            return;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (IntersectsAny(candidate, occupied))
+            {
+                AddIntersectionConflicts(conflicts, view, preferred.ToString(), candidate, occupied);
+                return;
+            }
+        }
+
+        AddConflict(conflicts, view, preferred.ToString(), "outside_zone_bounds");
+    }
+
+    private static void DiagnoseStackPlacementFailureWithFallback(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (sectionViews.Count == 0)
+            return;
+
+        if (TryPlaceVerticalSectionStack(context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(preferredZone)))
+            return;
+
+        var fallbackZone = preferredZone == RelativePlacement.Left ? RelativePlacement.Right : RelativePlacement.Left;
+        if (TryPlaceVerticalSectionStack(context, sectionViews, frontRect, fallbackAnchorRect, fallbackZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(fallbackZone)))
+            return;
+
+        DiagnoseVerticalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
+    }
+
+    private static void DiagnoseHorizontalStackPlacementFailureWithFallback(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (sectionViews.Count == 0)
+            return;
+
+        if (TryPlaceHorizontalSectionStack(context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(preferredZone)))
+            return;
+
+        var fallbackZone = preferredZone == RelativePlacement.Top ? RelativePlacement.Bottom : RelativePlacement.Top;
+        if (TryPlaceHorizontalSectionStack(context, sectionViews, frontRect, fallbackAnchorRect, fallbackZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(fallbackZone)))
+            return;
+
+        DiagnoseHorizontalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
+    }
+
+    private static void DiagnoseVerticalStackPlacementFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        var proposed = new List<ReservedRect>();
+        var currentAnchor = anchorRect;
+        foreach (var section in sectionViews.OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view)).ThenBy(view => view.GetIdentifier().ID))
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, section);
+            var height = DrawingArrangeContextSizing.GetHeight(context, section);
+            var minY = CenterY(frontRect) - height / 2.0;
+            if (minY < freeMinY || minY + height > freeMaxY)
+            {
+                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
+                return;
+            }
+
+            ReservedRect rect;
+            if (zone == RelativePlacement.Right)
+            {
+                var minX = currentAnchor.MaxX + gap;
+                rect = new ReservedRect(minX, minY, minX + width, minY + height);
+            }
+            else
+            {
+                var maxX = currentAnchor.MinX - gap;
+                rect = new ReservedRect(maxX - width, minY, maxX, minY + height);
+            }
+
+            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+            {
+                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
+                return;
+            }
+
+            if (IntersectsAny(rect, occupied))
+            {
+                AddIntersectionConflicts(conflicts, section, zone.ToString(), rect, occupied);
+                return;
+            }
+
+            var proposedHit = proposed.FirstOrDefault(item => Intersects(item, rect));
+            if (proposedHit.Width > 0 || proposedHit.Height > 0)
+            {
+                AddConflict(conflicts, section, zone.ToString(), "intersects_view");
+                return;
+            }
+
+            proposed.Add(rect);
+            currentAnchor = rect;
+        }
+    }
+
+    private static void DiagnoseHorizontalStackPlacementFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        var proposed = new List<ReservedRect>();
+        var currentAnchor = anchorRect;
+        foreach (var section in sectionViews.OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view)).ThenBy(view => view.GetIdentifier().ID))
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, section);
+            var height = DrawingArrangeContextSizing.GetHeight(context, section);
+            var minX = CenterX(frontRect) - width / 2.0;
+            if (minX < freeMinX || minX + width > freeMaxX)
+            {
+                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
+                return;
+            }
+
+            ReservedRect rect;
+            if (zone == RelativePlacement.Top)
+            {
+                var minY = currentAnchor.MaxY + gap;
+                rect = new ReservedRect(minX, minY, minX + width, minY + height);
+            }
+            else
+            {
+                var maxY = currentAnchor.MinY - gap;
+                rect = new ReservedRect(minX, maxY - height, minX + width, maxY);
+            }
+
+            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+            {
+                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
+                return;
+            }
+
+            if (IntersectsAny(rect, occupied))
+            {
+                AddIntersectionConflicts(conflicts, section, zone.ToString(), rect, occupied);
+                return;
+            }
+
+            var proposedHit = proposed.FirstOrDefault(item => Intersects(item, rect));
+            if (proposedHit.Width > 0 || proposedHit.Height > 0)
+            {
+                AddConflict(conflicts, section, zone.ToString(), "intersects_view");
+                return;
+            }
+
+            proposed.Add(rect);
+            currentAnchor = rect;
+        }
+    }
+
+    private static void AddIntersectionConflicts(
+        List<DrawingFitConflict> conflicts,
+        View view,
+        string attemptedZone,
+        ReservedRect rect,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        var added = false;
+        foreach (var other in occupied.Where(other => Intersects(rect, other)))
+        {
+            AddConflict(conflicts, view, attemptedZone, "intersects_reserved_area", target: $"{other.MinX:F1},{other.MinY:F1},{other.MaxX:F1},{other.MaxY:F1}");
+            added = true;
+        }
+
+        if (!added)
+            AddConflict(conflicts, view, attemptedZone, "intersects_view");
+    }
+
+    private static void AddConflict(
+        List<DrawingFitConflict> conflicts,
+        View view,
+        string attemptedZone,
+        string type,
+        int? otherViewId = null,
+        string target = "")
+    {
+        var viewId = view.GetIdentifier().ID;
+        var conflict = conflicts.FirstOrDefault(item => item.ViewId == viewId && item.AttemptedZone == attemptedZone);
+        if (conflict == null)
+        {
+            conflict = new DrawingFitConflict
+            {
+                ViewId = viewId,
+                ViewType = view.ViewType.ToString(),
+                AttemptedZone = attemptedZone
+            };
+            conflicts.Add(conflict);
+        }
+
+        if (conflict.Conflicts.Any(item => item.Type == type && item.OtherViewId == otherViewId && item.Target == target))
+            return;
+
+        conflict.Conflicts.Add(new DrawingFitConflictItem
+        {
+            Type = type,
+            OtherViewId = otherViewId,
+            Target = target
+        });
     }
 
     private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)

@@ -213,7 +213,10 @@ public sealed partial class TeklaDrawingViewApi
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
             candidateAttempts = 1;
             if (!fits)
-                throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.");
+            {
+                var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
+                throw new DrawingFitFailedException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.", conflicts);
+            }
 
             // ShouldSkipProjectionAlignment skips when scale >= cutoff (100), meaning all views
             // are small enough that alignment corrections are negligible. Use Max() so projection
@@ -239,7 +242,10 @@ public sealed partial class TeklaDrawingViewApi
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
             candidateAttempts = 1;
             if (!fits)
-                throw new System.InvalidOperationException("Could not fit views on sheet at current scales.");
+            {
+                var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
+                throw new DrawingFitFailedException("Could not fit views on sheet at current scales.", conflicts);
+            }
 
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
         }
