@@ -5,6 +5,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Diagnostics;
 
@@ -424,8 +425,9 @@ public sealed partial class TeklaDrawingViewApi
                 if (!offsetById.TryGetValue(arranged[i].Id, out var off))
                     continue;
 
-                var corrX = off.X / optimalScale.Value;
-                var corrY = off.Y / optimalScale.Value;
+                var correctionScale = v.Attributes.Scale > 0 ? v.Attributes.Scale : optimalScale.Value;
+                var corrX = off.X / correctionScale;
+                var corrY = off.Y / correctionScale;
                 var semanticKind = semanticKindById.TryGetValue(arranged[i].Id, out var kind)
                     ? kind
                     : ViewSemanticKind.Other;
@@ -495,6 +497,17 @@ public sealed partial class TeklaDrawingViewApi
         arranged = TryCenterViewGroup(activeDrawing, finalViews, arranged,
             effectiveMargin, sheetW - effectiveMargin,
             effectiveMargin, sheetH - effectiveMargin,
+            reservedAreas);
+        finalViews = EnumerateViews(activeDrawing).ToList();
+        arranged = TryRepositionDetailViews(
+            activeDrawing,
+            finalViews,
+            arranged,
+            effectiveMargin,
+            sheetW - effectiveMargin,
+            effectiveMargin,
+            sheetH - effectiveMargin,
+            gap,
             reservedAreas);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
@@ -614,6 +627,183 @@ public sealed partial class TeklaDrawingViewApi
     private static List<ReservedRect> ShiftRects(IReadOnlyList<ReservedRect> rects, double dx, double dy)
         => rects.Select(r => new ReservedRect(r.MinX + dx, r.MinY + dy, r.MaxX + dx, r.MaxY + dy)).ToList();
 
+    private List<ArrangedView> TryRepositionDetailViews(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        List<View> views,
+        List<ArrangedView> arranged,
+        double usableMinX,
+        double usableMaxX,
+        double usableMinY,
+        double usableMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> reserved)
+    {
+        var detailViews = views
+            .Where(v => ViewSemanticClassifier.Classify(v.ViewType) == ViewSemanticKind.Detail)
+            .ToList();
+        if (detailViews.Count == 0)
+            return arranged;
+
+        var detailMarks = GetDetailMarks().DetailMarks
+            .Where(mark => mark.DetailViewId.HasValue)
+            .GroupBy(mark => mark.DetailViewId!.Value)
+            .ToDictionary(group => group.Key, group => group.First());
+        if (detailMarks.Count == 0)
+            return arranged;
+
+        var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
+        var blocked = new List<ReservedRect>(reserved);
+        foreach (var view in views.Where(v => ViewSemanticClassifier.Classify(v.ViewType) != ViewSemanticKind.Detail))
+        {
+            if (DrawingViewSheetGeometry.TryGetBoundingRect(view, out var rect))
+                blocked.Add(rect);
+        }
+
+        var movedAny = false;
+        for (var i = 0; i < detailViews.Count; i++)
+        {
+            var detailView = detailViews[i];
+            var detailId = detailView.GetIdentifier().ID;
+            if (!detailMarks.TryGetValue(detailId, out var detailMark))
+            {
+                if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
+                    blocked.Add(currentRect);
+                continue;
+            }
+
+            if (!viewById.TryGetValue(detailMark.OwnerViewId, out var ownerView))
+            {
+                if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
+                    blocked.Add(currentRect);
+                continue;
+            }
+
+            if (!DrawingViewSheetGeometry.TryGetBoundingRect(ownerView, out var ownerRect)
+                || !DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var detailRect))
+            {
+                continue;
+            }
+
+            var detailWidth = detailRect.MaxX - detailRect.MinX;
+            var detailHeight = detailRect.MaxY - detailRect.MinY;
+            if (detailWidth <= 0 || detailHeight <= 0)
+            {
+                blocked.Add(detailRect);
+                continue;
+            }
+
+            var anchorX = CenterX(ownerRect);
+            var anchorY = CenterY(ownerRect);
+            if (TryResolveDetailAnchorSheet(ownerView, detailMark, out var resolvedAnchorX, out var resolvedAnchorY))
+            {
+                anchorX = resolvedAnchorX;
+                anchorY = resolvedAnchorY;
+            }
+
+            if (!BaseProjectedDrawingArrangeStrategy.TryFindDetailRect(
+                    ownerRect,
+                    detailWidth,
+                    detailHeight,
+                    gap * 2.0,
+                    usableMinX,
+                    usableMaxX,
+                    usableMinY,
+                    usableMaxY,
+                    blocked,
+                    anchorX,
+                    anchorY,
+                    out var candidateRect))
+            {
+                blocked.Add(detailRect);
+                continue;
+            }
+
+            var targetCenterX = (candidateRect.MinX + candidateRect.MaxX) * 0.5;
+            var targetCenterY = (candidateRect.MinY + candidateRect.MaxY) * 0.5;
+            var currentCenterX = (detailRect.MinX + detailRect.MaxX) * 0.5;
+            var currentCenterY = (detailRect.MinY + detailRect.MaxY) * 0.5;
+            if (System.Math.Abs(currentCenterX - targetCenterX) < 0.5
+                && System.Math.Abs(currentCenterY - targetCenterY) < 0.5)
+            {
+                blocked.Add(detailRect);
+                continue;
+            }
+
+            var origin = detailView.Origin;
+            if (origin == null)
+            {
+                blocked.Add(detailRect);
+                continue;
+            }
+
+            if (DrawingViewSheetGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
+            {
+                origin.X = targetCenterX - offsetX;
+                origin.Y = targetCenterY - offsetY;
+            }
+            else
+            {
+                origin.X = targetCenterX;
+                origin.Y = targetCenterY;
+            }
+
+            detailView.Origin = origin;
+            if (!detailView.Modify())
+            {
+                blocked.Add(detailRect);
+                continue;
+            }
+
+            movedAny = true;
+            blocked.Add(candidateRect);
+            for (var ai = 0; ai < arranged.Count; ai++)
+            {
+                if (arranged[ai].Id != detailId)
+                    continue;
+
+                arranged[ai] = new ArrangedView
+                {
+                    Id = arranged[ai].Id,
+                    ViewType = arranged[ai].ViewType,
+                    OriginX = origin.X,
+                    OriginY = origin.Y,
+                    PreferredPlacementSide = arranged[ai].PreferredPlacementSide,
+                    ActualPlacementSide = arranged[ai].ActualPlacementSide,
+                    PlacementFallbackUsed = arranged[ai].PlacementFallbackUsed
+                };
+                break;
+            }
+        }
+
+        if (movedAny)
+            activeDrawing.CommitChanges();
+
+        return arranged;
+    }
+
+    private static bool TryResolveDetailAnchorSheet(View ownerView, DetailMarkInfo detailMark, out double anchorX, out double anchorY)
+    {
+        if (TryResolveDetailAnchorSheet(ownerView, detailMark.LabelPoint, out anchorX, out anchorY))
+            return true;
+        if (TryResolveDetailAnchorSheet(ownerView, detailMark.BoundaryPoint, out anchorX, out anchorY))
+            return true;
+        return TryResolveDetailAnchorSheet(ownerView, detailMark.CenterPoint, out anchorX, out anchorY);
+    }
+
+    private static bool TryResolveDetailAnchorSheet(View ownerView, double[] point, out double anchorX, out double anchorY)
+    {
+        anchorX = 0;
+        anchorY = 0;
+        if (point == null || point.Length < 2)
+            return false;
+
+        return BaseProjectedDrawingArrangeStrategy.TryProjectViewLocalPointToSheet(
+            ownerView,
+            new Point(point[0], point[1], 0),
+            out anchorX,
+            out anchorY);
+    }
+
     /// <summary>
     /// After packing, the view group may be biased toward one side because reserved areas
     /// only block a corner. Shift the whole group toward the center of the usable area
@@ -673,4 +863,8 @@ public sealed partial class TeklaDrawingViewApi
             PlacementFallbackUsed = a.PlacementFallbackUsed
         }).ToList();
     }
+
+    private static double CenterX(ReservedRect rect) => (rect.MinX + rect.MaxX) / 2.0;
+
+    private static double CenterY(ReservedRect rect) => (rect.MinY + rect.MaxY) / 2.0;
 }

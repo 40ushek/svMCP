@@ -1381,6 +1381,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (detailRelations.Count == 0)
             return;
 
+        var reservedCount = System.Math.Max(0, occupied.Count - planned.Count);
         var plannedById = planned.ToDictionary(
             item => item.View.GetIdentifier().ID,
             item =>
@@ -1390,6 +1391,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
                 return rect;
             });
+        var blockedRects = new List<ReservedRect>(occupied.Take(reservedCount));
+        foreach (var item in planned)
+        {
+            if (plannedById.TryGetValue(item.View.GetIdentifier().ID, out var plannedRect))
+                blockedRects.Add(plannedRect);
+        }
 
         foreach (var relation in detailRelations)
         {
@@ -1408,19 +1415,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     freeMaxX,
                     freeMinY,
                     freeMaxY,
-                    occupied,
+                    blockedRects,
                     relation.AnchorX,
                     relation.AnchorY,
                     out var candidateRect))
                 continue;
 
             planned.Add(new PlannedPlacement(relation.DetailView, CenterX(candidateRect), CenterY(candidateRect)));
+            blockedRects.Add(candidateRect);
             occupied.Add(candidateRect);
             plannedById[relation.DetailView.GetIdentifier().ID] = candidateRect;
         }
     }
 
-    private static bool TryFindDetailRect(
+    internal static bool TryFindDetailRect(
         ReservedRect ownerRect,
         double detailWidth,
         double detailHeight,
