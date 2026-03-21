@@ -196,6 +196,13 @@ internal sealed partial class DrawingCommandHandler
                     viewId = conflict.ViewId,
                     viewType = conflict.ViewType,
                     attemptedZone = conflict.AttemptedZone,
+                    bbox = new
+                    {
+                        minX = conflict.BBoxMinX,
+                        minY = conflict.BBoxMinY,
+                        maxX = conflict.BBoxMaxX,
+                        maxY = conflict.BBoxMaxY
+                    },
                     conflicts = conflict.Conflicts.Select(item => new
                     {
                         type = item.Type,

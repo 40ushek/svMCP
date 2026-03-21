@@ -190,7 +190,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
             {
                 foreach (var view in unplannedViews)
-                    AddConflict(conflicts, view, "Residual", "no_residual_space", target: "maxrects_fallback");
+                    AddResidualConflicts(conflicts, view, unplannedCtx, extendedReserved);
             }
 
             if (conflicts.Count > 0)
@@ -710,6 +710,38 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             AddConflict(conflicts, view, attemptedZone, "intersects_view");
     }
 
+    private static void AddResidualConflicts(
+        List<DrawingFitConflict> conflicts,
+        View view,
+        DrawingArrangeContext context,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (!TryGetViewBoundingRect(view, out var rect))
+        {
+            AddConflict(conflicts, view, "Residual", "no_residual_space", target: "maxrects_fallback");
+            return;
+        }
+
+        EnsureBoundingRect(conflicts, view, "Residual", rect);
+
+        var usableMinX = context.Margin;
+        var usableMaxX = context.SheetWidth - context.Margin;
+        var usableMinY = context.Margin;
+        var usableMaxY = context.SheetHeight - context.Margin;
+
+        if (!IsWithinArea(rect, usableMinX, usableMaxX, usableMinY, usableMaxY))
+            AddConflict(conflicts, view, "Residual", "outside_sheet_bounds");
+
+        AddIntersectionConflicts(conflicts, view, "Residual", rect, occupied);
+
+        var residualConflict = conflicts.FirstOrDefault(item =>
+            item.ViewId == view.GetIdentifier().ID &&
+            item.AttemptedZone == "Residual");
+
+        if (residualConflict == null || residualConflict.Conflicts.Count == 0)
+            AddConflict(conflicts, view, "Residual", "no_residual_space", target: "maxrects_fallback");
+    }
+
     private static void AddConflict(
         List<DrawingFitConflict> conflicts,
         View view,
@@ -740,6 +772,60 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             OtherViewId = otherViewId,
             Target = target
         });
+    }
+
+    private static void EnsureBoundingRect(
+        List<DrawingFitConflict> conflicts,
+        View view,
+        string attemptedZone,
+        ReservedRect rect)
+    {
+        var viewId = view.GetIdentifier().ID;
+        var conflict = conflicts.FirstOrDefault(item => item.ViewId == viewId && item.AttemptedZone == attemptedZone);
+        if (conflict == null)
+        {
+            conflict = new DrawingFitConflict
+            {
+                ViewId = viewId,
+                ViewType = view.ViewType.ToString(),
+                AttemptedZone = attemptedZone
+            };
+            conflicts.Add(conflict);
+        }
+
+        conflict.BBoxMinX = rect.MinX;
+        conflict.BBoxMinY = rect.MinY;
+        conflict.BBoxMaxX = rect.MaxX;
+        conflict.BBoxMaxY = rect.MaxY;
+    }
+
+    private static bool TryGetViewBoundingRect(View view, out ReservedRect rect)
+    {
+        if (view is IAxisAlignedBoundingBox bounded)
+        {
+            var box = bounded.GetAxisAlignedBoundingBox();
+            if (box != null)
+            {
+                rect = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                return true;
+            }
+        }
+
+        var origin = view.Origin;
+        if (origin != null)
+        {
+            var halfWidth = view.Width * 0.5;
+            var halfHeight = view.Height * 0.5;
+            rect = new ReservedRect(
+                origin.X - halfWidth,
+                origin.Y - halfHeight,
+                origin.X + halfWidth,
+                origin.Y + halfHeight);
+            return true;
+        }
+
+        rect = default;
+        return false;
     }
 
     private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)

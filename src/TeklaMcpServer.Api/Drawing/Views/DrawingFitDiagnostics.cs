@@ -7,6 +7,10 @@ public sealed class DrawingFitConflict
     public int ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
     public string AttemptedZone { get; set; } = string.Empty;
+    public double? BBoxMinX { get; set; }
+    public double? BBoxMinY { get; set; }
+    public double? BBoxMaxX { get; set; }
+    public double? BBoxMaxY { get; set; }
     public List<DrawingFitConflictItem> Conflicts { get; set; } = new();
 }
 
@@ -27,4 +31,3 @@ public sealed class DrawingFitFailedException : System.InvalidOperationException
 
     public IReadOnlyList<DrawingFitConflict> Conflicts { get; }
 }
-
