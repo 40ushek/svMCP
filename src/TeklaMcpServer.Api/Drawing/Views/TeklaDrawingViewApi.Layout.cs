@@ -72,6 +72,38 @@ public sealed partial class TeklaDrawingViewApi
         return frames;
     }
 
+    private static List<DrawingFitConflict> BuildOversizeConflicts(
+        IReadOnlyList<View> views,
+        IReadOnlyList<(double w, double h)> frames,
+        double availW,
+        double availH)
+    {
+        var conflicts = new List<DrawingFitConflict>();
+        for (int i = 0; i < views.Count && i < frames.Count; i++)
+        {
+            var frame = frames[i];
+            if (frame.w <= availW && frame.h <= availH)
+                continue;
+
+            conflicts.Add(new DrawingFitConflict
+            {
+                ViewId = views[i].GetIdentifier().ID,
+                ViewType = views[i].ViewType.ToString(),
+                AttemptedZone = "sheet",
+                Conflicts = new List<DrawingFitConflictItem>
+                {
+                    new()
+                    {
+                        Type = "sheet-oversize",
+                        Target = $"usable={availW:F1}x{availH:F1};view={frame.w:F1}x{frame.h:F1}"
+                    }
+                }
+            });
+        }
+
+        return conflicts;
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -213,6 +245,9 @@ public sealed partial class TeklaDrawingViewApi
                 .ToList();
             var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
+            var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
+            if (oversizeConflicts.Count > 0)
+                throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
             keepFitSw.Stop();
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
@@ -242,6 +277,9 @@ public sealed partial class TeklaDrawingViewApi
                 .ToList();
             var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
+            var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
+            if (oversizeConflicts.Count > 0)
+                throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
             keepFitSw.Stop();
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
@@ -256,6 +294,7 @@ public sealed partial class TeklaDrawingViewApi
         }
         else
         {
+            List<DrawingFitConflict>? lastOversizeConflicts = null;
             foreach (var s in candidates)
             {
                 candidateAttempts++;
@@ -279,8 +318,7 @@ public sealed partial class TeklaDrawingViewApi
 
                     activeDrawing.CommitChanges();
                     candidateViews = EnumerateViews(activeDrawing).ToList();
-                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews,
-                        DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing));
+                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews, null);
                     actualFrames = candidateViews
                         .Select(v =>
                         {
@@ -297,6 +335,15 @@ public sealed partial class TeklaDrawingViewApi
                     effectiveFrameSizes = originalFrameSizes;
                     actualFrames = BuildCandidateFrames(candidateViews, semanticKindById, originalScales, originalFrameSizes, s, uniformAllNonDetail);
                     ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                }
+
+                var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
+                if (oversizeConflicts.Count > 0)
+                {
+                    lastOversizeConflicts = oversizeConflicts;
+                    candidateSw.Stop();
+                    candidateFitMs += candidateSw.ElapsedMilliseconds;
+                    continue;
                 }
 
                 if (_arrangementSelector.EstimateFit(ctx, actualFrames))
@@ -324,6 +371,9 @@ public sealed partial class TeklaDrawingViewApi
                 }
 
                 activeDrawing.CommitChanges();
+                if (lastOversizeConflicts is { Count: > 0 })
+                    throw new DrawingFitFailedException("One or more views are larger than the usable sheet area for every available standard scale.", lastOversizeConflicts);
+
                 throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
             }
 
@@ -347,49 +397,8 @@ public sealed partial class TeklaDrawingViewApi
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
             : TryGetFrameOffsetsFromBoundingBoxes(currentViews, actualRects);
-        if (!preserveExistingScales &&
-            debugPreview &&
-            scalePolicy != DrawingScalePolicy.UniformMainWithSectionExceptions &&
-            offsetById.Count != currentViews.Count)
-        {
-            var originsAtOptimal = currentViews
-                .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
-                .ToList();
-
-            var probeScale = standardScales.FirstOrDefault(s => System.Math.Abs(s - optimalScale.Value) > 0.5);
-            if (probeScale > 0)
-            {
-                var probeSw = Stopwatch.StartNew();
-                foreach (var v in currentViews)
-                {
-                    v.Attributes.Scale = probeScale;
-                    v.Modify();
-                }
-
-                activeDrawing.CommitChanges();
-                var probeViews = EnumerateViews(activeDrawing).ToList();
-
-                var denom = 1.0 / optimalScale.Value - 1.0 / probeScale;
-                for (int i = 0; i < currentViews.Count && i < probeViews.Count; i++)
-                {
-                    var dX = (probeViews[i].Origin?.X ?? 0) - originsAtOptimal[i].X;
-                    var dY = (probeViews[i].Origin?.Y ?? 0) - originsAtOptimal[i].Y;
-                    var viewId = currentViews[i].GetIdentifier().ID;
-                    offsetById[viewId] = (dX / denom, dY / denom);
-                }
-
-                foreach (var v in probeViews)
-                {
-                    v.Attributes.Scale = optimalScale.Value;
-                    v.Modify();
-                }
-
-                activeDrawing.CommitChanges();
-                currentViews = EnumerateViews(activeDrawing).ToList();
-                probeSw.Stop();
-                probeMs = probeSw.ElapsedMilliseconds;
-            }
-        }
+        // Do not probe temporary scales in the live drawing: interrupted runs can leave the
+        // sheet in an arbitrary intermediate state. Missing offsets now simply skip correction.
 
         var gridApi = new TeklaDrawingGridApi();
         var preloadedAxes = currentViews
@@ -400,7 +409,7 @@ public sealed partial class TeklaDrawingViewApi
         var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
             new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
-                TryGetFrameSizesFromBoundingBoxes(currentViews, DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing))));
+                TryGetFrameSizesFromBoundingBoxes(currentViews, null)));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 

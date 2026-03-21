@@ -28,6 +28,23 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Get section placement sides (Top/Bottom/Left/Right) for all section views in the active drawing, based on coordinate system analysis")]
+    public static string GetDrawingSectionSides()
+    {
+        var json = RunBridge("get_drawing_section_sides");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Move a drawing view by relative offset (dx/dy) or to an absolute position")]
     public static string MoveView(
         [Description("Drawing view ID (from get_drawing_views)")] int viewId,
