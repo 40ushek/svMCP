@@ -64,15 +64,9 @@ public static partial class DrawingCommandParsers
             double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var titleBlockHeight))
             request.TitleBlockHeight = titleBlockHeight;
 
-        // Boolean flags can appear at any position (positional args are numeric, so no ambiguity)
+        // Scale-policy tokens can appear at any position (positional args are numeric, so no ambiguity)
         for (int i = 1; i < args.Length; i++)
         {
-            if (string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
-            {
-                request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
-                continue;
-            }
-
             if (string.Equals(args[i], "preserveexistingscales", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(args[i], "preservemixedscales", StringComparison.OrdinalIgnoreCase))
             {
@@ -80,18 +74,14 @@ public static partial class DrawingCommandParsers
                 continue;
             }
 
-            if (string.Equals(args[i], "uniformnondetailscale", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "uniformmainscale", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "uniformallnondetail", StringComparison.OrdinalIgnoreCase) ||
+            if (string.Equals(args[i], "uniformallnondetail", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(args[i], "strictuniformscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformAllNonDetail;
                 continue;
             }
 
-            if (string.Equals(args[i], "mixednondetailscale", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "allowsectionscaleexceptions", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;
             }

@@ -106,7 +106,7 @@ public sealed class SetViewScaleResult
 public sealed class FitViewsResult
 {
     public double              OptimalScale        { get; set; }
-    /// <summary>True when keepScale=true was used; OptimalScale is Max of existing scales, not a unified target.</summary>
+    /// <summary>True when ScalePolicy=PreserveExistingScales was used; OptimalScale is Max of existing scales, not a unified target.</summary>
     public bool                ScalePreserved      { get; set; }
     public string              ScalePolicy         { get; set; } = string.Empty;
     public double              SheetWidth          { get; set; }

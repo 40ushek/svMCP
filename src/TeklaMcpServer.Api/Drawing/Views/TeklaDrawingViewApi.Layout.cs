@@ -151,7 +151,7 @@ public sealed partial class TeklaDrawingViewApi
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
             candidateAttempts = 1;
             if (!fits)
-                throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use keepScale=false to allow rescaling.");
+                throw new System.InvalidOperationException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.");
 
             // ShouldSkipProjectionAlignment skips when scale >= cutoff (100), meaning all views
             // are small enough that alignment corrections are negligible. Use Max() so projection
