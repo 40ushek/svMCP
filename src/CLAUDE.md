@@ -296,9 +296,17 @@ var drawings = new DrawingHandler().GetDrawings(); // DrawingEnumerator
 
 ### Layout Table Bounds Contract
 
-- For drawing layout tables, the canonical source of visible table bounds is `Segment.Primitives[0/2]` from the presentation model.
-- Contract: `Primitives[0]` = min-corner marker, `Primitives[2]` = max-corner marker.
-- Do not replace this marker-based path with generic primitive accumulation unless canvas markers are proven unavailable for the specific runtime/template.
+Tekla layout table bounds are read from the Presentation Model (`DrawingPresentationModelInterface.Connection`) via `GetObjectPresentation(tableId)` → `Segment`.
+
+**Fallback chain** (in `DrawingReservedAreaReader.TryGetSegmentBounds`):
+
+1. **Canvas markers** (`TryGetCanvasBounds`): `Primitives[0]` = min-corner `LinePrimitive`, `Primitives[2]` = max-corner `LinePrimitive`. Works for simple fixed-width tables (e.g. `MPD_rev`). Confirmed by `MpdQR.Core.Presentation.QRpresentation` which uses the identical contract.
+
+2. **Line-only accumulation** (`AccumulateLinePrimitiveBounds`): recursively collects only `LinePrimitive` endpoints (ignoring `TextPrimitive`). Required for multi-column dynamic tables (e.g. `_assemblyMultiLayerPartList`) whose top-level primitives are `TextPrimitive` + `PrimitiveGroup`s. Without this step, column-header text pushes `maxX` far beyond the visible frame (200.875 vs correct 165 for a 160mm table).
+
+3. **Full accumulation** (`AccumulatePrimitiveBounds`): all primitive types including `TextPrimitive`. Last resort only — may over-extend bounds.
+
+**Do not** replace step 1 with step 2 for templates that emit canvas markers — markers give exact frame corners in O(1).
 
 ## Key Dependencies
 

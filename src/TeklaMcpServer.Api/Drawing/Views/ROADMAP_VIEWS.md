@@ -132,6 +132,11 @@
   - `get_drawing_section_sides`
   - `get_drawing_detail_marks`
   - `fit_views_to_sheet` теперь возвращает bbox конфликтующего вида
+- геометрия layout-таблиц читается корректно для всех типов шаблонов:
+  - простые таблицы (`MPD_rev`) — через canvas-маркеры `Primitives[0/2]`
+  - многоколоночные динамические таблицы (`_assemblyMultiLayerPartList`) —
+    через line-only accumulation (`AccumulateLinePrimitiveBounds`), который
+    игнорирует `TextPrimitive` и не даёт заголовкам колонок раздувать `maxX`
 
 Подтверждённый live-факт:
 
