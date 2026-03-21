@@ -178,8 +178,34 @@ internal static class DrawingReservedAreaReader
                 var ltSelected = lt.Select();
                 var overlapWithViews = ltSelected && lt.OverlapVithViews;
                 var tableName = ltSelected ? (lt.Name ?? "") : "";
+
+                // Try IAxisAlignedBoundingBox first — gives actual placed bounds on the sheet.
+                // Primitives[0/2] reads template column layout (constant width) rather than
+                // the visible rendered frame, so it can give wrong maxX for multi-column tables.
+                LayoutTableGeometryInfo info;
+                if (lt is IAxisAlignedBoundingBox ltBounded)
+                {
+                    var box = ltBounded.GetAxisAlignedBoundingBox();
+                    if (box != null)
+                    {
+                        var bounds = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                        info = new LayoutTableGeometryInfo
+                        {
+                            TableId = tableId,
+                            Name = tableName,
+                            OverlapWithViews = overlapWithViews,
+                            HasGeometry = true,
+                            Bounds = bounds
+                        };
+                        PerfTrace.Write("api-view", "reserved_table_geometry", 0,
+                            $"tableId={tableId} name={tableName} path=bbox minX={bounds.MinX:F1} minY={bounds.MinY:F1} maxX={bounds.MaxX:F1} maxY={bounds.MaxY:F1}");
+                        result.Add(info);
+                        continue;
+                    }
+                }
+
                 var segment = connection.Service.GetObjectPresentation(tableId);
-                var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
+                info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
                 result.Add(info);
                 PerfTrace.Write(
                     "api-view",
@@ -291,12 +317,41 @@ internal static class DrawingReservedAreaReader
         if (TryGetCanvasBounds(segment, out bounds))
             return true;
 
-        // Safety fallback only. Do not treat this as the primary source of truth.
+        // Second attempt: accumulate only LinePrimitive bounds (ignore TextPrimitive).
+        // Multi-column tables have no canvas markers but do have LinePrimitive frame/column lines
+        // inside PrimitiveGroups. Excluding text gives correct frame extents.
+        var lineAcc = new BoundsAccumulator();
+        AccumulateLinePrimitiveBounds(segment, ref lineAcc);
+        if (lineAcc.HasValue)
+        {
+            bounds = new ReservedRect(lineAcc.MinX, lineAcc.MinY, lineAcc.MaxX, lineAcc.MaxY);
+            return true;
+        }
+
+        // Last resort: all primitive types including text (may over-extend).
         var acc = new BoundsAccumulator();
         AccumulatePrimitiveBounds(segment, ref acc);
         if (!acc.HasValue) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
         bounds = new ReservedRect(acc.MinX, acc.MinY, acc.MaxX, acc.MaxY);
         return true;
+    }
+
+    private static void AccumulateLinePrimitiveBounds(PrimitiveBase primitive, ref BoundsAccumulator acc)
+    {
+        switch (primitive)
+        {
+            case Segment seg:
+                foreach (var c in seg.Primitives) AccumulateLinePrimitiveBounds(c, ref acc);
+                break;
+            case PrimitiveGroup grp:
+                foreach (var c in grp.Primitives) AccumulateLinePrimitiveBounds(c, ref acc);
+                break;
+            case LinePrimitive line:
+                Include(ref acc, line.StartPoint);
+                Include(ref acc, line.EndPoint);
+                break;
+            // TextPrimitive and others intentionally excluded
+        }
     }
 
     private static bool TryGetCanvasBounds(Segment segment, out ReservedRect bounds)
