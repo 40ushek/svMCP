@@ -44,8 +44,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     {
         public View DetailView { get; set; } = null!;
         public View OwnerView { get; set; } = null!;
-        public double? LabelX { get; set; }
-        public double? LabelY { get; set; }
+        public double? AnchorX { get; set; }
+        public double? AnchorY { get; set; }
     }
 
     public bool CanArrange(DrawingArrangeContext context)
@@ -74,7 +74,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             {
                 var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+                DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
+                return rect;
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
@@ -116,7 +117,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                     var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                    return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+                    DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
+                    return rect;
                 }).ToList();
 
                 var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
@@ -1327,8 +1329,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                     {
                         DetailView = detailView,
                         OwnerView = ownerView,
-                        LabelX = detailMark.LabelPoint?.X,
-                        LabelY = detailMark.LabelPoint?.Y
+                        AnchorX = detailMark.LabelPoint?.X ?? detailMark.BoundaryPoint?.X ?? detailMark.CenterPoint?.X,
+                        AnchorY = detailMark.LabelPoint?.Y ?? detailMark.BoundaryPoint?.Y ?? detailMark.CenterPoint?.Y
                     });
                     break;
                 }
@@ -1358,7 +1360,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                return new ReservedRect(item.X - width / 2.0, item.Y - height / 2.0, item.X + width / 2.0, item.Y + height / 2.0);
+                DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
+                return rect;
             });
 
         foreach (var relation in detailRelations)
@@ -1379,8 +1382,8 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
                     freeMinY,
                     freeMaxY,
                     occupied,
-                    relation.LabelX,
-                    relation.LabelY,
+                    relation.AnchorX,
+                    relation.AnchorY,
                     out var candidateRect))
                 continue;
 
@@ -1400,14 +1403,16 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         double freeMinY,
         double freeMaxY,
         IReadOnlyList<ReservedRect> occupied,
-        double? labelX,
-        double? labelY,
+        double? anchorX,
+        double? anchorY,
         out ReservedRect bestRect)
     {
         var ownerCenterX = CenterX(ownerRect);
         var ownerCenterY = CenterY(ownerRect);
-        var preferRight = !labelX.HasValue || labelX.Value >= ownerCenterX;
-        var preferTop = !labelY.HasValue || labelY.Value >= ownerCenterY;
+        var effectiveAnchorX = anchorX ?? ownerCenterX;
+        var effectiveAnchorY = anchorY ?? ownerCenterY;
+        var preferRight = effectiveAnchorX >= ownerCenterX;
+        var preferTop = effectiveAnchorY >= ownerCenterY;
         var preferredCenterX = preferRight
             ? ownerRect.MaxX + offset + detailWidth * 0.5
             : ownerRect.MinX - offset - detailWidth * 0.5;
@@ -1453,7 +1458,9 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
                 var centerX = CenterX(rect);
                 var centerY = CenterY(rect);
-                var score = System.Math.Abs(centerX - preferredCenterX) + System.Math.Abs(centerY - preferredCenterY);
+                var anchorDistance = System.Math.Abs(centerX - effectiveAnchorX) + System.Math.Abs(centerY - effectiveAnchorY);
+                var preferredDistance = System.Math.Abs(centerX - preferredCenterX) + System.Math.Abs(centerY - preferredCenterY);
+                var score = (anchorDistance * 10.0) + preferredDistance;
                 if (score >= bestScore)
                     continue;
 

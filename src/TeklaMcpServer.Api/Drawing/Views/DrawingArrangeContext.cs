@@ -47,6 +47,23 @@ internal static class DrawingArrangeContextSizing
 
 internal static class DrawingViewSheetGeometry
 {
+    public static bool TryGetCenterOffsetFromOrigin(View view, out double offsetX, out double offsetY)
+    {
+        offsetX = 0;
+        offsetY = 0;
+
+        var origin = view.Origin;
+        if (origin == null)
+            return false;
+
+        if (!TryGetCenter(view, out var centerX, out var centerY))
+            return false;
+
+        offsetX = centerX - origin.X;
+        offsetY = centerY - origin.Y;
+        return true;
+    }
+
     public static bool TryGetBoundingRect(View view, out ReservedRect rect)
     {
         if (view is IAxisAlignedBoundingBox bounded)
@@ -74,6 +91,34 @@ internal static class DrawingViewSheetGeometry
 
         rect = default;
         return false;
+    }
+
+    public static bool TryGetBoundingRectAtOrigin(
+        View view,
+        double originX,
+        double originY,
+        double width,
+        double height,
+        out ReservedRect rect)
+    {
+        if (TryGetCenterOffsetFromOrigin(view, out var offsetX, out var offsetY))
+        {
+            var centerX = originX + offsetX;
+            var centerY = originY + offsetY;
+            rect = new ReservedRect(
+                centerX - width * 0.5,
+                centerY - height * 0.5,
+                centerX + width * 0.5,
+                centerY + height * 0.5);
+            return true;
+        }
+
+        rect = new ReservedRect(
+            originX - width * 0.5,
+            originY - height * 0.5,
+            originX + width * 0.5,
+            originY + height * 0.5);
+        return true;
     }
 
     public static bool TryGetCenter(View view, out double centerX, out double centerY)
