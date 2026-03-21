@@ -190,7 +190,11 @@ public sealed partial class TeklaDrawingViewApi
         initMs = init.ElapsedMilliseconds;
 
         var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
-        var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views);
+        // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
+        // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
+        // views from GetViews() which may be stale after Modify/CommitChanges.
+        var actualRects = DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing);
+        var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views, actualRects);
 
         double? optimalScale = null;
         var currentViews = views;
@@ -198,7 +202,7 @@ public sealed partial class TeklaDrawingViewApi
         if (preserveExistingScales)
         {
             // Validate that views fit at their current scales before committing to arrange.
-            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews);
+            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews, actualRects);
             var keepFrames = currentViews
                 .Select(v =>
                 {
@@ -227,7 +231,7 @@ public sealed partial class TeklaDrawingViewApi
         }
         else if (keepCurrentScales)
         {
-            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews);
+            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews, actualRects);
             var keepFrames = currentViews
                 .Select(v =>
                 {
@@ -275,7 +279,8 @@ public sealed partial class TeklaDrawingViewApi
 
                     activeDrawing.CommitChanges();
                     candidateViews = EnumerateViews(activeDrawing).ToList();
-                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews);
+                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews,
+                        DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing));
                     actualFrames = candidateViews
                         .Select(v =>
                         {
@@ -341,7 +346,7 @@ public sealed partial class TeklaDrawingViewApi
 
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
-            : TryGetFrameOffsetsFromBoundingBoxes(currentViews);
+            : TryGetFrameOffsetsFromBoundingBoxes(currentViews, actualRects);
         if (!preserveExistingScales &&
             debugPreview &&
             scalePolicy != DrawingScalePolicy.UniformMainWithSectionExceptions &&
@@ -394,7 +399,8 @@ public sealed partial class TeklaDrawingViewApi
 
         var arrangeSw = Stopwatch.StartNew();
         var arranged = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, TryGetFrameSizesFromBoundingBoxes(currentViews)));
+            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
+                TryGetFrameSizesFromBoundingBoxes(currentViews, DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing))));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
@@ -508,7 +514,8 @@ public sealed partial class TeklaDrawingViewApi
             effectiveMargin,
             sheetH - effectiveMargin,
             gap,
-            reservedAreas);
+            reservedAreas,
+            offsetById);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
@@ -636,7 +643,8 @@ public sealed partial class TeklaDrawingViewApi
         double usableMinY,
         double usableMaxY,
         double gap,
-        IReadOnlyList<ReservedRect> reserved)
+        IReadOnlyList<ReservedRect> reserved,
+        IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets)
     {
         var detailViews = views
             .Where(v => ViewSemanticClassifier.Classify(v.ViewType) == ViewSemanticKind.Detail)
@@ -736,7 +744,17 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
-            if (DrawingViewSheetGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
+            // Use the frame offset captured BEFORE any moves in this fit cycle.
+            // Re-reading the bbox here would return a stale value (center == origin, offset = 0)
+            // because Tekla doesn't update the bbox immediately after Modify/CommitChanges.
+            // offsetById stores (center - origin) * scale, so sheet-space offset = stored / scale.
+            var detailScale = detailView.Attributes.Scale > 0 ? detailView.Attributes.Scale : 1.0;
+            if (preMovedFrameOffsets.TryGetValue(detailId, out var preOffset))
+            {
+                origin.X = targetCenterX - preOffset.X / detailScale;
+                origin.Y = targetCenterY - preOffset.Y / detailScale;
+            }
+            else if (DrawingViewSheetGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
             {
                 origin.X = targetCenterX - offsetX;
                 origin.Y = targetCenterY - offsetY;
