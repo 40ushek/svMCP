@@ -164,7 +164,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                 continue;
 
             var state = BuildViewStateFromPos(v, pos.X, pos.Y, frameOffsetsById);
-            frameCenterById[id] = (state.OriginX + state.FrameOffsetSheetX, state.OriginY + state.FrameOffsetSheetY);
+            frameCenterById[id] = (state.FrameCenterX, state.FrameCenterY);
         }
 
         var byX = views.OrderBy(v => frameCenterById.TryGetValue(v.GetIdentifier().ID, out var p) ? p.X : 0).ToList();
@@ -213,7 +213,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                 {
                     posById[targetId] = (targetPos.X, targetPos.Y + dy);
                     var movedState = BuildViewStateFromPos(target, targetPos.X, targetPos.Y + dy, frameOffsetsById);
-                    frameCenterById[targetId] = (movedState.OriginX + movedState.FrameOffsetSheetX, movedState.OriginY + movedState.FrameOffsetSheetY);
+                    frameCenterById[targetId] = (movedState.FrameCenterX, movedState.FrameCenterY);
                 }
             }
         }
@@ -264,7 +264,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                 {
                     posById[targetId] = (targetPos.X + dx, targetPos.Y);
                     var movedState = BuildViewStateFromPos(target, targetPos.X + dx, targetPos.Y, frameOffsetsById);
-                    frameCenterById[targetId] = (movedState.OriginX + movedState.FrameOffsetSheetX, movedState.OriginY + movedState.FrameOffsetSheetY);
+                    frameCenterById[targetId] = (movedState.FrameCenterX, movedState.FrameCenterY);
                 }
             }
         }

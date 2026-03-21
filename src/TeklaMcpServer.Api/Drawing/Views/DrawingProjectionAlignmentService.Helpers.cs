@@ -208,10 +208,18 @@ internal sealed partial class DrawingProjectionAlignmentService
             frameOffsetSheetY = frameOffset.Y / scale;
         }
 
+        var originX = view.Origin?.X ?? 0;
+        var originY = view.Origin?.Y ?? 0;
+        if (DrawingViewSheetGeometry.TryGetCenter(view, out var centerX, out var centerY))
+        {
+            originX = centerX - frameOffsetSheetX;
+            originY = centerY - frameOffsetSheetY;
+        }
+
         return new ProjectionViewState(
             view.GetIdentifier().ID,
-            view.Origin?.X ?? 0,
-            view.Origin?.Y ?? 0,
+            originX,
+            originY,
             scale,
             view.Width,
             view.Height,

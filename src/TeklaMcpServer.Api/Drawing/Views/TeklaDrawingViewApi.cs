@@ -49,21 +49,12 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
         var offsets = new Dictionary<int, (double X, double Y)>(views.Count);
         foreach (var view in views)
         {
-            if (view is not IAxisAlignedBoundingBox bounded)
+            if (!DrawingViewSheetGeometry.TryGetCenter(view, out var centerX, out var centerY))
             {
                 offsets.Clear();
                 return offsets;
             }
 
-            var box = bounded.GetAxisAlignedBoundingBox();
-            if (box == null)
-            {
-                offsets.Clear();
-                return offsets;
-            }
-
-            var centerX = (box.MinPoint.X + box.MaxPoint.X) * 0.5;
-            var centerY = (box.MinPoint.Y + box.MaxPoint.Y) * 0.5;
             var origin = view.Origin;
             var originX = origin?.X ?? 0;
             var originY = origin?.Y ?? 0;
@@ -80,22 +71,15 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
         var sizes = new Dictionary<int, (double Width, double Height)>(views.Count);
         foreach (var view in views)
         {
-            if (view is not IAxisAlignedBoundingBox bounded)
-            {
-                sizes.Clear();
-                return sizes;
-            }
-
-            var box = bounded.GetAxisAlignedBoundingBox();
-            if (box == null)
+            if (!DrawingViewSheetGeometry.TryGetBoundingRect(view, out var rect))
             {
                 sizes.Clear();
                 return sizes;
             }
 
             sizes[view.GetIdentifier().ID] = (
-                box.MaxPoint.X - box.MinPoint.X,
-                box.MaxPoint.Y - box.MinPoint.Y);
+                rect.MaxX - rect.MinX,
+                rect.MaxY - rect.MinY);
         }
 
         return sizes;

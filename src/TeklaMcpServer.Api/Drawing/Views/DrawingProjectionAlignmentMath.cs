@@ -22,13 +22,11 @@ internal static class DrawingProjectionAlignmentMath
 
     public static ProjectionRect GetFrameRect(ProjectionViewState view)
     {
-        var centerX = view.OriginX + view.FrameOffsetSheetX;
-        var centerY = view.OriginY + view.FrameOffsetSheetY;
         return new ProjectionRect(
-            centerX - (view.Width * 0.5),
-            centerY - (view.Height * 0.5),
-            centerX + (view.Width * 0.5),
-            centerY + (view.Height * 0.5));
+            view.FrameCenterX - (view.Width * 0.5),
+            view.FrameCenterY - (view.Height * 0.5),
+            view.FrameCenterX + (view.Width * 0.5),
+            view.FrameCenterY + (view.Height * 0.5));
     }
 
     public static ProjectionViewState TranslateOrigin(ProjectionViewState view, double dx, double dy)

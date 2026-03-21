@@ -40,6 +40,8 @@ internal sealed class ProjectionViewState
     public double Height { get; }
     public double FrameOffsetSheetX { get; }
     public double FrameOffsetSheetY { get; }
+    public double FrameCenterX => OriginX + FrameOffsetSheetX;
+    public double FrameCenterY => OriginY + FrameOffsetSheetY;
 }
 
 internal sealed class ProjectionRect
