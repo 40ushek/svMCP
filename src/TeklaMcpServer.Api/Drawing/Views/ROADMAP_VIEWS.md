@@ -137,6 +137,14 @@
   - многоколоночные динамические таблицы (`_assemblyMultiLayerPartList`) —
     через line-only accumulation (`AccumulateLinePrimitiveBounds`), который
     игнорирует `TextPrimitive` и не даёт заголовкам колонок раздувать `maxX`
+- `ReadLayoutInfo()` кэширует результат по `drawingId` внутри процесса TeklaBridge:
+  - кэш живёт ровно один MCP-вызов — TeklaBridge запускается и завершается
+    на каждый вызов, поэтому между вызовами кэш всегда пустой
+  - внутри одного вызова (например `fit_views_to_sheet`) повторные обращения
+    к `ReadLayoutInfo()` используют кэш и не делают повторных IPC/gRPC вызовов
+  - кэш инвалидируется при `open_drawing` и `close_drawing`
+  - при ручном переключении чертежа в Tekla (без MCP) кэш также не используется:
+    `drawingId` не совпадёт с кэшированным
 
 Подтверждённый live-факт:
 

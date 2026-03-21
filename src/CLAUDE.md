@@ -308,6 +308,8 @@ Tekla layout table bounds are read from the Presentation Model (`DrawingPresenta
 
 **Do not** replace step 1 with step 2 for templates that emit canvas markers — markers give exact frame corners in O(1).
 
+**Cache lifetime**: `ReadLayoutInfo()` caches by `drawingId` in a static field on `DrawingReservedAreaReader`. TeklaBridge is a subprocess launched per MCP call and exits after the response — so the cache is always cold at the start of each MCP call. Within a single call (e.g. `fit_views_to_sheet`) repeated reads hit the cache. Invalidated explicitly on `open_drawing` and `close_drawing`.
+
 ## Key Dependencies
 
 | Package | Version | Purpose |
