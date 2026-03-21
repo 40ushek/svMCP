@@ -109,6 +109,7 @@ public sealed class FitViewsResult
     /// <summary>True when ScalePolicy=PreserveExistingScales was used; OptimalScale is Max of existing scales, not a unified target.</summary>
     public bool                ScalePreserved      { get; set; }
     public string              ScalePolicy         { get; set; } = string.Empty;
+    public string              ApplyMode           { get; set; } = string.Empty;
     public double              SheetWidth          { get; set; }
     public double              SheetHeight         { get; set; }
     public double              Margin              { get; set; }

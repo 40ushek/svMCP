@@ -332,6 +332,7 @@ public sealed class FitViewsToSheetRequest
     public double Gap { get; set; }
     public double TitleBlockHeight { get; set; }
     public DrawingScalePolicy ScalePolicy { get; set; } = DrawingScalePolicy.UniformAllNonDetail;
+    public DrawingLayoutApplyMode ApplyMode { get; set; } = DrawingLayoutApplyMode.DebugPreview;
 }
 
 public sealed class DeleteDimensionRequest

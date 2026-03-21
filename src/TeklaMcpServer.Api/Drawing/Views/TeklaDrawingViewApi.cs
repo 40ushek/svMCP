@@ -36,8 +36,7 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
     };
 
     private static Dictionary<int, (double X, double Y)> TryGetFrameOffsetsFromBoundingBoxes(
-        IReadOnlyList<View> views,
-        double scale)
+        IReadOnlyList<View> views)
     {
         var offsets = new Dictionary<int, (double X, double Y)>(views.Count);
         foreach (var view in views)
@@ -60,6 +59,7 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
             var origin = view.Origin;
             var originX = origin?.X ?? 0;
             var originY = origin?.Y ?? 0;
+            var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
             offsets[view.GetIdentifier().ID] = ((centerX - originX) * scale, (centerY - originY) * scale);
         }
 

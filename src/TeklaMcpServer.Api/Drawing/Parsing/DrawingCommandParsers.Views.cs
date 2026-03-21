@@ -67,6 +67,20 @@ public static partial class DrawingCommandParsers
         // Scale-policy tokens can appear at any position (positional args are numeric, so no ambiguity)
         for (int i = 1; i < args.Length; i++)
         {
+            if (string.Equals(args[i], "debugpreview", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "debug", StringComparison.OrdinalIgnoreCase))
+            {
+                request.ApplyMode = DrawingLayoutApplyMode.DebugPreview;
+                continue;
+            }
+
+            if (string.Equals(args[i], "finalonly", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "production", StringComparison.OrdinalIgnoreCase))
+            {
+                request.ApplyMode = DrawingLayoutApplyMode.FinalOnly;
+                continue;
+            }
+
             if (string.Equals(args[i], "preserveexistingscales", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(args[i], "preservemixedscales", StringComparison.OrdinalIgnoreCase))
             {

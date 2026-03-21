@@ -17,9 +17,68 @@ public sealed partial class TeklaDrawingViewApi
     internal static bool ShouldSkipProjectionAlignment(double optimalScale)
         => optimalScale >= ProjectionAlignmentScaleCutoff;
 
+    private static double ResolveTargetScale(
+        View view,
+        ViewSemanticKind semanticKind,
+        double candidateScale,
+        bool uniformAllNonDetail,
+        IReadOnlyDictionary<int, double> originalScales)
+    {
+        if (!originalScales.TryGetValue(view.GetIdentifier().ID, out var originalScale))
+            originalScale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+
+        if (semanticKind == ViewSemanticKind.Detail)
+            return originalScale;
+
+        if (uniformAllNonDetail)
+            return candidateScale;
+
+        if (semanticKind == ViewSemanticKind.BaseProjected)
+            return candidateScale;
+
+        return originalScale;
+    }
+
+    private static List<(double w, double h)> BuildCandidateFrames(
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
+        IReadOnlyDictionary<int, double> originalScales,
+        IReadOnlyDictionary<int, (double Width, double Height)> sourceFrameSizes,
+        double candidateScale,
+        bool uniformAllNonDetail)
+    {
+        var frames = new List<(double w, double h)>(views.Count);
+        foreach (var view in views)
+        {
+            var viewId = view.GetIdentifier().ID;
+            var sourceScale = originalScales.TryGetValue(viewId, out var originalScale) && originalScale > 0
+                ? originalScale
+                : (view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0);
+            var targetScale = ResolveTargetScale(view, semanticKindById[viewId], candidateScale, uniformAllNonDetail, originalScales);
+
+            if (sourceFrameSizes.TryGetValue(viewId, out var sourceFrame))
+            {
+                var factor = sourceScale / targetScale;
+                frames.Add((sourceFrame.Width * factor, sourceFrame.Height * factor));
+            }
+            else
+            {
+                var factor = sourceScale / targetScale;
+                frames.Add((view.Width * factor, view.Height * factor));
+            }
+        }
+
+        return frames;
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
-    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail)
+    public FitViewsResult FitViewsToSheet(
+        double? margin,
+        double gap,
+        double titleBlockHeight,
+        DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
+        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -44,6 +103,8 @@ public sealed partial class TeklaDrawingViewApi
 
         var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
         var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
+        var keepCurrentScales = scalePolicy == DrawingScalePolicy.UniformMainWithSectionExceptions;
+        var debugPreview = applyMode == DrawingLayoutApplyMode.DebugPreview;
 
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -128,6 +189,7 @@ public sealed partial class TeklaDrawingViewApi
         initMs = init.ElapsedMilliseconds;
 
         var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
+        var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views);
 
         double? optimalScale = null;
         var currentViews = views;
@@ -159,49 +221,81 @@ public sealed partial class TeklaDrawingViewApi
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
         }
+        else if (keepCurrentScales)
+        {
+            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews);
+            var keepFrames = currentViews
+                .Select(v =>
+                {
+                    if (keepFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                        return (w: size.Width, h: size.Height);
+                    return (w: v.Width, h: v.Height);
+                })
+                .ToList();
+            var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
+            var keepFitSw = Stopwatch.StartNew();
+            var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+            keepFitSw.Stop();
+            candidateFitMs = keepFitSw.ElapsedMilliseconds;
+            candidateAttempts = 1;
+            if (!fits)
+                throw new System.InvalidOperationException("Could not fit views on sheet at current scales.");
+
+            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
+        }
         else
         {
             foreach (var s in candidates)
             {
                 candidateAttempts++;
                 var candidateSw = Stopwatch.StartNew();
-                foreach (var v in currentViews)
+                List<View> candidateViews;
+                Dictionary<int, (double Width, double Height)> effectiveFrameSizes;
+                List<(double w, double h)> actualFrames;
+                DrawingArrangeContext ctx;
+
+                if (debugPreview)
                 {
-                    var semanticKind = semanticKindById[v.GetIdentifier().ID];
-                    if (semanticKind == ViewSemanticKind.Detail)
-                        continue;
-
-                    if (!uniformAllNonDetail && semanticKind != ViewSemanticKind.BaseProjected)
-                        continue;
-
-                    v.Attributes.Scale = s;
-                    v.Modify();
-                }
-
-                activeDrawing.CommitChanges();
-
-                var reread = EnumerateViews(activeDrawing).ToList();
-                var effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(reread);
-                var actualFrames = reread
-                    .Select(v =>
+                    foreach (var v in currentViews)
                     {
-                        if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                            return (w: size.Width, h: size.Height);
-                        return (w: v.Width, h: v.Height);
-                    })
-                    .ToList();
-                var ctx = new DrawingArrangeContext(activeDrawing, reread, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                        var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, originalScales);
+                        if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
+                            continue;
+
+                        v.Attributes.Scale = targetScale;
+                        v.Modify();
+                    }
+
+                    activeDrawing.CommitChanges();
+                    candidateViews = EnumerateViews(activeDrawing).ToList();
+                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews);
+                    actualFrames = candidateViews
+                        .Select(v =>
+                        {
+                            if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                                return (w: size.Width, h: size.Height);
+                            return (w: v.Width, h: v.Height);
+                        })
+                        .ToList();
+                    ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                }
+                else
+                {
+                    candidateViews = currentViews;
+                    effectiveFrameSizes = originalFrameSizes;
+                    actualFrames = BuildCandidateFrames(candidateViews, semanticKindById, originalScales, originalFrameSizes, s, uniformAllNonDetail);
+                    ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                }
 
                 if (_arrangementSelector.EstimateFit(ctx, actualFrames))
                 {
                     optimalScale = s;
-                    currentViews = reread;
+                    currentViews = candidateViews;
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
                     break;
                 }
-
-                currentViews = reread;
+                currentViews = candidateViews;
                 candidateSw.Stop();
                 candidateFitMs += candidateSw.ElapsedMilliseconds;
             }
@@ -220,12 +314,31 @@ public sealed partial class TeklaDrawingViewApi
                 activeDrawing.CommitChanges();
                 throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
             }
+
+            if (!debugPreview)
+            {
+                foreach (var v in currentViews)
+                {
+                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], optimalScale.Value, uniformAllNonDetail, originalScales);
+                    if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
+                        continue;
+
+                    v.Attributes.Scale = targetScale;
+                    v.Modify();
+                }
+
+                activeDrawing.CommitChanges();
+                currentViews = EnumerateViews(activeDrawing).ToList();
+            }
         }
 
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
-            : TryGetFrameOffsetsFromBoundingBoxes(currentViews, optimalScale.Value);
-        if (!preserveExistingScales && offsetById.Count != currentViews.Count)
+            : TryGetFrameOffsetsFromBoundingBoxes(currentViews);
+        if (!preserveExistingScales &&
+            debugPreview &&
+            scalePolicy != DrawingScalePolicy.UniformMainWithSectionExceptions &&
+            offsetById.Count != currentViews.Count)
         {
             var originsAtOptimal = currentViews
                 .Select(v => (X: v.Origin?.X ?? 0, Y: v.Origin?.Y ?? 0))
@@ -384,6 +497,7 @@ public sealed partial class TeklaDrawingViewApi
             OptimalScale = optimalScale.Value,
             ScalePreserved = preserveExistingScales,
             ScalePolicy = scalePolicy.ToString(),
+            ApplyMode = applyMode.ToString(),
             SheetWidth = sheetW,
             SheetHeight = sheetH,
             Margin = effectiveMargin,
@@ -407,7 +521,7 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
-            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
     }
 
