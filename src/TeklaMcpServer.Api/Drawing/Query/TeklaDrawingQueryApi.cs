@@ -103,6 +103,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         }
 
         var opened = drawingHandler.SetActiveDrawing(targetDrawing);
+        DrawingReservedAreaReader.InvalidateLayoutCache();
         return new OpenDrawingResult
         {
             Found = true,
@@ -126,6 +127,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         }
 
         var drawingInfo = ToDrawingInfo(activeDrawing);
+        DrawingReservedAreaReader.InvalidateLayoutCache();
         var closed = drawingHandler.CloseActiveDrawing(true);
         return new CloseDrawingResult
         {

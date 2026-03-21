@@ -16,6 +16,12 @@ internal static class DrawingReservedAreaReader
     private const double MinObstacleSize = 1.0;
     private const double FullSheetCoverageRatio = 0.95;
 
+    // Cache: keyed by drawing identifier ID. ReadLayoutInfo() is expensive (2× editor
+    // open/close + N IPC + M gRPC calls). The table layout does not change during a
+    // single fit_views_to_sheet session, so one read per drawing is sufficient.
+    private static int _cachedDrawingId = -1;
+    private static (double? SheetMargin, IReadOnlyList<LayoutTableGeometryInfo> Tables) _cachedLayoutInfo;
+
     public static IReadOnlyList<ReservedRect> Read(
         Tekla.Structures.Drawing.Drawing drawing,
         double margin,
@@ -114,8 +120,18 @@ internal static class DrawingReservedAreaReader
     /// packages and must be copied manually from C:\TeklaStructures\{ver}\bin\ to the bridge folder.
     /// Missing DLL symptom: FileNotFoundException on first PresentationConnection constructor call.
     /// </summary>
+    internal static void InvalidateLayoutCache() => _cachedDrawingId = -1;
+
     internal static (double? SheetMargin, IReadOnlyList<LayoutTableGeometryInfo> Tables) ReadLayoutInfo()
     {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        var drawingId = activeDrawing?.GetIdentifier().ID ?? -1;
+        if (drawingId >= 0 && drawingId == _cachedDrawingId)
+        {
+            PerfTrace.Write("api-view", "reserved_tables_cache_hit", 0, $"drawingId={drawingId}");
+            return _cachedLayoutInfo;
+        }
+
         // Phase 1: read margins and table IDs in one editor-open pass.
         // Must be closed BEFORE creating PresentationConnection — PresentationConnection
         // opens the Layout Editor itself as a side effect, and fails if it is already open.
@@ -179,41 +195,23 @@ internal static class DrawingReservedAreaReader
                 var overlapWithViews = ltSelected && lt.OverlapVithViews;
                 var tableName = ltSelected ? (lt.Name ?? "") : "";
 
-                // Try IAxisAlignedBoundingBox first — gives actual placed bounds on the sheet.
-                // Primitives[0/2] reads template column layout (constant width) rather than
-                // the visible rendered frame, so it can give wrong maxX for multi-column tables.
-                LayoutTableGeometryInfo info;
-                if (lt is IAxisAlignedBoundingBox ltBounded)
+                // OverlapWithViews tables are never added to reserved areas — skip gRPC call.
+                if (overlapWithViews)
                 {
-                    var box = ltBounded.GetAxisAlignedBoundingBox();
-                    if (box != null)
-                    {
-                        var bounds = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
-                        info = new LayoutTableGeometryInfo
-                        {
-                            TableId = tableId,
-                            Name = tableName,
-                            OverlapWithViews = overlapWithViews,
-                            HasGeometry = true,
-                            Bounds = bounds
-                        };
-                        PerfTrace.Write("api-view", "reserved_table_geometry", 0,
-                            $"tableId={tableId} name={tableName} path=bbox minX={bounds.MinX:F1} minY={bounds.MinY:F1} maxX={bounds.MaxX:F1} maxY={bounds.MaxY:F1}");
-                        result.Add(info);
-                        continue;
-                    }
+                    result.Add(new LayoutTableGeometryInfo { TableId = tableId, Name = tableName, OverlapWithViews = true });
+                    continue;
                 }
 
                 var segment = connection.Service.GetObjectPresentation(tableId);
-                info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
+                var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
                 result.Add(info);
                 PerfTrace.Write(
                     "api-view",
                     "reserved_table_geometry",
                     0,
                     info.HasGeometry && info.Bounds != null
-                        ? $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
-                        : $"tableId={info.TableId} name={info.Name} overlap={info.OverlapWithViews} hasGeometry=false");
+                        ? $"tableId={info.TableId} name={info.Name} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
+                        : $"tableId={info.TableId} name={info.Name} hasGeometry=false");
             }
         }
         catch (Exception ex)
@@ -228,7 +226,14 @@ internal static class DrawingReservedAreaReader
 
         PerfTrace.Write("api-view", "reserved_tables_summary", 0,
             $"count={result.Count} reserved={result.Count(x => x.HasGeometry && !x.OverlapWithViews)}");
-        return (sheetMargin, result);
+
+        var layoutInfo = (sheetMargin, (IReadOnlyList<LayoutTableGeometryInfo>)result);
+        if (drawingId >= 0)
+        {
+            _cachedDrawingId = drawingId;
+            _cachedLayoutInfo = layoutInfo;
+        }
+        return layoutInfo;
     }
 
     /// <summary>
