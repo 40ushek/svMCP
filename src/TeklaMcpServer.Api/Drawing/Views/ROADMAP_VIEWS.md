@@ -215,6 +215,26 @@
 - AI/ML-оптимизация допустима только поверх корректной проекционной схемы,
   а не вместо неё.
 
+## References
+
+Ниже не “спецификация проекта”, а внешние опорные материалы, которые
+поддерживают выбранное направление: сначала семантика и ограничения,
+потом поиск/оптимизация, а не чистая упаковка.
+
+- Mackinlay J. (1986), *Automating the Design of Graphical Presentations of Relational Information*  
+  https://doi.org/10.1145/22949.22950
+- Graf W. / LayLab, constraint-based graphical layout (DFKI, 1992–1993)  
+  https://www.dfki.de/web/forschung/projekte-publikationen/publikation/6030  
+  https://www.dfki.de/web/forschung/projekte-publikationen/publikation/6102
+- Christensen J. et al. (1995), *Cartographic Label Placement by Simulated Annealing*  
+  https://doi.org/10.1559/152304097782439259
+- Zoraster S. (1990), map-label placement / optimization reference  
+  http://nrs.harvard.edu/urn-3:HUL.InstRepos:2051370
+- Para et al. (ICCV 2021), *Generative Layout Modeling Using Constraint Graphs*  
+  https://openaccess.thecvf.com/content/ICCV2021/html/Para_Generative_Layout_Modeling_Using_Constraint_Graphs_ICCV_2021_paper.html
+- Dupty et al. (CVPR 2024), *Constrained Layout Generation with Factor Graphs*  
+  https://openaccess.thecvf.com/content/CVPR2024/html/Dupty_Constrained_Layout_Generation_with_Factor_Graphs_CVPR_2024_paper.html
+
 ## Словарь
 
 В этом документе термины используются в фиксированном смысле:
