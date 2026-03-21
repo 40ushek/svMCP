@@ -17,6 +17,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_section_sides":
                 return HandleGetDrawingSectionSides(api);
 
+            case "get_drawing_detail_marks":
+                return HandleGetDrawingDetailMarks(api);
+
             case "move_view":
                 return HandleMoveView(api, args);
 
@@ -71,6 +74,32 @@ internal sealed partial class DrawingCommandHandler
                 viewAxisX = section.ViewAxisX,
                 viewAxisY = section.ViewAxisY,
                 viewNormal = section.ViewNormal
+            })
+        });
+        return true;
+    }
+
+    private bool HandleGetDrawingDetailMarks(TeklaDrawingViewApi api)
+    {
+        var result = api.GetDetailMarks();
+        WriteJson(new
+        {
+            sheetWidth = result.SheetWidth,
+            sheetHeight = result.SheetHeight,
+            detailMarks = result.DetailMarks.Select(mark => new
+            {
+                id = mark.Id,
+                ownerViewId = mark.OwnerViewId,
+                ownerViewType = mark.OwnerViewType,
+                ownerViewName = mark.OwnerViewName,
+                markName = mark.MarkName,
+                detailViewId = mark.DetailViewId,
+                detailViewType = mark.DetailViewType,
+                detailViewName = mark.DetailViewName,
+                detailViewScale = mark.DetailViewScale,
+                centerPoint = mark.CenterPoint,
+                boundaryPoint = mark.BoundaryPoint,
+                labelPoint = mark.LabelPoint
             })
         });
         return true;

@@ -21,6 +21,13 @@ public sealed class DrawingSectionPlacementSidesResult
     public List<SectionPlacementSideInfo> Sections { get; set; } = new();
 }
 
+public sealed class DrawingDetailMarksResult
+{
+    public double SheetWidth  { get; set; }
+    public double SheetHeight { get; set; }
+    public List<DetailMarkInfo> DetailMarks { get; set; } = new();
+}
+
 public sealed class SectionPlacementSideInfo
 {
     public int Id { get; set; }
@@ -36,6 +43,22 @@ public sealed class SectionPlacementSideInfo
     public double[] ViewAxisX { get; set; } = [];
     public double[] ViewAxisY { get; set; } = [];
     public double[] ViewNormal { get; set; } = [];
+}
+
+public sealed class DetailMarkInfo
+{
+    public int Id { get; set; }
+    public int OwnerViewId { get; set; }
+    public string OwnerViewType { get; set; } = string.Empty;
+    public string OwnerViewName { get; set; } = string.Empty;
+    public string MarkName { get; set; } = string.Empty;
+    public int? DetailViewId { get; set; }
+    public string DetailViewType { get; set; } = string.Empty;
+    public string DetailViewName { get; set; } = string.Empty;
+    public double? DetailViewScale { get; set; }
+    public double[] CenterPoint { get; set; } = [];
+    public double[] BoundaryPoint { get; set; } = [];
+    public double[] LabelPoint { get; set; } = [];
 }
 
 public sealed class MoveViewResult

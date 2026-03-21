@@ -53,6 +53,66 @@ public sealed partial class TeklaDrawingViewApi
         };
     }
 
+    public DrawingDetailMarksResult GetDetailMarks()
+    {
+        var drawing = new DrawingHandler().GetActiveDrawing();
+        if (drawing == null)
+            throw new DrawingNotOpenException();
+
+        double sheetW = 0;
+        double sheetH = 0;
+        try
+        {
+            var ss = drawing.Layout.SheetSize;
+            sheetW = ss.Width;
+            sheetH = ss.Height;
+        }
+        catch
+        {
+        }
+
+        var result = new DrawingDetailMarksResult
+        {
+            SheetWidth = sheetW,
+            SheetHeight = sheetH
+        };
+        var detailViewsByName = EnumerateViews(drawing)
+            .Where(view => ViewSemanticClassifier.Classify(view.ViewType) == ViewSemanticKind.Detail)
+            .GroupBy(view => view.Name ?? string.Empty)
+            .ToDictionary(group => group.Key, group => group.First());
+
+        foreach (var view in EnumerateViews(drawing))
+        {
+            var detailMarks = view.GetAllObjects(typeof(DetailMark));
+            while (detailMarks.MoveNext())
+            {
+                if (detailMarks.Current is not DetailMark detailMark)
+                    continue;
+
+                var markName = detailMark.Attributes?.MarkName ?? string.Empty;
+                detailViewsByName.TryGetValue(markName, out var detailView);
+
+                result.DetailMarks.Add(new DetailMarkInfo
+                {
+                    Id = detailMark.GetIdentifier().ID,
+                    OwnerViewId = view.GetIdentifier().ID,
+                    OwnerViewType = view.ViewType.ToString(),
+                    OwnerViewName = view.Name ?? string.Empty,
+                    MarkName = markName,
+                    DetailViewId = detailView?.GetIdentifier().ID,
+                    DetailViewType = detailView?.ViewType.ToString() ?? string.Empty,
+                    DetailViewName = detailView?.Name ?? string.Empty,
+                    DetailViewScale = detailView?.Attributes.Scale,
+                    CenterPoint = ToArray(detailMark.CenterPoint),
+                    BoundaryPoint = ToArray(detailMark.BoundaryPoint),
+                    LabelPoint = ToArray(detailMark.LabelPoint)
+                });
+            }
+        }
+
+        return result;
+    }
+
     public DrawingSectionPlacementSidesResult GetSectionPlacementSides()
     {
         var drawing = new DrawingHandler().GetActiveDrawing();
@@ -123,6 +183,9 @@ public sealed partial class TeklaDrawingViewApi
 
     private static double[] ToArray(Vector? vector)
         => vector == null ? [] : [vector.X, vector.Y, vector.Z];
+
+    private static double[] ToArray(Point? point)
+        => point == null ? [] : [point.X, point.Y, point.Z];
 
     private static Vector? TryGetNormal(CoordinateSystem coordinateSystem)
     {
