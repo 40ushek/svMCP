@@ -302,10 +302,19 @@ internal static class DrawingReservedAreaReader
     }
 
     /// <summary>
-    /// Gets table bounds from Tekla canvas marker primitives.
-    /// This marker-based path is the canonical svMCP contract for layout-table bounds:
-    /// `Primitives[0]` = min-corner marker, `Primitives[2]` = max-corner marker.
-    /// Generic primitive accumulation is only a safety fallback.
+    /// Gets table bounds from a Presentation Model Segment.
+    ///
+    /// Segment.Primitives structure varies by template type — NOT always LinePrimitive:
+    ///   - Simple fixed-width tables (e.g. MPD_rev, QR):
+    ///       top-level = LinePrimitive canvas markers at [0] (min corner) and [2] (max corner)
+    ///   - Multi-column dynamic tables (e.g. _assemblyMultiLayerPartList):
+    ///       top-level = TextPrimitive (headers) + PrimitiveGroup[]
+    ///       LinePrimitive frame/column lines are nested inside PrimitiveGroups
+    ///
+    /// Fallback chain:
+    ///   1. Canvas markers Primitives[0/2] as LinePrimitive  — fast, exact
+    ///   2. Line-only recursive accumulation (ignore TextPrimitive) — correct for multi-column
+    ///   3. Full primitive accumulation (all types)           — last resort, may over-extend
     /// </summary>
     internal static bool TryGetSegmentBounds(Segment? segment, out ReservedRect bounds)
     {
