@@ -280,7 +280,10 @@ public sealed partial class TeklaDrawingViewApi
                     Id = arranged[i].Id,
                     ViewType = arranged[i].ViewType,
                     OriginX = o.X,
-                    OriginY = o.Y
+                    OriginY = o.Y,
+                    PreferredPlacementSide = arranged[i].PreferredPlacementSide,
+                    ActualPlacementSide = arranged[i].ActualPlacementSide,
+                    PlacementFallbackUsed = arranged[i].PlacementFallbackUsed
                 };
             }
 
@@ -500,7 +503,10 @@ public sealed partial class TeklaDrawingViewApi
             Id       = a.Id,
             ViewType = a.ViewType,
             OriginX  = a.OriginX + dx,
-            OriginY  = a.OriginY + dy
+            OriginY  = a.OriginY + dy,
+            PreferredPlacementSide = a.PreferredPlacementSide,
+            ActualPlacementSide = a.ActualPlacementSide,
+            PlacementFallbackUsed = a.PlacementFallbackUsed
         }).ToList();
     }
 }

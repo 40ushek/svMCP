@@ -234,7 +234,10 @@ internal sealed partial class DrawingProjectionAlignmentService
                 Id = arrangedViews[i].Id,
                 ViewType = arrangedViews[i].ViewType,
                 OriginX = originX,
-                OriginY = originY
+                OriginY = originY,
+                PreferredPlacementSide = arrangedViews[i].PreferredPlacementSide,
+                ActualPlacementSide = arrangedViews[i].ActualPlacementSide,
+                PlacementFallbackUsed = arrangedViews[i].PlacementFallbackUsed
             };
             return;
         }

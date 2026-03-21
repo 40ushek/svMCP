@@ -77,6 +77,9 @@ public sealed class ArrangedView
     public string ViewType { get; set; } = string.Empty;
     public double OriginX  { get; set; }
     public double OriginY  { get; set; }
+    public string PreferredPlacementSide { get; set; } = string.Empty;
+    public string ActualPlacementSide    { get; set; } = string.Empty;
+    public bool   PlacementFallbackUsed  { get; set; }
 }
 
 public sealed class DrawingReservedAreasResult
