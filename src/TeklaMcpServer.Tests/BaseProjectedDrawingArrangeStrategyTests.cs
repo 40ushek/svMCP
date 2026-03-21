@@ -4,7 +4,7 @@ using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
-public sealed class FrontViewDrawingArrangeStrategyTests
+public sealed class BaseProjectedDrawingArrangeStrategyTests
 {
     [Theory]
     [InlineData(60, true)]
@@ -12,13 +12,13 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [InlineData(40, false)]
     public void ShouldPreferRelaxedLayout_UsesScaleCutoff(double scale, bool expected)
     {
-        Assert.Equal(expected, FrontViewDrawingArrangeStrategy.ShouldPreferRelaxedLayout(scale));
+        Assert.Equal(expected, BaseProjectedDrawingArrangeStrategy.ShouldPreferRelaxedLayout(scale));
     }
 
     [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {
-        var free = FrontViewDrawingArrangeStrategy.ComputeFreeArea(
+        var free = BaseProjectedDrawingArrangeStrategy.ComputeFreeArea(
             sheetWidth: 420,
             sheetHeight: 297,
             margin: 10,
@@ -38,7 +38,7 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [Fact]
     public void ComputeFreeArea_DoesNotShrinkForLocalCornerTables()
     {
-        var free = FrontViewDrawingArrangeStrategy.ComputeFreeArea(
+        var free = BaseProjectedDrawingArrangeStrategy.ComputeFreeArea(
             sheetWidth: 420,
             sheetHeight: 297,
             margin: 10,
@@ -58,7 +58,7 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [Fact]
     public void TryCreateCenteredRect_CentersInsideAvailableBand()
     {
-        var ok = FrontViewDrawingArrangeStrategy.TryCreateCenteredRect(
+        var ok = BaseProjectedDrawingArrangeStrategy.TryCreateCenteredRect(
             width: 120,
             height: 80,
             minX: 60,
@@ -77,7 +77,7 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [Fact]
     public void TryCreateCenteredRect_ReturnsFalseWhenBandIsTooSmall()
     {
-        var ok = FrontViewDrawingArrangeStrategy.TryCreateCenteredRect(
+        var ok = BaseProjectedDrawingArrangeStrategy.TryCreateCenteredRect(
             width: 180,
             height: 90,
             minX: 100,
@@ -92,7 +92,7 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [Fact]
     public void TryPackSupplementalViews_PlacesViewsOutsideCoreBounds()
     {
-        var packed = FrontViewDrawingArrangeStrategy.TryPackSupplementalViews(
+        var packed = BaseProjectedDrawingArrangeStrategy.TryPackSupplementalViews(
             new List<(double width, double height)>
             {
                 (40, 25),
@@ -133,7 +133,7 @@ public sealed class FrontViewDrawingArrangeStrategyTests
     [Fact]
     public void TryPackSupplementalViews_ReturnsFalseWhenNoRoomOutsideCore()
     {
-        var packed = FrontViewDrawingArrangeStrategy.TryPackSupplementalViews(
+        var packed = BaseProjectedDrawingArrangeStrategy.TryPackSupplementalViews(
             new List<(double width, double height)>
             {
                 (40, 40)

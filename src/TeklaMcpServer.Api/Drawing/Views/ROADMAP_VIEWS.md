@@ -102,21 +102,22 @@
 
 ### Реализовано в коде
 
-- `DrawingViewArrangementSelector` предпочитает `FrontViewDrawingArrangeStrategy`
-  при наличии `FrontView`
+- `DrawingViewArrangementSelector` предпочитает `BaseProjectedDrawingArrangeStrategy`
+  при наличии выбранного `BaseView`
 - введена семантическая классификация видов:
   `BaseProjected`, `Section`, `Detail`, `Other`
 - `BaseViewSelection` выделен в явный контракт; текущий fallback всё ещё
   `FrontView`-centric, но старт планировщика больше не зависит от прямого
   поиска `FrontView`
-- `FrontViewDrawingArrangeStrategy` уже разделяет:
+- `BaseProjectedDrawingArrangeStrategy` уже разделяет:
   - якорное/проекционно-осознанное размещение
   - fallback-упаковку для неразмещённых видов
 - `SectionView` больше не обрабатываются как единый список:
   planner работает с `SectionPlacementSide = Left | Right | Top | Bottom | Unknown`
 - для `SectionView` реализован `coordinate-system-first` resolver с fallback
   на геометрическую эвристику
-- строгая схема резервирует явные слоты вокруг `FrontView`
+- текущая строгая схема для стандартных соседей всё ещё опирается на
+  `FrontView`-centric topology
 - строгая и relaxed-схемы резервируют место для направленных стеков секций
   вокруг `BaseView`
 - `Left/Right/Top/Bottom` секции размещаются собственными stack-path'ами с

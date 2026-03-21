@@ -19,7 +19,7 @@ public sealed class DrawingViewArrangementSelector
     {
         return new DrawingViewArrangementSelector(new IDrawingViewArrangeStrategy[]
         {
-            new FrontViewDrawingArrangeStrategy(),
+            new BaseProjectedDrawingArrangeStrategy(),
             new GaDrawingMaxRectsArrangeStrategy(),
             new ShelfPackingDrawingArrangeStrategy()
         });
