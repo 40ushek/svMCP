@@ -51,7 +51,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     public bool CanArrange(DrawingArrangeContext context)
     {
         var baseView = BaseViewSelection.Select(context.Views).View;
-        return baseView?.ViewType == View.ViewTypes.FrontView;
+        return baseView != null;
     }
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
@@ -166,7 +166,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         var baseViewSelection = BaseViewSelection.Select(context.Views);
         var baseView = baseViewSelection.View;
-        if (baseView?.ViewType != View.ViewTypes.FrontView)
+        if (baseView == null)
             return conflicts;
 
         if (TryCreatePlan(context, out var planned))
@@ -845,7 +845,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
 
         var baseViewSelection = BaseViewSelection.Select(context.Views);
         var baseView = baseViewSelection.View;
-        if (baseView?.ViewType != View.ViewTypes.FrontView)
+        if (baseView == null)
             return false;
 
         var semanticKinds = context.Views.ToDictionary(
