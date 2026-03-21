@@ -49,15 +49,33 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
         var offsets = new Dictionary<int, (double X, double Y)>(views.Count);
         foreach (var view in views)
         {
+            var origin = view.Origin;
+            var originX = origin?.X ?? 0;
+            var originY = origin?.Y ?? 0;
+
+            // Only record offset when the bbox is plausible — i.e. the bbox center is close
+            // enough to Origin that it actually represents the current view position.
+            // If the bbox is stale (e.g. right after a Modify/CommitChanges cycle), the center
+            // returned by TryGetCenter falls back to Origin, giving a false zero offset.
+            // A false-zero offset causes the correction to leave the view at arranged.OriginX,
+            // which is the packer's target CENTER — but the view displays at center + true_offset,
+            // landing far outside the sheet. Skipping such views leaves them at their last
+            // committed position rather than actively misplacing them.
+            if (view is IAxisAlignedBoundingBox bounded)
+            {
+                var box = bounded.GetAxisAlignedBoundingBox();
+                if (box == null || !DrawingViewSheetGeometry.IsBoundingBoxOffsetPlausible(
+                        originX, originY, view.Width, view.Height,
+                        new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y)))
+                    continue;
+            }
+
             if (!DrawingViewSheetGeometry.TryGetCenter(view, out var centerX, out var centerY))
             {
                 offsets.Clear();
                 return offsets;
             }
 
-            var origin = view.Origin;
-            var originX = origin?.X ?? 0;
-            var originY = origin?.Y ?? 0;
             var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
             offsets[view.GetIdentifier().ID] = ((centerX - originX) * scale, (centerY - originY) * scale);
         }

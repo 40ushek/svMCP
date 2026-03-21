@@ -64,6 +64,32 @@ internal static class DrawingViewSheetGeometry
         return true;
     }
 
+    /// <summary>
+    /// Returns true when the bounding box center is close enough to Origin to be trusted
+    /// as the current view position. A stale bbox (returned by Tekla after Modify/CommitChanges
+    /// before the internal state is updated) can have its center displaced from Origin by many
+    /// hundreds of mm — far beyond the view's own dimensions. Rejecting such values prevents
+    /// frame-offset corrections from misplacing the view far outside the sheet.
+    /// Threshold: max(width, height) — generous enough to allow large frame offsets in views
+    /// where the model origin is near an edge of the part, but tight enough to catch stale data.
+    /// </summary>
+    internal static bool IsBoundingBoxOffsetPlausible(
+        double originX,
+        double originY,
+        double width,
+        double height,
+        ReservedRect rect)
+    {
+        if (width <= 0 || height <= 0)
+            return true;
+
+        var centerX = (rect.MinX + rect.MaxX) * 0.5;
+        var centerY = (rect.MinY + rect.MaxY) * 0.5;
+        var maxOffset = System.Math.Max(width, height);
+        return System.Math.Abs(centerX - originX) <= maxOffset
+            && System.Math.Abs(centerY - originY) <= maxOffset;
+    }
+
     public static bool TryGetBoundingRect(View view, out ReservedRect rect)
     {
         if (view is IAxisAlignedBoundingBox bounded)
@@ -71,21 +97,27 @@ internal static class DrawingViewSheetGeometry
             var box = bounded.GetAxisAlignedBoundingBox();
             if (box != null)
             {
-                rect = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
-                return true;
+                var candidate = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                var origin = view.Origin;
+                if (origin == null
+                    || IsBoundingBoxOffsetPlausible(origin.X, origin.Y, view.Width, view.Height, candidate))
+                {
+                    rect = candidate;
+                    return true;
+                }
             }
         }
 
-        var origin = view.Origin;
-        if (origin != null)
+        var fallbackOrigin = view.Origin;
+        if (fallbackOrigin != null)
         {
             var halfWidth = view.Width * 0.5;
             var halfHeight = view.Height * 0.5;
             rect = new ReservedRect(
-                origin.X - halfWidth,
-                origin.Y - halfHeight,
-                origin.X + halfWidth,
-                origin.Y + halfHeight);
+                fallbackOrigin.X - halfWidth,
+                fallbackOrigin.Y - halfHeight,
+                fallbackOrigin.X + halfWidth,
+                fallbackOrigin.Y + halfHeight);
             return true;
         }
 
