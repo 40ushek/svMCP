@@ -418,6 +418,33 @@ Planner должен различать:
 - `DetailView` не должен ломать основной каркас `BaseProjected + Section`
 - если отдельная detail policy ещё не реализована, `DetailView` размещается
   после base/section placement как residual view
+- planner поддерживает явную scale-policy опцию:
+  - `uniformNonDetailScale = true` — strict-mode, все не-`DetailView`
+    стремятся к общему масштабу
+  - `uniformNonDetailScale = false` — mixed-mode, общий scale в первую
+    очередь ведёт `BaseProjected`, а `SectionView` допускаются как исключения
+
+## Policy: Oversized SectionView
+
+`SectionView`, который не помещается как нормальный directed neighbor, не
+должен автоматически уменьшать весь лист вместе с основным каркасом.
+
+Правило деградации для oversized section:
+
+1. попытка размещения на preferred side;
+2. попытка размещения на fallback side;
+3. попытка residual placement без нарушения уже собранного base/section
+   каркаса;
+4. если и это не работает, допускается локальное уменьшение именно этого
+   `SectionView`, а не всего листа.
+
+Следствия:
+
+- основной каркас `BaseProjected` должен оставаться в общем масштабе;
+- outlier-секции не должны диктовать `optimalScale` всему листу без явной
+  причины;
+- локальное уменьшение секции допустимо только после исчерпания placement
+  options и должно быть явно диагностировано.
 
 Целевое развитие:
 
@@ -555,6 +582,8 @@ BaseView (якорь)
 - `Top` / `Bottom` и `Left` / `Right` пока используют простую stack policy,
   без более тонкой parent-aware topology
 - порядок секций внутри стека пока не привязан к явной позиции плоскости реза
+- локальное уменьшение oversized section пока ещё не реализовано как отдельный
+  шаг деградации
 
 ### Фаза 3: DetailView policy
 
@@ -641,19 +670,22 @@ BaseView (якорь)
 - зафиксировать policy порядка секций внутри `Left/Right/Top/Bottom` stack
 - сделать diagnostics причины деградации более явной для секций,
   не попавших на preferred side
-- решить, должен ли outlier-секционный вид жить в отдельной degraded policy,
-  не ломая scale всего листа
+- в mixed-mode реализовать отдельную degraded policy для outlier-секций:
+  preferred side -> fallback side -> residual placement -> local scale reduction
 
 Тесты:
 
 - крупный outlier section не заставляет уменьшать весь лист без явной причины
 - preferred-side fallback отражается в результате и повторяем
+- если section не помещается ни в preferred, ни в fallback, ни в residual
+  placement, уменьшается именно он, а не весь лист
 - повторный `fit_views_to_sheet` стабилен на одном и том же листе
 
 Готово когда:
 
 - обычные секции и outlier sections больше не смешиваются в одну scale policy
 - деградация секций объяснима и воспроизводима
+- локальное уменьшение применяется только к проблемному `SectionView`
 
 ### Phase 3: DetailView policy
 
@@ -701,6 +733,10 @@ BaseView (якорь)
   каркаса
 - сделать отказ масштаба объяснимым через зоны и semantic classes, а не только
   через факт невместимости
+- поддерживать явную опцию:
+  - `uniformNonDetailScale = true` — все не-`DetailView` в одном масштабе
+  - `uniformNonDetailScale = false` — допускаются исключения для oversized
+    `SectionView`
 
 Тесты:
 

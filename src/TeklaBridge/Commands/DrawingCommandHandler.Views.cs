@@ -175,7 +175,12 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleFitViewsToSheet(TeklaDrawingViewApi api, string[] args)
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
-        var result = api.FitViewsToSheet(request.Margin, request.Gap, request.TitleBlockHeight, request.KeepScale);
+        var result = api.FitViewsToSheet(
+            request.Margin,
+            request.Gap,
+            request.TitleBlockHeight,
+            request.KeepScale,
+            request.UniformNonDetailScale);
         WriteFitViewsToSheetResult(result, result.ReservedAreas);
         return true;
     }
@@ -260,6 +265,7 @@ internal sealed partial class DrawingCommandHandler
         {
             optimalScale = result.OptimalScale,
             scalePreserved = result.ScalePreserved,
+            uniformNonDetailScale = result.UniformNonDetailScale,
             sheetWidth = result.SheetWidth,
             sheetHeight = result.SheetHeight,
             arranged = result.Arranged,

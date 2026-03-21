@@ -332,6 +332,7 @@ public sealed class FitViewsToSheetRequest
     public double Gap { get; set; }
     public double TitleBlockHeight { get; set; }
     public bool KeepScale { get; set; }
+    public bool UniformNonDetailScale { get; set; } = true;
 }
 
 public sealed class DeleteDimensionRequest

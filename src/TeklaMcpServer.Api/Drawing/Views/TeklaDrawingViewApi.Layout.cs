@@ -19,7 +19,7 @@ public sealed partial class TeklaDrawingViewApi
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="keepScale">When true, skip scale optimisation and arrange views at their current scales.</param>
-    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, bool keepScale = false)
+    public FitViewsResult FitViewsToSheet(double? margin, double gap, double titleBlockHeight, bool keepScale = false, bool uniformNonDetailScale = true)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -59,9 +59,19 @@ public sealed partial class TeklaDrawingViewApi
         var semanticKindById = views.ToDictionary(
             v => v.GetIdentifier().ID,
             v => ViewSemanticClassifier.Classify(v.ViewType));
-        var scaleDriverViews = views
-            .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
-            .ToList();
+        var scaleDriverViews = uniformNonDetailScale
+            ? views
+                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+                .ToList()
+            : views
+                .Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)
+                .ToList();
+        if (scaleDriverViews.Count == 0)
+        {
+            scaleDriverViews = views
+                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+                .ToList();
+        }
         if (scaleDriverViews.Count == 0)
             scaleDriverViews = views;
 
@@ -154,7 +164,11 @@ public sealed partial class TeklaDrawingViewApi
                 var candidateSw = Stopwatch.StartNew();
                 foreach (var v in currentViews)
                 {
-                    if (semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail)
+                    var semanticKind = semanticKindById[v.GetIdentifier().ID];
+                    if (semanticKind == ViewSemanticKind.Detail)
+                        continue;
+
+                    if (!uniformNonDetailScale && semanticKind != ViewSemanticKind.BaseProjected)
                         continue;
 
                     v.Attributes.Scale = s;
@@ -366,6 +380,7 @@ public sealed partial class TeklaDrawingViewApi
         {
             OptimalScale = optimalScale.Value,
             ScalePreserved = keepScale,
+            UniformNonDetailScale = uniformNonDetailScale,
             SheetWidth = sheetW,
             SheetHeight = sheetH,
             Margin = effectiveMargin,
@@ -389,7 +404,7 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
-            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} uniformNonDetailScale={uniformNonDetailScale} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
     }
 

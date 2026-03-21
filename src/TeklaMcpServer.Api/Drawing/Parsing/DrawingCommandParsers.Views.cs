@@ -64,10 +64,25 @@ public static partial class DrawingCommandParsers
             double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var titleBlockHeight))
             request.TitleBlockHeight = titleBlockHeight;
 
-        // keepscale can appear at any position (positional args are numeric, so no ambiguity)
+        // Boolean flags can appear at any position (positional args are numeric, so no ambiguity)
         for (int i = 1; i < args.Length; i++)
+        {
             if (string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
-            { request.KeepScale = true; break; }
+                request.KeepScale = true;
+
+            if (string.Equals(args[i], "uniformnondetailscale", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "uniformmainscale", StringComparison.OrdinalIgnoreCase))
+            {
+                request.UniformNonDetailScale = true;
+                continue;
+            }
+
+            if (string.Equals(args[i], "mixednondetailscale", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "allowsectionscaleexceptions", StringComparison.OrdinalIgnoreCase))
+            {
+                request.UniformNonDetailScale = false;
+            }
+        }
 
         return request;
     }
