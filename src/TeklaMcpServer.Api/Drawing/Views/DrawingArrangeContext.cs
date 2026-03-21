@@ -47,6 +47,23 @@ internal static class DrawingArrangeContextSizing
 
 internal static class DrawingViewSheetGeometry
 {
+    internal static bool IsBoundingBoxOffsetPlausible(
+        double originX,
+        double originY,
+        double width,
+        double height,
+        ReservedRect rect)
+    {
+        if (width <= 0 || height <= 0)
+            return true;
+
+        var centerX = (rect.MinX + rect.MaxX) * 0.5;
+        var centerY = (rect.MinY + rect.MaxY) * 0.5;
+        var maxOffset = System.Math.Max(width, height);
+        return System.Math.Abs(centerX - originX) <= maxOffset
+            && System.Math.Abs(centerY - originY) <= maxOffset;
+    }
+
     public static bool TryGetCenterOffsetFromOrigin(View view, out double offsetX, out double offsetY)
     {
         offsetX = 0;
@@ -71,21 +88,27 @@ internal static class DrawingViewSheetGeometry
             var box = bounded.GetAxisAlignedBoundingBox();
             if (box != null)
             {
-                rect = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
-                return true;
+                var candidate = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                var origin = view.Origin;
+                if (origin == null
+                    || IsBoundingBoxOffsetPlausible(origin.X, origin.Y, view.Width, view.Height, candidate))
+                {
+                    rect = candidate;
+                    return true;
+                }
             }
         }
 
-        var origin = view.Origin;
-        if (origin != null)
+        var fallbackOrigin = view.Origin;
+        if (fallbackOrigin != null)
         {
             var halfWidth = view.Width * 0.5;
             var halfHeight = view.Height * 0.5;
             rect = new ReservedRect(
-                origin.X - halfWidth,
-                origin.Y - halfHeight,
-                origin.X + halfWidth,
-                origin.Y + halfHeight);
+                fallbackOrigin.X - halfWidth,
+                fallbackOrigin.Y - halfHeight,
+                fallbackOrigin.X + halfWidth,
+                fallbackOrigin.Y + halfHeight);
             return true;
         }
 

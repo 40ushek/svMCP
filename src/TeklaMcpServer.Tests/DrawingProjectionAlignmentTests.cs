@@ -200,6 +200,30 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Theory]
+    [InlineData(100, 100, 300, 200, 220, 140, 520, 340, false)]
+    [InlineData(100, 100, 300, 200, -30, 10, 270, 190, true)]
+    public void IsBoundingBoxOffsetPlausible_FiltersImplausibleRuntimeOffsets(
+        double originX,
+        double originY,
+        double width,
+        double height,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        bool expected)
+    {
+        var plausible = DrawingViewSheetGeometry.IsBoundingBoxOffsetPlausible(
+            originX,
+            originY,
+            width,
+            height,
+            new ReservedRect(minX, minY, maxX, maxY));
+
+        Assert.Equal(expected, plausible);
+    }
+
+    [Theory]
     [InlineData(125, true)]
     [InlineData(100, true)]
     [InlineData(60, false)]
