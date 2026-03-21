@@ -56,6 +56,14 @@ public sealed partial class TeklaDrawingViewApi
         viewsCount = views.Count;
         if (views.Count == 0)
             throw new System.InvalidOperationException("No views found in active drawing.");
+        var semanticKindById = views.ToDictionary(
+            v => v.GetIdentifier().ID,
+            v => ViewSemanticClassifier.Classify(v.ViewType));
+        var scaleDriverViews = views
+            .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+            .ToList();
+        if (scaleDriverViews.Count == 0)
+            scaleDriverViews = views;
 
         double sheetW = 0;
         double sheetH = 0;
@@ -88,13 +96,13 @@ public sealed partial class TeklaDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
-        double currentScale = views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
+        double currentScale = scaleDriverViews.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
         if (currentScale <= 0)
             currentScale = 1.0;
 
         const double borderEst = 20.0;
-        var maxModelW = views.Max(v => v.Width * currentScale);
-        var maxModelH = views.Max(v => v.Height * currentScale);
+        var maxModelW = scaleDriverViews.Max(v => v.Width * currentScale);
+        var maxModelH = scaleDriverViews.Max(v => v.Height * currentScale);
         var minDenom = System.Math.Max(
             maxModelW / System.Math.Max(availW - borderEst, 1),
             maxModelH / System.Math.Max(availH - borderEst, 1));
@@ -146,6 +154,9 @@ public sealed partial class TeklaDrawingViewApi
                 var candidateSw = Stopwatch.StartNew();
                 foreach (var v in currentViews)
                 {
+                    if (semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail)
+                        continue;
+
                     v.Attributes.Scale = s;
                     v.Modify();
                 }
@@ -249,6 +260,21 @@ public sealed partial class TeklaDrawingViewApi
             new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, TryGetFrameSizesFromBoundingBoxes(currentViews)));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
+
+        if (!keepScale)
+        {
+            foreach (var detailView in currentViews.Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail))
+            {
+                if (!originalScales.TryGetValue(detailView.GetIdentifier().ID, out var detailScale))
+                    continue;
+
+                if (detailScale <= 0 || System.Math.Abs(detailView.Attributes.Scale - detailScale) < 0.01)
+                    continue;
+
+                detailView.Attributes.Scale = detailScale;
+                detailView.Modify();
+            }
+        }
 
         if (offsetById.Count > 0)
         {
