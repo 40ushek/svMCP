@@ -58,6 +58,8 @@
   чем к беззнаковым классам `horizontal` / `vertical`.
 - `DetailView` не образует новую проекционную сторону:
   это увеличенный фрагмент родительского вида, связанный с ним через `DetailMark`.
+- для `DetailView` ключевой критерий размещения — близость к `DetailMark` /
+  callout anchor при отсутствии пересечений.
 - конкретные имена видов (`PlanView`, `FrontView`, `TopView`, `BackView`
   и т.д.) — это частные случаи этой схемы, а не единственно возможная основа.
 
@@ -121,7 +123,7 @@
   preferred side и fallback на противоположную сторону
 - `DetailView` выделены как отдельный semantic class:
   - не участвуют в выборе глобального `optimalScale`
-  - откладываются после base/section placement и занимают остаточное место
+  - не интерпретируются через `Origin` при diagnostics/fit checks
 - `EstimateFit` теперь проверяет неразмещённые виды в оставшемся свободном
   пространстве перед выбором масштаба
 - проекционное выравнивание существует как пост-проход
@@ -153,8 +155,8 @@
   ещё не выделена: очень крупный `SectionView` всё ещё может диктовать общий
   масштаб листа
 - `DetailView` пока не имеют отдельной parent-aware placement policy:
-  родительская связь уже доступна через `DetailMark`, но используется только
-  в diagnostics и soft ordering, но не в полноценном layout policy
+  родительская связь уже доступна через `DetailMark`, и первая proximity-aware
+  попытка placement уже есть, но policy ещё не доведена до устойчивого результата
 - `TryPlaceRelative` — не решатель жёстких ограничений: при неудаче
   предпочтительного размещения перебирает запасные стороны
 - качество `EstimateFit` ограничено качеством модели планирования
@@ -181,6 +183,8 @@
   проекционные слоты.
 - BBox-first: planner и diagnostics должны опираться на рамку вида;
   `Origin` не должен использоваться для вывода “вид внутри/вне листа”.
+- `DetailView` должен искать место по близости к `DetailMark` / callout anchor;
+  residual placement для него является fallback, а не нормой.
 - Расстановка должна деградировать корректно: если проекционная позиция
   не влезает — перейти к следующей лучшей, никогда не отбрасывать
   проекционную связь молча.
@@ -207,6 +211,8 @@
 - `DetailViewRelation` — связь detail-вида с родительским видом и detail mark:
   owner view берётся по месту размещения `DetailMark`, связанный detail view —
   через `detailMark.GetRelatedObjects()`
+- `DetailMarkAnchor` — точка вызова detail-вида на листе; используется как
+  основной reference point для поиска ближайшего валидного размещения
 - `ProjectionLayoutPlan` — итог планирования: какие виды попали в какие зоны,
   какие деградировали, какие ушли в fallback
 - `ViewBBox` — фактическая рамка вида на листе; используется для debug,
@@ -307,12 +313,14 @@
 
 - `OwnerView`
 - `DetailMark`
+- `DetailMarkAnchor`
 - `DetailView`
 - `Reason`
 
 Первая версия может строиться так:
 
 - `OwnerView` — view, в котором размещён `DetailMark`
+- `DetailMarkAnchor` — sheet point detail mark'а (`LabelPoint` / callout point)
 - `DetailView` — `View`, найденный через `detailMark.GetRelatedObjects()`
 - имя detail (`A`, `B`, ...) используется только как fallback
 
@@ -434,8 +442,8 @@ Planner должен различать:
 
 - `DetailView` не участвует в выборе глобального `optimalScale`
 - `DetailView` не должен ломать основной каркас `BaseProjected + Section`
-- если отдельная detail policy ещё не реализована, `DetailView` размещается
-  после base/section placement как residual view
+- planner должен сначала искать ближайшее валидное место к `DetailMarkAnchor`
+- residual placement для `DetailView` допустим только как fallback
 - planner поддерживает явную scale-policy опцию:
   - `UniformAllNonDetail` — strict-mode, все не-`DetailView` стремятся к
     общему масштабу
@@ -615,14 +623,15 @@ BaseView (якорь)
 Уже сделано:
 
 - `DetailView` исключён из global scale selection
-- `DetailView` откладывается после base/section placement
 - diagnostics подтверждают связь:
   `owner view -> DetailMark -> related DetailView`
+- planner уже имеет первую proximity-aware попытку placement по `DetailMark`
+- diagnostics для `DetailView` и конфликтов опираются на реальный bbox, а не на `Origin`
 
 Готово когда:
 
 - placement `DetailView` использует parent relation через `DetailMark`
-- detail view старается жить рядом с owner view/detail mark, а не просто
+- detail view старается жить как можно ближе к `DetailMarkAnchor`, а не просто
   в любом остаточном прямоугольнике
 - detail view не ломает основной layout и сохраняет смысл увеличенного
   фрагмента
@@ -718,27 +727,30 @@ BaseView (якорь)
 - ввести `DetailViewRelationResolver`
 - определять owner view по `DetailMark`
 - определять связанный detail view по `detailMark.GetRelatedObjects()`
+- явно выделить `DetailMarkAnchor`
 - использовать имя detail (`A`, `B`, ...) только как fallback
-- добавить placement policy, которая сначала ищет место рядом с owner view /
-  detail mark, а потом уже деградирует в residual placement
+- добавить placement policy, которая сначала ищет ближайшее валидное место
+  к `DetailMarkAnchor`, а потом уже деградирует в residual placement
 
 Минимальные правила первой версии:
 
 - `DetailView` не влияет на глобальный выбор масштаба
 - `DetailView` не ломает уже размещённый base/section каркас
 - parent relation для detail не определяется по свободной геометрии листа
+- основная метрика detail placement — близость к `DetailMarkAnchor`
 
 Тесты:
 
 - `DetailMark.GetRelatedObjects()` возвращает связанный `DetailView`
 - owner view detail mark'а определяется корректно
+- `DetailMarkAnchor` читается стабильно на реальных листах
 - detail view не участвует в `SectionPlacementSide`
 - detail view после `fit_views_to_sheet` сохраняет отдельный масштаб
 
 Готово когда:
 
 - для `DetailView` есть надёжный parent relation
-- planner использует этот relation при размещении
+- planner использует этот relation и `DetailMarkAnchor` при размещении
 
 ### Phase 4: Scale policy after semantic split
 
@@ -810,6 +822,7 @@ BaseView (якорь)
 - все вертикальные SectionView находятся в одной боковой зоне `BaseView`,
   выровнены по Y с `BaseView`, сгруппированы вместе
 - `DetailView` не ломают scale и topology основного каркаса листа
+- `DetailView` по возможности размещаются по близости к `DetailMarkAnchor`
 - выбранный масштаб — наибольший, при котором эта схема влезает
 - нет перекрытий с зарезервированными зонами
 - результат стабилен: двойной запуск `fit_views_to_sheet` даёт одну и ту
