@@ -32,7 +32,11 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
         OriginY = v.Origin?.Y ?? 0,
         Scale = v.Attributes.Scale,
         Width = v.Width,
-        Height = v.Height
+        Height = v.Height,
+        BBoxMinX = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MinPoint.X,
+        BBoxMinY = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MinPoint.Y,
+        BBoxMaxX = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MaxPoint.X,
+        BBoxMaxY = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MaxPoint.Y
     };
 
     private static Dictionary<int, (double X, double Y)> TryGetFrameOffsetsFromBoundingBoxes(

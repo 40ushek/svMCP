@@ -261,7 +261,11 @@ internal sealed partial class DrawingCommandHandler
                 originY = v.OriginY,
                 scale = v.Scale,
                 width = v.Width,
-                height = v.Height
+                height = v.Height,
+                bboxMinX = v.BBoxMinX,
+                bboxMinY = v.BBoxMinY,
+                bboxMaxX = v.BBoxMaxX,
+                bboxMaxY = v.BBoxMaxY
             })
         });
     }

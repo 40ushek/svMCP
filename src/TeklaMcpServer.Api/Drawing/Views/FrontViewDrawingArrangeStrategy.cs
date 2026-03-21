@@ -40,6 +40,14 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         public SectionPlacementSide? ActualPlacementSide { get; }
     }
 
+    private sealed class DetailViewRelation
+    {
+        public View DetailView { get; set; } = null!;
+        public View OwnerView { get; set; } = null!;
+        public double? LabelX { get; set; }
+        public double? LabelY { get; set; }
+    }
+
     public bool CanArrange(DrawingArrangeContext context)
     {
         var baseView = BaseViewSelection.Select(context.Views).View;
@@ -880,6 +888,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var detailViews = context.Views
             .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Detail)
             .ToList();
+        var detailRelations = ReadDetailViewRelations(context, detailViews);
         var otherViews = context.Views
             .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Other)
             .ToList();
@@ -914,7 +923,6 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             .ToList();
         var secondaryViews = nonDetailSecondaryViews
             .Concat(deferredSections)
-            .Concat(detailViews)
             .ToList();
 
         PerfTrace.Write(
@@ -935,16 +943,16 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         var scale = GetCurrentScale(context);
         if (!ShouldPreferRelaxedLayout(scale))
         {
-            if (TryPlanStrictLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, secondaryViews, out planned))
+            if (TryPlanStrictLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned))
                 return true;
             PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=strict result=failed");
         }
 
-        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, secondaryViews, out planned))
+        if (TryPlanRelaxedLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned))
             return true;
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
 
-        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, secondaryViews, out planned);
+        var strictRetry = TryPlanStrictLayout(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
         return strictRetry;
     }
@@ -962,6 +970,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         IReadOnlyList<View> rightSections,
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
+        IReadOnlyList<DetailViewRelation> detailRelations,
         IReadOnlyList<View> secondaryViews,
         out List<PlannedPlacement> planned)
     {
@@ -1110,6 +1119,17 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied,
             planned);
 
+        TryPlaceDetailViews(
+            context,
+            detailRelations,
+            freeArea.minX,
+            freeArea.maxX,
+            freeArea.minY,
+            freeArea.maxY,
+            gap,
+            occupied,
+            planned);
+
         // Secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
     }
@@ -1124,6 +1144,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
         IReadOnlyList<View> rightSections,
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
+        IReadOnlyList<DetailViewRelation> detailRelations,
         IReadOnlyList<View> secondaryViews,
         out List<PlannedPlacement> planned)
     {
@@ -1281,8 +1302,193 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
             occupied,
             planned);
 
+        TryPlaceDetailViews(
+            context,
+            detailRelations,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            context.Gap,
+            occupied,
+            planned);
+
         // Deferred secondary views left unplanned — Arrange() handles them via MaxRects.
         return true;
+    }
+
+    private static List<DetailViewRelation> ReadDetailViewRelations(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> detailViews)
+    {
+        if (detailViews.Count == 0)
+            return new List<DetailViewRelation>();
+
+        var detailById = detailViews.ToDictionary(view => view.GetIdentifier().ID);
+        var relations = new List<DetailViewRelation>();
+        var seenDetailIds = new HashSet<int>();
+
+        foreach (var ownerView in context.Views)
+        {
+            var detailMarks = ownerView.GetAllObjects(typeof(DetailMark));
+            while (detailMarks.MoveNext())
+            {
+                if (detailMarks.Current is not DetailMark detailMark)
+                    continue;
+
+                var relatedObjects = detailMark.GetRelatedObjects();
+                while (relatedObjects.MoveNext())
+                {
+                    if (relatedObjects.Current is not View relatedView)
+                        continue;
+
+                    var detailId = relatedView.GetIdentifier().ID;
+                    if (!detailById.TryGetValue(detailId, out var detailView))
+                        continue;
+
+                    if (!seenDetailIds.Add(detailId))
+                        break;
+
+                    relations.Add(new DetailViewRelation
+                    {
+                        DetailView = detailView,
+                        OwnerView = ownerView,
+                        LabelX = detailMark.LabelPoint?.X,
+                        LabelY = detailMark.LabelPoint?.Y
+                    });
+                    break;
+                }
+            }
+        }
+
+        return relations;
+    }
+
+    private static void TryPlaceDetailViews(
+        DrawingArrangeContext context,
+        IReadOnlyList<DetailViewRelation> detailRelations,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+    {
+        if (detailRelations.Count == 0)
+            return;
+
+        var plannedById = planned.ToDictionary(
+            item => item.View.GetIdentifier().ID,
+            item =>
+            {
+                var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
+                var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
+                return new ReservedRect(item.X - width / 2.0, item.Y - height / 2.0, item.X + width / 2.0, item.Y + height / 2.0);
+            });
+
+        foreach (var relation in detailRelations)
+        {
+            if (!plannedById.TryGetValue(relation.OwnerView.GetIdentifier().ID, out var ownerRect))
+                continue;
+
+            var detailWidth = DrawingArrangeContextSizing.GetWidth(context, relation.DetailView);
+            var detailHeight = DrawingArrangeContextSizing.GetHeight(context, relation.DetailView);
+            var offset = gap * 2.0;
+            if (!TryFindDetailRect(
+                    ownerRect,
+                    detailWidth,
+                    detailHeight,
+                    offset,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    relation.LabelX,
+                    relation.LabelY,
+                    out var candidateRect))
+                continue;
+
+            planned.Add(new PlannedPlacement(relation.DetailView, CenterX(candidateRect), CenterY(candidateRect)));
+            occupied.Add(candidateRect);
+            plannedById[relation.DetailView.GetIdentifier().ID] = candidateRect;
+        }
+    }
+
+    private static bool TryFindDetailRect(
+        ReservedRect ownerRect,
+        double detailWidth,
+        double detailHeight,
+        double offset,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        double? labelX,
+        double? labelY,
+        out ReservedRect bestRect)
+    {
+        var ownerCenterX = CenterX(ownerRect);
+        var ownerCenterY = CenterY(ownerRect);
+        var preferRight = !labelX.HasValue || labelX.Value >= ownerCenterX;
+        var preferTop = !labelY.HasValue || labelY.Value >= ownerCenterY;
+        var preferredCenterX = preferRight
+            ? ownerRect.MaxX + offset + detailWidth * 0.5
+            : ownerRect.MinX - offset - detailWidth * 0.5;
+        var preferredCenterY = preferTop
+            ? ownerRect.MaxY + offset + detailHeight * 0.5
+            : ownerRect.MinY - offset - detailHeight * 0.5;
+
+        var xCandidates = new HashSet<double>
+        {
+            freeMinX,
+            ownerRect.MinX - offset - detailWidth,
+            ownerRect.MaxX + offset,
+            ownerCenterX - detailWidth * 0.5
+        };
+        var yCandidates = new HashSet<double>
+        {
+            freeMinY,
+            ownerRect.MinY - offset - detailHeight,
+            ownerRect.MaxY + offset,
+            ownerCenterY - detailHeight * 0.5
+        };
+
+        foreach (var rect in occupied)
+        {
+            xCandidates.Add(rect.MinX - offset - detailWidth);
+            xCandidates.Add(rect.MaxX + offset);
+            yCandidates.Add(rect.MinY - offset - detailHeight);
+            yCandidates.Add(rect.MaxY + offset);
+        }
+
+        var bestScore = double.MaxValue;
+        bestRect = default;
+        foreach (var minX in xCandidates)
+        {
+            foreach (var minY in yCandidates)
+            {
+                var rect = new ReservedRect(minX, minY, minX + detailWidth, minY + detailHeight);
+                if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+                    continue;
+
+                if (IntersectsAny(rect, occupied))
+                    continue;
+
+                var centerX = CenterX(rect);
+                var centerY = CenterY(rect);
+                var score = System.Math.Abs(centerX - preferredCenterX) + System.Math.Abs(centerY - preferredCenterY);
+                if (score >= bestScore)
+                    continue;
+
+                bestScore = score;
+                bestRect = rect;
+            }
+        }
+
+        return bestScore < double.MaxValue;
     }
 
     private static double ComputeVerticalStackHeight(

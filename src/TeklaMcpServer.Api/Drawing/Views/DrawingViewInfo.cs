@@ -11,4 +11,8 @@ public sealed class DrawingViewInfo
     public double Scale    { get; set; }
     public double Width    { get; set; }
     public double Height   { get; set; }
+    public double? BBoxMinX { get; set; }
+    public double? BBoxMinY { get; set; }
+    public double? BBoxMaxX { get; set; }
+    public double? BBoxMaxY { get; set; }
 }
