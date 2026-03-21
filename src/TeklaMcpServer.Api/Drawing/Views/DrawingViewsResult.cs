@@ -56,9 +56,18 @@ public sealed class DetailMarkInfo
     public string DetailViewType { get; set; } = string.Empty;
     public string DetailViewName { get; set; } = string.Empty;
     public double? DetailViewScale { get; set; }
+    public List<RelatedDrawingObjectInfo> RelatedObjects { get; set; } = new();
     public double[] CenterPoint { get; set; } = [];
     public double[] BoundaryPoint { get; set; } = [];
     public double[] LabelPoint { get; set; } = [];
+}
+
+public sealed class RelatedDrawingObjectInfo
+{
+    public int Id { get; set; }
+    public string ObjectType { get; set; } = string.Empty;
+    public string ViewType { get; set; } = string.Empty;
+    public string ViewName { get; set; } = string.Empty;
 }
 
 public sealed class MoveViewResult

@@ -97,6 +97,13 @@ internal sealed partial class DrawingCommandHandler
                 detailViewType = mark.DetailViewType,
                 detailViewName = mark.DetailViewName,
                 detailViewScale = mark.DetailViewScale,
+                relatedObjects = mark.RelatedObjects.Select(related => new
+                {
+                    id = related.Id,
+                    objectType = related.ObjectType,
+                    viewType = related.ViewType,
+                    viewName = related.ViewName
+                }),
                 centerPoint = mark.CenterPoint,
                 boundaryPoint = mark.BoundaryPoint,
                 labelPoint = mark.LabelPoint

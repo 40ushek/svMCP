@@ -91,6 +91,24 @@ public sealed partial class TeklaDrawingViewApi
 
                 var markName = detailMark.Attributes?.MarkName ?? string.Empty;
                 detailViewsByName.TryGetValue(markName, out var detailView);
+                var relatedObjects = new List<RelatedDrawingObjectInfo>();
+                var relatedEnumerator = detailMark.GetRelatedObjects();
+                if (relatedEnumerator != null)
+                {
+                    while (relatedEnumerator.MoveNext())
+                    {
+                        if (relatedEnumerator.Current is not DrawingObject relatedObject)
+                            continue;
+
+                        relatedObjects.Add(new RelatedDrawingObjectInfo
+                        {
+                            Id = relatedObject.GetIdentifier().ID,
+                            ObjectType = relatedObject.GetType().Name,
+                            ViewType = relatedObject is View relatedView ? relatedView.ViewType.ToString() : string.Empty,
+                            ViewName = relatedObject is View namedView ? namedView.Name ?? string.Empty : string.Empty
+                        });
+                    }
+                }
 
                 result.DetailMarks.Add(new DetailMarkInfo
                 {
@@ -103,6 +121,7 @@ public sealed partial class TeklaDrawingViewApi
                     DetailViewType = detailView?.ViewType.ToString() ?? string.Empty,
                     DetailViewName = detailView?.Name ?? string.Empty,
                     DetailViewScale = detailView?.Attributes.Scale,
+                    RelatedObjects = relatedObjects,
                     CenterPoint = ToArray(detailMark.CenterPoint),
                     BoundaryPoint = ToArray(detailMark.BoundaryPoint),
                     LabelPoint = ToArray(detailMark.LabelPoint)
