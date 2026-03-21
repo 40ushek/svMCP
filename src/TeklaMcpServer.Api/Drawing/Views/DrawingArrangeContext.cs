@@ -44,3 +44,49 @@ internal static class DrawingArrangeContextSizing
     public static double GetHeight(DrawingArrangeContext context, View view)
         => context.EffectiveFrameSizes.TryGetValue(view.GetIdentifier().ID, out var size) ? size.Height : view.Height;
 }
+
+internal static class DrawingViewSheetGeometry
+{
+    public static bool TryGetBoundingRect(View view, out ReservedRect rect)
+    {
+        if (view is IAxisAlignedBoundingBox bounded)
+        {
+            var box = bounded.GetAxisAlignedBoundingBox();
+            if (box != null)
+            {
+                rect = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                return true;
+            }
+        }
+
+        var origin = view.Origin;
+        if (origin != null)
+        {
+            var halfWidth = view.Width * 0.5;
+            var halfHeight = view.Height * 0.5;
+            rect = new ReservedRect(
+                origin.X - halfWidth,
+                origin.Y - halfHeight,
+                origin.X + halfWidth,
+                origin.Y + halfHeight);
+            return true;
+        }
+
+        rect = default;
+        return false;
+    }
+
+    public static bool TryGetCenter(View view, out double centerX, out double centerY)
+    {
+        if (TryGetBoundingRect(view, out var rect))
+        {
+            centerX = (rect.MinX + rect.MaxX) * 0.5;
+            centerY = (rect.MinY + rect.MaxY) * 0.5;
+            return true;
+        }
+
+        centerX = 0;
+        centerY = 0;
+        return false;
+    }
+}

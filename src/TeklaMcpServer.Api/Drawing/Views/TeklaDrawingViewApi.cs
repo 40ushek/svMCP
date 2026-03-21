@@ -22,22 +22,26 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
                 yield return v;
     }
 
-    private static DrawingViewInfo ToInfo(View v) => new()
+    private static DrawingViewInfo ToInfo(View v)
     {
-        Id = v.GetIdentifier().ID,
-        ViewType = v.ViewType.ToString(),
-        SemanticKind = ViewSemanticClassifier.Classify(v.ViewType).ToString(),
-        Name = v.Name ?? string.Empty,
-        OriginX = v.Origin?.X ?? 0,
-        OriginY = v.Origin?.Y ?? 0,
-        Scale = v.Attributes.Scale,
-        Width = v.Width,
-        Height = v.Height,
-        BBoxMinX = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MinPoint.X,
-        BBoxMinY = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MinPoint.Y,
-        BBoxMaxX = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MaxPoint.X,
-        BBoxMaxY = (v as IAxisAlignedBoundingBox)?.GetAxisAlignedBoundingBox()?.MaxPoint.Y
-    };
+        var hasBBox = DrawingViewSheetGeometry.TryGetBoundingRect(v, out var bbox);
+        return new DrawingViewInfo
+        {
+            Id = v.GetIdentifier().ID,
+            ViewType = v.ViewType.ToString(),
+            SemanticKind = ViewSemanticClassifier.Classify(v.ViewType).ToString(),
+            Name = v.Name ?? string.Empty,
+            OriginX = v.Origin?.X ?? 0,
+            OriginY = v.Origin?.Y ?? 0,
+            Scale = v.Attributes.Scale,
+            Width = v.Width,
+            Height = v.Height,
+            BBoxMinX = hasBBox ? bbox.MinX : null,
+            BBoxMinY = hasBBox ? bbox.MinY : null,
+            BBoxMaxX = hasBBox ? bbox.MaxX : null,
+            BBoxMaxY = hasBBox ? bbox.MaxY : null
+        };
+    }
 
     private static Dictionary<int, (double X, double Y)> TryGetFrameOffsetsFromBoundingBoxes(
         IReadOnlyList<View> views)

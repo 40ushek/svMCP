@@ -56,8 +56,11 @@ internal static class BaseViewSelection
 
         if (eligibleCandidates.Count > 1)
         {
-            var centroidX = eligibleCandidates.Average(candidate => candidate.View.Origin?.X ?? 0.0);
-            var centroidY = eligibleCandidates.Average(candidate => candidate.View.Origin?.Y ?? 0.0);
+            var centers = eligibleCandidates
+                .Select(candidate => TryGetCenter(candidate.View))
+                .ToList();
+            var centroidX = centers.Average(center => center.X);
+            var centroidY = centers.Average(center => center.Y);
             var ranked = eligibleCandidates
                 .OrderByDescending(candidate => GetArea(candidate.View))
                 .ThenBy(candidate => GetDistanceSquared(candidate.View, centroidX, centroidY))
@@ -87,10 +90,17 @@ internal static class BaseViewSelection
 
     private static double GetDistanceSquared(View view, double centroidX, double centroidY)
     {
-        var origin = view.Origin;
-        var dx = (origin?.X ?? 0.0) - centroidX;
-        var dy = (origin?.Y ?? 0.0) - centroidY;
+        var center = TryGetCenter(view);
+        var dx = center.X - centroidX;
+        var dy = center.Y - centroidY;
         return (dx * dx) + (dy * dy);
+    }
+
+    private static (double X, double Y) TryGetCenter(View view)
+    {
+        return DrawingViewSheetGeometry.TryGetCenter(view, out var centerX, out var centerY)
+            ? (centerX, centerY)
+            : (0.0, 0.0);
     }
 
     private sealed class BaseViewCandidate

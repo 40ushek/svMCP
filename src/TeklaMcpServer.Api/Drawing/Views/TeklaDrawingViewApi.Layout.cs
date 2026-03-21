@@ -598,14 +598,10 @@ public sealed partial class TeklaDrawingViewApi
         var rects = new List<ReservedRect>(views.Count);
         foreach (var v in views)
         {
-            if (v is not IAxisAlignedBoundingBox bounded)
+            if (!DrawingViewSheetGeometry.TryGetBoundingRect(v, out var rect))
                 return new List<ReservedRect>();
 
-            var box = bounded.GetAxisAlignedBoundingBox();
-            if (box == null)
-                return new List<ReservedRect>();
-
-            rects.Add(new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y));
+            rects.Add(rect);
         }
 
         return rects;

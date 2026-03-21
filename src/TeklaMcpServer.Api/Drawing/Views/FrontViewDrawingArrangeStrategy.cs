@@ -808,33 +808,7 @@ public sealed class FrontViewDrawingArrangeStrategy : IDrawingViewArrangeStrateg
     }
 
     private static bool TryGetViewBoundingRect(View view, out ReservedRect rect)
-    {
-        if (view is IAxisAlignedBoundingBox bounded)
-        {
-            var box = bounded.GetAxisAlignedBoundingBox();
-            if (box != null)
-            {
-                rect = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
-                return true;
-            }
-        }
-
-        var origin = view.Origin;
-        if (origin != null)
-        {
-            var halfWidth = view.Width * 0.5;
-            var halfHeight = view.Height * 0.5;
-            rect = new ReservedRect(
-                origin.X - halfWidth,
-                origin.Y - halfHeight,
-                origin.X + halfWidth,
-                origin.Y + halfHeight);
-            return true;
-        }
-
-        rect = default;
-        return false;
-    }
+        => DrawingViewSheetGeometry.TryGetBoundingRect(view, out rect);
 
     private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)
     {
