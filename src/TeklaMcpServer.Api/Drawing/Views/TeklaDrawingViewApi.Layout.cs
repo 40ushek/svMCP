@@ -400,16 +400,22 @@ public sealed partial class TeklaDrawingViewApi
         // Do not probe temporary scales in the live drawing: interrupted runs can leave the
         // sheet in an arbitrary intermediate state. Missing offsets now simply skip correction.
 
+        var arrangedViews = currentViews
+            .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+            .ToList();
+
         var gridApi = new TeklaDrawingGridApi();
-        var preloadedAxes = currentViews
+        var preloadedAxes = arrangedViews
             .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
             .Where(x => x.Result.Success)
             .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
 
         var arrangeSw = Stopwatch.StartNew();
-        var arranged = _arrangementSelector.Arrange(
-            new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
-                TryGetFrameSizesFromBoundingBoxes(currentViews, null)));
+        var arranged = arrangedViews.Count == 0
+            ? new List<ArrangedView>()
+            : _arrangementSelector.Arrange(
+                new DrawingArrangeContext(activeDrawing, arrangedViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
+                    TryGetFrameSizesFromBoundingBoxes(arrangedViews, null)));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
@@ -489,7 +495,7 @@ public sealed partial class TeklaDrawingViewApi
             var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
             projectionResult = projectionAlignmentService.Apply(
                 activeDrawing,
-                currentViews,
+                arrangedViews,
                 offsetById,
                 sheetW,
                 sheetH,
@@ -509,7 +515,10 @@ public sealed partial class TeklaDrawingViewApi
 
         // Center the arranged group inside the usable area.
         var finalViews = EnumerateViews(activeDrawing).ToList();
-        arranged = TryCenterViewGroup(activeDrawing, finalViews, arranged,
+        var finalArrangedViews = finalViews
+            .Where(v => semanticKindById.TryGetValue(v.GetIdentifier().ID, out var kind) && kind != ViewSemanticKind.Detail)
+            .ToList();
+        arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             effectiveMargin, sheetW - effectiveMargin,
             effectiveMargin, sheetH - effectiveMargin,
             reservedAreas);

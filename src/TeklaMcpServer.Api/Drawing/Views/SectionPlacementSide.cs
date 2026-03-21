@@ -91,7 +91,7 @@ internal sealed class SectionPlacementSideResolver
 
         var alignedWithReferenceX = Vector.Dot(viewZ, referenceX);
         if (Math.Abs(alignedWithReferenceX) >= AxisAlignmentThreshold)
-            return alignedWithReferenceX >= 0 ? SectionPlacementSide.Right : SectionPlacementSide.Left;
+            return alignedWithReferenceX >= 0 ? SectionPlacementSide.Left : SectionPlacementSide.Right;
 
         var alignedWithReferenceY = Vector.Dot(viewZ, referenceY);
         if (Math.Abs(alignedWithReferenceY) >= AxisAlignmentThreshold)
