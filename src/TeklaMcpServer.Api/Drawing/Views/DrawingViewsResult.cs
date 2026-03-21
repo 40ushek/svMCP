@@ -28,6 +28,13 @@ public sealed class DrawingDetailMarksResult
     public List<DetailMarkInfo> DetailMarks { get; set; } = new();
 }
 
+public sealed class DrawingSectionMarksResult
+{
+    public double SheetWidth  { get; set; }
+    public double SheetHeight { get; set; }
+    public List<SectionMarkInfo> SectionMarks { get; set; } = new();
+}
+
 public sealed class SectionPlacementSideInfo
 {
     public int Id { get; set; }
@@ -60,6 +67,15 @@ public sealed class DetailMarkInfo
     public double[] CenterPoint { get; set; } = [];
     public double[] BoundaryPoint { get; set; } = [];
     public double[] LabelPoint { get; set; } = [];
+}
+
+public sealed class SectionMarkInfo
+{
+    public int Id { get; set; }
+    public int OwnerViewId { get; set; }
+    public string OwnerViewType { get; set; } = string.Empty;
+    public string OwnerViewName { get; set; } = string.Empty;
+    public List<RelatedDrawingObjectInfo> RelatedObjects { get; set; } = new();
 }
 
 public sealed class RelatedDrawingObjectInfo

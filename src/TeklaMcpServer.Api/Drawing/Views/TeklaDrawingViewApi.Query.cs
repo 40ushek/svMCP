@@ -91,24 +91,7 @@ public sealed partial class TeklaDrawingViewApi
 
                 var markName = detailMark.Attributes?.MarkName ?? string.Empty;
                 detailViewsByName.TryGetValue(markName, out var detailView);
-                var relatedObjects = new List<RelatedDrawingObjectInfo>();
-                var relatedEnumerator = detailMark.GetRelatedObjects();
-                if (relatedEnumerator != null)
-                {
-                    while (relatedEnumerator.MoveNext())
-                    {
-                        if (relatedEnumerator.Current is not DrawingObject relatedObject)
-                            continue;
-
-                        relatedObjects.Add(new RelatedDrawingObjectInfo
-                        {
-                            Id = relatedObject.GetIdentifier().ID,
-                            ObjectType = relatedObject.GetType().Name,
-                            ViewType = relatedObject is View relatedView ? relatedView.ViewType.ToString() : string.Empty,
-                            ViewName = relatedObject is View namedView ? namedView.Name ?? string.Empty : string.Empty
-                        });
-                    }
-                }
+                var relatedObjects = ReadRelatedObjects(detailMark.GetRelatedObjects());
 
                 result.DetailMarks.Add(new DetailMarkInfo
                 {
@@ -125,6 +108,52 @@ public sealed partial class TeklaDrawingViewApi
                     CenterPoint = ToArray(detailMark.CenterPoint),
                     BoundaryPoint = ToArray(detailMark.BoundaryPoint),
                     LabelPoint = ToArray(detailMark.LabelPoint)
+                });
+            }
+        }
+
+        return result;
+    }
+
+    public DrawingSectionMarksResult GetSectionMarks()
+    {
+        var drawing = new DrawingHandler().GetActiveDrawing();
+        if (drawing == null)
+            throw new DrawingNotOpenException();
+
+        double sheetW = 0;
+        double sheetH = 0;
+        try
+        {
+            var ss = drawing.Layout.SheetSize;
+            sheetW = ss.Width;
+            sheetH = ss.Height;
+        }
+        catch
+        {
+        }
+
+        var result = new DrawingSectionMarksResult
+        {
+            SheetWidth = sheetW,
+            SheetHeight = sheetH
+        };
+
+        foreach (var view in EnumerateViews(drawing))
+        {
+            var sectionMarks = view.GetAllObjects(typeof(SectionMark));
+            while (sectionMarks.MoveNext())
+            {
+                if (sectionMarks.Current is not SectionMark sectionMark)
+                    continue;
+
+                result.SectionMarks.Add(new SectionMarkInfo
+                {
+                    Id = sectionMark.GetIdentifier().ID,
+                    OwnerViewId = view.GetIdentifier().ID,
+                    OwnerViewType = view.ViewType.ToString(),
+                    OwnerViewName = view.Name ?? string.Empty,
+                    RelatedObjects = ReadRelatedObjects(sectionMark.GetRelatedObjects())
                 });
             }
         }
@@ -205,6 +234,29 @@ public sealed partial class TeklaDrawingViewApi
 
     private static double[] ToArray(Point? point)
         => point == null ? [] : [point.X, point.Y, point.Z];
+
+    private static List<RelatedDrawingObjectInfo> ReadRelatedObjects(DrawingObjectEnumerator? relatedEnumerator)
+    {
+        var relatedObjects = new List<RelatedDrawingObjectInfo>();
+        if (relatedEnumerator == null)
+            return relatedObjects;
+
+        while (relatedEnumerator.MoveNext())
+        {
+            if (relatedEnumerator.Current is not DrawingObject relatedObject)
+                continue;
+
+            relatedObjects.Add(new RelatedDrawingObjectInfo
+            {
+                Id = relatedObject.GetIdentifier().ID,
+                ObjectType = relatedObject.GetType().Name,
+                ViewType = relatedObject is View relatedView ? relatedView.ViewType.ToString() : string.Empty,
+                ViewName = relatedObject is View namedView ? namedView.Name ?? string.Empty : string.Empty
+            });
+        }
+
+        return relatedObjects;
+    }
 
     private static Vector? TryGetNormal(CoordinateSystem coordinateSystem)
     {

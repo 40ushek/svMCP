@@ -43,6 +43,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_drawing_views":
             case "get_drawing_section_sides":
             case "get_drawing_detail_marks":
+            case "get_drawing_section_marks":
             case "move_view":
             case "set_view_scale":
             case "fit_views_to_sheet":
