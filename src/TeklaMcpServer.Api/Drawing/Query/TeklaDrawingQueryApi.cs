@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 
@@ -102,7 +103,29 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
             };
         }
 
-        var opened = drawingHandler.SetActiveDrawing(targetDrawing);
+        // SetActiveDrawing can fail if Tekla hasn't fully finished closing a previous drawing.
+        // Retry up to 3 times with a short pause before each attempt.
+        bool opened = false;
+        Exception? lastEx = null;
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            if (attempt > 0)
+                Thread.Sleep(500);
+            try
+            {
+                opened = drawingHandler.SetActiveDrawing(targetDrawing);
+                lastEx = null;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+            }
+        }
+
+        if (lastEx != null)
+            throw new InvalidOperationException($"SetActiveDrawing failed after 3 attempts: {lastEx.Message}", lastEx);
+
         DrawingReservedAreaReader.InvalidateLayoutCache();
         return new OpenDrawingResult
         {
