@@ -1621,24 +1621,57 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            var minX = CenterX(frontRect) - width / 2.0;
-            if (minX < freeMinX || minX + width > freeMaxX)
-                return false;
+            var preferredMinX = CenterX(frontRect) - width / 2.0;
 
-            ReservedRect rect;
+            // Compute Y bounds first (zone-dependent), then find a valid X position.
+            double minY, maxY;
             if (zone == RelativePlacement.Top)
             {
-                var minY = currentAnchor.MaxY + gap;
-                rect = new ReservedRect(minX, minY, minX + width, minY + height);
+                minY = currentAnchor.MaxY + gap;
+                maxY = minY + height;
             }
             else
             {
-                var maxY = currentAnchor.MinY - gap;
-                rect = new ReservedRect(minX, maxY - height, minX + width, maxY);
+                maxY = currentAnchor.MinY - gap;
+                minY = maxY - height;
             }
 
-            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
+            // Try preferred (centered) X, then shift right, then shift left to clear obstacles.
+            ReservedRect rect;
+            double minX = preferredMinX;
+            bool found = false;
+            foreach (var candidateMinX in new[] { preferredMinX, freeMinX, freeMaxX - width })
+            {
+                minX = candidateMinX;
+
+                // Push right past any blocking occupied areas whose X overlaps would obstruct.
+                foreach (var blocked in occupied)
+                {
+                    if (blocked.MinY < maxY && blocked.MaxY > minY  // Y overlap
+                        && blocked.MaxX > minX && blocked.MinX < minX + width) // X overlap
+                    {
+                        if (blocked.MaxX > minX && blocked.MaxX < minX + width)
+                            minX = System.Math.Max(minX, blocked.MaxX); // push right past blocker
+                    }
+                }
+
+                if (minX < freeMinX || minX + width > freeMaxX)
+                    continue;
+
+                rect = new ReservedRect(minX, minY, minX + width, maxY);
+                if (IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY)
+                    && !IntersectsAny(rect, occupied)
+                    && !proposed.Any(item => Intersects(item.Rect, rect)))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
                 return false;
+
+            rect = new ReservedRect(minX, minY, minX + width, maxY);
 
             proposed.Add((section, rect));
             currentAnchor = rect;

@@ -242,6 +242,18 @@ src/
 - `SVMCP_PERF=1` — включить запись таймингов
 - `SVMCP_PERF_LOG=<path>` — путь к файлу логов (по умолчанию `%TEMP%\svmcp-perf.log`)
 
+### Прямой вызов TeklaBridge без Claude
+
+TeklaBridge поддерживает режим `--loop`: читает JSON-запросы из stdin, возвращает JSON в stdout. Это позволяет тестировать команды напрямую из PowerShell:
+
+```powershell
+$bridge = "C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\TeklaBridge.exe"
+'{"id":1,"cmd":"fit_views_to_sheet","args":[]}' | & $bridge --loop
+```
+
+Формат запроса: `{"id":<int>,"cmd":"<command>","args":[<arg1>,<arg2>,...]}`.
+Список команд — см. `TeklaBridge/Commands/DrawingCommandHandler.cs` и `ModelCommandHandler.cs`.
+
 ---
 
 ## История отладки: как это всё заработало
