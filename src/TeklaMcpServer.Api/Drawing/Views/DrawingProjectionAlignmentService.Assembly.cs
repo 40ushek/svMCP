@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Diagnostics;
 using ModelAssembly = Tekla.Structures.Model.Assembly;
 using ModelPart = Tekla.Structures.Model.Part;
 using DrawingView = Tekla.Structures.Drawing.View;
@@ -208,6 +209,11 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         var dx = alignX ? frontAnchorX - targetAnchorX : 0.0;
         var dy = alignX ? 0.0 : frontAnchorY - targetAnchorY;
+        PerfTrace.Write(
+            "api-view",
+            "projection_move_attempt",
+            0,
+            $"view={targetId} alignAxis={(alignX ? "X" : "Y")} frontAnchor=({frontAnchorX:F2},{frontAnchorY:F2}) targetAnchor=({targetAnchorX:F2},{targetAnchorY:F2}) delta=({dx:F2},{dy:F2}) origin=({targetPos.X:F2},{targetPos.Y:F2})");
         if (TryMoveView(result, target, dx, dy, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, targetPos.X, targetPos.Y, boundsMarginOverride: 0, otherViewStates: otherViewStates)
             && allStates != null)
         {

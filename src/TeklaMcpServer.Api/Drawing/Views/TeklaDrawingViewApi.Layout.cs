@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -102,6 +103,102 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         return conflicts;
+    }
+
+    private static void TraceScaleSelectionInputs(
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
+        IReadOnlyList<View> scaleDriverViews,
+        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        IReadOnlyList<double> candidates,
+        double sheetW,
+        double sheetH,
+        double margin,
+        double gap,
+        double availW,
+        double availH,
+        double currentScale,
+        double minDenom,
+        DrawingScalePolicy scalePolicy,
+        DrawingLayoutApplyMode applyMode)
+    {
+        var scaleDriverIds = scaleDriverViews
+            .Select(v => v.GetIdentifier().ID)
+            .ToHashSet();
+        var sb = new StringBuilder();
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "policy={0} applyMode={1} sheet={2:F1}x{3:F1} margin={4:F1} gap={5:F1} usable={6:F1}x{7:F1} reserved={8} currentScale={9:F2} minDenom={10:F3} candidates=[{11}]",
+            scalePolicy,
+            applyMode,
+            sheetW,
+            sheetH,
+            margin,
+            gap,
+            availW,
+            availH,
+            reservedAreas.Count,
+            currentScale,
+            minDenom,
+            string.Join(",", candidates.Select(c => c.ToString("0.###", CultureInfo.InvariantCulture))));
+
+        foreach (var view in views)
+        {
+            var viewId = view.GetIdentifier().ID;
+            var kind = semanticKindById.TryGetValue(viewId, out var semanticKind)
+                ? semanticKind
+                : ViewSemanticKind.Other;
+            var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
+            var frameWidth = frameSizes.TryGetValue(viewId, out var frame) ? frame.Width : view.Width;
+            var frameHeight = frameSizes.TryGetValue(viewId, out var frame2) ? frame2.Height : view.Height;
+
+            sb.AppendFormat(
+                CultureInfo.InvariantCulture,
+                " | view={0}:{1}:{2}:scale={3:F2}:driver={4}:frame={5:F2}x{6:F2}:origin={7:F2},{8:F2}",
+                viewId,
+                view.ViewType,
+                kind,
+                view.Attributes.Scale,
+                isDriver,
+                frameWidth,
+                frameHeight,
+                view.Origin?.X ?? 0,
+                view.Origin?.Y ?? 0);
+        }
+
+        PerfTrace.Write("api-view", "fit_scale_inputs", 0, sb.ToString());
+    }
+
+    private static void TraceScaleCandidate(
+        double candidateScale,
+        IReadOnlyList<View> views,
+        IReadOnlyList<(double w, double h)> frames,
+        bool fits,
+        IReadOnlyList<DrawingFitConflict>? oversizeConflicts = null)
+    {
+        var sb = new StringBuilder();
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "candidate=1:{0} fits={1} oversizeConflicts={2}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            fits ? 1 : 0,
+            oversizeConflicts?.Count ?? 0);
+
+        for (int i = 0; i < views.Count && i < frames.Count; i++)
+        {
+            var frame = frames[i];
+            sb.AppendFormat(
+                CultureInfo.InvariantCulture,
+                " | view={0}:{1}:frame={2:F2}x{3:F2}:scale={4:F2}",
+                views[i].GetIdentifier().ID,
+                views[i].ViewType,
+                frame.w,
+                frame.h,
+                views[i].Attributes.Scale);
+        }
+
+        PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
@@ -227,9 +324,27 @@ public sealed partial class TeklaDrawingViewApi
         // views from GetViews() which may be stale after Modify/CommitChanges.
         var actualRects = DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing);
         var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views, actualRects);
+        TraceScaleSelectionInputs(
+            views,
+            semanticKindById,
+            scaleDriverViews,
+            originalFrameSizes,
+            reservedAreas,
+            candidates,
+            sheetW,
+            sheetH,
+            effectiveMargin,
+            gap,
+            availW,
+            availH,
+            currentScale,
+            minDenom,
+            scalePolicy,
+            applyMode);
 
         double? optimalScale = null;
         var currentViews = views;
+        Dictionary<int, (double Width, double Height)> selectedFrameSizesById = originalFrameSizes;
 
         if (preserveExistingScales)
         {
@@ -249,6 +364,7 @@ public sealed partial class TeklaDrawingViewApi
             if (oversizeConflicts.Count > 0)
                 throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+            TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
             keepFitSw.Stop();
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
             candidateAttempts = 1;
@@ -263,6 +379,7 @@ public sealed partial class TeklaDrawingViewApi
             // is skipped only when every view is at or above the cutoff — the one correct
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
+            selectedFrameSizesById = keepFrameSizes;
         }
         else if (keepCurrentScales)
         {
@@ -281,6 +398,7 @@ public sealed partial class TeklaDrawingViewApi
             if (oversizeConflicts.Count > 0)
                 throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+            TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
             keepFitSw.Stop();
             candidateFitMs = keepFitSw.ElapsedMilliseconds;
             candidateAttempts = 1;
@@ -291,6 +409,7 @@ public sealed partial class TeklaDrawingViewApi
             }
 
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
+            selectedFrameSizesById = keepFrameSizes;
         }
         else
         {
@@ -340,16 +459,22 @@ public sealed partial class TeklaDrawingViewApi
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
                 {
+                    TraceScaleCandidate(s, candidateViews, actualFrames, fits: false, oversizeConflicts);
                     lastOversizeConflicts = oversizeConflicts;
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
                     continue;
                 }
 
-                if (_arrangementSelector.EstimateFit(ctx, actualFrames))
+                var fits = _arrangementSelector.EstimateFit(ctx, actualFrames);
+                TraceScaleCandidate(s, candidateViews, actualFrames, fits);
+                if (fits)
                 {
                     optimalScale = s;
                     currentViews = candidateViews;
+                    selectedFrameSizesById = candidateViews
+                        .Select((v, i) => new { Id = v.GetIdentifier().ID, Frame = actualFrames[i] })
+                        .ToDictionary(x => x.Id, x => (x.Frame.w, x.Frame.h));
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
                     break;
@@ -394,6 +519,12 @@ public sealed partial class TeklaDrawingViewApi
             }
         }
 
+        PerfTrace.Write(
+            "api-view",
+            "fit_scale_selected",
+            0,
+            $"selectedScale=1:{optimalScale.Value.ToString("0.###", CultureInfo.InvariantCulture)} attempts={candidateAttempts} policy={scalePolicy} applyMode={applyMode}");
+
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
             : TryGetFrameOffsetsFromBoundingBoxes(currentViews, actualRects);
@@ -403,6 +534,11 @@ public sealed partial class TeklaDrawingViewApi
         var arrangedViews = currentViews
             .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
             .ToList();
+        var arrangedFrameSizes = arrangedViews.ToDictionary(
+            v => v.GetIdentifier().ID,
+            v => selectedFrameSizesById.TryGetValue(v.GetIdentifier().ID, out var size)
+                ? size
+                : (v.Width, v.Height));
 
         var gridApi = new TeklaDrawingGridApi();
         var preloadedAxes = arrangedViews
@@ -415,7 +551,7 @@ public sealed partial class TeklaDrawingViewApi
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
                 new DrawingArrangeContext(activeDrawing, arrangedViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
-                    TryGetFrameSizesFromBoundingBoxes(arrangedViews, null)));
+                    arrangedFrameSizes));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 

@@ -181,14 +181,35 @@ internal sealed partial class DrawingProjectionAlignmentService
         if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
         {
             if (result != null)
+            {
+                var blockers = reservedAreas
+                    .Where(r => !(r.MaxX <= candidateRect.MinX || r.MinX >= candidateRect.MaxX || r.MaxY <= candidateRect.MinY || r.MinY >= candidateRect.MaxY))
+                    .Select(r => $"[{r.MinX:F1},{r.MinY:F1},{r.MaxX:F1},{r.MaxY:F1}]");
+                PerfTrace.Write(
+                    "api-view",
+                    "projection_move_reject",
+                    0,
+                    $"view={view.GetIdentifier().ID} reason=reserved-overlap delta=({dx:F2},{dy:F2}) candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] blockers={string.Join(";", blockers)}");
                 TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
+            }
             return false;
         }
 
         if (DrawingProjectionAlignmentMath.IntersectsAnyView(candidateRect, otherViewStates))
         {
             if (result != null)
+            {
+                var blockers = (otherViewStates ?? Array.Empty<ProjectionViewState>())
+                    .Select(s => (State: s, Rect: DrawingProjectionAlignmentMath.GetFrameRect(s)))
+                    .Where(x => !(x.Rect.MaxX <= candidateRect.MinX || x.Rect.MinX >= candidateRect.MaxX || x.Rect.MaxY <= candidateRect.MinY || x.Rect.MinY >= candidateRect.MaxY))
+                    .Select(x => $"{x.State.ViewId}:[{x.Rect.MinX:F1},{x.Rect.MinY:F1},{x.Rect.MaxX:F1},{x.Rect.MaxY:F1}]");
+                PerfTrace.Write(
+                    "api-view",
+                    "projection_move_reject",
+                    0,
+                    $"view={view.GetIdentifier().ID} reason=view-overlap delta=({dx:F2},{dy:F2}) candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] blockers={string.Join(";", blockers)}");
                 TraceSkip(result, $"projection-skip:view-overlap:view={view.GetIdentifier().ID}");
+            }
             return false;
         }
 

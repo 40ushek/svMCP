@@ -63,13 +63,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     public bool EstimateFit(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
-        if (TryCreatePlan(context, out var planned))
+        var planningContext = CreatePlanningContext(context, frames);
+
+        if (TryCreatePlan(planningContext, out var planned))
         {
             // Plan succeeded, but it may leave some views unplanned.
             // EstimateFit must return true only when ALL views can be placed.
             var plannedIds = new System.Collections.Generic.HashSet<int>(
                 planned.Select(p => p.View.GetIdentifier().ID));
-            var unplannedViews = context.Views
+            var unplannedViews = planningContext.Views
                 .Where(v => !plannedIds.Contains(v.GetIdentifier().ID))
                 .ToList();
 
@@ -79,26 +81,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             // Check if unplanned views can fit in the space left around anchors.
             var anchorRects = planned.Select(p =>
             {
-                var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
-                var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
+                var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
+                var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
                 DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
                 return rect;
             }).ToList();
-            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
+            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
             var unplannedCtx = new DrawingArrangeContext(
-                context.Drawing, unplannedViews,
-                context.SheetWidth, context.SheetHeight,
-                context.Margin, context.Gap,
-                extendedReserved, context.EffectiveFrameSizes);
+                planningContext.Drawing, unplannedViews,
+                planningContext.SheetWidth, planningContext.SheetHeight,
+                planningContext.Margin, planningContext.Gap,
+                extendedReserved, planningContext.EffectiveFrameSizes);
             var unplannedFrames = unplannedViews
                 .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                 .ToList();
             return _maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames);
         }
 
-        var maxr  = _maxRectsFallback.EstimateFit(context, frames);
-        var shelf = !maxr && context.ReservedAreas.Count == 0 && _fallback.EstimateFit(context, frames);
+        var maxr  = _maxRectsFallback.EstimateFit(planningContext, frames);
+        var shelf = !maxr && planningContext.ReservedAreas.Count == 0 && _fallback.EstimateFit(planningContext, frames);
         return maxr || shelf;
     }
 
@@ -170,17 +172,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     public List<DrawingFitConflict> DiagnoseFitConflicts(DrawingArrangeContext context, IReadOnlyList<(double w, double h)> frames)
     {
         var conflicts = new List<DrawingFitConflict>();
+        var planningContext = CreatePlanningContext(context, frames);
 
-        var baseViewSelection = BaseViewSelection.Select(context.Views);
+        var baseViewSelection = BaseViewSelection.Select(planningContext.Views);
         var baseView = baseViewSelection.View;
         if (baseView == null)
             return conflicts;
 
-        if (TryCreatePlan(context, out var planned))
+        if (TryCreatePlan(planningContext, out var planned))
         {
             var plannedIds = new System.Collections.Generic.HashSet<int>(
                 planned.Select(p => p.View.GetIdentifier().ID));
-            var unplannedViews = context.Views
+            var unplannedViews = planningContext.Views
                 .Where(v => !plannedIds.Contains(v.GetIdentifier().ID))
                 .ToList();
 
@@ -189,17 +192,17 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
             var anchorRects = planned.Select(p =>
             {
-                var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
-                var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
+                var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
+                var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
                 return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
             }).ToList();
-            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
+            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
             var unplannedCtx = new DrawingArrangeContext(
-                context.Drawing, unplannedViews,
-                context.SheetWidth, context.SheetHeight,
-                context.Margin, context.Gap,
-                extendedReserved, context.EffectiveFrameSizes);
+                planningContext.Drawing, unplannedViews,
+                planningContext.SheetWidth, planningContext.SheetHeight,
+                planningContext.Margin, planningContext.Gap,
+                extendedReserved, planningContext.EffectiveFrameSizes);
             var unplannedFrames = unplannedViews
                 .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                 .ToList();
@@ -214,12 +217,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 return conflicts;
         }
 
-        var semanticViews = SemanticViewSet.Build(context.Views);
+        var semanticViews = SemanticViewSet.Build(planningContext.Views);
 
-        var neighbors = StandardNeighborResolver.Build(context.Views, semanticViews, baseViewSelection);
+        var neighbors = StandardNeighborResolver.Build(planningContext.Views, semanticViews, baseViewSelection);
         var sectionGroups = SectionGroupSet.Build(
             semanticViews.Sections,
-            context.Drawing,
+            planningContext.Drawing,
             baseView,
             _sectionPlacementSideResolver);
 
@@ -228,8 +231,36 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var topSections = sectionGroups.Top;
         var bottomSections = sectionGroups.Bottom;
 
-        DiagnoseRelaxedLayoutConflicts(context, neighbors, leftSections, rightSections, topSections, bottomSections, conflicts);
+        DiagnoseRelaxedLayoutConflicts(planningContext, neighbors, leftSections, rightSections, topSections, bottomSections, conflicts);
         return conflicts;
+    }
+
+    private static DrawingArrangeContext CreatePlanningContext(
+        DrawingArrangeContext context,
+        IReadOnlyList<(double w, double h)> frames)
+    {
+        if (frames.Count != context.Views.Count)
+            return context;
+
+        var effectiveFrameSizes = context.EffectiveFrameSizes.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value);
+        for (var i = 0; i < context.Views.Count; i++)
+        {
+            var view = context.Views[i];
+            var frame = frames[i];
+            effectiveFrameSizes[view.GetIdentifier().ID] = (frame.w, frame.h);
+        }
+
+        return new DrawingArrangeContext(
+            context.Drawing,
+            context.Views,
+            context.SheetWidth,
+            context.SheetHeight,
+            context.Margin,
+            context.Gap,
+            context.ReservedAreas,
+            effectiveFrameSizes);
     }
 
     internal static bool ShouldPreferRelaxedLayout(double scale)
@@ -1538,7 +1569,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
             var minY = CenterY(frontRect) - height / 2.0;
             if (minY < freeMinY || minY + height > freeMaxY)
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "section_stack_reject",
+                    0,
+                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-y rectY={minY:F2}..{(minY + height):F2} freeY={freeMinY:F2}..{freeMaxY:F2}");
                 return false;
+            }
 
             ReservedRect rect;
             if (zone == RelativePlacement.Right)
@@ -1553,7 +1591,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
+            {
+                var reason = !IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY)
+                    ? "out-of-bounds"
+                    : IntersectsAny(rect, occupied)
+                        ? "occupied-intersection"
+                        : "proposed-intersection";
+                PerfTrace.Write(
+                    "api-view",
+                    "section_stack_reject",
+                    0,
+                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason={reason} rect=({rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}) free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2})");
                 return false;
+            }
 
             proposed.Add((section, rect));
             currentAnchor = rect;
@@ -1646,7 +1696,24 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
 
             if (!found)
+            {
+                var preferredRect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
+                var blockers = occupied
+                    .Where(blocked =>
+                        blocked.MinY < maxY &&
+                        blocked.MaxY > minY &&
+                        blocked.MaxX > preferredMinX &&
+                        blocked.MinX < preferredMinX + width)
+                    .Select(blocked =>
+                        $"[{blocked.MinX:F2},{blocked.MinY:F2},{blocked.MaxX:F2},{blocked.MaxY:F2}]")
+                    .ToList();
+                PerfTrace.Write(
+                    "api-view",
+                    "section_stack_reject",
+                    0,
+                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=no-valid-x y={minY:F2}..{maxY:F2} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2}) occupied={occupied.Count} blockers={string.Join(";", blockers)}");
                 return false;
+            }
 
             rect = new ReservedRect(minX, minY, minX + width, maxY);
 
@@ -1681,6 +1748,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_attempt",
+            0,
+            $"axis=horizontal preferred={preferredZone} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+
         if (TryPlaceHorizontalSectionStack(
                 context,
                 sectionViews,
@@ -1696,13 +1769,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 planned,
                 ToPlacementSide(preferredZone),
                 ToPlacementSide(preferredZone)))
+        {
+            PerfTrace.Write(
+                "api-view",
+                "section_stack_result",
+                0,
+                $"axis=horizontal preferred={preferredZone} actual={preferredZone} fallbackUsed=0 sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
             return true;
+        }
 
         var fallbackZone = preferredZone == RelativePlacement.Top
             ? RelativePlacement.Bottom
             : RelativePlacement.Top;
 
-        return TryPlaceHorizontalSectionStack(
+        var fallbackPlaced = TryPlaceHorizontalSectionStack(
             context,
             sectionViews,
             frontRect,
@@ -1717,6 +1797,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned,
             ToPlacementSide(preferredZone),
             ToPlacementSide(fallbackZone));
+
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_result",
+            0,
+            $"axis=horizontal preferred={preferredZone} actual={(fallbackPlaced ? fallbackZone.ToString() : "none")} fallbackUsed={(fallbackPlaced ? 1 : 0)} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+
+        return fallbackPlaced;
     }
 
     private static bool TryPlaceVerticalSectionStackWithFallback(
@@ -1737,6 +1825,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_attempt",
+            0,
+            $"axis=vertical preferred={preferredZone} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+
         if (TryPlaceVerticalSectionStack(
                 context,
                 sectionViews,
@@ -1752,13 +1846,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 planned,
                 ToPlacementSide(preferredZone),
                 ToPlacementSide(preferredZone)))
+        {
+            PerfTrace.Write(
+                "api-view",
+                "section_stack_result",
+                0,
+                $"axis=vertical preferred={preferredZone} actual={preferredZone} fallbackUsed=0 sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
             return true;
+        }
 
         var fallbackZone = preferredZone == RelativePlacement.Left
             ? RelativePlacement.Right
             : RelativePlacement.Left;
 
-        return TryPlaceVerticalSectionStack(
+        var fallbackPlaced = TryPlaceVerticalSectionStack(
             context,
             sectionViews,
             frontRect,
@@ -1773,6 +1874,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned,
             ToPlacementSide(preferredZone),
             ToPlacementSide(fallbackZone));
+
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_result",
+            0,
+            $"axis=vertical preferred={preferredZone} actual={(fallbackPlaced ? fallbackZone.ToString() : "none")} fallbackUsed={(fallbackPlaced ? 1 : 0)} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+
+        return fallbackPlaced;
     }
 
     private static SectionPlacementSide ToPlacementSide(RelativePlacement placement)

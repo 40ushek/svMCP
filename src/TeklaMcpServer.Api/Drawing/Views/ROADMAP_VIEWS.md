@@ -97,6 +97,11 @@
 - repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
+- `Top/Bottom` section placement ещё не гарантирует сохранение сильной
+  проекционной связи с base view при конфликте по `X`.
+- каркас main layout всё ещё слишком `BaseView`-centered:
+  standard neighbors и horizontal sections сначала наследуют центр базового вида,
+  а уже потом пытаются разойтись по остаточному месту на листе.
 
 ## Семантическая модель
 
@@ -132,6 +137,9 @@
 - `Top`/`Bottom` секции живут в вертикальной зоне `BaseView`
 - `Left`/`Right` секции живут в боковой зоне `BaseView`
 - grouping и alignment обязаны следовать `SectionPlacementSide`
+- текущий horizontal stack для `Top/Bottom` sections сначала пробует
+  проекционный центр base view, затем только грубые крайние позиции.
+  Это уже даёт explainable diagnostics, но пока слишком сужает поиск по `X`.
 
 ### Details
 
@@ -157,6 +165,11 @@
   - почему preferred placement не влез
   - куда произошла деградация
   - какой вид остался residual
+- scale selection должен быть устойчив к повторному запуску на уже расставленном листе
+- для `Top/Bottom` sections лог должен явно показывать:
+  - preferred centered rect
+  - blockers по `X`
+  - причину fallback / skip
 
 ## Ближайшие шаги
 
@@ -184,7 +197,24 @@
 
 - обычный каркас листа не ломается из-за одного проблемного разреза
 
-### 3. Усилить detail/dependent placement policy
+### 3. Ослабить жёсткую привязку каркаса к центру BaseView
+
+Нужно:
+
+- перестать считать центр `BaseView` единственной осью компоновки
+- разрешить standard neighbors и `Top/Bottom` sections искать более
+  широкий набор допустимых `X`-позиций до fallback на противоположную сторону
+- держать проекционный центр как preferred anchor, а не как почти единственный
+  допустимый сценарий
+
+Готово когда:
+
+- `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
+  centered-slot around `BaseView`
+- повторный `fit_views_to_sheet` не плавает между `1:20` и `1:25`
+  при той же смысловой схеме листа
+
+### 4. Усилить detail/dependent placement policy
 
 Нужно:
 
@@ -197,7 +227,7 @@
 - detail и detail-like section ставятся максимально близко к своему anchor
 - при нехватке места причина деградации видна в результате
 
-### 4. Сделать projection method явной конфигурацией
+### 5. Сделать projection method явной конфигурацией
 
 Нужно:
 
