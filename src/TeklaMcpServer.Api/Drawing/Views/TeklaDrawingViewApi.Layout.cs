@@ -41,38 +41,6 @@ public sealed partial class TeklaDrawingViewApi
         return originalScale;
     }
 
-    private static List<(double w, double h)> BuildCandidateFrames(
-        IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
-        IReadOnlyDictionary<int, double> originalScales,
-        IReadOnlyDictionary<int, (double Width, double Height)> sourceFrameSizes,
-        double candidateScale,
-        bool uniformAllNonDetail)
-    {
-        var frames = new List<(double w, double h)>(views.Count);
-        foreach (var view in views)
-        {
-            var viewId = view.GetIdentifier().ID;
-            var sourceScale = originalScales.TryGetValue(viewId, out var originalScale) && originalScale > 0
-                ? originalScale
-                : (view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0);
-            var targetScale = ResolveTargetScale(view, semanticKindById[viewId], candidateScale, uniformAllNonDetail, originalScales);
-
-            if (sourceFrameSizes.TryGetValue(viewId, out var sourceFrame))
-            {
-                var factor = sourceScale / targetScale;
-                frames.Add((sourceFrame.Width * factor, sourceFrame.Height * factor));
-            }
-            else
-            {
-                var factor = sourceScale / targetScale;
-                frames.Add((view.Width * factor, view.Height * factor));
-            }
-        }
-
-        return frames;
-    }
-
     private static List<DrawingFitConflict> BuildOversizeConflicts(
         IReadOnlyList<View> views,
         IReadOnlyList<(double w, double h)> frames,
@@ -234,8 +202,6 @@ public sealed partial class TeklaDrawingViewApi
         var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
         var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
         var keepCurrentScales = scalePolicy == DrawingScalePolicy.UniformMainWithSectionExceptions;
-        var debugPreview = applyMode == DrawingLayoutApplyMode.DebugPreview;
-
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -421,39 +387,32 @@ public sealed partial class TeklaDrawingViewApi
                 Dictionary<int, (double Width, double Height)> effectiveFrameSizes;
                 List<(double w, double h)> actualFrames;
                 DrawingArrangeContext ctx;
-
-                if (debugPreview)
+                var probeSw = Stopwatch.StartNew();
+                foreach (var v in currentViews)
                 {
-                    foreach (var v in currentViews)
+                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, originalScales);
+                    if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
+                        continue;
+
+                    v.Attributes.Scale = targetScale;
+                    v.Modify();
+                }
+
+                activeDrawing.CommitChanges();
+                probeSw.Stop();
+                probeMs += probeSw.ElapsedMilliseconds;
+
+                candidateViews = EnumerateViews(activeDrawing).ToList();
+                effectiveFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews);
+                actualFrames = candidateViews
+                    .Select(v =>
                     {
-                        var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, originalScales);
-                        if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
-                            continue;
-
-                        v.Attributes.Scale = targetScale;
-                        v.Modify();
-                    }
-
-                    activeDrawing.CommitChanges();
-                    candidateViews = EnumerateViews(activeDrawing).ToList();
-                    effectiveFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews);
-                    actualFrames = candidateViews
-                        .Select(v =>
-                        {
-                            if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                                return (w: size.Width, h: size.Height);
-                            return (w: v.Width, h: v.Height);
-                        })
-                        .ToList();
-                    ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
-                }
-                else
-                {
-                    candidateViews = currentViews;
-                    effectiveFrameSizes = originalFrameSizes;
-                    actualFrames = BuildCandidateFrames(candidateViews, semanticKindById, originalScales, originalFrameSizes, s, uniformAllNonDetail);
-                    ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
-                }
+                        if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                            return (w: size.Width, h: size.Height);
+                        return (w: v.Width, h: v.Height);
+                    })
+                    .ToList();
+                ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
 
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
@@ -501,21 +460,7 @@ public sealed partial class TeklaDrawingViewApi
                 throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
             }
 
-            if (!debugPreview)
-            {
-                foreach (var v in currentViews)
-                {
-                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], optimalScale.Value, uniformAllNonDetail, originalScales);
-                    if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
-                        continue;
-
-                    v.Attributes.Scale = targetScale;
-                    v.Modify();
-                }
-
-                activeDrawing.CommitChanges();
-                currentViews = EnumerateViews(activeDrawing).ToList();
-            }
+            currentViews = EnumerateViews(activeDrawing).ToList();
         }
 
         PerfTrace.Write(
@@ -523,6 +468,8 @@ public sealed partial class TeklaDrawingViewApi
             "fit_scale_selected",
             0,
             $"selectedScale=1:{optimalScale.Value.ToString("0.###", CultureInfo.InvariantCulture)} attempts={candidateAttempts} policy={scalePolicy} applyMode={applyMode}");
+
+        actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
 
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()

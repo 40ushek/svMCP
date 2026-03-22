@@ -81,11 +81,18 @@
   если вид больше usable area листа, кандидат сразу отбрасывается.
 - стартовый список scale candidates теперь считается от реальной frame geometry
   scale-driver видов, а не от одного общего текущего scale листа.
+- candidate-fit для `FinalOnly` теперь тоже идёт по реальному probe-path:
+  candidate scale реально применяется к видам, затем planner читает
+  фактические frame sizes/bbox, а не использует линейную аппроксимацию
+  `oldFrame * sourceScale / targetScale`.
 - в planner реализован `zone budgeting` вокруг `BaseView`:
   budgets для `Top/Bottom/Left/Right` считаются и используются
   для выбора допустимого окна `BaseView`.
 - `baseRect` внутри budget-window теперь ищется через `MaxRects`,
   а не через старый `3x3` centered-first поиск.
+- `TryFindBaseViewRectInWindow` теперь учитывает `context.Gap`:
+  поиск `baseRect` идёт в gap-aware внутреннем окне,
+  поэтому `BaseView` больше не встаёт вплотную к границам budget-window.
 - `EndView` больше не обязан уходить в residual:
   если topology resolver классифицирует его как `SideNeighborRight`,
   он получает явный правый neighbor slot в main layout.
@@ -103,14 +110,11 @@
 - oversized sections пока не вынесены в отдельную degraded policy.
 - local scale reduction для outlier section пока нет.
 - repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
+- после перехода `FinalOnly` на real-probe path исчез отдельный слой ошибок
+  из-за линейного пересчёта bbox, но на части листов итог всё ещё плавает
+  между несколькими локальными layout/state вариантами.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
-- `TryFindBaseViewRectInWindow` не задаёт зазор между base view и blocked-областями
-  внутри окна. `PackSecondaryViewsPartial` добавляет gap явно (`width + gap`, `binSize + gap`),
-  а здесь blocked-прямоугольники и целевой размер не расширяются на gap. Base view может
-  встать вплотную к зарезервированной области (штамп, другой вид). Исправление: передавать
-  `context.Gap` в `TryFindBaseViewRectInWindow` и расширять blocked-прямоугольники на gap
-  перед клиппингом (или уменьшать доступное окно на gap).
 - `Top/Bottom` section placement ещё не гарантирует сохранение сильной
   проекционной связи с base view при конфликте по `X`.
 - `zone budgeting` и `MaxRects` убрали жёсткую center-привязку `BaseView`,
@@ -120,6 +124,10 @@
 - repeated apply всё ещё может ломать projection post-pass:
   после повторного `fit_views_to_sheet` возможны массовые
   `projection-skip:view-overlap`.
+- на части листов основной main layout всё ещё допускает слишком плотную схему
+  ещё до projection:
+  `Front/Top/Section` оказываются почти вплотную, а post-pass уже не может
+  восстановить проекционную связь без overlap.
 - `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
   candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
 
@@ -223,35 +231,42 @@
 
 - обычный каркас листа не ломается из-за одного проблемного разреза
 
-### 3. Довести zone budgeting вокруг BaseView
+### 3. Довести main-layout spacing вокруг BaseView
 
 Нужно:
 
-- убрать оставшиеся centered-first допущения в estimate/apply parity
-- использовать budget window как один и тот же source of truth
+- использовать один и тот же source of truth для budget window
   в strict/relaxed/diagnostics path
+- перестать принимать слишком плотный `Front/Top/Right` каркас как валидный fit
+  до projection
+- добавить явный spacing reserve для standard neighbors там, где projection
+  потом обязан сделать корректирующий move
 
 Готово когда:
 
 - `BaseView` размещается с учётом реальной потребности в месте сверху/снизу/слева/справа
 - `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
   centered-slot around `BaseView`
-- выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window,
-  а не через грубый перебор кандидатов
+- выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window
+- основной каркас после первой расстановки уже имеет безопасные зазоры,
+  а не упирается в `projection-skip:view-overlap`
 
-### 4. Свести `EstimateFit` и apply path для `Top/Bottom` sections
+### 4. Свести `EstimateFit` и apply path
 
 Нужно:
 
-- понять и убрать расхождение, при котором `EstimateFit` отвергает рабочий
-  `Top` section layout по `no-valid-x`, а apply path на том же листе даёт валидную
-  расстановку
+- понять и убрать расхождение, при котором `EstimateFit` принимает или отвергает
+  layout по одной геометрии, а после apply фактические bbox дают другой результат
+- отдельно довести parity для `Top/Bottom` sections, где уже наблюдался
+  ложный reject по `no-valid-x`
 - логировать и сравнивать одни и те же rect в estimate/apply path
 - не считать `1:20` невалидным, если на том же листе этот layout реально помещается
 
 Готово когда:
 
 - `fits=0` не возникает для layout, который потом реально встаёт на лист
+- `fits=1` не возникает для layout, который после первой расстановки уже даёт
+  overlap/почти-overlap
 - `Top/Bottom` section decision совпадает между estimate и apply
 
 ### 5. Усилить detail/dependent placement policy

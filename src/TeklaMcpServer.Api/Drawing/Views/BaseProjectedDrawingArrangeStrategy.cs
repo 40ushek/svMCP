@@ -414,6 +414,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     new ReservedRect(x1, y1, x2, y2),
                     baseWidth,
                     baseHeight,
+                    context.Gap,
                     out baseRect))
             {
                 placed = true;
@@ -1046,6 +1047,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseWindow,
                 baseWidth,
                 baseHeight,
+                gap,
                 out var baseRect))
         {
             TracePlanReject("strict", "base", context, planned, null);
@@ -1236,6 +1238,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseWidth,
                 baseHeight,
                 budgets,
+                context.Gap,
                 includeRelaxedCandidates: true,
                 out var baseRect))
         {
@@ -1665,6 +1668,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double baseWidth,
         double baseHeight,
         ZoneBudgets budgets,
+        double gap,
         bool includeRelaxedCandidates,
         out ReservedRect baseRect)
     {
@@ -1684,6 +1688,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     new ReservedRect(minX, minY, maxX, maxY),
                     baseWidth,
                     baseHeight,
+                    gap,
                     out baseRect))
                 return true;
         }
@@ -1697,9 +1702,17 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect window,
         double baseWidth,
         double baseHeight,
+        double gap,
         out ReservedRect baseRect)
     {
-        if (window.MaxX - window.MinX < baseWidth || window.MaxY - window.MinY < baseHeight)
+        var inset = gap > 0 ? gap : 0.0;
+        var searchWindow = new ReservedRect(
+            window.MinX + inset,
+            window.MinY + inset,
+            window.MaxX - inset,
+            window.MaxY - inset);
+
+        if (searchWindow.MaxX - searchWindow.MinX < baseWidth || searchWindow.MaxY - searchWindow.MinY < baseHeight)
         {
             baseRect = new ReservedRect(0, 0, 0, 0);
             return false;
@@ -1708,27 +1721,27 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var blockedRectangles = new List<PackedRectangle>();
         foreach (var rect in blocked)
         {
-            if (!TryClipToWindow(rect, window, out var clipped))
+            if (!TryClipToWindow(rect, searchWindow, out var clipped))
                 continue;
 
-            blockedRectangles.Add(ToBlockedRectangle(window.MinX, window.MaxY, clipped));
+            blockedRectangles.Add(ToBlockedRectangle(searchWindow.MinX, searchWindow.MaxY, clipped));
         }
 
         var packer = new MaxRectsBinPacker(
-            window.MaxX - window.MinX,
-            window.MaxY - window.MinY,
+            searchWindow.MaxX - searchWindow.MinX,
+            searchWindow.MaxY - searchWindow.MinY,
             allowRotation: false,
             blockedRectangles);
 
-        var targetCenterX = (window.MaxX - window.MinX) / 2.0;
-        var targetCenterY = (window.MaxY - window.MinY) / 2.0;
+        var targetCenterX = (searchWindow.MaxX - searchWindow.MinX) / 2.0;
+        var targetCenterY = (searchWindow.MaxY - searchWindow.MinY) / 2.0;
         if (!packer.TryInsertClosestToPoint(baseWidth, baseHeight, targetCenterX, targetCenterY, out var placement))
         {
             baseRect = new ReservedRect(0, 0, 0, 0);
             return false;
         }
 
-        baseRect = FromPackedRectangle(window.MinX, window.MaxY, placement);
+        baseRect = FromPackedRectangle(searchWindow.MinX, searchWindow.MaxY, placement);
         return true;
     }
 
