@@ -300,21 +300,10 @@ public sealed partial class TeklaDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
-        double currentScale = scaleDriverViews.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
-        if (currentScale <= 0)
-            currentScale = 1.0;
-
-        const double borderEst = 20.0;
-        var maxModelW = scaleDriverViews.Max(v => v.Width * currentScale);
-        var maxModelH = scaleDriverViews.Max(v => v.Height * currentScale);
-        var minDenom = System.Math.Max(
-            maxModelW / System.Math.Max(availW - borderEst, 1),
-            maxModelH / System.Math.Max(availH - borderEst, 1));
-
-        var standardScales = new[] { 1.0, 2, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 100, 125, 150, 175, 200, 250, 300 };
-        var candidates = System.Array.FindAll(standardScales, s => s >= minDenom);
-        if (candidates.Length == 0)
-            candidates = new[] { standardScales[standardScales.Length - 1] };
+        var scaleSelection = DrawingScaleCandidateSelector.Select(scaleDriverViews, availW, availH);
+        var currentScale = scaleSelection.CurrentScale;
+        var minDenom = scaleSelection.MinDenom;
+        var candidates = scaleSelection.Candidates;
         init.Stop();
         initMs = init.ElapsedMilliseconds;
 
