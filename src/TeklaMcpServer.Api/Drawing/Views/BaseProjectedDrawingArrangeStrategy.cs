@@ -1312,110 +1312,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DrawingArrangeContext context,
         IReadOnlyList<View> detailViews)
     {
-        if (detailViews.Count == 0)
-            return new List<DetailViewRelation>();
-
-        var detailById = detailViews.ToDictionary(view => view.GetIdentifier().ID);
-        var relations = new List<DetailViewRelation>();
-        var seenDetailIds = new HashSet<int>();
-
-        foreach (var ownerView in context.Views)
+        var relationSet = DetailRelationResolver.Build(context.Views, detailViews);
+        var result = new List<DetailViewRelation>();
+        foreach (var rel in relationSet.All)
         {
-            var detailMarks = ownerView.GetAllObjects(typeof(DetailMark));
-            while (detailMarks.MoveNext())
+            result.Add(new DetailViewRelation
             {
-                if (detailMarks.Current is not DetailMark detailMark)
-                    continue;
-
-                var relatedObjects = detailMark.GetRelatedObjects();
-                while (relatedObjects.MoveNext())
-                {
-                    if (relatedObjects.Current is not View relatedView)
-                        continue;
-
-                    var detailId = relatedView.GetIdentifier().ID;
-                    if (!detailById.TryGetValue(detailId, out var detailView))
-                        continue;
-
-                    if (!seenDetailIds.Add(detailId))
-                        break;
-
-                    relations.Add(new DetailViewRelation
-                    {
-                        DetailView = detailView,
-                        OwnerView = ownerView,
-                        AnchorX = TryProjectViewLocalPointToSheet(ownerView, detailMark.LabelPoint, out var labelX, out _)
-                            ? labelX
-                            : TryProjectViewLocalPointToSheet(ownerView, detailMark.BoundaryPoint, out var boundaryX, out _)
-                                ? boundaryX
-                                : TryProjectViewLocalPointToSheet(ownerView, detailMark.CenterPoint, out var centerX, out _)
-                                    ? centerX
-                                    : null,
-                        AnchorY = TryProjectViewLocalPointToSheet(ownerView, detailMark.LabelPoint, out _, out var labelY)
-                            ? labelY
-                            : TryProjectViewLocalPointToSheet(ownerView, detailMark.BoundaryPoint, out _, out var boundaryY)
-                                ? boundaryY
-                                : TryProjectViewLocalPointToSheet(ownerView, detailMark.CenterPoint, out _, out var centerY)
-                                    ? centerY
-                                    : null
-                    });
-                    break;
-                }
-            }
-
-            var sectionMarks = ownerView.GetAllObjects(typeof(SectionMark));
-            while (sectionMarks.MoveNext())
-            {
-                if (sectionMarks.Current is not SectionMark sectionMark)
-                    continue;
-
-                var relatedObjects = sectionMark.GetRelatedObjects();
-                while (relatedObjects.MoveNext())
-                {
-                    if (relatedObjects.Current is not View relatedView)
-                        continue;
-
-                    var detailId = relatedView.GetIdentifier().ID;
-                    if (!detailById.TryGetValue(detailId, out var detailView))
-                        continue;
-
-                    if (!seenDetailIds.Add(detailId))
-                        break;
-
-                    Point? sectionMidPoint = null;
-                    try
-                    {
-                        var lp = sectionMark.LeftPoint;
-                        var rp = sectionMark.RightPoint;
-                        if (lp != null && rp != null)
-                            sectionMidPoint = new Point((lp.X + rp.X) * 0.5, (lp.Y + rp.Y) * 0.5, 0);
-                        else
-                            sectionMidPoint = lp ?? rp;
-                    }
-                    catch { }
-
-                    double? smAnchorX = null;
-                    double? smAnchorY = null;
-                    if (sectionMidPoint != null
-                        && TryProjectViewLocalPointToSheet(ownerView, sectionMidPoint, out var projX, out var projY))
-                    {
-                        smAnchorX = projX;
-                        smAnchorY = projY;
-                    }
-
-                    relations.Add(new DetailViewRelation
-                    {
-                        DetailView = detailView,
-                        OwnerView = ownerView,
-                        AnchorX = smAnchorX,
-                        AnchorY = smAnchorY
-                    });
-                    break;
-                }
-            }
+                DetailView = rel.DetailView,
+                OwnerView  = rel.OwnerView,
+                AnchorX    = rel.AnchorX,
+                AnchorY    = rel.AnchorY,
+            });
         }
-
-        return relations;
+        return result;
     }
 
     private static void TryPlaceDetailViews(

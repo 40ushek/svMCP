@@ -671,61 +671,8 @@ public sealed partial class TeklaDrawingViewApi
             return arranged;
 
         // Build detailId → owner relation for both real DetailView and detail-like SectionView.
-        var detailViewIds = new System.Collections.Generic.HashSet<int>(detailViews.Select(v => v.GetIdentifier().ID));
-        var detailRelationByDetailId = new System.Collections.Generic.Dictionary<int, (View OwnerView, double? AnchorX, double? AnchorY)>();
-        foreach (var ownerView in views)
-        {
-            var markEnum = ownerView.GetAllObjects(typeof(Tekla.Structures.Drawing.DetailMark));
-            while (markEnum.MoveNext())
-            {
-                if (markEnum.Current is not Tekla.Structures.Drawing.DetailMark mark)
-                    continue;
-                var related = mark.GetRelatedObjects();
-                while (related.MoveNext())
-                {
-                    if (related.Current is not View relatedView)
-                        continue;
-                    var relId = relatedView.GetIdentifier().ID;
-                    if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
-                    {
-                        var hasAnchor = TryResolveDetailAnchorSheet(ownerView, mark, out var anchorX, out var anchorY);
-                        detailRelationByDetailId[relId] = (
-                            ownerView,
-                            hasAnchor ? anchorX : null,
-                            hasAnchor ? anchorY : null);
-                    }
-                    break;
-                }
-            }
-
-            var sectionMarkEnum = ownerView.GetAllObjects(typeof(Tekla.Structures.Drawing.SectionMark));
-            while (sectionMarkEnum.MoveNext())
-            {
-                if (sectionMarkEnum.Current is not Tekla.Structures.Drawing.SectionMark sectionMark)
-                    continue;
-
-                var related = sectionMark.GetRelatedObjects();
-                while (related.MoveNext())
-                {
-                    if (related.Current is not View relatedView)
-                        continue;
-
-                    var relId = relatedView.GetIdentifier().ID;
-                    if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
-                    {
-                        var midPoint = TrySectionMarkMidPoint(sectionMark);
-                        double smAnchorX = 0, smAnchorY = 0;
-                        var hasAnchor = midPoint != null
-                            && TryResolveDetailAnchorSheet(ownerView, new[] { midPoint.X, midPoint.Y }, out smAnchorX, out smAnchorY);
-                        detailRelationByDetailId[relId] = (ownerView,
-                            hasAnchor ? smAnchorX : null,
-                            hasAnchor ? smAnchorY : null);
-                    }
-                    break;
-                }
-            }
-        }
-        if (detailRelationByDetailId.Count == 0)
+        var relations = DetailRelationResolver.Build(views, detailViews);
+        if (relations.Count == 0)
             return arranged;
 
         var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
@@ -741,7 +688,7 @@ public sealed partial class TeklaDrawingViewApi
         {
             var detailView = detailViews[i];
             var detailId = detailView.GetIdentifier().ID;
-            if (!detailRelationByDetailId.TryGetValue(detailId, out var relation))
+            if (!relations.TryGet(detailId, out var relation))
             {
                 if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
                     blocked.Add(currentRect);
