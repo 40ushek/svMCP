@@ -1362,6 +1362,34 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     break;
                 }
             }
+
+            var sectionMarks = ownerView.GetAllObjects(typeof(SectionMark));
+            while (sectionMarks.MoveNext())
+            {
+                if (sectionMarks.Current is not SectionMark sectionMark)
+                    continue;
+
+                var relatedObjects = sectionMark.GetRelatedObjects();
+                while (relatedObjects.MoveNext())
+                {
+                    if (relatedObjects.Current is not View relatedView)
+                        continue;
+
+                    var detailId = relatedView.GetIdentifier().ID;
+                    if (!detailById.TryGetValue(detailId, out var detailView))
+                        continue;
+
+                    if (!seenDetailIds.Add(detailId))
+                        break;
+
+                    relations.Add(new DetailViewRelation
+                    {
+                        DetailView = detailView,
+                        OwnerView = ownerView
+                    });
+                    break;
+                }
+            }
         }
 
         return relations;

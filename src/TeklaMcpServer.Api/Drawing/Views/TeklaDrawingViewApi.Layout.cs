@@ -670,9 +670,9 @@ public sealed partial class TeklaDrawingViewApi
         if (detailViews.Count == 0)
             return arranged;
 
-        // Build detailId → (ownerView, detailMark) using GetRelatedObjects() — more reliable than name matching.
+        // Build detailId → owner relation for both real DetailView and detail-like SectionView.
         var detailViewIds = new System.Collections.Generic.HashSet<int>(detailViews.Select(v => v.GetIdentifier().ID));
-        var detailRelationByDetailId = new System.Collections.Generic.Dictionary<int, (View OwnerView, Tekla.Structures.Drawing.DetailMark Mark)>();
+        var detailRelationByDetailId = new System.Collections.Generic.Dictionary<int, (View OwnerView, double? AnchorX, double? AnchorY)>();
         foreach (var ownerView in views)
         {
             var markEnum = ownerView.GetAllObjects(typeof(Tekla.Structures.Drawing.DetailMark));
@@ -687,7 +687,32 @@ public sealed partial class TeklaDrawingViewApi
                         continue;
                     var relId = relatedView.GetIdentifier().ID;
                     if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
-                        detailRelationByDetailId[relId] = (ownerView, mark);
+                    {
+                        var hasAnchor = TryResolveDetailAnchorSheet(ownerView, mark, out var anchorX, out var anchorY);
+                        detailRelationByDetailId[relId] = (
+                            ownerView,
+                            hasAnchor ? anchorX : null,
+                            hasAnchor ? anchorY : null);
+                    }
+                    break;
+                }
+            }
+
+            var sectionMarkEnum = ownerView.GetAllObjects(typeof(Tekla.Structures.Drawing.SectionMark));
+            while (sectionMarkEnum.MoveNext())
+            {
+                if (sectionMarkEnum.Current is not Tekla.Structures.Drawing.SectionMark sectionMark)
+                    continue;
+
+                var related = sectionMark.GetRelatedObjects();
+                while (related.MoveNext())
+                {
+                    if (related.Current is not View relatedView)
+                        continue;
+
+                    var relId = relatedView.GetIdentifier().ID;
+                    if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
+                        detailRelationByDetailId[relId] = (ownerView, null, null);
                     break;
                 }
             }
@@ -739,11 +764,10 @@ public sealed partial class TeklaDrawingViewApi
 
             var anchorX = CenterX(ownerRect);
             var anchorY = CenterY(ownerRect);
-            if (TryResolveDetailAnchorSheet(ownerView, relation.Mark, out var resolvedAnchorX, out var resolvedAnchorY))
-            {
-                anchorX = resolvedAnchorX;
-                anchorY = resolvedAnchorY;
-            }
+            if (relation.AnchorX.HasValue)
+                anchorX = relation.AnchorX.Value;
+            if (relation.AnchorY.HasValue)
+                anchorY = relation.AnchorY.Value;
 
             if (!BaseProjectedDrawingArrangeStrategy.TryFindDetailRect(
                     ownerRect,
