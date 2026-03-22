@@ -112,12 +112,157 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             var unplannedFrames = unplannedViews
                 .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                 .ToList();
-            return _maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames);
+            if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
+                return false;
+
+            var fallbackStandardSectionIds = CollectUnplannedStandardSectionIds(planningContext, plannedIds);
+            return fallbackStandardSectionIds.Count == 0
+                || ValidateResidualFallbackLayout(unplannedCtx, fallbackStandardSectionIds);
         }
 
         var maxr  = _maxRectsFallback.EstimateFit(planningContext, frames);
         var shelf = !maxr && planningContext.ReservedAreas.Count == 0 && _fallback.EstimateFit(planningContext, frames);
         return maxr || shelf;
+    }
+
+    private HashSet<int> CollectUnplannedStandardSectionIds(
+        DrawingArrangeContext context,
+        HashSet<int> plannedIds)
+    {
+        var baseViewSelection = BaseViewSelection.Select(context.Views);
+        var baseView = baseViewSelection.View;
+        if (baseView == null)
+            return new HashSet<int>();
+
+        var semanticViews = SemanticViewSet.Build(context.Views);
+        var sectionGroups = SectionGroupSet.Build(
+            semanticViews.Sections,
+            context.Drawing,
+            baseView,
+            _sectionPlacementSideResolver);
+
+        return sectionGroups.Left
+            .Concat(sectionGroups.Right)
+            .Concat(sectionGroups.Top)
+            .Concat(sectionGroups.Bottom)
+            .Select(view => view.GetIdentifier().ID)
+            .Where(id => !plannedIds.Contains(id))
+            .ToHashSet();
+    }
+
+    private static bool ValidateResidualFallbackLayout(
+        DrawingArrangeContext context,
+        HashSet<int> fallbackSectionIds)
+    {
+        if (fallbackSectionIds.Count == 0)
+            return true;
+
+        if (!TryEstimateResidualPlacements(context, out var residualRectsById))
+            return false;
+
+        foreach (var entry in residualRectsById)
+        {
+            if (!fallbackSectionIds.Contains(entry.Key))
+                continue;
+
+            var rect = entry.Value;
+            if (!IsWithinArea(
+                    rect,
+                    context.Margin,
+                    context.SheetWidth - context.Margin,
+                    context.Margin,
+                    context.SheetHeight - context.Margin))
+            {
+                PerfTrace.Write("api-view", "fallback_layout_reject", 0,
+                    $"view={entry.Key} reason=out-of-sheet rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
+                return false;
+            }
+
+            if (IntersectsAny(rect, context.ReservedAreas))
+            {
+                PerfTrace.Write("api-view", "fallback_layout_reject", 0,
+                    $"view={entry.Key} reason=reserved-overlap rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
+                return false;
+            }
+
+            foreach (var other in residualRectsById)
+            {
+                if (other.Key == entry.Key)
+                    continue;
+
+                if (!Intersects(rect, other.Value))
+                    continue;
+
+                PerfTrace.Write("api-view", "fallback_layout_reject", 0,
+                    $"view={entry.Key} reason=view-overlap blocker={other.Key} rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}] blockerRect=[{other.Value.MinX:F2},{other.Value.MinY:F2},{other.Value.MaxX:F2},{other.Value.MaxY:F2}]");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool TryEstimateResidualPlacements(
+        DrawingArrangeContext context,
+        out Dictionary<int, ReservedRect> residualRectsById)
+    {
+        residualRectsById = new Dictionary<int, ReservedRect>();
+
+        var availableW = context.SheetWidth - (2 * context.Margin);
+        var availableH = context.SheetHeight - (2 * context.Margin);
+        if (availableW <= 0 || availableH <= 0)
+            return false;
+
+        var packer = new MaxRectsBinPacker(
+            availableW + context.Gap,
+            availableH + context.Gap,
+            allowRotation: false,
+            blockedRectangles: ToMaxRectsBlockedRectangles(context));
+
+        var orderedViews = context.Views
+            .OrderByDescending(view => view.Width * view.Height)
+            .ToList();
+
+        foreach (var view in orderedViews)
+        {
+            if (!packer.TryInsert(view.Width + context.Gap, view.Height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
+                return false;
+
+            var originX = context.Margin + placement.X + (view.Width / 2.0);
+            var originY = context.SheetHeight - context.Margin - placement.Y - (view.Height / 2.0);
+            var width = DrawingArrangeContextSizing.GetWidth(context, view);
+            var height = DrawingArrangeContextSizing.GetHeight(context, view);
+            if (!DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(view, originX, originY, width, height, out var rect))
+                rect = new ReservedRect(
+                    originX - (width / 2.0),
+                    originY - (height / 2.0),
+                    originX + (width / 2.0),
+                    originY + (height / 2.0));
+
+            residualRectsById[view.GetIdentifier().ID] = rect;
+        }
+
+        return true;
+    }
+
+    private static IEnumerable<PackedRectangle> ToMaxRectsBlockedRectangles(DrawingArrangeContext context)
+    {
+        foreach (var area in context.ReservedAreas)
+        {
+            var minX = System.Math.Max(context.Margin, area.MinX - context.Gap);
+            var maxX = System.Math.Min(context.SheetWidth - context.Margin, area.MaxX + context.Gap);
+            var minY = System.Math.Max(context.Margin, area.MinY - context.Gap);
+            var maxY = System.Math.Min(context.SheetHeight - context.Margin, area.MaxY + context.Gap);
+
+            if (maxX <= minX || maxY <= minY)
+                continue;
+
+            yield return new PackedRectangle(
+                minX - context.Margin,
+                (context.SheetHeight - context.Margin) - maxY,
+                maxX - minX,
+                maxY - minY);
+        }
     }
 
     public List<ArrangedView> Arrange(DrawingArrangeContext context)

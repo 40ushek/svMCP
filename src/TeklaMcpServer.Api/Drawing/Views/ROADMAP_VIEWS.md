@@ -101,6 +101,12 @@
   При этом API-level default в сигнатуре пока остаётся `DebugPreview`,
   то есть это осознанное различие между parser contract и API contract.
 - default `gap` для `fit_views_to_sheet` на parser/tool layer теперь `4 мм`.
+- если standard section не встала в normal stack и уходит в residual fallback,
+  `EstimateFit` теперь дополнительно делает hard-check итоговой residual geometry:
+  overlap с другими planned views, overlap с reserved areas и выход за лист
+  считаются hard fail для candidate scale.
+  То есть fallback для standard sections по-прежнему разрешён,
+  но плохой fallback больше не проходит как `fits=1`.
 
 ### Что ещё не закончено
 
@@ -130,6 +136,11 @@
   восстановить проекционную связь без overlap.
 - `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
   candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
+- standard section, не вставшая в preferred stack, уже не должна проходить
+  через residual fallback с hard overlap, но остаётся открытым вопрос
+  более мягкой деградации:
+  когда fallback геометрически валиден, но проекционно выглядит слабо,
+  planner пока ещё не умеет это оценивать отдельной soft-метрикой.
 
 ## Семантическая модель
 
@@ -178,6 +189,9 @@
 - он размещается после основного base/section каркаса
 - основная метрика — близость к `DetailMarkAnchor`
 - fallback в residual placement допустим только как явная деградация
+- для standard sections residual fallback допустим только если итоговая геометрия
+  остаётся overlap-free и не конфликтует с reserved areas;
+  потеря идеальной projection relation сама по себе не является hard fail.
 
 ### Detail-like sections
 
@@ -250,6 +264,10 @@
 - выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window
 - основной каркас после первой расстановки уже имеет безопасные зазоры,
   а не упирается в `projection-skip:view-overlap`
+- если standard section не может быть поставлена в свой normal stack,
+  следующий допустимый путь деградации всё равно обязан оставаться
+  overlap-free; иначе candidate scale должен быть отвергнут, и внешний
+  scale loop должен взять следующий, более крупный масштаб
 
 ### 4. Свести `EstimateFit` и apply path
 
