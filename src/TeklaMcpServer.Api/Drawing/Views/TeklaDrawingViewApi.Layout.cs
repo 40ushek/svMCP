@@ -670,11 +670,29 @@ public sealed partial class TeklaDrawingViewApi
         if (detailViews.Count == 0)
             return arranged;
 
-        var detailMarks = GetDetailMarks().DetailMarks
-            .Where(mark => mark.DetailViewId.HasValue)
-            .GroupBy(mark => mark.DetailViewId!.Value)
-            .ToDictionary(group => group.Key, group => group.First());
-        if (detailMarks.Count == 0)
+        // Build detailId → (ownerView, detailMark) using GetRelatedObjects() — more reliable than name matching.
+        var detailViewIds = new System.Collections.Generic.HashSet<int>(detailViews.Select(v => v.GetIdentifier().ID));
+        var detailRelationByDetailId = new System.Collections.Generic.Dictionary<int, (View OwnerView, Tekla.Structures.Drawing.DetailMark Mark)>();
+        foreach (var ownerView in views)
+        {
+            var markEnum = ownerView.GetAllObjects(typeof(Tekla.Structures.Drawing.DetailMark));
+            while (markEnum.MoveNext())
+            {
+                if (markEnum.Current is not Tekla.Structures.Drawing.DetailMark mark)
+                    continue;
+                var related = mark.GetRelatedObjects();
+                while (related.MoveNext())
+                {
+                    if (related.Current is not View relatedView)
+                        continue;
+                    var relId = relatedView.GetIdentifier().ID;
+                    if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
+                        detailRelationByDetailId[relId] = (ownerView, mark);
+                    break;
+                }
+            }
+        }
+        if (detailRelationByDetailId.Count == 0)
             return arranged;
 
         var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
@@ -690,14 +708,15 @@ public sealed partial class TeklaDrawingViewApi
         {
             var detailView = detailViews[i];
             var detailId = detailView.GetIdentifier().ID;
-            if (!detailMarks.TryGetValue(detailId, out var detailMark))
+            if (!detailRelationByDetailId.TryGetValue(detailId, out var relation))
             {
                 if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
                     blocked.Add(currentRect);
                 continue;
             }
 
-            if (!viewById.TryGetValue(detailMark.OwnerViewId, out var ownerView))
+            var ownerView = relation.OwnerView;
+            if (!viewById.ContainsKey(ownerView.GetIdentifier().ID))
             {
                 if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
                     blocked.Add(currentRect);
@@ -720,7 +739,7 @@ public sealed partial class TeklaDrawingViewApi
 
             var anchorX = CenterX(ownerRect);
             var anchorY = CenterY(ownerRect);
-            if (TryResolveDetailAnchorSheet(ownerView, detailMark, out var resolvedAnchorX, out var resolvedAnchorY))
+            if (TryResolveDetailAnchorSheet(ownerView, relation.Mark, out var resolvedAnchorX, out var resolvedAnchorY))
             {
                 anchorX = resolvedAnchorX;
                 anchorY = resolvedAnchorY;
@@ -824,6 +843,19 @@ public sealed partial class TeklaDrawingViewApi
         if (TryResolveDetailAnchorSheet(ownerView, detailMark.BoundaryPoint, out anchorX, out anchorY))
             return true;
         return TryResolveDetailAnchorSheet(ownerView, detailMark.CenterPoint, out anchorX, out anchorY);
+    }
+
+    private static bool TryResolveDetailAnchorSheet(View ownerView, Tekla.Structures.Drawing.DetailMark detailMark, out double anchorX, out double anchorY)
+    {
+        if (detailMark.LabelPoint != null && TryResolveDetailAnchorSheet(ownerView, new[] { detailMark.LabelPoint.X, detailMark.LabelPoint.Y }, out anchorX, out anchorY))
+            return true;
+        if (detailMark.BoundaryPoint != null && TryResolveDetailAnchorSheet(ownerView, new[] { detailMark.BoundaryPoint.X, detailMark.BoundaryPoint.Y }, out anchorX, out anchorY))
+            return true;
+        if (detailMark.CenterPoint != null && TryResolveDetailAnchorSheet(ownerView, new[] { detailMark.CenterPoint.X, detailMark.CenterPoint.Y }, out anchorX, out anchorY))
+            return true;
+        anchorX = 0;
+        anchorY = 0;
+        return false;
     }
 
     private static bool TryResolveDetailAnchorSheet(View ownerView, double[] point, out double anchorX, out double anchorY)
