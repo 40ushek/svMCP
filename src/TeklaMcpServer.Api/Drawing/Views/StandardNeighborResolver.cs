@@ -78,6 +78,10 @@ internal static class StandardNeighborResolver
 
     internal static NeighborRole ResolveRole(View baseView, View candidate)
     {
+        var byViewType = ResolveFromViewType(candidate.ViewType);
+        if (byViewType != NeighborRole.Unknown)
+            return byViewType;
+
         if (TryGetViewCoordinateSystem(baseView, out var reference)
             && TryGetViewCoordinateSystem(candidate, out var view))
         {
@@ -85,10 +89,6 @@ internal static class StandardNeighborResolver
             if (byCoordinateSystems != NeighborRole.Unknown)
                 return byCoordinateSystems;
         }
-
-        var byViewType = ResolveFromViewType(candidate.ViewType);
-        if (byViewType != NeighborRole.Unknown)
-            return byViewType;
 
         return ResolveFromCurrentPosition(baseView, candidate);
     }

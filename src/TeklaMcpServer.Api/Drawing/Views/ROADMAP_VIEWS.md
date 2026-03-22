@@ -41,6 +41,11 @@
   для standard projected neighbors.
 - standard neighbors определяются относительно выбранного `BaseView`,
   а не через прямые raw lookups `TopView/BottomView/BackView` в entry points.
+- для standard projected views действует intentional stabilizing override:
+  `ViewType` (`TopView` / `BottomView` / `BackView` / `EndView`) имеет приоритет
+  над coordinate-system heuristic.
+  Coordinate systems и текущая sheet-position используются как fallback,
+  когда `ViewType` не даёт явной роли.
 - `SectionPlacementSide` реализован как явная семантика:
   - `Left`
   - `Right`
@@ -77,6 +82,10 @@
 - `EndView` больше не обязан уходить в residual:
   если topology resolver классифицирует его как `SideNeighborRight`,
   он получает явный правый neighbor slot в main layout.
+- default behavior у `fit_views_to_sheet` на parser/bridge layer теперь intentional:
+  вызов без явного mode token трактуется как `FinalOnly`.
+  При этом API-level default в сигнатуре пока остаётся `DebugPreview`,
+  то есть это осознанное различие между parser contract и API contract.
 
 ### Что ещё не закончено
 
@@ -108,6 +117,8 @@
   - `BottomNeighbor`
   - `SideNeighborLeft`
   - `SideNeighborRight`
+- для standard neighbors сначала учитывается явный `ViewType`,
+  затем coordinate systems, затем текущая позиция на листе
 - затем направленные секции
 - упаковка остатка возможна только после этого
 - `ResidualProjected` получает только те projected views, которые не были выбраны
@@ -154,7 +165,8 @@
 Нужно:
 
 - выделить явный projection graph поверх уже существующего `NeighborSet`
-- перестать держать role resolution неявно внутри resolver heuristics
+- вынести current resolver order в явную policy:
+  `ViewType override -> coordinate systems -> current position`
 
 Готово когда:
 
