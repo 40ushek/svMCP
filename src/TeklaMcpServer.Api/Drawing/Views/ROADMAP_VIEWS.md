@@ -79,6 +79,9 @@
 - planner и final post-pass используют одну и ту же anchor-идею для detail-like sections.
 - scale search защищён от заведомо безумных scale candidates:
   если вид больше usable area листа, кандидат сразу отбрасывается.
+- в planner начат переход к `zone budgeting` вокруг `BaseView`:
+  budgets для `Top/Bottom/Left/Right` уже считаются и используются
+  для выбора допустимого окна `BaseView`.
 - `EndView` больше не обязан уходить в residual:
   если topology resolver классифицирует его как `SideNeighborRight`,
   он получает явный правый neighbor slot в main layout.
@@ -95,13 +98,20 @@
 - oversized sections пока не вынесены в отдельную degraded policy.
 - local scale reduction для outlier section пока нет.
 - repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
+- scale selection всё ещё слишком зависит от текущих scale на листе:
+  смешанное входное состояние (`1:15`, `1:20`, `1:25`) может поднять `minDenom`
+  и выбросить крупные кандидаты масштаба ещё до реальной проверки fit.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
 - `Top/Bottom` section placement ещё не гарантирует сохранение сильной
   проекционной связи с base view при конфликте по `X`.
-- каркас main layout всё ещё слишком `BaseView`-centered:
-  standard neighbors и horizontal sections сначала наследуют центр базового вида,
-  а уже потом пытаются разойтись по остаточному месту на листе.
+- `zone budgeting` уменьшил жёсткую center-привязку `BaseView`,
+  но ложные reject в `EstimateFit` для `Top/Bottom` section всё ещё встречаются:
+  planner может отвергнуть рабочий `1:20` layout по `reason=no-valid-x`,
+  хотя фактическая расстановка на листе при том же масштабе оказывается валидной.
+- repeated apply всё ещё может ломать projection post-pass:
+  после повторного `fit_views_to_sheet` возможны массовые
+  `projection-skip:view-overlap`.
 
 ## Семантическая модель
 
@@ -140,6 +150,8 @@
 - текущий horizontal stack для `Top/Bottom` sections сначала пробует
   проекционный центр base view, затем только грубые крайние позиции.
   Это уже даёт explainable diagnostics, но пока слишком сужает поиск по `X`.
+- текущий `EstimateFit` для `Top/Bottom` sections всё ещё может считать
+  rect хуже, чем реально получается в apply path на том же листе.
 
 ### Details
 
@@ -166,10 +178,14 @@
   - куда произошла деградация
   - какой вид остался residual
 - scale selection должен быть устойчив к повторному запуску на уже расставленном листе
+- выбор кандидатов масштаба не должен зависеть от случайно смешанных текущих
+  scale видов на входном листе
 - для `Top/Bottom` sections лог должен явно показывать:
   - preferred centered rect
   - blockers по `X`
   - причину fallback / skip
+- для сравнения `estimate` vs `apply` лог должен позволять увидеть,
+  почему рабочий layout был отвергнут раньше времени
 
 ## Ближайшие шаги
 
@@ -186,7 +202,24 @@
 - standard neighbors и dependent relations выводятся из явной topology policy,
   а не только из текущего resolver
 
-### 2. Отделить oversized sections от normal section policy
+### 2. Починить scale selection от текущего состояния листа
+
+Нужно:
+
+- перестать поднимать стартовый `minDenom` только из-за того,
+  что на входе лист уже содержит смешанные текущие scale
+- считать candidate start от реальной geometry/sheet-capacity,
+  а не от случайно испорченного состояния после предыдущих прогонов
+- сделать repeated `fit_views_to_sheet` устойчивым к входу вида
+  с уже изменённым scale
+
+Готово когда:
+
+- лист со смешанными current scales не уводит алгоритм сразу на `1:30`
+- `1:20` и `1:25` сравниваются по реальной fit-логике, а не отбрасываются
+  до layout-check
+
+### 3. Отделить oversized sections от normal section policy
 
 Нужно:
 
@@ -197,24 +230,41 @@
 
 - обычный каркас листа не ломается из-за одного проблемного разреза
 
-### 3. Ослабить жёсткую привязку каркаса к центру BaseView
+### 4. Довести zone budgeting вокруг BaseView
 
 Нужно:
 
-- перестать считать центр `BaseView` единственной осью компоновки
-- разрешить standard neighbors и `Top/Bottom` sections искать более
-  широкий набор допустимых `X`-позиций до fallback на противоположную сторону
-- держать проекционный центр как preferred anchor, а не как почти единственный
-  допустимый сценарий
+- завершить переход, начатый в planner:
+  - `ComputeZoneBudgets(...)`
+  - `FindBaseViewWindow(...)`
+- убрать оставшиеся centered-first допущения в estimate/apply parity
+- использовать budget window как один и тот же source of truth
+  в strict/relaxed/diagnostics path
 
 Готово когда:
 
+- `BaseView` размещается с учётом реальной потребности в месте сверху/снизу/слева/справа
 - `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
   centered-slot around `BaseView`
-- повторный `fit_views_to_sheet` не плавает между `1:20` и `1:25`
-  при той же смысловой схеме листа
+- выбор `baseRect` объясняется через budgets, а не через неявное
+  "попробовали центр и несколько грубых альтернатив"
 
-### 4. Усилить detail/dependent placement policy
+### 5. Свести `EstimateFit` и apply path для `Top/Bottom` sections
+
+Нужно:
+
+- понять и убрать расхождение, при котором `EstimateFit` отвергает рабочий
+  `Top` section layout по `no-valid-x`, а apply path на том же листе даёт валидную
+  расстановку
+- логировать и сравнивать одни и те же rect в estimate/apply path
+- не считать `1:20` невалидным, если на том же листе этот layout реально помещается
+
+Готово когда:
+
+- `fits=0` не возникает для layout, который потом реально встаёт на лист
+- `Top/Bottom` section decision совпадает между estimate и apply
+
+### 6. Усилить detail/dependent placement policy
 
 Нужно:
 
@@ -227,7 +277,7 @@
 - detail и detail-like section ставятся максимально близко к своему anchor
 - при нехватке места причина деградации видна в результате
 
-### 5. Сделать projection method явной конфигурацией
+### 7. Сделать projection method явной конфигурацией
 
 Нужно:
 

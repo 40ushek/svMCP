@@ -14,6 +14,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 {
     internal const double RelaxedLayoutScaleCutoff = 50.0;
 
+    internal readonly struct ZoneBudgets
+    {
+        public ZoneBudgets(double topHeight, double bottomHeight, double leftWidth, double rightWidth)
+        {
+            TopHeight = topHeight;
+            BottomHeight = bottomHeight;
+            LeftWidth = leftWidth;
+            RightWidth = rightWidth;
+        }
+
+        public double TopHeight { get; }
+        public double BottomHeight { get; }
+        public double LeftWidth { get; }
+        public double RightWidth { get; }
+    }
+
     private readonly GaDrawingMaxRectsArrangeStrategy _maxRectsFallback = new();
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
     private readonly SectionPlacementSideResolver _sectionPlacementSideResolver = new(new Model());
@@ -380,24 +396,17 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
         var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
 
-        var leftSlotW = (leftNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, leftNeighbor) + context.Gap : 0)
-            + ComputeHorizontalStackWidth(context, leftSections, context.Gap);
-        var rightSlotW = (rightNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, rightNeighbor) + context.Gap : 0)
-            + ComputeHorizontalStackWidth(context, rightSections, context.Gap);
-        var topSlotH = (top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0)
-            + ComputeVerticalStackHeight(context, topSections, context.Gap);
-        var bottomSlotH = (bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) + context.Gap : 0)
-            + ComputeVerticalStackHeight(context, bottomSections, context.Gap);
+        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
 
         var baseRect = new ReservedRect(0, 0, 0, 0);
         var placed = false;
-        foreach (var (x1, x2, y1, y2) in new[]
-        {
-            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY + bottomSlotH, freeMaxY - topSlotH),
-            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY,               freeMaxY),
-            (freeMinX,             freeMaxX,             freeMinY + bottomSlotH, freeMaxY - topSlotH),
-            (freeMinX,             freeMaxX,             freeMinY,               freeMaxY),
-        })
+        foreach (var (x1, x2, y1, y2) in EnumerateBaseViewWindows(
+                     freeMinX,
+                     freeMaxX,
+                     freeMinY,
+                     freeMaxY,
+                     budgets,
+                     includeRelaxedCandidates: true))
         {
             if (x2 - x1 >= baseWidth && y2 - y1 >= baseHeight
                 && TryFindFrontViewRect(baseWidth, baseHeight, x1, x2, y1, y2, blocked, out baseRect))
@@ -999,24 +1008,36 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var rightNeighborHeight = rightNeighbor != null ? DrawingArrangeContextSizing.GetHeight(context, rightNeighbor) : 0;
         var leftSectionStackWidth = ComputeHorizontalStackWidth(context, leftSections, gap);
         var rightSectionStackWidth = ComputeHorizontalStackWidth(context, rightSections, gap);
+        var topSectionStackHeight = ComputeVerticalStackHeight(context, topSections, gap);
+        var bottomSectionStackHeight = ComputeVerticalStackHeight(context, bottomSections, gap);
         PerfTrace.Write(
             "api-view",
             "front_arrange_strict_input",
             0,
-            $"free=({freeArea.minX:F2},{freeArea.maxX:F2},{freeArea.minY:F2},{freeArea.maxY:F2}) base=({baseWidth:F2},{baseHeight:F2}) top=({topWidth:F2},{topHeight:F2}) leftStackW=({leftSectionStackWidth:F2}) rightStackW=({rightSectionStackWidth:F2}) leftNeighbor=({leftNeighborWidth:F2},{leftNeighborHeight:F2}) rightNeighbor=({rightNeighborWidth:F2},{rightNeighborHeight:F2}) bottom=({bottomWidth:F2},{bottomHeight:F2})");
+            $"free=({freeArea.minX:F2},{freeArea.maxX:F2},{freeArea.minY:F2},{freeArea.maxY:F2}) base=({baseWidth:F2},{baseHeight:F2}) top=({topWidth:F2},{topHeight:F2}) leftStackW=({leftSectionStackWidth:F2}) rightStackW=({rightSectionStackWidth:F2}) leftNeighbor=({leftNeighborWidth:F2},{leftNeighborHeight:F2}) rightNeighbor=({rightNeighborWidth:F2},{rightNeighborHeight:F2}) bottom=({bottomWidth:F2},{bottomHeight:F2}) budgets=(top:{(top != null ? topHeight + gap : 0) + topSectionStackHeight:F2},bottom:{(bottom != null ? bottomHeight + gap : 0) + bottomSectionStackHeight:F2},left:{(leftNeighbor != null ? leftNeighborWidth + gap : 0) + leftSectionStackWidth:F2},right:{(rightNeighbor != null ? rightNeighborWidth + gap : 0) + rightSectionStackWidth:F2})");
 
-        var leftSlotW = (leftNeighbor != null ? leftNeighborWidth + gap : 0) + leftSectionStackWidth;
-        var rightSlotW = (rightNeighbor != null ? rightNeighborWidth + gap : 0) + rightSectionStackWidth;
-        var topSlotH = (top != null ? topHeight + gap : 0) + ComputeVerticalStackHeight(context, topSections, gap);
-        var bottomSlotH = (bottom != null ? bottomHeight + gap : 0) + ComputeVerticalStackHeight(context, bottomSections, gap);
+        var budgets = new ZoneBudgets(
+            topHeight: (top != null ? topHeight + gap : 0) + topSectionStackHeight,
+            bottomHeight: (bottom != null ? bottomHeight + gap : 0) + bottomSectionStackHeight,
+            leftWidth: (leftNeighbor != null ? leftNeighborWidth + gap : 0) + leftSectionStackWidth,
+            rightWidth: (rightNeighbor != null ? rightNeighborWidth + gap : 0) + rightSectionStackWidth);
 
-        if (!TryFindFrontViewRect(
+        if (!TryFindBaseViewWindow(
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
                 baseWidth,
                 baseHeight,
-                freeArea.minX + leftSlotW,
-                freeArea.maxX - rightSlotW,
-                freeArea.minY + bottomSlotH,
-                freeArea.maxY - topSlotH,
+                budgets,
+                out var baseWindow)
+            || !TryFindFrontViewRect(
+                baseWidth,
+                baseHeight,
+                baseWindow.MinX,
+                baseWindow.MaxX,
+                baseWindow.MinY,
+                baseWindow.MaxY,
                 blocked,
                 out var baseRect))
             return false;
@@ -1182,34 +1203,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
         var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
 
-        var leftSlotW = (leftNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, leftNeighbor) + context.Gap : 0)
-            + ComputeHorizontalStackWidth(context, leftSections, context.Gap);
-        var rightSlotW = (rightNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, rightNeighbor) + context.Gap : 0)
-            + ComputeHorizontalStackWidth(context, rightSections, context.Gap);
-        var topSlotH = (top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + context.Gap : 0)
-            + ComputeVerticalStackHeight(context, topSections, context.Gap);
-        var bottomSlotH = (bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) + context.Gap : 0)
-            + ComputeVerticalStackHeight(context, bottomSections, context.Gap);
+        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
 
-        var baseRect = new ReservedRect(0, 0, 0, 0);
-        var placed = false;
-        foreach (var (x1, x2, y1, y2) in new[]
-        {
-            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY + bottomSlotH, freeMaxY - topSlotH),
-            (freeMinX + leftSlotW, freeMaxX - rightSlotW, freeMinY,               freeMaxY),
-            (freeMinX,             freeMaxX,             freeMinY + bottomSlotH, freeMaxY - topSlotH),
-            (freeMinX,             freeMaxX,             freeMinY,               freeMaxY),
-        })
-        {
-            if (x2 - x1 >= baseWidth && y2 - y1 >= baseHeight
-                && TryFindFrontViewRect(baseWidth, baseHeight, x1, x2, y1, y2, blocked, out baseRect))
-            {
-                placed = true;
-                break;
-            }
-        }
-
-        if (!placed)
+        if (!TryPlaceBaseViewWithBudgets(
+                blocked,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                baseWidth,
+                baseHeight,
+                budgets,
+                includeRelaxedCandidates: true,
+                out var baseRect))
             return false;
 
         planned.Add(new PlannedPlacement(baseView, CenterX(baseRect), CenterY(baseRect)));
@@ -1535,6 +1541,121 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return 0;
 
         return views.Sum(view => DrawingArrangeContextSizing.GetWidth(context, view)) + (views.Count * gap);
+    }
+
+    private static ZoneBudgets ComputeZoneBudgets(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections)
+    {
+        var gap = context.Gap;
+        var top = neighbors.TopNeighbor;
+        var bottom = neighbors.BottomNeighbor;
+        var leftNeighbor = neighbors.SideNeighborLeft;
+        var rightNeighbor = neighbors.SideNeighborRight;
+
+        return new ZoneBudgets(
+            topHeight: (top != null ? DrawingArrangeContextSizing.GetHeight(context, top) + gap : 0)
+                + ComputeVerticalStackHeight(context, topSections, gap),
+            bottomHeight: (bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) + gap : 0)
+                + ComputeVerticalStackHeight(context, bottomSections, gap),
+            leftWidth: (leftNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, leftNeighbor) + gap : 0)
+                + ComputeHorizontalStackWidth(context, leftSections, gap),
+            rightWidth: (rightNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, rightNeighbor) + gap : 0)
+                + ComputeHorizontalStackWidth(context, rightSections, gap));
+    }
+
+    internal static bool TryFindBaseViewWindow(
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double baseWidth,
+        double baseHeight,
+        ZoneBudgets budgets,
+        out ReservedRect window)
+    {
+        var minX = freeMinX + budgets.LeftWidth;
+        var maxX = freeMaxX - budgets.RightWidth;
+        var minY = freeMinY + budgets.BottomHeight;
+        var maxY = freeMaxY - budgets.TopHeight;
+
+        if (maxX - minX < baseWidth || maxY - minY < baseHeight)
+        {
+            window = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        window = new ReservedRect(minX, minY, maxX, maxY);
+        return true;
+    }
+
+    private static IEnumerable<(double minX, double maxX, double minY, double maxY)> EnumerateBaseViewWindows(
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        ZoneBudgets budgets,
+        bool includeRelaxedCandidates)
+    {
+        yield return (
+            freeMinX + budgets.LeftWidth,
+            freeMaxX - budgets.RightWidth,
+            freeMinY + budgets.BottomHeight,
+            freeMaxY - budgets.TopHeight);
+
+        if (!includeRelaxedCandidates)
+            yield break;
+
+        yield return (
+            freeMinX + budgets.LeftWidth,
+            freeMaxX - budgets.RightWidth,
+            freeMinY,
+            freeMaxY);
+        yield return (
+            freeMinX,
+            freeMaxX,
+            freeMinY + budgets.BottomHeight,
+            freeMaxY - budgets.TopHeight);
+        yield return (
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY);
+    }
+
+    private static bool TryPlaceBaseViewWithBudgets(
+        IReadOnlyList<ReservedRect> blocked,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double baseWidth,
+        double baseHeight,
+        ZoneBudgets budgets,
+        bool includeRelaxedCandidates,
+        out ReservedRect baseRect)
+    {
+        foreach (var (minX, maxX, minY, maxY) in EnumerateBaseViewWindows(
+                     freeMinX,
+                     freeMaxX,
+                     freeMinY,
+                     freeMaxY,
+                     budgets,
+                     includeRelaxedCandidates))
+        {
+            if (maxX - minX < baseWidth || maxY - minY < baseHeight)
+                continue;
+
+            if (TryFindFrontViewRect(baseWidth, baseHeight, minX, maxX, minY, maxY, blocked, out baseRect))
+                return true;
+        }
+
+        baseRect = new ReservedRect(0, 0, 0, 0);
+        return false;
     }
 
     private static bool TryPlaceVerticalSectionStack(

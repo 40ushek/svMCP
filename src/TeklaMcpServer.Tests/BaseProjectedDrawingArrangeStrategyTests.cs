@@ -92,6 +92,80 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void TryFindBaseViewWindow_AccountsForAllZoneBudgets()
+    {
+        var budgets = new BaseProjectedDrawingArrangeStrategy.ZoneBudgets(
+            topHeight: 80,
+            bottomHeight: 50,
+            leftWidth: 60,
+            rightWidth: 40);
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryFindBaseViewWindow(
+            freeMinX: 10,
+            freeMaxX: 410,
+            freeMinY: 20,
+            freeMaxY: 320,
+            baseWidth: 200,
+            baseHeight: 120,
+            budgets,
+            out var window);
+
+        Assert.True(ok);
+        Assert.Equal(70, window.MinX, 6);
+        Assert.Equal(370, window.MaxX, 6);
+        Assert.Equal(70, window.MinY, 6);
+        Assert.Equal(240, window.MaxY, 6);
+    }
+
+    [Fact]
+    public void TryFindBaseViewWindow_FailsWhenTopBudgetLeavesNoHeight()
+    {
+        var budgets = new BaseProjectedDrawingArrangeStrategy.ZoneBudgets(
+            topHeight: 120,
+            bottomHeight: 40,
+            leftWidth: 0,
+            rightWidth: 0);
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryFindBaseViewWindow(
+            freeMinX: 10,
+            freeMaxX: 410,
+            freeMinY: 20,
+            freeMaxY: 220,
+            baseWidth: 200,
+            baseHeight: 70,
+            budgets,
+            out _);
+
+        Assert.False(ok);
+    }
+
+    [Fact]
+    public void TryFindBaseViewWindow_IgnoresResidualAndDetailByContract()
+    {
+        var budgets = new BaseProjectedDrawingArrangeStrategy.ZoneBudgets(
+            topHeight: 0,
+            bottomHeight: 24,
+            leftWidth: 36,
+            rightWidth: 12);
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryFindBaseViewWindow(
+            freeMinX: 5,
+            freeMaxX: 589,
+            freeMinY: 5,
+            freeMaxY: 415,
+            baseWidth: 300,
+            baseHeight: 150,
+            budgets,
+            out var window);
+
+        Assert.True(ok);
+        Assert.Equal(41, window.MinX, 6);
+        Assert.Equal(577, window.MaxX, 6);
+        Assert.Equal(29, window.MinY, 6);
+        Assert.Equal(415, window.MaxY, 6);
+    }
+
+    [Fact]
     public void TryPackSupplementalViews_PlacesViewsOutsideCoreBounds()
     {
         var packed = BaseProjectedDrawingArrangeStrategy.TryPackSupplementalViews(
