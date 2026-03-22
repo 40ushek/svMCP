@@ -105,6 +105,12 @@
 - repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
+- `TryFindBaseViewRectInWindow` не задаёт зазор между base view и blocked-областями
+  внутри окна. `PackSecondaryViewsPartial` добавляет gap явно (`width + gap`, `binSize + gap`),
+  а здесь blocked-прямоугольники и целевой размер не расширяются на gap. Base view может
+  встать вплотную к зарезервированной области (штамп, другой вид). Исправление: передавать
+  `context.Gap` в `TryFindBaseViewRectInWindow` и расширять blocked-прямоугольники на gap
+  перед клиппингом (или уменьшать доступное окно на gap).
 - `Top/Bottom` section placement ещё не гарантирует сохранение сильной
   проекционной связи с base view при конфликте по `X`.
 - `zone budgeting` и `MaxRects` убрали жёсткую center-привязку `BaseView`,

@@ -214,37 +214,17 @@ internal static class TeklaDrawingMarkLayoutAdapter
         insertionPoint = mark.InsertionPoint;
         centerX = 0.0;
         centerY = 0.0;
-
-        var ownerView = mark.GetView();
-        if (ownerView == null)
-            return false;
-
-        var targetId = mark.GetIdentifier().ID;
-        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = true;
         try
         {
-            var marks = ownerView.GetAllObjects(typeof(Mark));
-            while (marks.MoveNext())
-            {
-                if (marks.Current is not Mark currentMark)
-                    continue;
-
-                if (currentMark.GetIdentifier().ID != targetId)
-                    continue;
-
-                insertionPoint = currentMark.InsertionPoint;
-                var bbox = currentMark.GetAxisAlignedBoundingBox();
-                centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-                centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-                return true;
-            }
+            var bbox = mark.GetAxisAlignedBoundingBox();
+            insertionPoint = mark.InsertionPoint;
+            centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
+            centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+            return true;
         }
-        finally
+        catch
         {
-            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+            return false;
         }
-
-        return false;
     }
 }
