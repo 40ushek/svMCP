@@ -200,6 +200,23 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Theory]
+    [InlineData(NeighborRole.Top, true, true)]
+    [InlineData(NeighborRole.Bottom, true, true)]
+    [InlineData(NeighborRole.SideLeft, false, true)]
+    [InlineData(NeighborRole.SideRight, false, true)]
+    [InlineData(NeighborRole.Unknown, false, false)]
+    public void TryGetNeighborAlignmentAxis_UsesNeighborRoleSemantics(
+        NeighborRole role,
+        bool expectedAlignX,
+        bool expectedResolved)
+    {
+        var resolved = DrawingProjectionAlignmentMath.TryGetNeighborAlignmentAxis(role, out var alignX);
+
+        Assert.Equal(expectedResolved, resolved);
+        Assert.Equal(expectedAlignX, alignX);
+    }
+
+    [Theory]
     [InlineData(125, true)]
     [InlineData(100, true)]
     [InlineData(60, false)]

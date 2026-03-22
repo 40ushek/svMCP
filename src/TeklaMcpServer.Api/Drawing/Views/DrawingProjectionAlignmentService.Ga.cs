@@ -12,7 +12,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     private void ApplyGaAlignment(
         ProjectionAlignmentResult result,
         GADrawing drawing,
-        DrawingView front,
+        NeighborSet neighbors,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
         double sheetWidth,
@@ -22,22 +22,23 @@ internal sealed partial class DrawingProjectionAlignmentService
         IList<ArrangedView>? arrangedViews,
         IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes)
     {
-        var frontId = front.GetIdentifier().ID;
-        IReadOnlyList<GridAxisInfo> frontAxes;
-        if (preloadedAxes != null && preloadedAxes.TryGetValue(frontId, out var cached))
+        var baseView = neighbors.BaseView;
+        var baseViewId = baseView.GetIdentifier().ID;
+        IReadOnlyList<GridAxisInfo> baseAxes;
+        if (preloadedAxes != null && preloadedAxes.TryGetValue(baseViewId, out var cached))
         {
-            frontAxes = cached;
+            baseAxes = cached;
         }
         else
         {
-            var frontAxesResult = _gridApi.GetGridAxes(frontId);
-            if (!frontAxesResult.Success)
+            var baseAxesResult = _gridApi.GetGridAxes(baseViewId);
+            if (!baseAxesResult.Success)
             {
-                TraceSkip(result, $"projection-skip:front-grid-read-failed:view={frontId}");
+                TraceSkip(result, $"projection-skip:base-grid-read-failed:view={baseViewId}");
                 return;
             }
 
-            frontAxes = frontAxesResult.Axes;
+            baseAxes = baseAxesResult.Axes;
         }
 
         var posById = BuildPositionLookup(views, arrangedViews);
@@ -45,22 +46,46 @@ internal sealed partial class DrawingProjectionAlignmentService
             .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
             .ToList();
 
-        var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
-        if (top != null)
+        foreach (var neighbor in new[]
         {
-            var topId = top.GetIdentifier().ID;
-            var others = allStates.Where(s => s.ViewId != topId).ToList();
-            ApplyGaMove(result, front, top, frontAxes, requiredDirection: "X", alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
+            (View: neighbors.TopNeighbor, Role: NeighborRole.Top),
+            (View: neighbors.BottomNeighbor, Role: NeighborRole.Bottom),
+            (View: neighbors.SideNeighborLeft, Role: NeighborRole.SideLeft),
+            (View: neighbors.SideNeighborRight, Role: NeighborRole.SideRight)
+        })
+        {
+            if (neighbor.View == null || !DrawingProjectionAlignmentMath.TryGetNeighborAlignmentAxis(neighbor.Role, out var alignNeighborX))
+                continue;
+
+            var targetId = neighbor.View.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != targetId).ToList();
+            ApplyGaMove(
+                result,
+                baseView,
+                neighbor.View,
+                baseAxes,
+                requiredDirection: alignNeighborX ? "X" : "Y",
+                alignX: alignNeighborX,
+                frameOffsetsById,
+                sheetWidth,
+                sheetHeight,
+                margin,
+                reservedAreas,
+                arrangedViews,
+                preloadedAxes,
+                posById,
+                allStates,
+                others);
         }
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
         {
-            if (!TryGetSectionAlignmentAxis(drawing, front, section, result, out var alignSectionX))
+            if (!TryGetSectionAlignmentAxis(drawing, baseView, section, result, out var alignSectionX))
                 continue;
 
             var sectionId = section.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != sectionId).ToList();
-            ApplyGaMove(result, front, section, frontAxes, requiredDirection: alignSectionX ? "X" : "Y", alignX: alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
+            ApplyGaMove(result, baseView, section, baseAxes, requiredDirection: alignSectionX ? "X" : "Y", alignX: alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes, posById, allStates, others);
         }
     }
 

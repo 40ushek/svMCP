@@ -26,6 +26,26 @@ internal static class DrawingProjectionAlignmentMath
         }
     }
 
+    public static bool TryGetNeighborAlignmentAxis(NeighborRole role, out bool alignX)
+    {
+        switch (role)
+        {
+            case NeighborRole.Top:
+            case NeighborRole.Bottom:
+                alignX = true;
+                return true;
+
+            case NeighborRole.SideLeft:
+            case NeighborRole.SideRight:
+                alignX = false;
+                return true;
+
+            default:
+                alignX = false;
+                return false;
+        }
+    }
+
     public static (double X, double Y) LocalToSheet(ProjectionViewState view, double localX, double localY)
     {
         var scale = view.Scale > 0 ? view.Scale : 1.0;

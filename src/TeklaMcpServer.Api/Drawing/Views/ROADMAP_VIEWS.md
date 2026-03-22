@@ -28,11 +28,19 @@
 - `DrawingViewArrangementSelector` предпочитает `BaseProjectedDrawingArrangeStrategy`.
 - `BaseViewSelection` выделен в отдельный этап.
 - planner больше не стартует от прямого `FrontView` lookup.
+- введена единая topology-модель standard neighbors:
+  - `NeighborSet`
+  - `StandardNeighborResolver`
+  - `NeighborRole`
 - semantic split видов есть в коде:
   - `BaseProjected`
   - `Section`
   - `Detail`
   - `Other`
+- planner и projection alignment теперь используют один и тот же source of truth
+  для standard projected neighbors.
+- standard neighbors определяются относительно выбранного `BaseView`,
+  а не через прямые raw lookups `TopView/BottomView/BackView` в entry points.
 - `SectionPlacementSide` реализован как явная семантика:
   - `Left`
   - `Right`
@@ -66,13 +74,13 @@
 - planner и final post-pass используют одну и ту же anchor-идею для detail-like sections.
 - scale search защищён от заведомо безумных scale candidates:
   если вид больше usable area листа, кандидат сразу отбрасывается.
+- `EndView` больше не обязан уходить в residual:
+  если topology resolver классифицирует его как `SideNeighborRight`,
+  он получает явный правый neighbor slot в main layout.
 
 ### Что ещё не закончено
 
 - `BaseViewSelection` всё ещё имеет `FrontView`-centric fallback shortcut.
-- topology standard neighbors всё ещё частично зашита как:
-  `TopView`, `BottomView`, `BackView`
-  относительно старой front-centric модели.
 - явный projection graph в коде ещё не выделен.
 - `ProjectionMethod` ещё не стал явным параметром.
 - oversized sections пока не вынесены в отдельную degraded policy.
@@ -95,9 +103,15 @@
 ### Base / projected
 
 - сначала выбирается `BaseView`
-- затем размещаются стандартные соседи
+- затем через `NeighborSet` выбираются стандартные соседи:
+  - `TopNeighbor`
+  - `BottomNeighbor`
+  - `SideNeighborLeft`
+  - `SideNeighborRight`
 - затем направленные секции
 - упаковка остатка возможна только после этого
+- `ResidualProjected` получает только те projected views, которые не были выбраны
+  как standard neighbors.
 
 ### Sections
 
@@ -139,12 +153,13 @@
 
 Нужно:
 
-- убрать остаточную зависимость от фиксированной `Front/Top/Bottom/Back` схемы
-- строить neighbor relations относительно выбранного `BaseView`
+- выделить явный projection graph поверх уже существующего `NeighborSet`
+- перестать держать role resolution неявно внутри resolver heuristics
 
 Готово когда:
 
-- planner реально работает от `BaseView`, а не от старой front-topology
+- standard neighbors и dependent relations выводятся из явной topology policy,
+  а не только из текущего resolver
 
 ### 2. Отделить oversized sections от normal section policy
 
@@ -188,7 +203,9 @@
 ### Юнит-тесты
 
 - `BaseViewSelection`
+- `StandardNeighborResolver`
 - `SectionPlacementSide`
+- `NeighborRole -> alignment axis`
 - naming-based detail-like classification
 - anchor-driven detail placement
 

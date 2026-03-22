@@ -14,7 +14,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     private void ApplyAssemblyAlignment(
         ProjectionAlignmentResult result,
         AssemblyDrawing drawing,
-        DrawingView front,
+        NeighborSet neighbors,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
         double sheetWidth,
@@ -23,6 +23,7 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyList<ReservedRect> reservedAreas,
         IList<ArrangedView>? arrangedViews)
     {
+        var baseView = neighbors.BaseView;
         if (!TryGetAssemblyMainPartId(drawing, out var mainPartId, out var reason))
         {
             TraceSkip(result, reason);
@@ -30,9 +31,9 @@ internal sealed partial class DrawingProjectionAlignmentService
         }
 
         var posById = BuildPositionLookup(views, arrangedViews);
-        posById.TryGetValue(front.GetIdentifier().ID, out var frontPos);
+        posById.TryGetValue(baseView.GetIdentifier().ID, out var basePos);
 
-        if (!TryGetPartAnchorSheet(front, mainPartId, frontPos.X, frontPos.Y, out var frontAnchorX, out var frontAnchorY, out reason))
+        if (!TryGetPartAnchorSheet(baseView, mainPartId, basePos.X, basePos.Y, out var baseAnchorX, out var baseAnchorY, out reason))
         {
             TraceSkip(result, reason);
             return;
@@ -42,18 +43,18 @@ internal sealed partial class DrawingProjectionAlignmentService
             .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
             .ToList();
 
-        var top = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.TopView);
+        var top = neighbors.TopNeighbor;
 
-        // If TopView exists, ensure there is room for it above FrontView.
-        // If FrontView is too high on the sheet, shift FrontView and SectionViews down first.
+        // If top projected neighbor exists, ensure there is room for it above BaseView.
+        // If BaseView is too high on the sheet, shift non-top views down first.
         if (top != null)
         {
             var topState = allStates.First(s => s.ViewId == top.GetIdentifier().ID);
-            var frontState = allStates.First(s => s.ViewId == front.GetIdentifier().ID);
+            var baseState = allStates.First(s => s.ViewId == baseView.GetIdentifier().ID);
             var topFrameHeight = DrawingProjectionAlignmentMath.GetFrameRect(topState).MaxY - DrawingProjectionAlignmentMath.GetFrameRect(topState).MinY;
-            var frontFrameMaxY = DrawingProjectionAlignmentMath.GetFrameRect(frontState).MaxY;
+            var baseFrameMaxY = DrawingProjectionAlignmentMath.GetFrameRect(baseState).MaxY;
             var needed = topFrameHeight + ProjectionViewGap;
-            var available = (sheetHeight - margin) - frontFrameMaxY;
+            var available = (sheetHeight - margin) - baseFrameMaxY;
 
             if (needed > available)
             {
@@ -138,7 +139,7 @@ internal sealed partial class DrawingProjectionAlignmentService
 
                 if (shifted)
                 {
-                    frontAnchorY -= shiftDown;
+                    baseAnchorY -= shiftDown;
                     allStates = views
                         .Select(v => { posById.TryGetValue(v.GetIdentifier().ID, out var p); return BuildViewStateFromPos(v, p.X, p.Y, frameOffsetsById); })
                         .ToList();
@@ -150,17 +151,32 @@ internal sealed partial class DrawingProjectionAlignmentService
         {
             var topId = top.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != topId).ToList();
-            ApplyAssemblyMove(result, top, mainPartId, frontAnchorX, frontAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
+            ApplyAssemblyMove(result, top, mainPartId, baseAnchorX, baseAnchorY, alignX: true, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
+        }
+
+        foreach (var neighbor in new[]
+                 {
+                     (View: neighbors.BottomNeighbor, Role: NeighborRole.Bottom),
+                     (View: neighbors.SideNeighborLeft, Role: NeighborRole.SideLeft),
+                     (View: neighbors.SideNeighborRight, Role: NeighborRole.SideRight)
+                 })
+        {
+            if (neighbor.View == null || !DrawingProjectionAlignmentMath.TryGetNeighborAlignmentAxis(neighbor.Role, out var alignNeighborX))
+                continue;
+
+            var viewId = neighbor.View.GetIdentifier().ID;
+            var others = allStates.Where(s => s.ViewId != viewId).ToList();
+            ApplyAssemblyMove(result, neighbor.View, mainPartId, baseAnchorX, baseAnchorY, alignNeighborX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
 
         foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
         {
-            if (!TryGetSectionAlignmentAxis(drawing, front, section, result, out var alignSectionX))
+            if (!TryGetSectionAlignmentAxis(drawing, baseView, section, result, out var alignSectionX))
                 continue;
 
             var sectionId = section.GetIdentifier().ID;
             var others = allStates.Where(s => s.ViewId != sectionId).ToList();
-            ApplyAssemblyMove(result, section, mainPartId, frontAnchorX, frontAnchorY, alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
+            ApplyAssemblyMove(result, section, mainPartId, baseAnchorX, baseAnchorY, alignSectionX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
     }
 

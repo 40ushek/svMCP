@@ -40,29 +40,32 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes = null)
     {
         var result = new ProjectionAlignmentResult();
+        var semanticViews = SemanticViewSet.Build(views);
+        var baseSelection = BaseViewSelection.Select(views);
+        var neighbors = baseSelection.View != null
+            ? StandardNeighborResolver.Build(views, semanticViews, baseSelection)
+            : null;
 
         switch (drawing)
         {
             case AssemblyDrawing assemblyDrawing:
             {
                 result.Mode = "assembly";
-                var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
-                if (front == null)
+                if (neighbors == null)
                 {
-                    TraceSkip(result, "projection-skip:no-front-view");
+                    TraceSkip(result, "projection-skip:no-base-view");
                     return result;
                 }
 
-                ApplyAssemblyAlignment(result, assemblyDrawing, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                ApplyAssemblyAlignment(result, assemblyDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 break;
             }
 
             case GADrawing gaDrawing:
             {
                 result.Mode = "ga";
-                var front = views.FirstOrDefault(v => v.ViewType == DrawingView.ViewTypes.FrontView);
-                if (front != null)
-                    ApplyGaAlignment(result, gaDrawing, front, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
+                if (neighbors != null)
+                    ApplyGaAlignment(result, gaDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 else
                     ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 break;
