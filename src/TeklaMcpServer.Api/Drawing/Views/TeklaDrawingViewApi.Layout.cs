@@ -304,8 +304,8 @@ public sealed partial class TeklaDrawingViewApi
         // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
-        var actualRects = DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing);
-        var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views, actualRects);
+        var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+        var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
         var scaleDrivers = scaleDriverViews
             .Select(v =>
             {
@@ -348,7 +348,7 @@ public sealed partial class TeklaDrawingViewApi
         if (preserveExistingScales)
         {
             // Validate that views fit at their current scales before committing to arrange.
-            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews, actualRects);
+            var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
             var keepFrames = currentViews
                 .Select(v =>
                 {
@@ -382,7 +382,7 @@ public sealed partial class TeklaDrawingViewApi
         }
         else if (keepCurrentScales)
         {
-            var keepFrameSizes = TryGetFrameSizesFromBoundingBoxes(currentViews, actualRects);
+            var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
             var keepFrames = currentViews
                 .Select(v =>
                 {
@@ -436,7 +436,7 @@ public sealed partial class TeklaDrawingViewApi
 
                     activeDrawing.CommitChanges();
                     candidateViews = EnumerateViews(activeDrawing).ToList();
-                    effectiveFrameSizes = TryGetFrameSizesFromBoundingBoxes(candidateViews, null);
+                    effectiveFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews);
                     actualFrames = candidateViews
                         .Select(v =>
                         {
@@ -526,7 +526,7 @@ public sealed partial class TeklaDrawingViewApi
 
         var offsetById = preserveExistingScales
             ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
-            : TryGetFrameOffsetsFromBoundingBoxes(currentViews, actualRects);
+            : DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
         // Do not probe temporary scales in the live drawing: interrupted runs can leave the
         // sheet in an arbitrary intermediate state. Missing offsets now simply skip correction.
 
@@ -775,7 +775,7 @@ public sealed partial class TeklaDrawingViewApi
         var rects = new List<ReservedRect>(views.Count);
         foreach (var v in views)
         {
-            if (!DrawingViewSheetGeometry.TryGetBoundingRect(v, out var rect))
+            if (!DrawingViewFrameGeometry.TryGetBoundingRect(v, out var rect))
                 return new List<ReservedRect>();
 
             rects.Add(rect);
@@ -814,7 +814,7 @@ public sealed partial class TeklaDrawingViewApi
         var blocked = new List<ReservedRect>(reserved);
         foreach (var view in views.Where(v => ViewSemanticClassifier.Classify(v) != ViewSemanticKind.Detail))
         {
-            if (DrawingViewSheetGeometry.TryGetBoundingRect(view, out var rect))
+            if (DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
                 blocked.Add(rect);
         }
 
@@ -825,7 +825,7 @@ public sealed partial class TeklaDrawingViewApi
             var detailId = detailView.GetIdentifier().ID;
             if (!relations.TryGet(detailId, out var relation))
             {
-                if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
+                if (DrawingViewFrameGeometry.TryGetBoundingRect(detailView, out var currentRect))
                     blocked.Add(currentRect);
                 continue;
             }
@@ -833,13 +833,13 @@ public sealed partial class TeklaDrawingViewApi
             var ownerView = relation.OwnerView;
             if (!viewById.ContainsKey(ownerView.GetIdentifier().ID))
             {
-                if (DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var currentRect))
+                if (DrawingViewFrameGeometry.TryGetBoundingRect(detailView, out var currentRect))
                     blocked.Add(currentRect);
                 continue;
             }
 
-            if (!DrawingViewSheetGeometry.TryGetBoundingRect(ownerView, out var ownerRect)
-                || !DrawingViewSheetGeometry.TryGetBoundingRect(detailView, out var detailRect))
+            if (!DrawingViewFrameGeometry.TryGetBoundingRect(ownerView, out var ownerRect)
+                || !DrawingViewFrameGeometry.TryGetBoundingRect(detailView, out var detailRect))
             {
                 continue;
             }
@@ -905,7 +905,7 @@ public sealed partial class TeklaDrawingViewApi
                 origin.X = targetCenterX - preOffset.X / detailScale;
                 origin.Y = targetCenterY - preOffset.Y / detailScale;
             }
-            else if (DrawingViewSheetGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
+            else if (DrawingViewFrameGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
             {
                 origin.X = targetCenterX - offsetX;
                 origin.Y = targetCenterY - offsetY;

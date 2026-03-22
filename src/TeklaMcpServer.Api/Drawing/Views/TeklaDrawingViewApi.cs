@@ -24,7 +24,7 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
 
     private static DrawingViewInfo ToInfo(View v, IReadOnlyDictionary<int, ReservedRect>? actualRects = null)
     {
-        var hasBBox = DrawingViewSheetGeometry.TryGetBoundingRect(v, actualRects, out var bbox);
+        var hasBBox = DrawingViewFrameGeometry.TryGetBoundingRect(v, actualRects, out var bbox);
         return new DrawingViewInfo
         {
             Id = v.GetIdentifier().ID,
@@ -41,51 +41,6 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
             BBoxMaxX = hasBBox ? bbox.MaxX : null,
             BBoxMaxY = hasBBox ? bbox.MaxY : null
         };
-    }
-
-    private static Dictionary<int, (double X, double Y)> TryGetFrameOffsetsFromBoundingBoxes(
-        IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, ReservedRect> actualRects)
-    {
-        var offsets = new Dictionary<int, (double X, double Y)>(views.Count);
-        foreach (var view in views)
-        {
-            var origin = view.Origin;
-            var originX = origin?.X ?? 0;
-            var originY = origin?.Y ?? 0;
-
-            if (!DrawingViewSheetGeometry.TryGetCenter(view, actualRects, out var centerX, out var centerY))
-            {
-                offsets.Clear();
-                return offsets;
-            }
-
-            var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
-            offsets[view.GetIdentifier().ID] = ((centerX - originX) * scale, (centerY - originY) * scale);
-        }
-
-        return offsets;
-    }
-
-    private static Dictionary<int, (double Width, double Height)> TryGetFrameSizesFromBoundingBoxes(
-        IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, ReservedRect> actualRects)
-    {
-        var sizes = new Dictionary<int, (double Width, double Height)>(views.Count);
-        foreach (var view in views)
-        {
-            if (!DrawingViewSheetGeometry.TryGetBoundingRect(view, actualRects, out var rect))
-            {
-                sizes.Clear();
-                return sizes;
-            }
-
-            sizes[view.GetIdentifier().ID] = (
-                rect.MaxX - rect.MinX,
-                rect.MaxY - rect.MinY);
-        }
-
-        return sizes;
     }
 }
 

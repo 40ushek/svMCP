@@ -98,7 +98,7 @@ internal static class BaseViewSelection
 
     private static (double X, double Y) TryGetCenter(View view)
     {
-        return DrawingViewSheetGeometry.TryGetCenter(view, out var centerX, out var centerY)
+        return DrawingViewFrameGeometry.TryGetCenter(view, out var centerX, out var centerY)
             ? (centerX, centerY)
             : (0.0, 0.0);
     }

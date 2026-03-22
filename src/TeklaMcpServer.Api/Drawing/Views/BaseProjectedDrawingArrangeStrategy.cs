@@ -99,7 +99,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             {
                 var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
+                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
                 return rect;
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
@@ -142,7 +142,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                     var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                    DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
+                    DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
                     return rect;
                 }).ToList();
 
@@ -872,7 +872,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     }
 
     private static bool TryGetViewBoundingRect(View view, out ReservedRect rect)
-        => DrawingViewSheetGeometry.TryGetBoundingRect(view, out rect);
+        => DrawingViewFrameGeometry.TryGetBoundingRect(view, out rect);
 
     private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)
     {
@@ -1040,7 +1040,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseWindow.MaxY,
                 blocked,
                 out var baseRect))
+        {
+            TracePlanReject("strict", "base", context, planned, null);
             return false;
+        }
 
         planned.Add(new PlannedPlacement(baseView, CenterX(baseRect), CenterY(baseRect)));
 
@@ -1058,7 +1061,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 CenterX(baseRect) + topWidth / 2.0,
                 baseRect.MaxY + gap + topHeight);
             if (!IsWithinArea(topRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(topRect, occupied))
+            {
+                TracePlanReject("strict", "top", context, planned, topRect);
                 return false;
+            }
 
             planned.Add(new PlannedPlacement(top, CenterX(topRect), CenterY(topRect)));
             occupied.Add(topRect);
@@ -1072,7 +1078,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 CenterX(baseRect) + bottomWidth / 2.0,
                 baseRect.MinY - gap);
             if (!IsWithinArea(bottomRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(bottomRect, occupied))
+            {
+                TracePlanReject("strict", "bottom", context, planned, bottomRect);
                 return false;
+            }
 
             planned.Add(new PlannedPlacement(bottom, CenterX(bottomRect), CenterY(bottomRect)));
             occupied.Add(bottomRect);
@@ -1086,7 +1095,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseRect.MinX - gap,
                 CenterY(baseRect) + leftNeighborHeight / 2.0);
             if (!IsWithinArea(leftRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(leftRect, occupied))
+            {
+                TracePlanReject("strict", "left", context, planned, leftRect);
                 return false;
+            }
 
             planned.Add(new PlannedPlacement(leftNeighbor, CenterX(leftRect), CenterY(leftRect)));
             occupied.Add(leftRect);
@@ -1100,7 +1112,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseRect.MaxX + gap + rightNeighborWidth,
                 CenterY(baseRect) + rightNeighborHeight / 2.0);
             if (!IsWithinArea(rightRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(rightRect, occupied))
+            {
+                TracePlanReject("strict", "right", context, planned, rightRect);
                 return false;
+            }
 
             planned.Add(new PlannedPlacement(rightNeighbor, CenterX(rightRect), CenterY(rightRect)));
             occupied.Add(rightRect);
@@ -1216,7 +1231,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 budgets,
                 includeRelaxedCandidates: true,
                 out var baseRect))
+        {
+            TracePlanReject("relaxed", "base", context, planned, null);
             return false;
+        }
 
         planned.Add(new PlannedPlacement(baseView, CenterX(baseRect), CenterY(baseRect)));
         var occupied = new List<ReservedRect>(blocked) { baseRect };
@@ -1243,6 +1261,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
             else
             {
+                TracePlanReject("relaxed", "top", context, planned, null);
                 deferred.Add(top);
             }
         }
@@ -1258,6 +1277,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
             else
             {
+                TracePlanReject("relaxed", "bottom", context, planned, null);
                 deferred.Add(bottom);
             }
         }
@@ -1273,6 +1293,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
             else
             {
+                TracePlanReject("relaxed", "left", context, planned, null);
                 deferred.Add(leftNeighbor);
             }
         }
@@ -1288,6 +1309,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
             else
             {
+                TracePlanReject("relaxed", "right", context, planned, null);
                 deferred.Add(rightNeighbor);
             }
         }
@@ -1387,7 +1409,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                DrawingViewSheetGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
+                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
                 return rect;
             });
         var blockedRects = new List<ReservedRect>(occupied.Take(reservedCount));
@@ -1819,6 +1841,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             if (!found)
             {
                 var preferredRect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
+                var hasActualRect = DrawingViewFrameGeometry.TryGetBoundingRect(section, out var actualRect);
                 var blockers = occupied
                     .Where(blocked =>
                         blocked.MinY < maxY &&
@@ -1832,7 +1855,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     "api-view",
                     "section_stack_reject",
                     0,
-                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=no-valid-x y={minY:F2}..{maxY:F2} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2}) occupied={occupied.Count} blockers={string.Join(";", blockers)}");
+                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=no-valid-x y={minY:F2}..{maxY:F2} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")} size={width:F2}x{height:F2} free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2}) occupied={occupied.Count} blockers={string.Join(";", blockers)}");
+                PerfTrace.Write(
+                    "api-view",
+                    "section_stack_snapshot",
+                    0,
+                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} candidate=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] planned=[{FormatPlannedRects(context, planned)}]");
+
+                if (ShouldDebugStopOnSectionReject())
+                {
+                    throw new System.InvalidOperationException(
+                        $"Debug stop: horizontal section reject section={section.GetIdentifier().ID} zone={zone} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")}");
+                }
+
                 return false;
             }
 
@@ -1849,6 +1884,48 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         }
 
         return true;
+    }
+
+    private static bool ShouldDebugStopOnSectionReject()
+    {
+        var raw = System.Environment.GetEnvironmentVariable("SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT");
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        return raw.Equals("1", System.StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("true", System.StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("on", System.StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("yes", System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string FormatPlannedRects(DrawingArrangeContext context, IReadOnlyList<PlannedPlacement> planned)
+    {
+        return string.Join(";",
+            planned.Select(item =>
+            {
+                var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
+                var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
+                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
+                return $"{item.View.GetIdentifier().ID}:{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}";
+            }));
+    }
+
+    private static void TracePlanReject(
+        string mode,
+        string stage,
+        DrawingArrangeContext context,
+        IReadOnlyList<PlannedPlacement> planned,
+        ReservedRect? attemptedRect)
+    {
+        var attempted = attemptedRect == null
+            ? "n/a"
+            : $"[{attemptedRect.MinX:F2},{attemptedRect.MinY:F2},{attemptedRect.MaxX:F2},{attemptedRect.MaxY:F2}]";
+
+        PerfTrace.Write(
+            "api-view",
+            "plan_reject_snapshot",
+            0,
+            $"mode={mode} stage={stage} attempted={attempted} planned=[{FormatPlannedRects(context, planned)}]");
     }
 
     private static bool TryPlaceHorizontalSectionStackWithFallback(

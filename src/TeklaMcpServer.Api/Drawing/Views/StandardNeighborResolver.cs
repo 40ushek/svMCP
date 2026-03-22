@@ -135,8 +135,8 @@ internal static class StandardNeighborResolver
 
     private static NeighborRole ResolveFromCurrentPosition(View baseView, View candidate)
     {
-        if (!DrawingViewSheetGeometry.TryGetCenter(baseView, out var baseX, out var baseY)
-            || !DrawingViewSheetGeometry.TryGetCenter(candidate, out var candidateX, out var candidateY))
+        if (!DrawingViewFrameGeometry.TryGetCenter(baseView, out var baseX, out var baseY)
+            || !DrawingViewFrameGeometry.TryGetCenter(candidate, out var candidateX, out var candidateY))
             return NeighborRole.Unknown;
 
         var dx = candidateX - baseX;
@@ -164,7 +164,7 @@ internal static class StandardNeighborResolver
         if (candidates.Count == 0)
             return null;
 
-        DrawingViewSheetGeometry.TryGetCenter(baseView, out var baseCenterX, out var baseCenterY);
+        DrawingViewFrameGeometry.TryGetCenter(baseView, out var baseCenterX, out var baseCenterY);
 
         return candidates
             .OrderBy(v => GetTypePriority(role, v.ViewType))
@@ -197,7 +197,7 @@ internal static class StandardNeighborResolver
 
     private static double GetCrossAxisDistance(double baseCenterX, double baseCenterY, View view, NeighborRole role)
     {
-        if (!DrawingViewSheetGeometry.TryGetCenter(view, out var x, out var y))
+        if (!DrawingViewFrameGeometry.TryGetCenter(view, out var x, out var y))
             return double.MaxValue;
 
         return role switch
@@ -210,7 +210,7 @@ internal static class StandardNeighborResolver
 
     private static double GetPrimaryAxisDistance(double baseCenterX, double baseCenterY, View view, NeighborRole role)
     {
-        if (!DrawingViewSheetGeometry.TryGetCenter(view, out var x, out var y))
+        if (!DrawingViewFrameGeometry.TryGetCenter(view, out var x, out var y))
             return double.MaxValue;
 
         return role switch

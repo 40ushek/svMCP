@@ -217,7 +217,7 @@ internal sealed partial class DrawingCommandHandler
 
     private bool HandleGetDrawingReservedAreas()
     {
-        var result = new TeklaDrawingViewApi().GetReservedAreas(margin: 10.0);
+        var result = new TeklaDrawingViewApi().GetReservedAreas(margin: 0.0);
         WriteJson(new
         {
             sheetWidth  = result.SheetWidth,
