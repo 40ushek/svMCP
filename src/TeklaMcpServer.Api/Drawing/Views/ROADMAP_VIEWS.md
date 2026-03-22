@@ -174,6 +174,14 @@
 - `DetailView` пока не имеют отдельной parent-aware placement policy:
   родительская связь уже доступна через `DetailMark`, и первая proximity-aware
   попытка placement уже есть, но policy ещё не доведена до устойчивого результата
+- для части production-чертежей допустим простой naming-first classifier для
+  detail-like views:
+  - `Detail*`
+  - `Det*`
+  - `D*`, если имя длиннее одного символа
+  - имена, начинающиеся с lowercase
+  - специальное исключение: ровно `D` не считается detail-like и остаётся
+    обычным section-like short name
 - `TryPlaceRelative` — не решатель жёстких ограничений: при неудаче
   предпочтительного размещения перебирает запасные стороны
 - качество `EstimateFit` ограничено качеством модели планирования
