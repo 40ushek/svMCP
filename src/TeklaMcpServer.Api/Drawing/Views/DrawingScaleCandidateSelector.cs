@@ -63,15 +63,31 @@ internal static class DrawingScaleCandidateSelector
             maxModelW / Math.Max(availableWidth - borderEstimate, 1),
             maxModelH / Math.Max(availableHeight - borderEstimate, 1));
 
-        var startScale = StandardScales
-            .Where(s => s <= minDenom)
-            .DefaultIfEmpty(StandardScales[0])
-            .Last();
+        var startScale = SelectStartScale(minDenom);
 
         var candidates = Array.FindAll(StandardScales, s => s >= startScale);
         if (candidates.Length == 0)
             candidates = new[] { StandardScales[StandardScales.Length - 1] };
 
         return new DrawingScaleCandidateSelection(currentScale, minDenom, candidates);
+    }
+
+    private static double SelectStartScale(double minDenom)
+    {
+        if (minDenom <= StandardScales[0])
+            return StandardScales[0];
+
+        for (var i = 0; i < StandardScales.Length - 1; i++)
+        {
+            var lower = StandardScales[i];
+            var upper = StandardScales[i + 1];
+            if (minDenom > upper)
+                continue;
+
+            var midpoint = lower + ((upper - lower) / 2.0);
+            return minDenom <= midpoint ? lower : upper;
+        }
+
+        return StandardScales[StandardScales.Length - 1];
     }
 }
