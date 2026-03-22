@@ -274,7 +274,7 @@ public static partial class ModelTools
     [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. Set keepScale=true to preserve existing view scales and only rearrange positions. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: 0 = auto-read from drawing layout")] double margin = 0,
-        [Description("Gap between views in mm. Default: 8")] double gap = 8,
+        [Description("Gap between views in mm. Default: 4")] double gap = 4,
         [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0,
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false)
     {

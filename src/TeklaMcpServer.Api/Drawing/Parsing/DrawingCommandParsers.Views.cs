@@ -50,7 +50,7 @@ public static partial class DrawingCommandParsers
 
     public static FitViewsToSheetRequest ParseFitViewsToSheetRequest(string[] args)
     {
-        var request = new FitViewsToSheetRequest { Margin = null, Gap = 8.0, TitleBlockHeight = 0.0, ApplyMode = DrawingLayoutApplyMode.FinalOnly };
+        var request = new FitViewsToSheetRequest { Margin = null, Gap = 4.0, TitleBlockHeight = 0.0, ApplyMode = DrawingLayoutApplyMode.FinalOnly };
 
         if (args.Length > 1 &&
             double.TryParse(args[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var margin))

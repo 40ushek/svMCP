@@ -409,7 +409,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                      includeRelaxedCandidates: true))
         {
             if (x2 - x1 >= baseWidth && y2 - y1 >= baseHeight
-                && TryFindFrontViewRect(baseWidth, baseHeight, x1, x2, y1, y2, blocked, out baseRect))
+                && TryFindBaseViewRectInWindow(
+                    blocked,
+                    new ReservedRect(x1, y1, x2, y2),
+                    baseWidth,
+                    baseHeight,
+                    out baseRect))
             {
                 placed = true;
                 break;
@@ -1030,15 +1035,17 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 baseWidth,
                 baseHeight,
                 budgets,
-                out var baseWindow)
-            || !TryFindFrontViewRect(
+                out var baseWindow))
+        {
+            TracePlanReject("strict", "base", context, planned, null);
+            return false;
+        }
+
+        if (!TryFindBaseViewRectInWindow(
+                blocked,
+                baseWindow,
                 baseWidth,
                 baseHeight,
-                baseWindow.MinX,
-                baseWindow.MaxX,
-                baseWindow.MinY,
-                baseWindow.MaxY,
-                blocked,
                 out var baseRect))
         {
             TracePlanReject("strict", "base", context, planned, null);
@@ -1672,12 +1679,57 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             if (maxX - minX < baseWidth || maxY - minY < baseHeight)
                 continue;
 
-            if (TryFindFrontViewRect(baseWidth, baseHeight, minX, maxX, minY, maxY, blocked, out baseRect))
+            if (TryFindBaseViewRectInWindow(
+                    blocked,
+                    new ReservedRect(minX, minY, maxX, maxY),
+                    baseWidth,
+                    baseHeight,
+                    out baseRect))
                 return true;
         }
 
         baseRect = new ReservedRect(0, 0, 0, 0);
         return false;
+    }
+
+    private static bool TryFindBaseViewRectInWindow(
+        IReadOnlyList<ReservedRect> blocked,
+        ReservedRect window,
+        double baseWidth,
+        double baseHeight,
+        out ReservedRect baseRect)
+    {
+        if (window.MaxX - window.MinX < baseWidth || window.MaxY - window.MinY < baseHeight)
+        {
+            baseRect = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        var blockedRectangles = new List<PackedRectangle>();
+        foreach (var rect in blocked)
+        {
+            if (!TryClipToWindow(rect, window, out var clipped))
+                continue;
+
+            blockedRectangles.Add(ToBlockedRectangle(window.MinX, window.MaxY, clipped));
+        }
+
+        var packer = new MaxRectsBinPacker(
+            window.MaxX - window.MinX,
+            window.MaxY - window.MinY,
+            allowRotation: false,
+            blockedRectangles);
+
+        var targetCenterX = (window.MaxX - window.MinX) / 2.0;
+        var targetCenterY = (window.MaxY - window.MinY) / 2.0;
+        if (!packer.TryInsertClosestToPoint(baseWidth, baseHeight, targetCenterX, targetCenterY, out var placement))
+        {
+            baseRect = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        baseRect = FromPackedRectangle(window.MinX, window.MaxY, placement);
+        return true;
     }
 
     private static bool TryPlaceVerticalSectionStack(
@@ -2309,56 +2361,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     /// overlapping any blocked area. Tries 9 positions (center, right, left) × (center, top, bottom)
     /// in order of visual preference, returning the first non-overlapping placement.
     /// </summary>
-    internal static bool TryFindFrontViewRect(
-        double width,
-        double height,
-        double minX,
-        double maxX,
-        double minY,
-        double maxY,
-        IReadOnlyList<ReservedRect> blocked,
-        out ReservedRect placement)
-    {
-        if (width <= 0 || height <= 0 || maxX - minX < width || maxY - minY < height)
-        {
-            placement = new ReservedRect(0, 0, 0, 0);
-            return false;
-        }
-
-        var cx = minX + (maxX - minX - width) / 2.0;
-        var cy = minY + (maxY - minY - height) / 2.0;
-        var rx = maxX - width;
-        var lx = minX;
-        var ty = maxY - height;
-        var by = minY;
-
-        // Try center first (most balanced), then shifts to avoid reserved corners
-        var candidates = new[]
-        {
-            new ReservedRect(cx, cy, cx + width, cy + height),
-            new ReservedRect(rx, cy, rx + width, cy + height),
-            new ReservedRect(lx, cy, lx + width, cy + height),
-            new ReservedRect(cx, ty, cx + width, ty + height),
-            new ReservedRect(rx, ty, rx + width, ty + height),
-            new ReservedRect(lx, ty, lx + width, ty + height),
-            new ReservedRect(cx, by, cx + width, by + height),
-            new ReservedRect(rx, by, rx + width, by + height),
-            new ReservedRect(lx, by, lx + width, by + height),
-        };
-
-        foreach (var candidate in candidates)
-        {
-            if (!IntersectsAny(candidate, blocked))
-            {
-                placement = candidate;
-                return true;
-            }
-        }
-
-        placement = new ReservedRect(0, 0, 0, 0);
-        return false;
-    }
-
     internal static bool TryCreateCenteredRect(
         double width,
         double height,
@@ -2422,12 +2424,36 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return normalized;
     }
 
+    private static bool TryClipToWindow(ReservedRect rect, ReservedRect window, out ReservedRect clipped)
+    {
+        var minX = System.Math.Max(window.MinX, rect.MinX);
+        var minY = System.Math.Max(window.MinY, rect.MinY);
+        var maxX = System.Math.Min(window.MaxX, rect.MaxX);
+        var maxY = System.Math.Min(window.MaxY, rect.MaxY);
+
+        if (maxX <= minX || maxY <= minY)
+        {
+            clipped = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        clipped = new ReservedRect(minX, minY, maxX, maxY);
+        return true;
+    }
+
     private static PackedRectangle ToBlockedRectangle(double freeMinX, double freeMaxY, ReservedRect rect)
         => new(
             rect.MinX - freeMinX,
             freeMaxY - rect.MaxY,
             rect.MaxX - rect.MinX,
             rect.MaxY - rect.MinY);
+
+    private static ReservedRect FromPackedRectangle(double freeMinX, double freeMaxY, PackedRectangle rect)
+        => new(
+            freeMinX + rect.X,
+            freeMaxY - rect.Y - rect.Height,
+            freeMinX + rect.X + rect.Width,
+            freeMaxY - rect.Y);
 
     private static double CenterX(ReservedRect rect) => (rect.MinX + rect.MaxX) / 2.0;
 

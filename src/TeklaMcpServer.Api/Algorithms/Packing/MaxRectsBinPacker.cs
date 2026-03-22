@@ -72,6 +72,36 @@ public sealed class MaxRectsBinPacker
         return true;
     }
 
+    public bool TryInsertClosestToPoint(double width, double height, double targetCenterX, double targetCenterY, out PackedRectangle placement)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            placement = default;
+            return false;
+        }
+
+        var bestDistance = double.MaxValue;
+        var bestNode = default(PackedRectangle);
+
+        foreach (var free in _freeRectangles)
+        {
+            TryScoreClosestCandidate(width, height, targetCenterX, targetCenterY, free, ref bestDistance, ref bestNode);
+
+            if (_allowRotation)
+                TryScoreClosestCandidate(height, width, targetCenterX, targetCenterY, free, ref bestDistance, ref bestNode);
+        }
+
+        if (bestDistance == double.MaxValue || bestNode.Width <= 0 || bestNode.Height <= 0)
+        {
+            placement = default;
+            return false;
+        }
+
+        PlaceRectangle(bestNode);
+        placement = bestNode;
+        return true;
+    }
+
     private PackedRectangle FindBestNode(double width, double height, MaxRectsHeuristic heuristic, out double bestScore1, out double bestScore2)
     {
         bestScore1 = double.MaxValue;
@@ -125,6 +155,38 @@ public sealed class MaxRectsBinPacker
             bestNode = new PackedRectangle(free.X, free.Y, width, height);
             bestScore1 = score1;
             bestScore2 = score2;
+        }
+    }
+
+    private static void TryScoreClosestCandidate(
+        double width,
+        double height,
+        double targetCenterX,
+        double targetCenterY,
+        PackedRectangle free,
+        ref double bestDistance,
+        ref PackedRectangle bestNode)
+    {
+        if (free.Width < width || free.Height < height)
+            return;
+
+        var minX = free.X;
+        var maxX = free.X + free.Width - width;
+        var minY = free.Y;
+        var maxY = free.Y + free.Height - height;
+
+        var candidateX = Clamp(targetCenterX - (width / 2.0), minX, maxX);
+        var candidateY = Clamp(targetCenterY - (height / 2.0), minY, maxY);
+        var centerX = candidateX + (width / 2.0);
+        var centerY = candidateY + (height / 2.0);
+        var dx = centerX - targetCenterX;
+        var dy = centerY - targetCenterY;
+        var distance = (dx * dx) + (dy * dy);
+
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            bestNode = new PackedRectangle(candidateX, candidateY, width, height);
         }
     }
 
@@ -232,5 +294,14 @@ public sealed class MaxRectsBinPacker
             && b.Y >= a.Y
             && b.X + b.Width <= a.X + a.Width
             && b.Y + b.Height <= a.Y + a.Height;
+    }
+
+    private static double Clamp(double value, double min, double max)
+    {
+        if (value < min)
+            return min;
+        if (value > max)
+            return max;
+        return value;
     }
 }
