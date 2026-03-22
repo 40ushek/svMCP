@@ -155,7 +155,7 @@ public sealed partial class TeklaDrawingViewApi
             throw new System.InvalidOperationException("No views found in active drawing.");
         var semanticKindById = views.ToDictionary(
             v => v.GetIdentifier().ID,
-            v => ViewSemanticClassifier.Classify(v.ViewType));
+            v => ViewSemanticClassifier.Classify(v));
         var scaleDriverViews = uniformAllNonDetail
             ? views
                 .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
@@ -665,7 +665,7 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets)
     {
         var detailViews = views
-            .Where(v => ViewSemanticClassifier.Classify(v.ViewType) == ViewSemanticKind.Detail)
+            .Where(v => ViewSemanticClassifier.Classify(v) == ViewSemanticKind.Detail)
             .ToList();
         if (detailViews.Count == 0)
             return arranged;
@@ -697,7 +697,7 @@ public sealed partial class TeklaDrawingViewApi
 
         var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
         var blocked = new List<ReservedRect>(reserved);
-        foreach (var view in views.Where(v => ViewSemanticClassifier.Classify(v.ViewType) != ViewSemanticKind.Detail))
+        foreach (var view in views.Where(v => ViewSemanticClassifier.Classify(v) != ViewSemanticKind.Detail))
         {
             if (DrawingViewSheetGeometry.TryGetBoundingRect(view, out var rect))
                 blocked.Add(rect);

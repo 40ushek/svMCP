@@ -29,7 +29,7 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
         {
             Id = v.GetIdentifier().ID,
             ViewType = v.ViewType.ToString(),
-            SemanticKind = ViewSemanticClassifier.Classify(v.ViewType).ToString(),
+            SemanticKind = ViewSemanticClassifier.Classify(v).ToString(),
             Name = v.Name ?? string.Empty,
             OriginX = v.Origin?.X ?? 0,
             OriginY = v.Origin?.Y ?? 0,

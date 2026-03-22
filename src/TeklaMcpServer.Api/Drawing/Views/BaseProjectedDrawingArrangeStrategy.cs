@@ -224,7 +224,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var semanticKinds = context.Views.ToDictionary(
             view => view.GetIdentifier().ID,
-            view => ViewSemanticClassifier.Classify(view.ViewType));
+            view => ViewSemanticClassifier.Classify(view));
 
         var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
         var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
@@ -865,7 +865,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var semanticKinds = context.Views.ToDictionary(
             view => view.GetIdentifier().ID,
-            view => ViewSemanticClassifier.Classify(view.ViewType));
+            view => ViewSemanticClassifier.Classify(view));
 
         // TODO: when this strategy becomes truly BaseView-centric, dependent views
         // must be selected relative to the chosen BaseView rather than by fixed
