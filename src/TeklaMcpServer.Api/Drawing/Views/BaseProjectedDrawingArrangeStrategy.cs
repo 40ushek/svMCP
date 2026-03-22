@@ -41,14 +41,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public SectionPlacementSide? ActualPlacementSide { get; }
     }
 
-    private sealed class DetailViewRelation
-    {
-        public View DetailView { get; set; } = null!;
-        public View OwnerView { get; set; } = null!;
-        public double? AnchorX { get; set; }
-        public double? AnchorY { get; set; }
-    }
-
     internal static bool TryProjectViewLocalPointToSheet(View view, Point? localPoint, out double sheetX, out double sheetY)
     {
         sheetX = 0;
@@ -222,24 +214,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 return conflicts;
         }
 
-        var semanticKinds = context.Views.ToDictionary(
-            view => view.GetIdentifier().ID,
-            view => ViewSemanticClassifier.Classify(view));
+        var semanticViews = SemanticViewSet.Build(context.Views);
 
         var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
         var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
         var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
-        var sections = context.Views
-            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Section)
-            .ToList();
-        var sectionPlacementSides = sections.ToDictionary(
-            section => section.GetIdentifier().ID,
-            section => _sectionPlacementSideResolver.Resolve(context.Drawing, baseView, section));
+        var sectionGroups = SectionGroupSet.Build(
+            semanticViews.Sections,
+            context.Drawing,
+            baseView,
+            _sectionPlacementSideResolver);
 
-        var leftSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Left).ToList();
-        var rightSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Right).ToList();
-        var topSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Top).ToList();
-        var bottomSections = sections.Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Bottom).ToList();
+        var leftSections = sectionGroups.Left;
+        var rightSections = sectionGroups.Right;
+        var topSections = sectionGroups.Top;
+        var bottomSections = sectionGroups.Bottom;
 
         DiagnoseRelaxedLayoutConflicts(context, baseView, top, bottom, back, leftSections, rightSections, topSections, bottomSections, conflicts);
         return conflicts;
@@ -863,9 +852,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (baseView == null)
             return false;
 
-        var semanticKinds = context.Views.ToDictionary(
-            view => view.GetIdentifier().ID,
-            view => ViewSemanticClassifier.Classify(view));
+        var semanticViews = SemanticViewSet.Build(context.Views);
 
         // TODO: when this strategy becomes truly BaseView-centric, dependent views
         // must be selected relative to the chosen BaseView rather than by fixed
@@ -873,43 +860,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var top = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.TopView);
         var bottom = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BottomView);
         var back = context.Views.FirstOrDefault(v => v != baseView && v.ViewType == View.ViewTypes.BackView);
-        var sections = context.Views
-            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Section)
-            .ToList();
-        var detailViews = context.Views
-            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Detail)
-            .ToList();
-        var detailRelations = ReadDetailViewRelations(context, detailViews);
-        var otherViews = context.Views
-            .Where(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.Other)
-            .ToList();
-        var sectionPlacementSides = sections.ToDictionary(
-            section => section.GetIdentifier().ID,
-            section => _sectionPlacementSideResolver.Resolve(context.Drawing, baseView, section));
-        var leftSections = sections
-            .Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Left)
-            .ToList();
-        var rightSections = sections
-            .Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Right)
-            .ToList();
-        var topSections = sections
-            .Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Top)
-            .ToList();
-        var bottomSections = sections
-            .Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Bottom)
-            .ToList();
-        var unknownSections = sections
-            .Where(section => sectionPlacementSides[section.GetIdentifier().ID].PlacementSide == SectionPlacementSide.Unknown)
-            .ToList();
+        var sections = semanticViews.Sections;
+        var detailViews = semanticViews.Details;
+        var detailRelations = DetailRelationResolver.Build(context.Views, detailViews).All.ToList();
+        var otherViews = semanticViews.Other;
+        var sectionGroups = SectionGroupSet.Build(
+            sections,
+            context.Drawing,
+            baseView,
+            _sectionPlacementSideResolver);
+        var leftSections = sectionGroups.Left;
+        var rightSections = sectionGroups.Right;
+        var topSections = sectionGroups.Top;
+        var bottomSections = sectionGroups.Bottom;
+        var unknownSections = sectionGroups.Unknown;
         var deferredSections = leftSections
             .Concat(rightSections)
             .Concat(topSections)
             .Concat(bottomSections)
             .Concat(unknownSections)
             .ToList();
-        var nonDetailSecondaryViews = context.Views
-            .Where(v => semanticKinds[v.GetIdentifier().ID] != ViewSemanticKind.Section)
-            .Where(v => semanticKinds[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+        var nonDetailSecondaryViews = semanticViews.BaseProjected
+            .Concat(otherViews)
             .Where(v => v != baseView && v != top && v != bottom && v != back)
             .ToList();
         var secondaryViews = nonDetailSecondaryViews
@@ -920,7 +892,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             "api-view",
             "view_semantic_summary",
             0,
-            $"baseProjected={context.Views.Count(v => semanticKinds[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
+            $"baseProjected={semanticViews.BaseProjected.Count} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
 
         if (sections.Count > 0)
         {
@@ -961,7 +933,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         IReadOnlyList<View> rightSections,
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
-        IReadOnlyList<DetailViewRelation> detailRelations,
+        IReadOnlyList<DetailRelation> detailRelations,
         IReadOnlyList<View> secondaryViews,
         out List<PlannedPlacement> planned)
     {
@@ -1135,7 +1107,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         IReadOnlyList<View> rightSections,
         IReadOnlyList<View> topSections,
         IReadOnlyList<View> bottomSections,
-        IReadOnlyList<DetailViewRelation> detailRelations,
+        IReadOnlyList<DetailRelation> detailRelations,
         IReadOnlyList<View> secondaryViews,
         out List<PlannedPlacement> planned)
     {
@@ -1308,28 +1280,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return true;
     }
 
-    private static List<DetailViewRelation> ReadDetailViewRelations(
-        DrawingArrangeContext context,
-        IReadOnlyList<View> detailViews)
-    {
-        var relationSet = DetailRelationResolver.Build(context.Views, detailViews);
-        var result = new List<DetailViewRelation>();
-        foreach (var rel in relationSet.All)
-        {
-            result.Add(new DetailViewRelation
-            {
-                DetailView = rel.DetailView,
-                OwnerView  = rel.OwnerView,
-                AnchorX    = rel.AnchorX,
-                AnchorY    = rel.AnchorY,
-            });
-        }
-        return result;
-    }
-
     private static void TryPlaceDetailViews(
         DrawingArrangeContext context,
-        IReadOnlyList<DetailViewRelation> detailRelations,
+        IReadOnlyList<DetailRelation> detailRelations,
         double freeMinX,
         double freeMaxX,
         double freeMinY,

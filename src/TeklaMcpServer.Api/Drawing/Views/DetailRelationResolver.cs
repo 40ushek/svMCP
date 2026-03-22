@@ -61,11 +61,14 @@ internal static class DetailRelationResolver
                 {
                     if (related.Current is not View rv) continue;
                     var id = rv.GetIdentifier().ID;
-                    if (!detailById.ContainsKey(id) || !seen.Add(id)) break;
+                    if (!detailById.TryGetValue(id, out var detailView))
+                        continue;
+                    if (!seen.Add(id))
+                        continue;
 
                     dict[id] = new DetailRelation
                     {
-                        DetailView = detailById[id],
+                        DetailView = detailView,
                         OwnerView  = ownerView,
                         AnchorX    = ResolveDetailMarkAnchorX(ownerView, mark),
                         AnchorY    = ResolveDetailMarkAnchorY(ownerView, mark),
@@ -84,7 +87,10 @@ internal static class DetailRelationResolver
                 {
                     if (related.Current is not View rv) continue;
                     var id = rv.GetIdentifier().ID;
-                    if (!detailById.ContainsKey(id) || !seen.Add(id)) break;
+                    if (!detailById.TryGetValue(id, out var detailView))
+                        continue;
+                    if (!seen.Add(id))
+                        continue;
 
                     var mid = TrySectionMarkMidPoint(sm);
                     double? ax = null, ay = null;
@@ -94,7 +100,7 @@ internal static class DetailRelationResolver
                     }
                     dict[id] = new DetailRelation
                     {
-                        DetailView = detailById[id],
+                        DetailView = detailView,
                         OwnerView  = ownerView,
                         AnchorX    = ax,
                         AnchorY    = ay,
