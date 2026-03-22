@@ -91,7 +91,7 @@ public sealed class MaxRectsBinPacker
                 TryScoreClosestCandidate(height, width, targetCenterX, targetCenterY, free, ref bestDistance, ref bestNode);
         }
 
-        if (bestDistance == double.MaxValue || bestNode.Width <= 0 || bestNode.Height <= 0)
+        if (bestDistance == double.MaxValue)
         {
             placement = default;
             return false;

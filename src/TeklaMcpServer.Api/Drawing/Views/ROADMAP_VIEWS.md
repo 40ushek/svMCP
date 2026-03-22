@@ -114,6 +114,8 @@
 - repeated apply всё ещё может ломать projection post-pass:
   после повторного `fit_views_to_sheet` возможны массовые
   `projection-skip:view-overlap`.
+- `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
+  candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
 
 ## Семантическая модель
 
