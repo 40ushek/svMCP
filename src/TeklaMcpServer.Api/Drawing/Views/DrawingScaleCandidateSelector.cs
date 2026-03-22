@@ -63,7 +63,12 @@ internal static class DrawingScaleCandidateSelector
             maxModelW / Math.Max(availableWidth - borderEstimate, 1),
             maxModelH / Math.Max(availableHeight - borderEstimate, 1));
 
-        var candidates = Array.FindAll(StandardScales, s => s >= minDenom);
+        var startScale = StandardScales
+            .Where(s => s <= minDenom)
+            .DefaultIfEmpty(StandardScales[0])
+            .Last();
+
+        var candidates = Array.FindAll(StandardScales, s => s >= startScale);
         if (candidates.Length == 0)
             candidates = new[] { StandardScales[StandardScales.Length - 1] };
 
