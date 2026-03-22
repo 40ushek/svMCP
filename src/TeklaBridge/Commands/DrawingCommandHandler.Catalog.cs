@@ -84,7 +84,10 @@ internal sealed partial class DrawingCommandHandler
             result.RequestedGuid,
             result.Drawing.Name,
             result.Drawing.Mark,
-            result.Drawing.Type);
+            result.Drawing.Type,
+            result.Drawing.Title1,
+            result.Drawing.Title2,
+            result.Drawing.Title3);
         return true;
     }
 
@@ -104,7 +107,10 @@ internal sealed partial class DrawingCommandHandler
                 result.Drawing.Guid,
                 result.Drawing.Name,
                 result.Drawing.Mark,
-                result.Drawing.Type);
+                result.Drawing.Type,
+                result.Drawing.Title1,
+                result.Drawing.Title2,
+                result.Drawing.Title3);
             return true;
         }
 
@@ -112,7 +118,10 @@ internal sealed partial class DrawingCommandHandler
             result.Drawing.Guid,
             result.Drawing.Name,
             result.Drawing.Mark,
-            result.Drawing.Type);
+            result.Drawing.Type,
+            result.Drawing.Title1,
+            result.Drawing.Title2,
+            result.Drawing.Title3);
         return true;
     }
 
@@ -169,7 +178,10 @@ internal sealed partial class DrawingCommandHandler
         string? guid,
         string? name,
         string? mark,
-        string? type)
+        string? type,
+        string? title1 = null,
+        string? title2 = null,
+        string? title3 = null)
     {
         WriteJson(new
         {
@@ -177,11 +189,14 @@ internal sealed partial class DrawingCommandHandler
             guid,
             name,
             mark,
-            type
+            type,
+            title1,
+            title2,
+            title3
         });
     }
 
-    private void WriteOpenedDrawing(string? guid, string? name, string? mark, string? type)
+    private void WriteOpenedDrawing(string? guid, string? name, string? mark, string? type, string? title1, string? title2, string? title3)
     {
         WriteJson(new
         {
@@ -189,11 +204,14 @@ internal sealed partial class DrawingCommandHandler
             guid,
             name,
             mark,
-            type
+            type,
+            title1,
+            title2,
+            title3
         });
     }
 
-    private void WriteClosedDrawing(string? guid, string? name, string? mark, string? type)
+    private void WriteClosedDrawing(string? guid, string? name, string? mark, string? type, string? title1, string? title2, string? title3)
     {
         WriteJson(new
         {
@@ -201,7 +219,10 @@ internal sealed partial class DrawingCommandHandler
             guid,
             name,
             mark,
-            type
+            type,
+            title1,
+            title2,
+            title3
         });
     }
 
@@ -228,6 +249,9 @@ internal sealed partial class DrawingCommandHandler
                 guid = d.Guid,
                 name = d.Name,
                 mark = d.Mark,
+                title1 = d.Title1,
+                title2 = d.Title2,
+                title3 = d.Title3,
                 type = d.Type
             });
         }
@@ -237,6 +261,9 @@ internal sealed partial class DrawingCommandHandler
             guid = d.Guid,
             name = d.Name,
             mark = d.Mark,
+            title1 = d.Title1,
+            title2 = d.Title2,
+            title3 = d.Title3,
             type = d.Type,
             status = d.Status
         });

@@ -216,6 +216,9 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
             Guid = drawing.GetIdentifier().GUID.ToString(),
             Name = drawing.Name,
             Mark = drawing.Mark,
+            Title1 = drawing.Title1,
+            Title2 = drawing.Title2,
+            Title3 = drawing.Title3,
             Type = drawing.GetType().Name,
             Status = drawing.UpToDateStatus.ToString()
         };
@@ -242,6 +245,9 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
             {
                 "name" => string.Equals(drawing.Name ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
                 "mark" => string.Equals(drawing.Mark ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
+                "title1" => string.Equals(drawing.Title1 ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
+                "title2" => string.Equals(drawing.Title2 ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
+                "title3" => string.Equals(drawing.Title3 ?? string.Empty, value, StringComparison.OrdinalIgnoreCase),
                 "type" => string.Equals(drawing.GetType().Name, value, StringComparison.OrdinalIgnoreCase),
                 "status" => string.Equals(drawing.UpToDateStatus.ToString(), value, StringComparison.OrdinalIgnoreCase),
                 _ => false
