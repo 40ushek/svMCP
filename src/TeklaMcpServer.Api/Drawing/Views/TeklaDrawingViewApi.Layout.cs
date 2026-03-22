@@ -712,7 +712,37 @@ public sealed partial class TeklaDrawingViewApi
 
                     var relId = relatedView.GetIdentifier().ID;
                     if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
-                        detailRelationByDetailId[relId] = (ownerView, null, null);
+                    {
+                        double? anchorX = null;
+                        double? anchorY = null;
+                        var sideResult = new SectionPlacementSideResolver().Resolve(activeDrawing, ownerView, relatedView);
+                        if (sideResult.PlacementSide != SectionPlacementSide.Unknown
+                            && DrawingViewSheetGeometry.TryGetBoundingRect(ownerView, out var ownerRectForAnchor))
+                        {
+                            var oCx = (ownerRectForAnchor.MinX + ownerRectForAnchor.MaxX) * 0.5;
+                            var oCy = (ownerRectForAnchor.MinY + ownerRectForAnchor.MaxY) * 0.5;
+                            switch (sideResult.PlacementSide)
+                            {
+                                case SectionPlacementSide.Left:
+                                    anchorX = ownerRectForAnchor.MinX;
+                                    anchorY = oCy;
+                                    break;
+                                case SectionPlacementSide.Right:
+                                    anchorX = ownerRectForAnchor.MaxX;
+                                    anchorY = oCy;
+                                    break;
+                                case SectionPlacementSide.Top:
+                                    anchorX = oCx;
+                                    anchorY = ownerRectForAnchor.MaxY;
+                                    break;
+                                case SectionPlacementSide.Bottom:
+                                    anchorX = oCx;
+                                    anchorY = ownerRectForAnchor.MinY;
+                                    break;
+                            }
+                        }
+                        detailRelationByDetailId[relId] = (ownerView, anchorX, anchorY);
+                    }
                     break;
                 }
             }

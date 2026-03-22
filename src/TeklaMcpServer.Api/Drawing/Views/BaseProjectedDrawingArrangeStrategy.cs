@@ -1498,6 +1498,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             ownerCenterY - detailHeight * 0.5
         };
 
+        // Anchor-driven candidates: ensure positions centred on the anchor are
+        // explicitly considered, not just ranked among accidentally nearby ones.
+        if (anchorX.HasValue)
+        {
+            xCandidates.Add(anchorX.Value - detailWidth * 0.5);
+            xCandidates.Add(anchorX.Value);
+            xCandidates.Add(anchorX.Value - detailWidth);
+        }
+        if (anchorY.HasValue)
+        {
+            yCandidates.Add(anchorY.Value - detailHeight * 0.5);
+            yCandidates.Add(anchorY.Value);
+            yCandidates.Add(anchorY.Value - detailHeight);
+        }
+
         foreach (var rect in occupied)
         {
             xCandidates.Add(rect.MinX - offset - detailWidth);
