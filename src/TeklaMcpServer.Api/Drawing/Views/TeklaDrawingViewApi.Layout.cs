@@ -713,35 +713,13 @@ public sealed partial class TeklaDrawingViewApi
                     var relId = relatedView.GetIdentifier().ID;
                     if (detailViewIds.Contains(relId) && !detailRelationByDetailId.ContainsKey(relId))
                     {
-                        double? anchorX = null;
-                        double? anchorY = null;
-                        var sideResult = new SectionPlacementSideResolver().Resolve(activeDrawing, ownerView, relatedView);
-                        if (sideResult.PlacementSide != SectionPlacementSide.Unknown
-                            && DrawingViewSheetGeometry.TryGetBoundingRect(ownerView, out var ownerRectForAnchor))
-                        {
-                            var oCx = (ownerRectForAnchor.MinX + ownerRectForAnchor.MaxX) * 0.5;
-                            var oCy = (ownerRectForAnchor.MinY + ownerRectForAnchor.MaxY) * 0.5;
-                            switch (sideResult.PlacementSide)
-                            {
-                                case SectionPlacementSide.Left:
-                                    anchorX = ownerRectForAnchor.MinX;
-                                    anchorY = oCy;
-                                    break;
-                                case SectionPlacementSide.Right:
-                                    anchorX = ownerRectForAnchor.MaxX;
-                                    anchorY = oCy;
-                                    break;
-                                case SectionPlacementSide.Top:
-                                    anchorX = oCx;
-                                    anchorY = ownerRectForAnchor.MaxY;
-                                    break;
-                                case SectionPlacementSide.Bottom:
-                                    anchorX = oCx;
-                                    anchorY = ownerRectForAnchor.MinY;
-                                    break;
-                            }
-                        }
-                        detailRelationByDetailId[relId] = (ownerView, anchorX, anchorY);
+                        var midPoint = TrySectionMarkMidPoint(sectionMark);
+                        double smAnchorX = 0, smAnchorY = 0;
+                        var hasAnchor = midPoint != null
+                            && TryResolveDetailAnchorSheet(ownerView, new[] { midPoint.X, midPoint.Y }, out smAnchorX, out smAnchorY);
+                        detailRelationByDetailId[relId] = (ownerView,
+                            hasAnchor ? smAnchorX : null,
+                            hasAnchor ? smAnchorY : null);
                     }
                     break;
                 }
@@ -924,6 +902,22 @@ public sealed partial class TeklaDrawingViewApi
             new Point(point[0], point[1], 0),
             out anchorX,
             out anchorY);
+    }
+
+    private static Point? TrySectionMarkMidPoint(Tekla.Structures.Drawing.SectionMark sectionMark)
+    {
+        try
+        {
+            var lp = sectionMark.LeftPoint;
+            var rp = sectionMark.RightPoint;
+            if (lp != null && rp != null)
+                return new Point((lp.X + rp.X) * 0.5, (lp.Y + rp.Y) * 0.5, 0);
+            return lp ?? rp;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>

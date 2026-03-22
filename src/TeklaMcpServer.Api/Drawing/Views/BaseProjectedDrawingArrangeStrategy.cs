@@ -1382,10 +1382,33 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     if (!seenDetailIds.Add(detailId))
                         break;
 
+                    Point? sectionMidPoint = null;
+                    try
+                    {
+                        var lp = sectionMark.LeftPoint;
+                        var rp = sectionMark.RightPoint;
+                        if (lp != null && rp != null)
+                            sectionMidPoint = new Point((lp.X + rp.X) * 0.5, (lp.Y + rp.Y) * 0.5, 0);
+                        else
+                            sectionMidPoint = lp ?? rp;
+                    }
+                    catch { }
+
+                    double? smAnchorX = null;
+                    double? smAnchorY = null;
+                    if (sectionMidPoint != null
+                        && TryProjectViewLocalPointToSheet(ownerView, sectionMidPoint, out var projX, out var projY))
+                    {
+                        smAnchorX = projX;
+                        smAnchorY = projY;
+                    }
+
                     relations.Add(new DetailViewRelation
                     {
                         DetailView = detailView,
-                        OwnerView = ownerView
+                        OwnerView = ownerView,
+                        AnchorX = smAnchorX,
+                        AnchorY = smAnchorY
                     });
                     break;
                 }
