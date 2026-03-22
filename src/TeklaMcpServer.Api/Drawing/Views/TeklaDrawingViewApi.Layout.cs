@@ -300,19 +300,29 @@ public sealed partial class TeklaDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
-        var scaleSelection = DrawingScaleCandidateSelector.Select(scaleDriverViews, availW, availH);
-        var currentScale = scaleSelection.CurrentScale;
-        var minDenom = scaleSelection.MinDenom;
-        var candidates = scaleSelection.Candidates;
-        init.Stop();
-        initMs = init.ElapsedMilliseconds;
-
         var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
         // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
         var actualRects = DrawingViewSheetGeometry.BuildActualViewRects(activeDrawing);
         var originalFrameSizes = TryGetFrameSizesFromBoundingBoxes(views, actualRects);
+        var scaleDrivers = scaleDriverViews
+            .Select(v =>
+            {
+                var viewId = v.GetIdentifier().ID;
+                var scale = v.Attributes.Scale > 0 ? v.Attributes.Scale : 1.0;
+                var frame = originalFrameSizes.TryGetValue(viewId, out var size)
+                    ? size
+                    : (v.Width, v.Height);
+                return new DrawingScaleDriver(frame.Width, frame.Height, scale);
+            })
+            .ToList();
+        var scaleSelection = DrawingScaleCandidateSelector.Select(scaleDrivers, availW, availH);
+        var currentScale = scaleSelection.CurrentScale;
+        var minDenom = scaleSelection.MinDenom;
+        var candidates = scaleSelection.Candidates;
+        init.Stop();
+        initMs = init.ElapsedMilliseconds;
         TraceScaleSelectionInputs(
             views,
             semanticKindById,
