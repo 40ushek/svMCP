@@ -169,6 +169,80 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
+    private static void TracePlannedVsActualParity(
+        string stage,
+        IReadOnlyList<ArrangedView> arranged,
+        IReadOnlyDictionary<int, View> viewsById,
+        IReadOnlyDictionary<int, (double Width, double Height)> frameSizesById,
+        IReadOnlyDictionary<int, ReservedRect> actualRects)
+    {
+        foreach (var item in arranged)
+        {
+            if (!viewsById.TryGetValue(item.Id, out var view))
+                continue;
+
+            var width = frameSizesById.TryGetValue(item.Id, out var frame)
+                ? frame.Width
+                : view.Width;
+            var height = frameSizesById.TryGetValue(item.Id, out var frame2)
+                ? frame2.Height
+                : view.Height;
+
+            if (!DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(view, item.OriginX, item.OriginY, width, height, out var plannedRect))
+            {
+                plannedRect = new ReservedRect(
+                    item.OriginX - (width / 2.0),
+                    item.OriginY - (height / 2.0),
+                    item.OriginX + (width / 2.0),
+                    item.OriginY + (height / 2.0));
+            }
+
+            var hasActualRect = actualRects.TryGetValue(item.Id, out var actualRect);
+            var plannedCenterX = (plannedRect.MinX + plannedRect.MaxX) / 2.0;
+            var plannedCenterY = (plannedRect.MinY + plannedRect.MaxY) / 2.0;
+            var plannedWidth = plannedRect.MaxX - plannedRect.MinX;
+            var plannedHeight = plannedRect.MaxY - plannedRect.MinY;
+
+            var actualCenterX = hasActualRect ? (actualRect.MinX + actualRect.MaxX) / 2.0 : 0.0;
+            var actualCenterY = hasActualRect ? (actualRect.MinY + actualRect.MaxY) / 2.0 : 0.0;
+            var actualWidth = hasActualRect ? actualRect.MaxX - actualRect.MinX : 0.0;
+            var actualHeight = hasActualRect ? actualRect.MaxY - actualRect.MinY : 0.0;
+
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_parity",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "stage={0} view={1}:{2} placement={3}->{4} fallback={5} plannedOrigin={6:F2},{7:F2} plannedRect=[{8:F2},{9:F2},{10:F2},{11:F2}] actualRect={12} deltaCenter=({13:F2},{14:F2}) deltaSize=({15:F2},{16:F2})",
+                    stage,
+                    item.Id,
+                    item.ViewType,
+                    string.IsNullOrWhiteSpace(item.PreferredPlacementSide) ? "none" : item.PreferredPlacementSide,
+                    string.IsNullOrWhiteSpace(item.ActualPlacementSide) ? "none" : item.ActualPlacementSide,
+                    item.PlacementFallbackUsed ? 1 : 0,
+                    item.OriginX,
+                    item.OriginY,
+                    plannedRect.MinX,
+                    plannedRect.MinY,
+                    plannedRect.MaxX,
+                    plannedRect.MaxY,
+                    hasActualRect
+                        ? string.Format(
+                            CultureInfo.InvariantCulture,
+                            "[{0:F2},{1:F2},{2:F2},{3:F2}]",
+                            actualRect.MinX,
+                            actualRect.MinY,
+                            actualRect.MaxX,
+                            actualRect.MaxY)
+                        : "n/a",
+                    hasActualRect ? actualCenterX - plannedCenterX : 0.0,
+                    hasActualRect ? actualCenterY - plannedCenterY : 0.0,
+                    hasActualRect ? actualWidth - plannedWidth : 0.0,
+                    hasActualRect ? actualHeight - plannedHeight : 0.0));
+        }
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -562,6 +636,13 @@ public sealed partial class TeklaDrawingViewApi
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
+        TracePlannedVsActualParity(
+            "post-arrange-pre-projection",
+            arranged,
+            currentViews.ToDictionary(v => v.GetIdentifier().ID),
+            arrangedFrameSizes,
+            DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
+
         var projectionSw = Stopwatch.StartNew();
         if (ShouldSkipProjectionAlignment(optimalScale.Value))
         {
@@ -616,6 +697,13 @@ public sealed partial class TeklaDrawingViewApi
             gap,
             reservedAreas,
             offsetById);
+
+        TracePlannedVsActualParity(
+            "post-commit-final",
+            arranged,
+            finalViews.ToDictionary(v => v.GetIdentifier().ID),
+            arrangedFrameSizes,
+            DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
