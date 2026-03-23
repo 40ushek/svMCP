@@ -81,6 +81,11 @@
   если вид больше usable area листа, кандидат сразу отбрасывается.
 - стартовый список scale candidates теперь считается от реальной frame geometry
   scale-driver видов, а не от одного общего текущего scale листа.
+- стартовый candidate scale теперь выбирается по midpoint между соседними
+  standard scales:
+  lower half интервала стартует с меньшего масштаба, upper half — с большего.
+  Это уменьшает число лишних probe-прогонов относительно чистого `floor`,
+  но не возвращает прежнюю жёсткость `ceil`.
 - candidate-fit для `FinalOnly` теперь тоже идёт по реальному probe-path:
   candidate scale реально применяется к видам, затем planner читает
   фактические frame sizes/bbox, а не использует линейную аппроксимацию
@@ -90,9 +95,12 @@
   для выбора допустимого окна `BaseView`.
 - `baseRect` внутри budget-window теперь ищется через `MaxRects`,
   а не через старый `3x3` centered-first поиск.
-- `TryFindBaseViewRectInWindow` теперь учитывает `context.Gap`:
-  поиск `baseRect` идёт в gap-aware внутреннем окне,
-  поэтому `BaseView` больше не встаёт вплотную к границам budget-window.
+- `TryFindBaseViewRectInWindow` учитывает `context.Gap` на уровне budget-window:
+  бюджеты включают gap, поэтому `BaseView` больше не встаёт вплотную к _внешним_
+  границам budget-window.
+  При этом gap между `baseRect` и blocked-областями _внутри_ окна не применяется:
+  `baseWidth/baseHeight` передаются без `+context.Gap`, blocked-прямоугольники
+  не раздуваются — см. «Что ещё не закончено».
 - `EndView` больше не обязан уходить в residual:
   если topology resolver классифицирует его как `SideNeighborRight`,
   он получает явный правый neighbor slot в main layout.
@@ -141,6 +149,21 @@
   более мягкой деградации:
   когда fallback геометрически валиден, но проекционно выглядит слабо,
   planner пока ещё не умеет это оценивать отдельной soft-метрикой.
+- зазор между `baseRect` и blocked-областями внутри `TryFindBaseViewRectInWindow`
+  не задаётся: `baseWidth/baseHeight` передаются без `+gap`, blocked-прямоугольники
+  не раздуваются. `BaseView` может вставать вплотную к зарезервированным областям
+  и к уже расставленным видам без запаса для projection post-pass.
+- `optimalScale` в preserve-scale путях (`PreserveExistingScales`,
+  `UniformMainWithSectionExceptions`) вычисляется как `Max()` всех масштабов:
+  `ShouldSkipProjectionAlignment` пропустит alignment, если самый мелкий
+  вид листа >= 100, даже когда другие виды (1:20, 1:50) реально нуждаются
+  в alignment. Семантически правильный агрегат — `Min()`.
+- бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
+  на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
+  без диагностики для остальных.
+- debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
+  при reject horizontal section (бросает `InvalidOperationException`).
+  Не задокументирован нигде, кроме кода.
 
 ## Семантическая модель
 
