@@ -57,6 +57,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public SectionPlacementSide? ActualPlacementSide { get; }
     }
 
+    private readonly struct MainSkeletonRect
+    {
+        public MainSkeletonRect(string role, ReservedRect rect)
+        {
+            Role = role;
+            Rect = rect;
+        }
+
+        public string Role { get; }
+        public ReservedRect Rect { get; }
+    }
+
     internal static bool TryProjectViewLocalPointToSheet(View view, Point? localPoint, out double sheetX, out double sheetY)
     {
         sheetX = 0;
@@ -640,6 +652,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
         }
 
+        if (!TryValidateMainSkeletonSpacing(
+                baseRect,
+                topPlaced ? topRect : null,
+                bottomPlaced ? bottomRect : null,
+                leftPlaced ? leftRect : null,
+                rightPlaced ? rightRect : null,
+                context.SheetWidth,
+                context.SheetHeight,
+                context.Margin,
+                context.Gap,
+                context.ReservedAreas,
+                out var mainSkeletonReason,
+                out var mainSkeletonRole,
+                out var mainSkeletonRect))
+        {
+            var conflictedView = ResolveMainSkeletonView(neighbors, mainSkeletonRole);
+            var attemptedZone = ToAttemptedZone(mainSkeletonRole);
+            AddConflict(conflicts, conflictedView, attemptedZone, mainSkeletonReason);
+            EnsureBoundingRect(conflicts, conflictedView, attemptedZone, mainSkeletonRect);
+            return;
+        }
+
         DiagnoseStackPlacementFailureWithFallback(
             conflicts,
             context,
@@ -700,6 +734,127 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             context.Gap,
             occupied);
     }
+
+    internal static bool TryValidateMainSkeletonSpacing(
+        ReservedRect baseRect,
+        ReservedRect? topRect,
+        ReservedRect? bottomRect,
+        ReservedRect? leftRect,
+        ReservedRect? rightRect,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        double gap,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        out string reason,
+        out string role,
+        out ReservedRect failingRect)
+    {
+        reason = string.Empty;
+        role = string.Empty;
+        failingRect = baseRect;
+
+        var placements = new List<MainSkeletonRect>
+        {
+            new("base", baseRect)
+        };
+
+        if (topRect != null)
+            placements.Add(new MainSkeletonRect("top", topRect));
+        if (bottomRect != null)
+            placements.Add(new MainSkeletonRect("bottom", bottomRect));
+        if (leftRect != null)
+            placements.Add(new MainSkeletonRect("left", leftRect));
+        if (rightRect != null)
+            placements.Add(new MainSkeletonRect("right", rightRect));
+
+        foreach (var placement in placements)
+        {
+            if (!IsWithinArea(placement.Rect, margin, sheetWidth - margin, margin, sheetHeight - margin))
+            {
+                reason = $"main-skeleton-out-of-sheet-{placement.Role}";
+                role = placement.Role;
+                failingRect = placement.Rect;
+                return false;
+            }
+
+            if (IntersectsAny(placement.Rect, reservedAreas))
+            {
+                reason = $"main-skeleton-reserved-overlap-{placement.Role}";
+                role = placement.Role;
+                failingRect = placement.Rect;
+                return false;
+            }
+        }
+
+        for (var i = 0; i < placements.Count; i++)
+        {
+            for (var j = i + 1; j < placements.Count; j++)
+            {
+                if (!Intersects(placements[i].Rect, placements[j].Rect))
+                    continue;
+
+                reason = $"main-skeleton-overlap-{placements[j].Role}";
+                role = placements[j].Role;
+                failingRect = placements[j].Rect;
+                return false;
+            }
+        }
+
+        if (topRect != null && topRect.MinY - baseRect.MaxY < gap)
+        {
+            reason = "main-skeleton-gap-top";
+            role = "top";
+            failingRect = topRect;
+            return false;
+        }
+
+        if (bottomRect != null && baseRect.MinY - bottomRect.MaxY < gap)
+        {
+            reason = "main-skeleton-gap-bottom";
+            role = "bottom";
+            failingRect = bottomRect;
+            return false;
+        }
+
+        if (leftRect != null && baseRect.MinX - leftRect.MaxX < gap)
+        {
+            reason = "main-skeleton-gap-left";
+            role = "left";
+            failingRect = leftRect;
+            return false;
+        }
+
+        if (rightRect != null && rightRect.MinX - baseRect.MaxX < gap)
+        {
+            reason = "main-skeleton-gap-right";
+            role = "right";
+            failingRect = rightRect;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static View ResolveMainSkeletonView(NeighborSet neighbors, string role)
+        => role switch
+        {
+            "top" => neighbors.TopNeighbor ?? neighbors.BaseView,
+            "bottom" => neighbors.BottomNeighbor ?? neighbors.BaseView,
+            "left" => neighbors.SideNeighborLeft ?? neighbors.BaseView,
+            "right" => neighbors.SideNeighborRight ?? neighbors.BaseView,
+            _ => neighbors.BaseView
+        };
+
+    private static string ToAttemptedZone(string role)
+        => role switch
+        {
+            "top" => RelativePlacement.Top.ToString(),
+            "bottom" => RelativePlacement.Bottom.ToString(),
+            "left" => RelativePlacement.Left.ToString(),
+            "right" => RelativePlacement.Right.ToString(),
+            _ => "Center"
+        };
 
     private static void DiagnoseRelativePlacementFailure(
         List<DrawingFitConflict> conflicts,
@@ -1275,6 +1430,25 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             occupied.Add(rightRect);
         }
 
+        if (!TryValidateMainSkeletonSpacing(
+                baseRect,
+                top != null ? topRect : null,
+                bottom != null ? bottomRect : null,
+                leftNeighbor != null ? leftRect : null,
+                rightNeighbor != null ? rightRect : null,
+                context.SheetWidth,
+                context.SheetHeight,
+                context.Margin,
+                context.Gap,
+                context.ReservedAreas,
+                out var mainSkeletonReason,
+                out _,
+                out var mainSkeletonRect))
+        {
+            TracePlanReject("strict", mainSkeletonReason, context, planned, mainSkeletonRect);
+            return false;
+        }
+
         var leftAnchor = leftNeighbor != null ? leftRect : baseRect;
         var rightAnchor = rightNeighbor != null ? rightRect : baseRect;
         TryPlaceVerticalSectionStackWithFallback(
@@ -1467,6 +1641,25 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 TracePlanReject("relaxed", "right", context, planned, null);
                 deferred.Add(rightNeighbor);
             }
+        }
+
+        if (!TryValidateMainSkeletonSpacing(
+                baseRect,
+                topPlaced ? topRect : null,
+                bottomPlaced ? bottomRect : null,
+                leftPlaced ? leftRect : null,
+                rightPlaced ? rightRect : null,
+                context.SheetWidth,
+                context.SheetHeight,
+                context.Margin,
+                context.Gap,
+                context.ReservedAreas,
+                out var mainSkeletonReason,
+                out _,
+                out var mainSkeletonRect))
+        {
+            TracePlanReject("relaxed", mainSkeletonReason, context, planned, mainSkeletonRect);
+            return false;
         }
 
         var leftPlacedAnchor = leftPlaced ? leftRect : baseRect;

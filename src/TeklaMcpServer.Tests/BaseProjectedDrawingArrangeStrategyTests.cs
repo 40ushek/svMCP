@@ -166,6 +166,192 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void TryValidateMainSkeletonSpacing_PassesWhenTopAndRightRespectGap()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: new ReservedRect(110, 204, 190, 244),
+            bottomRect: null,
+            leftRect: null,
+            rightRect: new ReservedRect(204, 120, 254, 180),
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out _,
+            out _);
+
+        Assert.True(ok);
+        Assert.Equal(string.Empty, reason);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsTopGapViolation()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: new ReservedRect(110, 202, 190, 242),
+            bottomRect: null,
+            leftRect: null,
+            rightRect: null,
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-gap-top", reason);
+        Assert.Equal("top", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsRightGapViolation()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: null,
+            bottomRect: null,
+            leftRect: null,
+            rightRect: new ReservedRect(203, 120, 253, 180),
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-gap-right", reason);
+        Assert.Equal("right", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsBottomGapViolation()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: null,
+            bottomRect: new ReservedRect(110, 58, 190, 98),
+            leftRect: null,
+            rightRect: null,
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-gap-bottom", reason);
+        Assert.Equal("bottom", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsLeftGapViolation()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: null,
+            bottomRect: null,
+            leftRect: new ReservedRect(48, 120, 98, 180),
+            rightRect: null,
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-gap-left", reason);
+        Assert.Equal("left", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsOutOfSheetPlacement()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: new ReservedRect(110, 204, 190, 320),
+            bottomRect: null,
+            leftRect: null,
+            rightRect: null,
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-out-of-sheet-top", reason);
+        Assert.Equal("top", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsNeighborOverlap()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: new ReservedRect(110, 204, 190, 244),
+            bottomRect: null,
+            leftRect: null,
+            rightRect: new ReservedRect(180, 210, 240, 250),
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: System.Array.Empty<ReservedRect>(),
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-overlap-right", reason);
+        Assert.Equal("right", role);
+    }
+
+    [Fact]
+    public void TryValidateMainSkeletonSpacing_RejectsReservedOverlap()
+    {
+        var ok = BaseProjectedDrawingArrangeStrategy.TryValidateMainSkeletonSpacing(
+            baseRect: new ReservedRect(100, 100, 200, 200),
+            topRect: new ReservedRect(110, 204, 190, 244),
+            bottomRect: null,
+            leftRect: null,
+            rightRect: null,
+            sheetWidth: 420,
+            sheetHeight: 297,
+            margin: 10,
+            gap: 4,
+            reservedAreas: new List<ReservedRect>
+            {
+                new(120, 220, 180, 260)
+            },
+            out var reason,
+            out var role,
+            out _);
+
+        Assert.False(ok);
+        Assert.Equal("main-skeleton-reserved-overlap-top", reason);
+        Assert.Equal("top", role);
+    }
+
+    [Fact]
     public void TryPackSupplementalViews_PlacesViewsOutsideCoreBounds()
     {
         var packed = BaseProjectedDrawingArrangeStrategy.TryPackSupplementalViews(
