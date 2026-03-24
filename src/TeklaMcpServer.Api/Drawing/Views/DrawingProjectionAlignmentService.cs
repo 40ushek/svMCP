@@ -61,6 +61,19 @@ internal sealed partial class DrawingProjectionAlignmentService
                 break;
             }
 
+            case SinglePartDrawing singlePartDrawing:
+            {
+                result.Mode = "single-part";
+                if (neighbors == null)
+                {
+                    TraceSkip(result, "projection-skip:no-base-view");
+                    return result;
+                }
+
+                ApplySinglePartAlignment(result, singlePartDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                break;
+            }
+
             case GADrawing gaDrawing:
             {
                 result.Mode = "ga";

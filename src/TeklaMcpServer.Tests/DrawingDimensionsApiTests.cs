@@ -1,6 +1,7 @@
 using System.Text.Json;
 using TeklaMcpServer.Api.Drawing;
 using Tekla.Structures.Drawing;
+using Tekla.Structures.Geometry3d;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
@@ -317,5 +318,78 @@ public sealed class DrawingDimensionsApiTests
             (0, 0));
 
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void FilterOutlierPoints_RemovesFarOriginLikeOutlier()
+    {
+        var points = new List<Point>
+        {
+            new(100, 100, 0),
+            new(102, 99, 0),
+            new(101, 103, 0),
+            new(98, 101, 0),
+            new(5000, 5000, 0)
+        };
+
+        var filtered = TeklaDrawingDimensionsApi.FilterOutlierPoints(points);
+
+        Assert.Equal(4, filtered.Count);
+        Assert.DoesNotContain(filtered, p => System.Math.Abs(p.X - 5000) < 0.001 && System.Math.Abs(p.Y - 5000) < 0.001);
+    }
+
+    [Fact]
+    public void FilterOutlierPoints_PreservesRectangleExtremes()
+    {
+        var points = new List<Point>
+        {
+            new(0, 0, 0),
+            new(100, 0, 0),
+            new(100, 50, 0),
+            new(0, 50, 0),
+            new(50, 25, 0)
+        };
+
+        var filtered = TeklaDrawingDimensionsApi.FilterOutlierPoints(points);
+
+        Assert.Equal(5, filtered.Count);
+        Assert.Contains(filtered, p => System.Math.Abs(p.X) < 0.001 && System.Math.Abs(p.Y) < 0.001);
+        Assert.Contains(filtered, p => System.Math.Abs(p.X - 100) < 0.001 && System.Math.Abs(p.Y) < 0.001);
+        Assert.Contains(filtered, p => System.Math.Abs(p.X - 100) < 0.001 && System.Math.Abs(p.Y - 50) < 0.001);
+        Assert.Contains(filtered, p => System.Math.Abs(p.X) < 0.001 && System.Math.Abs(p.Y - 50) < 0.001);
+    }
+
+    [Fact]
+    public void SimplifyHull_RemovesNearCollinearSnapVertex()
+    {
+        var hull = new List<Point>
+        {
+            new(0, 0, 0),
+            new(50, 0.4, 0),
+            new(100, 0, 0),
+            new(100, 50, 0),
+            new(0, 50, 0)
+        };
+
+        var simplified = TeklaDrawingDimensionsApi.SimplifyHull(hull);
+
+        Assert.Equal(4, simplified.Count);
+        Assert.DoesNotContain(simplified, p => System.Math.Abs(p.X - 50) < 0.001 && System.Math.Abs(p.Y - 0.4) < 0.001);
+    }
+
+    [Fact]
+    public void SimplifyHull_PreservesRectangleCorners()
+    {
+        var hull = new List<Point>
+        {
+            new(0, 0, 0),
+            new(100, 0, 0),
+            new(100, 50, 0),
+            new(0, 50, 0)
+        };
+
+        var simplified = TeklaDrawingDimensionsApi.SimplifyHull(hull);
+
+        Assert.Equal(4, simplified.Count);
     }
 }

@@ -1475,6 +1475,81 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return new Vector(-dy / len, dx / len, 0);
     }
 
+    /// <summary>
+    /// Removes hull vertices that are nearly collinear with their neighbors
+    /// (perpendicular deviation below threshold). Eliminates spurious snap points
+    /// that are genuine hull vertices but barely outside the true shape boundary.
+    /// </summary>
+    internal static List<Point> SimplifyHull(List<Point> hull, double maxDeviationMm = 1.0)
+    {
+        if (hull.Count <= 3)
+            return hull;
+
+        var simplified = new List<Point>(hull);
+        var changed = true;
+        while (changed && simplified.Count > 3)
+        {
+            changed = false;
+            for (var i = 0; i < simplified.Count; i++)
+            {
+                var prev = simplified[(i - 1 + simplified.Count) % simplified.Count];
+                var curr = simplified[i];
+                var next = simplified[(i + 1) % simplified.Count];
+
+                var edgeDx = next.X - prev.X;
+                var edgeDy = next.Y - prev.Y;
+                var edgeLen = System.Math.Sqrt((edgeDx * edgeDx) + (edgeDy * edgeDy));
+                if (edgeLen < 1e-6)
+                    continue;
+
+                // Perpendicular distance from curr to the line prev→next
+                var dist = System.Math.Abs((edgeDx * (prev.Y - curr.Y)) - (edgeDy * (prev.X - curr.X))) / edgeLen;
+                if (dist < maxDeviationMm)
+                {
+                    simplified.RemoveAt(i);
+                    changed = true;
+                    break;
+                }
+            }
+        }
+
+        return simplified;
+    }
+
+    /// <summary>
+    /// Removes statistical outlier points using MAD (Median Absolute Deviation).
+    /// Protects convex hull from spurious snap points near the model origin.
+    /// </summary>
+    internal static List<Point> FilterOutlierPoints(List<Point> points)
+    {
+        if (points.Count <= 4)
+            return points;
+
+        var xs = points.Select(p => p.X).OrderBy(x => x).ToList();
+        var ys = points.Select(p => p.Y).OrderBy(y => y).ToList();
+        var medX = xs[xs.Count / 2];
+        var medY = ys[ys.Count / 2];
+
+        var madXs = points.Select(p => System.Math.Abs(p.X - medX)).OrderBy(v => v).ToList();
+        var madYs = points.Select(p => System.Math.Abs(p.Y - medY)).OrderBy(v => v).ToList();
+        var madX = madXs[madXs.Count / 2];
+        var madY = madYs[madYs.Count / 2];
+
+        // Use a generous threshold (6×MAD ≈ ~4σ for normal distribution).
+        // Fall back to a minimum scale so near-zero MAD doesn't discard valid points.
+        const double ThresholdFactor = 6.0;
+        const double MinScale = 10.0; // mm
+        var threshX = System.Math.Max(madX * ThresholdFactor, MinScale);
+        var threshY = System.Math.Max(madY * ThresholdFactor, MinScale);
+
+        var filtered = points.Where(p =>
+            System.Math.Abs(p.X - medX) <= threshX &&
+            System.Math.Abs(p.Y - medY) <= threshY).ToList();
+
+        // Never return fewer than 2 points — fall back to original if over-filtered.
+        return filtered.Count >= 2 ? filtered : points;
+    }
+
     private static List<Point> CollectDimensionSegmentPoints(View targetView, out int dimensionsScanned)
     {
         var points = new List<Point>();

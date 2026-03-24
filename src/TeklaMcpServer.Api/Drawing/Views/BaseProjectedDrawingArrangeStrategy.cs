@@ -34,7 +34,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
     private readonly SectionPlacementSideResolver _sectionPlacementSideResolver = new(new Model());
 
-    private sealed class PlannedPlacement
+    internal sealed class PlannedPlacement
     {
         public PlannedPlacement(
             View view,
@@ -594,7 +594,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var bottomPlaced = false;
         var leftPlaced = false;
         var rightPlaced = false;
-
         if (top != null)
         {
             if (TryPlaceRelative(context, top, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect)
@@ -855,6 +854,65 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             "right" => RelativePlacement.Right.ToString(),
             _ => "Center"
         };
+
+    internal static bool TryDeferMainSkeletonNeighbor(
+        string role,
+        string reason,
+        View? top,
+        View? bottom,
+        View? leftNeighbor,
+        View? rightNeighbor,
+        ref bool topPlaced,
+        ref bool bottomPlaced,
+        ref bool leftPlaced,
+        ref bool rightPlaced,
+        ref ReservedRect topRect,
+        ref ReservedRect bottomRect,
+        ref ReservedRect leftRect,
+        ref ReservedRect rightRect,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+    {
+        void RemovePlacement(View view, ReservedRect rect)
+        {
+            planned.RemoveAll(item => item.View.GetIdentifier().ID == view.GetIdentifier().ID);
+            occupied.Remove(rect);
+        }
+
+        switch (role)
+        {
+            case "top" when topPlaced && top != null:
+                RemovePlacement(top, topRect);
+                topPlaced = false;
+                topRect = new ReservedRect(0, 0, 0, 0);
+                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=top reason={reason}");
+                return true;
+
+            case "bottom" when bottomPlaced && bottom != null:
+                RemovePlacement(bottom, bottomRect);
+                bottomPlaced = false;
+                bottomRect = new ReservedRect(0, 0, 0, 0);
+                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=bottom reason={reason}");
+                return true;
+
+            case "left" when leftPlaced && leftNeighbor != null:
+                RemovePlacement(leftNeighbor, leftRect);
+                leftPlaced = false;
+                leftRect = new ReservedRect(0, 0, 0, 0);
+                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=left reason={reason}");
+                return true;
+
+            case "right" when rightPlaced && rightNeighbor != null:
+                RemovePlacement(rightNeighbor, rightRect);
+                rightPlaced = false;
+                rightRect = new ReservedRect(0, 0, 0, 0);
+                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=right reason={reason}");
+                return true;
+
+            default:
+                return false;
+        }
+    }
 
     private static void DiagnoseRelativePlacementFailure(
         List<DrawingFitConflict> conflicts,
@@ -1577,6 +1635,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var bottomPlaced = false;
         var leftPlaced = false;
         var rightPlaced = false;
+        var deferredMainSkeletonRoles = new List<string>();
 
         if (top != null)
         {
@@ -1643,23 +1702,53 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
         }
 
-        if (!TryValidateMainSkeletonSpacing(
-                baseRect,
-                topPlaced ? topRect : null,
-                bottomPlaced ? bottomRect : null,
-                leftPlaced ? leftRect : null,
-                rightPlaced ? rightRect : null,
-                context.SheetWidth,
-                context.SheetHeight,
-                context.Margin,
-                context.Gap,
-                context.ReservedAreas,
-                out var mainSkeletonReason,
-                out _,
-                out var mainSkeletonRect))
+        while (!TryValidateMainSkeletonSpacing(
+                   baseRect,
+                   topPlaced ? topRect : null,
+                   bottomPlaced ? bottomRect : null,
+                   leftPlaced ? leftRect : null,
+                   rightPlaced ? rightRect : null,
+                   context.SheetWidth,
+                   context.SheetHeight,
+                   context.Margin,
+                   context.Gap,
+                   context.ReservedAreas,
+                   out var mainSkeletonReason,
+                   out var mainSkeletonRole,
+                   out var mainSkeletonRect))
         {
-            TracePlanReject("relaxed", mainSkeletonReason, context, planned, mainSkeletonRect);
-            return false;
+            if (!TryDeferMainSkeletonNeighbor(
+                    mainSkeletonRole,
+                    mainSkeletonReason,
+                    top,
+                    bottom,
+                    leftNeighbor,
+                    rightNeighbor,
+                    ref topPlaced,
+                    ref bottomPlaced,
+                    ref leftPlaced,
+                    ref rightPlaced,
+                    ref topRect,
+                    ref bottomRect,
+                    ref leftRect,
+                    ref rightRect,
+                    occupied,
+                    planned))
+            {
+                TracePlanReject("relaxed", mainSkeletonReason, context, planned, mainSkeletonRect);
+                return false;
+            }
+
+            deferredMainSkeletonRoles.Add(mainSkeletonRole);
+        }
+
+        if (deferredMainSkeletonRoles.Count > 0)
+        {
+            PerfTrace.Write(
+                "api-view",
+                "main_skeleton_relaxed_resolved",
+                0,
+                $"deferrals={deferredMainSkeletonRoles.Count} roles=[{string.Join(",", deferredMainSkeletonRoles)}]");
         }
 
         var leftPlacedAnchor = leftPlaced ? leftRect : baseRect;

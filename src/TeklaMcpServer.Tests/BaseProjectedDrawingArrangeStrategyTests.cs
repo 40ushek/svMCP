@@ -428,4 +428,89 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal(434.17, sheetX, 2);
         Assert.Equal(224.17, sheetY, 2);
     }
+
+    [Fact]
+    public void TryDeferMainSkeletonNeighbor_RemovesTopPlacementAndReservation()
+    {
+        var top = new View();
+        var topRect = new ReservedRect(10, 20, 40, 60);
+        var bottomRect = new ReservedRect(0, 0, 0, 0);
+        var leftRect = new ReservedRect(0, 0, 0, 0);
+        var rightRect = new ReservedRect(0, 0, 0, 0);
+        var occupied = new List<ReservedRect> { topRect };
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>
+        {
+            new(top, 25, 40)
+        };
+        var topPlaced = true;
+        var bottomPlaced = false;
+        var leftPlaced = false;
+        var rightPlaced = false;
+
+        var deferred = BaseProjectedDrawingArrangeStrategy.TryDeferMainSkeletonNeighbor(
+            role: "top",
+            reason: "test",
+            top,
+            bottom: null,
+            leftNeighbor: null,
+            rightNeighbor: null,
+            ref topPlaced,
+            ref bottomPlaced,
+            ref leftPlaced,
+            ref rightPlaced,
+            ref topRect,
+            ref bottomRect,
+            ref leftRect,
+            ref rightRect,
+            occupied,
+            planned);
+
+        Assert.True(deferred);
+        Assert.False(topPlaced);
+        Assert.Empty(planned);
+        Assert.Empty(occupied);
+        Assert.Equal(0, topRect.MinX, 6);
+        Assert.Equal(0, topRect.MaxX, 6);
+        Assert.Equal(0, topRect.MinY, 6);
+        Assert.Equal(0, topRect.MaxY, 6);
+    }
+
+    [Fact]
+    public void TryDeferMainSkeletonNeighbor_ReturnsFalseWhenRoleIsNotPlaced()
+    {
+        var topRect = new ReservedRect(10, 20, 40, 60);
+        var bottomRect = new ReservedRect(0, 0, 0, 0);
+        var leftRect = new ReservedRect(0, 0, 0, 0);
+        var rightRect = new ReservedRect(0, 0, 0, 0);
+        var occupied = new List<ReservedRect> { topRect };
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
+        var topPlaced = false;
+        var bottomPlaced = false;
+        var leftPlaced = false;
+        var rightPlaced = false;
+
+        var deferred = BaseProjectedDrawingArrangeStrategy.TryDeferMainSkeletonNeighbor(
+            role: "top",
+            reason: "test",
+            top: null,
+            bottom: null,
+            leftNeighbor: null,
+            rightNeighbor: null,
+            ref topPlaced,
+            ref bottomPlaced,
+            ref leftPlaced,
+            ref rightPlaced,
+            ref topRect,
+            ref bottomRect,
+            ref leftRect,
+            ref rightRect,
+            occupied,
+            planned);
+
+        Assert.False(deferred);
+        Assert.Single(occupied);
+        Assert.Empty(planned);
+        Assert.Equal(10, topRect.MinX, 6);
+        Assert.Equal(60, topRect.MaxY, 6);
+    }
 }

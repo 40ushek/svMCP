@@ -24,17 +24,54 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyList<ReservedRect> reservedAreas,
         IList<ArrangedView>? arrangedViews)
     {
-        var baseView = neighbors.BaseView;
         if (!TryGetAssemblyMainPartId(drawing, out var mainPartId, out var reason))
         {
             TraceSkip(result, reason);
             return;
         }
 
+        ApplyProjectionAlignmentCore(result, drawing, mainPartId, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+    }
+
+    private void ApplySinglePartAlignment(
+        ProjectionAlignmentResult result,
+        SinglePartDrawing drawing,
+        NeighborSet neighbors,
+        IReadOnlyList<DrawingView> views,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        IList<ArrangedView>? arrangedViews)
+    {
+        if (!TryGetSinglePartId(drawing, out var mainPartId, out var reason))
+        {
+            TraceSkip(result, reason);
+            return;
+        }
+
+        ApplyProjectionAlignmentCore(result, drawing, mainPartId, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+    }
+
+    private void ApplyProjectionAlignmentCore(
+        ProjectionAlignmentResult result,
+        Tekla.Structures.Drawing.Drawing drawing,
+        int mainPartId,
+        NeighborSet neighbors,
+        IReadOnlyList<DrawingView> views,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        IList<ArrangedView>? arrangedViews)
+    {
+        var baseView = neighbors.BaseView;
         var posById = BuildPositionLookup(views, arrangedViews);
         posById.TryGetValue(baseView.GetIdentifier().ID, out var basePos);
 
-        if (!TryGetPartAnchorSheet(baseView, mainPartId, basePos.X, basePos.Y, out var baseAnchorX, out var baseAnchorY, out reason))
+        if (!TryGetPartAnchorSheet(baseView, mainPartId, basePos.X, basePos.Y, out var baseAnchorX, out var baseAnchorY, out var reason))
         {
             TraceSkip(result, reason);
             return;
@@ -252,6 +289,27 @@ internal sealed partial class DrawingProjectionAlignmentService
         }
 
         mainPartId = mainPart.Identifier.ID;
+        reason = string.Empty;
+        return true;
+    }
+
+    private bool TryGetSinglePartId(SinglePartDrawing drawing, out int partId, out string reason)
+    {
+        partId = 0;
+        var partIdentifier = drawing.PartIdentifier;
+        if (partIdentifier == null || (partIdentifier.ID == 0 && partIdentifier.GUID == Guid.Empty))
+        {
+            reason = "projection-skip:single-part-id-missing";
+            return false;
+        }
+
+        if (_model.SelectModelObject(partIdentifier) is not ModelPart part)
+        {
+            reason = "projection-skip:single-part-model-object-not-found";
+            return false;
+        }
+
+        partId = part.Identifier.ID;
         reason = string.Empty;
         return true;
     }

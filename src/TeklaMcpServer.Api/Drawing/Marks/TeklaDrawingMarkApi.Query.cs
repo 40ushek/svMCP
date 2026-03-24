@@ -181,35 +181,48 @@ public sealed partial class TeklaDrawingMarkApi
                 }
             }
 
-            var overlaps = new List<MarkOverlap>();
-            for (int i = 0; i < marks.Count; i++)
-            for (int j = i + 1; j < marks.Count; j++)
-            {
-                var a = marks[i];
-                var b = marks[j];
-                var overlapsDetected =
-                    a.ResolvedGeometry?.Corners is { Count: >= 3 } aCorners &&
-                    b.ResolvedGeometry?.Corners is { Count: >= 3 } bCorners
-                        ? MarkGeometryHelper.PolygonsIntersect(aCorners, bCorners)
-                        : MarkGeometryHelper.RectanglesOverlap(
-                            a.ResolvedGeometry?.MinX ?? a.BboxMinX,
-                            a.ResolvedGeometry?.MinY ?? a.BboxMinY,
-                            a.ResolvedGeometry?.MaxX ?? a.BboxMaxX,
-                            a.ResolvedGeometry?.MaxY ?? a.BboxMaxY,
-                            b.ResolvedGeometry?.MinX ?? b.BboxMinX,
-                            b.ResolvedGeometry?.MinY ?? b.BboxMinY,
-                            b.ResolvedGeometry?.MaxX ?? b.BboxMaxX,
-                            b.ResolvedGeometry?.MaxY ?? b.BboxMaxY);
-
-                if (overlapsDetected)
-                    overlaps.Add(new MarkOverlap { IdA = a.Id, IdB = b.Id });
-            }
-
-            return new GetMarksResult { Total = marks.Count, Marks = marks, Overlaps = overlaps };
+            return new GetMarksResult { Total = marks.Count, Marks = marks, Overlaps = BuildOverlaps(marks) };
         }
         finally
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
     }
+
+    internal static List<MarkOverlap> BuildOverlaps(IReadOnlyList<DrawingMarkInfo> marks)
+    {
+        var overlaps = new List<MarkOverlap>();
+        for (int i = 0; i < marks.Count; i++)
+        for (int j = i + 1; j < marks.Count; j++)
+        {
+            var a = marks[i];
+            var b = marks[j];
+            // Skip zero-size marks — they have degenerate geometry and produce false overlaps.
+            if (ShouldSkipOverlapComparison(a) || ShouldSkipOverlapComparison(b))
+                continue;
+
+            var overlapsDetected =
+                a.ResolvedGeometry?.Corners is { Count: >= 3 } aCorners &&
+                b.ResolvedGeometry?.Corners is { Count: >= 3 } bCorners
+                    ? MarkGeometryHelper.PolygonsIntersect(aCorners, bCorners)
+                    : MarkGeometryHelper.RectanglesOverlap(
+                        a.ResolvedGeometry?.MinX ?? a.BboxMinX,
+                        a.ResolvedGeometry?.MinY ?? a.BboxMinY,
+                        a.ResolvedGeometry?.MaxX ?? a.BboxMaxX,
+                        a.ResolvedGeometry?.MaxY ?? a.BboxMaxY,
+                        b.ResolvedGeometry?.MinX ?? b.BboxMinX,
+                        b.ResolvedGeometry?.MinY ?? b.BboxMinY,
+                        b.ResolvedGeometry?.MaxX ?? b.BboxMaxX,
+                        b.ResolvedGeometry?.MaxY ?? b.BboxMaxY);
+
+            if (overlapsDetected)
+                overlaps.Add(new MarkOverlap { IdA = a.Id, IdB = b.Id });
+        }
+
+        return overlaps;
+    }
+
+    internal static bool ShouldSkipOverlapComparison(DrawingMarkInfo mark)
+        => (mark.ResolvedGeometry?.Width ?? 0) < 0.1
+           && (mark.ResolvedGeometry?.Height ?? 0) < 0.1;
 }

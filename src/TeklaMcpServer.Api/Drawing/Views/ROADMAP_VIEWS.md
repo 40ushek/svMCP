@@ -27,7 +27,8 @@
 
 - `DrawingViewArrangementSelector` предпочитает `BaseProjectedDrawingArrangeStrategy`.
 - `BaseViewSelection` выделен в отдельный этап.
-- planner больше не стартует от прямого `FrontView` lookup.
+- entry points и основной planner больше не используют прямой `FrontView` lookup
+  как основной source of truth для topology.
 - введена единая topology-модель standard neighbors:
   - `NeighborSet`
   - `StandardNeighborResolver`
@@ -86,10 +87,13 @@
   lower half интервала стартует с меньшего масштаба, upper half — с большего.
   Это уменьшает число лишних probe-прогонов относительно чистого `floor`,
   но не возвращает прежнюю жёсткость `ceil`.
-- candidate-fit для `FinalOnly` теперь тоже идёт по реальному probe-path:
+- candidate-fit в текущей реализации идёт по реальному probe-path:
   candidate scale реально применяется к видам, затем planner читает
   фактические frame sizes/bbox, а не использует линейную аппроксимацию
   `oldFrame * sourceScale / targetScale`.
+  При этом parser/bridge default без явного mode token трактуется как `FinalOnly`,
+  но сам `applyMode` пока ещё не переключает отдельную layout-ветку внутри
+  `TeklaDrawingViewApi.Layout`; сейчас это в основном transport/trace/result contract.
 - в planner реализован `zone budgeting` вокруг `BaseView`:
   budgets для `Top/Bottom/Left/Right` считаются и используются
   для выбора допустимого окна `BaseView`.
@@ -115,6 +119,16 @@
   считаются hard fail для candidate scale.
   То есть fallback для standard sections по-прежнему разрешён,
   но плохой fallback больше не проходит как `fits=1`.
+- `relaxed` main layout больше не обязан выбрасывать весь partial plan,
+  если один standard neighbor ломает `main skeleton`:
+  конфликтующий `Top/Bottom/Left/Right` now defer'ится локально,
+  а уже хорошо вставшие anchor views сохраняются.
+  После этого в fallback-path уходит только unresolved neighbor, а не весь набор видов.
+- для такого локального defer добавлен явный trace:
+  `main_skeleton_relaxed_resolved`
+  с количеством deferrals и списком ролей, которые были сняты с main skeleton.
+- в relaxed path для `TopView` перед уходом в residual planner делает отдельную
+  попытку sheet-top placement, а не только centered-above-base slot.
 
 ### Что ещё не закончено
 
@@ -122,6 +136,8 @@
 - явный projection graph в коде ещё не выделен.
 - `ProjectionMethod` ещё не стал явным параметром.
 - oversized sections пока не вынесены в отдельную degraded policy.
+- в `UniformAllNonDetail` section views по-прежнему входят в scale-driver set,
+  поэтому один outlier section всё ещё может тянуть `optimalScale` вниз.
 - local scale reduction для outlier section пока нет.
 - repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
 - после перехода `FinalOnly` на real-probe path исчез отдельный слой ошибок
@@ -142,6 +158,11 @@
   ещё до projection:
   `Front/Top/Section` оказываются почти вплотную, а post-pass уже не может
   восстановить проекционную связь без overlap.
+- если `strict/relaxed` не могут удержать `TopView` в standard neighbor path,
+  она всё ещё может попасть в `MaxRects` как unresolved residual view.
+  После локального defer хорошие anchor views уже не теряются, но policy для самого
+  `TopView` остаётся слабой: residual slot может быть геометрически валиден,
+  но композиционно плох для верхнего вида.
 - `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
   candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
 - standard section, не вставшая в preferred stack, уже не должна проходить
@@ -157,13 +178,42 @@
   `UniformMainWithSectionExceptions`) вычисляется как `Max()` всех масштабов:
   `ShouldSkipProjectionAlignment` пропустит alignment, если самый мелкий
   вид листа >= 100, даже когда другие виды (1:20, 1:50) реально нуждаются
-  в alignment. Семантически правильный агрегат — `Min()`.
+  в alignment. Текущий код и комментарий в `TeklaDrawingViewApi.Layout`
+  всё ещё защищают `Max()`, но roadmap фиксирует целевой переход на `Min()`
+  как семантически правильный агрегат для этого decision.
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
+- user-facing aliases для `fit_views_to_sheet` ещё не полностью унифицированы
+  между tool/parser/API layer:
+  parser знает `preserveexistingscales` / `preservemixedscales`,
+  тогда как tool layer всё ещё держит упрощённый `keepScale` contract.
 - debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
   при reject horizontal section (бросает `InvalidOperationException`).
-  Не задокументирован нигде, кроме кода.
+  Это временный локальный debug-hook, а не часть нормального runtime contract.
+
+## Зафиксированные текущие контракты
+
+- parser/bridge default для `fit_views_to_sheet`:
+  - `ApplyMode = FinalOnly`
+  - `gap = 4 мм`
+- API-level default в сигнатуре `FitViewsToSheet(...)` пока остаётся
+  `DrawingLayoutApplyMode.DebugPreview`; это осознанное различие слоёв,
+  а не опечатка документации.
+- current resolver order для standard projected neighbors:
+  `ViewType override -> coordinate systems -> current position`
+- current scale-driver behavior:
+  - `UniformAllNonDetail` использует все non-detail views
+  - `UniformMainWithSectionExceptions` и `PreserveExistingScales`
+    не делают unified rescale и валидируют текущие масштабы как есть
+- current projection-skip decision:
+  `ShouldSkipProjectionAlignment` использует агрегат `optimalScale`,
+  который в preserve-scale путях сейчас считается через `Max()`;
+  это documented current behavior, но не финальная целевая семантика.
+- временный debug env var:
+  `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT`
+  включает hard stop на reject horizontal section и должен использоваться
+  только для локальной диагностики.
 
 ## Семантическая модель
 
@@ -232,6 +282,11 @@
   - почему preferred placement не влез
   - куда произошла деградация
   - какой вид остался residual
+- если `relaxed` снял standard neighbor с main skeleton и продолжил partial plan,
+  лог должен явно показывать:
+  - какая роль была defer'нута
+  - что anchor views были сохранены
+  - что в residual fallback ушёл только unresolved neighbor
 - scale selection должен быть устойчив к повторному запуску на уже расставленном листе
 - выбор кандидатов масштаба не должен зависеть от случайно смешанных текущих
   scale видов на входном листе
