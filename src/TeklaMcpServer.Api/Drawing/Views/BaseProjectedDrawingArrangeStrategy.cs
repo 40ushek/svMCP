@@ -1098,28 +1098,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         var proposed = new List<ReservedRect>();
         var currentAnchor = anchorRect;
-        foreach (var section in sectionViews.OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view)).ThenBy(view => view.GetIdentifier().ID))
+        foreach (var section in OrderSectionViewsForStack(context, sectionViews))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            var minX = CenterX(frontRect) - width / 2.0;
-            if (minX < freeMinX || minX + width > freeMaxX)
+            if (!TryGetHorizontalSectionPlacementInputs(
+                    frontRect,
+                    currentAnchor,
+                    zone,
+                    width,
+                    height,
+                    gap,
+                    freeMinX,
+                    freeMaxX,
+                    out var preferredMinX,
+                    out var minY,
+                    out var maxY))
             {
                 AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
                 return;
             }
 
-            ReservedRect rect;
-            if (zone == RelativePlacement.Top)
-            {
-                var minY = currentAnchor.MaxY + gap;
-                rect = new ReservedRect(minX, minY, minX + width, minY + height);
-            }
-            else
-            {
-                var maxY = currentAnchor.MinY - gap;
-                rect = new ReservedRect(minX, maxY - height, minX + width, maxY);
-            }
+            var rect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
             {
@@ -2277,19 +2277,25 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            var preferredMinX = CenterX(frontRect) - width / 2.0;
-
-            // Compute Y bounds first (zone-dependent), then find a valid X position.
-            double minY, maxY;
-            if (zone == RelativePlacement.Top)
+            if (!TryGetHorizontalSectionPlacementInputs(
+                    frontRect,
+                    currentAnchor,
+                    zone,
+                    width,
+                    height,
+                    gap,
+                    freeMinX,
+                    freeMaxX,
+                    out var preferredMinX,
+                    out var minY,
+                    out var maxY))
             {
-                minY = currentAnchor.MaxY + gap;
-                maxY = minY + height;
-            }
-            else
-            {
-                maxY = currentAnchor.MinY - gap;
-                minY = maxY - height;
+                PerfTrace.Write(
+                    "api-view",
+                    "section_stack_reject",
+                    0,
+                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-x size={width:F2}x{height:F2} freeX={freeMinX:F2}..{freeMaxX:F2}");
+                return false;
             }
 
             // Try preferred (centered) X, then shift right, then shift left to clear obstacles.
@@ -2595,6 +2601,46 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             RelativePlacement.Right => RelativePlacement.Left,
             _ => preferredZone
         };
+
+    private static bool TryGetHorizontalSectionPlacementInputs(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        out double preferredMinX,
+        out double minY,
+        out double maxY)
+    {
+        preferredMinX = CenterX(frontRect) - width / 2.0;
+        if (preferredMinX < freeMinX || preferredMinX + width > freeMaxX)
+        {
+            minY = 0;
+            maxY = 0;
+            return false;
+        }
+
+        if (zone == RelativePlacement.Top)
+        {
+            minY = anchorRect.MaxY + gap;
+            maxY = minY + height;
+            return true;
+        }
+
+        if (zone == RelativePlacement.Bottom)
+        {
+            maxY = anchorRect.MinY - gap;
+            minY = maxY - height;
+            return true;
+        }
+
+        minY = 0;
+        maxY = 0;
+        return false;
+    }
 
     private static bool TryCreateVerticalSectionRect(
         ReservedRect frontRect,
