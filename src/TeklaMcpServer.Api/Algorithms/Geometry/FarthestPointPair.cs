@@ -46,7 +46,7 @@ public static class FarthestPointPair
 
     private static double AreaTwice(Point left, Point right, Point candidate)
     {
-        return Math.Abs(ConvexHull.Cross(left, right, candidate));
+        return ConvexHull.Cross(left, right, candidate);
     }
 
     private static FarthestPointPairResult Max(FarthestPointPairResult current, Point left, Point right)

@@ -634,8 +634,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             }
 
             var findExtremesSw = Stopwatch.StartNew();
-            var filteredPoints = FilterOutlierPoints(sourcePoints);
-            var hull = SimplifyHull(ConvexHull.Compute(filteredPoints).ToList());
+            var hull = SimplifyHull(ConvexHull.Compute(sourcePoints).ToList());
             if (hull.Count < 2)
             {
                 findExtremesSw.Stop();
