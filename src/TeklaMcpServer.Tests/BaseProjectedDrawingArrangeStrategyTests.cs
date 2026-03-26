@@ -17,6 +17,19 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal(expected, BaseProjectedDrawingArrangeStrategy.ShouldPreferRelaxedLayout(scale));
     }
 
+    [Theory]
+    [InlineData(SectionPlacementSide.Top, SectionPlacementSide.Bottom)]
+    [InlineData(SectionPlacementSide.Bottom, SectionPlacementSide.Top)]
+    [InlineData(SectionPlacementSide.Left, SectionPlacementSide.Right)]
+    [InlineData(SectionPlacementSide.Right, SectionPlacementSide.Left)]
+    [InlineData(SectionPlacementSide.Unknown, SectionPlacementSide.Unknown)]
+    public void GetFallbackPlacementSide_MirrorsPreferredSide(
+        SectionPlacementSide preferred,
+        SectionPlacementSide expected)
+    {
+        Assert.Equal(expected, BaseProjectedDrawingArrangeStrategy.GetFallbackPlacementSide(preferred));
+    }
+
     [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {

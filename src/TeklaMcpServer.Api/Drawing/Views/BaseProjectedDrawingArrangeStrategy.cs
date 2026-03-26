@@ -964,11 +964,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return;
 
-        if (TryPlaceVerticalSectionStack(context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(preferredZone)))
-            return;
-
-        var fallbackZone = preferredZone == RelativePlacement.Left ? RelativePlacement.Right : RelativePlacement.Left;
-        if (TryPlaceVerticalSectionStack(context, sectionViews, frontRect, fallbackAnchorRect, fallbackZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(fallbackZone)))
+        var preferredPlacementSide = ToPlacementSide(preferredZone);
+        if (TryProbeSectionStackWithFallback(
+                preferredZone,
+                zone => TryPlaceVerticalSectionStack(
+                    context,
+                    sectionViews,
+                    frontRect,
+                    zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
+                    zone,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    gap,
+                    occupied.ToList(),
+                    new List<PlannedPlacement>(),
+                    preferredPlacementSide,
+                    zone == preferredZone ? preferredPlacementSide : GetFallbackPlacementSide(preferredPlacementSide)),
+                out _,
+                out _))
             return;
 
         DiagnoseVerticalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
@@ -992,11 +1007,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return;
 
-        if (TryPlaceHorizontalSectionStack(context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(preferredZone)))
-            return;
-
-        var fallbackZone = preferredZone == RelativePlacement.Top ? RelativePlacement.Bottom : RelativePlacement.Top;
-        if (TryPlaceHorizontalSectionStack(context, sectionViews, frontRect, fallbackAnchorRect, fallbackZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied.ToList(), new List<PlannedPlacement>(), ToPlacementSide(preferredZone), ToPlacementSide(fallbackZone)))
+        var preferredPlacementSide = ToPlacementSide(preferredZone);
+        if (TryProbeSectionStackWithFallback(
+                preferredZone,
+                zone => TryPlaceHorizontalSectionStack(
+                    context,
+                    sectionViews,
+                    frontRect,
+                    zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
+                    zone,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    gap,
+                    occupied.ToList(),
+                    new List<PlannedPlacement>(),
+                    preferredPlacementSide,
+                    zone == preferredZone ? preferredPlacementSide : GetFallbackPlacementSide(preferredPlacementSide)),
+                out _,
+                out _))
             return;
 
         DiagnoseHorizontalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
@@ -1018,27 +1048,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         var proposed = new List<ReservedRect>();
         var currentAnchor = anchorRect;
-        foreach (var section in sectionViews.OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view)).ThenBy(view => view.GetIdentifier().ID))
+        foreach (var section in OrderSectionViewsForStack(context, sectionViews))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            var minY = CenterY(frontRect) - height / 2.0;
-            if (minY < freeMinY || minY + height > freeMaxY)
+            if (!TryCreateVerticalSectionRect(frontRect, currentAnchor, zone, width, height, gap, freeMinY, freeMaxY, out var rect))
             {
                 AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
                 return;
-            }
-
-            ReservedRect rect;
-            if (zone == RelativePlacement.Right)
-            {
-                var minX = currentAnchor.MaxX + gap;
-                rect = new ReservedRect(minX, minY, minX + width, minY + height);
-            }
-            else
-            {
-                var maxX = currentAnchor.MinX - gap;
-                rect = new ReservedRect(maxX - width, minY, maxX, minY + height);
             }
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
@@ -2191,10 +2208,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
-        var orderedSections = sectionViews
-            .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
-            .ThenBy(view => view.GetIdentifier().ID)
-            .ToList();
+        var orderedSections = OrderSectionViewsForStack(context, sectionViews);
 
         var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
         var currentAnchor = anchorRect;
@@ -2202,27 +2216,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            var minY = CenterY(frontRect) - height / 2.0;
-            if (minY < freeMinY || minY + height > freeMaxY)
+            if (!TryCreateVerticalSectionRect(frontRect, currentAnchor, zone, width, height, gap, freeMinY, freeMaxY, out var rect))
             {
                 PerfTrace.Write(
                     "api-view",
                     "section_stack_reject",
                     0,
-                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-y rectY={minY:F2}..{(minY + height):F2} freeY={freeMinY:F2}..{freeMaxY:F2}");
+                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-y height={height:F2} freeY={freeMinY:F2}..{freeMaxY:F2}");
                 return false;
-            }
-
-            ReservedRect rect;
-            if (zone == RelativePlacement.Right)
-            {
-                var minX = currentAnchor.MaxX + gap;
-                rect = new ReservedRect(minX, minY, minX + width, minY + height);
-            }
-            else
-            {
-                var maxX = currentAnchor.MinX - gap;
-                rect = new ReservedRect(maxX - width, minY, maxX, minY + height);
             }
 
             if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
@@ -2244,11 +2245,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             currentAnchor = rect;
         }
 
-        foreach (var item in proposed)
-        {
-            planned.Add(new PlannedPlacement(item.View, CenterX(item.Rect), CenterY(item.Rect), preferredPlacementSide, actualPlacementSide));
-            occupied.Add(item.Rect);
-        }
+        CommitSectionPlacements(proposed, planned, occupied, preferredPlacementSide, actualPlacementSide);
 
         return true;
     }
@@ -2272,10 +2269,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (horizontalSections.Count == 0)
             return true;
 
-        var orderedSections = horizontalSections
-            .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
-            .ThenBy(view => view.GetIdentifier().ID)
-            .ToList();
+        var orderedSections = OrderSectionViewsForStack(context, horizontalSections);
 
         var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
         var currentAnchor = anchorRect;
@@ -2369,13 +2363,85 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             currentAnchor = rect;
         }
 
+        CommitSectionPlacements(proposed, planned, occupied, preferredPlacementSide, actualPlacementSide);
+
+        return true;
+    }
+
+    private static List<View> OrderSectionViewsForStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews)
+    {
+        return sectionViews
+            .OrderByDescending(view => DrawingArrangeContextSizing.GetWidth(context, view) * DrawingArrangeContextSizing.GetHeight(context, view))
+            .ThenBy(view => view.GetIdentifier().ID)
+            .ToList();
+    }
+
+    private static void CommitSectionPlacements(
+        IReadOnlyList<(View View, ReservedRect Rect)> proposed,
+        List<PlannedPlacement> planned,
+        List<ReservedRect> occupied,
+        SectionPlacementSide preferredPlacementSide,
+        SectionPlacementSide actualPlacementSide)
+    {
         foreach (var item in proposed)
         {
             planned.Add(new PlannedPlacement(item.View, CenterX(item.Rect), CenterY(item.Rect), preferredPlacementSide, actualPlacementSide));
             occupied.Add(item.Rect);
         }
+    }
 
-        return true;
+    private static string FormatSectionIds(IReadOnlyList<View> sectionViews)
+        => string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID));
+
+    private static void TraceSectionStackAttempt(string axis, RelativePlacement preferredZone, IReadOnlyList<View> sectionViews)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_attempt",
+            0,
+            $"axis={axis} preferred={preferredZone} sections=[{FormatSectionIds(sectionViews)}]");
+    }
+
+    private static void TraceSectionStackResult(
+        string axis,
+        RelativePlacement preferredZone,
+        RelativePlacement? actualZone,
+        bool fallbackUsed,
+        IReadOnlyList<View> sectionViews)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_result",
+            0,
+            $"axis={axis} preferred={preferredZone} actual={(actualZone?.ToString() ?? "none")} fallbackUsed={(fallbackUsed ? 1 : 0)} sections=[{FormatSectionIds(sectionViews)}]");
+    }
+
+    private static bool TryProbeSectionStackWithFallback(
+        RelativePlacement preferredZone,
+        System.Func<RelativePlacement, bool> tryPlace,
+        out RelativePlacement? actualZone,
+        out bool fallbackUsed)
+    {
+        if (tryPlace(preferredZone))
+        {
+            actualZone = preferredZone;
+            fallbackUsed = false;
+            return true;
+        }
+
+        var fallbackZone = GetFallbackZone(preferredZone);
+        if (tryPlace(fallbackZone))
+        {
+            actualZone = fallbackZone;
+            fallbackUsed = true;
+            return true;
+        }
+
+        actualZone = null;
+        fallbackUsed = false;
+        return false;
     }
 
     private static bool ShouldDebugStopOnSectionReject()
@@ -2438,63 +2504,36 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
-        PerfTrace.Write(
-            "api-view",
-            "section_stack_attempt",
-            0,
-            $"axis=horizontal preferred={preferredZone} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+        TraceSectionStackAttempt("horizontal", preferredZone, sectionViews);
+        var preferredPlacementSide = ToPlacementSide(preferredZone);
 
-        if (TryPlaceHorizontalSectionStack(
-                context,
-                sectionViews,
-                frontRect,
-                preferredAnchorRect,
+        if (TryProbeSectionStackWithFallback(
                 preferredZone,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
-                gap,
-                occupied,
-                planned,
-                ToPlacementSide(preferredZone),
-                ToPlacementSide(preferredZone)))
+                zone => TryPlaceHorizontalSectionStack(
+                    context,
+                    sectionViews,
+                    frontRect,
+                    zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
+                    zone,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    gap,
+                    occupied,
+                    planned,
+                    preferredPlacementSide,
+                    zone == preferredZone ? preferredPlacementSide : GetFallbackPlacementSide(preferredPlacementSide)),
+                out var actualZone,
+                out var fallbackUsed))
         {
-            PerfTrace.Write(
-                "api-view",
-                "section_stack_result",
-                0,
-                $"axis=horizontal preferred={preferredZone} actual={preferredZone} fallbackUsed=0 sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+            TraceSectionStackResult("horizontal", preferredZone, actualZone, fallbackUsed, sectionViews);
             return true;
         }
 
-        var fallbackZone = preferredZone == RelativePlacement.Top
-            ? RelativePlacement.Bottom
-            : RelativePlacement.Top;
+        TraceSectionStackResult("horizontal", preferredZone, actualZone: null, fallbackUsed: false, sectionViews);
 
-        var fallbackPlaced = TryPlaceHorizontalSectionStack(
-            context,
-            sectionViews,
-            frontRect,
-            fallbackAnchorRect,
-            fallbackZone,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            gap,
-            occupied,
-            planned,
-            ToPlacementSide(preferredZone),
-            ToPlacementSide(fallbackZone));
-
-        PerfTrace.Write(
-            "api-view",
-            "section_stack_result",
-            0,
-            $"axis=horizontal preferred={preferredZone} actual={(fallbackPlaced ? fallbackZone.ToString() : "none")} fallbackUsed={(fallbackPlaced ? 1 : 0)} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
-
-        return fallbackPlaced;
+        return false;
     }
 
     private static bool TryPlaceVerticalSectionStackWithFallback(
@@ -2515,63 +2554,82 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
-        PerfTrace.Write(
-            "api-view",
-            "section_stack_attempt",
-            0,
-            $"axis=vertical preferred={preferredZone} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+        TraceSectionStackAttempt("vertical", preferredZone, sectionViews);
+        var preferredPlacementSide = ToPlacementSide(preferredZone);
 
-        if (TryPlaceVerticalSectionStack(
-                context,
-                sectionViews,
-                frontRect,
-                preferredAnchorRect,
+        if (TryProbeSectionStackWithFallback(
                 preferredZone,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
-                gap,
-                occupied,
-                planned,
-                ToPlacementSide(preferredZone),
-                ToPlacementSide(preferredZone)))
+                zone => TryPlaceVerticalSectionStack(
+                    context,
+                    sectionViews,
+                    frontRect,
+                    zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
+                    zone,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    gap,
+                    occupied,
+                    planned,
+                    preferredPlacementSide,
+                    zone == preferredZone ? preferredPlacementSide : GetFallbackPlacementSide(preferredPlacementSide)),
+                out var actualZone,
+                out var fallbackUsed))
         {
-            PerfTrace.Write(
-                "api-view",
-                "section_stack_result",
-                0,
-                $"axis=vertical preferred={preferredZone} actual={preferredZone} fallbackUsed=0 sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+            TraceSectionStackResult("vertical", preferredZone, actualZone, fallbackUsed, sectionViews);
             return true;
         }
 
-        var fallbackZone = preferredZone == RelativePlacement.Left
-            ? RelativePlacement.Right
-            : RelativePlacement.Left;
+        TraceSectionStackResult("vertical", preferredZone, actualZone: null, fallbackUsed: false, sectionViews);
 
-        var fallbackPlaced = TryPlaceVerticalSectionStack(
-            context,
-            sectionViews,
-            frontRect,
-            fallbackAnchorRect,
-            fallbackZone,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            gap,
-            occupied,
-            planned,
-            ToPlacementSide(preferredZone),
-            ToPlacementSide(fallbackZone));
+        return false;
+    }
 
-        PerfTrace.Write(
-            "api-view",
-            "section_stack_result",
-            0,
-            $"axis=vertical preferred={preferredZone} actual={(fallbackPlaced ? fallbackZone.ToString() : "none")} fallbackUsed={(fallbackPlaced ? 1 : 0)} sections=[{string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID))}]");
+    private static RelativePlacement GetFallbackZone(RelativePlacement preferredZone)
+        => preferredZone switch
+        {
+            RelativePlacement.Top => RelativePlacement.Bottom,
+            RelativePlacement.Bottom => RelativePlacement.Top,
+            RelativePlacement.Left => RelativePlacement.Right,
+            RelativePlacement.Right => RelativePlacement.Left,
+            _ => preferredZone
+        };
 
-        return fallbackPlaced;
+    private static bool TryCreateVerticalSectionRect(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        double freeMinY,
+        double freeMaxY,
+        out ReservedRect rect)
+    {
+        var minY = CenterY(frontRect) - height / 2.0;
+        if (minY < freeMinY || minY + height > freeMaxY)
+        {
+            rect = new ReservedRect(0, 0, 0, 0);
+            return false;
+        }
+
+        if (zone == RelativePlacement.Right)
+        {
+            var minX = anchorRect.MaxX + gap;
+            rect = new ReservedRect(minX, minY, minX + width, minY + height);
+            return true;
+        }
+
+        if (zone == RelativePlacement.Left)
+        {
+            var maxX = anchorRect.MinX - gap;
+            rect = new ReservedRect(maxX - width, minY, maxX, minY + height);
+            return true;
+        }
+
+        rect = new ReservedRect(0, 0, 0, 0);
+        return false;
     }
 
     private static SectionPlacementSide ToPlacementSide(RelativePlacement placement)
@@ -2581,6 +2639,16 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             RelativePlacement.Right => SectionPlacementSide.Right,
             RelativePlacement.Top => SectionPlacementSide.Top,
             RelativePlacement.Bottom => SectionPlacementSide.Bottom,
+            _ => SectionPlacementSide.Unknown
+        };
+
+    internal static SectionPlacementSide GetFallbackPlacementSide(SectionPlacementSide preferredPlacementSide)
+        => preferredPlacementSide switch
+        {
+            SectionPlacementSide.Top => SectionPlacementSide.Bottom,
+            SectionPlacementSide.Bottom => SectionPlacementSide.Top,
+            SectionPlacementSide.Left => SectionPlacementSide.Right,
+            SectionPlacementSide.Right => SectionPlacementSide.Left,
             _ => SectionPlacementSide.Unknown
         };
 
