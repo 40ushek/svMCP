@@ -15,9 +15,51 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed partial class TeklaDrawingViewApi
 {
     internal const double ProjectionAlignmentScaleCutoff = 100.0;
+    internal const double ProjectionAlignmentMixedScaleTolerance = 0.05;
 
     internal static bool ShouldSkipProjectionAlignment(double optimalScale)
         => optimalScale >= ProjectionAlignmentScaleCutoff;
+
+    internal static bool ShouldSkipProjectionAlignment(
+        double optimalScale,
+        IReadOnlyList<View> views,
+        out string mode,
+        out string diagnostic)
+    {
+        if (ShouldSkipProjectionAlignment(optimalScale))
+        {
+            mode = "disabled-scale";
+            diagnostic = $"projection-skip:scale-too-small:1:{optimalScale.ToString(CultureInfo.InvariantCulture)}";
+            return true;
+        }
+
+        if (views.Count > 1)
+        {
+            var scales = views
+                .Select(v => v.Attributes.Scale > 0 ? v.Attributes.Scale : 1.0)
+                .Where(scale => scale > 0)
+                .ToList();
+            if (scales.Count > 1)
+            {
+                var minScale = scales.Min();
+                var maxScale = scales.Max();
+                var allowedMaxScale = minScale * (1.0 + ProjectionAlignmentMixedScaleTolerance);
+                if (maxScale > allowedMaxScale)
+                {
+                    mode = "disabled-mixed-scales";
+                    diagnostic =
+                        $"projection-skip:mixed-scales:min=1:{minScale.ToString("0.###", CultureInfo.InvariantCulture)}" +
+                        $":max=1:{maxScale.ToString("0.###", CultureInfo.InvariantCulture)}" +
+                        $":tolerance={(ProjectionAlignmentMixedScaleTolerance * 100.0).ToString("0.###", CultureInfo.InvariantCulture)}%";
+                    return true;
+                }
+            }
+        }
+
+        mode = string.Empty;
+        diagnostic = string.Empty;
+        return false;
+    }
 
     private static double ResolveTargetScale(
         View view,
@@ -644,14 +686,15 @@ public sealed partial class TeklaDrawingViewApi
             DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
         var projectionSw = Stopwatch.StartNew();
-        if (ShouldSkipProjectionAlignment(optimalScale.Value))
+        if (ShouldSkipProjectionAlignment(optimalScale.Value, arrangedViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
         {
             projectionResult = new ProjectionAlignmentResult
             {
-                Mode = "disabled-scale",
+                Mode = projectionSkipMode,
                 SkippedMoves = 1
             };
-            projectionResult.Diagnostics.Add($"projection-skip:scale-too-small:1:{optimalScale.Value.ToString(CultureInfo.InvariantCulture)}");
+            if (!string.IsNullOrWhiteSpace(projectionSkipDiagnostic))
+                projectionResult.Diagnostics.Add(projectionSkipDiagnostic);
         }
         else
         {

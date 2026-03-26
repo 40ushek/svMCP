@@ -282,7 +282,7 @@ public static partial class ModelTools
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
         var titleBlockStr     = titleBlockHeight.ToString(CultureInfo.InvariantCulture);
         var json = keepScale
-            ? RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr, "keepscale")
+            ? RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr, "preserveexistingscales")
             : RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr);
         try
         {
