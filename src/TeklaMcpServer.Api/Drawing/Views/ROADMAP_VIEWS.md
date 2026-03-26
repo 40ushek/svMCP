@@ -154,6 +154,14 @@
 - repeated apply всё ещё может ломать projection post-pass:
   после повторного `fit_views_to_sheet` возможны массовые
   `projection-skip:view-overlap`.
+- geometry/collision pipeline всё ещё архитектурно раздвоен:
+  main layout и projection post-pass проверяют placement похожими,
+  но не идентичными путями.
+  Из-за этого одна и та же пара видов может получить разные ответы на вопрос
+  `overlap / no-overlap` в разных фазах `fit_views_to_sheet`.
+  Последствие уже проявлялось на live-кейсе:
+  layout ставил `SectionView` валидно, а затем post-pass мог повторно сдвинуть
+  её внутрь `FrontView`, потому что collision check шёл через другой geometry path.
 - на части листов основной main layout всё ещё допускает слишком плотную схему
   ещё до projection:
   `Front/Top/Section` оказываются почти вплотную, а post-pass уже не может
@@ -364,6 +372,43 @@
 - `fits=1` не возникает для layout, который после первой расстановки уже даёт
   overlap/почти-overlap
 - `Top/Bottom` section decision совпадает между estimate и apply
+
+### 4a. Выделить единый geometry/collision pipeline для всех фаз layout
+
+Нужно:
+
+- перестать держать две разные реализации placement-geometry для одного и того же `View`
+- выделить единый helper/service, который является source of truth для:
+  - реального `bbox` вида
+  - `frame offset` относительно `Origin`
+  - `candidate rect at origin`
+  - `center / width / height`
+  - candidate state после `dx/dy`
+- выделить единый validator для placement-проверок:
+  - usable area
+  - overlap с `reservedAreas`
+  - overlap с другими видами
+  - единый `reason / blockers` contract
+- перевести на этот pipeline:
+  - main layout
+  - `EstimateFit`
+  - projection post-pass
+  - live diagnostics/debug traces
+
+Кандидаты на выделение:
+
+- `ViewPlacementGeometryService`
+- `ViewPlacementValidator`
+
+Готово когда:
+
+- layout и projection post-pass больше не считают один и тот же view разной геометрией
+- collision decision для одной и той же candidate position одинаков
+  в `EstimateFit`, apply и post-pass
+- кейс `SectionView` внутри `FrontView` не может повториться из-за divergence
+  между layout-path и projection-path
+- весь код, который принимает решение `можно ли двигать view`,
+  использует один validator, а не локальную копию overlap logic
 
 ### 5. Усилить detail/dependent placement policy
 

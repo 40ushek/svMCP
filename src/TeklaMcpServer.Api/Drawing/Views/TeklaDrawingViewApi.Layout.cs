@@ -587,11 +587,10 @@ public sealed partial class TeklaDrawingViewApi
 
         actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
 
-        var offsetById = preserveExistingScales
-            ? new System.Collections.Generic.Dictionary<int, (double X, double Y)>()
-            : DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
-        // Do not probe temporary scales in the live drawing: interrupted runs can leave the
-        // sheet in an arbitrary intermediate state. Missing offsets now simply skip correction.
+        var offsetById = DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
+        // Read offsets from actual sheet geometry after the final scale state is already applied.
+        // Keep-scale mode still needs real frame offsets; otherwise projection-pass collision checks
+        // degrade to origin-centered boxes and may allow one view to move inside another.
 
         var arrangedViews = currentViews
             .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
