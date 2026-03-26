@@ -129,6 +129,14 @@
   с количеством deferrals и списком ролей, которые были сняты с main skeleton.
 - в relaxed path для `TopView` перед уходом в residual planner делает отдельную
   попытку sheet-top placement, а не только centered-above-base slot.
+- projection alignment теперь пропускается для mixed-scale набора non-detail видов:
+  если spread по scale больше `5%`, post-pass не пытается сохранять
+  жёсткую проекционную связь.
+- keep-scale (`PreserveExistingScales`) post-pass теперь читает реальные
+  `frame offsets` из фактической sheet geometry, а не деградирует к
+  origin-centered bbox.
+  Это закрывает конкретный live-баг, где `SectionView` могла после valid layout
+  уехать внутрь `FrontView` из-за неверного collision check в projection-pass.
 
 ### Что ещё не закончено
 
@@ -159,9 +167,9 @@
   но не идентичными путями.
   Из-за этого одна и та же пара видов может получить разные ответы на вопрос
   `overlap / no-overlap` в разных фазах `fit_views_to_sheet`.
-  Последствие уже проявлялось на live-кейсе:
-  layout ставил `SectionView` валидно, а затем post-pass мог повторно сдвинуть
-  её внутрь `FrontView`, потому что collision check шёл через другой geometry path.
+  Последний live-регресс конкретно для keep-scale collision checks уже закрыт,
+  но архитектурный долг остаётся: решение `можно / нельзя двигать view`
+  по-прежнему не сведено к одному validator/source of truth.
 - на части листов основной main layout всё ещё допускает слишком плотную схему
   ещё до projection:
   `Front/Top/Section` оказываются почти вплотную, а post-pass уже не может
@@ -216,7 +224,9 @@
     не делают unified rescale и валидируют текущие масштабы как есть
 - current projection-skip decision:
   `ShouldSkipProjectionAlignment` использует агрегат `optimalScale`,
-  который в preserve-scale путях сейчас считается через `Max()`;
+  который в preserve-scale путях сейчас считается через `Max()`.
+  Дополнительно alignment пропускается для mixed-scale non-detail набора,
+  если spread по scale больше `5%`;
   это documented current behavior, но не финальная целевая семантика.
 - временный debug env var:
   `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT`
