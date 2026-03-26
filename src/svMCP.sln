@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaBridge", "TeklaBridge\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Tests", "TeklaMcpServer.Tests\TeklaMcpServer.Tests.csproj", "{A3C3F2E4-6E3B-4F7B-B1E3-9D1C9F4A36D7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Host", "TeklaMcpServer.Host\TeklaMcpServer.Host.csproj", "{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{A3C3F2E4-6E3B-4F7B-B1E3-9D1C9F4A36D7}.Release|x64.Build.0 = Release|Any CPU
 		{A3C3F2E4-6E3B-4F7B-B1E3-9D1C9F4A36D7}.Release|x86.ActiveCfg = Release|Any CPU
 		{A3C3F2E4-6E3B-4F7B-B1E3-9D1C9F4A36D7}.Release|x86.Build.0 = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|x64.Build.0 = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Debug|x86.Build.0 = Debug|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x64.ActiveCfg = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x64.Build.0 = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x86.ActiveCfg = Release|Any CPU
+		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,5 +1,6 @@
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using System.Globalization;
 using System.Text.Json;
 
 namespace TeklaMcpServer.Tools;
@@ -59,6 +60,74 @@ public static partial class ModelTools
     public static string DrawSelectedMarkPartAxisGeometry()
     {
         return RunBridge("draw_selected_mark_part_axis_geometry");
+    }
+
+    [McpServerTool, Description(
+        "Draw debug polygons for text objects found inside the currently selected drawing mark. " +
+        "Requires exactly one selected Mark. This probes real text boxes inside the mark instead of mark layout geometry.")]
+    public static string DrawSelectedMarkTextBoxes()
+    {
+        var json = RunBridge("draw_selected_mark_text_boxes");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
+        "Draw the raw GetObjectAlignedBoundingBox polygon for the currently selected drawing mark. " +
+        "Requires exactly one selected Mark. This is the direct Tekla OBB without any custom reconstruction.")]
+    public static string DrawSelectedMarkObjectAlignedBox()
+    {
+        var json = RunBridge("draw_selected_mark_object_aligned_box");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
+        "Draw debug mark boxes for marks in the active drawing using native object-aligned text bounding boxes. " +
+        "Degenerate marks with zero-size geometry are skipped. " +
+        "Optionally limit to a single view by viewId.")]
+    public static string DrawMarkBoxes(
+        [Description("Optional view ID to limit drawing to one view")] int? viewId = null,
+        [Description("Overlay group name. Default: mark-boxes")] string group = "mark-boxes",
+        [Description("If true, clear the overlay group before drawing. Default: true")] bool clearFirst = true)
+    {
+        var json = RunBridge(
+            "draw_mark_boxes",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            group ?? "mark-boxes",
+            clearFirst ? "true" : "false");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
     }
 
     [McpServerTool, Description(

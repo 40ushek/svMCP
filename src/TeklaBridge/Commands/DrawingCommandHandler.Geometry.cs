@@ -18,6 +18,8 @@ internal sealed partial class DrawingCommandHandler
         TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
         TeklaDrawingPartsApi? partsApi = null;
         TeklaDrawingPartsApi GetPartsApi() => partsApi ??= new TeklaDrawingPartsApi(_model);
+        TeklaDrawingMarkApi? markApi = null;
+        TeklaDrawingMarkApi GetMarkApi() => markApi ??= new TeklaDrawingMarkApi(_model);
         TeklaDrawingDebugOverlayApi? debugOverlayApi = null;
         TeklaDrawingDebugOverlayApi GetDebugOverlayApi() => debugOverlayApi ??= new TeklaDrawingDebugOverlayApi();
 
@@ -37,6 +39,15 @@ internal sealed partial class DrawingCommandHandler
 
             case "draw_debug_overlay":
                 return HandleDrawDebugOverlay(GetDebugOverlayApi(), args);
+
+            case "draw_mark_boxes":
+                return HandleDrawMarkBoxes(GetMarkApi(), GetDebugOverlayApi(), args);
+
+            case "draw_selected_mark_text_boxes":
+                return HandleDrawSelectedMarkTextBoxes(GetDebugOverlayApi());
+
+            case "draw_selected_mark_object_aligned_box":
+                return HandleDrawSelectedMarkObjectAlignedBox(GetDebugOverlayApi());
 
             case "draw_selected_mark_part_axis_geometry":
                 return HandleDrawSelectedMarkPartAxisGeometry(GetPartGeometryApi(), GetDebugOverlayApi());
@@ -132,6 +143,216 @@ internal sealed partial class DrawingCommandHandler
             clearedCount = result.ClearedCount,
             createdCount = result.CreatedCount,
             createdIds = result.CreatedIds
+        });
+        return true;
+    }
+
+    private bool HandleDrawMarkBoxes(TeklaDrawingMarkApi markApi, TeklaDrawingDebugOverlayApi debugOverlayApi, string[] args)
+    {
+        if (!EnsureActiveDrawing())
+            return true;
+
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var group = args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]) ? args[2].Trim() : "mark-boxes";
+        var clearFirst = ParseOptionalBoolArg(args, 3, defaultValue: true);
+
+        var markResult = markApi.GetMarks(viewId);
+        var request = new DrawingDebugOverlayRequest
+        {
+            Group = group,
+            ClearGroupFirst = clearFirst
+        };
+
+        var skippedDegenerate = 0;
+        foreach (var mark in markResult.Marks)
+        {
+            if (mark.ObjectAlignedBoundingBox?.Corners is not { Count: >= 3 } corners
+                || mark.ObjectAlignedBoundingBox.Width < 0.1
+                || mark.ObjectAlignedBoundingBox.Height < 0.1)
+            {
+                skippedDegenerate++;
+                continue;
+            }
+
+            request.Shapes.Add(new DrawingDebugShape
+            {
+                Kind = "polygon",
+                ViewId = mark.ViewId,
+                Points = corners.Select(c => new[] { c[0], c[1] }).ToList(),
+                Color = "Green",
+                LineType = "DashDot"
+            });
+        }
+
+        var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
+        WriteJson(new
+        {
+            group = overlayResult.Group,
+            viewId,
+            totalMarks = markResult.Total,
+            drawnMarks = request.Shapes.Count,
+            skippedDegenerate,
+            clearedCount = overlayResult.ClearedCount,
+            createdCount = overlayResult.CreatedCount,
+            createdIds = overlayResult.CreatedIds
+        });
+        return true;
+    }
+
+    private bool HandleDrawSelectedMarkTextBoxes(TeklaDrawingDebugOverlayApi debugOverlayApi)
+    {
+        if (!EnsureActiveDrawing())
+            return true;
+
+        var drawingHandler = new DrawingHandler();
+        var selectedMarks = new List<Mark>();
+        var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
+        while (selected.MoveNext())
+        {
+            if (selected.Current is Mark selectedMark)
+                selectedMarks.Add(selectedMark);
+        }
+
+        if (selectedMarks.Count != 1)
+        {
+            WriteError($"Expected exactly 1 selected mark, got {selectedMarks.Count}");
+            return true;
+        }
+
+        var mark = selectedMarks[0];
+        var view = mark.GetView();
+        if (view == null)
+        {
+            WriteError($"Selected mark {mark.GetIdentifier().ID} has no owner view");
+            return true;
+        }
+
+        var textBoxes = MarkTextGeometryHelper.CollectTextBoxes(mark);
+        var request = new DrawingDebugOverlayRequest
+        {
+            Group = "selected-mark-text-boxes",
+            ClearGroupFirst = true
+        };
+
+        foreach (var textBox in textBoxes)
+        {
+            if (textBox.Corners.Count < 3 || textBox.Width < 0.1 || textBox.Height < 0.1)
+                continue;
+
+            request.Shapes.Add(new DrawingDebugShape
+            {
+                Kind = "polygon",
+                ViewId = view.GetIdentifier().ID,
+                Points = textBox.Corners.Select(c => new[] { c[0], c[1] }).ToList(),
+                Color = "Magenta",
+                LineType = "Solid"
+            });
+        }
+
+        var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
+        WriteJson(new
+        {
+            markId = mark.GetIdentifier().ID,
+            viewId = view.GetIdentifier().ID,
+            placingType = mark.Placing?.GetType().Name ?? "null",
+            textBoxCount = textBoxes.Count,
+            drawnCount = request.Shapes.Count,
+            group = overlayResult.Group,
+            clearedCount = overlayResult.ClearedCount,
+            createdCount = overlayResult.CreatedCount,
+            createdIds = overlayResult.CreatedIds,
+            textBoxes = textBoxes.Select(t => new
+            {
+                source = t.Source,
+                objectType = t.ObjectType,
+                text = t.Text,
+                width = t.Width,
+                height = t.Height,
+                angleToAxis = t.AngleToAxis,
+                centerX = t.CenterX,
+                centerY = t.CenterY,
+                minX = t.MinX,
+                minY = t.MinY,
+                maxX = t.MaxX,
+                maxY = t.MaxY,
+                corners = t.Corners
+            })
+        });
+        return true;
+    }
+
+    private bool HandleDrawSelectedMarkObjectAlignedBox(TeklaDrawingDebugOverlayApi debugOverlayApi)
+    {
+        if (!EnsureActiveDrawing())
+            return true;
+
+        var drawingHandler = new DrawingHandler();
+        var selectedMarks = new List<Mark>();
+        var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
+        while (selected.MoveNext())
+        {
+            if (selected.Current is Mark selectedMark)
+                selectedMarks.Add(selectedMark);
+        }
+
+        if (selectedMarks.Count != 1)
+        {
+            WriteError($"Expected exactly 1 selected mark, got {selectedMarks.Count}");
+            return true;
+        }
+
+        var mark = selectedMarks[0];
+        var view = mark.GetView();
+        if (view == null)
+        {
+            WriteError($"Selected mark {mark.GetIdentifier().ID} has no owner view");
+            return true;
+        }
+
+        var objectAligned = mark.GetObjectAlignedBoundingBox();
+        var corners = new List<double[]>
+        {
+            new[] { Round2(objectAligned.LowerLeft.X), Round2(objectAligned.LowerLeft.Y) },
+            new[] { Round2(objectAligned.UpperLeft.X), Round2(objectAligned.UpperLeft.Y) },
+            new[] { Round2(objectAligned.UpperRight.X), Round2(objectAligned.UpperRight.Y) },
+            new[] { Round2(objectAligned.LowerRight.X), Round2(objectAligned.LowerRight.Y) }
+        };
+
+        var request = new DrawingDebugOverlayRequest
+        {
+            Group = "selected-mark-object-aligned-box",
+            ClearGroupFirst = true,
+            Shapes = new List<DrawingDebugShape>
+            {
+                new()
+                {
+                    Kind = "polygon",
+                    ViewId = view.GetIdentifier().ID,
+                    Points = corners,
+                    Color = "Magenta",
+                    LineType = "Solid"
+                }
+            }
+        };
+
+        var overlayResult = debugOverlayApi.DrawOverlay(JsonSerializer.Serialize(request));
+        WriteJson(new
+        {
+            markId = mark.GetIdentifier().ID,
+            viewId = view.GetIdentifier().ID,
+            placingType = mark.Placing?.GetType().Name ?? "null",
+            width = Round2(objectAligned.Width),
+            height = Round2(objectAligned.Height),
+            angleToAxis = Round2(objectAligned.AngleToAxis),
+            minX = Round2(objectAligned.MinPoint.X),
+            minY = Round2(objectAligned.MinPoint.Y),
+            maxX = Round2(objectAligned.MaxPoint.X),
+            maxY = Round2(objectAligned.MaxPoint.Y),
+            corners,
+            group = overlayResult.Group,
+            clearedCount = overlayResult.ClearedCount,
+            createdCount = overlayResult.CreatedCount,
+            createdIds = overlayResult.CreatedIds
         });
         return true;
     }
@@ -365,4 +586,23 @@ internal sealed partial class DrawingCommandHandler
     }
 
     private static double Round2(double value) => Math.Round(value, 2);
+
+    private static bool ParseOptionalBoolArg(string[] args, int index, bool defaultValue)
+    {
+        if (args.Length <= index || string.IsNullOrWhiteSpace(args[index]))
+            return defaultValue;
+
+        var raw = args[index].Trim();
+        if (bool.TryParse(raw, out var parsed))
+            return parsed;
+
+        return raw switch
+        {
+            "1" => true,
+            "0" => false,
+            "yes" => true,
+            "no" => false,
+            _ => defaultValue
+        };
+    }
 }
