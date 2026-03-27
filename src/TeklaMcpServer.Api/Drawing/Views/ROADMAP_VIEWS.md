@@ -102,9 +102,8 @@
 - `TryFindBaseViewRectInWindow` учитывает `context.Gap` на уровне budget-window:
   бюджеты включают gap, поэтому `BaseView` больше не встаёт вплотную к _внешним_
   границам budget-window.
-  При этом gap между `baseRect` и blocked-областями _внутри_ окна не применяется:
-  `baseWidth/baseHeight` передаются без `+context.Gap`, blocked-прямоугольники
-  не раздуваются — см. «Что ещё не закончено».
+  Внутренние blocked/reserved areas внутри окна тоже учитываются с одним `gap`,
+  без прежней двойной инфляции.
 - `EndView` больше не обязан уходить в residual:
   если topology resolver классифицирует его как `SideNeighborRight`,
   он получает явный правый neighbor slot в main layout.
@@ -172,23 +171,12 @@
 - `ProjectionMethod` ещё не стал явным параметром.
 - oversized sections уже отделены от normal section policy и не должны
   идти в generic residual path, но их degraded policy ещё можно полировать.
-- в `UniformAllNonDetail` oversized standard sections больше не входят
-  в normal scale-driver set; дальнейшая настройка здесь уже относится
-  к policy polish, а не к behavioral bugfix.
 - local scale reduction для outlier section пока нет.
 - repeated `fit_views_to_sheet` уже стабилизирован для текущих standard
   neighbor/section scenarios, но не зафиксирован как абсолютная гарантия
   для всех будущих policy-комбинаций и edge cases.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
-- `Top/Bottom` section placement теперь использует bounded horizontal shift
-  внутри preferred/degraded band и не должен преждевременно падать в
-  `no-valid-x`, если рабочий `X` внутри band существует.
-- projection post-pass больше не должен трактовать unresolved standard section
-  как normal align target: `ActualPlacementSide` используется как source of truth
-  для section alignment eligibility.
-- shared geometry/collision pipeline между planner, `EstimateFit` и projection
-  уже закрыт; дальнейшая работа здесь — policy-level tuning, а не parity fix.
 - основной main layout уже отвергает слишком плотные `BaseView`-centric
   варианты раньше, чем они превращаются в `projection-skip:view-overlap`,
   но сама topology/projection policy остаётся следующим этапом.
@@ -199,10 +187,6 @@
   более мягкой деградации:
   когда fallback геометрически валиден, но проекционно выглядит слабо,
   planner пока ещё не умеет это оценивать отдельной soft-метрикой.
-- зазор между `baseRect` и blocked-областями внутри `TryFindBaseViewRectInWindow`
-  не задаётся: `baseWidth/baseHeight` передаются без `+gap`, blocked-прямоугольники
-  не раздуваются. `BaseView` может вставать вплотную к зарезервированным областям
-  и к уже расставленным видам без запаса для projection post-pass.
 - `optimalScale` в preserve-scale путях (`PreserveExistingScales`,
   `UniformMainWithSectionExceptions`) вычисляется как `Max()` всех масштабов:
   `ShouldSkipProjectionAlignment` пропустит alignment, если самый мелкий
@@ -213,14 +197,6 @@
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
-- `EstimateFit` и projection post-pass переведены на тот же
-  geometry/validator contract, который теперь уже стабилизирован внутри
-  `BaseProjectedDrawingArrangeStrategy`.
-  `ViewPlacementGeometryService` / `ViewPlacementValidator` уже используются
-  в planner, `EstimateFit` parity path и projection move validation.
-- user-facing aliases для `fit_views_to_sheet` унифицированы:
-  parser знает `preserveexistingscales` / `preservemixedscales` / `keepscale`
-  (все три ведут в `PreserveExistingScales`). Закрыто.
 - debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
   при reject horizontal section (бросает `InvalidOperationException`).
   Это временный локальный debug-hook, а не часть нормального runtime contract.
@@ -261,7 +237,8 @@
 - current resolver order для standard projected neighbors:
   `ViewType override -> coordinate systems -> current position`
 - current scale-driver behavior:
-  - `UniformAllNonDetail` использует все non-detail views
+  - `UniformAllNonDetail` использует все non-detail views,
+    кроме oversized standard sections
   - `UniformMainWithSectionExceptions` и `PreserveExistingScales`
     не делают unified rescale и валидируют текущие масштабы как есть
 - current projection-skip decision:
@@ -309,11 +286,11 @@
 - `Top`/`Bottom` секции живут в вертикальной зоне `BaseView`
 - `Left`/`Right` секции живут в боковой зоне `BaseView`
 - grouping и alignment обязаны следовать `SectionPlacementSide`
-- текущий horizontal stack для `Top/Bottom` sections сначала пробует
-  проекционный центр base view, затем только грубые крайние позиции.
-  Это уже даёт explainable diagnostics, но пока слишком сужает поиск по `X`.
-- текущий `EstimateFit` для `Top/Bottom` sections всё ещё может считать
-  rect хуже, чем реально получается в apply path на том же листе.
+- `Top/Bottom` секции используют bounded horizontal shift внутри
+  preferred/degraded band:
+  сначала centered candidate, затем допустимые смещения по `X` внутри того же band
+- `EstimateFit` и apply для `Top/Bottom` sections используют один и тот же
+  probe/result contract и одинаковые reject reasons
 
 ### Details
 
@@ -359,34 +336,15 @@
 
 ## Ближайшие шаги
 
-Порядок ниже уже исходит из того, что `Stage 0` и `Stage 1` закрыты.
+Порядок ниже уже исходит из того, что `Stage 0`..`Stage 3` закрыты.
 
 ### 1. Выделить единый geometry/collision pipeline для всех фаз layout
 
-Нужно:
+Статус:
 
-- перестать держать две разные реализации placement-geometry для одного и того же `View`
-- выделить единый helper/service, который является source of truth для:
-  - реального `bbox` вида
-  - `frame offset` относительно `Origin`
-  - `candidate rect at origin`
-  - `center / width / height`
-  - candidate state после `dx/dy`
-- выделить единый validator для placement-проверок:
-  - usable area
-  - overlap с `reservedAreas`
-  - overlap с другими видами
-  - единый `reason / blockers` contract
-- перевести на этот pipeline:
-  - main layout
-  - `EstimateFit`
-  - projection post-pass
-  - live diagnostics/debug traces
-
-Кандидаты на выделение:
-
-- `ViewPlacementGeometryService`
-- `ViewPlacementValidator`
+- закрыто как `Stage 2`.
+- `ViewPlacementGeometryService` / `ViewPlacementValidator` уже являются
+  общим source of truth для planner, `EstimateFit` и projection move checks.
 
 Готово когда:
 
@@ -397,13 +355,6 @@
   между layout-path и projection-path
 - весь код, который принимает решение `можно ли двигать view`,
   использует один validator, а не локальную копию overlap logic
-
-Первый безопасный вход в этот этап:
-
-- сначала выделить общий internal geometry/validator helper без смены policy
-- сначала подключить его в `BaseProjectedDrawingArrangeStrategy`
-- только затем тянуть тот же contract в `EstimateFit`
-  и projection post-pass
 
 ### 2. Свести `EstimateFit` и apply path
 
@@ -445,6 +396,10 @@
 
 ### 4. Довести BaseView-centric topology и явную projection policy
 
+Статус:
+
+- следующий активный этап.
+
 Нужно:
 
 - выделить явный projection graph поверх уже существующего `NeighborSet`
@@ -466,12 +421,6 @@
 - закрыто как `Stage 3D`.
 - oversized standard sections отделены от normal stack/scoring и больше
   не должны легализоваться через generic residual.
-
-Нужно:
-
-- не позволять одному outlier section диктовать весь `optimalScale`
-- ввести отдельный degraded path для outlier sections
-- отделить oversized geometry fail от normal section planning fail
 
 Готово когда:
 
