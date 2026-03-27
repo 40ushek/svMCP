@@ -1403,7 +1403,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         }
 
-        planned.Add(new PlannedPlacement(baseView, CenterX(baseRect), CenterY(baseRect)));
+        AddPlannedRect(planned, baseView, baseRect);
 
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var topRect = new ReservedRect(0, 0, 0, 0);
@@ -1634,7 +1634,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         }
 
-        planned.Add(new PlannedPlacement(baseView, CenterX(baseRect), CenterY(baseRect)));
+        AddPlannedRect(planned, baseView, baseRect);
         var occupied = new List<ReservedRect>(blocked) { baseRect };
 
         var deferred = new List<View>(secondaryViews);
@@ -1929,9 +1929,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     out var candidateRect))
                 continue;
 
-            planned.Add(new PlannedPlacement(relation.DetailView, CenterX(candidateRect), CenterY(candidateRect)));
+            AddPlannedAndOccupiedRect(planned, occupied, relation.DetailView, candidateRect);
             blockedRects.Add(candidateRect);
-            occupied.Add(candidateRect);
             plannedById[relation.DetailView.GetIdentifier().ID] = candidateRect;
         }
     }
@@ -2435,9 +2434,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         foreach (var item in proposed)
         {
-            planned.Add(new PlannedPlacement(item.View, CenterX(item.Rect), CenterY(item.Rect), preferredPlacementSide, actualPlacementSide));
-            occupied.Add(item.Rect);
+            AddPlannedAndOccupiedRect(planned, occupied, item.View, item.Rect, preferredPlacementSide, actualPlacementSide);
         }
+    }
+
+    private static void AddPlannedRect(
+        List<PlannedPlacement> planned,
+        View view,
+        ReservedRect rect,
+        SectionPlacementSide? preferredPlacementSide = null,
+        SectionPlacementSide? actualPlacementSide = null)
+    {
+        planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect), preferredPlacementSide, actualPlacementSide));
+    }
+
+    private static void AddPlannedAndOccupiedRect(
+        List<PlannedPlacement> planned,
+        List<ReservedRect> occupied,
+        View view,
+        ReservedRect rect,
+        SectionPlacementSide? preferredPlacementSide = null,
+        SectionPlacementSide? actualPlacementSide = null)
+    {
+        AddPlannedRect(planned, view, rect, preferredPlacementSide, actualPlacementSide);
+        occupied.Add(rect);
     }
 
     private static string FormatSectionIds(IReadOnlyList<View> sectionViews)
@@ -2787,7 +2807,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double freeMaxX,
         double freeMinY,
         double freeMaxY,
-        IReadOnlyList<ReservedRect> occupied,
+        List<ReservedRect> occupied,
         List<PlannedPlacement> planned,
         out ReservedRect rect)
     {
@@ -2797,9 +2817,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied))
             return false;
 
-        planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect)));
-        if (occupied is List<ReservedRect> occupiedList)
-            occupiedList.Add(rect);
+        AddPlannedAndOccupiedRect(planned, occupied, view, rect);
         return true;
     }
 
@@ -2833,8 +2851,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 && placement == RelativePlacement.Top
                 && TryFindTopViewAtSheetTop(context, view, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect)))
         {
-            planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect)));
-            occupied.Add(rect);
+            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
             return true;
         }
 
