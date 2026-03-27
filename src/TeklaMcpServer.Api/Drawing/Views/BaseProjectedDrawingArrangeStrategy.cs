@@ -2880,7 +2880,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
-        if (!TryCreateCenteredRelativeRect(searchArea.BaseRect, spec.Placement, spec.Width, spec.Height, gap, out var rect))
+        var rect = FindStrictMainSkeletonRelativeRect(spec, searchArea, gap);
+        if (rect == null)
             return null;
 
         if (!TryValidateMainSkeletonNeighborRect(rect, searchArea, occupied))
@@ -2888,6 +2889,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         return rect;
     }
+
+    private static ReservedRect? FindStrictMainSkeletonRelativeRect(
+        MainSkeletonNeighborSpec spec,
+        MainSkeletonNeighborSearchArea searchArea,
+        double gap)
+        => TryCreateCenteredRelativeRect(
+            searchArea.BaseRect,
+            spec.Placement,
+            spec.Width,
+            spec.Height,
+            gap,
+            out var rect)
+            ? rect
+            : null;
 
     private static bool TryValidateMainSkeletonNeighborRect(
         ReservedRect rect,
