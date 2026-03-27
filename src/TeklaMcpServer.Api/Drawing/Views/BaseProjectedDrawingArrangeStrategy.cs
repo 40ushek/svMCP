@@ -1411,93 +1411,77 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var leftRect = new ReservedRect(0, 0, 0, 0);
         var rightRect = new ReservedRect(0, 0, 0, 0);
 
-        if (top != null)
-        {
-            if (!TryPlaceStrictMainSkeletonNeighbor(
-                    top,
-                    RelativePlacement.Top,
-                    baseRect,
-                    topWidth,
-                    topHeight,
-                    gap,
-                    freeArea.minX,
-                    freeArea.maxX,
-                    freeArea.minY,
-                    freeArea.maxY,
-                    occupied,
-                    planned,
-                    out topRect))
-            {
-                TracePlanReject("strict", "top", context, planned, topRect.Width > 0 || topRect.Height > 0 ? topRect : null);
-                return false;
-            }
-        }
+        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
+                context,
+                "top",
+                top,
+                RelativePlacement.Top,
+                baseRect,
+                topWidth,
+                topHeight,
+                gap,
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
+                occupied,
+                planned,
+                out topRect))
+            return false;
 
-        if (bottom != null)
-        {
-            if (!TryPlaceStrictMainSkeletonNeighbor(
-                    bottom,
-                    RelativePlacement.Bottom,
-                    baseRect,
-                    bottomWidth,
-                    bottomHeight,
-                    gap,
-                    freeArea.minX,
-                    freeArea.maxX,
-                    freeArea.minY,
-                    freeArea.maxY,
-                    occupied,
-                    planned,
-                    out bottomRect))
-            {
-                TracePlanReject("strict", "bottom", context, planned, bottomRect.Width > 0 || bottomRect.Height > 0 ? bottomRect : null);
-                return false;
-            }
-        }
+        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
+                context,
+                "bottom",
+                bottom,
+                RelativePlacement.Bottom,
+                baseRect,
+                bottomWidth,
+                bottomHeight,
+                gap,
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
+                occupied,
+                planned,
+                out bottomRect))
+            return false;
 
-        if (leftNeighbor != null)
-        {
-            if (!TryPlaceStrictMainSkeletonNeighbor(
-                    leftNeighbor,
-                    RelativePlacement.Left,
-                    baseRect,
-                    leftNeighborWidth,
-                    leftNeighborHeight,
-                    gap,
-                    freeArea.minX,
-                    freeArea.maxX,
-                    freeArea.minY,
-                    freeArea.maxY,
-                    occupied,
-                    planned,
-                    out leftRect))
-            {
-                TracePlanReject("strict", "left", context, planned, leftRect.Width > 0 || leftRect.Height > 0 ? leftRect : null);
-                return false;
-            }
-        }
+        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
+                context,
+                "left",
+                leftNeighbor,
+                RelativePlacement.Left,
+                baseRect,
+                leftNeighborWidth,
+                leftNeighborHeight,
+                gap,
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
+                occupied,
+                planned,
+                out leftRect))
+            return false;
 
-        if (rightNeighbor != null)
-        {
-            if (!TryPlaceStrictMainSkeletonNeighbor(
-                    rightNeighbor,
-                    RelativePlacement.Right,
-                    baseRect,
-                    rightNeighborWidth,
-                    rightNeighborHeight,
-                    gap,
-                    freeArea.minX,
-                    freeArea.maxX,
-                    freeArea.minY,
-                    freeArea.maxY,
-                    occupied,
-                    planned,
-                    out rightRect))
-            {
-                TracePlanReject("strict", "right", context, planned, rightRect.Width > 0 || rightRect.Height > 0 ? rightRect : null);
-                return false;
-            }
-        }
+        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
+                context,
+                "right",
+                rightNeighbor,
+                RelativePlacement.Right,
+                baseRect,
+                rightNeighborWidth,
+                rightNeighborHeight,
+                gap,
+                freeArea.minX,
+                freeArea.maxX,
+                freeArea.minY,
+                freeArea.maxY,
+                occupied,
+                planned,
+                out rightRect))
+            return false;
 
         if (!TryValidateMainSkeletonSpacing(
                 baseRect,
@@ -1648,109 +1632,73 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var rightPlaced = false;
         var deferredMainSkeletonRoles = new List<string>();
 
-        if (top != null)
-        {
-            if (TryPlaceRelaxedMainSkeletonNeighbor(
-                    context,
-                    top,
-                    baseRect,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
-                    occupied,
-                    planned,
-                    RelativePlacement.Top,
-                    allowSheetTopFallback: true,
-                    out var rect))
-            {
-                topRect = rect;
-                topPlaced = true;
-            }
-            else
-            {
-                TracePlanReject("relaxed", "top", context, planned, null);
-                deferred.Add(top);
-            }
-        }
+        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+            context,
+            "top",
+            top,
+            baseRect,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            occupied,
+            planned,
+            deferred,
+            RelativePlacement.Top,
+            allowSheetTopFallback: true,
+            out topPlaced,
+            out topRect);
 
-        if (bottom != null)
-        {
-            if (TryPlaceRelaxedMainSkeletonNeighbor(
-                    context,
-                    bottom,
-                    baseRect,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
-                    occupied,
-                    planned,
-                    RelativePlacement.Bottom,
-                    allowSheetTopFallback: false,
-                    out var rect))
-            {
-                bottomRect = rect;
-                bottomPlaced = true;
-            }
-            else
-            {
-                TracePlanReject("relaxed", "bottom", context, planned, null);
-                deferred.Add(bottom);
-            }
-        }
+        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+            context,
+            "bottom",
+            bottom,
+            baseRect,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            occupied,
+            planned,
+            deferred,
+            RelativePlacement.Bottom,
+            allowSheetTopFallback: false,
+            out bottomPlaced,
+            out bottomRect);
 
-        if (leftNeighbor != null)
-        {
-            if (TryPlaceRelaxedMainSkeletonNeighbor(
-                    context,
-                    leftNeighbor,
-                    baseRect,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
-                    occupied,
-                    planned,
-                    RelativePlacement.Left,
-                    allowSheetTopFallback: false,
-                    out var rect))
-            {
-                leftRect = rect;
-                leftPlaced = true;
-            }
-            else
-            {
-                TracePlanReject("relaxed", "left", context, planned, null);
-                deferred.Add(leftNeighbor);
-            }
-        }
+        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+            context,
+            "left",
+            leftNeighbor,
+            baseRect,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            occupied,
+            planned,
+            deferred,
+            RelativePlacement.Left,
+            allowSheetTopFallback: false,
+            out leftPlaced,
+            out leftRect);
 
-        if (rightNeighbor != null)
-        {
-            if (TryPlaceRelaxedMainSkeletonNeighbor(
-                    context,
-                    rightNeighbor,
-                    baseRect,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
-                    occupied,
-                    planned,
-                    RelativePlacement.Right,
-                    allowSheetTopFallback: false,
-                    out var rect))
-            {
-                rightRect = rect;
-                rightPlaced = true;
-            }
-            else
-            {
-                TracePlanReject("relaxed", "right", context, planned, null);
-                deferred.Add(rightNeighbor);
-            }
-        }
+        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+            context,
+            "right",
+            rightNeighbor,
+            baseRect,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            occupied,
+            planned,
+            deferred,
+            RelativePlacement.Right,
+            allowSheetTopFallback: false,
+            out rightPlaced,
+            out rightRect);
 
         while (!TryValidateMainSkeletonSpacing(
                    baseRect,
@@ -2821,6 +2769,49 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return true;
     }
 
+    private static bool TryPlaceOptionalStrictMainSkeletonNeighbor(
+        DrawingArrangeContext context,
+        string role,
+        View? view,
+        RelativePlacement placement,
+        ReservedRect baseRect,
+        double width,
+        double height,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        out ReservedRect rect)
+    {
+        if (view == null)
+        {
+            rect = new ReservedRect(0, 0, 0, 0);
+            return true;
+        }
+
+        if (TryPlaceStrictMainSkeletonNeighbor(
+                view,
+                placement,
+                baseRect,
+                width,
+                height,
+                gap,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                occupied,
+                planned,
+                out rect))
+            return true;
+
+        TracePlanReject("strict", role, context, planned, rect.Width > 0 || rect.Height > 0 ? rect : null);
+        return false;
+    }
+
     private static bool TryPlaceRelaxedMainSkeletonNeighbor(
         DrawingArrangeContext context,
         View view,
@@ -2857,6 +2848,51 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         rect = new ReservedRect(0, 0, 0, 0);
         return false;
+    }
+
+    private static void TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+        DrawingArrangeContext context,
+        string role,
+        View? view,
+        ReservedRect baseRect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        List<View> deferred,
+        RelativePlacement placement,
+        bool allowSheetTopFallback,
+        out bool placed,
+        out ReservedRect rect)
+    {
+        if (view != null
+            && TryPlaceRelaxedMainSkeletonNeighbor(
+                context,
+                view,
+                baseRect,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                occupied,
+                planned,
+                placement,
+                allowSheetTopFallback,
+                out rect))
+        {
+            placed = true;
+            return;
+        }
+
+        placed = false;
+        rect = new ReservedRect(0, 0, 0, 0);
+        if (view == null)
+            return;
+
+        TracePlanReject("relaxed", role, context, planned, null);
+        deferred.Add(view);
     }
 
     private static bool TryCreateVerticalSectionRect(
