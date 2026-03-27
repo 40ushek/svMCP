@@ -2875,14 +2875,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     }
 
     private static ReservedRect? FindStrictMainSkeletonNeighborRect(
-        RelativePlacement placement,
+        MainSkeletonNeighborSpec spec,
         MainSkeletonNeighborSearchArea searchArea,
-        double width,
-        double height,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
-        if (!TryCreateCenteredRelativeRect(searchArea.BaseRect, placement, width, height, gap, out var rect))
+        if (!TryCreateCenteredRelativeRect(searchArea.BaseRect, spec.Placement, spec.Width, spec.Height, gap, out var rect))
             return null;
 
         if (!IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY)
@@ -2909,13 +2907,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return true;
         }
 
-        var rect = FindStrictMainSkeletonNeighborRect(
-            spec.Placement,
-            searchArea,
-            spec.Width,
-            spec.Height,
-            gap,
-            occupied);
+        var rect = FindStrictMainSkeletonNeighborRect(spec, searchArea, gap, occupied);
         if (rect != null)
         {
             CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
@@ -2939,13 +2931,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var role = spec.Role;
         var view = spec.View;
         var rect = view != null
-            ? FindRelaxedMainSkeletonNeighborRect(
-                context,
-                view,
-                searchArea,
-                occupied,
-                spec.Placement,
-                spec.AllowSheetTopFallback)
+            ? FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied)
             : null;
         if (view != null && rect != null)
         {
@@ -2963,12 +2949,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     private static ReservedRect? FindRelaxedMainSkeletonNeighborRect(
         DrawingArrangeContext context,
-        View view,
+        MainSkeletonNeighborSpec spec,
         MainSkeletonNeighborSearchArea searchArea,
-        IReadOnlyList<ReservedRect> occupied,
-        RelativePlacement placement,
-        bool allowSheetTopFallback)
+        IReadOnlyList<ReservedRect> occupied)
     {
+        var view = spec.View;
+        if (view == null)
+            return null;
+
         if (TryPlaceRelative(
                 context,
                 view,
@@ -2979,14 +2967,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 searchArea.FreeMaxY,
                 context.Gap,
                 occupied,
-                placement,
+                spec.Placement,
                 out var rect))
         {
             return rect;
         }
 
-        if (allowSheetTopFallback
-            && placement == RelativePlacement.Top
+        if (spec.AllowSheetTopFallback
+            && spec.Placement == RelativePlacement.Top
             && TryFindTopViewAtSheetTop(
                 context,
                 view,
@@ -3014,13 +3002,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var role = spec.Role;
         var view = spec.View;
         var rect = view != null
-            ? FindRelaxedMainSkeletonNeighborRect(
-                context,
-                view,
-                searchArea,
-                occupied,
-                spec.Placement,
-                spec.AllowSheetTopFallback)
+            ? FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied)
             : null;
         if (view != null && rect != null)
         {
