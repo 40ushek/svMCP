@@ -2831,8 +2831,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             or RelativePlacement.Right;
     }
 
-    private static bool TryPlaceStrictMainSkeletonNeighbor(
-        View view,
+    private static bool TryFindStrictMainSkeletonNeighborRect(
         RelativePlacement placement,
         ReservedRect baseRect,
         double width,
@@ -2842,8 +2841,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double freeMaxX,
         double freeMinY,
         double freeMaxY,
-        List<ReservedRect> occupied,
-        List<PlannedPlacement> planned,
+        IReadOnlyList<ReservedRect> occupied,
         out ReservedRect rect)
     {
         if (!TryCreateCenteredRelativeRect(baseRect, placement, width, height, gap, out rect))
@@ -2852,7 +2850,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied))
             return false;
 
-        AddPlannedAndOccupiedRect(planned, occupied, view, rect);
         return true;
     }
 
@@ -2879,8 +2876,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return true;
         }
 
-        if (TryPlaceStrictMainSkeletonNeighbor(
-                view,
+        if (TryFindStrictMainSkeletonNeighborRect(
                 placement,
                 baseRect,
                 width,
@@ -2891,9 +2887,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 freeMinY,
                 freeMaxY,
                 occupied,
-                planned,
                 out var rect))
         {
+            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
             placements.SetPlaced(role, rect);
             return true;
         }
