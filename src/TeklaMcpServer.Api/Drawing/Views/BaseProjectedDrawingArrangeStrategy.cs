@@ -1166,33 +1166,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         IReadOnlyList<ReservedRect> occupied,
         RelativePlacement preferred)
-        => DiagnoseRelativePlacementFailure(
-            conflicts,
-            context,
-            view,
-            anchor,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            gap,
-            occupied,
-            preferred);
-
-    private static void DiagnoseRelativePlacementFailure(
-        List<DrawingFitConflict> conflicts,
-        DrawingArrangeContext context,
-        View view,
-        ReservedRect anchor,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        double gap,
-        IReadOnlyList<ReservedRect> occupied,
-        RelativePlacement preferred)
     {
-        var candidates = EnumerateRelativeCandidates(context, view, anchor, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, preferred).ToList();
+        var candidates = EnumerateRelativeCandidates(context, view, anchor, searchArea, gap, preferred).ToList();
         if (candidates.Count == 0)
         {
             AddConflict(conflicts, view, preferred.ToString(), "outside_zone_bounds");
@@ -1210,6 +1185,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         AddConflict(conflicts, view, preferred.ToString(), "outside_zone_bounds");
     }
+
+    private static void DiagnoseRelativePlacementFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+        => DiagnoseRelativePlacementFailure(
+            conflicts,
+            context,
+            view,
+            anchor,
+            new ViewPlacementSearchArea(anchor, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            preferred);
 
     private static void DiagnoseStackPlacementFailureWithFallback(
         List<DrawingFitConflict> conflicts,
@@ -2103,32 +2100,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned)
-        => TryPlaceDetailViews(
-            context,
-            detailRelations,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            gap,
-            occupied,
-            planned);
-
-    private static void TryPlaceDetailViews(
-        DrawingArrangeContext context,
-        IReadOnlyList<DetailRelation> detailRelations,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        double gap,
-        List<ReservedRect> occupied,
-        List<PlannedPlacement> planned)
     {
         if (detailRelations.Count == 0)
             return;
-
-        var detailSearchArea = CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY);
 
         var reservedCount = System.Math.Max(0, occupied.Count - planned.Count);
         var plannedById = planned.ToDictionary(
@@ -2160,7 +2134,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     detailWidth,
                     detailHeight,
                     offset,
-                    detailSearchArea,
+                    searchArea,
                     blockedRects,
                     relation.AnchorX,
                     relation.AnchorY,
@@ -2173,39 +2147,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         }
     }
 
+    private static void TryPlaceDetailViews(
+        DrawingArrangeContext context,
+        IReadOnlyList<DetailRelation> detailRelations,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+        => TryPlaceDetailViews(
+            context,
+            detailRelations,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            planned);
+
     private static bool TryFindDetailRect(
         ReservedRect ownerRect,
         double detailWidth,
         double detailHeight,
         double offset,
         ViewPlacementSearchArea searchArea,
-        IReadOnlyList<ReservedRect> occupied,
-        double? anchorX,
-        double? anchorY,
-        out ReservedRect bestRect)
-        => TryFindDetailRect(
-            ownerRect,
-            detailWidth,
-            detailHeight,
-            offset,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            occupied,
-            anchorX,
-            anchorY,
-            out bestRect);
-
-    internal static bool TryFindDetailRect(
-        ReservedRect ownerRect,
-        double detailWidth,
-        double detailHeight,
-        double offset,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
         IReadOnlyList<ReservedRect> occupied,
         double? anchorX,
         double? anchorY,
@@ -2226,14 +2191,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var xCandidates = new HashSet<double>
         {
-            freeMinX,
+            searchArea.FreeMinX,
             ownerRect.MinX - offset - detailWidth,
             ownerRect.MaxX + offset,
             ownerCenterX - detailWidth * 0.5
         };
         var yCandidates = new HashSet<double>
         {
-            freeMinY,
+            searchArea.FreeMinY,
             ownerRect.MinY - offset - detailHeight,
             ownerRect.MaxY + offset,
             ownerCenterY - detailHeight * 0.5
@@ -2269,7 +2234,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             foreach (var minY in yCandidates)
             {
                 var rect = new ReservedRect(minX, minY, minX + detailWidth, minY + detailHeight);
-                if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+                if (!IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY))
                     continue;
 
                 if (IntersectsAny(rect, occupied))
@@ -2290,6 +2255,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         return bestScore < double.MaxValue;
     }
+
+    internal static bool TryFindDetailRect(
+        ReservedRect ownerRect,
+        double detailWidth,
+        double detailHeight,
+        double offset,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        double? anchorX,
+        double? anchorY,
+        out ReservedRect bestRect)
+        => TryFindDetailRect(
+            ownerRect,
+            detailWidth,
+            detailHeight,
+            offset,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            occupied,
+            anchorX,
+            anchorY,
+            out bestRect);
 
     private static double ComputeVerticalStackHeight(
         DrawingArrangeContext context,
@@ -2344,30 +2333,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double baseHeight,
         ZoneBudgets budgets,
         out ReservedRect window)
-        => TryFindBaseViewWindow(
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            baseWidth,
-            baseHeight,
-            budgets,
-            out window);
-
-    internal static bool TryFindBaseViewWindow(
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        double baseWidth,
-        double baseHeight,
-        ZoneBudgets budgets,
-        out ReservedRect window)
     {
-        var minX = freeMinX + budgets.LeftWidth;
-        var maxX = freeMaxX - budgets.RightWidth;
-        var minY = freeMinY + budgets.BottomHeight;
-        var maxY = freeMaxY - budgets.TopHeight;
+        var minX = searchArea.FreeMinX + budgets.LeftWidth;
+        var maxX = searchArea.FreeMaxX - budgets.RightWidth;
+        var minY = searchArea.FreeMinY + budgets.BottomHeight;
+        var maxY = searchArea.FreeMaxY - budgets.TopHeight;
 
         if (maxX - minX < baseWidth || maxY - minY < baseHeight)
         {
@@ -2379,21 +2349,52 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return true;
     }
 
+    internal static bool TryFindBaseViewWindow(
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double baseWidth,
+        double baseHeight,
+        ZoneBudgets budgets,
+        out ReservedRect window)
+        => TryFindBaseViewWindow(
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            baseWidth,
+            baseHeight,
+            budgets,
+            out window);
+
     private static IEnumerable<ReservedRect> EnumerateBaseViewWindows(
         ViewPlacementSearchArea searchArea,
         ZoneBudgets budgets,
         bool includeRelaxedCandidates)
     {
-        foreach (var (minX, maxX, minY, maxY) in EnumerateBaseViewWindows(
-                     searchArea.FreeMinX,
-                     searchArea.FreeMaxX,
-                     searchArea.FreeMinY,
-                     searchArea.FreeMaxY,
-                     budgets,
-                     includeRelaxedCandidates))
-        {
-            yield return new ReservedRect(minX, minY, maxX, maxY);
-        }
+        yield return (
+            new ReservedRect(
+                searchArea.FreeMinX + budgets.LeftWidth,
+                searchArea.FreeMinY + budgets.BottomHeight,
+                searchArea.FreeMaxX - budgets.RightWidth,
+                searchArea.FreeMaxY - budgets.TopHeight));
+
+        if (!includeRelaxedCandidates)
+            yield break;
+
+        yield return new ReservedRect(
+            searchArea.FreeMinX + budgets.LeftWidth,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxX - budgets.RightWidth,
+            searchArea.FreeMaxY);
+        yield return new ReservedRect(
+            searchArea.FreeMinX,
+            searchArea.FreeMinY + budgets.BottomHeight,
+            searchArea.FreeMaxX,
+            searchArea.FreeMaxY - budgets.TopHeight);
+        yield return new ReservedRect(
+            searchArea.FreeMinX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxX,
+            searchArea.FreeMaxY);
     }
 
     private static IEnumerable<(double minX, double maxX, double minY, double maxY)> EnumerateBaseViewWindows(
@@ -2404,30 +2405,13 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ZoneBudgets budgets,
         bool includeRelaxedCandidates)
     {
-        yield return (
-            freeMinX + budgets.LeftWidth,
-            freeMaxX - budgets.RightWidth,
-            freeMinY + budgets.BottomHeight,
-            freeMaxY - budgets.TopHeight);
-
-        if (!includeRelaxedCandidates)
-            yield break;
-
-        yield return (
-            freeMinX + budgets.LeftWidth,
-            freeMaxX - budgets.RightWidth,
-            freeMinY,
-            freeMaxY);
-        yield return (
-            freeMinX,
-            freeMaxX,
-            freeMinY + budgets.BottomHeight,
-            freeMaxY - budgets.TopHeight);
-        yield return (
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY);
+        foreach (var window in EnumerateBaseViewWindows(
+                     CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+                     budgets,
+                     includeRelaxedCandidates))
+        {
+            yield return (window.MinX, window.MaxX, window.MinY, window.MaxY);
+        }
     }
 
     private static bool TryPlaceBaseViewWithBudgets(
@@ -2735,27 +2719,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         IReadOnlyList<ReservedRect> occupied,
         IEnumerable<ReservedRect> proposed,
         out string reason)
-        => TryValidateSectionCandidateRect(
-            rect,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            occupied,
-            proposed,
-            out reason);
-
-    private static bool TryValidateSectionCandidateRect(
-        ReservedRect rect,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        IReadOnlyList<ReservedRect> occupied,
-        IEnumerable<ReservedRect> proposed,
-        out string reason)
     {
-        if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+        if (!IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY))
         {
             reason = "out-of-bounds";
             return false;
@@ -2776,6 +2741,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         reason = string.Empty;
         return true;
     }
+
+    private static bool TryValidateSectionCandidateRect(
+        ReservedRect rect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        IEnumerable<ReservedRect> proposed,
+        out string reason)
+        => TryValidateSectionCandidateRect(
+            rect,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            occupied,
+            proposed,
+            out reason);
 
     private static void AddSectionCandidateConflict(
         List<DrawingFitConflict> conflicts,
@@ -3079,32 +3060,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         out double preferredMinX,
         out double minY,
         out double maxY)
-        => TryGetHorizontalSectionPlacementInputs(
-            frontRect,
-            anchorRect,
-            zone,
-            width,
-            height,
-            gap,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            out preferredMinX,
-            out minY,
-            out maxY);
-
-    private static bool TryGetHorizontalSectionPlacementInputs(
-        ReservedRect frontRect,
-        ReservedRect anchorRect,
-        RelativePlacement zone,
-        double width,
-        double height,
-        double gap,
-        double freeMinX,
-        double freeMaxX,
-        out double preferredMinX,
-        out double minY,
-        out double maxY)
     {
+        var freeMinX = searchArea.FreeMinX;
+        var freeMaxX = searchArea.FreeMaxX;
         preferredMinX = CenterX(frontRect) - width / 2.0;
         if (preferredMinX < freeMinX || preferredMinX + width > freeMaxX)
         {
@@ -3131,6 +3089,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         maxY = 0;
         return false;
     }
+
+    private static bool TryGetHorizontalSectionPlacementInputs(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        out double preferredMinX,
+        out double minY,
+        out double maxY)
+        => TryGetHorizontalSectionPlacementInputs(
+            frontRect,
+            anchorRect,
+            zone,
+            width,
+            height,
+            gap,
+            CreateSearchArea(freeMinX, freeMaxX, 0, 0),
+            out preferredMinX,
+            out minY,
+            out maxY);
 
     private static bool TryCreateCenteredRelativeRect(
         ReservedRect anchorRect,
@@ -3469,28 +3451,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         ViewPlacementSearchArea searchArea,
         out ReservedRect rect)
-        => TryCreateVerticalSectionRect(
-            frontRect,
-            anchorRect,
-            zone,
-            width,
-            height,
-            gap,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            out rect);
-
-    private static bool TryCreateVerticalSectionRect(
-        ReservedRect frontRect,
-        ReservedRect anchorRect,
-        RelativePlacement zone,
-        double width,
-        double height,
-        double gap,
-        double freeMinY,
-        double freeMaxY,
-        out ReservedRect rect)
     {
+        var freeMinY = searchArea.FreeMinY;
+        var freeMaxY = searchArea.FreeMaxY;
         var minY = CenterY(frontRect) - height / 2.0;
         if (minY < freeMinY || minY + height > freeMaxY)
         {
@@ -3515,6 +3478,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         rect = new ReservedRect(0, 0, 0, 0);
         return false;
     }
+
+    private static bool TryCreateVerticalSectionRect(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        double freeMinY,
+        double freeMaxY,
+        out ReservedRect rect)
+        => TryCreateVerticalSectionRect(
+            frontRect,
+            anchorRect,
+            zone,
+            width,
+            height,
+            gap,
+            CreateSearchArea(0, 0, freeMinY, freeMaxY),
+            out rect);
 
     private static SectionPlacementSide ToPlacementSide(RelativePlacement placement)
         => placement switch
@@ -3550,26 +3533,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ViewPlacementSearchArea searchArea,
         IReadOnlyList<ReservedRect> occupied,
         out ReservedRect placement)
-        => TryFindTopViewAtSheetTop(
-            context,
-            top,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            occupied,
-            out placement);
-
-    private static bool TryFindTopViewAtSheetTop(
-        DrawingArrangeContext context,
-        View top,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        IReadOnlyList<ReservedRect> occupied,
-        out ReservedRect placement)
     {
+        var freeMinX = searchArea.FreeMinX;
+        var freeMaxX = searchArea.FreeMaxX;
+        var freeMinY = searchArea.FreeMinY;
+        var freeMaxY = searchArea.FreeMaxY;
         var width  = DrawingArrangeContextSizing.GetWidth(context, top);
         var height = DrawingArrangeContextSizing.GetHeight(context, top);
         var y = freeMaxY - height;
@@ -3665,6 +3633,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         placement = new ReservedRect(0, 0, 0, 0);
         return false;
     }
+
+    private static bool TryFindTopViewAtSheetTop(
+        DrawingArrangeContext context,
+        View top,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        out ReservedRect placement)
+        => TryFindTopViewAtSheetTop(
+            context,
+            top,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            occupied,
+            out placement);
 
     private static IEnumerable<ReservedRect> EnumerateTopViewAtSheetTopCandidates(
         double freeMinX,
@@ -3799,28 +3783,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ViewPlacementSearchArea searchArea,
         double gap,
         RelativePlacement placement)
-        => EnumerateRelativeCandidates(
-            context,
-            view,
-            anchor,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
-            gap,
-            placement);
-
-    private static IEnumerable<ReservedRect> EnumerateRelativeCandidates(
-        DrawingArrangeContext context,
-        View view,
-        ReservedRect anchor,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        double gap,
-        RelativePlacement placement)
     {
+        var freeMinX = searchArea.FreeMinX;
+        var freeMaxX = searchArea.FreeMaxX;
+        var freeMinY = searchArea.FreeMinY;
+        var freeMaxY = searchArea.FreeMaxY;
         var width = DrawingArrangeContextSizing.GetWidth(context, view);
         var height = DrawingArrangeContextSizing.GetHeight(context, view);
         var maxX = freeMaxX - width;
@@ -3902,6 +3869,24 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             _ => System.Array.Empty<ReservedRect>()
         };
     }
+
+    private static IEnumerable<ReservedRect> EnumerateRelativeCandidates(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        RelativePlacement placement)
+        => EnumerateRelativeCandidates(
+            context,
+            view,
+            anchor,
+            new ViewPlacementSearchArea(anchor, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            placement);
 
     /// <summary>
     /// Tries to place a view of the given size within [minX..maxX, minY..maxY] without

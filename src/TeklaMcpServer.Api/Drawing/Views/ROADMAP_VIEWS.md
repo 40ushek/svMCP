@@ -151,6 +151,16 @@
   - `FindTopViewAtSheetTopInSearchArea(...)`
   - `TryValidateMainSkeletonNeighborRect(...)`
   - `DiagnoseRelativePlacementFailureInSearchArea(...)`
+- `Stage 1` local geometry/search/validation layer внутри
+  `BaseProjectedDrawingArrangeStrategy` по сути закрыт:
+  - `ViewPlacementSearchArea` стал общим internal contract для
+    `main skeleton`, section stacks, relative placement, sheet-top fallback,
+    base-window selection и detail placement
+  - raw `freeMin/freeMax` overload'ы в основном сведены к wrapper'ам и legacy
+    test/call-site surfaces
+  - соседние `strict`, `relaxed`, `diagnostic` и section-adjacent checks
+    больше не держат отдельные локальные реализации одного и того же
+    search/validation flow
 - test-facing legacy surface для `TryDeferMainSkeletonNeighbor(...)`
   сохранён как совместимый wrapper, чтобы внутренний refactor не ломал
   существующие unit-тесты
@@ -217,10 +227,9 @@
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
-- локальный geometry/search слой пока покрывает в основном optional
-  `main skeleton` flow внутри `BaseProjectedDrawingArrangeStrategy`:
-  секции, `base-window`, `EstimateFit` и projection post-pass
-  ещё не переведены на тот же source of truth.
+- `EstimateFit` и projection post-pass ещё не переведены на тот же
+  geometry/search contract, который теперь уже стабилизирован внутри
+  `BaseProjectedDrawingArrangeStrategy`.
 - user-facing aliases для `fit_views_to_sheet` унифицированы:
   parser знает `preserveexistingscales` / `preservemixedscales` / `keepscale`
   (все три ведут в `PreserveExistingScales`). Закрыто.
@@ -235,11 +244,11 @@
   Основной structural cleanup внутри `BaseProjectedDrawingArrangeStrategy`
   уже сделан без смены layout-policy.
 - `Stage 1: local geometry/search/validation layer inside strategy`:
-  в процессе.
-  Локальный mini-layer уже работает для optional main-skeleton placement,
-  но ещё не покрывает соседние placement paths.
+  практически завершён и считается закрытым для `BaseProjectedDrawingArrangeStrategy`.
+  Локальный mini-layer уже покрывает основные placement/search/validation paths
+  внутри strategy; дальше это считается устойчивой внутренней границей.
 - `Stage 2: shared geometry/collision pipeline across layout phases`:
-  следующий большой этап.
+  следующий активный этап.
   Здесь нужно выйти за пределы одного блока и свести `strategy`,
   `EstimateFit`, apply и projection post-pass к одному source of truth.
 - `Stage 3: behavioral fixes`:
@@ -362,26 +371,7 @@
 
 Порядок ниже уже учитывает, что подготовительный refactor почти завершён.
 
-### 1. Закрыть local geometry/search/validation layer внутри strategy
-
-Нужно:
-
-- довести `ViewPlacementSearchArea` и соседние helper'ы до устойчивой внутренней
-  границы, а не оставлять их набором локальных convenience-методов
-- перевести на этот mini-layer не только optional main-skeleton path,
-  но и соседние search/validation участки внутри
-  `BaseProjectedDrawingArrangeStrategy`
-- убрать оставшиеся локальные расхождения между `strict`, `relaxed`,
-  `diagnostic` и section-adjacent placement checks
-
-Готово когда:
-
-- geometry/search/validation для соседних placement paths внутри strategy
-  читается через один набор helper'ов
-- новые правки в main layout больше не требуют править три разные локальные
-  реализации одной и той же placement-логики
-
-### 2. Выделить единый geometry/collision pipeline для всех фаз layout
+### 1. Выделить единый geometry/collision pipeline для всех фаз layout
 
 Нужно:
 
@@ -418,7 +408,7 @@
 - весь код, который принимает решение `можно ли двигать view`,
   использует один validator, а не локальную копию overlap logic
 
-### 3. Свести `EstimateFit` и apply path
+### 2. Свести `EstimateFit` и apply path
 
 Нужно:
 
@@ -436,7 +426,7 @@
   overlap/почти-overlap
 - `Top/Bottom` section decision совпадает между estimate и apply
 
-### 4. Довести main-layout spacing вокруг BaseView
+### 3. Довести main-layout spacing вокруг BaseView
 
 Нужно:
 
@@ -460,7 +450,7 @@
   overlap-free; иначе candidate scale должен быть отвергнут, и внешний
   scale loop должен взять следующий, более крупный масштаб
 
-### 5. Довести BaseView-centric topology и явную projection policy
+### 4. Довести BaseView-centric topology и явную projection policy
 
 Нужно:
 
@@ -476,7 +466,7 @@
 - стороны размещения standard neighbors и секций определяются не скрытым соглашением,
   а явной policy
 
-### 6. Отделить oversized sections от normal section policy
+### 5. Отделить oversized sections от normal section policy
 
 Нужно:
 
@@ -490,7 +480,7 @@
 - oversized section получает объяснимую degraded policy, а не ломает
   normal path для всех остальных видов
 
-### 7. Усилить detail/dependent placement policy
+### 6. Усилить detail/dependent placement policy
 
 Нужно:
 
