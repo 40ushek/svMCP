@@ -1505,7 +1505,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         {
             if (blocked.MinY < maxY && blocked.MaxY > minY
                 && blocked.MaxX > adjustedMinX && blocked.MinX < adjustedMinX + width
-                && blocked.MaxX > adjustedMinX && blocked.MaxX < adjustedMinX + width)
+                && blocked.MaxX < adjustedMinX + width)
             {
                 adjustedMinX = System.Math.Max(adjustedMinX, blocked.MaxX);
             }
