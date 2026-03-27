@@ -118,6 +118,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public double FreeMaxY { get; }
     }
 
+    private readonly struct SectionStackFailureInfo
+    {
+        public SectionStackFailureInfo(
+            View section,
+            ReservedRect rect,
+            string rejectReason,
+            string conflictReason)
+        {
+            Section = section;
+            Rect = rect;
+            RejectReason = rejectReason;
+            ConflictReason = conflictReason;
+        }
+
+        public View Section { get; }
+        public ReservedRect Rect { get; }
+        public string RejectReason { get; }
+        public string ConflictReason { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -826,10 +846,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("left", baseRect),
             mainSkeleton.GetAnchorOrBase("right", baseRect),
             RelativePlacement.Left,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied);
 
@@ -841,10 +858,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("right", baseRect),
             mainSkeleton.GetAnchorOrBase("left", baseRect),
             RelativePlacement.Right,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied);
 
@@ -856,10 +870,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             RelativePlacement.Top,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied);
 
@@ -871,10 +882,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             RelativePlacement.Bottom,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied);
     }
@@ -1184,10 +1192,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect preferredAnchorRect,
         ReservedRect fallbackAnchorRect,
         RelativePlacement preferredZone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
@@ -1203,10 +1208,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     frontRect,
                     zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
                     zone,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
+                    searchArea,
                     gap,
                     occupied.ToList(),
                     new List<PlannedPlacement>(),
@@ -1216,7 +1218,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 out _))
             return;
 
-        DiagnoseVerticalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
+        DiagnoseVerticalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, searchArea, gap, occupied);
     }
 
     private static void DiagnoseHorizontalStackPlacementFailureWithFallback(
@@ -1227,10 +1229,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect preferredAnchorRect,
         ReservedRect fallbackAnchorRect,
         RelativePlacement preferredZone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
@@ -1246,10 +1245,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     frontRect,
                     zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
                     zone,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
+                    searchArea,
                     gap,
                     occupied.ToList(),
                     new List<PlannedPlacement>(),
@@ -1259,7 +1255,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 out _))
             return;
 
-        DiagnoseHorizontalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, occupied);
+        DiagnoseHorizontalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, searchArea, gap, occupied);
     }
 
     private static void DiagnoseVerticalStackPlacementFailure(
@@ -1269,34 +1265,24 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect frontRect,
         ReservedRect anchorRect,
         RelativePlacement zone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
-        var proposed = new List<ReservedRect>();
-        var currentAnchor = anchorRect;
-        foreach (var section in OrderSectionViewsForStack(context, sectionViews))
-        {
-            var width = DrawingArrangeContextSizing.GetWidth(context, section);
-            var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            if (!TryCreateVerticalSectionRect(frontRect, currentAnchor, zone, width, height, gap, freeMinY, freeMaxY, out var rect))
-            {
-                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
-                return;
-            }
+        if (TryPlanVerticalSectionStack(
+                context,
+                sectionViews,
+                frontRect,
+                anchorRect,
+                zone,
+                searchArea,
+                gap,
+                occupied,
+                out _,
+                out var failure))
+            return;
 
-            if (!TryValidateSectionCandidateRect(rect, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, proposed, out var reason))
-            {
-                AddSectionCandidateConflict(conflicts, section, zone, rect, reason, occupied);
-                return;
-            }
-
-            proposed.Add(rect);
-            currentAnchor = rect;
-        }
+        DiagnoseSectionStackFailure(conflicts, zone, failure, occupied);
     }
 
     private static void DiagnoseHorizontalStackPlacementFailure(
@@ -1306,48 +1292,233 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect frontRect,
         ReservedRect anchorRect,
         RelativePlacement zone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
     {
-        var proposed = new List<ReservedRect>();
+        if (TryPlanHorizontalSectionStack(
+                context,
+                sectionViews,
+                frontRect,
+                anchorRect,
+                zone,
+                searchArea,
+                gap,
+                occupied,
+                out _,
+                out var failure))
+            return;
+
+        DiagnoseSectionStackFailure(conflicts, zone, failure, occupied);
+    }
+
+    private static void DiagnoseSectionStackFailure(
+        List<DrawingFitConflict> conflicts,
+        RelativePlacement zone,
+        SectionStackFailureInfo? failure,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (failure == null)
+            return;
+
+        if (failure.Value.ConflictReason == "out-of-bounds")
+        {
+            AddConflict(conflicts, failure.Value.Section, zone.ToString(), "outside_zone_bounds");
+            return;
+        }
+
+        AddSectionCandidateConflict(
+            conflicts,
+            failure.Value.Section,
+            zone,
+            failure.Value.Rect,
+            failure.Value.ConflictReason,
+            occupied);
+    }
+
+    private static bool TryPlanVerticalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        out List<(View View, ReservedRect Rect)> proposed,
+        out SectionStackFailureInfo? failure)
+    {
+        proposed = new List<(View View, ReservedRect Rect)>(sectionViews.Count);
         var currentAnchor = anchorRect;
         foreach (var section in OrderSectionViewsForStack(context, sectionViews))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, section);
             var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            if (!TryGetHorizontalSectionPlacementInputs(
+            if (!TryCreateVerticalSectionRect(frontRect, currentAnchor, zone, width, height, gap, searchArea, out var rect))
+            {
+                failure = new SectionStackFailureInfo(
+                    section,
+                    new ReservedRect(0, 0, 0, 0),
+                    "out-of-bounds-y",
+                    "out-of-bounds");
+                return false;
+            }
+
+            if (!TryValidateSectionCandidateRect(rect, searchArea, occupied, proposed.Select(item => item.Rect), out var reason))
+            {
+                failure = new SectionStackFailureInfo(section, rect, reason, reason);
+                return false;
+            }
+
+            proposed.Add((section, rect));
+            currentAnchor = rect;
+        }
+
+        failure = null;
+        return true;
+    }
+
+    private static bool TryPlanHorizontalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        out List<(View View, ReservedRect Rect)> proposed,
+        out SectionStackFailureInfo? failure)
+    {
+        proposed = new List<(View View, ReservedRect Rect)>(sectionViews.Count);
+        var currentAnchor = anchorRect;
+        foreach (var section in OrderSectionViewsForStack(context, sectionViews))
+        {
+            if (!TryFindHorizontalSectionRectInSearchArea(
+                    context,
+                    section,
                     frontRect,
                     currentAnchor,
                     zone,
-                    width,
-                    height,
+                    searchArea,
                     gap,
-                    freeMinX,
-                    freeMaxX,
-                    out var preferredMinX,
-                    out var minY,
-                    out var maxY))
+                    occupied,
+                    proposed.Select(item => item.Rect),
+                    out var rect,
+                    out failure))
             {
-                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
-                return;
+                return false;
             }
 
-            var rect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
-
-            if (!TryValidateSectionCandidateRect(rect, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, proposed, out var reason))
-            {
-                AddSectionCandidateConflict(conflicts, section, zone, rect, reason, occupied);
-                return;
-            }
-
-            proposed.Add(rect);
+            proposed.Add((section, rect));
             currentAnchor = rect;
         }
+
+        failure = null;
+        return true;
     }
+
+    private static bool TryFindHorizontalSectionRectInSearchArea(
+        DrawingArrangeContext context,
+        View section,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        IEnumerable<ReservedRect> proposed,
+        out ReservedRect rect,
+        out SectionStackFailureInfo? failure)
+    {
+        var width = DrawingArrangeContextSizing.GetWidth(context, section);
+        var height = DrawingArrangeContextSizing.GetHeight(context, section);
+        if (!TryGetHorizontalSectionPlacementInputs(
+                frontRect,
+                anchorRect,
+                zone,
+                width,
+                height,
+                gap,
+                searchArea,
+                out var preferredMinX,
+                out var minY,
+                out var maxY))
+        {
+            rect = new ReservedRect(0, 0, 0, 0);
+            failure = new SectionStackFailureInfo(
+                section,
+                rect,
+                "out-of-bounds-x",
+                "out-of-bounds");
+            return false;
+        }
+
+        var preferredRect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
+        TryValidateSectionCandidateRect(preferredRect, searchArea, occupied, proposed, out var preferredReason);
+
+        foreach (var candidateMinX in EnumerateHorizontalSectionCandidateMinXs(preferredMinX, width, searchArea))
+        {
+            var adjustedMinX = PushHorizontalSectionCandidateRight(candidateMinX, minY, maxY, width, occupied);
+            if (!IsHorizontalSectionCandidateInSearchArea(adjustedMinX, width, searchArea))
+                continue;
+
+            rect = new ReservedRect(adjustedMinX, minY, adjustedMinX + width, maxY);
+            if (TryValidateSectionCandidateRect(rect, searchArea, occupied, proposed, out _))
+            {
+                failure = null;
+                return true;
+            }
+        }
+
+        rect = preferredRect;
+        failure = new SectionStackFailureInfo(
+            section,
+            preferredRect,
+            "no-valid-x",
+            string.IsNullOrEmpty(preferredReason) ? "intersects_view" : preferredReason);
+        return false;
+    }
+
+    private static IEnumerable<double> EnumerateHorizontalSectionCandidateMinXs(
+        double preferredMinX,
+        double width,
+        ViewPlacementSearchArea searchArea)
+    {
+        return new[]
+        {
+            preferredMinX,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX - width
+        }.Distinct();
+    }
+
+    private static double PushHorizontalSectionCandidateRight(
+        double minX,
+        double minY,
+        double maxY,
+        double width,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        var adjustedMinX = minX;
+        foreach (var blocked in occupied)
+        {
+            if (blocked.MinY < maxY && blocked.MaxY > minY
+                && blocked.MaxX > adjustedMinX && blocked.MinX < adjustedMinX + width
+                && blocked.MaxX > adjustedMinX && blocked.MaxX < adjustedMinX + width)
+            {
+                adjustedMinX = System.Math.Max(adjustedMinX, blocked.MaxX);
+            }
+        }
+
+        return adjustedMinX;
+    }
+
+    private static bool IsHorizontalSectionCandidateInSearchArea(
+        double minX,
+        double width,
+        ViewPlacementSearchArea searchArea)
+        => minX >= searchArea.FreeMinX && minX + width <= searchArea.FreeMaxX;
 
     private static void AddIntersectionConflicts(
         List<DrawingFitConflict> conflicts,
@@ -1690,10 +1861,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             leftAnchor,
             rightAnchor,
             RelativePlacement.Left,
-            freeArea.minX,
-            freeArea.maxX,
-            freeArea.minY,
-            freeArea.maxY,
+            searchArea,
             gap,
             occupied,
             planned);
@@ -1704,10 +1872,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             rightAnchor,
             leftAnchor,
             RelativePlacement.Right,
-            freeArea.minX,
-            freeArea.maxX,
-            freeArea.minY,
-            freeArea.maxY,
+            searchArea,
             gap,
             occupied,
             planned);
@@ -1719,10 +1884,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             RelativePlacement.Top,
-            freeArea.minX,
-            freeArea.maxX,
-            freeArea.minY,
-            freeArea.maxY,
+            searchArea,
             gap,
             occupied,
             planned);
@@ -1733,10 +1895,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             RelativePlacement.Bottom,
-            freeArea.minX,
-            freeArea.maxX,
-            freeArea.minY,
-            freeArea.maxY,
+            searchArea,
             gap,
             occupied,
             planned);
@@ -1866,10 +2025,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             leftPlacedAnchor,
             rightPlacedAnchor,
             RelativePlacement.Left,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             planned);
@@ -1880,10 +2036,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             rightPlacedAnchor,
             leftPlacedAnchor,
             RelativePlacement.Right,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             planned);
@@ -1895,10 +2048,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             RelativePlacement.Top,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             planned);
@@ -1909,10 +2059,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             RelativePlacement.Bottom,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             planned);
@@ -2283,10 +2430,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect frontRect,
         ReservedRect anchorRect,
         RelativePlacement zone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned,
@@ -2296,44 +2440,85 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (sectionViews.Count == 0)
             return true;
 
-        var orderedSections = OrderSectionViewsForStack(context, sectionViews);
-
-        var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
-        var currentAnchor = anchorRect;
-        foreach (var section in orderedSections)
+        if (!TryPlanVerticalSectionStack(
+                context,
+                sectionViews,
+                frontRect,
+                anchorRect,
+                zone,
+                searchArea,
+                gap,
+                occupied,
+                out var proposed,
+                out var failure))
         {
-            var width = DrawingArrangeContextSizing.GetWidth(context, section);
-            var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            if (!TryCreateVerticalSectionRect(frontRect, currentAnchor, zone, width, height, gap, freeMinY, freeMaxY, out var rect))
-            {
-                PerfTrace.Write(
-                    "api-view",
-                    "section_stack_reject",
-                    0,
-                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-y height={height:F2} freeY={freeMinY:F2}..{freeMaxY:F2}");
-                return false;
-            }
+            TraceVerticalSectionStackFailure(context, zone, searchArea, failure);
+            return false;
+        }
 
-            if (!TryValidateSectionCandidateRect(
-                    rect,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
-                    occupied,
-                    proposed.Select(item => item.Rect),
-                    out var reason))
-            {
-                PerfTrace.Write(
-                    "api-view",
-                    "section_stack_reject",
-                    0,
-                    $"axis=vertical zone={zone} section={section.GetIdentifier().ID} reason={reason} rect=({rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}) free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2})");
-                return false;
-            }
+        CommitSectionPlacements(proposed, planned, occupied, preferredPlacementSide, actualPlacementSide);
 
-            proposed.Add((section, rect));
-            currentAnchor = rect;
+        return true;
+    }
+
+    private static bool TryPlaceVerticalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        SectionPlacementSide preferredPlacementSide,
+        SectionPlacementSide actualPlacementSide)
+        => TryPlaceVerticalSectionStack(
+            context,
+            sectionViews,
+            frontRect,
+            anchorRect,
+            zone,
+            new ViewPlacementSearchArea(frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            planned,
+            preferredPlacementSide,
+            actualPlacementSide);
+
+    private static bool TryPlaceHorizontalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> horizontalSections,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        SectionPlacementSide preferredPlacementSide,
+        SectionPlacementSide actualPlacementSide)
+    {
+        if (horizontalSections.Count == 0)
+            return true;
+
+        if (!TryPlanHorizontalSectionStack(
+                context,
+                horizontalSections,
+                frontRect,
+                anchorRect,
+                zone,
+                searchArea,
+                gap,
+                occupied,
+                out var proposed,
+                out var failure))
+        {
+            TraceHorizontalSectionStackFailure(context, zone, searchArea, occupied, planned, failure);
+            return false;
         }
 
         CommitSectionPlacements(proposed, planned, occupied, preferredPlacementSide, actualPlacementSide);
@@ -2356,120 +2541,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         List<PlannedPlacement> planned,
         SectionPlacementSide preferredPlacementSide,
         SectionPlacementSide actualPlacementSide)
-    {
-        if (horizontalSections.Count == 0)
-            return true;
-
-        var orderedSections = OrderSectionViewsForStack(context, horizontalSections);
-
-        var proposed = new List<(View View, ReservedRect Rect)>(orderedSections.Count);
-        var currentAnchor = anchorRect;
-        foreach (var section in orderedSections)
-        {
-            var width = DrawingArrangeContextSizing.GetWidth(context, section);
-            var height = DrawingArrangeContextSizing.GetHeight(context, section);
-            if (!TryGetHorizontalSectionPlacementInputs(
-                    frontRect,
-                    currentAnchor,
-                    zone,
-                    width,
-                    height,
-                    gap,
-                    freeMinX,
-                    freeMaxX,
-                    out var preferredMinX,
-                    out var minY,
-                    out var maxY))
-            {
-                PerfTrace.Write(
-                    "api-view",
-                    "section_stack_reject",
-                    0,
-                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-x size={width:F2}x{height:F2} freeX={freeMinX:F2}..{freeMaxX:F2}");
-                return false;
-            }
-
-            // Try preferred (centered) X, then shift right, then shift left to clear obstacles.
-            ReservedRect rect;
-            double minX = preferredMinX;
-            bool found = false;
-            foreach (var candidateMinX in new[] { preferredMinX, freeMinX, freeMaxX - width })
-            {
-                minX = candidateMinX;
-
-                // Push right past any blocking occupied areas whose X overlaps would obstruct.
-                foreach (var blocked in occupied)
-                {
-                    if (blocked.MinY < maxY && blocked.MaxY > minY  // Y overlap
-                        && blocked.MaxX > minX && blocked.MinX < minX + width) // X overlap
-                    {
-                        if (blocked.MaxX > minX && blocked.MaxX < minX + width)
-                            minX = System.Math.Max(minX, blocked.MaxX); // push right past blocker
-                    }
-                }
-
-                if (minX < freeMinX || minX + width > freeMaxX)
-                    continue;
-
-                rect = new ReservedRect(minX, minY, minX + width, maxY);
-                if (TryValidateSectionCandidateRect(
-                        rect,
-                        freeMinX,
-                        freeMaxX,
-                        freeMinY,
-                        freeMaxY,
-                        occupied,
-                        proposed.Select(item => item.Rect),
-                        out _))
-                {
-                    found = true;
-                    break;
-                }
-            }
-
-            if (!found)
-            {
-                var preferredRect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
-                var hasActualRect = DrawingViewFrameGeometry.TryGetBoundingRect(section, out var actualRect);
-                var blockers = occupied
-                    .Where(blocked =>
-                        blocked.MinY < maxY &&
-                        blocked.MaxY > minY &&
-                        blocked.MaxX > preferredMinX &&
-                        blocked.MinX < preferredMinX + width)
-                    .Select(blocked =>
-                        $"[{blocked.MinX:F2},{blocked.MinY:F2},{blocked.MaxX:F2},{blocked.MaxY:F2}]")
-                    .ToList();
-                PerfTrace.Write(
-                    "api-view",
-                    "section_stack_reject",
-                    0,
-                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=no-valid-x y={minY:F2}..{maxY:F2} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")} size={width:F2}x{height:F2} free=({freeMinX:F2},{freeMinY:F2},{freeMaxX:F2},{freeMaxY:F2}) occupied={occupied.Count} blockers={string.Join(";", blockers)}");
-                PerfTrace.Write(
-                    "api-view",
-                    "section_stack_snapshot",
-                    0,
-                    $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} candidate=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] planned=[{FormatPlannedRects(context, planned)}]");
-
-                if (ShouldDebugStopOnSectionReject())
-                {
-                    throw new System.InvalidOperationException(
-                        $"Debug stop: horizontal section reject section={section.GetIdentifier().ID} zone={zone} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")}");
-                }
-
-                return false;
-            }
-
-            rect = new ReservedRect(minX, minY, minX + width, maxY);
-
-            proposed.Add((section, rect));
-            currentAnchor = rect;
-        }
-
-        CommitSectionPlacements(proposed, planned, occupied, preferredPlacementSide, actualPlacementSide);
-
-        return true;
-    }
+        => TryPlaceHorizontalSectionStack(
+            context,
+            horizontalSections,
+            frontRect,
+            anchorRect,
+            zone,
+            new ViewPlacementSearchArea(frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            planned,
+            preferredPlacementSide,
+            actualPlacementSide);
 
     private static List<View> OrderSectionViewsForStack(
         DrawingArrangeContext context,
@@ -2540,6 +2623,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     private static string FormatSectionIds(IReadOnlyList<View> sectionViews)
         => string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID));
+
+    private static bool TryValidateSectionCandidateRect(
+        ReservedRect rect,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        IEnumerable<ReservedRect> proposed,
+        out string reason)
+        => TryValidateSectionCandidateRect(
+            rect,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            occupied,
+            proposed,
+            out reason);
 
     private static bool TryValidateSectionCandidateRect(
         ReservedRect rect,
@@ -2617,6 +2716,87 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             $"axis={axis} preferred={preferredZone} actual={(actualZone?.ToString() ?? "none")} fallbackUsed={(fallbackUsed ? 1 : 0)} sections=[{FormatSectionIds(sectionViews)}]");
     }
 
+    private static void TraceVerticalSectionStackFailure(
+        DrawingArrangeContext context,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        SectionStackFailureInfo? failure)
+    {
+        if (failure == null)
+            return;
+
+        if (failure.Value.RejectReason == "out-of-bounds-y")
+        {
+            var height = DrawingArrangeContextSizing.GetHeight(context, failure.Value.Section);
+            PerfTrace.Write(
+                "api-view",
+                "section_stack_reject",
+                0,
+                $"axis=vertical zone={zone} section={failure.Value.Section.GetIdentifier().ID} reason=out-of-bounds-y height={height:F2} freeY={searchArea.FreeMinY:F2}..{searchArea.FreeMaxY:F2}");
+            return;
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_reject",
+            0,
+            $"axis=vertical zone={zone} section={failure.Value.Section.GetIdentifier().ID} reason={failure.Value.RejectReason} rect=({failure.Value.Rect.MinX:F2},{failure.Value.Rect.MinY:F2},{failure.Value.Rect.MaxX:F2},{failure.Value.Rect.MaxY:F2}) free=({searchArea.FreeMinX:F2},{searchArea.FreeMinY:F2},{searchArea.FreeMaxX:F2},{searchArea.FreeMaxY:F2})");
+    }
+
+    private static void TraceHorizontalSectionStackFailure(
+        DrawingArrangeContext context,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        IReadOnlyList<PlannedPlacement> planned,
+        SectionStackFailureInfo? failure)
+    {
+        if (failure == null)
+            return;
+
+        var section = failure.Value.Section;
+        var width = DrawingArrangeContextSizing.GetWidth(context, section);
+        var height = DrawingArrangeContextSizing.GetHeight(context, section);
+
+        if (failure.Value.RejectReason == "out-of-bounds-x")
+        {
+            PerfTrace.Write(
+                "api-view",
+                "section_stack_reject",
+                0,
+                $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason=out-of-bounds-x size={width:F2}x{height:F2} freeX={searchArea.FreeMinX:F2}..{searchArea.FreeMaxX:F2}");
+            return;
+        }
+
+        var preferredRect = failure.Value.Rect;
+        var hasActualRect = DrawingViewFrameGeometry.TryGetBoundingRect(section, out var actualRect);
+        var blockers = occupied
+            .Where(blocked =>
+                blocked.MinY < preferredRect.MaxY &&
+                blocked.MaxY > preferredRect.MinY &&
+                blocked.MaxX > preferredRect.MinX &&
+                blocked.MinX < preferredRect.MaxX)
+            .Select(blocked =>
+                $"[{blocked.MinX:F2},{blocked.MinY:F2},{blocked.MaxX:F2},{blocked.MaxY:F2}]")
+            .ToList();
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_reject",
+            0,
+            $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} reason={failure.Value.RejectReason} y={preferredRect.MinY:F2}..{preferredRect.MaxY:F2} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")} size={width:F2}x{height:F2} free=({searchArea.FreeMinX:F2},{searchArea.FreeMinY:F2},{searchArea.FreeMaxX:F2},{searchArea.FreeMaxY:F2}) occupied={occupied.Count} blockers={string.Join(";", blockers)}");
+        PerfTrace.Write(
+            "api-view",
+            "section_stack_snapshot",
+            0,
+            $"axis=horizontal zone={zone} section={section.GetIdentifier().ID} candidate=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] planned=[{FormatPlannedRects(context, planned)}]");
+
+        if (ShouldDebugStopOnSectionReject())
+        {
+            throw new System.InvalidOperationException(
+                $"Debug stop: horizontal section reject section={section.GetIdentifier().ID} zone={zone} preferredRect=[{preferredRect.MinX:F2},{preferredRect.MinY:F2},{preferredRect.MaxX:F2},{preferredRect.MaxY:F2}] actualRect={(hasActualRect ? $"[{actualRect.MinX:F2},{actualRect.MinY:F2},{actualRect.MaxX:F2},{actualRect.MaxY:F2}]" : "n/a")}");
+        }
+    }
+
     private static bool TryProbeSectionStackWithFallback(
         RelativePlacement preferredZone,
         System.Func<RelativePlacement, bool> tryPlace,
@@ -2692,10 +2872,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect preferredAnchorRect,
         ReservedRect fallbackAnchorRect,
         RelativePlacement preferredZone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned)
@@ -2714,10 +2891,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     frontRect,
                     zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
                     zone,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
+                    searchArea,
                     gap,
                     occupied,
                     planned,
@@ -2742,10 +2916,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         ReservedRect preferredAnchorRect,
         ReservedRect fallbackAnchorRect,
         RelativePlacement preferredZone,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned)
@@ -2764,10 +2935,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     frontRect,
                     zone == preferredZone ? preferredAnchorRect : fallbackAnchorRect,
                     zone,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
+                    searchArea,
                     gap,
                     occupied,
                     planned,
@@ -2794,6 +2962,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             RelativePlacement.Right => RelativePlacement.Left,
             _ => preferredZone
         };
+
+    private static bool TryGetHorizontalSectionPlacementInputs(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        ViewPlacementSearchArea searchArea,
+        out double preferredMinX,
+        out double minY,
+        out double maxY)
+        => TryGetHorizontalSectionPlacementInputs(
+            frontRect,
+            anchorRect,
+            zone,
+            width,
+            height,
+            gap,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            out preferredMinX,
+            out minY,
+            out maxY);
 
     private static bool TryGetHorizontalSectionPlacementInputs(
         ReservedRect frontRect,
@@ -3171,6 +3363,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             (role, _, rect) => CommitMainSkeletonPlacement(placements, role, occupied, rect),
             (_, view) => DiagnoseOptionalMainSkeletonNeighborFailure(conflicts, context, spec, searchArea, occupied, view));
     }
+
+    private static bool TryCreateVerticalSectionRect(
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        double width,
+        double height,
+        double gap,
+        ViewPlacementSearchArea searchArea,
+        out ReservedRect rect)
+        => TryCreateVerticalSectionRect(
+            frontRect,
+            anchorRect,
+            zone,
+            width,
+            height,
+            gap,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            out rect);
 
     private static bool TryCreateVerticalSectionRect(
         ReservedRect frontRect,
