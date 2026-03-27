@@ -41,11 +41,8 @@ internal sealed partial class DrawingProjectionAlignmentService
         IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes = null)
     {
         var result = new ProjectionAlignmentResult();
-        var semanticViews = SemanticViewSet.Build(views);
-        var baseSelection = BaseViewSelection.Select(views);
-        var neighbors = baseSelection.View != null
-            ? StandardNeighborResolver.Build(views, semanticViews, baseSelection)
-            : null;
+        var topology = ViewTopologyGraph.Build(views);
+        var neighbors = topology.Neighbors;
 
         switch (drawing)
         {
@@ -58,7 +55,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                     return result;
                 }
 
-                ApplyAssemblyAlignment(result, assemblyDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                ApplyAssemblyAlignment(result, assemblyDrawing, topology, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 break;
             }
 
@@ -71,7 +68,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                     return result;
                 }
 
-                ApplySinglePartAlignment(result, singlePartDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+                ApplySinglePartAlignment(result, singlePartDrawing, topology, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
                 break;
             }
 
@@ -79,7 +76,7 @@ internal sealed partial class DrawingProjectionAlignmentService
             {
                 result.Mode = "ga";
                 if (neighbors != null)
-                    ApplyGaAlignment(result, gaDrawing, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
+                    ApplyGaAlignment(result, gaDrawing, topology, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 else
                     ApplyGaNeighborAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, preloadedAxes);
                 break;

@@ -1082,20 +1082,18 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<ReservedRect> reserved,
         IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets)
     {
-        var detailViews = views
-            .Where(v => ViewSemanticClassifier.Classify(v) == ViewSemanticKind.Detail)
-            .ToList();
+        var topology = ViewTopologyGraph.Build(views);
+        var detailViews = topology.SemanticViews.Details.ToList();
         if (detailViews.Count == 0)
             return arranged;
 
-        // Build detailId → owner relation for both real DetailView and detail-like SectionView.
-        var relations = DetailRelationResolver.Build(views, detailViews);
+        var relations = topology.DetailRelations;
         if (relations.Count == 0)
             return arranged;
 
         var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
         var blocked = new List<ReservedRect>(reserved);
-        foreach (var view in views.Where(v => ViewSemanticClassifier.Classify(v) != ViewSemanticKind.Detail))
+        foreach (var view in views.Where(v => topology.SemanticViews.GetKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail))
         {
             if (DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
                 blocked.Add(rect);
@@ -1142,23 +1140,25 @@ public sealed partial class TeklaDrawingViewApi
             if (relation.AnchorY.HasValue)
                 anchorY = relation.AnchorY.Value;
 
-            if (!BaseProjectedDrawingArrangeStrategy.TryFindDetailRect(
-                    ownerRect,
-                    detailWidth,
-                    detailHeight,
-                    gap * 2.0,
-                    usableMinX,
-                    usableMaxX,
-                    usableMinY,
-                    usableMaxY,
-                    blocked,
-                    anchorX,
-                    anchorY,
-                    out var candidateRect))
+            var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
+                ownerRect,
+                detailWidth,
+                detailHeight,
+                gap * 2.0,
+                usableMinX,
+                usableMaxX,
+                usableMinY,
+                usableMaxY,
+                blocked,
+                anchorX,
+                anchorY);
+            if (!decision.Success)
             {
                 blocked.Add(detailRect);
                 continue;
             }
+
+            var candidateRect = decision.Rect;
 
             var targetCenterX = (candidateRect.MinX + candidateRect.MaxX) * 0.5;
             var targetCenterY = (candidateRect.MinY + candidateRect.MaxY) * 0.5;

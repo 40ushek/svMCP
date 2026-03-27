@@ -1069,6 +1069,55 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
                 gap));
     }
 
+    [Fact]
+    public void ProbeDetailPlacement_PrefersAnchorNearestPreferredBand()
+    {
+        var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
+            ownerRect: new ReservedRect(40, 40, 80, 80),
+            detailWidth: 20,
+            detailHeight: 10,
+            offset: 10,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[] { new ReservedRect(40, 40, 80, 80) },
+            anchorX: 95,
+            anchorY: 95);
+
+        Assert.True(decision.Success);
+        Assert.True(decision.PreferredBand);
+        Assert.Equal(string.Empty, decision.DegradedReason);
+        Assert.Equal(85, decision.Rect.MinX, 6);
+        Assert.Equal(90, decision.Rect.MinY, 6);
+    }
+
+    [Fact]
+    public void ProbeDetailPlacement_ReturnsCrossBandReasonWhenPreferredBandBlocked()
+    {
+        var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
+            ownerRect: new ReservedRect(40, 40, 80, 80),
+            detailWidth: 20,
+            detailHeight: 10,
+            offset: 10,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[]
+            {
+                new ReservedRect(40, 40, 80, 80),
+                new ReservedRect(0, 85, 85, 200),
+                new ReservedRect(85, 35, 140, 140)
+            },
+            anchorX: 100,
+            anchorY: 100);
+
+        Assert.True(decision.Success);
+        Assert.False(decision.PreferredBand);
+        Assert.Equal("cross-band", decision.DegradedReason);
+    }
+
     private static Tekla.Structures.Drawing.Drawing CreateDrawing()
     {
 #pragma warning disable SYSLIB0050

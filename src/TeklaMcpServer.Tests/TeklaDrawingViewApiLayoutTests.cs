@@ -99,4 +99,29 @@ public sealed class TeklaDrawingViewApiLayoutTests
                 sectionHeight,
                 gap));
     }
+
+    [Fact]
+    public void ProbeDetailPlacement_UsesStableCrossBandDegradedReason()
+    {
+        var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
+            ownerRect: new ReservedRect(40, 40, 80, 80),
+            detailWidth: 20,
+            detailHeight: 10,
+            offset: 10,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[]
+            {
+                new ReservedRect(40, 40, 80, 80),
+                new ReservedRect(0, 85, 85, 200),
+                new ReservedRect(85, 35, 140, 140)
+            },
+            anchorX: 100,
+            anchorY: 100);
+
+        Assert.True(decision.Success);
+        Assert.Equal("cross-band", decision.DegradedReason);
+    }
 }

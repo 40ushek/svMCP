@@ -15,6 +15,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     private void ApplyAssemblyAlignment(
         ProjectionAlignmentResult result,
         AssemblyDrawing drawing,
+        ViewTopologyGraph topology,
         NeighborSet neighbors,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
@@ -30,12 +31,13 @@ internal sealed partial class DrawingProjectionAlignmentService
             return;
         }
 
-        ApplyProjectionAlignmentCore(result, drawing, mainPartId, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+        ApplyProjectionAlignmentCore(result, drawing, mainPartId, topology, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
     }
 
     private void ApplySinglePartAlignment(
         ProjectionAlignmentResult result,
         SinglePartDrawing drawing,
+        ViewTopologyGraph topology,
         NeighborSet neighbors,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
@@ -51,13 +53,14 @@ internal sealed partial class DrawingProjectionAlignmentService
             return;
         }
 
-        ApplyProjectionAlignmentCore(result, drawing, mainPartId, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+        ApplyProjectionAlignmentCore(result, drawing, mainPartId, topology, neighbors, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
     }
 
     private void ApplyProjectionAlignmentCore(
         ProjectionAlignmentResult result,
         Tekla.Structures.Drawing.Drawing drawing,
         int mainPartId,
+        ViewTopologyGraph topology,
         NeighborSet neighbors,
         IReadOnlyList<DrawingView> views,
         IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
@@ -207,7 +210,7 @@ internal sealed partial class DrawingProjectionAlignmentService
             ApplyAssemblyMove(result, neighbor.View, mainPartId, baseAnchorX, baseAnchorY, alignNeighborX, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews, posById, allStates, others);
         }
 
-        foreach (var section in views.Where(v => v.ViewType == DrawingView.ViewTypes.SectionView))
+        foreach (var section in topology.SemanticViews.Sections)
         {
             var sectionId = section.GetIdentifier().ID;
             if (!TryGetSectionAlignmentAxis(drawing, baseView, sectionId, section, result, arrangedViews, out var alignSectionX))

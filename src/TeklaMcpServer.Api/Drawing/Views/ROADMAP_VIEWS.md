@@ -222,9 +222,10 @@
   bounded-band decision, oversized standard sections и repeated-fit
   stabilization для standard neighbors/sections.
 - `Stage 4: policy polish`:
-  следующий активный этап.
-  Сюда входят detail/dependent placement policy и явная конфигурация
-  projection method.
+  завершён.
+  Topology/projection policy выделена как явный internal слой,
+  detail/dependent placement использует единый anchor-driven decision shape,
+  `ProjectionMethod` зафиксирован как internal policy model.
 
 ## Зафиксированные текущие контракты
 
@@ -398,7 +399,7 @@
 
 Статус:
 
-- следующий активный этап.
+- закрыто как `Stage 4`.
 
 Нужно:
 
@@ -429,6 +430,12 @@
   normal path для всех остальных видов
 
 ### 6. Усилить detail/dependent placement policy
+
+Статус:
+
+- закрыто как `Stage 4`.
+- detail/dependent placement использует единый anchor-driven decision path
+  в planner и final reposition pass.
 
 Нужно:
 

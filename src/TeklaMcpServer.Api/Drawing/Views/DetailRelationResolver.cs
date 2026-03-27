@@ -52,12 +52,28 @@ internal static class DetailRelationResolver
         foreach (var ownerView in allViews)
         {
             // DetailMark -> real DetailView
-            var detailMarks = ownerView.GetAllObjects(typeof(DetailMark));
-            while (detailMarks.MoveNext())
+            DrawingObjectEnumerator? detailMarks = null;
+            try
+            {
+                detailMarks = ownerView.GetAllObjects(typeof(DetailMark));
+            }
+            catch
+            {
+            }
+
+            while (detailMarks != null && detailMarks.MoveNext())
             {
                 if (detailMarks.Current is not DetailMark mark) continue;
-                var related = mark.GetRelatedObjects();
-                while (related.MoveNext())
+                DrawingObjectEnumerator? related = null;
+                try
+                {
+                    related = mark.GetRelatedObjects();
+                }
+                catch
+                {
+                }
+
+                while (related != null && related.MoveNext())
                 {
                     if (related.Current is not View rv) continue;
                     var id = rv.GetIdentifier().ID;
@@ -78,12 +94,28 @@ internal static class DetailRelationResolver
             }
 
             // SectionMark -> detail-like SectionView
-            var sectionMarks = ownerView.GetAllObjects(typeof(SectionMark));
-            while (sectionMarks.MoveNext())
+            DrawingObjectEnumerator? sectionMarks = null;
+            try
+            {
+                sectionMarks = ownerView.GetAllObjects(typeof(SectionMark));
+            }
+            catch
+            {
+            }
+
+            while (sectionMarks != null && sectionMarks.MoveNext())
             {
                 if (sectionMarks.Current is not SectionMark sm) continue;
-                var related = sm.GetRelatedObjects();
-                while (related.MoveNext())
+                DrawingObjectEnumerator? related = null;
+                try
+                {
+                    related = sm.GetRelatedObjects();
+                }
+                catch
+                {
+                }
+
+                while (related != null && related.MoveNext())
                 {
                     if (related.Current is not View rv) continue;
                     var id = rv.GetIdentifier().ID;

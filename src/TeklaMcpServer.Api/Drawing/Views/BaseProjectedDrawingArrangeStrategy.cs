@@ -244,6 +244,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public IReadOnlyList<View> Oversized { get; }
     }
 
+    internal readonly struct DetailPlacementDecision
+    {
+        public DetailPlacementDecision(
+            bool success,
+            ReservedRect rect,
+            double anchorDistance,
+            double preferredDistance,
+            bool preferredBand,
+            string degradedReason)
+        {
+            Success = success;
+            Rect = rect;
+            AnchorDistance = anchorDistance;
+            PreferredDistance = preferredDistance;
+            PreferredBand = preferredBand;
+            DegradedReason = degradedReason;
+        }
+
+        public bool Success { get; }
+        public ReservedRect Rect { get; }
+        public double AnchorDistance { get; }
+        public double PreferredDistance { get; }
+        public bool PreferredBand { get; }
+        public string DegradedReason { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -723,11 +749,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 return conflicts;
         }
 
-        var semanticViews = SemanticViewSet.Build(planningContext.Views);
-
-        var neighbors = StandardNeighborResolver.Build(planningContext.Views, semanticViews, baseViewSelection);
+        var topology = ViewTopologyGraph.Build(planningContext.Views);
+        var neighbors = topology.Neighbors;
+        if (neighbors == null)
+            return conflicts;
         var sectionGroups = SectionGroupSet.Build(
-            semanticViews.Sections,
+            topology.SemanticViews.Sections,
             planningContext.Drawing,
             baseView,
             _sectionPlacementSideResolver);
@@ -2044,18 +2071,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         planned = new List<PlannedPlacement>();
 
-        var baseViewSelection = BaseViewSelection.Select(context.Views);
-        var baseView = baseViewSelection.View;
+        var topology = ViewTopologyGraph.Build(context.Views);
+        var baseView = topology.BaseView;
         if (baseView == null)
             return false;
-
-        var semanticViews = SemanticViewSet.Build(context.Views);
-
-        var neighbors = StandardNeighborResolver.Build(context.Views, semanticViews, baseViewSelection);
-        var sections = semanticViews.Sections;
-        var detailViews = semanticViews.Details;
-        var detailRelations = DetailRelationResolver.Build(context.Views, detailViews).All.ToList();
-        var otherViews = semanticViews.Other;
+        var neighbors = topology.Neighbors!;
+        var sections = topology.SemanticViews.Sections;
+        var detailViews = topology.SemanticViews.Details;
+        var detailRelations = topology.DetailRelations.All.ToList();
+        var otherViews = topology.SemanticViews.Other;
         var sectionGroups = SectionGroupSet.Build(
             sections,
             context.Drawing,
@@ -2083,7 +2107,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             "api-view",
             "view_semantic_summary",
             0,
-            $"baseProjected={semanticViews.BaseProjected.Count} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
+            $"baseProjected={topology.SemanticViews.BaseProjected.Count} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
+        PerfTrace.Write(
+            "api-view",
+            "view_topology_summary",
+            0,
+            $"base={baseView.GetIdentifier().ID} residualProjected={topology.ResidualProjected.Count} detailRelations={topology.DetailRelations.Count}");
 
         if (sections.Count > 0)
         {
@@ -2687,21 +2716,33 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             var detailWidth = DrawingArrangeContextSizing.GetWidth(context, relation.DetailView);
             var detailHeight = DrawingArrangeContextSizing.GetHeight(context, relation.DetailView);
             var offset = gap * 2.0;
-            if (!TryFindDetailRect(
-                    ownerRect,
-                    detailWidth,
-                    detailHeight,
-                    offset,
-                    searchArea,
-                    blockedRects,
-                    relation.AnchorX,
-                    relation.AnchorY,
-                    out var candidateRect))
+            var decision = ProbeDetailPlacement(
+                ownerRect,
+                detailWidth,
+                detailHeight,
+                offset,
+                searchArea.FreeMinX,
+                searchArea.FreeMaxX,
+                searchArea.FreeMinY,
+                searchArea.FreeMaxY,
+                blockedRects,
+                relation.AnchorX,
+                relation.AnchorY);
+            if (!decision.Success)
                 continue;
 
-            AddPlannedAndOccupiedRect(planned, occupied, relation.DetailView, candidateRect);
-            blockedRects.Add(candidateRect);
-            plannedById[relation.DetailView.GetIdentifier().ID] = candidateRect;
+            if (!string.IsNullOrEmpty(decision.DegradedReason))
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "detail_placement_degraded",
+                    0,
+                    $"detail={relation.DetailView.GetIdentifier().ID} owner={relation.OwnerView.GetIdentifier().ID} reason={decision.DegradedReason} anchorDistance={decision.AnchorDistance:F2} preferredDistance={decision.PreferredDistance:F2}");
+            }
+
+            AddPlannedAndOccupiedRect(planned, occupied, relation.DetailView, decision.Rect);
+            blockedRects.Add(decision.Rect);
+            plannedById[relation.DetailView.GetIdentifier().ID] = decision.Rect;
         }
     }
 
@@ -2734,10 +2775,42 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double? anchorY,
         out ReservedRect bestRect)
     {
+        if (!TrySelectDetailPlacementDecision(
+                ownerRect,
+                detailWidth,
+                detailHeight,
+                offset,
+                searchArea,
+                occupied,
+                anchorX,
+                anchorY,
+                out var decision))
+        {
+            bestRect = default;
+            return false;
+        }
+
+        bestRect = decision.Rect;
+        return true;
+    }
+
+    private static bool TrySelectDetailPlacementDecision(
+        ReservedRect ownerRect,
+        double detailWidth,
+        double detailHeight,
+        double offset,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        double? anchorX,
+        double? anchorY,
+        out DetailPlacementDecision bestDecision)
+    {
         var ownerCenterX = CenterX(ownerRect);
         var ownerCenterY = CenterY(ownerRect);
         var effectiveAnchorX = anchorX ?? ownerCenterX;
         var effectiveAnchorY = anchorY ?? ownerCenterY;
+        var hasHorizontalAnchor = anchorX.HasValue;
+        var hasVerticalAnchor = anchorY.HasValue;
         var preferRight = effectiveAnchorX >= ownerCenterX;
         var preferTop = effectiveAnchorY >= ownerCenterY;
         var preferredCenterX = preferRight
@@ -2762,8 +2835,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             ownerCenterY - detailHeight * 0.5
         };
 
-        // Anchor-driven candidates: ensure positions centred on the anchor are
-        // explicitly considered, not just ranked among accidentally nearby ones.
         if (anchorX.HasValue)
         {
             xCandidates.Add(anchorX.Value - detailWidth * 0.5);
@@ -2785,8 +2856,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             yCandidates.Add(rect.MaxY + offset);
         }
 
-        var bestScore = double.MaxValue;
-        bestRect = default;
+        bestDecision = default;
         foreach (var minX in xCandidates)
         {
             foreach (var minY in yCandidates)
@@ -2802,16 +2872,69 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 var centerY = CenterY(rect);
                 var anchorDistance = System.Math.Abs(centerX - effectiveAnchorX) + System.Math.Abs(centerY - effectiveAnchorY);
                 var preferredDistance = System.Math.Abs(centerX - preferredCenterX) + System.Math.Abs(centerY - preferredCenterY);
-                var score = (anchorDistance * 10.0) + preferredDistance;
-                if (score >= bestScore)
-                    continue;
-
-                bestScore = score;
-                bestRect = rect;
+                var horizontalPreferred = !hasHorizontalAnchor || (preferRight ? centerX >= ownerCenterX : centerX <= ownerCenterX);
+                var verticalPreferred = !hasVerticalAnchor || (preferTop ? centerY >= ownerCenterY : centerY <= ownerCenterY);
+                var preferredBand = horizontalPreferred && verticalPreferred;
+                var degradedReason = preferredBand ? string.Empty : "cross-band";
+                var candidateDecision = new DetailPlacementDecision(
+                    success: true,
+                    rect,
+                    anchorDistance,
+                    preferredDistance,
+                    preferredBand,
+                    degradedReason);
+                if (IsBetterDetailPlacementDecision(candidateDecision, bestDecision))
+                    bestDecision = candidateDecision;
             }
         }
 
-        return bestScore < double.MaxValue;
+        return bestDecision.Success;
+    }
+
+    private static bool IsBetterDetailPlacementDecision(DetailPlacementDecision candidate, DetailPlacementDecision currentBest)
+    {
+        if (candidate.Success != currentBest.Success)
+            return candidate.Success;
+
+        if (candidate.AnchorDistance != currentBest.AnchorDistance)
+            return candidate.AnchorDistance < currentBest.AnchorDistance;
+
+        if (candidate.PreferredBand != currentBest.PreferredBand)
+            return candidate.PreferredBand;
+
+        if (candidate.PreferredDistance != currentBest.PreferredDistance)
+            return candidate.PreferredDistance < currentBest.PreferredDistance;
+
+        if (candidate.Rect.MinY != currentBest.Rect.MinY)
+            return candidate.Rect.MinY < currentBest.Rect.MinY;
+
+        return candidate.Rect.MinX < currentBest.Rect.MinX;
+    }
+
+    internal static DetailPlacementDecision ProbeDetailPlacement(
+        ReservedRect ownerRect,
+        double detailWidth,
+        double detailHeight,
+        double offset,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        double? anchorX,
+        double? anchorY)
+    {
+        TrySelectDetailPlacementDecision(
+            ownerRect,
+            detailWidth,
+            detailHeight,
+            offset,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            occupied,
+            anchorX,
+            anchorY,
+            out var decision);
+        return decision;
     }
 
     internal static bool TryFindDetailRect(
