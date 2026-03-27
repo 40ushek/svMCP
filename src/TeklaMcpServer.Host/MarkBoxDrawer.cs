@@ -27,10 +27,9 @@ internal static class MarkBoxDrawer
 
         var box = mark.GetObjectAlignedBoundingBox();
 
+ 
         var a = matrix.Transform(box.MinPoint);
         var b = matrix.Transform(box.MaxPoint);
-
-
 
         var linePlacing = mark.Placing as BaseLinePlacing;
         var line = new Tekla.Structures.Drawing.Line(view, a, b);

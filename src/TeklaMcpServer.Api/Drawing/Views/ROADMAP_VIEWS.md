@@ -170,42 +170,28 @@
 - `BaseViewSelection` всё ещё имеет `FrontView`-centric fallback shortcut.
 - явный projection graph в коде ещё не выделен.
 - `ProjectionMethod` ещё не стал явным параметром.
-- oversized sections пока не вынесены в отдельную degraded policy.
-- в `UniformAllNonDetail` section views по-прежнему входят в scale-driver set,
-  поэтому один outlier section всё ещё может тянуть `optimalScale` вниз.
+- oversized sections уже отделены от normal section policy и не должны
+  идти в generic residual path, но их degraded policy ещё можно полировать.
+- в `UniformAllNonDetail` oversized standard sections больше не входят
+  в normal scale-driver set; дальнейшая настройка здесь уже относится
+  к policy polish, а не к behavioral bugfix.
 - local scale reduction для outlier section пока нет.
-- repeated `fit_views_to_sheet` ещё не гарантированно идемпотентен на всех листах.
-- после перехода `FinalOnly` на real-probe path исчез отдельный слой ошибок
-  из-за линейного пересчёта bbox, но на части листов итог всё ещё плавает
-  между несколькими локальными layout/state вариантами.
+- repeated `fit_views_to_sheet` уже стабилизирован для текущих standard
+  neighbor/section scenarios, но не зафиксирован как абсолютная гарантия
+  для всех будущих policy-комбинаций и edge cases.
 - detail placement уже anchor-aware, но policy всё ещё можно улучшать:
   при нехватке места нужна более явная и объяснимая деградация.
-- `Top/Bottom` section placement ещё не гарантирует сохранение сильной
-  проекционной связи с base view при конфликте по `X`.
-- `zone budgeting` и `MaxRects` убрали жёсткую center-привязку `BaseView`,
-  но ложные reject в `EstimateFit` для `Top/Bottom` section всё ещё встречаются:
-  planner может отвергнуть рабочий `1:20` layout по `reason=no-valid-x`,
-  хотя фактическая расстановка на листе при том же масштабе оказывается валидной.
-- repeated apply всё ещё может ломать projection post-pass:
-  после повторного `fit_views_to_sheet` возможны массовые
-  `projection-skip:view-overlap`.
-- geometry/collision pipeline всё ещё архитектурно раздвоен:
-  main layout и projection post-pass проверяют placement похожими,
-  но не идентичными путями.
-  Из-за этого одна и та же пара видов может получить разные ответы на вопрос
-  `overlap / no-overlap` в разных фазах `fit_views_to_sheet`.
-  Последний live-регресс конкретно для keep-scale collision checks уже закрыт,
-  но архитектурный долг остаётся: решение `можно / нельзя двигать view`
-  по-прежнему не сведено к одному validator/source of truth.
-- на части листов основной main layout всё ещё допускает слишком плотную схему
-  ещё до projection:
-  `Front/Top/Section` оказываются почти вплотную, а post-pass уже не может
-  восстановить проекционную связь без overlap.
-- если `strict/relaxed` не могут удержать `TopView` в standard neighbor path,
-  она всё ещё может попасть в `MaxRects` как unresolved residual view.
-  После локального defer хорошие anchor views уже не теряются, но policy для самого
-  `TopView` остаётся слабой: residual slot может быть геометрически валиден,
-  но композиционно плох для верхнего вида.
+- `Top/Bottom` section placement теперь использует bounded horizontal shift
+  внутри preferred/degraded band и не должен преждевременно падать в
+  `no-valid-x`, если рабочий `X` внутри band существует.
+- projection post-pass больше не должен трактовать unresolved standard section
+  как normal align target: `ActualPlacementSide` используется как source of truth
+  для section alignment eligibility.
+- shared geometry/collision pipeline между planner, `EstimateFit` и projection
+  уже закрыт; дальнейшая работа здесь — policy-level tuning, а не parity fix.
+- основной main layout уже отвергает слишком плотные `BaseView`-centric
+  варианты раньше, чем они превращаются в `projection-skip:view-overlap`,
+  но сама topology/projection policy остаётся следующим этапом.
 - `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
   candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
 - standard section, не вставшая в preferred stack, уже не должна проходить
@@ -255,11 +241,12 @@
   к одному geometry/validator source of truth; reject reasons и parity traces
   унифицированы.
 - `Stage 3: behavioral fixes`:
-  следующий активный этап.
-  Сюда относятся `EstimateFit vs apply`, `Top/Bottom` sections,
-  oversized policy и идемпотентность repeated `fit_views_to_sheet`.
+  завершён.
+  Закрыты `BaseView` spacing / main-skeleton hardening, `Top/Bottom`
+  bounded-band decision, oversized standard sections и repeated-fit
+  stabilization для standard neighbors/sections.
 - `Stage 4: policy polish`:
-  после стабилизации geometry/collision pipeline.
+  следующий активный этап.
   Сюда входят detail/dependent placement policy и явная конфигурация
   projection method.
 
@@ -422,20 +409,11 @@
 
 Статус:
 
-- закрыто как diagnostics/parity этап.
+- закрыто.
 - `EstimateFit` failure decisions сведены к одному snapshot shape.
 - section probe regressions добавлены для `Top/Bottom` и `Left/Right`.
 - projection post-pass использует тот же validator contract и пишет
   parity summary trace.
-
-Нужно:
-
-- убрать расхождение, при котором `EstimateFit` принимает или отвергает
-  layout по одной геометрии, а после apply фактические bbox дают другой результат
-- отдельно довести parity для `Top/Bottom` sections, где уже наблюдался
-  ложный reject по `no-valid-x`
-- логировать и сравнивать одни и те же rect в estimate/apply path
-- не считать `1:20` невалидным, если на том же листе этот layout реально помещается
 
 Готово когда:
 
@@ -448,18 +426,9 @@
 
 Статус:
 
-- следующий активный этап.
-- это уже не geometry extraction, а policy/spacing work поверх
-  закрытого `Stage 2`.
-
-Нужно:
-
-- использовать один и тот же source of truth для budget window
-  в strict/relaxed/diagnostics path
-- перестать принимать слишком плотный `Front/Top/Right` каркас как валидный fit
-  до projection
-- добавить явный spacing reserve для standard neighbors там, где projection
-  потом обязан сделать корректирующий move
+- закрыто как `Stage 3A/3B/3C/3E`.
+- viability-first `baseRect` selection, single-gap reserve, degraded standard
+  section path и repeated-fit stabilization уже внедрены.
 
 Готово когда:
 
@@ -491,6 +460,12 @@
   а явной policy
 
 ### 5. Отделить oversized sections от normal section policy
+
+Статус:
+
+- закрыто как `Stage 3D`.
+- oversized standard sections отделены от normal stack/scoring и больше
+  не должны легализоваться через generic residual.
 
 Нужно:
 

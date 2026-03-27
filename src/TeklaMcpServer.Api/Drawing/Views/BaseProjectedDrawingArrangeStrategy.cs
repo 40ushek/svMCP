@@ -232,6 +232,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public string DiagnosticTarget { get; }
     }
 
+    internal readonly struct StandardSectionPartition
+    {
+        public StandardSectionPartition(IReadOnlyList<View> normal, IReadOnlyList<View> oversized)
+        {
+            Normal = normal;
+            Oversized = oversized;
+        }
+
+        public IReadOnlyList<View> Normal { get; }
+        public IReadOnlyList<View> Oversized { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -395,6 +407,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         rightRect = placements.RightRect ?? new ReservedRect(0, 0, 0, 0);
     }
 
+    internal static bool IsOversizedStandardSection(
+        SectionPlacementSide placementSide,
+        double baseWidth,
+        double baseHeight,
+        double sectionWidth,
+        double sectionHeight,
+        double gap)
+        => placementSide switch
+        {
+            SectionPlacementSide.Top or SectionPlacementSide.Bottom => sectionWidth > baseWidth + gap,
+            SectionPlacementSide.Left or SectionPlacementSide.Right => sectionHeight > baseHeight + gap,
+            _ => false
+        };
+
     public bool CanArrange(DrawingArrangeContext context)
     {
         var baseView = BaseViewSelection.Select(context.Views).View;
@@ -438,12 +464,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
                 return false;
 
-            var fallbackStandardSectionIds = CollectUnplannedStandardSectionIds(planningContext, plannedIds);
-            return fallbackStandardSectionIds.Count == 0
-                || ValidateResidualFallbackLayout(unplannedCtx, fallbackStandardSectionIds);
+            var unplannedSectionIds = CollectUnplannedSemanticSectionIds(planningContext, plannedIds);
+            if (unplannedSectionIds.Count > 0)
+                return false;
+
+            return true;
         }
 
-        if (CollectStandardSectionIds(planningContext).Count > 0)
+        if (CollectSemanticSectionIds(planningContext).Count > 0)
             return false;
 
         var maxr  = _maxRectsFallback.EstimateFit(planningContext, frames);
@@ -451,33 +479,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return maxr || shelf;
     }
 
-    private HashSet<int> CollectUnplannedStandardSectionIds(
+    private static HashSet<int> CollectUnplannedSemanticSectionIds(
         DrawingArrangeContext context,
         HashSet<int> plannedIds)
     {
-        var baseViewSelection = BaseViewSelection.Select(context.Views);
-        var baseView = baseViewSelection.View;
-        if (baseView == null)
-            return new HashSet<int>();
-
         var semanticViews = SemanticViewSet.Build(context.Views);
-        var sectionGroups = SectionGroupSet.Build(
-            semanticViews.Sections,
-            context.Drawing,
-            baseView,
-            _sectionPlacementSideResolver);
-
-        return sectionGroups.Left
-            .Concat(sectionGroups.Right)
-            .Concat(sectionGroups.Top)
-            .Concat(sectionGroups.Bottom)
+        return semanticViews.Sections
             .Select(view => view.GetIdentifier().ID)
             .Where(id => !plannedIds.Contains(id))
             .ToHashSet();
     }
 
-    private HashSet<int> CollectStandardSectionIds(DrawingArrangeContext context)
-        => CollectUnplannedStandardSectionIds(context, new HashSet<int>());
+    private static HashSet<int> CollectSemanticSectionIds(DrawingArrangeContext context)
+        => CollectUnplannedSemanticSectionIds(context, new HashSet<int>());
 
     private static bool ValidateResidualFallbackLayout(
         DrawingArrangeContext context,
@@ -596,6 +610,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
             if (unplanned.Count > 0)
             {
+                var unplannedSectionIds = CollectUnplannedSemanticSectionIds(context, plannedIds);
+                var residualEligible = unplanned
+                    .Where(v => !unplannedSectionIds.Contains(v.GetIdentifier().ID))
+                    .ToList();
+
                 var anchorRects = planned.Select(p =>
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
@@ -607,14 +626,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 extendedReserved.AddRange(anchorRects);
 
                 var unplannedCtx = new DrawingArrangeContext(
-                    context.Drawing, unplanned,
+                    context.Drawing, residualEligible,
                     context.SheetWidth, context.SheetHeight,
                     context.Margin, context.Gap,
                     extendedReserved, context.EffectiveFrameSizes);
 
                 PerfTrace.Write("api-view", "front_arrange_plan", 0,
-                    $"mode=anchor-then-maxrects anchors={planned.Count} remaining={unplanned.Count}");
-                var unplannedFrames = unplanned
+                    $"mode=anchor-then-maxrects anchors={planned.Count} remaining={residualEligible.Count} unresolvedSections={unplannedSectionIds.Count}");
+
+                if (residualEligible.Count == 0)
+                {
+                    PerfTrace.Write("api-view", "front_arrange_plan", 0, "mode=anchor-only unresolved-sections");
+                    return result;
+                }
+
+                var unplannedFrames = residualEligible
                     .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                     .ToList();
                 if (_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
@@ -661,6 +687,13 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 .ToList();
 
             if (unplannedViews.Count == 0)
+                return conflicts;
+
+            var unplannedSectionIds = CollectUnplannedSemanticSectionIds(planningContext, plannedIds);
+            foreach (var section in unplannedViews.Where(v => unplannedSectionIds.Contains(v.GetIdentifier().ID)))
+                AddConflict(conflicts, section, "Residual", "section_residual_disallowed", target: "semantic-section");
+
+            if (conflicts.Count > 0)
                 return conflicts;
 
             var anchorRects = planned.Select(p =>
@@ -875,6 +908,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
+        var leftSectionPartition = PartitionStandardSections(context, baseRect, leftSections, SectionPlacementSide.Left);
+        var rightSectionPartition = PartitionStandardSections(context, baseRect, rightSections, SectionPlacementSide.Right);
+        var topSectionPartition = PartitionStandardSections(context, baseRect, topSections, SectionPlacementSide.Top);
+        var bottomSectionPartition = PartitionStandardSections(context, baseRect, bottomSections, SectionPlacementSide.Bottom);
 
         var searchArea = new ViewPlacementSearchArea(baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY);
 
@@ -911,7 +948,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DiagnoseStackPlacementFailureWithFallback(
             conflicts,
             context,
-            leftSections,
+            leftSectionPartition.Normal,
+            baseRect,
+            mainSkeleton.GetAnchorOrBase("left", baseRect),
+            mainSkeleton.GetAnchorOrBase("right", baseRect),
+            RelativePlacement.Left,
+            searchArea,
+            context.Gap,
+            occupied);
+        DiagnoseOversizedStandardSections(
+            conflicts,
+            context,
+            leftSectionPartition.Oversized,
             baseRect,
             mainSkeleton.GetAnchorOrBase("left", baseRect),
             mainSkeleton.GetAnchorOrBase("right", baseRect),
@@ -923,7 +971,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DiagnoseStackPlacementFailureWithFallback(
             conflicts,
             context,
-            rightSections,
+            rightSectionPartition.Normal,
+            baseRect,
+            mainSkeleton.GetAnchorOrBase("right", baseRect),
+            mainSkeleton.GetAnchorOrBase("left", baseRect),
+            RelativePlacement.Right,
+            searchArea,
+            context.Gap,
+            occupied);
+        DiagnoseOversizedStandardSections(
+            conflicts,
+            context,
+            rightSectionPartition.Oversized,
             baseRect,
             mainSkeleton.GetAnchorOrBase("right", baseRect),
             mainSkeleton.GetAnchorOrBase("left", baseRect),
@@ -935,7 +994,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DiagnoseHorizontalStackPlacementFailureWithFallback(
             conflicts,
             context,
-            topSections,
+            topSectionPartition.Normal,
+            baseRect,
+            mainSkeleton.GetAnchorOrBase("top", baseRect),
+            mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+            RelativePlacement.Top,
+            searchArea,
+            context.Gap,
+            occupied);
+        DiagnoseOversizedStandardSections(
+            conflicts,
+            context,
+            topSectionPartition.Oversized,
             baseRect,
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
@@ -947,7 +1017,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DiagnoseHorizontalStackPlacementFailureWithFallback(
             conflicts,
             context,
-            bottomSections,
+            bottomSectionPartition.Normal,
+            baseRect,
+            mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+            mainSkeleton.GetAnchorOrBase("top", baseRect),
+            RelativePlacement.Bottom,
+            searchArea,
+            context.Gap,
+            occupied);
+        DiagnoseOversizedStandardSections(
+            conflicts,
+            context,
+            bottomSectionPartition.Oversized,
             baseRect,
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
@@ -1347,6 +1428,38 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DiagnoseHorizontalStackPlacementFailure(conflicts, context, sectionViews, frontRect, preferredAnchorRect, preferredZone, searchArea, gap, occupied);
     }
 
+    private static void DiagnoseOversizedStandardSections(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (sectionViews.Count == 0)
+            return;
+
+        if (TryPlaceDegradedStandardSections(
+                context,
+                sectionViews,
+                frontRect,
+                preferredAnchorRect,
+                fallbackAnchorRect,
+                preferredZone,
+                searchArea,
+                gap,
+                occupied.ToList(),
+                new List<PlannedPlacement>()))
+            return;
+
+        foreach (var section in sectionViews)
+            AddConflict(conflicts, section, preferredZone.ToString(), "oversized_section");
+    }
+
     private static void DiagnoseVerticalStackPlacementFailure(
         List<DrawingFitConflict> conflicts,
         DrawingArrangeContext context,
@@ -1572,17 +1685,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         }
 
+        var proposedRects = proposed.ToList();
+        var blockers = occupied.Concat(proposedRects).ToList();
         var preferredRect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
-        TryValidateSectionCandidateRect(preferredRect, searchArea, occupied, proposed, out var preferredReason);
+        TryValidateSectionCandidateRect(preferredRect, searchArea, occupied, proposedRects, out var preferredReason);
 
-        foreach (var candidateMinX in EnumerateHorizontalSectionCandidateMinXs(preferredMinX, width, searchArea))
+        var currentMinX = TryGetCurrentHorizontalSectionMinX(section, width);
+        foreach (var candidateMinX in EnumerateHorizontalSectionCandidateMinXs(preferredMinX, currentMinX, width, minY, maxY, searchArea, blockers))
         {
-            var adjustedMinX = PushHorizontalSectionCandidateRight(candidateMinX, minY, maxY, width, occupied);
+            var adjustedMinX = PushHorizontalSectionCandidateRight(candidateMinX, minY, maxY, width, blockers);
             if (!IsHorizontalSectionCandidateInSearchArea(adjustedMinX, width, searchArea))
                 continue;
 
             rect = new ReservedRect(adjustedMinX, minY, adjustedMinX + width, maxY);
-            if (TryValidateSectionCandidateRect(rect, searchArea, occupied, proposed, out _))
+            if (TryValidateSectionCandidateRect(rect, searchArea, occupied, proposedRects, out _))
             {
                 failure = null;
                 return true;
@@ -1718,15 +1834,38 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     private static IEnumerable<double> EnumerateHorizontalSectionCandidateMinXs(
         double preferredMinX,
+        double? currentMinX,
         double width,
-        ViewPlacementSearchArea searchArea)
+        double minY,
+        double maxY,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> blockers)
     {
-        return new[]
+        var candidates = new List<double>
         {
             preferredMinX,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX - width
-        }.Distinct();
+        };
+
+        if (currentMinX.HasValue)
+            candidates.Add(currentMinX.Value);
+
+        candidates.Add(searchArea.FreeMinX);
+        candidates.Add(searchArea.FreeMaxX - width);
+
+        foreach (var blocker in blockers)
+        {
+            if (blocker.MinY >= maxY || blocker.MaxY <= minY)
+                continue;
+
+            candidates.Add(blocker.MaxX);
+            candidates.Add(blocker.MinX - width);
+        }
+
+        return candidates
+            .Distinct()
+            .OrderBy(candidate => candidate.Equals(preferredMinX) ? double.NegativeInfinity : System.Math.Abs(candidate - preferredMinX))
+            .ThenBy(candidate => currentMinX.HasValue && candidate.Equals(currentMinX.Value) ? -1 : 0)
+            .ThenBy(candidate => candidate);
     }
 
     private static double PushHorizontalSectionCandidateRight(
@@ -1755,6 +1894,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double width,
         ViewPlacementSearchArea searchArea)
         => minX >= searchArea.FreeMinX && minX + width <= searchArea.FreeMaxX;
+
+    private static double? TryGetCurrentHorizontalSectionMinX(View section, double width)
+    {
+        if (section.Origin == null)
+            return null;
+
+        return section.Origin.X - (width / 2.0);
+    }
 
     private static void AddIntersectionConflicts(
         List<DrawingFitConflict> conflicts,
@@ -2086,9 +2233,13 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var leftAnchor = mainSkeleton.GetAnchorOrBase("left", baseRect);
         var rightAnchor = mainSkeleton.GetAnchorOrBase("right", baseRect);
+        var leftSectionPartition = PartitionStandardSections(context, baseRect, leftSections, SectionPlacementSide.Left);
+        var rightSectionPartition = PartitionStandardSections(context, baseRect, rightSections, SectionPlacementSide.Right);
+        var topSectionPartition = PartitionStandardSections(context, baseRect, topSections, SectionPlacementSide.Top);
+        var bottomSectionPartition = PartitionStandardSections(context, baseRect, bottomSections, SectionPlacementSide.Bottom);
         if (!TryPlaceVerticalSectionStackWithFallback(
             context,
-            leftSections,
+            leftSectionPartition.Normal,
             baseRect,
             leftAnchor,
             rightAnchor,
@@ -2099,7 +2250,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                leftSections,
+                leftSectionPartition.Normal,
+                baseRect,
+                leftAnchor,
+                rightAnchor,
+                RelativePlacement.Left,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                leftSectionPartition.Oversized,
                 baseRect,
                 leftAnchor,
                 rightAnchor,
@@ -2111,7 +2274,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         if (!TryPlaceVerticalSectionStackWithFallback(
             context,
-            rightSections,
+            rightSectionPartition.Normal,
             baseRect,
             rightAnchor,
             leftAnchor,
@@ -2122,7 +2285,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                rightSections,
+                rightSectionPartition.Normal,
+                baseRect,
+                rightAnchor,
+                leftAnchor,
+                RelativePlacement.Right,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                rightSectionPartition.Oversized,
                 baseRect,
                 rightAnchor,
                 leftAnchor,
@@ -2135,7 +2310,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
-            topSections,
+            topSectionPartition.Normal,
             baseRect,
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
@@ -2146,7 +2321,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                topSections,
+                topSectionPartition.Normal,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                RelativePlacement.Top,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                topSectionPartition.Oversized,
                 baseRect,
                 mainSkeleton.GetAnchorOrBase("top", baseRect),
                 mainSkeleton.GetAnchorOrBase("bottom", baseRect),
@@ -2158,7 +2345,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
-            bottomSections,
+            bottomSectionPartition.Normal,
             baseRect,
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
@@ -2169,7 +2356,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                bottomSections,
+                bottomSectionPartition.Normal,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                RelativePlacement.Bottom,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                bottomSectionPartition.Oversized,
                 baseRect,
                 mainSkeleton.GetAnchorOrBase("bottom", baseRect),
                 mainSkeleton.GetAnchorOrBase("top", baseRect),
@@ -2296,9 +2495,13 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var leftPlacedAnchor = mainSkeleton.GetAnchorOrBase("left", baseRect);
         var rightPlacedAnchor = mainSkeleton.GetAnchorOrBase("right", baseRect);
+        var leftSectionPartition = PartitionStandardSections(context, baseRect, leftSections, SectionPlacementSide.Left);
+        var rightSectionPartition = PartitionStandardSections(context, baseRect, rightSections, SectionPlacementSide.Right);
+        var topSectionPartition = PartitionStandardSections(context, baseRect, topSections, SectionPlacementSide.Top);
+        var bottomSectionPartition = PartitionStandardSections(context, baseRect, bottomSections, SectionPlacementSide.Bottom);
         if (!TryPlaceVerticalSectionStackWithFallback(
             context,
-            leftSections,
+            leftSectionPartition.Normal,
             baseRect,
             leftPlacedAnchor,
             rightPlacedAnchor,
@@ -2309,7 +2512,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                leftSections,
+                leftSectionPartition.Normal,
+                baseRect,
+                leftPlacedAnchor,
+                rightPlacedAnchor,
+                RelativePlacement.Left,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                leftSectionPartition.Oversized,
                 baseRect,
                 leftPlacedAnchor,
                 rightPlacedAnchor,
@@ -2321,7 +2536,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         if (!TryPlaceVerticalSectionStackWithFallback(
             context,
-            rightSections,
+            rightSectionPartition.Normal,
             baseRect,
             rightPlacedAnchor,
             leftPlacedAnchor,
@@ -2332,7 +2547,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                rightSections,
+                rightSectionPartition.Normal,
+                baseRect,
+                rightPlacedAnchor,
+                leftPlacedAnchor,
+                RelativePlacement.Right,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                rightSectionPartition.Oversized,
                 baseRect,
                 rightPlacedAnchor,
                 leftPlacedAnchor,
@@ -2345,7 +2572,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
-            topSections,
+            topSectionPartition.Normal,
             baseRect,
             mainSkeleton.GetAnchorOrBase("top", baseRect),
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
@@ -2356,7 +2583,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                topSections,
+                topSectionPartition.Normal,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                RelativePlacement.Top,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                topSectionPartition.Oversized,
                 baseRect,
                 mainSkeleton.GetAnchorOrBase("top", baseRect),
                 mainSkeleton.GetAnchorOrBase("bottom", baseRect),
@@ -2368,7 +2607,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return false;
         if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
-            bottomSections,
+            bottomSectionPartition.Normal,
             baseRect,
             mainSkeleton.GetAnchorOrBase("bottom", baseRect),
             mainSkeleton.GetAnchorOrBase("top", baseRect),
@@ -2379,7 +2618,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned)
             && !TryPlaceDegradedStandardSections(
                 context,
-                bottomSections,
+                bottomSectionPartition.Normal,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                RelativePlacement.Bottom,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceOversizedStandardSections(
+                context,
+                bottomSectionPartition.Oversized,
                 baseRect,
                 mainSkeleton.GetAnchorOrBase("bottom", baseRect),
                 mainSkeleton.GetAnchorOrBase("top", baseRect),
@@ -2609,6 +2860,33 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return views.Sum(view => DrawingArrangeContextSizing.GetWidth(context, view)) + (views.Count * gap);
     }
 
+    private static StandardSectionPartition PartitionStandardSections(
+        DrawingArrangeContext context,
+        ReservedRect baseRect,
+        IReadOnlyList<View> sections,
+        SectionPlacementSide placementSide)
+    {
+        if (sections.Count == 0)
+            return new StandardSectionPartition(System.Array.Empty<View>(), System.Array.Empty<View>());
+
+        var normal = new List<View>(sections.Count);
+        var oversized = new List<View>();
+        var baseWidth = baseRect.MaxX - baseRect.MinX;
+        var baseHeight = baseRect.MaxY - baseRect.MinY;
+
+        foreach (var section in sections)
+        {
+            var width = DrawingArrangeContextSizing.GetWidth(context, section);
+            var height = DrawingArrangeContextSizing.GetHeight(context, section);
+            if (IsOversizedStandardSection(placementSide, baseWidth, baseHeight, width, height, context.Gap))
+                oversized.Add(section);
+            else
+                normal.Add(section);
+        }
+
+        return new StandardSectionPartition(normal, oversized);
+    }
+
     private static ZoneBudgets ComputeZoneBudgets(
         DrawingArrangeContext context,
         NeighborSet neighbors,
@@ -2653,6 +2931,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
         var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
         var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
+        var currentBaseRect = TryGetViewBoundingRect(baseView, out var currentRect) ? currentRect : (ReservedRect?)null;
 
         var bestDecision = new BaseRectViabilityDecision(
             new ReservedRect(0, 0, 0, 0),
@@ -2696,7 +2975,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 blocked,
                 requireAllStrictNeighborsFit);
 
-            if (IsBetterBaseRectViability(candidateDecision, bestDecision))
+            if (IsBetterBaseRectViability(candidateDecision, bestDecision, currentBaseRect))
                 bestDecision = candidateDecision;
         }
 
@@ -2745,6 +3024,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     internal static bool IsBetterBaseRectViability(
         BaseRectViabilityDecision candidate,
         BaseRectViabilityDecision currentBest)
+        => IsBetterBaseRectViability(candidate, currentBest, currentBaseRect: null);
+
+    private static bool IsBetterBaseRectViability(
+        BaseRectViabilityDecision candidate,
+        BaseRectViabilityDecision currentBest,
+        ReservedRect? currentBaseRect)
     {
         if (candidate.IsViable != currentBest.IsViable)
             return candidate.IsViable;
@@ -2757,6 +3042,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (!candidate.SafeGapScore.Equals(currentBest.SafeGapScore))
             return candidate.SafeGapScore > currentBest.SafeGapScore;
+
+        if (currentBaseRect != null)
+        {
+            var candidateDistance = ComputeBaseRectCenterDistance(candidate.BaseRect, currentBaseRect);
+            var currentBestDistance = ComputeBaseRectCenterDistance(currentBest.BaseRect, currentBaseRect);
+            if (!candidateDistance.Equals(currentBestDistance))
+                return candidateDistance < currentBestDistance;
+        }
 
         if (candidate.BaseRect.MinY != currentBest.BaseRect.MinY)
             return candidate.BaseRect.MinY < currentBest.BaseRect.MinY;
@@ -2782,6 +3075,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var bottom = neighbors.BottomNeighbor;
         var leftNeighbor = neighbors.SideNeighborLeft;
         var rightNeighbor = neighbors.SideNeighborRight;
+        var topSectionPartition = PartitionStandardSections(context, baseRect, topSections, SectionPlacementSide.Top);
+        var bottomSectionPartition = PartitionStandardSections(context, baseRect, bottomSections, SectionPlacementSide.Bottom);
 
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var placements = new MainSkeletonPlacementState();
@@ -2859,7 +3154,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var preferredHorizontalStackFitCount = 0;
         if (!TryValidatePreferredHorizontalSectionStack(
                 context,
-                topSections,
+                topSectionPartition.Normal,
                 baseRect,
                 placements.GetAnchorOrBase("top", baseRect),
                 RelativePlacement.Top,
@@ -2871,12 +3166,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return CreateBaseRectSectionRejectDecision(baseRect, strictNeighborFitCount, preferredHorizontalStackFitCount, searchArea, budgets, RelativePlacement.Top, topFailure);
         }
 
-        if (topSections.Count > 0)
+        if (topSectionPartition.Normal.Count > 0)
             preferredHorizontalStackFitCount++;
 
         if (!TryValidatePreferredHorizontalSectionStack(
                 context,
-                bottomSections,
+                bottomSectionPartition.Normal,
                 baseRect,
                 placements.GetAnchorOrBase("bottom", baseRect),
                 RelativePlacement.Bottom,
@@ -2888,7 +3183,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return CreateBaseRectSectionRejectDecision(baseRect, strictNeighborFitCount, preferredHorizontalStackFitCount, searchArea, budgets, RelativePlacement.Bottom, bottomFailure);
         }
 
-        if (bottomSections.Count > 0)
+        if (bottomSectionPartition.Normal.Count > 0)
             preferredHorizontalStackFitCount++;
 
         return new BaseRectViabilityDecision(
@@ -2978,6 +3273,13 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var bottomSlack = System.Math.Max(0, baseRect.MinY - (searchArea.FreeMinY + budgets.BottomHeight));
         var topSlack = System.Math.Max(0, (searchArea.FreeMaxY - budgets.TopHeight) - baseRect.MaxY);
         return leftSlack + rightSlack + bottomSlack + topSlack;
+    }
+
+    private static double ComputeBaseRectCenterDistance(ReservedRect rect, ReservedRect currentBaseRect)
+    {
+        var dx = CenterX(rect) - CenterX(currentBaseRect);
+        var dy = CenterY(rect) - CenterY(currentBaseRect);
+        return (dx * dx) + (dy * dy);
     }
 
     private static bool TryFindBaseViewWindow(
@@ -3690,6 +3992,48 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         TraceSectionStackResult("vertical", preferredZone, actualZone: null, fallbackUsed: false, sectionViews);
 
         return false;
+    }
+
+    private static bool TryPlaceOversizedStandardSections(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+    {
+        if (sectionViews.Count == 0)
+            return true;
+
+        PerfTrace.Write(
+            "api-view",
+            "section_oversized_degraded_attempt",
+            0,
+            $"preferred={preferredZone} sections=[{FormatSectionIds(sectionViews)}]");
+
+        var ok = TryPlaceDegradedStandardSections(
+            context,
+            sectionViews,
+            frontRect,
+            preferredAnchorRect,
+            fallbackAnchorRect,
+            preferredZone,
+            searchArea,
+            gap,
+            occupied,
+            planned);
+
+        PerfTrace.Write(
+            "api-view",
+            ok ? "section_oversized_degraded_result" : "section_oversized_degraded_reject",
+            0,
+            $"preferred={preferredZone} sections=[{FormatSectionIds(sectionViews)}]");
+
+        return ok;
     }
 
     internal static bool TryPlaceDegradedStandardSections(

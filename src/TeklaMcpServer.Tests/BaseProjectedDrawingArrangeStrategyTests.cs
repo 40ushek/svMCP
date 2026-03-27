@@ -581,6 +581,30 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void ProbeHorizontalSectionCandidate_FindsBlockerDerivedShiftInsidePreferredBand()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20, originX: 75, originY: 75);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeHorizontalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(35, 20, 65, 60),
+            anchorRect: new ReservedRect(35, 20, 65, 60),
+            placementSide: SectionPlacementSide.Top,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 120,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[] { new ReservedRect(35, 65, 70, 85) });
+
+        Assert.True(result.Success);
+        Assert.Equal(70, result.Rect.MinX, 6);
+        Assert.Equal(100, result.Rect.MaxX, 6);
+        Assert.Equal(65, result.Rect.MinY, 6);
+        Assert.Equal(85, result.Rect.MaxY, 6);
+    }
+
+    [Fact]
     public void ProbeHorizontalSectionCandidate_ReturnsOutOfBoundsX_WhenBandCannotFit()
     {
         var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 80, height: 20);
@@ -1018,6 +1042,31 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
 
         Assert.False(ok);
         Assert.Empty(planned);
+    }
+
+    [Theory]
+    [InlineData(SectionPlacementSide.Top, 60, 40, 66, 20, 5, true)]
+    [InlineData(SectionPlacementSide.Top, 60, 40, 65, 20, 5, false)]
+    [InlineData(SectionPlacementSide.Left, 60, 40, 20, 46, 5, true)]
+    [InlineData(SectionPlacementSide.Left, 60, 40, 20, 45, 5, false)]
+    public void IsOversizedStandardSection_UsesBaseExtentAlongPlacementAxis(
+        SectionPlacementSide placementSide,
+        double baseWidth,
+        double baseHeight,
+        double sectionWidth,
+        double sectionHeight,
+        double gap,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            BaseProjectedDrawingArrangeStrategy.IsOversizedStandardSection(
+                placementSide,
+                baseWidth,
+                baseHeight,
+                sectionWidth,
+                sectionHeight,
+                gap));
     }
 
     private static Tekla.Structures.Drawing.Drawing CreateDrawing()

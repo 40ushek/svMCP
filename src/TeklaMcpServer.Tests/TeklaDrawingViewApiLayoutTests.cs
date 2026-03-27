@@ -74,4 +74,29 @@ public sealed class TeklaDrawingViewApiLayoutTests
         Assert.Contains("oversizeConflicts=0", text);
         Assert.Contains("diagnosedConflicts=0", text);
     }
+
+    [Theory]
+    [InlineData(SectionPlacementSide.Top, 60, 40, 70, 20, 5, true)]
+    [InlineData(SectionPlacementSide.Top, 60, 40, 60, 20, 5, false)]
+    [InlineData(SectionPlacementSide.Right, 60, 40, 20, 50, 5, true)]
+    [InlineData(SectionPlacementSide.Right, 60, 40, 20, 45, 5, false)]
+    public void IsOversizedStandardSectionScaleDriver_MatchesStage3Policy(
+        SectionPlacementSide placementSide,
+        double baseWidth,
+        double baseHeight,
+        double sectionWidth,
+        double sectionHeight,
+        double gap,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            TeklaDrawingViewApi.IsOversizedStandardSectionScaleDriver(
+                placementSide,
+                baseWidth,
+                baseHeight,
+                sectionWidth,
+                sectionHeight,
+                gap));
+    }
 }

@@ -138,6 +138,70 @@ public sealed partial class TeklaDrawingViewApi
         return conflicts;
     }
 
+    internal static HashSet<int> CollectOversizedStandardSectionScaleDriverIds(
+        Tekla.Structures.Drawing.Drawing drawing,
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
+        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
+        double gap)
+    {
+        var baseViewSelection = BaseViewSelection.Select(views);
+        var baseView = baseViewSelection.View;
+        if (baseView == null)
+            return new HashSet<int>();
+
+        var baseId = baseView.GetIdentifier().ID;
+        var baseWidth = frameSizes.TryGetValue(baseId, out var baseFrame) ? baseFrame.Width : baseView.Width;
+        var baseHeight = frameSizes.TryGetValue(baseId, out var baseFrame2) ? baseFrame2.Height : baseView.Height;
+        var semanticViews = SemanticViewSet.Build(views);
+        var sectionGroups = SectionGroupSet.Build(
+            semanticViews.Sections,
+            drawing,
+            baseView,
+            new SectionPlacementSideResolver(new Model()));
+
+        var result = new HashSet<int>();
+        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Top, SectionPlacementSide.Top, baseWidth, baseHeight, frameSizes, gap);
+        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Bottom, SectionPlacementSide.Bottom, baseWidth, baseHeight, frameSizes, gap);
+        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Left, SectionPlacementSide.Left, baseWidth, baseHeight, frameSizes, gap);
+        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Right, SectionPlacementSide.Right, baseWidth, baseHeight, frameSizes, gap);
+        return result;
+    }
+
+    private static void CollectOversizedStandardSectionScaleDriverIds(
+        HashSet<int> oversizedIds,
+        IReadOnlyList<View> sections,
+        SectionPlacementSide placementSide,
+        double baseWidth,
+        double baseHeight,
+        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
+        double gap)
+    {
+        foreach (var section in sections)
+        {
+            var sectionId = section.GetIdentifier().ID;
+            var width = frameSizes.TryGetValue(sectionId, out var size) ? size.Width : section.Width;
+            var height = frameSizes.TryGetValue(sectionId, out var size2) ? size2.Height : section.Height;
+            if (BaseProjectedDrawingArrangeStrategy.IsOversizedStandardSection(placementSide, baseWidth, baseHeight, width, height, gap))
+                oversizedIds.Add(sectionId);
+        }
+    }
+
+    internal static bool IsOversizedStandardSectionScaleDriver(
+        SectionPlacementSide placementSide,
+        double baseWidth,
+        double baseHeight,
+        double sectionWidth,
+        double sectionHeight,
+        double gap)
+        => BaseProjectedDrawingArrangeStrategy.IsOversizedStandardSection(
+            placementSide,
+            baseWidth,
+            baseHeight,
+            sectionWidth,
+            sectionHeight,
+            gap);
+
     private static void TraceScaleSelectionInputs(
         IReadOnlyList<View> views,
         IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
@@ -414,21 +478,7 @@ public sealed partial class TeklaDrawingViewApi
         var semanticKindById = views.ToDictionary(
             v => v.GetIdentifier().ID,
             v => ViewSemanticClassifier.Classify(v));
-        var scaleDriverViews = uniformAllNonDetail
-            ? views
-                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
-                .ToList()
-            : views
-                .Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)
-                .ToList();
-        if (scaleDriverViews.Count == 0)
-        {
-            scaleDriverViews = views
-                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
-                .ToList();
-        }
-        if (scaleDriverViews.Count == 0)
-            scaleDriverViews = views;
+        List<View> scaleDriverViews;
 
         double sheetW = 0;
         double sheetH = 0;
@@ -467,6 +517,26 @@ public sealed partial class TeklaDrawingViewApi
         // views from GetViews() which may be stale after Modify/CommitChanges.
         var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
+        var oversizedStandardSectionScaleDriverIds = uniformAllNonDetail
+            ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, semanticKindById, originalFrameSizes, gap)
+            : new HashSet<int>();
+        scaleDriverViews = uniformAllNonDetail
+            ? views
+                .Where(v =>
+                    semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail
+                    && !oversizedStandardSectionScaleDriverIds.Contains(v.GetIdentifier().ID))
+                .ToList()
+            : views
+                .Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)
+                .ToList();
+        if (scaleDriverViews.Count == 0)
+        {
+            scaleDriverViews = views
+                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+                .ToList();
+        }
+        if (scaleDriverViews.Count == 0)
+            scaleDriverViews = views;
         var scaleDrivers = scaleDriverViews
             .Select(v =>
             {
