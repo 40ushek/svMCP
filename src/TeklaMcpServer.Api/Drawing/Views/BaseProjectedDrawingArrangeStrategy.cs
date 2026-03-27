@@ -2908,6 +2908,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return false;
     }
 
+    private static bool TryPlaceOptionalPlannedMainSkeletonNeighborCore(
+        DrawingArrangeContext context,
+        string mode,
+        MainSkeletonNeighborSpec spec,
+        MainSkeletonPlacementState placements,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        System.Func<ReservedRect?> findRect,
+        System.Action<View>? onRejected = null)
+    {
+        if (!TryGetOptionalMainSkeletonNeighborView(spec, placements, out var role, out var view))
+            return true;
+
+        var rect = findRect();
+        if (rect != null)
+        {
+            CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
+            return true;
+        }
+
+        placements.Clear(role);
+        TracePlanReject(mode, role, context, planned, null);
+        onRejected?.Invoke(view);
+        return false;
+    }
+
     private static bool TryPlaceOptionalStrictMainSkeletonNeighbor(
         DrawingArrangeContext context,
         MainSkeletonNeighborSpec spec,
@@ -2916,21 +2942,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned,
         MainSkeletonPlacementState placements)
-    {
-        if (!TryGetOptionalMainSkeletonNeighborView(spec, placements, out var role, out var view))
-            return true;
-
-        var rect = FindStrictMainSkeletonNeighborRect(spec, searchArea, gap, occupied);
-        if (rect != null)
-        {
-            CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
-            return true;
-        }
-
-        placements.Clear(role);
-        TracePlanReject("strict", role, context, planned, null);
-        return false;
-    }
+        => TryPlaceOptionalPlannedMainSkeletonNeighborCore(
+            context,
+            "strict",
+            spec,
+            placements,
+            occupied,
+            planned,
+            () => FindStrictMainSkeletonNeighborRect(spec, searchArea, gap, occupied));
 
     private static void TryPlaceOptionalRelaxedMainSkeletonNeighbor(
         DrawingArrangeContext context,
@@ -2941,19 +2960,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         List<View> deferred,
         MainSkeletonPlacementState placements)
     {
-        if (!TryGetOptionalMainSkeletonNeighborView(spec, placements, out var role, out var view))
-            return;
-
-        var rect = FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied);
-        if (rect != null)
-        {
-            CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
-            return;
-        }
-
-        placements.Clear(role);
-        TracePlanReject("relaxed", role, context, planned, null);
-        deferred.Add(view);
+        TryPlaceOptionalPlannedMainSkeletonNeighborCore(
+            context,
+            "relaxed",
+            spec,
+            placements,
+            occupied,
+            planned,
+            () => FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied),
+            deferred.Add);
     }
 
     private static ReservedRect? FindRelaxedMainSkeletonNeighborRect(
