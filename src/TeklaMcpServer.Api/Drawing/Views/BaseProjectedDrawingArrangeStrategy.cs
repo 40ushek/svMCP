@@ -1413,70 +1413,90 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (top != null)
         {
-            topRect = new ReservedRect(
-                CenterX(baseRect) - topWidth / 2.0,
-                baseRect.MaxY + gap,
-                CenterX(baseRect) + topWidth / 2.0,
-                baseRect.MaxY + gap + topHeight);
-            if (!IsWithinArea(topRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(topRect, occupied))
+            if (!TryPlaceStrictMainSkeletonNeighbor(
+                    top,
+                    RelativePlacement.Top,
+                    baseRect,
+                    topWidth,
+                    topHeight,
+                    gap,
+                    freeArea.minX,
+                    freeArea.maxX,
+                    freeArea.minY,
+                    freeArea.maxY,
+                    occupied,
+                    planned,
+                    out topRect))
             {
-                TracePlanReject("strict", "top", context, planned, topRect);
+                TracePlanReject("strict", "top", context, planned, topRect.Width > 0 || topRect.Height > 0 ? topRect : null);
                 return false;
             }
-
-            planned.Add(new PlannedPlacement(top, CenterX(topRect), CenterY(topRect)));
-            occupied.Add(topRect);
         }
 
         if (bottom != null)
         {
-            bottomRect = new ReservedRect(
-                CenterX(baseRect) - bottomWidth / 2.0,
-                baseRect.MinY - gap - bottomHeight,
-                CenterX(baseRect) + bottomWidth / 2.0,
-                baseRect.MinY - gap);
-            if (!IsWithinArea(bottomRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(bottomRect, occupied))
+            if (!TryPlaceStrictMainSkeletonNeighbor(
+                    bottom,
+                    RelativePlacement.Bottom,
+                    baseRect,
+                    bottomWidth,
+                    bottomHeight,
+                    gap,
+                    freeArea.minX,
+                    freeArea.maxX,
+                    freeArea.minY,
+                    freeArea.maxY,
+                    occupied,
+                    planned,
+                    out bottomRect))
             {
-                TracePlanReject("strict", "bottom", context, planned, bottomRect);
+                TracePlanReject("strict", "bottom", context, planned, bottomRect.Width > 0 || bottomRect.Height > 0 ? bottomRect : null);
                 return false;
             }
-
-            planned.Add(new PlannedPlacement(bottom, CenterX(bottomRect), CenterY(bottomRect)));
-            occupied.Add(bottomRect);
         }
 
         if (leftNeighbor != null)
         {
-            leftRect = new ReservedRect(
-                baseRect.MinX - gap - leftNeighborWidth,
-                CenterY(baseRect) - leftNeighborHeight / 2.0,
-                baseRect.MinX - gap,
-                CenterY(baseRect) + leftNeighborHeight / 2.0);
-            if (!IsWithinArea(leftRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(leftRect, occupied))
+            if (!TryPlaceStrictMainSkeletonNeighbor(
+                    leftNeighbor,
+                    RelativePlacement.Left,
+                    baseRect,
+                    leftNeighborWidth,
+                    leftNeighborHeight,
+                    gap,
+                    freeArea.minX,
+                    freeArea.maxX,
+                    freeArea.minY,
+                    freeArea.maxY,
+                    occupied,
+                    planned,
+                    out leftRect))
             {
-                TracePlanReject("strict", "left", context, planned, leftRect);
+                TracePlanReject("strict", "left", context, planned, leftRect.Width > 0 || leftRect.Height > 0 ? leftRect : null);
                 return false;
             }
-
-            planned.Add(new PlannedPlacement(leftNeighbor, CenterX(leftRect), CenterY(leftRect)));
-            occupied.Add(leftRect);
         }
 
         if (rightNeighbor != null)
         {
-            rightRect = new ReservedRect(
-                baseRect.MaxX + gap,
-                CenterY(baseRect) - rightNeighborHeight / 2.0,
-                baseRect.MaxX + gap + rightNeighborWidth,
-                CenterY(baseRect) + rightNeighborHeight / 2.0);
-            if (!IsWithinArea(rightRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY) || IntersectsAny(rightRect, occupied))
+            if (!TryPlaceStrictMainSkeletonNeighbor(
+                    rightNeighbor,
+                    RelativePlacement.Right,
+                    baseRect,
+                    rightNeighborWidth,
+                    rightNeighborHeight,
+                    gap,
+                    freeArea.minX,
+                    freeArea.maxX,
+                    freeArea.minY,
+                    freeArea.maxY,
+                    occupied,
+                    planned,
+                    out rightRect))
             {
-                TracePlanReject("strict", "right", context, planned, rightRect);
+                TracePlanReject("strict", "right", context, planned, rightRect.Width > 0 || rightRect.Height > 0 ? rightRect : null);
                 return false;
             }
-
-            planned.Add(new PlannedPlacement(rightNeighbor, CenterX(rightRect), CenterY(rightRect)));
-            occupied.Add(rightRect);
         }
 
         if (!TryValidateMainSkeletonSpacing(
@@ -2676,6 +2696,72 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         minY = 0;
         maxY = 0;
         return false;
+    }
+
+    private static bool TryCreateCenteredRelativeRect(
+        ReservedRect anchorRect,
+        RelativePlacement placement,
+        double width,
+        double height,
+        double gap,
+        out ReservedRect rect)
+    {
+        rect = placement switch
+        {
+            RelativePlacement.Top => new ReservedRect(
+                CenterX(anchorRect) - width / 2.0,
+                anchorRect.MaxY + gap,
+                CenterX(anchorRect) + width / 2.0,
+                anchorRect.MaxY + gap + height),
+            RelativePlacement.Bottom => new ReservedRect(
+                CenterX(anchorRect) - width / 2.0,
+                anchorRect.MinY - gap - height,
+                CenterX(anchorRect) + width / 2.0,
+                anchorRect.MinY - gap),
+            RelativePlacement.Left => new ReservedRect(
+                anchorRect.MinX - gap - width,
+                CenterY(anchorRect) - height / 2.0,
+                anchorRect.MinX - gap,
+                CenterY(anchorRect) + height / 2.0),
+            RelativePlacement.Right => new ReservedRect(
+                anchorRect.MaxX + gap,
+                CenterY(anchorRect) - height / 2.0,
+                anchorRect.MaxX + gap + width,
+                CenterY(anchorRect) + height / 2.0),
+            _ => new ReservedRect(0, 0, 0, 0)
+        };
+
+        return placement is RelativePlacement.Top
+            or RelativePlacement.Bottom
+            or RelativePlacement.Left
+            or RelativePlacement.Right;
+    }
+
+    private static bool TryPlaceStrictMainSkeletonNeighbor(
+        View view,
+        RelativePlacement placement,
+        ReservedRect baseRect,
+        double width,
+        double height,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        out ReservedRect rect)
+    {
+        if (!TryCreateCenteredRelativeRect(baseRect, placement, width, height, gap, out rect))
+            return false;
+
+        if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied))
+            return false;
+
+        planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect)));
+        if (occupied is List<ReservedRect> occupiedList)
+            occupiedList.Add(rect);
+        return true;
     }
 
     private static bool TryCreateVerticalSectionRect(
