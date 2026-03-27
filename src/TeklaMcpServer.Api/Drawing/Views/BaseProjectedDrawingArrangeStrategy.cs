@@ -1650,11 +1650,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (top != null)
         {
-            if (TryPlaceRelative(context, top, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Top, out var rect)
-                || TryFindTopViewAtSheetTop(context, top, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect))
+            if (TryPlaceRelaxedMainSkeletonNeighbor(
+                    context,
+                    top,
+                    baseRect,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    planned,
+                    RelativePlacement.Top,
+                    allowSheetTopFallback: true,
+                    out var rect))
             {
-                planned.Add(new PlannedPlacement(top, CenterX(rect), CenterY(rect)));
-                occupied.Add(rect);
                 topRect = rect;
                 topPlaced = true;
             }
@@ -1667,10 +1676,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (bottom != null)
         {
-            if (TryPlaceRelative(context, bottom, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Bottom, out var rect))
+            if (TryPlaceRelaxedMainSkeletonNeighbor(
+                    context,
+                    bottom,
+                    baseRect,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    planned,
+                    RelativePlacement.Bottom,
+                    allowSheetTopFallback: false,
+                    out var rect))
             {
-                planned.Add(new PlannedPlacement(bottom, CenterX(rect), CenterY(rect)));
-                occupied.Add(rect);
                 bottomRect = rect;
                 bottomPlaced = true;
             }
@@ -1683,10 +1702,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (leftNeighbor != null)
         {
-            if (TryPlaceRelative(context, leftNeighbor, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Left, out var rect))
+            if (TryPlaceRelaxedMainSkeletonNeighbor(
+                    context,
+                    leftNeighbor,
+                    baseRect,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    planned,
+                    RelativePlacement.Left,
+                    allowSheetTopFallback: false,
+                    out var rect))
             {
-                planned.Add(new PlannedPlacement(leftNeighbor, CenterX(rect), CenterY(rect)));
-                occupied.Add(rect);
                 leftRect = rect;
                 leftPlaced = true;
             }
@@ -1699,10 +1728,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (rightNeighbor != null)
         {
-            if (TryPlaceRelative(context, rightNeighbor, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, RelativePlacement.Right, out var rect))
+            if (TryPlaceRelaxedMainSkeletonNeighbor(
+                    context,
+                    rightNeighbor,
+                    baseRect,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    planned,
+                    RelativePlacement.Right,
+                    allowSheetTopFallback: false,
+                    out var rect))
             {
-                planned.Add(new PlannedPlacement(rightNeighbor, CenterX(rect), CenterY(rect)));
-                occupied.Add(rect);
                 rightRect = rect;
                 rightPlaced = true;
             }
@@ -2762,6 +2801,45 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (occupied is List<ReservedRect> occupiedList)
             occupiedList.Add(rect);
         return true;
+    }
+
+    private static bool TryPlaceRelaxedMainSkeletonNeighbor(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect baseRect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned,
+        RelativePlacement placement,
+        bool allowSheetTopFallback,
+        out ReservedRect rect)
+    {
+        if (TryPlaceRelative(
+                context,
+                view,
+                baseRect,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                context.Gap,
+                occupied,
+                placement,
+                out rect)
+            || (allowSheetTopFallback
+                && placement == RelativePlacement.Top
+                && TryFindTopViewAtSheetTop(context, view, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect)))
+        {
+            planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect)));
+            occupied.Add(rect);
+            return true;
+        }
+
+        rect = new ReservedRect(0, 0, 0, 0);
+        return false;
     }
 
     private static bool TryCreateVerticalSectionRect(
