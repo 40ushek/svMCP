@@ -30,6 +30,41 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public double RightWidth { get; }
     }
 
+    internal readonly struct BaseRectViabilityDecision
+    {
+        public BaseRectViabilityDecision(
+            ReservedRect baseRect,
+            bool isViable,
+            int strictNeighborFitCount,
+            int preferredHorizontalStackFitCount,
+            double safeGapScore,
+            string rejectReason,
+            string rejectZone,
+            View? rejectView,
+            ReservedRect rejectRect)
+        {
+            BaseRect = baseRect;
+            IsViable = isViable;
+            StrictNeighborFitCount = strictNeighborFitCount;
+            PreferredHorizontalStackFitCount = preferredHorizontalStackFitCount;
+            SafeGapScore = safeGapScore;
+            RejectReason = rejectReason;
+            RejectZone = rejectZone;
+            RejectView = rejectView;
+            RejectRect = rejectRect;
+        }
+
+        public ReservedRect BaseRect { get; }
+        public bool IsViable { get; }
+        public int StrictNeighborFitCount { get; }
+        public int PreferredHorizontalStackFitCount { get; }
+        public double SafeGapScore { get; }
+        public string RejectReason { get; }
+        public string RejectZone { get; }
+        public View? RejectView { get; }
+        public ReservedRect RejectRect { get; }
+    }
+
     private readonly GaDrawingMaxRectsArrangeStrategy _maxRectsFallback = new();
     private readonly ShelfPackingDrawingArrangeStrategy _fallback = new();
     private readonly SectionPlacementSideResolver _sectionPlacementSideResolver = new(new Model());
@@ -809,36 +844,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var blocked = NormalizeReservedAreas(context);
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
-        var baseSearchArea = CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY);
-        var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
-        var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
 
-        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
-
-        var baseRect = new ReservedRect(0, 0, 0, 0);
-        var placed = false;
-        foreach (var window in EnumerateBaseViewWindows(
-                     baseSearchArea,
-                     budgets,
-                     includeRelaxedCandidates: true))
+        if (!TrySelectBaseRectWithBudgets(
+                context,
+                neighbors,
+                leftSections,
+                rightSections,
+                topSections,
+                bottomSections,
+                blocked,
+                includeRelaxedCandidates: true,
+                requireAllStrictNeighborsFit: false,
+                out var baseRect,
+                out var baseDecision))
         {
-            if (window.MaxX - window.MinX >= baseWidth && window.MaxY - window.MinY >= baseHeight
-                && TryFindBaseViewRectInWindow(
-                    blocked,
-                    window,
-                    baseWidth,
-                    baseHeight,
-                    context.Gap,
-                    out baseRect))
-            {
-                placed = true;
-                break;
-            }
-        }
-
-        if (!placed)
-        {
-            AddConflict(conflicts, baseView, "Center", "outside_zone_bounds");
+            var conflictedView = baseDecision.RejectView ?? baseView;
+            var attemptedZone = string.IsNullOrEmpty(baseDecision.RejectZone) ? "Center" : baseDecision.RejectZone;
+            var reason = string.IsNullOrEmpty(baseDecision.RejectReason) ? "outside_zone_bounds" : baseDecision.RejectReason;
+            AddConflict(conflicts, conflictedView, attemptedZone, reason);
+            if (HasArea(baseDecision.RejectRect))
+                EnsureBoundingRect(conflicts, conflictedView, attemptedZone, baseDecision.RejectRect);
             return;
         }
 
@@ -1983,28 +2008,25 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             leftWidth: (leftNeighbor != null ? leftNeighborWidth + gap : 0) + leftSectionStackWidth,
             rightWidth: (rightNeighbor != null ? rightNeighborWidth + gap : 0) + rightSectionStackWidth);
 
-        var baseSearchArea = CreateSearchArea(freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY);
-
-        if (!TryFindBaseViewWindow(
-                baseSearchArea,
-                baseWidth,
-                baseHeight,
-                budgets,
-                out var baseWindow))
-        {
-            TracePlanReject("strict", "base", context, planned, null);
-            return false;
-        }
-
-        if (!TryFindBaseViewRectInWindow(
+        if (!TrySelectBaseRectWithBudgets(
+                context,
+                neighbors,
+                leftSections,
+                rightSections,
+                topSections,
+                bottomSections,
                 blocked,
-                baseWindow,
-                baseWidth,
-                baseHeight,
-                gap,
-                out var baseRect))
+                includeRelaxedCandidates: false,
+                requireAllStrictNeighborsFit: true,
+                out var baseRect,
+                out var baseDecision))
         {
-            TracePlanReject("strict", "base", context, planned, null);
+            TracePlanReject(
+                "strict",
+                string.IsNullOrEmpty(baseDecision.RejectReason) ? "base" : baseDecision.RejectReason,
+                context,
+                planned,
+                HasArea(baseDecision.RejectRect) ? baseDecision.RejectRect : null);
             return false;
         }
 
@@ -2135,23 +2157,26 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var rightNeighbor = neighbors.SideNeighborRight;
         var blocked = NormalizeReservedAreas(context);
         var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
-        var baseSearchArea = CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY);
-        var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
-        var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
 
-        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
-
-        if (!TryPlaceBaseViewWithBudgets(
+        if (!TrySelectBaseRectWithBudgets(
+                context,
+                neighbors,
+                leftSections,
+                rightSections,
+                topSections,
+                bottomSections,
                 blocked,
-                baseSearchArea,
-                baseWidth,
-                baseHeight,
-                budgets,
-                context.Gap,
                 includeRelaxedCandidates: true,
-                out var baseRect))
+                requireAllStrictNeighborsFit: false,
+                out var baseRect,
+                out var baseDecision))
         {
-            TracePlanReject("relaxed", "base", context, planned, null);
+            TracePlanReject(
+                "relaxed",
+                string.IsNullOrEmpty(baseDecision.RejectReason) ? "base" : baseDecision.RejectReason,
+                context,
+                planned,
+                HasArea(baseDecision.RejectRect) ? baseDecision.RejectRect : null);
             return false;
         }
 
@@ -2505,6 +2530,352 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 + ComputeHorizontalStackWidth(context, leftSections, gap),
             rightWidth: (rightNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, rightNeighbor) + gap : 0)
                 + ComputeHorizontalStackWidth(context, rightSections, gap));
+    }
+
+    internal static bool TrySelectBaseRectWithBudgets(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        IReadOnlyList<ReservedRect> blocked,
+        bool includeRelaxedCandidates,
+        bool requireAllStrictNeighborsFit,
+        out ReservedRect baseRect,
+        out BaseRectViabilityDecision decision)
+    {
+        var baseView = neighbors.BaseView;
+        var (freeMinX, freeMaxX, freeMinY, freeMaxY) = ComputeFreeArea(context);
+        var searchArea = CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY);
+        var baseWidth = DrawingArrangeContextSizing.GetWidth(context, baseView);
+        var baseHeight = DrawingArrangeContextSizing.GetHeight(context, baseView);
+        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
+
+        var bestDecision = new BaseRectViabilityDecision(
+            new ReservedRect(0, 0, 0, 0),
+            isViable: false,
+            strictNeighborFitCount: -1,
+            preferredHorizontalStackFitCount: -1,
+            safeGapScore: double.NegativeInfinity,
+            rejectReason: string.Empty,
+            rejectZone: "Center",
+            rejectView: baseView,
+            rejectRect: new ReservedRect(0, 0, 0, 0));
+        var foundCandidate = false;
+
+        foreach (var window in EnumerateBaseViewWindows(searchArea, budgets, includeRelaxedCandidates))
+        {
+            if (window.MaxX - window.MinX < baseWidth || window.MaxY - window.MinY < baseHeight)
+                continue;
+
+            if (!TryFindBaseViewRectInWindow(
+                    blocked,
+                    window,
+                    baseWidth,
+                    baseHeight,
+                    context.Gap,
+                    out var candidateBaseRect))
+            {
+                continue;
+            }
+
+            foundCandidate = true;
+            var candidateSearchArea = new ViewPlacementSearchArea(candidateBaseRect, freeMinX, freeMaxX, freeMinY, freeMaxY);
+            var candidateDecision = ProbeBaseRectViabilityCore(
+                context,
+                neighbors,
+                leftSections,
+                rightSections,
+                topSections,
+                bottomSections,
+                budgets,
+                candidateSearchArea,
+                blocked,
+                requireAllStrictNeighborsFit);
+
+            if (IsBetterBaseRectViability(candidateDecision, bestDecision))
+                bestDecision = candidateDecision;
+        }
+
+        if (!foundCandidate || !bestDecision.IsViable)
+        {
+            baseRect = new ReservedRect(0, 0, 0, 0);
+            decision = bestDecision;
+            return false;
+        }
+
+        baseRect = bestDecision.BaseRect;
+        decision = bestDecision;
+        return true;
+    }
+
+    internal static BaseRectViabilityDecision ProbeBaseRectViability(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        ReservedRect baseRect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect>? blocked = null,
+        bool requireAllStrictNeighborsFit = false)
+    {
+        blocked ??= System.Array.Empty<ReservedRect>();
+        var budgets = ComputeZoneBudgets(context, neighbors, leftSections, rightSections, topSections, bottomSections);
+        return ProbeBaseRectViabilityCore(
+            context,
+            neighbors,
+            leftSections,
+            rightSections,
+            topSections,
+            bottomSections,
+            budgets,
+            new ViewPlacementSearchArea(baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            blocked,
+            requireAllStrictNeighborsFit);
+    }
+
+    internal static bool IsBetterBaseRectViability(
+        BaseRectViabilityDecision candidate,
+        BaseRectViabilityDecision currentBest)
+    {
+        if (candidate.IsViable != currentBest.IsViable)
+            return candidate.IsViable;
+
+        if (candidate.StrictNeighborFitCount != currentBest.StrictNeighborFitCount)
+            return candidate.StrictNeighborFitCount > currentBest.StrictNeighborFitCount;
+
+        if (candidate.PreferredHorizontalStackFitCount != currentBest.PreferredHorizontalStackFitCount)
+            return candidate.PreferredHorizontalStackFitCount > currentBest.PreferredHorizontalStackFitCount;
+
+        if (!candidate.SafeGapScore.Equals(currentBest.SafeGapScore))
+            return candidate.SafeGapScore > currentBest.SafeGapScore;
+
+        if (candidate.BaseRect.MinY != currentBest.BaseRect.MinY)
+            return candidate.BaseRect.MinY < currentBest.BaseRect.MinY;
+
+        return candidate.BaseRect.MinX < currentBest.BaseRect.MinX;
+    }
+
+    private static BaseRectViabilityDecision ProbeBaseRectViabilityCore(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        ZoneBudgets budgets,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> blocked,
+        bool requireAllStrictNeighborsFit)
+    {
+        var baseRect = searchArea.BaseRect;
+        var gap = context.Gap;
+        var top = neighbors.TopNeighbor;
+        var bottom = neighbors.BottomNeighbor;
+        var leftNeighbor = neighbors.SideNeighborLeft;
+        var rightNeighbor = neighbors.SideNeighborRight;
+
+        var occupied = new List<ReservedRect>(blocked) { baseRect };
+        var placements = new MainSkeletonPlacementState();
+        var strictSpecs = CreateStrictMainSkeletonNeighborSpecs(
+            top,
+            bottom,
+            leftNeighbor,
+            rightNeighbor,
+            top != null ? DrawingArrangeContextSizing.GetWidth(context, top) : 0,
+            top != null ? DrawingArrangeContextSizing.GetHeight(context, top) : 0,
+            bottom != null ? DrawingArrangeContextSizing.GetWidth(context, bottom) : 0,
+            bottom != null ? DrawingArrangeContextSizing.GetHeight(context, bottom) : 0,
+            leftNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, leftNeighbor) : 0,
+            leftNeighbor != null ? DrawingArrangeContextSizing.GetHeight(context, leftNeighbor) : 0,
+            rightNeighbor != null ? DrawingArrangeContextSizing.GetWidth(context, rightNeighbor) : 0,
+            rightNeighbor != null ? DrawingArrangeContextSizing.GetHeight(context, rightNeighbor) : 0);
+
+        var strictNeighborFitCount = 0;
+        var missingStrictSpec = default(MainSkeletonNeighborSpec?);
+        foreach (var spec in strictSpecs)
+        {
+            if (spec.View == null)
+                continue;
+
+            var rect = FindStrictMainSkeletonNeighborRect(spec, searchArea, gap, occupied);
+            if (rect == null)
+            {
+                missingStrictSpec ??= spec;
+                continue;
+            }
+
+            CommitMainSkeletonPlacement(placements, spec.Role, occupied, rect);
+            strictNeighborFitCount++;
+        }
+
+        if (!TryValidateMainSkeletonSpacing(
+                baseRect,
+                placements,
+                context.SheetWidth,
+                context.SheetHeight,
+                context.Margin,
+                gap,
+                context.ReservedAreas,
+                out var mainSkeletonReason,
+                out var mainSkeletonRole,
+                out var mainSkeletonRect))
+        {
+            return new BaseRectViabilityDecision(
+                baseRect,
+                isViable: false,
+                strictNeighborFitCount,
+                preferredHorizontalStackFitCount: 0,
+                safeGapScore: ComputeBaseRectSafeGapScore(baseRect, searchArea, budgets),
+                rejectReason: mainSkeletonReason,
+                rejectZone: ToAttemptedZone(mainSkeletonRole),
+                rejectView: ResolveMainSkeletonView(neighbors, mainSkeletonRole),
+                rejectRect: mainSkeletonRect);
+        }
+
+        if (requireAllStrictNeighborsFit && missingStrictSpec.HasValue)
+        {
+            var missingRole = missingStrictSpec.Value.Role;
+            return new BaseRectViabilityDecision(
+                baseRect,
+                isViable: false,
+                strictNeighborFitCount,
+                preferredHorizontalStackFitCount: 0,
+                safeGapScore: ComputeBaseRectSafeGapScore(baseRect, searchArea, budgets),
+                rejectReason: $"main-skeleton-slot-{missingRole}",
+                rejectZone: ToAttemptedZone(missingRole),
+                rejectView: ResolveMainSkeletonView(neighbors, missingRole),
+                rejectRect: baseRect);
+        }
+
+        var preferredHorizontalStackFitCount = 0;
+        if (!TryValidatePreferredHorizontalSectionStack(
+                context,
+                topSections,
+                baseRect,
+                placements.GetAnchorOrBase("top", baseRect),
+                RelativePlacement.Top,
+                searchArea,
+                gap,
+                occupied,
+                out var topFailure))
+        {
+            return CreateBaseRectSectionRejectDecision(baseRect, strictNeighborFitCount, preferredHorizontalStackFitCount, searchArea, budgets, RelativePlacement.Top, topFailure);
+        }
+
+        if (topSections.Count > 0)
+            preferredHorizontalStackFitCount++;
+
+        if (!TryValidatePreferredHorizontalSectionStack(
+                context,
+                bottomSections,
+                baseRect,
+                placements.GetAnchorOrBase("bottom", baseRect),
+                RelativePlacement.Bottom,
+                searchArea,
+                gap,
+                occupied,
+                out var bottomFailure))
+        {
+            return CreateBaseRectSectionRejectDecision(baseRect, strictNeighborFitCount, preferredHorizontalStackFitCount, searchArea, budgets, RelativePlacement.Bottom, bottomFailure);
+        }
+
+        if (bottomSections.Count > 0)
+            preferredHorizontalStackFitCount++;
+
+        return new BaseRectViabilityDecision(
+            baseRect,
+            isViable: true,
+            strictNeighborFitCount,
+            preferredHorizontalStackFitCount,
+            ComputeBaseRectSafeGapScore(baseRect, searchArea, budgets),
+            rejectReason: string.Empty,
+            rejectZone: string.Empty,
+            rejectView: null,
+            rejectRect: new ReservedRect(0, 0, 0, 0));
+    }
+
+    private static BaseRectViabilityDecision CreateBaseRectSectionRejectDecision(
+        ReservedRect baseRect,
+        int strictNeighborFitCount,
+        int preferredHorizontalStackFitCount,
+        ViewPlacementSearchArea searchArea,
+        ZoneBudgets budgets,
+        RelativePlacement zone,
+        SectionStackFailureInfo? failure)
+    {
+        if (failure == null)
+        {
+            return new BaseRectViabilityDecision(
+                baseRect,
+                isViable: false,
+                strictNeighborFitCount,
+                preferredHorizontalStackFitCount,
+                ComputeBaseRectSafeGapScore(baseRect, searchArea, budgets),
+                rejectReason: "section-stack-failed",
+                rejectZone: "Center",
+                rejectView: null,
+                rejectRect: baseRect);
+        }
+
+        return new BaseRectViabilityDecision(
+            baseRect,
+            isViable: false,
+            strictNeighborFitCount,
+            preferredHorizontalStackFitCount,
+            ComputeBaseRectSafeGapScore(baseRect, searchArea, budgets),
+            rejectReason: failure.Value.RejectReason,
+            rejectZone: zone.ToString(),
+            rejectView: failure.Value.Section,
+            rejectRect: failure.Value.Rect);
+    }
+
+    private static bool TryValidatePreferredHorizontalSectionStack(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sections,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        out SectionStackFailureInfo? failure)
+    {
+        if (sections.Count == 0)
+        {
+            failure = null;
+            return true;
+        }
+
+        return TryPlanHorizontalSectionStack(
+            context,
+            sections,
+            frontRect,
+            anchorRect,
+            zone,
+            searchArea,
+            gap,
+            occupied,
+            out _,
+            out failure);
+    }
+
+    private static double ComputeBaseRectSafeGapScore(
+        ReservedRect baseRect,
+        ViewPlacementSearchArea searchArea,
+        ZoneBudgets budgets)
+    {
+        var leftSlack = System.Math.Max(0, baseRect.MinX - (searchArea.FreeMinX + budgets.LeftWidth));
+        var rightSlack = System.Math.Max(0, (searchArea.FreeMaxX - budgets.RightWidth) - baseRect.MaxX);
+        var bottomSlack = System.Math.Max(0, baseRect.MinY - (searchArea.FreeMinY + budgets.BottomHeight));
+        var topSlack = System.Math.Max(0, (searchArea.FreeMaxY - budgets.TopHeight) - baseRect.MaxY);
+        return leftSlack + rightSlack + bottomSlack + topSlack;
     }
 
     private static bool TryFindBaseViewWindow(
@@ -4155,6 +4526,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         clipped = new ReservedRect(minX, minY, maxX, maxY);
         return true;
     }
+
+    private static bool HasArea(ReservedRect rect)
+        => rect.MaxX > rect.MinX && rect.MaxY > rect.MinY;
 
     private static PackedRectangle ToBlockedRectangle(double freeMinX, double freeMaxY, ReservedRect rect)
         => new(

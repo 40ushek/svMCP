@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Reflection;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Drawing;
@@ -725,5 +726,255 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal("proposed-intersection", result.ConflictReason);
         Assert.Equal("intersects_view", result.DiagnosticType);
         Assert.Equal(string.Empty, result.DiagnosticTarget);
+    }
+
+    [Fact]
+    public void ProbeBaseRectViability_RejectsDenseTopSlotEvenWhenRawWindowFits()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var topSection = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 50, height: 20);
+        var neighbors = new NeighborSet(baseView);
+        var context = CreateArrangeContext([baseView, topSection], gap: 5);
+
+        var decision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: [topSection],
+            bottomSections: System.Array.Empty<View>(),
+            baseRect: new ReservedRect(70, 120, 130, 160),
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 220,
+            blocked:
+            [
+                new ReservedRect(20, 165, 180, 195)
+            ]);
+
+        Assert.False(decision.IsViable);
+        Assert.Equal("no-valid-x", decision.RejectReason);
+        Assert.Equal("Top", decision.RejectZone);
+        Assert.Equal(topSection, decision.RejectView);
+    }
+
+    [Fact]
+    public void IsBetterBaseRectViability_PrefersCandidateWithViableTopViewBand()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var topView = ViewTestHelper.Create(View.ViewTypes.TopView, width: 60, height: 20);
+        var neighbors = new NeighborSet(baseView)
+        {
+            TopNeighbor = topView
+        };
+        var context = CreateArrangeContext([baseView, topView], gap: 5);
+
+        var denseDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: System.Array.Empty<View>(),
+            bottomSections: System.Array.Empty<View>(),
+            baseRect: new ReservedRect(70, 160, 130, 200),
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 210);
+
+        var viableDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: System.Array.Empty<View>(),
+            bottomSections: System.Array.Empty<View>(),
+            baseRect: new ReservedRect(70, 120, 130, 160),
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 210);
+
+        Assert.False(denseDecision.IsViable);
+        Assert.True(viableDecision.IsViable);
+        Assert.Equal(0, denseDecision.StrictNeighborFitCount);
+        Assert.Equal(1, viableDecision.StrictNeighborFitCount);
+        Assert.True(BaseProjectedDrawingArrangeStrategy.IsBetterBaseRectViability(viableDecision, denseDecision));
+    }
+
+    [Fact]
+    public void IsBetterBaseRectViability_PrefersCandidateWithViableTopSectionXOverTighterFit()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var topSection = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 50, height: 20);
+        var neighbors = new NeighborSet(baseView);
+        var context = CreateArrangeContext([baseView, topSection], gap: 5);
+        var blocked = new[]
+        {
+            new ReservedRect(20, 165, 180, 195)
+        };
+
+        var denseDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: [topSection],
+            bottomSections: System.Array.Empty<View>(),
+            baseRect: new ReservedRect(70, 120, 130, 160),
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 220,
+            blocked);
+
+        var viableDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: [topSection],
+            bottomSections: System.Array.Empty<View>(),
+            baseRect: new ReservedRect(20, 120, 80, 160),
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 220,
+            blocked);
+
+        Assert.False(denseDecision.IsViable);
+        Assert.True(viableDecision.IsViable);
+        Assert.Equal(0, denseDecision.PreferredHorizontalStackFitCount);
+        Assert.Equal(1, viableDecision.PreferredHorizontalStackFitCount);
+        Assert.True(BaseProjectedDrawingArrangeStrategy.IsBetterBaseRectViability(viableDecision, denseDecision));
+    }
+
+    [Fact]
+    public void TrySelectBaseRectWithBudgets_KeepsGapFromReservedAreaInsideBudgetWindow()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 40, height: 40);
+        var neighbors = new NeighborSet(baseView);
+        var reserved = new List<ReservedRect>
+        {
+            new(90, 70, 110, 110)
+        };
+        var context = CreateArrangeContext([baseView], gap: 5, reservedAreas: reserved);
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TrySelectBaseRectWithBudgets(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: System.Array.Empty<View>(),
+            bottomSections: System.Array.Empty<View>(),
+            blocked: new List<ReservedRect>
+            {
+                new(85, 65, 115, 115)
+            },
+            includeRelaxedCandidates: true,
+            requireAllStrictNeighborsFit: false,
+            out var baseRect,
+            out var decision);
+
+        Assert.True(ok);
+        Assert.True(decision.IsViable);
+        Assert.True(
+            baseRect.MaxX <= 85 || baseRect.MinX >= 115 || baseRect.MaxY <= 65 || baseRect.MinY >= 115,
+            $"baseRect unexpectedly touches reserved band: [{baseRect.MinX},{baseRect.MinY},{baseRect.MaxX},{baseRect.MaxY}]");
+    }
+
+    [Fact]
+    public void TrySelectBaseRectWithBudgets_UsesSingleGapAroundReservedAreaInsideWindow()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 40, height: 40);
+        var neighbors = new NeighborSet(baseView);
+        var reserved = new List<ReservedRect>
+        {
+            new(90, 70, 110, 110)
+        };
+        var context = CreateArrangeContext([baseView], gap: 5, reservedAreas: reserved);
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TrySelectBaseRectWithBudgets(
+            context,
+            neighbors,
+            leftSections: System.Array.Empty<View>(),
+            rightSections: System.Array.Empty<View>(),
+            topSections: System.Array.Empty<View>(),
+            bottomSections: System.Array.Empty<View>(),
+            blocked: new List<ReservedRect>
+            {
+                new(85, 65, 115, 115)
+            },
+            includeRelaxedCandidates: true,
+            requireAllStrictNeighborsFit: false,
+            out var baseRect,
+            out var decision);
+
+        Assert.True(ok);
+        Assert.True(decision.IsViable);
+        Assert.False(
+            baseRect.MaxX <= 80 || baseRect.MinX >= 120 || baseRect.MaxY <= 60 || baseRect.MinY >= 120,
+            $"baseRect unexpectedly kept double gap: [{baseRect.MinX},{baseRect.MinY},{baseRect.MaxX},{baseRect.MaxY}]");
+        Assert.True(
+            baseRect.MaxX <= 85 || baseRect.MinX >= 115 || baseRect.MaxY <= 65 || baseRect.MinY >= 115,
+            $"baseRect violated single-gap reserve: [{baseRect.MinX},{baseRect.MinY},{baseRect.MaxX},{baseRect.MaxY}]");
+    }
+
+    private static Tekla.Structures.Drawing.Drawing CreateDrawing()
+    {
+#pragma warning disable SYSLIB0050
+        return (Tekla.Structures.Drawing.Drawing)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(Tekla.Structures.Drawing.Drawing));
+#pragma warning restore SYSLIB0050
+    }
+
+    private static DrawingArrangeContext CreateArrangeContext(
+        IReadOnlyList<View> views,
+        double sheetWidth = 200,
+        double sheetHeight = 220,
+        double margin = 0,
+        double gap = 4,
+        IReadOnlyList<ReservedRect>? reservedAreas = null)
+    {
+        var drawing = CreateDrawing();
+        var effectiveSizes = new Dictionary<int, (double Width, double Height)>();
+        for (var i = 0; i < views.Count; i++)
+        {
+            effectiveSizes[i + 1] = (views[i].Width, views[i].Height);
+            TrySetIdentifier(views[i], i + 1);
+        }
+
+        return new DrawingArrangeContext(
+            drawing,
+            views,
+            sheetWidth,
+            sheetHeight,
+            margin,
+            gap,
+            reservedAreas,
+            effectiveSizes);
+    }
+
+    private static void TrySetIdentifier(View view, int id)
+    {
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+        var identifier = view.GetIdentifier();
+        var idProperty = identifier.GetType().GetProperty("ID", flags);
+        var setter = idProperty?.GetSetMethod(nonPublic: true);
+        if (setter != null)
+        {
+            setter.Invoke(identifier, [id]);
+            return;
+        }
+
+        foreach (var fieldName in new[] { "<ID>k__BackingField", "m_ID", "m_id", "_id" })
+        {
+            var field = identifier.GetType().GetField(fieldName, flags);
+            if (field != null)
+            {
+                field.SetValue(identifier, id);
+                return;
+            }
+        }
     }
 }
