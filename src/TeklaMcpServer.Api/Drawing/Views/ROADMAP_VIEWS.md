@@ -164,42 +164,21 @@
   сохранён как совместимый wrapper, чтобы внутренний refactor не ломал
   существующие unit-тесты
 
-### Что ещё не закончено
+### Что осталось вне roadmap
 
-- `BaseViewSelection` всё ещё имеет `FrontView`-centric fallback shortcut.
-- явный projection graph в коде ещё не выделен.
-- `ProjectionMethod` ещё не стал явным параметром.
-- oversized sections уже отделены от normal section policy и не должны
-  идти в generic residual path, но их degraded policy ещё можно полировать.
-- local scale reduction для outlier section пока нет.
-- repeated `fit_views_to_sheet` уже стабилизирован для текущих standard
-  neighbor/section scenarios, но не зафиксирован как абсолютная гарантия
-  для всех будущих policy-комбинаций и edge cases.
-- detail placement уже anchor-aware, но policy всё ещё можно улучшать:
-  при нехватке места нужна более явная и объяснимая деградация.
-- основной main layout уже отвергает слишком плотные `BaseView`-centric
-  варианты раньше, чем они превращаются в `projection-skip:view-overlap`,
-  но сама topology/projection policy остаётся следующим этапом.
-- `MaxRects`-packer для поиска `baseRect` сейчас создаётся заново для каждого
-  candidate window. Это не bug, но остаётся низкоприоритетным perf-долгом.
-- standard section, не вставшая в preferred stack, уже не должна проходить
-  через residual fallback с hard overlap, но остаётся открытым вопрос
-  более мягкой деградации:
-  когда fallback геометрически валиден, но проекционно выглядит слабо,
-  planner пока ещё не умеет это оценивать отдельной soft-метрикой.
-- `optimalScale` в preserve-scale путях (`PreserveExistingScales`,
-  `UniformMainWithSectionExceptions`) вычисляется как `Max()` всех масштабов:
-  `ShouldSkipProjectionAlignment` пропустит alignment, если самый мелкий
-  вид листа >= 100, даже когда другие виды (1:20, 1:50) реально нуждаются
-  в alignment. Текущий код и комментарий в `TeklaDrawingViewApi.Layout`
-  всё ещё защищают `Max()`, но roadmap фиксирует целевой переход на `Min()`
-  как семантически правильный агрегат для этого decision.
-- бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
-  на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
-  без диагностики для остальных.
-- debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
-  при reject horizontal section (бросает `InvalidOperationException`).
-  Это временный локальный debug-hook, а не часть нормального runtime contract.
+Основной roadmap по `Views` закрыт. Ниже не незавершённые стадии,
+а остаточные follow-up темы вне текущего плана:
+
+- низкоприоритетный perf-долг:
+  `MaxRects`-packer для поиска `baseRect` создаётся заново для каждого
+  candidate window
+- возможная дополнительная policy-полировка degraded placement,
+  если реальные Tekla-прогоны покажут слабые композиционные кейсы
+- возможный пересмотр preserve-scale агрегата (`Max()` vs `Min()`)
+  в `ShouldSkipProjectionAlignment`, если это подтвердится на live-сценариях
+- локальные debug-hooks, например
+  `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT`, остаются только как
+  инструменты диагностики и не считаются частью production contract
 
 ### Согласованный статус этапов
 
@@ -226,6 +205,12 @@
   Topology/projection policy выделена как явный internal слой,
   detail/dependent placement использует единый anchor-driven decision shape,
   `ProjectionMethod` зафиксирован как internal policy model.
+
+Итог:
+
+- roadmap по `Views` завершён по коду
+- дальнейшая работа идёт уже как live-validation, regression fixing
+  и low-priority polish, а не как незакрытые roadmap-стадии
 
 ## Зафиксированные текущие контракты
 
@@ -335,118 +320,30 @@
 - для сравнения `estimate` vs `apply` лог должен позволять увидеть,
   почему рабочий layout был отвергнут раньше времени
 
-## Ближайшие шаги
+## Следующий режим работы
 
-Порядок ниже уже исходит из того, что `Stage 0`..`Stage 3` закрыты.
+Roadmap-этапы больше не активны. Дальше работа по `Views` идёт в таком порядке:
 
-### 1. Выделить единый geometry/collision pipeline для всех фаз layout
+### 1. Live-validation в Tekla
 
-Статус:
+- прогон реальных чертежей с standard neighbors
+- прогон листов с `Top/Bottom` sections
+- прогон листов с detail/dependent views и `SectionMark` anchor
+- повторный `fit_views_to_sheet` на тех же листах для проверки стабильности
 
-- закрыто как `Stage 2`.
-- `ViewPlacementGeometryService` / `ViewPlacementValidator` уже являются
-  общим source of truth для planner, `EstimateFit` и projection move checks.
+### 2. Regression fixing
 
-Готово когда:
+- любые найденные отклонения фиксируются как точечные runtime/regression bugs,
+  а не как новые roadmap-стадии
+- приоритет:
+  collision/parity regressions -> semantic placement regressions ->
+  composition polish
 
-- layout и projection post-pass больше не считают один и тот же view разной геометрией
-- collision decision для одной и той же candidate position одинаков
-  в `EstimateFit`, apply и post-pass
-- кейс `SectionView` внутри `FrontView` не может повториться из-за divergence
-  между layout-path и projection-path
-- весь код, который принимает решение `можно ли двигать view`,
-  использует один validator, а не локальную копию overlap logic
+### 3. Low-priority polish
 
-### 2. Свести `EstimateFit` и apply path
-
-Статус:
-
-- закрыто.
-- `EstimateFit` failure decisions сведены к одному snapshot shape.
-- section probe regressions добавлены для `Top/Bottom` и `Left/Right`.
-- projection post-pass использует тот же validator contract и пишет
-  parity summary trace.
-
-Готово когда:
-
-- `fits=0` не возникает для layout, который потом реально встаёт на лист
-- `fits=1` не возникает для layout, который после первой расстановки уже даёт
-  overlap/почти-overlap
-- `Top/Bottom` section decision совпадает между estimate и apply
-
-### 3. Довести main-layout spacing вокруг BaseView
-
-Статус:
-
-- закрыто как `Stage 3A/3B/3C/3E`.
-- viability-first `baseRect` selection, single-gap reserve, degraded standard
-  section path и repeated-fit stabilization уже внедрены.
-
-Готово когда:
-
-- `BaseView` размещается с учётом реальной потребности в месте сверху/снизу/слева/справа
-- `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
-  centered-slot around `BaseView`
-- выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window
-- основной каркас после первой расстановки уже имеет безопасные зазоры,
-  а не упирается в `projection-skip:view-overlap`
-- если standard section не может быть поставлена в свой normal stack,
-  следующий допустимый путь деградации всё равно обязан оставаться
-  overlap-free; иначе candidate scale должен быть отвергнут, и внешний
-  scale loop должен взять следующий, более крупный масштаб
-
-### 4. Довести BaseView-centric topology и явную projection policy
-
-Статус:
-
-- закрыто как `Stage 4`.
-
-Нужно:
-
-- выделить явный projection graph поверх уже существующего `NeighborSet`
-- вынести current resolver order в явную policy:
-  `ViewType override -> coordinate systems -> current position`
-- перестать держать проекционную конвенцию неявно в коде
-
-Готово когда:
-
-- standard neighbors и dependent relations выводятся из явной topology policy,
-  а не только из текущего resolver
-- стороны размещения standard neighbors и секций определяются не скрытым соглашением,
-  а явной policy
-
-### 5. Отделить oversized sections от normal section policy
-
-Статус:
-
-- закрыто как `Stage 3D`.
-- oversized standard sections отделены от normal stack/scoring и больше
-  не должны легализоваться через generic residual.
-
-Готово когда:
-
-- обычный каркас листа не ломается из-за одного проблемного разреза
-- oversized section получает объяснимую degraded policy, а не ломает
-  normal path для всех остальных видов
-
-### 6. Усилить detail/dependent placement policy
-
-Статус:
-
-- закрыто как `Stage 4`.
-- detail/dependent placement использует единый anchor-driven decision path
-  в planner и final reposition pass.
-
-Нужно:
-
-- сделать деградацию detail placement более явной и повторяемой
-- сохранить максимальную близость к anchor при нехватке места
-- не допускать нелогичных прыжков через лист без явной причины
-
-Готово когда:
-
-- detail и detail-like section ставятся максимально близко к своему anchor
-- при нехватке места причина деградации видна в результате
+- perf-улучшения без смены policy
+- возможная локальная корректировка preserve-scale semantics
+- trace/diagnostics cleanup по результатам живых прогонов
 
 ## Валидация
 
@@ -473,6 +370,10 @@
 - `DetailMark.GetRelatedObjects()` стабильно связывает detail view
 - `SectionMark.LeftPoint/RightPoint` доступны и дают корректный anchor
 - фактический runtime после `Modify()/CommitChanges()` сохраняет планируемую топологию
+
+На текущий момент именно этот раздел является главным источником
+дальнейшей валидации: roadmap по реализации уже закрыт, дальше важна
+проверка на реальных drawings.
 
 ## Критерии приёмки
 

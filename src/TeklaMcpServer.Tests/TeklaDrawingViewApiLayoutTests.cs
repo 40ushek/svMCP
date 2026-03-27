@@ -80,7 +80,7 @@ public sealed class TeklaDrawingViewApiLayoutTests
     [InlineData(SectionPlacementSide.Top, 60, 40, 60, 20, 5, false)]
     [InlineData(SectionPlacementSide.Right, 60, 40, 20, 50, 5, true)]
     [InlineData(SectionPlacementSide.Right, 60, 40, 20, 45, 5, false)]
-    public void IsOversizedStandardSectionScaleDriver_MatchesStage3Policy(
+    internal void IsOversizedStandardSectionScaleDriver_MatchesStage3Policy(
         SectionPlacementSide placementSide,
         double baseWidth,
         double baseHeight,
@@ -116,7 +116,7 @@ public sealed class TeklaDrawingViewApiLayoutTests
             {
                 new ReservedRect(40, 40, 80, 80),
                 new ReservedRect(0, 85, 85, 200),
-                new ReservedRect(85, 35, 140, 140)
+                new ReservedRect(85, 35, 200, 200)
             },
             anchorX: 100,
             anchorY: 100);

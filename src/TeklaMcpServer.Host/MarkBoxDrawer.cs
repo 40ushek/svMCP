@@ -27,7 +27,16 @@ internal static class MarkBoxDrawer
 
         var box = mark.GetObjectAlignedBoundingBox();
 
+
+        var enumerator = mark.Attributes.Content.GetEnumerator();
+        while (enumerator.MoveNext()) 
+        {
+            var c = enumerator.Current;
+
+        }
  
+
+
         var a = matrix.Transform(box.MinPoint);
         var b = matrix.Transform(box.MaxPoint);
 

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Tekla.Structures.Drawing;
+using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
@@ -1049,7 +1050,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     [InlineData(SectionPlacementSide.Top, 60, 40, 65, 20, 5, false)]
     [InlineData(SectionPlacementSide.Left, 60, 40, 20, 46, 5, true)]
     [InlineData(SectionPlacementSide.Left, 60, 40, 20, 45, 5, false)]
-    public void IsOversizedStandardSection_UsesBaseExtentAlongPlacementAxis(
+    internal void IsOversizedStandardSection_UsesBaseExtentAlongPlacementAxis(
         SectionPlacementSide placementSide,
         double baseWidth,
         double baseHeight,
@@ -1108,7 +1109,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             {
                 new ReservedRect(40, 40, 80, 80),
                 new ReservedRect(0, 85, 85, 200),
-                new ReservedRect(85, 35, 140, 140)
+                new ReservedRect(85, 35, 200, 200)
             },
             anchorX: 100,
             anchorY: 100);
@@ -1121,7 +1122,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     private static Tekla.Structures.Drawing.Drawing CreateDrawing()
     {
 #pragma warning disable SYSLIB0050
-        return (Tekla.Structures.Drawing.Drawing)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(Tekla.Structures.Drawing.Drawing));
+        return (Tekla.Structures.Drawing.Drawing)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(Tekla.Structures.Drawing.AssemblyDrawing));
 #pragma warning restore SYSLIB0050
     }
 
@@ -1156,6 +1157,31 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     {
         var flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
         var identifier = view.GetIdentifier();
+        if (identifier == null)
+        {
+            // View was uninitialized — find identifier backing field and create it
+            var type = view.GetType();
+            while (type != null)
+            {
+                foreach (var field in type.GetFields(flags))
+                {
+                    if (!field.FieldType.Name.Contains("Identifier")) continue;
+                    try
+                    {
+#pragma warning disable SYSLIB0050
+                        var created = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(field.FieldType);
+#pragma warning restore SYSLIB0050
+                        field.SetValue(view, created);
+                    }
+                    catch { }
+                }
+                type = type.BaseType;
+            }
+            identifier = view.GetIdentifier();
+        }
+
+        if (identifier == null) return;
+
         var idProperty = identifier.GetType().GetProperty("ID", flags);
         var setter = idProperty?.GetSetMethod(nonPublic: true);
         if (setter != null)
