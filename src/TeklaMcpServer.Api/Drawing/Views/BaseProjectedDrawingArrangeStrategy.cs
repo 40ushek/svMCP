@@ -1058,22 +1058,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 return;
             }
 
-            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+            if (!TryValidateSectionCandidateRect(rect, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, proposed, out var reason))
             {
-                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
-                return;
-            }
-
-            if (IntersectsAny(rect, occupied))
-            {
-                AddIntersectionConflicts(conflicts, section, zone.ToString(), rect, occupied);
-                return;
-            }
-
-            var proposedHit = proposed.FirstOrDefault(item => Intersects(item, rect));
-            if (proposedHit.Width > 0 || proposedHit.Height > 0)
-            {
-                AddConflict(conflicts, section, zone.ToString(), "intersects_view");
+                AddSectionCandidateConflict(conflicts, section, zone, rect, reason, occupied);
                 return;
             }
 
@@ -1121,22 +1108,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
             var rect = new ReservedRect(preferredMinX, minY, preferredMinX + width, maxY);
 
-            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+            if (!TryValidateSectionCandidateRect(rect, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, proposed, out var reason))
             {
-                AddConflict(conflicts, section, zone.ToString(), "outside_zone_bounds");
-                return;
-            }
-
-            if (IntersectsAny(rect, occupied))
-            {
-                AddIntersectionConflicts(conflicts, section, zone.ToString(), rect, occupied);
-                return;
-            }
-
-            var proposedHit = proposed.FirstOrDefault(item => Intersects(item, rect));
-            if (proposedHit.Width > 0 || proposedHit.Height > 0)
-            {
-                AddConflict(conflicts, section, zone.ToString(), "intersects_view");
+                AddSectionCandidateConflict(conflicts, section, zone, rect, reason, occupied);
                 return;
             }
 
@@ -2226,13 +2200,16 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 return false;
             }
 
-            if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied) || proposed.Any(item => Intersects(item.Rect, rect)))
+            if (!TryValidateSectionCandidateRect(
+                    rect,
+                    freeMinX,
+                    freeMaxX,
+                    freeMinY,
+                    freeMaxY,
+                    occupied,
+                    proposed.Select(item => item.Rect),
+                    out var reason))
             {
-                var reason = !IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY)
-                    ? "out-of-bounds"
-                    : IntersectsAny(rect, occupied)
-                        ? "occupied-intersection"
-                        : "proposed-intersection";
                 PerfTrace.Write(
                     "api-view",
                     "section_stack_reject",
@@ -2321,9 +2298,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     continue;
 
                 rect = new ReservedRect(minX, minY, minX + width, maxY);
-                if (IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY)
-                    && !IntersectsAny(rect, occupied)
-                    && !proposed.Any(item => Intersects(item.Rect, rect)))
+                if (TryValidateSectionCandidateRect(
+                        rect,
+                        freeMinX,
+                        freeMaxX,
+                        freeMinY,
+                        freeMaxY,
+                        occupied,
+                        proposed.Select(item => item.Rect),
+                        out _))
                 {
                     found = true;
                     break;
@@ -2400,6 +2383,59 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     private static string FormatSectionIds(IReadOnlyList<View> sectionViews)
         => string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID));
+
+    private static bool TryValidateSectionCandidateRect(
+        ReservedRect rect,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect> occupied,
+        IEnumerable<ReservedRect> proposed,
+        out string reason)
+    {
+        if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY))
+        {
+            reason = "out-of-bounds";
+            return false;
+        }
+
+        if (IntersectsAny(rect, occupied))
+        {
+            reason = "occupied-intersection";
+            return false;
+        }
+
+        if (proposed.Any(item => Intersects(item, rect)))
+        {
+            reason = "proposed-intersection";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
+    private static void AddSectionCandidateConflict(
+        List<DrawingFitConflict> conflicts,
+        View section,
+        RelativePlacement zone,
+        ReservedRect rect,
+        string reason,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (reason == "occupied-intersection")
+        {
+            AddIntersectionConflicts(conflicts, section, zone.ToString(), rect, occupied);
+            return;
+        }
+
+        AddConflict(
+            conflicts,
+            section,
+            zone.ToString(),
+            reason == "out-of-bounds" ? "outside_zone_bounds" : "intersects_view");
+    }
 
     private static void TraceSectionStackAttempt(string axis, RelativePlacement preferredZone, IReadOnlyList<View> sectionViews)
     {
