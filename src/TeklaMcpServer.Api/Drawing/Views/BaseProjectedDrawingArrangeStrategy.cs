@@ -2883,12 +2883,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (!TryCreateCenteredRelativeRect(searchArea.BaseRect, spec.Placement, spec.Width, spec.Height, gap, out var rect))
             return null;
 
-        if (!IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY)
-            || IntersectsAny(rect, occupied))
+        if (!TryValidateMainSkeletonNeighborRect(rect, searchArea, occupied))
             return null;
 
         return rect;
     }
+
+    private static bool TryValidateMainSkeletonNeighborRect(
+        ReservedRect rect,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied)
+        => IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY)
+            && !IntersectsAny(rect, occupied);
 
     private static bool TryGetOptionalMainSkeletonNeighborView(
         MainSkeletonNeighborSpec spec,
