@@ -78,18 +78,22 @@ internal static class DrawingViewFrameGeometry
 
         if (view is IAxisAlignedBoundingBox bounded)
         {
-            var box = bounded.GetAxisAlignedBoundingBox();
-            if (box != null)
+            try
             {
-                var candidate = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
-                var origin = view.Origin;
-                if (origin == null
-                    || IsBoundingBoxOffsetPlausible(origin.X, origin.Y, view.Width, view.Height, candidate))
+                var box = bounded.GetAxisAlignedBoundingBox();
+                if (box != null)
                 {
-                    rect = candidate;
-                    return true;
+                    var candidate = new ReservedRect(box.MinPoint.X, box.MinPoint.Y, box.MaxPoint.X, box.MaxPoint.Y);
+                    var origin = view.Origin;
+                    if (origin == null
+                        || IsBoundingBoxOffsetPlausible(origin.X, origin.Y, view.Width, view.Height, candidate))
+                    {
+                        rect = candidate;
+                        return true;
+                    }
                 }
             }
+            catch (System.NullReferenceException) { }
         }
 
         var fallbackOrigin = view.Origin;

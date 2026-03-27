@@ -22,7 +22,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
 
         var analysis = Assert.Single(analyses);
         Assert.False(analysis.HasOverlaps);
-        Assert.Equal(15, analysis.MinimumDistance, 3);
+        Assert.Equal(15, analysis.MinimumDistance!.Value, 3);
         var pair = Assert.Single(analysis.Pairs);
         Assert.Equal(1, pair.FirstDimensionId);
         Assert.Equal(2, pair.SecondDimensionId);
@@ -117,7 +117,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         [
             CreateMember(1, 10, 10, 100, 25, 0, 10, 100, 10),
             CreateMember(2, 10, 20, 100, 35, 0, 10, 100, 10)
-        ], "horizontal", "Horizontal", (1, 0), -1);
+        ], "horizontal", DimensionType.Horizontal, (1, 0), -1);
 
         var analysis = DimensionGroupSpacingAnalyzer.Analyze(group);
 

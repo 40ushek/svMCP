@@ -82,7 +82,8 @@ public static partial class DrawingCommandParsers
             }
 
             if (string.Equals(args[i], "preserveexistingscales", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(args[i], "preservemixedscales", StringComparison.OrdinalIgnoreCase))
+                string.Equals(args[i], "preservemixedscales", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
                 continue;

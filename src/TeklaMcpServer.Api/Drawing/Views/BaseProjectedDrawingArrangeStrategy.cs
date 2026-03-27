@@ -875,7 +875,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         void RemovePlacement(View view, ReservedRect rect)
         {
-            planned.RemoveAll(item => item.View.GetIdentifier().ID == view.GetIdentifier().ID);
+            planned.RemoveAll(item => ReferenceEquals(item.View, view));
             occupied.Remove(rect);
         }
 

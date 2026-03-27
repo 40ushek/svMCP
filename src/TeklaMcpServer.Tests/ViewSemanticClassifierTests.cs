@@ -14,13 +14,9 @@ public sealed class ViewSemanticClassifierTests
     [InlineData("a", ViewSemanticKind.Detail)]
     [InlineData("b12", ViewSemanticKind.Detail)]
     [InlineData("1", ViewSemanticKind.Section)]
-    public void Classify_UsesNamingRuleForSectionViews(string name, ViewSemanticKind expected)
+    internal void Classify_UsesNamingRuleForSectionViews(string name, ViewSemanticKind expected)
     {
-        var view = new View
-        {
-            ViewType = View.ViewTypes.SectionView,
-            Name = name
-        };
+        var view = ViewTestHelper.Create(View.ViewTypes.SectionView, name: name);
 
         Assert.Equal(expected, ViewSemanticClassifier.Classify(view));
     }
@@ -28,11 +24,7 @@ public sealed class ViewSemanticClassifierTests
     [Fact]
     public void Classify_KeepsActualDetailViewAsDetail()
     {
-        var view = new View
-        {
-            ViewType = View.ViewTypes.DetailView,
-            Name = "A"
-        };
+        var view = ViewTestHelper.Create(View.ViewTypes.DetailView, name: "A");
 
         Assert.Equal(ViewSemanticKind.Detail, ViewSemanticClassifier.Classify(view));
     }

@@ -118,7 +118,7 @@ public sealed class DimensionGroupFactoryTests
     {
         var item = Assert.Single(DimensionGroupFactory.BuildItems(
         [
-            CreateDimension(1, 10, "FrontView", "Relative", "angled", 40, 0.866, 0.5, -1, 0.5, -0.866, 0, 100, 5, 8, 105, 12, DimensionSourceKind.Grid)
+            CreateDimension(1, 10, "FrontView", "Relative", "angled", 40, 0.866, 0.5, -1, 0.5, -0.866, 0, 100, 5, 8, 105, 12, 0.0, DimensionSourceKind.Grid)
         ]));
 
         Assert.Equal(DimensionSourceKind.Grid, item.SourceKind);
@@ -129,7 +129,7 @@ public sealed class DimensionGroupFactoryTests
     [Fact]
     public void BuildItems_ReturnsUnknownWithoutSourceProof()
     {
-        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12, DimensionSourceKind.Unknown);
+        var dimension = CreateDimension(1, 10, "FrontView", "Absolute", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12, 0.0, DimensionSourceKind.Unknown);
         dimension.ClassifiedDimensionType = DimensionType.Unknown;
 
         var item = Assert.Single(DimensionGroupFactory.BuildItems([dimension]));
@@ -224,7 +224,7 @@ public sealed class DimensionGroupFactoryTests
 
         Assert.Equal(2, groups.Count);
         Assert.All(groups, group => Assert.Single(group.Members));
-        Assert.Contains(groups, group => Assert.Equal(1002, Assert.Single(group.Members).SegmentId));
+        Assert.Contains(groups, group => Assert.Single(group.Members).SegmentId == 1002);
     }
 
     [Fact]
@@ -941,7 +941,7 @@ public sealed class DimensionGroupFactoryTests
         double boundsMinX,
         double boundsMinY,
         double boundsMaxX,
-        double boundsMaxY,
+        double boundsMaxY = 0.0,
         DimensionSourceKind sourceKind = DimensionSourceKind.Part)
     {
         var endY = orientation == "vertical" ? 60.0 : startY;

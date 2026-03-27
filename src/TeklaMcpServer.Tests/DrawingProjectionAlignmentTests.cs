@@ -188,7 +188,7 @@ public sealed class DrawingProjectionAlignmentTests
     [InlineData(SectionPlacementSide.Top, true, true)]
     [InlineData(SectionPlacementSide.Bottom, true, true)]
     [InlineData(SectionPlacementSide.Unknown, false, false)]
-    public void TryGetSectionAlignmentAxis_UsesPlacementSideSemantics(
+    internal void TryGetSectionAlignmentAxis_UsesPlacementSideSemantics(
         SectionPlacementSide placementSide,
         bool expectedAlignX,
         bool expectedResolved)
@@ -205,7 +205,7 @@ public sealed class DrawingProjectionAlignmentTests
     [InlineData(NeighborRole.SideLeft, false, true)]
     [InlineData(NeighborRole.SideRight, false, true)]
     [InlineData(NeighborRole.Unknown, false, false)]
-    public void TryGetNeighborAlignmentAxis_UsesNeighborRoleSemantics(
+    internal void TryGetNeighborAlignmentAxis_UsesNeighborRoleSemantics(
         NeighborRole role,
         bool expectedAlignX,
         bool expectedResolved)

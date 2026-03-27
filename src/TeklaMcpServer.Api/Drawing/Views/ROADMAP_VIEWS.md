@@ -200,10 +200,9 @@
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
-- user-facing aliases для `fit_views_to_sheet` ещё не полностью унифицированы
-  между tool/parser/API layer:
-  parser знает `preserveexistingscales` / `preservemixedscales`,
-  тогда как tool layer всё ещё держит упрощённый `keepScale` contract.
+- user-facing aliases для `fit_views_to_sheet` унифицированы:
+  parser знает `preserveexistingscales` / `preservemixedscales` / `keepscale`
+  (все три ведут в `PreserveExistingScales`). Закрыто.
 - debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
   при reject horizontal section (бросает `InvalidOperationException`).
   Это временный локальный debug-hook, а не часть нормального runtime contract.

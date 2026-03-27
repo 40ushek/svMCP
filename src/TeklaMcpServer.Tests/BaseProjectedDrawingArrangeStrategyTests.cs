@@ -23,7 +23,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     [InlineData(SectionPlacementSide.Left, SectionPlacementSide.Right)]
     [InlineData(SectionPlacementSide.Right, SectionPlacementSide.Left)]
     [InlineData(SectionPlacementSide.Unknown, SectionPlacementSide.Unknown)]
-    public void GetFallbackPlacementSide_MirrorsPreferredSide(
+    internal void GetFallbackPlacementSide_MirrorsPreferredSide(
         SectionPlacementSide preferred,
         SectionPlacementSide expected)
     {
@@ -427,9 +427,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     [Fact]
     public void TryProjectViewLocalPointToSheet_UsesOriginAndScale()
     {
-        var view = new View();
-        view.Origin = new Point(131.57, 162.19, 0);
-        view.Attributes.Scale = 25;
+        var view = ViewTestHelper.Create(View.ViewTypes.FrontView, originX: 131.57, originY: 162.19, scale: 25);
 
         var ok = BaseProjectedDrawingArrangeStrategy.TryProjectViewLocalPointToSheet(
             view,
@@ -445,7 +443,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     [Fact]
     public void TryDeferMainSkeletonNeighbor_RemovesTopPlacementAndReservation()
     {
-        var top = new View();
+        var top = ViewTestHelper.Create(View.ViewTypes.FrontView);
         var topRect = new ReservedRect(10, 20, 40, 60);
         var bottomRect = new ReservedRect(0, 0, 0, 0);
         var leftRect = new ReservedRect(0, 0, 0, 0);

@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
@@ -14,7 +13,7 @@ public sealed class BaseViewSelectionTests
         var topView = CreateView(View.ViewTypes.TopView, width: 120, height: 80, originX: 100, originY: 50);
         var views = new List<View>
         {
-            new SectionView(),
+            ViewTestHelper.Create(View.ViewTypes.SectionView),
             topView
         };
 
@@ -69,7 +68,7 @@ public sealed class BaseViewSelectionTests
     {
         var views = new List<View>
         {
-            new SectionView(),
+            ViewTestHelper.Create(View.ViewTypes.SectionView),
             CreateView(View.ViewTypes.DetailView)
         };
 
@@ -87,11 +86,5 @@ public sealed class BaseViewSelectionTests
         double height = 0,
         double originX = 0,
         double originY = 0)
-        => new()
-        {
-            ViewType = viewType,
-            Width = width,
-            Height = height,
-            Origin = new Point(originX, originY, 0)
-        };
+        => ViewTestHelper.Create(viewType, width: width, height: height, originX: originX, originY: originY);
 }
