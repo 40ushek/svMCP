@@ -240,13 +240,13 @@
 ### Согласованный статус этапов
 
 - `Stage 0: safe internal refactor`:
-  практически завершён.
+  завершён.
   Основной structural cleanup внутри `BaseProjectedDrawingArrangeStrategy`
   уже сделан без смены layout-policy.
 - `Stage 1: local geometry/search/validation layer inside strategy`:
-  практически завершён и считается закрытым для `BaseProjectedDrawingArrangeStrategy`.
+  завершён.
   Локальный mini-layer уже покрывает основные placement/search/validation paths
-  внутри strategy; дальше это считается устойчивой внутренней границей.
+  внутри strategy и считается устойчивой внутренней границей.
 - `Stage 2: shared geometry/collision pipeline across layout phases`:
   следующий активный этап.
   Здесь нужно выйти за пределы одного блока и свести `strategy`,
@@ -369,7 +369,7 @@
 
 ## Ближайшие шаги
 
-Порядок ниже уже учитывает, что подготовительный refactor почти завершён.
+Порядок ниже уже исходит из того, что `Stage 0` и `Stage 1` закрыты.
 
 ### 1. Выделить единый geometry/collision pipeline для всех фаз layout
 
@@ -407,6 +407,13 @@
   между layout-path и projection-path
 - весь код, который принимает решение `можно ли двигать view`,
   использует один validator, а не локальную копию overlap logic
+
+Первый безопасный вход в этот этап:
+
+- сначала выделить общий internal geometry/validator helper без смены policy
+- сначала подключить его в `BaseProjectedDrawingArrangeStrategy`
+- только затем тянуть тот же contract в `EstimateFit`
+  и projection post-pass
 
 ### 2. Свести `EstimateFit` и apply path
 
