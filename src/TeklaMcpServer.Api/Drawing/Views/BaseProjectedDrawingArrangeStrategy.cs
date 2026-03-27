@@ -69,6 +69,40 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public ReservedRect Rect { get; }
     }
 
+    private readonly struct MainSkeletonNeighborSpec
+    {
+        public MainSkeletonNeighborSpec(string role, View? view, RelativePlacement placement, bool allowSheetTopFallback)
+        {
+            Role = role;
+            View = view;
+            Placement = placement;
+            AllowSheetTopFallback = allowSheetTopFallback;
+        }
+
+        public string Role { get; }
+        public View? View { get; }
+        public RelativePlacement Placement { get; }
+        public bool AllowSheetTopFallback { get; }
+    }
+
+    private readonly struct StrictMainSkeletonNeighborSpec
+    {
+        public StrictMainSkeletonNeighborSpec(string role, View? view, RelativePlacement placement, double width, double height)
+        {
+            Role = role;
+            View = view;
+            Placement = placement;
+            Width = width;
+            Height = height;
+        }
+
+        public string Role { get; }
+        public View? View { get; }
+        public RelativePlacement Placement { get; }
+        public double Width { get; }
+        public double Height { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -153,6 +187,83 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         sheetX = view.Origin.X + (localPoint.X / scale);
         sheetY = view.Origin.Y + (localPoint.Y / scale);
         return true;
+    }
+
+    private static MainSkeletonNeighborSpec[] CreateMainSkeletonNeighborSpecs(
+        View? top,
+        View? bottom,
+        View? leftNeighbor,
+        View? rightNeighbor)
+        => new[]
+        {
+            new MainSkeletonNeighborSpec("top", top, RelativePlacement.Top, allowSheetTopFallback: true),
+            new MainSkeletonNeighborSpec("bottom", bottom, RelativePlacement.Bottom, allowSheetTopFallback: false),
+            new MainSkeletonNeighborSpec("left", leftNeighbor, RelativePlacement.Left, allowSheetTopFallback: false),
+            new MainSkeletonNeighborSpec("right", rightNeighbor, RelativePlacement.Right, allowSheetTopFallback: false)
+        };
+
+    private static StrictMainSkeletonNeighborSpec[] CreateStrictMainSkeletonNeighborSpecs(
+        View? top,
+        View? bottom,
+        View? leftNeighbor,
+        View? rightNeighbor,
+        double topWidth,
+        double topHeight,
+        double bottomWidth,
+        double bottomHeight,
+        double leftNeighborWidth,
+        double leftNeighborHeight,
+        double rightNeighborWidth,
+        double rightNeighborHeight)
+        => new[]
+        {
+            new StrictMainSkeletonNeighborSpec("top", top, RelativePlacement.Top, topWidth, topHeight),
+            new StrictMainSkeletonNeighborSpec("bottom", bottom, RelativePlacement.Bottom, bottomWidth, bottomHeight),
+            new StrictMainSkeletonNeighborSpec("left", leftNeighbor, RelativePlacement.Left, leftNeighborWidth, leftNeighborHeight),
+            new StrictMainSkeletonNeighborSpec("right", rightNeighbor, RelativePlacement.Right, rightNeighborWidth, rightNeighborHeight)
+        };
+
+    private static MainSkeletonPlacementState CreateMainSkeletonPlacementState(
+        bool topPlaced,
+        bool bottomPlaced,
+        bool leftPlaced,
+        bool rightPlaced,
+        ReservedRect topRect,
+        ReservedRect bottomRect,
+        ReservedRect leftRect,
+        ReservedRect rightRect)
+    {
+        var placements = new MainSkeletonPlacementState();
+        if (topPlaced)
+            placements.SetPlaced("top", topRect);
+        if (bottomPlaced)
+            placements.SetPlaced("bottom", bottomRect);
+        if (leftPlaced)
+            placements.SetPlaced("left", leftRect);
+        if (rightPlaced)
+            placements.SetPlaced("right", rightRect);
+        return placements;
+    }
+
+    private static void CopyMainSkeletonPlacementStateToLegacy(
+        MainSkeletonPlacementState placements,
+        ref bool topPlaced,
+        ref bool bottomPlaced,
+        ref bool leftPlaced,
+        ref bool rightPlaced,
+        ref ReservedRect topRect,
+        ref ReservedRect bottomRect,
+        ref ReservedRect leftRect,
+        ref ReservedRect rightRect)
+    {
+        topPlaced = placements.TopRect != null;
+        bottomPlaced = placements.BottomRect != null;
+        leftPlaced = placements.LeftRect != null;
+        rightPlaced = placements.RightRect != null;
+        topRect = placements.TopRect ?? new ReservedRect(0, 0, 0, 0);
+        bottomRect = placements.BottomRect ?? new ReservedRect(0, 0, 0, 0);
+        leftRect = placements.LeftRect ?? new ReservedRect(0, 0, 0, 0);
+        rightRect = placements.RightRect ?? new ReservedRect(0, 0, 0, 0);
     }
 
     public bool CanArrange(DrawingArrangeContext context)
@@ -660,29 +771,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
-        var diagnosticMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, bool AllowSheetTopFallback)[]
-        {
-            ("top", top, RelativePlacement.Top, true),
-            ("bottom", bottom, RelativePlacement.Bottom, false),
-            ("left", leftNeighbor, RelativePlacement.Left, false),
-            ("right", rightNeighbor, RelativePlacement.Right, false)
-        };
-
-        foreach (var (role, view, placement, allowSheetTopFallback) in diagnosticMainSkeletonNeighbors)
+        foreach (var spec in CreateMainSkeletonNeighborSpecs(top, bottom, leftNeighbor, rightNeighbor))
         {
             TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
                 conflicts,
                 context,
-                role,
-                view,
+                spec.Role,
+                spec.View,
                 baseRect,
                 freeMinX,
                 freeMaxX,
                 freeMinY,
                 freeMaxY,
                 occupied,
-                placement,
-                allowSheetTopFallback,
+                spec.Placement,
+                spec.AllowSheetTopFallback,
                 mainSkeleton);
         }
 
@@ -908,15 +1011,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned)
     {
-        var placements = new MainSkeletonPlacementState();
-        if (topPlaced)
-            placements.SetPlaced("top", topRect);
-        if (bottomPlaced)
-            placements.SetPlaced("bottom", bottomRect);
-        if (leftPlaced)
-            placements.SetPlaced("left", leftRect);
-        if (rightPlaced)
-            placements.SetPlaced("right", rightRect);
+        var placements = CreateMainSkeletonPlacementState(
+            topPlaced,
+            bottomPlaced,
+            leftPlaced,
+            rightPlaced,
+            topRect,
+            bottomRect,
+            leftRect,
+            rightRect);
 
         var deferred = TryDeferMainSkeletonNeighborCore(
             role,
@@ -929,14 +1032,16 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             occupied,
             planned);
 
-        topPlaced = placements.TopRect != null;
-        bottomPlaced = placements.BottomRect != null;
-        leftPlaced = placements.LeftRect != null;
-        rightPlaced = placements.RightRect != null;
-        topRect = placements.TopRect ?? new ReservedRect(0, 0, 0, 0);
-        bottomRect = placements.BottomRect ?? new ReservedRect(0, 0, 0, 0);
-        leftRect = placements.LeftRect ?? new ReservedRect(0, 0, 0, 0);
-        rightRect = placements.RightRect ?? new ReservedRect(0, 0, 0, 0);
+        CopyMainSkeletonPlacementStateToLegacy(
+            placements,
+            ref topPlaced,
+            ref bottomPlaced,
+            ref leftPlaced,
+            ref rightPlaced,
+            ref topRect,
+            ref bottomRect,
+            ref leftRect,
+            ref rightRect);
         return deferred;
     }
 
@@ -1482,24 +1587,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
-        var strictMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, double Width, double Height)[]
-        {
-            ("top", top, RelativePlacement.Top, topWidth, topHeight),
-            ("bottom", bottom, RelativePlacement.Bottom, bottomWidth, bottomHeight),
-            ("left", leftNeighbor, RelativePlacement.Left, leftNeighborWidth, leftNeighborHeight),
-            ("right", rightNeighbor, RelativePlacement.Right, rightNeighborWidth, rightNeighborHeight)
-        };
-
-        foreach (var (role, view, placement, width, height) in strictMainSkeletonNeighbors)
+        foreach (var spec in CreateStrictMainSkeletonNeighborSpecs(
+                     top,
+                     bottom,
+                     leftNeighbor,
+                     rightNeighbor,
+                     topWidth,
+                     topHeight,
+                     bottomWidth,
+                     bottomHeight,
+                     leftNeighborWidth,
+                     leftNeighborHeight,
+                     rightNeighborWidth,
+                     rightNeighborHeight))
         {
             if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
                     context,
-                    role,
-                    view,
-                    placement,
+                    spec.Role,
+                    spec.View,
+                    spec.Placement,
                     baseRect,
-                    width,
-                    height,
+                    spec.Width,
+                    spec.Height,
                     gap,
                     freeArea.minX,
                     freeArea.maxX,
@@ -1653,20 +1762,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var mainSkeleton = new MainSkeletonPlacementState();
         var deferredMainSkeletonRoles = new List<string>();
 
-        var relaxedMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, bool AllowSheetTopFallback)[]
-        {
-            ("top", top, RelativePlacement.Top, true),
-            ("bottom", bottom, RelativePlacement.Bottom, false),
-            ("left", leftNeighbor, RelativePlacement.Left, false),
-            ("right", rightNeighbor, RelativePlacement.Right, false)
-        };
-
-        foreach (var (role, view, placement, allowSheetTopFallback) in relaxedMainSkeletonNeighbors)
+        foreach (var spec in CreateMainSkeletonNeighborSpecs(top, bottom, leftNeighbor, rightNeighbor))
         {
             TryPlaceOptionalRelaxedMainSkeletonNeighbor(
                 context,
-                role,
-                view,
+                spec.Role,
+                spec.View,
                 baseRect,
                 freeMinX,
                 freeMaxX,
@@ -1675,8 +1776,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 occupied,
                 planned,
                 deferred,
-                placement,
-                allowSheetTopFallback,
+                spec.Placement,
+                spec.AllowSheetTopFallback,
                 mainSkeleton);
         }
 
