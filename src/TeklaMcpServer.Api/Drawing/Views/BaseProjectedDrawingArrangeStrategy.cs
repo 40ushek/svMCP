@@ -2899,41 +2899,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return false;
     }
 
-    private static bool TryPlaceRelaxedMainSkeletonNeighbor(
-        DrawingArrangeContext context,
-        View view,
-        ReservedRect baseRect,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
-        List<ReservedRect> occupied,
-        List<PlannedPlacement> planned,
-        RelativePlacement placement,
-        bool allowSheetTopFallback,
-        out ReservedRect rect)
-    {
-        if (TryFindRelaxedMainSkeletonNeighborRect(
-                context,
-                view,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
-                occupied,
-                placement,
-                allowSheetTopFallback,
-                out rect))
-        {
-            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
-            return true;
-        }
-
-        rect = new ReservedRect(0, 0, 0, 0);
-        return false;
-    }
-
     private static void TryPlaceOptionalRelaxedMainSkeletonNeighbor(
         DrawingArrangeContext context,
         string role,
@@ -2951,7 +2916,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         MainSkeletonPlacementState placements)
     {
         if (view != null
-            && TryPlaceRelaxedMainSkeletonNeighbor(
+            && TryFindRelaxedMainSkeletonNeighborRect(
                 context,
                 view,
                 baseRect,
@@ -2960,11 +2925,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 freeMinY,
                 freeMaxY,
                 occupied,
-                planned,
                 placement,
                 allowSheetTopFallback,
                 out var rect))
         {
+            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
             placements.SetPlaced(role, rect);
             return;
         }
