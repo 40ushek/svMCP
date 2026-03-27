@@ -1929,10 +1929,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         TryPlaceDetailViews(
             context,
             detailRelations,
-            freeArea.minX,
-            freeArea.maxX,
-            freeArea.minY,
-            freeArea.maxY,
+            searchArea,
             gap,
             occupied,
             planned);
@@ -2091,16 +2088,31 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         TryPlaceDetailViews(
             context,
             detailRelations,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             planned);
 
         return true;
     }
+
+    private static void TryPlaceDetailViews(
+        DrawingArrangeContext context,
+        IReadOnlyList<DetailRelation> detailRelations,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+        => TryPlaceDetailViews(
+            context,
+            detailRelations,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            gap,
+            occupied,
+            planned);
 
     private static void TryPlaceDetailViews(
         DrawingArrangeContext context,
