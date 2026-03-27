@@ -921,6 +921,105 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             $"baseRect violated single-gap reserve: [{baseRect.MinX},{baseRect.MinY},{baseRect.MaxX},{baseRect.MaxY}]");
     }
 
+    [Fact]
+    public void TryPlaceDegradedStandardSections_PlacesTopSectionWithoutGenericResidual()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 40, height: 20);
+        var context = CreateArrangeContext([baseView, section], gap: 5);
+        var occupied = new List<ReservedRect> { new ReservedRect(70, 120, 130, 160) };
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryPlaceDegradedStandardSections(
+            context,
+            [section],
+            frontRect: new ReservedRect(70, 120, 130, 160),
+            preferredAnchorRect: new ReservedRect(70, 120, 130, 160),
+            fallbackAnchorRect: new ReservedRect(70, 120, 130, 160),
+            preferredPlacementSide: SectionPlacementSide.Top,
+            freeMinX: 0,
+            freeMaxX: 220,
+            freeMinY: 0,
+            freeMaxY: 260,
+            gap: 5,
+            occupied,
+            planned);
+
+        Assert.True(ok);
+        Assert.Single(planned);
+        Assert.Equal("Top", planned[0].PreferredPlacementSide?.ToString());
+        Assert.Equal("Top", planned[0].ActualPlacementSide?.ToString());
+    }
+
+    [Fact]
+    public void TryPlaceDegradedStandardSections_UsesFallbackPlacementSideWhenPreferredBandBlocked()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 40, height: 20);
+        var context = CreateArrangeContext([baseView, section], gap: 5);
+        var baseRect = new ReservedRect(70, 120, 130, 160);
+        var occupied = new List<ReservedRect>
+        {
+            baseRect,
+            new ReservedRect(80, 165, 120, 185)
+        };
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryPlaceDegradedStandardSections(
+            context,
+            [section],
+            frontRect: baseRect,
+            preferredAnchorRect: baseRect,
+            fallbackAnchorRect: baseRect,
+            preferredPlacementSide: SectionPlacementSide.Top,
+            freeMinX: 0,
+            freeMaxX: 220,
+            freeMinY: 0,
+            freeMaxY: 260,
+            gap: 5,
+            occupied,
+            planned);
+
+        Assert.True(ok);
+        Assert.Single(planned);
+        Assert.Equal("Top", planned[0].PreferredPlacementSide?.ToString());
+        Assert.Equal("Bottom", planned[0].ActualPlacementSide?.ToString());
+    }
+
+    [Fact]
+    public void TryPlaceDegradedStandardSections_ReturnsFalseWhenNoDegradedBandFits()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 40, height: 20);
+        var context = CreateArrangeContext([baseView, section], gap: 5);
+        var baseRect = new ReservedRect(70, 120, 130, 160);
+        var occupied = new List<ReservedRect>
+        {
+            baseRect,
+            new ReservedRect(0, 165, 220, 185),
+            new ReservedRect(0, 95, 220, 115)
+        };
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
+
+        var ok = BaseProjectedDrawingArrangeStrategy.TryPlaceDegradedStandardSections(
+            context,
+            [section],
+            frontRect: baseRect,
+            preferredAnchorRect: baseRect,
+            fallbackAnchorRect: baseRect,
+            preferredPlacementSide: SectionPlacementSide.Top,
+            freeMinX: 0,
+            freeMaxX: 220,
+            freeMinY: 0,
+            freeMaxY: 260,
+            gap: 5,
+            occupied,
+            planned);
+
+        Assert.False(ok);
+        Assert.Empty(planned);
+    }
+
     private static Tekla.Structures.Drawing.Drawing CreateDrawing()
     {
 #pragma warning disable SYSLIB0050

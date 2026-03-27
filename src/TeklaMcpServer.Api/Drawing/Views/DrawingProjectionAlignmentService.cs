@@ -103,20 +103,59 @@ internal sealed partial class DrawingProjectionAlignmentService
             $"mode={result.Mode} applied={result.AppliedMoves} skipped={result.SkippedMoves} outOfBoundsRejects={result.OutOfBoundsRejects} reservedOverlapRejects={result.ReservedOverlapRejects} viewOverlapRejects={result.ViewOverlapRejects} diagnostics={result.Diagnostics.Count}");
     }
 
+    internal static bool TryResolveSectionAlignmentAxis(
+        ArrangedView? arrangedView,
+        SectionPlacementSide fallbackPlacementSide,
+        out bool alignX,
+        out string reason)
+    {
+        if (arrangedView != null)
+        {
+            if (string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide))
+            {
+                alignX = false;
+                reason = $"projection-skip:section-unresolved:view={arrangedView.Id}";
+                return false;
+            }
+
+            if (System.Enum.TryParse<SectionPlacementSide>(arrangedView.ActualPlacementSide, ignoreCase: true, out var actualPlacementSide)
+                && DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(actualPlacementSide, out alignX))
+            {
+                reason = string.Empty;
+                return true;
+            }
+        }
+
+        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(fallbackPlacementSide, out alignX))
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        alignX = false;
+        reason = $"projection-skip:section-side-unknown:reason={fallbackPlacementSide}";
+        return false;
+    }
+
     private bool TryGetSectionAlignmentAxis(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingView baseView,
+        int sectionId,
         DrawingView sectionView,
         ProjectionAlignmentResult result,
+        IList<ArrangedView>? arrangedViews,
         out bool alignX)
     {
         var sectionSide = _sectionPlacementSideResolver.Resolve(drawing, baseView, sectionView);
-        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(sectionSide.PlacementSide, out alignX))
+        var arrangedView = arrangedViews?.FirstOrDefault(item => item.Id == sectionId);
+        if (TryResolveSectionAlignmentAxis(arrangedView, sectionSide.PlacementSide, out alignX, out var reason))
             return true;
 
         TraceSkip(
             result,
-            $"projection-skip:section-side-unknown:reason={sectionSide.Reason}");
+            reason == $"projection-skip:section-side-unknown:reason={sectionSide.PlacementSide}"
+                ? $"projection-skip:section-side-unknown:reason={sectionSide.Reason}"
+                : reason);
         return false;
     }
 }

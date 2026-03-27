@@ -316,4 +316,64 @@ public sealed class DrawingProjectionAlignmentTests
         Assert.Equal("reserved-overlap", validation.Reason);
         Assert.Equal(validation.Reason, decision.Reason);
     }
+
+    [Fact]
+    public void TryResolveSectionAlignmentAxis_SkipsSectionWhenActualPlacementSideMissing()
+    {
+        var arranged = new ArrangedView
+        {
+            Id = 44,
+            ActualPlacementSide = string.Empty,
+            PlacementFallbackUsed = false
+        };
+
+        var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
+            arranged,
+            SectionPlacementSide.Top,
+            out var alignX,
+            out var reason);
+
+        Assert.False(ok);
+        Assert.False(alignX);
+        Assert.Equal("projection-skip:section-unresolved:view=44", reason);
+    }
+
+    [Theory]
+    [InlineData("Top", true)]
+    [InlineData("Bottom", true)]
+    [InlineData("Left", false)]
+    [InlineData("Right", false)]
+    public void TryResolveSectionAlignmentAxis_UsesActualPlacementSide(string actualPlacementSide, bool expectedAlignX)
+    {
+        var arranged = new ArrangedView
+        {
+            Id = 45,
+            ActualPlacementSide = actualPlacementSide,
+            PlacementFallbackUsed = true
+        };
+
+        var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
+            arranged,
+            SectionPlacementSide.Unknown,
+            out var alignX,
+            out var reason);
+
+        Assert.True(ok);
+        Assert.Equal(expectedAlignX, alignX);
+        Assert.Equal(string.Empty, reason);
+    }
+
+    [Fact]
+    public void TryResolveSectionAlignmentAxis_FallsBackToResolvedPlacementSideWhenArrangedViewMissing()
+    {
+        var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
+            arrangedView: null,
+            fallbackPlacementSide: SectionPlacementSide.Right,
+            out var alignX,
+            out var reason);
+
+        Assert.True(ok);
+        Assert.False(alignX);
+        Assert.Equal(string.Empty, reason);
+    }
 }

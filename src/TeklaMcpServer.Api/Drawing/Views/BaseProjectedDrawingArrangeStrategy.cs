@@ -443,6 +443,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 || ValidateResidualFallbackLayout(unplannedCtx, fallbackStandardSectionIds);
         }
 
+        if (CollectStandardSectionIds(planningContext).Count > 0)
+            return false;
+
         var maxr  = _maxRectsFallback.EstimateFit(planningContext, frames);
         var shelf = !maxr && planningContext.ReservedAreas.Count == 0 && _fallback.EstimateFit(planningContext, frames);
         return maxr || shelf;
@@ -472,6 +475,9 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             .Where(id => !plannedIds.Contains(id))
             .ToHashSet();
     }
+
+    private HashSet<int> CollectStandardSectionIds(DrawingArrangeContext context)
+        => CollectUnplannedStandardSectionIds(context, new HashSet<int>());
 
     private static bool ValidateResidualFallbackLayout(
         DrawingArrangeContext context,
@@ -2080,7 +2086,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var leftAnchor = mainSkeleton.GetAnchorOrBase("left", baseRect);
         var rightAnchor = mainSkeleton.GetAnchorOrBase("right", baseRect);
-        TryPlaceVerticalSectionStackWithFallback(
+        if (!TryPlaceVerticalSectionStackWithFallback(
             context,
             leftSections,
             baseRect,
@@ -2090,8 +2096,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             gap,
             occupied,
-            planned);
-        TryPlaceVerticalSectionStackWithFallback(
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                leftSections,
+                baseRect,
+                leftAnchor,
+                rightAnchor,
+                RelativePlacement.Left,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceVerticalSectionStackWithFallback(
             context,
             rightSections,
             baseRect,
@@ -2101,9 +2119,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             gap,
             occupied,
-            planned);
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                rightSections,
+                baseRect,
+                rightAnchor,
+                leftAnchor,
+                RelativePlacement.Right,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
 
-        TryPlaceHorizontalSectionStackWithFallback(
+        if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
             topSections,
             baseRect,
@@ -2113,8 +2143,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             gap,
             occupied,
-            planned);
-        TryPlaceHorizontalSectionStackWithFallback(
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                topSections,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                RelativePlacement.Top,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
             bottomSections,
             baseRect,
@@ -2124,7 +2166,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             gap,
             occupied,
-            planned);
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                bottomSections,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                RelativePlacement.Bottom,
+                searchArea,
+                gap,
+                occupied,
+                planned))
+            return false;
 
         TryPlaceDetailViews(
             context,
@@ -2242,7 +2296,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var leftPlacedAnchor = mainSkeleton.GetAnchorOrBase("left", baseRect);
         var rightPlacedAnchor = mainSkeleton.GetAnchorOrBase("right", baseRect);
-        TryPlaceVerticalSectionStackWithFallback(
+        if (!TryPlaceVerticalSectionStackWithFallback(
             context,
             leftSections,
             baseRect,
@@ -2252,8 +2306,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             context.Gap,
             occupied,
-            planned);
-        TryPlaceVerticalSectionStackWithFallback(
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                leftSections,
+                baseRect,
+                leftPlacedAnchor,
+                rightPlacedAnchor,
+                RelativePlacement.Left,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceVerticalSectionStackWithFallback(
             context,
             rightSections,
             baseRect,
@@ -2263,9 +2329,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             context.Gap,
             occupied,
-            planned);
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                rightSections,
+                baseRect,
+                rightPlacedAnchor,
+                leftPlacedAnchor,
+                RelativePlacement.Right,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
 
-        TryPlaceHorizontalSectionStackWithFallback(
+        if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
             topSections,
             baseRect,
@@ -2275,8 +2353,20 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             context.Gap,
             occupied,
-            planned);
-        TryPlaceHorizontalSectionStackWithFallback(
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                topSections,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                RelativePlacement.Top,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
+        if (!TryPlaceHorizontalSectionStackWithFallback(
             context,
             bottomSections,
             baseRect,
@@ -2286,7 +2376,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             searchArea,
             context.Gap,
             occupied,
-            planned);
+            planned)
+            && !TryPlaceDegradedStandardSections(
+                context,
+                bottomSections,
+                baseRect,
+                mainSkeleton.GetAnchorOrBase("bottom", baseRect),
+                mainSkeleton.GetAnchorOrBase("top", baseRect),
+                RelativePlacement.Bottom,
+                searchArea,
+                context.Gap,
+                occupied,
+                planned))
+            return false;
 
         TryPlaceDetailViews(
             context,
@@ -3587,6 +3689,179 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         TraceSectionStackResult("vertical", preferredZone, actualZone: null, fallbackUsed: false, sectionViews);
 
+        return false;
+    }
+
+    internal static bool TryPlaceDegradedStandardSections(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        SectionPlacementSide preferredPlacementSide,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+        => TryPlaceDegradedStandardSections(
+            context,
+            sectionViews,
+            frontRect,
+            preferredAnchorRect,
+            fallbackAnchorRect,
+            ToRelativePlacement(preferredPlacementSide),
+            new ViewPlacementSearchArea(frontRect, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            planned);
+
+    private static bool TryPlaceDegradedStandardSections(
+        DrawingArrangeContext context,
+        IReadOnlyList<View> sectionViews,
+        ReservedRect frontRect,
+        ReservedRect preferredAnchorRect,
+        ReservedRect fallbackAnchorRect,
+        RelativePlacement preferredZone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        List<ReservedRect> occupied,
+        List<PlannedPlacement> planned)
+    {
+        if (sectionViews.Count == 0)
+            return true;
+
+        var preferredPlacementSide = ToPlacementSide(preferredZone);
+        var fallbackZone = GetFallbackZone(preferredZone);
+        var fallbackPlacementSide = GetFallbackPlacementSide(preferredPlacementSide);
+        var preferredCurrentAnchor = preferredAnchorRect;
+        var fallbackCurrentAnchor = fallbackAnchorRect;
+
+        PerfTrace.Write(
+            "api-view",
+            "section_degraded_attempt",
+            0,
+            $"preferred={preferredZone} sections=[{FormatSectionIds(sectionViews)}]");
+
+        foreach (var section in OrderSectionViewsForStack(context, sectionViews))
+        {
+            if (TryFindDegradedSectionRect(
+                    context,
+                    section,
+                    frontRect,
+                    preferredCurrentAnchor,
+                    preferredZone,
+                    searchArea,
+                    gap,
+                    occupied,
+                    out var preferredRect,
+                    out _))
+            {
+                AddPlannedAndOccupiedRect(planned, occupied, section, preferredRect, preferredPlacementSide, preferredPlacementSide);
+                preferredCurrentAnchor = preferredRect;
+                continue;
+            }
+
+            if (TryFindDegradedSectionRect(
+                    context,
+                    section,
+                    frontRect,
+                    fallbackCurrentAnchor,
+                    fallbackZone,
+                    searchArea,
+                    gap,
+                    occupied,
+                    out var fallbackRect,
+                    out _))
+            {
+                AddPlannedAndOccupiedRect(planned, occupied, section, fallbackRect, preferredPlacementSide, fallbackPlacementSide);
+                fallbackCurrentAnchor = fallbackRect;
+                continue;
+            }
+
+            PerfTrace.Write(
+                "api-view",
+                "section_degraded_reject",
+                0,
+                $"preferred={preferredZone} fallback={fallbackZone} section={section.GetIdentifier().ID}");
+            return false;
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "section_degraded_result",
+            0,
+            $"preferred={preferredZone} sections=[{FormatSectionIds(sectionViews)}]");
+        return true;
+    }
+
+    private static RelativePlacement ToRelativePlacement(SectionPlacementSide placementSide)
+        => placementSide switch
+        {
+            SectionPlacementSide.Top => RelativePlacement.Top,
+            SectionPlacementSide.Bottom => RelativePlacement.Bottom,
+            SectionPlacementSide.Left => RelativePlacement.Left,
+            SectionPlacementSide.Right => RelativePlacement.Right,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(placementSide))
+        };
+
+    private static bool TryFindDegradedSectionRect(
+        DrawingArrangeContext context,
+        View section,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        out ReservedRect rect,
+        out SectionStackFailureInfo? failure)
+    {
+        if (zone is RelativePlacement.Top or RelativePlacement.Bottom)
+        {
+            return TryFindHorizontalSectionRectInSearchArea(
+                context,
+                section,
+                frontRect,
+                anchorRect,
+                zone,
+                searchArea,
+                gap,
+                occupied,
+                System.Array.Empty<ReservedRect>(),
+                out rect,
+                out failure);
+        }
+
+        var width = DrawingArrangeContextSizing.GetWidth(context, section);
+        var height = DrawingArrangeContextSizing.GetHeight(context, section);
+        if (!TryCreateVerticalSectionRect(
+                frontRect,
+                anchorRect,
+                zone,
+                width,
+                height,
+                gap,
+                searchArea,
+                out rect))
+        {
+            failure = new SectionStackFailureInfo(section, new ReservedRect(0, 0, 0, 0), "out-of-bounds-y", "out-of-bounds");
+            return false;
+        }
+
+        if (TryValidateSectionCandidateRect(rect, searchArea, occupied, System.Array.Empty<ReservedRect>(), out var reason))
+        {
+            failure = null;
+            return true;
+        }
+
+        failure = new SectionStackFailureInfo(
+            section,
+            rect,
+            reason == "out-of-bounds" ? "out-of-bounds-y" : "intersects-view",
+            reason);
         return false;
     }
 
