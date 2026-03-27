@@ -3065,22 +3065,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             return rect;
         }
 
-        if (spec.AllowSheetTopFallback
-            && spec.Placement == RelativePlacement.Top
-            && TryFindTopViewAtSheetTop(
-                context,
-                view,
-                searchArea.FreeMinX,
-                searchArea.FreeMaxX,
-                searchArea.FreeMinY,
-                searchArea.FreeMaxY,
-                occupied,
-                out rect))
-        {
-            return rect;
-        }
+        return FindRelaxedMainSkeletonSheetTopFallbackRect(context, spec, view, searchArea, occupied);
+    }
 
-        return null;
+    private static ReservedRect? FindRelaxedMainSkeletonSheetTopFallbackRect(
+        DrawingArrangeContext context,
+        MainSkeletonNeighborSpec spec,
+        View view,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (!spec.AllowSheetTopFallback || spec.Placement != RelativePlacement.Top)
+            return null;
+
+        return TryFindTopViewAtSheetTop(
+            context,
+            view,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            occupied,
+            out var rect)
+            ? rect
+            : null;
     }
 
     private static void TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
