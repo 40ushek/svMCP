@@ -791,10 +791,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (!TryValidateMainSkeletonSpacing(
                 baseRect,
-                mainSkeleton.TopRect,
-                mainSkeleton.BottomRect,
-                mainSkeleton.LeftRect,
-                mainSkeleton.RightRect,
+                mainSkeleton,
                 context.SheetWidth,
                 context.SheetHeight,
                 context.Margin,
@@ -886,24 +883,56 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         out string reason,
         out string role,
         out ReservedRect failingRect)
+        => TryValidateMainSkeletonSpacingCore(
+            baseRect,
+            CreateMainSkeletonRects(baseRect, topRect, bottomRect, leftRect, rightRect),
+            sheetWidth,
+            sheetHeight,
+            margin,
+            gap,
+            reservedAreas,
+            out reason,
+            out role,
+            out failingRect);
+
+    private static bool TryValidateMainSkeletonSpacing(
+        ReservedRect baseRect,
+        MainSkeletonPlacementState placements,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        double gap,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        out string reason,
+        out string role,
+        out ReservedRect failingRect)
+        => TryValidateMainSkeletonSpacingCore(
+            baseRect,
+            CreateMainSkeletonRects(baseRect, placements.TopRect, placements.BottomRect, placements.LeftRect, placements.RightRect),
+            sheetWidth,
+            sheetHeight,
+            margin,
+            gap,
+            reservedAreas,
+            out reason,
+            out role,
+            out failingRect);
+
+    private static bool TryValidateMainSkeletonSpacingCore(
+        ReservedRect baseRect,
+        List<MainSkeletonRect> placements,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        double gap,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        out string reason,
+        out string role,
+        out ReservedRect failingRect)
     {
         reason = string.Empty;
         role = string.Empty;
         failingRect = baseRect;
-
-        var placements = new List<MainSkeletonRect>
-        {
-            new("base", baseRect)
-        };
-
-        if (topRect != null)
-            placements.Add(new MainSkeletonRect("top", topRect));
-        if (bottomRect != null)
-            placements.Add(new MainSkeletonRect("bottom", bottomRect));
-        if (leftRect != null)
-            placements.Add(new MainSkeletonRect("left", leftRect));
-        if (rightRect != null)
-            placements.Add(new MainSkeletonRect("right", rightRect));
 
         foreach (var placement in placements)
         {
@@ -938,40 +967,58 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             }
         }
 
-        if (topRect != null && topRect.MinY - baseRect.MaxY < gap)
+        foreach (var placement in placements)
         {
-            reason = "main-skeleton-gap-top";
-            role = "top";
-            failingRect = topRect;
-            return false;
-        }
-
-        if (bottomRect != null && baseRect.MinY - bottomRect.MaxY < gap)
-        {
-            reason = "main-skeleton-gap-bottom";
-            role = "bottom";
-            failingRect = bottomRect;
-            return false;
-        }
-
-        if (leftRect != null && baseRect.MinX - leftRect.MaxX < gap)
-        {
-            reason = "main-skeleton-gap-left";
-            role = "left";
-            failingRect = leftRect;
-            return false;
-        }
-
-        if (rightRect != null && rightRect.MinX - baseRect.MaxX < gap)
-        {
-            reason = "main-skeleton-gap-right";
-            role = "right";
-            failingRect = rightRect;
-            return false;
+            if (placement.Role != "base"
+                && !HasMainSkeletonGap(baseRect, placement.Role, placement.Rect, gap))
+            {
+                reason = $"main-skeleton-gap-{placement.Role}";
+                role = placement.Role;
+                failingRect = placement.Rect;
+                return false;
+            }
         }
 
         return true;
     }
+
+    private static List<MainSkeletonRect> CreateMainSkeletonRects(
+        ReservedRect baseRect,
+        ReservedRect? topRect,
+        ReservedRect? bottomRect,
+        ReservedRect? leftRect,
+        ReservedRect? rightRect)
+    {
+        var placements = new List<MainSkeletonRect>
+        {
+            new("base", baseRect)
+        };
+
+        if (topRect != null)
+            placements.Add(new MainSkeletonRect("top", topRect));
+        if (bottomRect != null)
+            placements.Add(new MainSkeletonRect("bottom", bottomRect));
+        if (leftRect != null)
+            placements.Add(new MainSkeletonRect("left", leftRect));
+        if (rightRect != null)
+            placements.Add(new MainSkeletonRect("right", rightRect));
+
+        return placements;
+    }
+
+    private static bool HasMainSkeletonGap(
+        ReservedRect baseRect,
+        string role,
+        ReservedRect rect,
+        double gap)
+        => role switch
+        {
+            "top" => rect.MinY - baseRect.MaxY >= gap,
+            "bottom" => baseRect.MinY - rect.MaxY >= gap,
+            "left" => baseRect.MinX - rect.MaxX >= gap,
+            "right" => rect.MinX - baseRect.MaxX >= gap,
+            _ => true
+        };
 
     private static View ResolveMainSkeletonView(NeighborSet neighbors, string role)
         => role switch
@@ -991,6 +1038,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             "left" => RelativePlacement.Left.ToString(),
             "right" => RelativePlacement.Right.ToString(),
             _ => "Center"
+        };
+
+    private static View? GetMainSkeletonNeighborView(
+        string role,
+        View? top,
+        View? bottom,
+        View? leftNeighbor,
+        View? rightNeighbor)
+        => role switch
+        {
+            "top" => top,
+            "bottom" => bottom,
+            "left" => leftNeighbor,
+            "right" => rightNeighbor,
+            _ => null
         };
 
     internal static bool TryDeferMainSkeletonNeighbor(
@@ -1062,35 +1124,14 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             occupied.Remove(rect);
         }
 
-        switch (role)
-        {
-            case "top" when top != null && placements.TryGetPlacedRect("top", out var topRect):
-                RemovePlacement(top, topRect);
-                placements.Clear("top");
-                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=top reason={reason}");
-                return true;
+        var view = GetMainSkeletonNeighborView(role, top, bottom, leftNeighbor, rightNeighbor);
+        if (view == null || !placements.TryGetPlacedRect(role, out var rect))
+            return false;
 
-            case "bottom" when bottom != null && placements.TryGetPlacedRect("bottom", out var bottomRect):
-                RemovePlacement(bottom, bottomRect);
-                placements.Clear("bottom");
-                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=bottom reason={reason}");
-                return true;
-
-            case "left" when leftNeighbor != null && placements.TryGetPlacedRect("left", out var leftRect):
-                RemovePlacement(leftNeighbor, leftRect);
-                placements.Clear("left");
-                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=left reason={reason}");
-                return true;
-
-            case "right" when rightNeighbor != null && placements.TryGetPlacedRect("right", out var rightRect):
-                RemovePlacement(rightNeighbor, rightRect);
-                placements.Clear("right");
-                PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role=right reason={reason}");
-                return true;
-
-            default:
-                return false;
-        }
+        RemovePlacement(view, rect);
+        placements.Clear(role);
+        PerfTrace.Write("api-view", "main_skeleton_defer", 0, $"role={role} reason={reason}");
+        return true;
     }
 
     private static void DiagnoseRelativePlacementFailure(
@@ -1622,10 +1663,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (!TryValidateMainSkeletonSpacing(
                 baseRect,
-                mainSkeleton.TopRect,
-                mainSkeleton.BottomRect,
-                mainSkeleton.LeftRect,
-                mainSkeleton.RightRect,
+                mainSkeleton,
                 context.SheetWidth,
                 context.SheetHeight,
                 context.Margin,
@@ -1783,10 +1821,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         while (!TryValidateMainSkeletonSpacing(
                    baseRect,
-                   mainSkeleton.TopRect,
-                   mainSkeleton.BottomRect,
-                   mainSkeleton.LeftRect,
-                   mainSkeleton.RightRect,
+                   mainSkeleton,
                    context.SheetWidth,
                    context.SheetHeight,
                    context.Margin,
