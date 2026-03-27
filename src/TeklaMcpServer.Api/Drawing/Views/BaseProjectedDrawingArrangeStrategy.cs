@@ -2495,6 +2495,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         occupied.Add(rect);
     }
 
+    private static void CommitMainSkeletonPlacement(
+        MainSkeletonPlacementState placements,
+        string role,
+        List<ReservedRect> occupied,
+        ReservedRect rect)
+    {
+        placements.SetPlaced(role, rect);
+        occupied.Add(rect);
+    }
+
+    private static void CommitPlannedMainSkeletonPlacement(
+        MainSkeletonPlacementState placements,
+        string role,
+        List<PlannedPlacement> planned,
+        List<ReservedRect> occupied,
+        View view,
+        ReservedRect rect)
+    {
+        AddPlannedAndOccupiedRect(planned, occupied, view, rect);
+        placements.SetPlaced(role, rect);
+    }
+
     private static string FormatSectionIds(IReadOnlyList<View> sectionViews)
         => string.Join(",", sectionViews.Select(v => v.GetIdentifier().ID));
 
@@ -2889,8 +2911,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 occupied,
                 out var rect))
         {
-            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
-            placements.SetPlaced(role, rect);
+            CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
             return true;
         }
 
@@ -2929,8 +2950,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 allowSheetTopFallback,
                 out var rect))
         {
-            AddPlannedAndOccupiedRect(planned, occupied, view, rect);
-            placements.SetPlaced(role, rect);
+            CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect);
             return;
         }
 
@@ -3011,8 +3031,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 allowSheetTopFallback,
                 out var rect))
         {
-            placements.SetPlaced(role, rect);
-            occupied.Add(rect);
+            CommitMainSkeletonPlacement(placements, role, occupied, rect);
             return;
         }
 
