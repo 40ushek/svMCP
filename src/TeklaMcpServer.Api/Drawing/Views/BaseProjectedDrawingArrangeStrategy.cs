@@ -2995,19 +2995,36 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         MainSkeletonNeighborSearchArea searchArea,
         IReadOnlyList<ReservedRect> occupied,
         View view)
+        => DiagnoseRelativePlacementFailureInSearchArea(
+            conflicts,
+            context,
+            view,
+            searchArea.BaseRect,
+            searchArea,
+            occupied,
+            spec.Placement);
+
+    private static void DiagnoseRelativePlacementFailureInSearchArea(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchorRect,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement placement)
     {
         DiagnoseRelativePlacementFailure(
             conflicts,
             context,
             view,
-            searchArea.BaseRect,
+            anchorRect,
             searchArea.FreeMinX,
             searchArea.FreeMaxX,
             searchArea.FreeMinY,
             searchArea.FreeMaxY,
             context.Gap,
             occupied,
-            spec.Placement);
+            placement);
     }
 
     private static bool TryPlaceOptionalPlannedMainSkeletonNeighborCore(
@@ -3118,7 +3135,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (!spec.AllowSheetTopFallback || spec.Placement != RelativePlacement.Top)
             return null;
 
-        return TryFindTopViewAtSheetTop(
+        return FindTopViewAtSheetTopInSearchArea(
+            context,
+            view,
+            searchArea,
+            occupied);
+    }
+
+    private static ReservedRect? FindTopViewAtSheetTopInSearchArea(
+        DrawingArrangeContext context,
+        View view,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied)
+        => TryFindTopViewAtSheetTop(
             context,
             view,
             searchArea.FreeMinX,
@@ -3129,7 +3158,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             out var rect)
             ? rect
             : null;
-    }
 
     private static void TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
         List<DrawingFitConflict> conflicts,
