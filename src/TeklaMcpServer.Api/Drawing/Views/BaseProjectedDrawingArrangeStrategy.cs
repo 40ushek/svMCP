@@ -2840,17 +2840,45 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         RelativePlacement preferred,
         out ReservedRect placement)
     {
-        foreach (var candidate in EnumerateRelativeCandidates(context, view, anchor, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, preferred))
+        foreach (var candidate in EnumerateAvailableRelativeCandidates(
+                     context,
+                     view,
+                     anchor,
+                     freeMinX,
+                     freeMaxX,
+                     freeMinY,
+                     freeMaxY,
+                     gap,
+                     occupied,
+                     preferred))
         {
-            if (IntersectsAny(candidate, occupied))
-                continue;
-
             placement = candidate;
             return true;
         }
 
         placement = new ReservedRect(0, 0, 0, 0);
         return false;
+    }
+
+    private static IEnumerable<ReservedRect> EnumerateAvailableRelativeCandidates(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+    {
+        foreach (var candidate in EnumerateRelativeCandidates(context, view, anchor, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, preferred))
+        {
+            if (IntersectsAny(candidate, occupied))
+                continue;
+
+            yield return candidate;
+        }
     }
 
     private static IEnumerable<ReservedRect> EnumerateRelativeCandidates(
