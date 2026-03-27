@@ -3049,21 +3049,19 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (view == null)
             return null;
 
-        if (TryPlaceRelative(
-                context,
-                view,
-                searchArea.BaseRect,
-                searchArea.FreeMinX,
-                searchArea.FreeMaxX,
-                searchArea.FreeMinY,
-                searchArea.FreeMaxY,
-                context.Gap,
-                occupied,
-                spec.Placement,
-                out var rect))
-        {
+        var rect = FindRelativeRect(
+            context,
+            view,
+            searchArea.BaseRect,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            context.Gap,
+            occupied,
+            spec.Placement);
+        if (rect != null)
             return rect;
-        }
 
         return FindRelaxedMainSkeletonSheetTopFallbackRect(context, spec, view, searchArea, occupied);
     }
@@ -3288,6 +3286,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         placement = new ReservedRect(0, 0, 0, 0);
         return false;
     }
+
+    private static ReservedRect? FindRelativeRect(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+        => TryPlaceRelative(
+            context,
+            view,
+            anchor,
+            freeMinX,
+            freeMaxX,
+            freeMinY,
+            freeMaxY,
+            gap,
+            occupied,
+            preferred,
+            out var placement)
+            ? placement
+            : null;
 
     private static IEnumerable<ReservedRect> EnumerateAvailableRelativeCandidates(
         DrawingArrangeContext context,
