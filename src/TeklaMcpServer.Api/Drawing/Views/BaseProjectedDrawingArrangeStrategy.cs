@@ -2954,6 +2954,40 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return false;
     }
 
+    private static void RejectOptionalPlannedMainSkeletonNeighbor(
+        string mode,
+        string role,
+        DrawingArrangeContext context,
+        List<PlannedPlacement> planned,
+        View view,
+        System.Action<View>? onRejected = null)
+    {
+        TracePlanReject(mode, role, context, planned, null);
+        onRejected?.Invoke(view);
+    }
+
+    private static void DiagnoseOptionalMainSkeletonNeighborFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        MainSkeletonNeighborSpec spec,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        View view)
+    {
+        DiagnoseRelativePlacementFailure(
+            conflicts,
+            context,
+            view,
+            searchArea.BaseRect,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            context.Gap,
+            occupied,
+            spec.Placement);
+    }
+
     private static bool TryPlaceOptionalPlannedMainSkeletonNeighborCore(
         DrawingArrangeContext context,
         string mode,
@@ -2968,11 +3002,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             placements,
             findRect,
             (role, view, rect) => CommitPlannedMainSkeletonPlacement(placements, role, planned, occupied, view, rect),
-            (role, view) =>
-            {
-                TracePlanReject(mode, role, context, planned, null);
-                onRejected?.Invoke(view);
-            });
+            (role, view) => RejectOptionalPlannedMainSkeletonNeighbor(mode, role, context, planned, view, onRejected));
 
     private static bool TryPlaceOptionalStrictMainSkeletonNeighbor(
         DrawingArrangeContext context,
@@ -2999,8 +3029,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         List<PlannedPlacement> planned,
         List<View> deferred,
         MainSkeletonPlacementState placements)
-    {
-        TryPlaceOptionalPlannedMainSkeletonNeighborCore(
+        => TryPlaceOptionalPlannedMainSkeletonNeighborCore(
             context,
             "relaxed",
             spec,
@@ -3009,7 +3038,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             planned,
             () => FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied),
             deferred.Add);
-    }
 
     private static ReservedRect? FindRelaxedMainSkeletonNeighborRect(
         DrawingArrangeContext context,
@@ -3068,18 +3096,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             placements,
             () => FindRelaxedMainSkeletonNeighborRect(context, spec, searchArea, occupied),
             (role, _, rect) => CommitMainSkeletonPlacement(placements, role, occupied, rect),
-            (_, view) => DiagnoseRelativePlacementFailure(
-                conflicts,
-                context,
-                view,
-                searchArea.BaseRect,
-                searchArea.FreeMinX,
-                searchArea.FreeMaxX,
-                searchArea.FreeMinY,
-                searchArea.FreeMaxY,
-                context.Gap,
-                occupied,
-                spec.Placement));
+            (_, view) => DiagnoseOptionalMainSkeletonNeighborFailure(conflicts, context, spec, searchArea, occupied, view));
     }
 
     private static bool TryCreateVerticalSectionRect(
