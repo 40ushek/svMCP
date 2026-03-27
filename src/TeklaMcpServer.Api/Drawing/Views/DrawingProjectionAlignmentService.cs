@@ -3,6 +3,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
+using TeklaMcpServer.Api.Diagnostics;
 using DrawingView = Tekla.Structures.Drawing.View;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -89,7 +90,17 @@ internal sealed partial class DrawingProjectionAlignmentService
                 break;
         }
 
+        TraceProjectionParitySummary(result);
         return result;
+    }
+
+    private static void TraceProjectionParitySummary(ProjectionAlignmentResult result)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "projection_parity_summary",
+            0,
+            $"mode={result.Mode} applied={result.AppliedMoves} skipped={result.SkippedMoves} outOfBoundsRejects={result.OutOfBoundsRejects} reservedOverlapRejects={result.ReservedOverlapRejects} viewOverlapRejects={result.ViewOverlapRejects} diagnostics={result.Diagnostics.Count}");
     }
 
     private bool TryGetSectionAlignmentAxis(

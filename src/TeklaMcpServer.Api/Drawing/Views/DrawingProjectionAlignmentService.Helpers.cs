@@ -10,6 +10,80 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
+    internal static ProjectionMoveRejectDecision CreateProjectionMoveRejectDecision(
+        string stage,
+        int viewId,
+        double dx,
+        double dy,
+        ProjectionRect candidateRect,
+        ViewPlacementValidationResult validation)
+        => new(stage, viewId, dx, dy, candidateRect, validation.Reason, validation.Blockers);
+
+    internal static string FormatProjectionMoveRejectDecision(ProjectionMoveRejectDecision decision)
+    {
+        var blockers = decision.Blockers.Select(blocker =>
+            blocker.ViewId.HasValue
+                ? $"{blocker.ViewId.Value}:[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]"
+                : $"[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]");
+
+        return string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "stage={0} view={1} reason={2} delta=({3:F2},{4:F2}) candidate=[{5:F1},{6:F1},{7:F1},{8:F1}] blockers={9}",
+            decision.Stage,
+            decision.ViewId,
+            string.IsNullOrWhiteSpace(decision.Reason) ? "unknown" : decision.Reason,
+            decision.Dx,
+            decision.Dy,
+            decision.CandidateRect.MinX,
+            decision.CandidateRect.MinY,
+            decision.CandidateRect.MaxX,
+            decision.CandidateRect.MaxY,
+            string.Join(";", blockers));
+    }
+
+    private static string FormatProjectionSkipReason(
+        ProjectionMoveRejectDecision decision,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        ProjectionViewState state)
+    {
+        return decision.Reason == "out-of-bounds"
+            ? string.Format(
+                System.Globalization.CultureInfo.InvariantCulture,
+                "projection-skip:out-of-bounds:view={0}:rect=[{1:F1},{2:F1},{3:F1},{4:F1}]:sheet={5}x{6}:margin={7}:scale={8}:w={9:F1}:h={10:F1}:offX={11:F2}:offY={12:F2}",
+                decision.ViewId,
+                decision.CandidateRect.MinX,
+                decision.CandidateRect.MinY,
+                decision.CandidateRect.MaxX,
+                decision.CandidateRect.MaxY,
+                sheetWidth,
+                sheetHeight,
+                margin,
+                state.Scale,
+                state.Width,
+                state.Height,
+                state.FrameOffsetSheetX,
+                state.FrameOffsetSheetY)
+            : $"projection-skip:{decision.Reason}:view={decision.ViewId}";
+    }
+
+    private static void TraceProjectionMoveReject(
+        ProjectionAlignmentResult? result,
+        ProjectionMoveRejectDecision decision,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        ProjectionViewState state)
+    {
+        if (result == null)
+            return;
+
+        result.RecordValidatorReject(decision.Reason);
+        PerfTrace.Write("api-view", "projection_move_reject", 0, FormatProjectionMoveRejectDecision(decision));
+        TraceSkip(result, FormatProjectionSkipReason(decision, sheetWidth, sheetHeight, margin, state));
+    }
+
     private static Dictionary<int, (double X, double Y)> BuildPositionLookup(
         IReadOnlyList<DrawingView> views,
         IList<ArrangedView>? arrangedViews)
@@ -185,44 +259,16 @@ internal sealed partial class DrawingProjectionAlignmentService
             reservedAreas,
             otherViewRects);
 
-        if (!validation.Fits && validation.Reason == "out-of-bounds")
+        if (!validation.Fits)
         {
-            if (result != null)
-                TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}:rect=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}]:sheet={sheetWidth}x{sheetHeight}:margin={margin}:scale={state.Scale}:w={state.Width:F1}:h={state.Height:F1}:offX={state.FrameOffsetSheetX:F2}:offY={state.FrameOffsetSheetY:F2}");
-            return false;
-        }
-
-        if (!validation.Fits && validation.Reason == "reserved-overlap")
-        {
-            if (result != null)
-            {
-                var blockers = validation.Blockers
-                    .Select(blocker => $"[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]");
-                PerfTrace.Write(
-                    "api-view",
-                    "projection_move_reject",
-                    0,
-                    $"view={view.GetIdentifier().ID} reason=reserved-overlap delta=({dx:F2},{dy:F2}) candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] blockers={string.Join(";", blockers)}");
-                TraceSkip(result, $"projection-skip:reserved-overlap:view={view.GetIdentifier().ID}");
-            }
-            return false;
-        }
-
-        if (!validation.Fits && validation.Reason == "view-overlap")
-        {
-            if (result != null)
-            {
-                var blockers = validation.Blockers
-                    .Select(blocker => blocker.ViewId.HasValue
-                        ? $"{blocker.ViewId.Value}:[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]"
-                        : $"[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]");
-                PerfTrace.Write(
-                    "api-view",
-                    "projection_move_reject",
-                    0,
-                    $"view={view.GetIdentifier().ID} reason=view-overlap delta=({dx:F2},{dy:F2}) candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] blockers={string.Join(";", blockers)}");
-                TraceSkip(result, $"projection-skip:view-overlap:view={view.GetIdentifier().ID}");
-            }
+            var decision = CreateProjectionMoveRejectDecision(
+                "projection-can-move",
+                view.GetIdentifier().ID,
+                dx,
+                dy,
+                candidateRect,
+                validation);
+            TraceProjectionMoveReject(result, decision, sheetWidth, sheetHeight, margin, state);
             return false;
         }
 

@@ -226,4 +226,94 @@ public sealed class DrawingProjectionAlignmentTests
     {
         Assert.Equal(expected, TeklaDrawingViewApi.ShouldSkipProjectionAlignment(scale));
     }
+
+    [Fact]
+    public void FormatProjectionMoveRejectDecision_IncludesReservedOverlapBlockers()
+    {
+        var decision = new ProjectionMoveRejectDecision(
+            stage: "projection-can-move",
+            viewId: 30,
+            dx: 5,
+            dy: -2,
+            candidateRect: new ProjectionRect(10, 20, 40, 60),
+            reason: "reserved-overlap",
+            blockers: new[]
+            {
+                new ViewPlacementBlocker(ViewPlacementBlockerKind.ReservedArea, new ReservedRect(12, 22, 44, 66))
+            });
+
+        var text = DrawingProjectionAlignmentService.FormatProjectionMoveRejectDecision(decision);
+
+        Assert.Contains("stage=projection-can-move", text);
+        Assert.Contains("view=30", text);
+        Assert.Contains("reason=reserved-overlap", text);
+        Assert.Contains("delta=(5.00,-2.00)", text);
+        Assert.Contains("candidate=[10.0,20.0,40.0,60.0]", text);
+        Assert.Contains("blockers=[12.0,22.0,44.0,66.0]", text);
+    }
+
+    [Fact]
+    public void FormatProjectionMoveRejectDecision_IncludesBlockingViewId()
+    {
+        var decision = new ProjectionMoveRejectDecision(
+            stage: "projection-can-move",
+            viewId: 31,
+            dx: 0,
+            dy: 8,
+            candidateRect: new ProjectionRect(15, 25, 45, 65),
+            reason: "view-overlap",
+            blockers: new[]
+            {
+                new ViewPlacementBlocker(ViewPlacementBlockerKind.View, new ReservedRect(14, 24, 46, 66), 99)
+            });
+
+        var text = DrawingProjectionAlignmentService.FormatProjectionMoveRejectDecision(decision);
+
+        Assert.Contains("reason=view-overlap", text);
+        Assert.Contains("blockers=99:[14.0,24.0,46.0,66.0]", text);
+    }
+
+    [Fact]
+    public void FormatProjectionMoveRejectDecision_DoesNotMaskOutOfBoundsAsOverlap()
+    {
+        var decision = new ProjectionMoveRejectDecision(
+            stage: "projection-can-move",
+            viewId: 32,
+            dx: -12,
+            dy: 0,
+            candidateRect: new ProjectionRect(2, 20, 22, 40),
+            reason: "out-of-bounds");
+
+        var text = DrawingProjectionAlignmentService.FormatProjectionMoveRejectDecision(decision);
+
+        Assert.Contains("reason=out-of-bounds", text);
+        Assert.DoesNotContain("reserved-overlap", text);
+        Assert.DoesNotContain("view-overlap", text);
+    }
+
+    [Fact]
+    public void ProjectionRejectDecision_UsesSameValidatorReasonAsEstimateSide()
+    {
+        var candidate = new ReservedRect(12, 20, 42, 60);
+        var validation = ViewPlacementValidator.Validate(
+            candidate,
+            minX: 0,
+            maxX: 100,
+            minY: 0,
+            maxY: 100,
+            reservedAreas: new[] { new ReservedRect(10, 18, 44, 62) },
+            otherViewRectsById: null);
+
+        var decision = DrawingProjectionAlignmentService.CreateProjectionMoveRejectDecision(
+            "projection-can-move",
+            viewId: 33,
+            dx: 0,
+            dy: 0,
+            candidateRect: new ProjectionRect(candidate.MinX, candidate.MinY, candidate.MaxX, candidate.MaxY),
+            validation);
+
+        Assert.False(validation.Fits);
+        Assert.Equal("reserved-overlap", validation.Reason);
+        Assert.Equal(validation.Reason, decision.Reason);
+    }
 }

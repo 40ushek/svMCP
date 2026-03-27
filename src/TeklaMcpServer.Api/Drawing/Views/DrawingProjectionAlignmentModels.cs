@@ -8,6 +8,25 @@ internal sealed class ProjectionAlignmentResult
     public int AppliedMoves { get; set; }
     public int SkippedMoves { get; set; }
     public List<string> Diagnostics { get; } = new();
+    public int OutOfBoundsRejects { get; private set; }
+    public int ReservedOverlapRejects { get; private set; }
+    public int ViewOverlapRejects { get; private set; }
+
+    public void RecordValidatorReject(string reason)
+    {
+        switch (reason)
+        {
+            case "out-of-bounds":
+                OutOfBoundsRejects++;
+                break;
+            case "reserved-overlap":
+                ReservedOverlapRejects++;
+                break;
+            case "view-overlap":
+                ViewOverlapRejects++;
+                break;
+        }
+    }
 }
 
 internal sealed class ProjectionViewState
@@ -58,4 +77,33 @@ internal sealed class ProjectionRect
     public double MinY { get; }
     public double MaxX { get; }
     public double MaxY { get; }
+}
+
+internal readonly struct ProjectionMoveRejectDecision
+{
+    public ProjectionMoveRejectDecision(
+        string stage,
+        int viewId,
+        double dx,
+        double dy,
+        ProjectionRect candidateRect,
+        string reason,
+        IReadOnlyList<ViewPlacementBlocker>? blockers = null)
+    {
+        Stage = stage;
+        ViewId = viewId;
+        Dx = dx;
+        Dy = dy;
+        CandidateRect = candidateRect;
+        Reason = reason;
+        Blockers = blockers ?? System.Array.Empty<ViewPlacementBlocker>();
+    }
+
+    public string Stage { get; }
+    public int ViewId { get; }
+    public double Dx { get; }
+    public double Dy { get; }
+    public ProjectionRect CandidateRect { get; }
+    public string Reason { get; }
+    public IReadOnlyList<ViewPlacementBlocker> Blockers { get; }
 }
