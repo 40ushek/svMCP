@@ -660,65 +660,31 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
-        TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
-            conflicts,
-            context,
-            "top",
-            top,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            RelativePlacement.Top,
-            allowSheetTopFallback: true,
-            mainSkeleton);
+        var diagnosticMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, bool AllowSheetTopFallback)[]
+        {
+            ("top", top, RelativePlacement.Top, true),
+            ("bottom", bottom, RelativePlacement.Bottom, false),
+            ("left", leftNeighbor, RelativePlacement.Left, false),
+            ("right", rightNeighbor, RelativePlacement.Right, false)
+        };
 
-        TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
-            conflicts,
-            context,
-            "bottom",
-            bottom,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            RelativePlacement.Bottom,
-            allowSheetTopFallback: false,
-            mainSkeleton);
-
-        TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
-            conflicts,
-            context,
-            "left",
-            leftNeighbor,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            RelativePlacement.Left,
-            allowSheetTopFallback: false,
-            mainSkeleton);
-
-        TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
-            conflicts,
-            context,
-            "right",
-            rightNeighbor,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            RelativePlacement.Right,
-            allowSheetTopFallback: false,
-            mainSkeleton);
+        foreach (var (role, view, placement, allowSheetTopFallback) in diagnosticMainSkeletonNeighbors)
+        {
+            TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
+                conflicts,
+                context,
+                role,
+                view,
+                baseRect,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                occupied,
+                placement,
+                allowSheetTopFallback,
+                mainSkeleton);
+        }
 
         if (!TryValidateMainSkeletonSpacing(
                 baseRect,
@@ -1516,77 +1482,34 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
-        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
-                context,
-                "top",
-                top,
-                RelativePlacement.Top,
-                baseRect,
-                topWidth,
-                topHeight,
-                gap,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                occupied,
-                planned,
-                mainSkeleton))
-            return false;
+        var strictMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, double Width, double Height)[]
+        {
+            ("top", top, RelativePlacement.Top, topWidth, topHeight),
+            ("bottom", bottom, RelativePlacement.Bottom, bottomWidth, bottomHeight),
+            ("left", leftNeighbor, RelativePlacement.Left, leftNeighborWidth, leftNeighborHeight),
+            ("right", rightNeighbor, RelativePlacement.Right, rightNeighborWidth, rightNeighborHeight)
+        };
 
-        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
-                context,
-                "bottom",
-                bottom,
-                RelativePlacement.Bottom,
-                baseRect,
-                bottomWidth,
-                bottomHeight,
-                gap,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                occupied,
-                planned,
-                mainSkeleton))
-            return false;
-
-        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
-                context,
-                "left",
-                leftNeighbor,
-                RelativePlacement.Left,
-                baseRect,
-                leftNeighborWidth,
-                leftNeighborHeight,
-                gap,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                occupied,
-                planned,
-                mainSkeleton))
-            return false;
-
-        if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
-                context,
-                "right",
-                rightNeighbor,
-                RelativePlacement.Right,
-                baseRect,
-                rightNeighborWidth,
-                rightNeighborHeight,
-                gap,
-                freeArea.minX,
-                freeArea.maxX,
-                freeArea.minY,
-                freeArea.maxY,
-                occupied,
-                planned,
-                mainSkeleton))
-            return false;
+        foreach (var (role, view, placement, width, height) in strictMainSkeletonNeighbors)
+        {
+            if (!TryPlaceOptionalStrictMainSkeletonNeighbor(
+                    context,
+                    role,
+                    view,
+                    placement,
+                    baseRect,
+                    width,
+                    height,
+                    gap,
+                    freeArea.minX,
+                    freeArea.maxX,
+                    freeArea.minY,
+                    freeArea.maxY,
+                    occupied,
+                    planned,
+                    mainSkeleton))
+                return false;
+        }
 
         if (!TryValidateMainSkeletonSpacing(
                 baseRect,
@@ -1730,69 +1653,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var mainSkeleton = new MainSkeletonPlacementState();
         var deferredMainSkeletonRoles = new List<string>();
 
-        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
-            context,
-            "top",
-            top,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            planned,
-            deferred,
-            RelativePlacement.Top,
-            allowSheetTopFallback: true,
-            mainSkeleton);
+        var relaxedMainSkeletonNeighbors = new (string Role, View? View, RelativePlacement Placement, bool AllowSheetTopFallback)[]
+        {
+            ("top", top, RelativePlacement.Top, true),
+            ("bottom", bottom, RelativePlacement.Bottom, false),
+            ("left", leftNeighbor, RelativePlacement.Left, false),
+            ("right", rightNeighbor, RelativePlacement.Right, false)
+        };
 
-        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
-            context,
-            "bottom",
-            bottom,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            planned,
-            deferred,
-            RelativePlacement.Bottom,
-            allowSheetTopFallback: false,
-            mainSkeleton);
-
-        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
-            context,
-            "left",
-            leftNeighbor,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            planned,
-            deferred,
-            RelativePlacement.Left,
-            allowSheetTopFallback: false,
-            mainSkeleton);
-
-        TryPlaceOptionalRelaxedMainSkeletonNeighbor(
-            context,
-            "right",
-            rightNeighbor,
-            baseRect,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
-            occupied,
-            planned,
-            deferred,
-            RelativePlacement.Right,
-            allowSheetTopFallback: false,
-            mainSkeleton);
+        foreach (var (role, view, placement, allowSheetTopFallback) in relaxedMainSkeletonNeighbors)
+        {
+            TryPlaceOptionalRelaxedMainSkeletonNeighbor(
+                context,
+                role,
+                view,
+                baseRect,
+                freeMinX,
+                freeMaxX,
+                freeMinY,
+                freeMaxY,
+                occupied,
+                planned,
+                deferred,
+                placement,
+                allowSheetTopFallback,
+                mainSkeleton);
+        }
 
         while (!TryValidateMainSkeletonSpacing(
                    baseRect,
