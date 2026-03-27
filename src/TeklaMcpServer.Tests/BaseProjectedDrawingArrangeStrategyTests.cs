@@ -605,4 +605,33 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal(0, result.Rect.MinY, 6);
         Assert.Equal(0, result.Rect.MaxY, 6);
     }
+
+    [Fact]
+    public void ProbeHorizontalSectionCandidate_ReturnsIntersectsView_WhenProposedRectsBlockAllCandidates()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeHorizontalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(35, 20, 65, 60),
+            anchorRect: new ReservedRect(35, 20, 65, 60),
+            placementSide: SectionPlacementSide.Top,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 100,
+            freeMinY: 0,
+            freeMaxY: 200,
+            proposed: new[]
+            {
+                new ReservedRect(35, 65, 65, 85),
+                new ReservedRect(0, 65, 30, 85),
+                new ReservedRect(70, 65, 100, 85)
+            });
+
+        Assert.False(result.Success);
+        Assert.Equal("no-valid-x", result.RejectReason);
+        Assert.Equal("proposed-intersection", result.ConflictReason);
+        Assert.Equal("intersects_view", result.DiagnosticType);
+        Assert.Equal(string.Empty, result.DiagnosticTarget);
+    }
 }
