@@ -41,6 +41,12 @@
 - `MarkGeometryHelper`: единая точка расчета геометрии меток для diagnostics/debug overlay
 - `Drawing/` разнесён по подпапкам `Views`, `Marks`, `Geometry`, `Dimensions`, `Interaction`, `Query`, `Parsing`, `Creation`, `Parts`, `DebugOverlay`
 - Legacy `place_views` удалён; основной путь расстановки видов — `fit_views_to_sheet`
+- `ViewPlacementSearchArea`: единый параметр границ поиска вместо отдельных freeMinX/freeMaxX/freeMinY/freeMaxY — все overload-ы в `BaseProjectedDrawingArrangeStrategy` принимают searchArea
+- `ViewPlacementGeometryService`: централизованный helper для создания кандидатных прямоугольников (`TryGetBoundingRectAtOrigin` + centered fallback)
+- `ViewPlacementValidator`: централизованная 3-шаговая валидация placement (out-of-bounds → reserved-overlap → view-overlap), возвращает `ViewPlacementValidationResult` с `Fits`, `Reason`, `Blockers`
+- `HorizontalSectionProbeResult` / `VerticalSectionProbeResult` + `ProbeHorizontalSectionCandidate` / `ProbeVerticalSectionCandidate` — internal static методы для unit-тестов секций (Top/Bottom, Left/Right)
+- `EstimateFitFailureDecision` — struct для трассировки отклонённых масштабных кандидатов в `fit_views_to_sheet`
+- `ProjectionMoveRejectDecision` — struct для трассировки отклонённых проекционных сдвигов; `ProjectionAlignmentResult` расширен счётчиками reject по типу
 
 **Геометрические утилиты**
 - `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется)
@@ -58,8 +64,8 @@
 - Cumulative тип: сохранить стиль в Tekla UI → `create_dimension(..., attributesFile="cumulative")`
 - `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
-- `place_control_diagonals`: перевести с bbox-экстремумов на реальные крайние точки видимого контура (без "точек в воздухе")
-- `place_control_diagonals`: текст второй диагонали ставится на `distance * 2` только когда диагонали пересекаются (иначе тексты и так не накладываются)
+- `place_control_diagonals`: перевести с dimension snap-точек на реальные крайние точки видимого контура через `GetProjectedShape.GetShape(partId, cs)` — сейчас hull строится по точкам существующих размеров, что даёт "точки в воздухе" при неполном набиве размеров
+- ~~`place_control_diagonals`: текст второй диагонали ставится на `distance * 2` только когда диагонали пересекаются~~ ✅ реализовано (`SegmentsProperlyIntersect` + `distance * 2`)
 
 ### Виды — проекционная связь (часть `fit_views_to_sheet`) ✅
 
