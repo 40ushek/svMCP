@@ -145,6 +145,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public string ConflictReason { get; }
     }
 
+    internal readonly struct HorizontalSectionProbeResult
+    {
+        public HorizontalSectionProbeResult(
+            bool success,
+            ReservedRect rect,
+            string rejectReason,
+            string conflictReason,
+            string diagnosticType,
+            string diagnosticTarget)
+        {
+            Success = success;
+            Rect = rect;
+            RejectReason = rejectReason;
+            ConflictReason = conflictReason;
+            DiagnosticType = diagnosticType;
+            DiagnosticTarget = diagnosticTarget;
+        }
+
+        public bool Success { get; }
+        public ReservedRect Rect { get; }
+        public string RejectReason { get; }
+        public string ConflictReason { get; }
+        public string DiagnosticType { get; }
+        public string DiagnosticTarget { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -1439,6 +1465,35 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     {
         var width = DrawingArrangeContextSizing.GetWidth(context, section);
         var height = DrawingArrangeContextSizing.GetHeight(context, section);
+        return TryFindHorizontalSectionRectInSearchArea(
+            section,
+            width,
+            height,
+            frontRect,
+            anchorRect,
+            zone,
+            searchArea,
+            gap,
+            occupied,
+            proposed,
+            out rect,
+            out failure);
+    }
+
+    private static bool TryFindHorizontalSectionRectInSearchArea(
+        View section,
+        double width,
+        double height,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        RelativePlacement zone,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        IEnumerable<ReservedRect> proposed,
+        out ReservedRect rect,
+        out SectionStackFailureInfo? failure)
+    {
         if (!TryGetHorizontalSectionPlacementInputs(
                 frontRect,
                 anchorRect,
@@ -1484,6 +1539,58 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             "no-valid-x",
             string.IsNullOrEmpty(preferredReason) ? "intersects_view" : preferredReason);
         return false;
+    }
+
+    internal static HorizontalSectionProbeResult ProbeHorizontalSectionCandidate(
+        View section,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        SectionPlacementSide placementSide,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect>? occupied = null,
+        IEnumerable<ReservedRect>? proposed = null)
+    {
+        occupied ??= System.Array.Empty<ReservedRect>();
+        proposed ??= System.Array.Empty<ReservedRect>();
+        var zone = placementSide switch
+        {
+            SectionPlacementSide.Top => RelativePlacement.Top,
+            SectionPlacementSide.Bottom => RelativePlacement.Bottom,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(placementSide), "Only Top/Bottom section probing is supported.")
+        };
+
+        var ok = TryFindHorizontalSectionRectInSearchArea(
+            section,
+            section.Width,
+            section.Height,
+            frontRect,
+            anchorRect,
+            zone,
+            CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            proposed,
+            out var rect,
+            out var failure);
+
+        if (ok || failure == null)
+            return new HorizontalSectionProbeResult(ok, rect, string.Empty, string.Empty, string.Empty, string.Empty);
+
+        var conflicts = new List<DrawingFitConflict>();
+        DiagnoseSectionStackFailure(conflicts, zone, failure, occupied);
+        var diagnostic = conflicts.FirstOrDefault()?.Conflicts.FirstOrDefault();
+
+        return new HorizontalSectionProbeResult(
+            success: false,
+            rect,
+            failure.Value.RejectReason,
+            failure.Value.ConflictReason,
+            diagnostic?.Type ?? string.Empty,
+            diagnostic?.Target ?? string.Empty);
     }
 
     private static IEnumerable<double> EnumerateHorizontalSectionCandidateMinXs(

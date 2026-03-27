@@ -524,4 +524,85 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal(10, topRect.MinX, 6);
         Assert.Equal(60, topRect.MaxY, 6);
     }
+
+    [Fact]
+    public void ProbeHorizontalSectionCandidate_ReturnsNoValidX_WhenTopSectionCannotShift()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+        var blocker = new ReservedRect(20, 65, 90, 95);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeHorizontalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(35, 20, 65, 60),
+            anchorRect: new ReservedRect(35, 20, 65, 60),
+            placementSide: SectionPlacementSide.Top,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 100,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[] { blocker });
+
+        Assert.False(result.Success);
+        Assert.Equal("no-valid-x", result.RejectReason);
+        Assert.Equal("occupied-intersection", result.ConflictReason);
+        Assert.Equal("intersects_reserved_area", result.DiagnosticType);
+        Assert.Equal("20.0,65.0,90.0,95.0", result.DiagnosticTarget);
+        Assert.Equal(35, result.Rect.MinX, 6);
+        Assert.Equal(65, result.Rect.MinY, 6);
+        Assert.Equal(65, result.Rect.MaxX, 6);
+        Assert.Equal(85, result.Rect.MaxY, 6);
+    }
+
+    [Fact]
+    public void ProbeHorizontalSectionCandidate_FindsFallbackX_WhenBottomSectionCanShift()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeHorizontalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(35, 40, 65, 80),
+            anchorRect: new ReservedRect(35, 40, 65, 80),
+            placementSide: SectionPlacementSide.Bottom,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 120,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[] { new ReservedRect(40, 15, 60, 35) });
+
+        Assert.True(result.Success);
+        Assert.Equal(string.Empty, result.RejectReason);
+        Assert.Equal(60, result.Rect.MinX, 6);
+        Assert.Equal(15, result.Rect.MinY, 6);
+        Assert.Equal(90, result.Rect.MaxX, 6);
+        Assert.Equal(35, result.Rect.MaxY, 6);
+    }
+
+    [Fact]
+    public void ProbeHorizontalSectionCandidate_ReturnsOutOfBoundsX_WhenBandCannotFit()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 80, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeHorizontalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(35, 20, 65, 60),
+            anchorRect: new ReservedRect(35, 20, 65, 60),
+            placementSide: SectionPlacementSide.Top,
+            gap: 5,
+            freeMinX: 20,
+            freeMaxX: 80,
+            freeMinY: 0,
+            freeMaxY: 200);
+
+        Assert.False(result.Success);
+        Assert.Equal("out-of-bounds-x", result.RejectReason);
+        Assert.Equal("out-of-bounds", result.ConflictReason);
+        Assert.Equal("outside_zone_bounds", result.DiagnosticType);
+        Assert.Equal(string.Empty, result.DiagnosticTarget);
+        Assert.Equal(0, result.Rect.MinX, 6);
+        Assert.Equal(0, result.Rect.MaxX, 6);
+        Assert.Equal(0, result.Rect.MinY, 6);
+        Assert.Equal(0, result.Rect.MaxY, 6);
+    }
 }
