@@ -3055,7 +3055,17 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (view == null)
             return null;
 
-        var rect = FindRelativeRect(
+        return FindRelaxedMainSkeletonRelativeRect(context, spec, view, searchArea, occupied)
+            ?? FindRelaxedMainSkeletonSheetTopFallbackRect(context, spec, view, searchArea, occupied);
+    }
+
+    private static ReservedRect? FindRelaxedMainSkeletonRelativeRect(
+        DrawingArrangeContext context,
+        MainSkeletonNeighborSpec spec,
+        View view,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied)
+        => FindRelativeRect(
             context,
             view,
             searchArea.BaseRect,
@@ -3066,11 +3076,6 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             context.Gap,
             occupied,
             spec.Placement);
-        if (rect != null)
-            return rect;
-
-        return FindRelaxedMainSkeletonSheetTopFallbackRect(context, spec, view, searchArea, occupied);
-    }
 
     private static ReservedRect? FindRelaxedMainSkeletonSheetTopFallbackRect(
         DrawingArrangeContext context,
