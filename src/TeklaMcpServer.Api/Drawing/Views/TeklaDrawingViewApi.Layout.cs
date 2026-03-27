@@ -14,6 +14,29 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingViewApi
 {
+    internal readonly struct EstimateFitFailureDecision
+    {
+        public EstimateFitFailureDecision(
+            string stage,
+            double candidateScale,
+            bool fits,
+            IReadOnlyList<DrawingFitConflict>? oversizeConflicts,
+            IReadOnlyList<DrawingFitConflict>? diagnosedConflicts)
+        {
+            Stage = stage;
+            CandidateScale = candidateScale;
+            Fits = fits;
+            OversizeConflicts = oversizeConflicts ?? System.Array.Empty<DrawingFitConflict>();
+            DiagnosedConflicts = diagnosedConflicts ?? System.Array.Empty<DrawingFitConflict>();
+        }
+
+        public string Stage { get; }
+        public double CandidateScale { get; }
+        public bool Fits { get; }
+        public IReadOnlyList<DrawingFitConflict> OversizeConflicts { get; }
+        public IReadOnlyList<DrawingFitConflict> DiagnosedConflicts { get; }
+    }
+
     internal const double ProjectionAlignmentScaleCutoff = 100.0;
     internal const double ProjectionAlignmentMixedScaleTolerance = 0.05;
 
@@ -211,49 +234,62 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
-    private static void TraceEstimateConflicts(
-        string stage,
-        double candidateScale,
-        IReadOnlyList<DrawingFitConflict> conflicts)
+    internal static string FormatEstimateFitFailureDecision(EstimateFitFailureDecision decision)
     {
         var sb = new StringBuilder();
         sb.AppendFormat(
             CultureInfo.InvariantCulture,
-            "stage={0} candidate=1:{1} conflicts={2}",
-            stage,
-            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
-            conflicts.Count);
+            "stage={0} candidate=1:{1} fits={2} oversizeConflicts={3} diagnosedConflicts={4}",
+            decision.Stage,
+            decision.CandidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            decision.Fits ? 1 : 0,
+            decision.OversizeConflicts.Count,
+            decision.DiagnosedConflicts.Count);
 
-        foreach (var conflict in conflicts)
+        foreach (var conflict in decision.OversizeConflicts)
+        {
+            AppendEstimateConflict(sb, "oversize", conflict);
+        }
+
+        foreach (var conflict in decision.DiagnosedConflicts)
+        {
+            AppendEstimateConflict(sb, "diagnosed", conflict);
+        }
+
+        return sb.ToString();
+    }
+
+    private static void TraceEstimateFailureDecision(EstimateFitFailureDecision decision)
+        => PerfTrace.Write("api-view", "fit_scale_conflicts", 0, FormatEstimateFitFailureDecision(decision));
+
+    private static void AppendEstimateConflict(StringBuilder sb, string source, DrawingFitConflict conflict)
+    {
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            " | source={0} view={1}:{2} zone={3} bbox={4}",
+            source,
+            conflict.ViewId,
+            string.IsNullOrWhiteSpace(conflict.ViewType) ? "unknown" : conflict.ViewType,
+            string.IsNullOrWhiteSpace(conflict.AttemptedZone) ? "unknown" : conflict.AttemptedZone,
+            conflict.BBoxMinX.HasValue && conflict.BBoxMinY.HasValue && conflict.BBoxMaxX.HasValue && conflict.BBoxMaxY.HasValue
+                ? string.Format(
+                    CultureInfo.InvariantCulture,
+                    "[{0:F2},{1:F2},{2:F2},{3:F2}]",
+                    conflict.BBoxMinX.Value,
+                    conflict.BBoxMinY.Value,
+                    conflict.BBoxMaxX.Value,
+                    conflict.BBoxMaxY.Value)
+                : "n/a");
+
+        foreach (var item in conflict.Conflicts)
         {
             sb.AppendFormat(
                 CultureInfo.InvariantCulture,
-                " | view={0}:{1} zone={2} bbox={3}",
-                conflict.ViewId,
-                string.IsNullOrWhiteSpace(conflict.ViewType) ? "unknown" : conflict.ViewType,
-                string.IsNullOrWhiteSpace(conflict.AttemptedZone) ? "unknown" : conflict.AttemptedZone,
-                conflict.BBoxMinX.HasValue && conflict.BBoxMinY.HasValue && conflict.BBoxMaxX.HasValue && conflict.BBoxMaxY.HasValue
-                    ? string.Format(
-                        CultureInfo.InvariantCulture,
-                        "[{0:F2},{1:F2},{2:F2},{3:F2}]",
-                        conflict.BBoxMinX.Value,
-                        conflict.BBoxMinY.Value,
-                        conflict.BBoxMaxX.Value,
-                        conflict.BBoxMaxY.Value)
-                    : "n/a");
-
-            foreach (var item in conflict.Conflicts)
-            {
-                sb.AppendFormat(
-                    CultureInfo.InvariantCulture,
-                    " conflict={0}:other={1}:target={2}",
-                    string.IsNullOrWhiteSpace(item.Type) ? "unknown" : item.Type,
-                    item.OtherViewId?.ToString(CultureInfo.InvariantCulture) ?? "n/a",
-                    string.IsNullOrWhiteSpace(item.Target) ? "n/a" : item.Target);
-            }
+                " conflict={0}:other={1}:target={2}",
+                string.IsNullOrWhiteSpace(item.Type) ? "unknown" : item.Type,
+                item.OtherViewId?.ToString(CultureInfo.InvariantCulture) ?? "n/a",
+                string.IsNullOrWhiteSpace(item.Target) ? "n/a" : item.Target);
         }
-
-        PerfTrace.Write("api-view", "fit_scale_conflicts", 0, sb.ToString());
     }
 
     private static void TracePlannedVsActualParity(
@@ -486,7 +522,15 @@ public sealed partial class TeklaDrawingViewApi
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
             if (oversizeConflicts.Count > 0)
+            {
+                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                    stage: "preserve-scales",
+                    candidateScale: currentScale,
+                    fits: false,
+                    oversizeConflicts,
+                    diagnosedConflicts: null));
                 throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
+            }
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
             TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
             keepFitSw.Stop();
@@ -495,7 +539,12 @@ public sealed partial class TeklaDrawingViewApi
             if (!fits)
             {
                 var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
-                TraceEstimateConflicts("preserve-scales", currentScale, conflicts);
+                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                    stage: "preserve-scales",
+                    candidateScale: currentScale,
+                    fits: false,
+                    oversizeConflicts: null,
+                    diagnosedConflicts: conflicts));
                 throw new DrawingFitFailedException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.", conflicts);
             }
 
@@ -521,7 +570,15 @@ public sealed partial class TeklaDrawingViewApi
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
             if (oversizeConflicts.Count > 0)
+            {
+                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                    stage: "keep-current-scales",
+                    candidateScale: currentScale,
+                    fits: false,
+                    oversizeConflicts,
+                    diagnosedConflicts: null));
                 throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
+            }
             var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
             TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
             keepFitSw.Stop();
@@ -530,7 +587,12 @@ public sealed partial class TeklaDrawingViewApi
             if (!fits)
             {
                 var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
-                TraceEstimateConflicts("keep-current-scales", currentScale, conflicts);
+                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                    stage: "keep-current-scales",
+                    candidateScale: currentScale,
+                    fits: false,
+                    oversizeConflicts: null,
+                    diagnosedConflicts: conflicts));
                 throw new DrawingFitFailedException("Could not fit views on sheet at current scales.", conflicts);
             }
 
@@ -540,6 +602,7 @@ public sealed partial class TeklaDrawingViewApi
         else
         {
             List<DrawingFitConflict>? lastOversizeConflicts = null;
+            EstimateFitFailureDecision? lastDiagnosedDecision = null;
             foreach (var s in candidates)
             {
                 candidateAttempts++;
@@ -578,6 +641,12 @@ public sealed partial class TeklaDrawingViewApi
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
                 {
+                    TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                        stage: "candidate-reject",
+                        candidateScale: s,
+                        fits: false,
+                        oversizeConflicts,
+                        diagnosedConflicts: null));
                     TraceScaleCandidate(s, candidateViews, actualFrames, fits: false, oversizeConflicts);
                     lastOversizeConflicts = oversizeConflicts;
                     candidateSw.Stop();
@@ -590,7 +659,13 @@ public sealed partial class TeklaDrawingViewApi
                 if (!fits && PerfTrace.IsActive)
                 {
                     var conflicts = _arrangementSelector.DiagnoseFitConflicts(ctx, actualFrames);
-                    TraceEstimateConflicts("candidate-reject", s, conflicts);
+                    lastDiagnosedDecision = new EstimateFitFailureDecision(
+                        stage: "candidate-reject",
+                        candidateScale: s,
+                        fits: false,
+                        oversizeConflicts: null,
+                        diagnosedConflicts: conflicts);
+                    TraceEstimateFailureDecision(lastDiagnosedDecision.Value);
                 }
 
                 if (fits)
@@ -623,6 +698,16 @@ public sealed partial class TeklaDrawingViewApi
                 activeDrawing.CommitChanges();
                 if (lastOversizeConflicts is { Count: > 0 })
                     throw new DrawingFitFailedException("One or more views are larger than the usable sheet area for every available standard scale.", lastOversizeConflicts);
+
+                if (PerfTrace.IsActive && lastDiagnosedDecision.HasValue)
+                {
+                    TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                        stage: "candidate-final-reject",
+                        candidateScale: lastDiagnosedDecision.Value.CandidateScale,
+                        fits: false,
+                        oversizeConflicts: lastDiagnosedDecision.Value.OversizeConflicts,
+                        diagnosedConflicts: lastDiagnosedDecision.Value.DiagnosedConflicts));
+                }
 
                 throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
             }
