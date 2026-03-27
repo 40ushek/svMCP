@@ -2879,30 +2879,31 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         MainSkeletonNeighborSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied)
-    {
-        var rect = FindStrictMainSkeletonRelativeRect(spec, searchArea, gap);
-        if (rect == null)
-            return null;
-
-        if (!TryValidateMainSkeletonNeighborRect(rect, searchArea, occupied))
-            return null;
-
-        return rect;
-    }
-
-    private static ReservedRect? FindStrictMainSkeletonRelativeRect(
-        MainSkeletonNeighborSpec spec,
-        MainSkeletonNeighborSearchArea searchArea,
-        double gap)
-        => TryCreateCenteredRelativeRect(
+        => FindCenteredRelativeRectInSearchArea(
             searchArea.BaseRect,
             spec.Placement,
             spec.Width,
             spec.Height,
             gap,
-            out var rect)
+            searchArea,
+            occupied);
+
+    private static ReservedRect? FindCenteredRelativeRectInSearchArea(
+        ReservedRect anchorRect,
+        RelativePlacement placement,
+        double width,
+        double height,
+        double gap,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied)
+    {
+        if (!TryCreateCenteredRelativeRect(anchorRect, placement, width, height, gap, out var rect))
+            return null;
+
+        return TryValidateMainSkeletonNeighborRect(rect, searchArea, occupied)
             ? rect
             : null;
+    }
 
     private static bool TryValidateMainSkeletonNeighborRect(
         ReservedRect rect,
@@ -3080,17 +3081,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         View view,
         MainSkeletonNeighborSearchArea searchArea,
         IReadOnlyList<ReservedRect> occupied)
-        => FindRelativeRect(
+        => FindAnchoredRelativeRectInSearchArea(
             context,
             view,
             searchArea.BaseRect,
+            searchArea,
+            occupied,
+            spec.Placement);
+
+    private static ReservedRect? FindAnchoredRelativeRectInSearchArea(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchorRect,
+        MainSkeletonNeighborSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement placement)
+        => FindRelativeRect(
+            context,
+            view,
+            anchorRect,
             searchArea.FreeMinX,
             searchArea.FreeMaxX,
             searchArea.FreeMinY,
             searchArea.FreeMaxY,
             context.Gap,
             occupied,
-            spec.Placement);
+            placement);
 
     private static ReservedRect? FindRelaxedMainSkeletonSheetTopFallbackRect(
         DrawingArrangeContext context,
