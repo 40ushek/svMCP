@@ -227,9 +227,11 @@
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
-- `EstimateFit` и projection post-pass ещё не переведены на тот же
-  geometry/search contract, который теперь уже стабилизирован внутри
+- `EstimateFit` и projection post-pass переведены на тот же
+  geometry/validator contract, который теперь уже стабилизирован внутри
   `BaseProjectedDrawingArrangeStrategy`.
+  `ViewPlacementGeometryService` / `ViewPlacementValidator` уже используются
+  в planner, `EstimateFit` parity path и projection move validation.
 - user-facing aliases для `fit_views_to_sheet` унифицированы:
   parser знает `preserveexistingscales` / `preservemixedscales` / `keepscale`
   (все три ведут в `PreserveExistingScales`). Закрыто.
@@ -248,11 +250,12 @@
   Локальный mini-layer уже покрывает основные placement/search/validation paths
   внутри strategy и считается устойчивой внутренней границей.
 - `Stage 2: shared geometry/collision pipeline across layout phases`:
-  следующий активный этап.
-  Здесь нужно выйти за пределы одного блока и свести `strategy`,
-  `EstimateFit`, apply и projection post-pass к одному source of truth.
+  завершён.
+  `strategy`, `EstimateFit`, apply и projection post-pass уже сведены
+  к одному geometry/validator source of truth; reject reasons и parity traces
+  унифицированы.
 - `Stage 3: behavioral fixes`:
-  ещё не начат.
+  следующий активный этап.
   Сюда относятся `EstimateFit vs apply`, `Top/Bottom` sections,
   oversized policy и идемпотентность repeated `fit_views_to_sheet`.
 - `Stage 4: policy polish`:
@@ -417,6 +420,14 @@
 
 ### 2. Свести `EstimateFit` и apply path
 
+Статус:
+
+- закрыто как diagnostics/parity этап.
+- `EstimateFit` failure decisions сведены к одному snapshot shape.
+- section probe regressions добавлены для `Top/Bottom` и `Left/Right`.
+- projection post-pass использует тот же validator contract и пишет
+  parity summary trace.
+
 Нужно:
 
 - убрать расхождение, при котором `EstimateFit` принимает или отвергает
@@ -434,6 +445,12 @@
 - `Top/Bottom` section decision совпадает между estimate и apply
 
 ### 3. Довести main-layout spacing вокруг BaseView
+
+Статус:
+
+- следующий активный этап.
+- это уже не geometry extraction, а policy/spacing work поверх
+  закрытого `Stage 2`.
 
 Нужно:
 
