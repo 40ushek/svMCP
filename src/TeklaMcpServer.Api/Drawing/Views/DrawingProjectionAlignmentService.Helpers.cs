@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Diagnostics;
@@ -170,21 +171,33 @@ internal sealed partial class DrawingProjectionAlignmentService
             : BuildViewState(view, frameOffsetsById);
         var candidateState = DrawingProjectionAlignmentMath.TranslateOrigin(state, dx, dy);
         var candidateRect = DrawingProjectionAlignmentMath.GetFrameRect(candidateState);
+        var candidateReservedRect = ViewPlacementGeometryService.FromProjectionRect(candidateRect);
+        var otherViewRects = otherViewStates?
+            .ToDictionary(
+                otherState => otherState.ViewId,
+                otherState => ViewPlacementGeometryService.FromProjectionRect(DrawingProjectionAlignmentMath.GetFrameRect(otherState)));
+        var validation = ViewPlacementValidator.Validate(
+            candidateReservedRect,
+            effectiveMargin,
+            sheetWidth - effectiveMargin,
+            effectiveMargin,
+            sheetHeight - effectiveMargin,
+            reservedAreas,
+            otherViewRects);
 
-        if (!DrawingProjectionAlignmentMath.IsWithinUsableArea(candidateRect, effectiveMargin, sheetWidth, sheetHeight))
+        if (!validation.Fits && validation.Reason == "out-of-bounds")
         {
             if (result != null)
                 TraceSkip(result, $"projection-skip:out-of-bounds:view={view.GetIdentifier().ID}:rect=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}]:sheet={sheetWidth}x{sheetHeight}:margin={margin}:scale={state.Scale}:w={state.Width:F1}:h={state.Height:F1}:offX={state.FrameOffsetSheetX:F2}:offY={state.FrameOffsetSheetY:F2}");
             return false;
         }
 
-        if (DrawingProjectionAlignmentMath.IntersectsAnyReserved(candidateRect, reservedAreas))
+        if (!validation.Fits && validation.Reason == "reserved-overlap")
         {
             if (result != null)
             {
-                var blockers = reservedAreas
-                    .Where(r => !(r.MaxX <= candidateRect.MinX || r.MinX >= candidateRect.MaxX || r.MaxY <= candidateRect.MinY || r.MinY >= candidateRect.MaxY))
-                    .Select(r => $"[{r.MinX:F1},{r.MinY:F1},{r.MaxX:F1},{r.MaxY:F1}]");
+                var blockers = validation.Blockers
+                    .Select(blocker => $"[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]");
                 PerfTrace.Write(
                     "api-view",
                     "projection_move_reject",
@@ -195,14 +208,14 @@ internal sealed partial class DrawingProjectionAlignmentService
             return false;
         }
 
-        if (DrawingProjectionAlignmentMath.IntersectsAnyView(candidateRect, otherViewStates))
+        if (!validation.Fits && validation.Reason == "view-overlap")
         {
             if (result != null)
             {
-                var blockers = (otherViewStates ?? Array.Empty<ProjectionViewState>())
-                    .Select(s => (State: s, Rect: DrawingProjectionAlignmentMath.GetFrameRect(s)))
-                    .Where(x => !(x.Rect.MaxX <= candidateRect.MinX || x.Rect.MinX >= candidateRect.MaxX || x.Rect.MaxY <= candidateRect.MinY || x.Rect.MinY >= candidateRect.MaxY))
-                    .Select(x => $"{x.State.ViewId}:[{x.Rect.MinX:F1},{x.Rect.MinY:F1},{x.Rect.MaxX:F1},{x.Rect.MaxY:F1}]");
+                var blockers = validation.Blockers
+                    .Select(blocker => blocker.ViewId.HasValue
+                        ? $"{blocker.ViewId.Value}:[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]"
+                        : $"[{blocker.Rect.MinX:F1},{blocker.Rect.MinY:F1},{blocker.Rect.MaxX:F1},{blocker.Rect.MaxY:F1}]");
                 PerfTrace.Write(
                     "api-view",
                     "projection_move_reject",

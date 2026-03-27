@@ -336,8 +336,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             {
                 var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
-                return rect;
+                return ViewPlacementGeometryService.CreateCandidateRect(p.View, p.X, p.Y, w, h);
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
@@ -403,35 +402,21 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 continue;
 
             var rect = entry.Value;
-            if (!IsWithinArea(
-                    rect,
-                    context.Margin,
-                    context.SheetWidth - context.Margin,
-                    context.Margin,
-                    context.SheetHeight - context.Margin))
+            var otherResidualRects = residualRectsById
+                .Where(other => other.Key != entry.Key)
+                .ToDictionary(other => other.Key, other => other.Value);
+            var validation = ViewPlacementValidator.Validate(
+                rect,
+                context.Margin,
+                context.SheetWidth - context.Margin,
+                context.Margin,
+                context.SheetHeight - context.Margin,
+                context.ReservedAreas,
+                otherResidualRects);
+            if (!validation.Fits)
             {
                 PerfTrace.Write("api-view", "fallback_layout_reject", 0,
-                    $"view={entry.Key} reason=out-of-sheet rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
-                return false;
-            }
-
-            if (IntersectsAny(rect, context.ReservedAreas))
-            {
-                PerfTrace.Write("api-view", "fallback_layout_reject", 0,
-                    $"view={entry.Key} reason=reserved-overlap rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
-                return false;
-            }
-
-            foreach (var other in residualRectsById)
-            {
-                if (other.Key == entry.Key)
-                    continue;
-
-                if (!Intersects(rect, other.Value))
-                    continue;
-
-                PerfTrace.Write("api-view", "fallback_layout_reject", 0,
-                    $"view={entry.Key} reason=view-overlap blocker={other.Key} rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}] blockerRect=[{other.Value.MinX:F2},{other.Value.MinY:F2},{other.Value.MaxX:F2},{other.Value.MaxY:F2}]");
+                    $"view={entry.Key} reason={validation.Reason} rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}] blockers={FormatValidationBlockers(validation.Blockers)}");
                 return false;
             }
         }
@@ -469,14 +454,12 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             var originY = context.SheetHeight - context.Margin - placement.Y - (view.Height / 2.0);
             var width = DrawingArrangeContextSizing.GetWidth(context, view);
             var height = DrawingArrangeContextSizing.GetHeight(context, view);
-            if (!DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(view, originX, originY, width, height, out var rect))
-                rect = new ReservedRect(
-                    originX - (width / 2.0),
-                    originY - (height / 2.0),
-                    originX + (width / 2.0),
-                    originY + (height / 2.0));
-
-            residualRectsById[view.GetIdentifier().ID] = rect;
+            residualRectsById[view.GetIdentifier().ID] = ViewPlacementGeometryService.CreateCandidateRect(
+                view,
+                originX,
+                originY,
+                width,
+                height);
         }
 
         return true;
@@ -524,8 +507,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                     var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                    DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(p.View, p.X, p.Y, w, h, out var rect);
-                    return rect;
+                    return ViewPlacementGeometryService.CreateCandidateRect(p.View, p.X, p.Y, w, h);
                 }).ToList();
 
                 var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
@@ -2111,8 +2093,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
-                return rect;
+                return ViewPlacementGeometryService.CreateCandidateRect(item.View, item.X, item.Y, width, height);
             });
         var blockedRects = new List<ReservedRect>(occupied.Take(reservedCount));
         foreach (var item in planned)
@@ -2928,7 +2909,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(item.View, item.X, item.Y, width, height, out var rect);
+                var rect = ViewPlacementGeometryService.CreateCandidateRect(item.View, item.X, item.Y, width, height);
                 return $"{item.View.GetIdentifier().ID}:{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}";
             }));
     }
@@ -3923,19 +3904,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     }
 
     private static bool IntersectsAny(ReservedRect rect, IReadOnlyList<ReservedRect> others)
-        => others.Any(other => Intersects(rect, other));
+        => ViewPlacementValidator.IntersectsAny(rect, others);
 
     private static bool Intersects(ReservedRect a, ReservedRect b)
-        => a.MinX < b.MaxX
-           && a.MaxX > b.MinX
-           && a.MinY < b.MaxY
-           && a.MaxY > b.MinY;
+        => ViewPlacementValidator.Intersects(a, b);
 
     private static bool IsWithinArea(ReservedRect rect, double minX, double maxX, double minY, double maxY)
-        => rect.MinX >= minX
-           && rect.MaxX <= maxX
-           && rect.MinY >= minY
-           && rect.MaxY <= maxY;
+        => ViewPlacementValidator.IsWithinArea(rect, minX, maxX, minY, maxY);
+
+    private static string FormatValidationBlockers(IReadOnlyList<ViewPlacementBlocker> blockers)
+        => blockers.Count == 0
+            ? "none"
+            : string.Join(
+                ";",
+                blockers.Select(blocker => blocker.Kind == ViewPlacementBlockerKind.View && blocker.ViewId.HasValue
+                    ? $"{blocker.Kind}:{blocker.ViewId.Value}:[{blocker.Rect.MinX:F2},{blocker.Rect.MinY:F2},{blocker.Rect.MaxX:F2},{blocker.Rect.MaxY:F2}]"
+                    : $"{blocker.Kind}:[{blocker.Rect.MinX:F2},{blocker.Rect.MinY:F2},{blocker.Rect.MaxX:F2},{blocker.Rect.MaxY:F2}]"));
 
     private static List<ReservedRect> NormalizeReservedAreas(DrawingArrangeContext context)
     {

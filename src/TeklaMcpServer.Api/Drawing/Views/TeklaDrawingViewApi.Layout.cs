@@ -230,14 +230,12 @@ public sealed partial class TeklaDrawingViewApi
                 ? frame2.Height
                 : view.Height;
 
-            if (!DrawingViewFrameGeometry.TryGetBoundingRectAtOrigin(view, item.OriginX, item.OriginY, width, height, out var plannedRect))
-            {
-                plannedRect = new ReservedRect(
-                    item.OriginX - (width / 2.0),
-                    item.OriginY - (height / 2.0),
-                    item.OriginX + (width / 2.0),
-                    item.OriginY + (height / 2.0));
-            }
+            var plannedRect = ViewPlacementGeometryService.CreateCandidateRect(
+                view,
+                item.OriginX,
+                item.OriginY,
+                width,
+                height);
 
             var hasActualRect = actualRects.TryGetValue(item.Id, out var actualRect);
             var plannedCenterX = (plannedRect.MinX + plannedRect.MaxX) / 2.0;
