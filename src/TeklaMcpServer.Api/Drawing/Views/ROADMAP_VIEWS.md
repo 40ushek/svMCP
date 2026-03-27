@@ -137,6 +137,23 @@
   origin-centered bbox.
   Это закрывает конкретный live-баг, где `SectionView` могла после valid layout
   уехать внутрь `FrontView` из-за неверного collision check в projection-pass.
+- внутри `BaseProjectedDrawingArrangeStrategy` почти завершён safe internal refactor
+  вокруг `main skeleton` placement:
+  - выделены `MainSkeletonPlacementState`, `MainSkeletonNeighborSpec`,
+    `ViewPlacementSearchArea`
+  - `strict`, `relaxed` и `diagnostic` paths сведены к более симметричным
+    orchestration helper'ам
+  - success / reject / diagnose flow для optional standard neighbors
+    больше не размазан по четырём отдельным веткам `Top/Bottom/Left/Right`
+- для optional main-skeleton placement уже есть локальный geometry/search mini-layer:
+  - `FindCenteredRelativeRectInSearchArea(...)`
+  - `FindRelativeRectInSearchArea(...)`
+  - `FindTopViewAtSheetTopInSearchArea(...)`
+  - `TryValidateMainSkeletonNeighborRect(...)`
+  - `DiagnoseRelativePlacementFailureInSearchArea(...)`
+- test-facing legacy surface для `TryDeferMainSkeletonNeighbor(...)`
+  сохранён как совместимый wrapper, чтобы внутренний refactor не ломал
+  существующие unit-тесты
 
 ### Что ещё не закончено
 
@@ -200,12 +217,39 @@
 - бюджет стека секций вычисляется как суммарная высота/ширина, но не проверяется
   на каждую секцию отдельно: одна oversized-секция способна занять весь бюджет
   без диагностики для остальных.
+- локальный geometry/search слой пока покрывает в основном optional
+  `main skeleton` flow внутри `BaseProjectedDrawingArrangeStrategy`:
+  секции, `base-window`, `EstimateFit` и projection post-pass
+  ещё не переведены на тот же source of truth.
 - user-facing aliases для `fit_views_to_sheet` унифицированы:
   parser знает `preserveexistingscales` / `preservemixedscales` / `keepscale`
   (все три ведут в `PreserveExistingScales`). Закрыто.
 - debug env var `SVMCP_FIT_DEBUG_STOP_ON_SECTION_REJECT` активирует hard stop
   при reject horizontal section (бросает `InvalidOperationException`).
   Это временный локальный debug-hook, а не часть нормального runtime contract.
+
+### Согласованный статус этапов
+
+- `Stage 0: safe internal refactor`:
+  практически завершён.
+  Основной structural cleanup внутри `BaseProjectedDrawingArrangeStrategy`
+  уже сделан без смены layout-policy.
+- `Stage 1: local geometry/search/validation layer inside strategy`:
+  в процессе.
+  Локальный mini-layer уже работает для optional main-skeleton placement,
+  но ещё не покрывает соседние placement paths.
+- `Stage 2: shared geometry/collision pipeline across layout phases`:
+  следующий большой этап.
+  Здесь нужно выйти за пределы одного блока и свести `strategy`,
+  `EstimateFit`, apply и projection post-pass к одному source of truth.
+- `Stage 3: behavioral fixes`:
+  ещё не начат.
+  Сюда относятся `EstimateFit vs apply`, `Top/Bottom` sections,
+  oversized policy и идемпотентность repeated `fit_views_to_sheet`.
+- `Stage 4: policy polish`:
+  после стабилизации geometry/collision pipeline.
+  Сюда входят detail/dependent placement policy и явная конфигурация
+  projection method.
 
 ## Зафиксированные текущие контракты
 
@@ -316,73 +360,28 @@
 
 ## Ближайшие шаги
 
-### 1. Довести BaseView-centric topology
+Порядок ниже уже учитывает, что подготовительный refactor почти завершён.
+
+### 1. Закрыть local geometry/search/validation layer внутри strategy
 
 Нужно:
 
-- выделить явный projection graph поверх уже существующего `NeighborSet`
-- вынести current resolver order в явную policy:
-  `ViewType override -> coordinate systems -> current position`
+- довести `ViewPlacementSearchArea` и соседние helper'ы до устойчивой внутренней
+  границы, а не оставлять их набором локальных convenience-методов
+- перевести на этот mini-layer не только optional main-skeleton path,
+  но и соседние search/validation участки внутри
+  `BaseProjectedDrawingArrangeStrategy`
+- убрать оставшиеся локальные расхождения между `strict`, `relaxed`,
+  `diagnostic` и section-adjacent placement checks
 
 Готово когда:
 
-- standard neighbors и dependent relations выводятся из явной topology policy,
-  а не только из текущего resolver
+- geometry/search/validation для соседних placement paths внутри strategy
+  читается через один набор helper'ов
+- новые правки в main layout больше не требуют править три разные локальные
+  реализации одной и той же placement-логики
 
-### 2. Отделить oversized sections от normal section policy
-
-Нужно:
-
-- не позволять одному outlier section диктовать весь `optimalScale`
-- ввести отдельный degraded path для outlier sections
-
-Готово когда:
-
-- обычный каркас листа не ломается из-за одного проблемного разреза
-
-### 3. Довести main-layout spacing вокруг BaseView
-
-Нужно:
-
-- использовать один и тот же source of truth для budget window
-  в strict/relaxed/diagnostics path
-- перестать принимать слишком плотный `Front/Top/Right` каркас как валидный fit
-  до projection
-- добавить явный spacing reserve для standard neighbors там, где projection
-  потом обязан сделать корректирующий move
-
-Готово когда:
-
-- `BaseView` размещается с учётом реальной потребности в месте сверху/снизу/слева/справа
-- `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
-  centered-slot around `BaseView`
-- выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window
-- основной каркас после первой расстановки уже имеет безопасные зазоры,
-  а не упирается в `projection-skip:view-overlap`
-- если standard section не может быть поставлена в свой normal stack,
-  следующий допустимый путь деградации всё равно обязан оставаться
-  overlap-free; иначе candidate scale должен быть отвергнут, и внешний
-  scale loop должен взять следующий, более крупный масштаб
-
-### 4. Свести `EstimateFit` и apply path
-
-Нужно:
-
-- понять и убрать расхождение, при котором `EstimateFit` принимает или отвергает
-  layout по одной геометрии, а после apply фактические bbox дают другой результат
-- отдельно довести parity для `Top/Bottom` sections, где уже наблюдался
-  ложный reject по `no-valid-x`
-- логировать и сравнивать одни и те же rect в estimate/apply path
-- не считать `1:20` невалидным, если на том же листе этот layout реально помещается
-
-Готово когда:
-
-- `fits=0` не возникает для layout, который потом реально встаёт на лист
-- `fits=1` не возникает для layout, который после первой расстановки уже даёт
-  overlap/почти-overlap
-- `Top/Bottom` section decision совпадает между estimate и apply
-
-### 4a. Выделить единый geometry/collision pipeline для всех фаз layout
+### 2. Выделить единый geometry/collision pipeline для всех фаз layout
 
 Нужно:
 
@@ -419,7 +418,79 @@
 - весь код, который принимает решение `можно ли двигать view`,
   использует один validator, а не локальную копию overlap logic
 
-### 5. Усилить detail/dependent placement policy
+### 3. Свести `EstimateFit` и apply path
+
+Нужно:
+
+- убрать расхождение, при котором `EstimateFit` принимает или отвергает
+  layout по одной геометрии, а после apply фактические bbox дают другой результат
+- отдельно довести parity для `Top/Bottom` sections, где уже наблюдался
+  ложный reject по `no-valid-x`
+- логировать и сравнивать одни и те же rect в estimate/apply path
+- не считать `1:20` невалидным, если на том же листе этот layout реально помещается
+
+Готово когда:
+
+- `fits=0` не возникает для layout, который потом реально встаёт на лист
+- `fits=1` не возникает для layout, который после первой расстановки уже даёт
+  overlap/почти-overlap
+- `Top/Bottom` section decision совпадает между estimate и apply
+
+### 4. Довести main-layout spacing вокруг BaseView
+
+Нужно:
+
+- использовать один и тот же source of truth для budget window
+  в strict/relaxed/diagnostics path
+- перестать принимать слишком плотный `Front/Top/Right` каркас как валидный fit
+  до projection
+- добавить явный spacing reserve для standard neighbors там, где projection
+  потом обязан сделать корректирующий move
+
+Готово когда:
+
+- `BaseView` размещается с учётом реальной потребности в месте сверху/снизу/слева/справа
+- `TopView` и `Top/Bottom` sections не деградируют только из-за узкого
+  centered-slot around `BaseView`
+- выбор `baseRect` объясняется через budgets и свободный слот внутри budget-window
+- основной каркас после первой расстановки уже имеет безопасные зазоры,
+  а не упирается в `projection-skip:view-overlap`
+- если standard section не может быть поставлена в свой normal stack,
+  следующий допустимый путь деградации всё равно обязан оставаться
+  overlap-free; иначе candidate scale должен быть отвергнут, и внешний
+  scale loop должен взять следующий, более крупный масштаб
+
+### 5. Довести BaseView-centric topology и явную projection policy
+
+Нужно:
+
+- выделить явный projection graph поверх уже существующего `NeighborSet`
+- вынести current resolver order в явную policy:
+  `ViewType override -> coordinate systems -> current position`
+- перестать держать проекционную конвенцию неявно в коде
+
+Готово когда:
+
+- standard neighbors и dependent relations выводятся из явной topology policy,
+  а не только из текущего resolver
+- стороны размещения standard neighbors и секций определяются не скрытым соглашением,
+  а явной policy
+
+### 6. Отделить oversized sections от normal section policy
+
+Нужно:
+
+- не позволять одному outlier section диктовать весь `optimalScale`
+- ввести отдельный degraded path для outlier sections
+- отделить oversized geometry fail от normal section planning fail
+
+Готово когда:
+
+- обычный каркас листа не ломается из-за одного проблемного разреза
+- oversized section получает объяснимую degraded policy, а не ломает
+  normal path для всех остальных видов
+
+### 7. Усилить detail/dependent placement policy
 
 Нужно:
 
@@ -431,17 +502,6 @@
 
 - detail и detail-like section ставятся максимально близко к своему anchor
 - при нехватке места причина деградации видна в результате
-
-### 6. Сделать projection method явной конфигурацией
-
-Нужно:
-
-- перестать держать проекционную конвенцию неявно в коде
-
-Готово когда:
-
-- стороны размещения standard neighbors и секций определяются не скрытым соглашением,
-  а явной policy
 
 ## Валидация
 
