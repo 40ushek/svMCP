@@ -3355,10 +3355,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         => TryFindTopViewAtSheetTop(
             context,
             view,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
+            searchArea,
             occupied,
             out var rect)
             ? rect
@@ -3467,6 +3464,22 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     private static bool TryFindTopViewAtSheetTop(
         DrawingArrangeContext context,
         View top,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        out ReservedRect placement)
+        => TryFindTopViewAtSheetTop(
+            context,
+            top,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            occupied,
+            out placement);
+
+    private static bool TryFindTopViewAtSheetTop(
+        DrawingArrangeContext context,
+        View top,
         double freeMinX,
         double freeMaxX,
         double freeMinY,
@@ -3485,14 +3498,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         var maxX = freeMaxX - width;
         var cx = freeMinX + (freeMaxX - freeMinX - width) / 2.0;
-        var candidates = new[]
-        {
-            new ReservedRect(System.Math.Min(cx,  maxX), y, System.Math.Min(cx,  maxX) + width, freeMaxY),
-            new ReservedRect(freeMinX,                   y, freeMinX + width,                   freeMaxY),
-            new ReservedRect(System.Math.Max(freeMinX, maxX), y, System.Math.Max(freeMinX, maxX) + width, freeMaxY),
-        };
 
-        foreach (var c in candidates)
+        foreach (var c in EnumerateTopViewAtSheetTopCandidates(freeMinX, freeMaxX, freeMaxY, width, y, cx, maxX))
         {
             if (!IntersectsAny(c, occupied))
             {
@@ -3574,6 +3581,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         placement = new ReservedRect(0, 0, 0, 0);
         return false;
+    }
+
+    private static IEnumerable<ReservedRect> EnumerateTopViewAtSheetTopCandidates(
+        double freeMinX,
+        double freeMaxX,
+        double freeMaxY,
+        double width,
+        double y,
+        double centeredMinX,
+        double maxX)
+    {
+        yield return new ReservedRect(
+            System.Math.Min(centeredMinX, maxX),
+            y,
+            System.Math.Min(centeredMinX, maxX) + width,
+            freeMaxY);
+        yield return new ReservedRect(
+            freeMinX,
+            y,
+            freeMinX + width,
+            freeMaxY);
+        yield return new ReservedRect(
+            System.Math.Max(freeMinX, maxX),
+            y,
+            System.Math.Max(freeMinX, maxX) + width,
+            freeMaxY);
     }
 
     private static bool TryPlaceRelative(
