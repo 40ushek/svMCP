@@ -171,6 +171,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public string DiagnosticTarget { get; }
     }
 
+    internal readonly struct VerticalSectionProbeResult
+    {
+        public VerticalSectionProbeResult(
+            bool success,
+            ReservedRect rect,
+            string rejectReason,
+            string conflictReason,
+            string diagnosticType,
+            string diagnosticTarget)
+        {
+            Success = success;
+            Rect = rect;
+            RejectReason = rejectReason;
+            ConflictReason = conflictReason;
+            DiagnosticType = diagnosticType;
+            DiagnosticTarget = diagnosticTarget;
+        }
+
+        public bool Success { get; }
+        public ReservedRect Rect { get; }
+        public string RejectReason { get; }
+        public string ConflictReason { get; }
+        public string DiagnosticType { get; }
+        public string DiagnosticTarget { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -1591,6 +1617,72 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             failure.Value.ConflictReason,
             diagnostic?.Type ?? string.Empty,
             diagnostic?.Target ?? string.Empty);
+    }
+
+    internal static VerticalSectionProbeResult ProbeVerticalSectionCandidate(
+        View section,
+        ReservedRect frontRect,
+        ReservedRect anchorRect,
+        SectionPlacementSide placementSide,
+        double gap,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        IReadOnlyList<ReservedRect>? occupied = null,
+        IEnumerable<ReservedRect>? proposed = null)
+    {
+        occupied ??= System.Array.Empty<ReservedRect>();
+        proposed ??= System.Array.Empty<ReservedRect>();
+
+        var zone = placementSide switch
+        {
+            SectionPlacementSide.Left => RelativePlacement.Left,
+            SectionPlacementSide.Right => RelativePlacement.Right,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(placementSide), "Only Left/Right section probing is supported.")
+        };
+
+        var width = section.Width;
+        var height = section.Height;
+        if (!TryCreateVerticalSectionRect(
+                frontRect,
+                anchorRect,
+                zone,
+                width,
+                height,
+                gap,
+                CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY),
+                out var rect))
+        {
+            var failure = new SectionStackFailureInfo(section, new ReservedRect(0, 0, 0, 0), "out-of-bounds-y", "out-of-bounds");
+            var conflicts = new List<DrawingFitConflict>();
+            DiagnoseSectionStackFailure(conflicts, zone, failure, occupied);
+            var diagnostic = conflicts.FirstOrDefault()?.Conflicts.FirstOrDefault();
+
+            return new VerticalSectionProbeResult(
+                success: false,
+                rect,
+                failure.RejectReason,
+                failure.ConflictReason,
+                diagnostic?.Type ?? string.Empty,
+                diagnostic?.Target ?? string.Empty);
+        }
+
+        if (TryValidateSectionCandidateRect(rect, CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY), occupied, proposed, out var reason))
+            return new VerticalSectionProbeResult(true, rect, string.Empty, string.Empty, string.Empty, string.Empty);
+
+        var validationFailure = new SectionStackFailureInfo(section, rect, reason, reason);
+        var validationConflicts = new List<DrawingFitConflict>();
+        DiagnoseSectionStackFailure(validationConflicts, zone, validationFailure, occupied);
+        var validationDiagnostic = validationConflicts.FirstOrDefault()?.Conflicts.FirstOrDefault();
+
+        return new VerticalSectionProbeResult(
+            success: false,
+            rect,
+            validationFailure.RejectReason,
+            validationFailure.ConflictReason,
+            validationDiagnostic?.Type ?? string.Empty,
+            validationDiagnostic?.Target ?? string.Empty);
     }
 
     private static IEnumerable<double> EnumerateHorizontalSectionCandidateMinXs(

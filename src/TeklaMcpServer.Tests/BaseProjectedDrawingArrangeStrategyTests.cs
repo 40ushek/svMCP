@@ -634,4 +634,96 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal("intersects_view", result.DiagnosticType);
         Assert.Equal(string.Empty, result.DiagnosticTarget);
     }
+
+    [Fact]
+    public void ProbeVerticalSectionCandidate_FindsRightPlacement_WhenCandidateFits()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeVerticalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(40, 40, 80, 80),
+            anchorRect: new ReservedRect(40, 40, 80, 80),
+            placementSide: SectionPlacementSide.Right,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200);
+
+        Assert.True(result.Success);
+        Assert.Equal(85, result.Rect.MinX, 6);
+        Assert.Equal(50, result.Rect.MinY, 6);
+        Assert.Equal(115, result.Rect.MaxX, 6);
+        Assert.Equal(70, result.Rect.MaxY, 6);
+    }
+
+    [Fact]
+    public void ProbeVerticalSectionCandidate_ReturnsOutOfBoundsY_WhenBandCannotFit()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 50);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeVerticalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(40, 10, 80, 30),
+            anchorRect: new ReservedRect(40, 10, 80, 30),
+            placementSide: SectionPlacementSide.Left,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 40);
+
+        Assert.False(result.Success);
+        Assert.Equal("out-of-bounds-y", result.RejectReason);
+        Assert.Equal("out-of-bounds", result.ConflictReason);
+        Assert.Equal("outside_zone_bounds", result.DiagnosticType);
+        Assert.Equal(string.Empty, result.DiagnosticTarget);
+    }
+
+    [Fact]
+    public void ProbeVerticalSectionCandidate_ReturnsIntersectsReservedArea_WhenOccupiedBlocksCandidate()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeVerticalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(40, 40, 80, 80),
+            anchorRect: new ReservedRect(40, 40, 80, 80),
+            placementSide: SectionPlacementSide.Right,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200,
+            occupied: new[] { new ReservedRect(90, 45, 120, 75) });
+
+        Assert.False(result.Success);
+        Assert.Equal("occupied-intersection", result.ConflictReason);
+        Assert.Equal("intersects_reserved_area", result.DiagnosticType);
+        Assert.Equal("90.0,45.0,120.0,75.0", result.DiagnosticTarget);
+    }
+
+    [Fact]
+    public void ProbeVerticalSectionCandidate_ReturnsIntersectsView_WhenProposedRectsBlockCandidate()
+    {
+        var section = ViewTestHelper.Create(View.ViewTypes.SectionView, width: 30, height: 20);
+
+        var result = BaseProjectedDrawingArrangeStrategy.ProbeVerticalSectionCandidate(
+            section,
+            frontRect: new ReservedRect(40, 40, 80, 80),
+            anchorRect: new ReservedRect(40, 40, 80, 80),
+            placementSide: SectionPlacementSide.Left,
+            gap: 5,
+            freeMinX: 0,
+            freeMaxX: 200,
+            freeMinY: 0,
+            freeMaxY: 200,
+            proposed: new[] { new ReservedRect(5, 50, 35, 70) });
+
+        Assert.False(result.Success);
+        Assert.Equal("proposed-intersection", result.ConflictReason);
+        Assert.Equal("intersects_view", result.DiagnosticType);
+        Assert.Equal(string.Empty, result.DiagnosticTarget);
+    }
 }
