@@ -1157,6 +1157,28 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DrawingArrangeContext context,
         View view,
         ReservedRect anchor,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+        => DiagnoseRelativePlacementFailure(
+            conflicts,
+            context,
+            view,
+            anchor,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            gap,
+            occupied,
+            preferred);
+
+    private static void DiagnoseRelativePlacementFailure(
+        List<DrawingFitConflict> conflicts,
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
         double freeMinX,
         double freeMaxX,
         double freeMinY,
@@ -3210,10 +3232,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             context,
             view,
             anchorRect,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             placement);
@@ -3306,10 +3325,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             context,
             view,
             anchorRect,
-            searchArea.FreeMinX,
-            searchArea.FreeMaxX,
-            searchArea.FreeMinY,
-            searchArea.FreeMaxY,
+            searchArea,
             context.Gap,
             occupied,
             placement);
@@ -3537,10 +3553,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DrawingArrangeContext context,
         View view,
         ReservedRect anchor,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        ViewPlacementSearchArea searchArea,
         double gap,
         IReadOnlyList<ReservedRect> occupied,
         RelativePlacement preferred,
@@ -3550,10 +3563,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                      context,
                      view,
                      anchor,
-                     freeMinX,
-                     freeMaxX,
-                     freeMinY,
-                     freeMaxY,
+                     searchArea,
                      gap,
                      occupied,
                      preferred))
@@ -3566,6 +3576,48 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         return false;
     }
 
+    private static bool TryPlaceRelative(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        double freeMinX,
+        double freeMaxX,
+        double freeMinY,
+        double freeMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred,
+        out ReservedRect placement)
+        => TryPlaceRelative(
+            context,
+            view,
+            anchor,
+            new ViewPlacementSearchArea(anchor, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            preferred,
+            out placement);
+
+    private static ReservedRect? FindRelativeRect(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+        => TryPlaceRelative(
+            context,
+            view,
+            anchor,
+            searchArea,
+            gap,
+            occupied,
+            preferred,
+            out var placement)
+            ? placement
+            : null;
+
     private static ReservedRect? FindRelativeRect(
         DrawingArrangeContext context,
         View view,
@@ -3577,20 +3629,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         IReadOnlyList<ReservedRect> occupied,
         RelativePlacement preferred)
-        => TryPlaceRelative(
+        => FindRelativeRect(
             context,
             view,
             anchor,
-            freeMinX,
-            freeMaxX,
-            freeMinY,
-            freeMaxY,
+            new ViewPlacementSearchArea(anchor, freeMinX, freeMaxX, freeMinY, freeMaxY),
             gap,
             occupied,
-            preferred,
-            out var placement)
-            ? placement
-            : null;
+            preferred);
+
+    private static IEnumerable<ReservedRect> EnumerateAvailableRelativeCandidates(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        IReadOnlyList<ReservedRect> occupied,
+        RelativePlacement preferred)
+    {
+        foreach (var candidate in EnumerateRelativeCandidates(context, view, anchor, searchArea, gap, preferred))
+        {
+            if (IntersectsAny(candidate, occupied))
+                continue;
+
+            yield return candidate;
+        }
+    }
 
     private static IEnumerable<ReservedRect> EnumerateAvailableRelativeCandidates(
         DrawingArrangeContext context,
@@ -3603,15 +3667,32 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         double gap,
         IReadOnlyList<ReservedRect> occupied,
         RelativePlacement preferred)
-    {
-        foreach (var candidate in EnumerateRelativeCandidates(context, view, anchor, freeMinX, freeMaxX, freeMinY, freeMaxY, gap, preferred))
-        {
-            if (IntersectsAny(candidate, occupied))
-                continue;
+        => EnumerateAvailableRelativeCandidates(
+            context,
+            view,
+            anchor,
+            new ViewPlacementSearchArea(anchor, freeMinX, freeMaxX, freeMinY, freeMaxY),
+            gap,
+            occupied,
+            preferred);
 
-            yield return candidate;
-        }
-    }
+    private static IEnumerable<ReservedRect> EnumerateRelativeCandidates(
+        DrawingArrangeContext context,
+        View view,
+        ReservedRect anchor,
+        ViewPlacementSearchArea searchArea,
+        double gap,
+        RelativePlacement placement)
+        => EnumerateRelativeCandidates(
+            context,
+            view,
+            anchor,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            gap,
+            placement);
 
     private static IEnumerable<ReservedRect> EnumerateRelativeCandidates(
         DrawingArrangeContext context,
