@@ -103,6 +103,29 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         public double Height { get; }
     }
 
+    private readonly struct MainSkeletonNeighborSearchArea
+    {
+        public MainSkeletonNeighborSearchArea(
+            ReservedRect baseRect,
+            double freeMinX,
+            double freeMaxX,
+            double freeMinY,
+            double freeMaxY)
+        {
+            BaseRect = baseRect;
+            FreeMinX = freeMinX;
+            FreeMaxX = freeMaxX;
+            FreeMinY = freeMinY;
+            FreeMaxY = freeMaxY;
+        }
+
+        public ReservedRect BaseRect { get; }
+        public double FreeMinX { get; }
+        public double FreeMaxX { get; }
+        public double FreeMinY { get; }
+        public double FreeMaxY { get; }
+    }
+
     private sealed class MainSkeletonPlacementState
     {
         public ReservedRect? TopRect { get; private set; }
@@ -771,6 +794,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
+        var searchArea = new MainSkeletonNeighborSearchArea(baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY);
+
         foreach (var spec in CreateMainSkeletonNeighborSpecs(top, bottom, leftNeighbor, rightNeighbor))
         {
             TryPlaceOptionalDiagnosticMainSkeletonNeighbor(
@@ -778,11 +803,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                 context,
                 spec.Role,
                 spec.View,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
+                searchArea,
                 occupied,
                 spec.Placement,
                 spec.AllowSheetTopFallback,
@@ -1628,6 +1649,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var occupied = new List<ReservedRect>(blocked) { baseRect };
         var mainSkeleton = new MainSkeletonPlacementState();
 
+        var searchArea = new MainSkeletonNeighborSearchArea(baseRect, freeArea.minX, freeArea.maxX, freeArea.minY, freeArea.maxY);
+
         foreach (var spec in CreateStrictMainSkeletonNeighborSpecs(
                      top,
                      bottom,
@@ -1647,14 +1670,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     spec.Role,
                     spec.View,
                     spec.Placement,
-                    baseRect,
+                    searchArea,
                     spec.Width,
                     spec.Height,
                     gap,
-                    freeArea.minX,
-                    freeArea.maxX,
-                    freeArea.minY,
-                    freeArea.maxY,
                     occupied,
                     planned,
                     mainSkeleton))
@@ -1800,17 +1819,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         var mainSkeleton = new MainSkeletonPlacementState();
         var deferredMainSkeletonRoles = new List<string>();
 
+        var searchArea = new MainSkeletonNeighborSearchArea(baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY);
+
         foreach (var spec in CreateMainSkeletonNeighborSpecs(top, bottom, leftNeighbor, rightNeighbor))
         {
             TryPlaceOptionalRelaxedMainSkeletonNeighbor(
                 context,
                 spec.Role,
                 spec.View,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
+                searchArea,
                 occupied,
                 planned,
                 deferred,
@@ -2877,21 +2894,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
     private static bool TryFindStrictMainSkeletonNeighborRect(
         RelativePlacement placement,
-        ReservedRect baseRect,
+        MainSkeletonNeighborSearchArea searchArea,
         double width,
         double height,
         double gap,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
         IReadOnlyList<ReservedRect> occupied,
         out ReservedRect rect)
     {
-        if (!TryCreateCenteredRelativeRect(baseRect, placement, width, height, gap, out rect))
+        if (!TryCreateCenteredRelativeRect(searchArea.BaseRect, placement, width, height, gap, out rect))
             return false;
 
-        if (!IsWithinArea(rect, freeMinX, freeMaxX, freeMinY, freeMaxY) || IntersectsAny(rect, occupied))
+        if (!IsWithinArea(rect, searchArea.FreeMinX, searchArea.FreeMaxX, searchArea.FreeMinY, searchArea.FreeMaxY)
+            || IntersectsAny(rect, occupied))
             return false;
 
         return true;
@@ -2902,14 +2916,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         string role,
         View? view,
         RelativePlacement placement,
-        ReservedRect baseRect,
+        MainSkeletonNeighborSearchArea searchArea,
         double width,
         double height,
         double gap,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned,
         MainSkeletonPlacementState placements)
@@ -2922,14 +2932,10 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (TryFindStrictMainSkeletonNeighborRect(
                 placement,
-                baseRect,
+                searchArea,
                 width,
                 height,
                 gap,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
                 occupied,
                 out var rect))
         {
@@ -2946,11 +2952,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DrawingArrangeContext context,
         string role,
         View? view,
-        ReservedRect baseRect,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        MainSkeletonNeighborSearchArea searchArea,
         List<ReservedRect> occupied,
         List<PlannedPlacement> planned,
         List<View> deferred,
@@ -2962,11 +2964,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             && TryFindRelaxedMainSkeletonNeighborRect(
                 context,
                 view,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
+                searchArea,
                 occupied,
                 placement,
                 allowSheetTopFallback,
@@ -2987,11 +2985,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
     private static bool TryFindRelaxedMainSkeletonNeighborRect(
         DrawingArrangeContext context,
         View view,
-        ReservedRect baseRect,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        MainSkeletonNeighborSearchArea searchArea,
         IReadOnlyList<ReservedRect> occupied,
         RelativePlacement placement,
         bool allowSheetTopFallback,
@@ -3000,11 +2994,11 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (TryPlaceRelative(
                 context,
                 view,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
+                searchArea.BaseRect,
+                searchArea.FreeMinX,
+                searchArea.FreeMaxX,
+                searchArea.FreeMinY,
+                searchArea.FreeMaxY,
                 context.Gap,
                 occupied,
                 placement,
@@ -3015,7 +3009,15 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
 
         if (allowSheetTopFallback
             && placement == RelativePlacement.Top
-            && TryFindTopViewAtSheetTop(context, view, freeMinX, freeMaxX, freeMinY, freeMaxY, occupied, out rect))
+            && TryFindTopViewAtSheetTop(
+                context,
+                view,
+                searchArea.FreeMinX,
+                searchArea.FreeMaxX,
+                searchArea.FreeMinY,
+                searchArea.FreeMaxY,
+                occupied,
+                out rect))
         {
             return true;
         }
@@ -3029,11 +3031,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         DrawingArrangeContext context,
         string role,
         View? view,
-        ReservedRect baseRect,
-        double freeMinX,
-        double freeMaxX,
-        double freeMinY,
-        double freeMaxY,
+        MainSkeletonNeighborSearchArea searchArea,
         List<ReservedRect> occupied,
         RelativePlacement placement,
         bool allowSheetTopFallback,
@@ -3043,11 +3041,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             && TryFindRelaxedMainSkeletonNeighborRect(
                 context,
                 view,
-                baseRect,
-                freeMinX,
-                freeMaxX,
-                freeMinY,
-                freeMaxY,
+                searchArea,
                 occupied,
                 placement,
                 allowSheetTopFallback,
@@ -3061,7 +3055,18 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (view == null)
             return;
 
-        DiagnoseRelativePlacementFailure(conflicts, context, view, baseRect, freeMinX, freeMaxX, freeMinY, freeMaxY, context.Gap, occupied, placement);
+        DiagnoseRelativePlacementFailure(
+            conflicts,
+            context,
+            view,
+            searchArea.BaseRect,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            context.Gap,
+            occupied,
+            placement);
     }
 
     private static bool TryCreateVerticalSectionRect(
