@@ -10,6 +10,8 @@ internal static class PerfTrace
     private static readonly bool Enabled = IsEnabled();
     private static readonly string LogPath = ResolveLogPath();
 
+    internal static bool IsActive => Enabled;
+
     public static void Write(string layer, string operation, long elapsedMs, string? details = null)
     {
         if (!Enabled)

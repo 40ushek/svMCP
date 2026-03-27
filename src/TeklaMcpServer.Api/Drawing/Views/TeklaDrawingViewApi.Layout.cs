@@ -211,6 +211,51 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
+    private static void TraceEstimateConflicts(
+        string stage,
+        double candidateScale,
+        IReadOnlyList<DrawingFitConflict> conflicts)
+    {
+        var sb = new StringBuilder();
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "stage={0} candidate=1:{1} conflicts={2}",
+            stage,
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            conflicts.Count);
+
+        foreach (var conflict in conflicts)
+        {
+            sb.AppendFormat(
+                CultureInfo.InvariantCulture,
+                " | view={0}:{1} zone={2} bbox={3}",
+                conflict.ViewId,
+                string.IsNullOrWhiteSpace(conflict.ViewType) ? "unknown" : conflict.ViewType,
+                string.IsNullOrWhiteSpace(conflict.AttemptedZone) ? "unknown" : conflict.AttemptedZone,
+                conflict.BBoxMinX.HasValue && conflict.BBoxMinY.HasValue && conflict.BBoxMaxX.HasValue && conflict.BBoxMaxY.HasValue
+                    ? string.Format(
+                        CultureInfo.InvariantCulture,
+                        "[{0:F2},{1:F2},{2:F2},{3:F2}]",
+                        conflict.BBoxMinX.Value,
+                        conflict.BBoxMinY.Value,
+                        conflict.BBoxMaxX.Value,
+                        conflict.BBoxMaxY.Value)
+                    : "n/a");
+
+            foreach (var item in conflict.Conflicts)
+            {
+                sb.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    " conflict={0}:other={1}:target={2}",
+                    string.IsNullOrWhiteSpace(item.Type) ? "unknown" : item.Type,
+                    item.OtherViewId?.ToString(CultureInfo.InvariantCulture) ?? "n/a",
+                    string.IsNullOrWhiteSpace(item.Target) ? "n/a" : item.Target);
+            }
+        }
+
+        PerfTrace.Write("api-view", "fit_scale_conflicts", 0, sb.ToString());
+    }
+
     private static void TracePlannedVsActualParity(
         string stage,
         IReadOnlyList<ArrangedView> arranged,
@@ -450,6 +495,7 @@ public sealed partial class TeklaDrawingViewApi
             if (!fits)
             {
                 var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
+                TraceEstimateConflicts("preserve-scales", currentScale, conflicts);
                 throw new DrawingFitFailedException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.", conflicts);
             }
 
@@ -484,6 +530,7 @@ public sealed partial class TeklaDrawingViewApi
             if (!fits)
             {
                 var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
+                TraceEstimateConflicts("keep-current-scales", currentScale, conflicts);
                 throw new DrawingFitFailedException("Could not fit views on sheet at current scales.", conflicts);
             }
 
@@ -540,6 +587,12 @@ public sealed partial class TeklaDrawingViewApi
 
                 var fits = _arrangementSelector.EstimateFit(ctx, actualFrames);
                 TraceScaleCandidate(s, candidateViews, actualFrames, fits);
+                if (!fits && PerfTrace.IsActive)
+                {
+                    var conflicts = _arrangementSelector.DiagnoseFitConflicts(ctx, actualFrames);
+                    TraceEstimateConflicts("candidate-reject", s, conflicts);
+                }
+
                 if (fits)
                 {
                     optimalScale = s;
