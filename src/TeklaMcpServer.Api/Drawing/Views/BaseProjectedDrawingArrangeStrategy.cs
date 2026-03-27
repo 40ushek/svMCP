@@ -2116,6 +2116,8 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
         if (detailRelations.Count == 0)
             return;
 
+        var detailSearchArea = CreateSearchArea(freeMinX, freeMaxX, freeMinY, freeMaxY);
+
         var reservedCount = System.Math.Max(0, occupied.Count - planned.Count);
         var plannedById = planned.ToDictionary(
             item => item.View.GetIdentifier().ID,
@@ -2146,10 +2148,7 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
                     detailWidth,
                     detailHeight,
                     offset,
-                    freeMinX,
-                    freeMaxX,
-                    freeMinY,
-                    freeMaxY,
+                    detailSearchArea,
                     blockedRects,
                     relation.AnchorX,
                     relation.AnchorY,
@@ -2161,6 +2160,30 @@ public sealed class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStr
             plannedById[relation.DetailView.GetIdentifier().ID] = candidateRect;
         }
     }
+
+    private static bool TryFindDetailRect(
+        ReservedRect ownerRect,
+        double detailWidth,
+        double detailHeight,
+        double offset,
+        ViewPlacementSearchArea searchArea,
+        IReadOnlyList<ReservedRect> occupied,
+        double? anchorX,
+        double? anchorY,
+        out ReservedRect bestRect)
+        => TryFindDetailRect(
+            ownerRect,
+            detailWidth,
+            detailHeight,
+            offset,
+            searchArea.FreeMinX,
+            searchArea.FreeMaxX,
+            searchArea.FreeMinY,
+            searchArea.FreeMaxY,
+            occupied,
+            anchorX,
+            anchorY,
+            out bestRect);
 
     internal static bool TryFindDetailRect(
         ReservedRect ownerRect,
