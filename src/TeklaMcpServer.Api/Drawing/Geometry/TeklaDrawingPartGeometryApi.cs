@@ -5,6 +5,7 @@ using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using ModelPart = Tekla.Structures.Model.Part;
+using SolidTypes = Tekla.Structures.Solid;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -56,6 +57,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 string typeName = modelObj.GetType().Name;
                 string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
                 double[] bboxMin = [], bboxMax = [];
+                List<double[]> solidVertices = new();
 
                 if (modelObj is Beam beam)
                 {
@@ -69,7 +71,12 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     profile  = beam.Profile.ProfileString;
                     material = beam.Material.MaterialString;
                     var solid = beam.GetSolid();
-                    if (solid != null) { bboxMin = ToArray(solid.MinimumPoint); bboxMax = ToArray(solid.MaximumPoint); }
+                    if (solid != null)
+                    {
+                        bboxMin = ToArray(solid.MinimumPoint);
+                        bboxMax = ToArray(solid.MaximumPoint);
+                        solidVertices = CollectSolidVertices(solid);
+                    }
                 }
                 else if (modelObj is ModelPart part)
                 {
@@ -80,7 +87,12 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     axisY    = ToArray(cs.AxisY);
                     name     = part.Name;
                     var solid = part.GetSolid();
-                    if (solid != null) { bboxMin = ToArray(solid.MinimumPoint); bboxMax = ToArray(solid.MaximumPoint); }
+                    if (solid != null)
+                    {
+                        bboxMin = ToArray(solid.MinimumPoint);
+                        bboxMax = ToArray(solid.MaximumPoint);
+                        solidVertices = CollectSolidVertices(solid);
+                    }
                     part.GetReportProperty("PROFILE",  ref profile);
                     part.GetReportProperty("MATERIAL", ref material);
                 }
@@ -99,6 +111,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     AxisY      = axisY,
                     BboxMin    = bboxMin,
                     BboxMax    = bboxMax,
+                    SolidVertices = solidVertices,
                     Type       = typeName,
                     Name       = name,
                     PartPos    = partPos,
@@ -178,6 +191,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
 
             double[] bboxMin = [];
             double[] bboxMax = [];
+            List<double[]> solidVertices = new();
             if (modelObj is ModelPart solidPart)
             {
                 var solid = solidPart.GetSolid();
@@ -185,6 +199,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 {
                     bboxMin = ToArray(solid.MinimumPoint);
                     bboxMax = ToArray(solid.MaximumPoint);
+                    solidVertices = CollectSolidVertices(solid);
                 }
             }
 
@@ -200,6 +215,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 AxisY      = axisY,
                 BboxMin    = bboxMin,
                 BboxMax    = bboxMax
+                ,
+                SolidVertices = solidVertices
             };
         }
         finally
@@ -210,6 +227,67 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
 
     private static PartGeometryInViewResult Fail(int viewId, int modelId, string error) =>
         new() { Success = false, ViewId = viewId, ModelId = modelId, Error = error };
+
+    private static List<double[]> CollectSolidVertices(Solid solid)
+    {
+        var result = new List<double[]>();
+
+        try
+        {
+            var faceEnumerator = solid.GetFaceEnumerator();
+            while (faceEnumerator.MoveNext())
+            {
+                if (faceEnumerator.Current is not SolidTypes.Face face)
+                    continue;
+
+                var loopEnumerator = face.GetLoopEnumerator();
+                while (loopEnumerator.MoveNext())
+                {
+                    if (loopEnumerator.Current is not SolidTypes.Loop loop)
+                        continue;
+
+                    if (loop.GetVertexEnumerator() is not SolidTypes.VertexEnumerator vertexEnumerator)
+                        continue;
+
+                    while (vertexEnumerator.MoveNext())
+                    {
+                        if (vertexEnumerator.Current is not Point vertex)
+                            continue;
+
+                        AddUniquePoint(result, vertex);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Some runtime solids may not expose stable face/loop traversal.
+        }
+
+        return result;
+    }
+
+    private static void AddUniquePoint(List<double[]> target, Point point)
+    {
+        for (var i = 0; i < target.Count; i++)
+        {
+            if (SamePoint(target[i], point))
+                return;
+        }
+
+        target.Add([point.X, point.Y, point.Z]);
+    }
+
+    private static bool SamePoint(double[] point, Point candidate)
+    {
+        const double epsilon = 0.0001;
+        if (point.Length < 3)
+            return false;
+
+        return System.Math.Abs(point[0] - candidate.X) <= epsilon
+            && System.Math.Abs(point[1] - candidate.Y) <= epsilon
+            && System.Math.Abs(point[2] - candidate.Z) <= epsilon;
+    }
 
     private static double[] ToArray(Point? p)  => p  == null ? [] : [p.X,  p.Y,  p.Z];
     private static double[] ToArray(Vector? v) => v  == null ? [] : [v.X,  v.Y,  v.Z];

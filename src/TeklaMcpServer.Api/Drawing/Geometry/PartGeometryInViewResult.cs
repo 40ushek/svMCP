@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class PartGeometryInViewResult
@@ -27,6 +29,9 @@ public sealed class PartGeometryInViewResult
 
     /// <summary>Solid bounding box maximum corner in view coordinate system (mm).</summary>
     public double[] BboxMax { get; set; } = [];
+
+    /// <summary>Unique solid vertices in view coordinate system (mm).</summary>
+    public List<double[]> SolidVertices { get; set; } = new();
 
     // Fields populated by GetAllPartsGeometryInView (not set by single-part call)
     public string? Type     { get; set; }

@@ -93,7 +93,8 @@ internal sealed partial class DrawingCommandHandler
                 axisX      = r.AxisX,
                 axisY      = r.AxisY,
                 bboxMin    = r.BboxMin,
-                bboxMax    = r.BboxMax
+                bboxMax    = r.BboxMax,
+                solidVertices = r.SolidVertices
             })
         });
         return true;
@@ -618,6 +619,7 @@ internal sealed partial class DrawingCommandHandler
             axisY = result.AxisY,
             bboxMin = result.BboxMin,
             bboxMax = result.BboxMax,
+            solidVertices = result.SolidVertices,
             error = result.Error
         });
     }
