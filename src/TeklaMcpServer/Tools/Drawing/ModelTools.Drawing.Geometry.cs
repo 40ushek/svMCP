@@ -53,7 +53,7 @@ public static partial class ModelTools
 
     [McpServerTool, Description(
         "Get characteristic semantic points for one model part in one drawing view. " +
-        "Returns point kinds such as AxisStart, AxisEnd, Origin, Center, BboxMin, BboxMax, Left, Right, Top and Bottom. " +
+        "Returns point kinds such as AxisStart, AxisEnd, AxisMidpoint, Origin, Center, BboxMin, BboxMax, bbox corner points, Left, Right, Top and Bottom. " +
         "All coordinates are returned in the drawing view coordinate system (mm).")]
     public static string GetPartPointsInView(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,

@@ -58,6 +58,7 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
 
         AddPoint(result.Points, DrawingPartPointKind.AxisStart, DrawingPartPointSourceKind.Axis, geometry.StartPoint);
         AddPoint(result.Points, DrawingPartPointKind.AxisEnd, DrawingPartPointSourceKind.Axis, geometry.EndPoint);
+        AddAxisMidpoint(result.Points, geometry.StartPoint, geometry.EndPoint);
         AddPoint(result.Points, DrawingPartPointKind.Origin, DrawingPartPointSourceKind.Part, geometry.CoordinateSystemOrigin);
         AddPoint(result.Points, DrawingPartPointKind.BboxMin, DrawingPartPointSourceKind.Part, geometry.BboxMin);
         AddPoint(result.Points, DrawingPartPointKind.BboxMax, DrawingPartPointSourceKind.Part, geometry.BboxMax);
@@ -93,10 +94,30 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
         var centerY = (minY + maxY) / 2.0;
         var centerZ = GetMidpointCoordinate(bboxMin, bboxMax, 2);
 
+        AddPoint(points, DrawingPartPointKind.BottomLeft, DrawingPartPointSourceKind.Part, [minX, minY, centerZ]);
+        AddPoint(points, DrawingPartPointKind.BottomRight, DrawingPartPointSourceKind.Part, [maxX, minY, centerZ]);
+        AddPoint(points, DrawingPartPointKind.TopLeft, DrawingPartPointSourceKind.Part, [minX, maxY, centerZ]);
+        AddPoint(points, DrawingPartPointKind.TopRight, DrawingPartPointSourceKind.Part, [maxX, maxY, centerZ]);
         AddPoint(points, DrawingPartPointKind.Left, DrawingPartPointSourceKind.Part, [minX, centerY, centerZ]);
         AddPoint(points, DrawingPartPointKind.Right, DrawingPartPointSourceKind.Part, [maxX, centerY, centerZ]);
         AddPoint(points, DrawingPartPointKind.Top, DrawingPartPointSourceKind.Part, [centerX, maxY, centerZ]);
         AddPoint(points, DrawingPartPointKind.Bottom, DrawingPartPointSourceKind.Part, [centerX, minY, centerZ]);
+    }
+
+    private static void AddAxisMidpoint(List<DrawingPartPointInfo> points, double[] startPoint, double[] endPoint)
+    {
+        if (startPoint.Length < 2 || endPoint.Length < 2)
+            return;
+
+        AddPoint(
+            points,
+            DrawingPartPointKind.AxisMidpoint,
+            DrawingPartPointSourceKind.Axis,
+            [
+                GetMidpointCoordinate(startPoint, endPoint, 0),
+                GetMidpointCoordinate(startPoint, endPoint, 1),
+                GetMidpointCoordinate(startPoint, endPoint, 2)
+            ]);
     }
 
     private static double[] TryCreateCenterPoint(PartGeometryInViewResult geometry)
