@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingArrangeContext
 {
@@ -45,3 +46,4 @@ internal static class DrawingArrangeContextSizing
     public static double GetHeight(DrawingArrangeContext context, View view)
         => context.EffectiveFrameSizes.TryGetValue(view.GetIdentifier().ID, out var size) ? size.Height : view.Height;
 }
+

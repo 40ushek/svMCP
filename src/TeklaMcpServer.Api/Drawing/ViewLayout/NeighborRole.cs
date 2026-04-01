@@ -1,4 +1,5 @@
-namespace TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal enum NeighborRole
 {
@@ -8,3 +9,4 @@ internal enum NeighborRole
     SideLeft,
     SideRight
 }
+

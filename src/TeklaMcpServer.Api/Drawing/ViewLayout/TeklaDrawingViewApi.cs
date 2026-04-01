@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
 {
@@ -44,12 +45,3 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
     }
 }
 
-public sealed class DrawingNotOpenException : System.Exception
-{
-    public DrawingNotOpenException() : base("No drawing is currently open.") { }
-}
-
-public sealed class ViewNotFoundException : System.Exception
-{
-    public ViewNotFoundException(int id) : base($"View with ID {id} not found in active drawing.") { }
-}

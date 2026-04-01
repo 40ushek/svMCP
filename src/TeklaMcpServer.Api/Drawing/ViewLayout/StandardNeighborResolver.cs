@@ -4,8 +4,9 @@ using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class StandardNeighborResolver
 {
@@ -272,3 +273,4 @@ internal static class StandardNeighborResolver
         return vector.GetNormal();
     }
 }
+

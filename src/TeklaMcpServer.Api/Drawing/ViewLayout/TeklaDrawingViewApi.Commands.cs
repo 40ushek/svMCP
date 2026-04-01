@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi
 {
@@ -72,3 +73,4 @@ public sealed partial class TeklaDrawingViewApi
         return new SetViewScaleResult { UpdatedCount = updated.Count, UpdatedIds = updated, Scale = scale };
     }
 }
+

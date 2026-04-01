@@ -3,8 +3,9 @@ using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Algorithms.Packing;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
@@ -145,3 +146,4 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
         }
     }
 }
+

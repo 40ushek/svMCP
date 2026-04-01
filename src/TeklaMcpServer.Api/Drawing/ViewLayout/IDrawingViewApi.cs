@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public interface IDrawingViewApi
 {
@@ -14,3 +15,4 @@ public interface IDrawingViewApi
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
         DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview);
 }
+

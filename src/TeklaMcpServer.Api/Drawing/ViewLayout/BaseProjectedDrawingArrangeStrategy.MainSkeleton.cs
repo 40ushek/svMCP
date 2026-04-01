@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class BaseProjectedDrawingArrangeStrategy
 {
@@ -740,3 +741,4 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
             (_, view) => DiagnoseOptionalMainSkeletonNeighborFailure(conflicts, context, spec, searchArea, occupied, view));
     }
 }
+

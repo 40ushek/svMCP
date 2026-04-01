@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Algorithms.Packing;
+using TeklaMcpServer.Api.Drawing;
 //publish
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class BaseProjectedDrawingArrangeStrategy
 {
@@ -597,3 +598,4 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
         return true;
     }
 }
+

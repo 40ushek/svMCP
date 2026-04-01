@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal enum BaseViewSelectionKind
 {
@@ -116,3 +117,4 @@ internal static class BaseViewSelection
         public int Index { get; }
     }
 }
+

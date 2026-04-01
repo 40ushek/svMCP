@@ -1,4 +1,5 @@
-namespace TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingViewInfo
 {
@@ -16,3 +17,4 @@ public sealed class DrawingViewInfo
     public double? BBoxMaxX { get; set; }
     public double? BBoxMaxY { get; set; }
 }
+

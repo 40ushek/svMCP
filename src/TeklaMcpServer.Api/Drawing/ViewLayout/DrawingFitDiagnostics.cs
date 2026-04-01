@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingFitConflict
 {
@@ -31,3 +32,4 @@ public sealed class DrawingFitFailedException : System.InvalidOperationException
 
     public IReadOnlyList<DrawingFitConflict> Conflicts { get; }
 }
+

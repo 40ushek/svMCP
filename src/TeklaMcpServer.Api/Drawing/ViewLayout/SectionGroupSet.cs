@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 /// <summary>
 /// Groups SectionViews by their resolved PlacementSide.
@@ -43,3 +44,4 @@ internal sealed class SectionGroupSet
         return set;
     }
 }
+

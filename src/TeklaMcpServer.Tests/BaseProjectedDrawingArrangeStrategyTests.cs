@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using Tekla.Structures.Drawing;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Drawing;

@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingViewArrangementSelector
 {
@@ -58,3 +59,4 @@ public sealed class DrawingViewArrangementSelector
         return strategy;
     }
 }
+

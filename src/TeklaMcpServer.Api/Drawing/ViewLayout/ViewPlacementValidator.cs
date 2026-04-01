@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal enum ViewPlacementBlockerKind
 {
@@ -133,3 +134,4 @@ internal static class ViewPlacementValidator
             .ToList();
     }
 }
+

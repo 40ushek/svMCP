@@ -1,4 +1,5 @@
-namespace TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public enum DrawingScalePolicy
 {
@@ -6,3 +7,4 @@ public enum DrawingScalePolicy
     UniformMainWithSectionExceptions = 1,
     PreserveExistingScales = 2
 }
+

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingViewsResult
 {
@@ -141,3 +142,4 @@ public sealed class DrawingReservedAreasResult
     public IReadOnlyList<LayoutTableGeometryInfo> Tables      { get; set; } = System.Array.Empty<LayoutTableGeometryInfo>();
     public IReadOnlyList<ReservedRect>            MergedAreas { get; set; } = System.Array.Empty<ReservedRect>();
 }
+

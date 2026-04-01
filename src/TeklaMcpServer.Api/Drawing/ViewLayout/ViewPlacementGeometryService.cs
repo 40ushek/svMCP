@@ -1,6 +1,7 @@
 using Tekla.Structures.Drawing;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class ViewPlacementGeometryService
 {
@@ -31,3 +32,4 @@ internal static class ViewPlacementGeometryService
     public static ReservedRect FromProjectionRect(ProjectionRect rect)
         => new(rect.MinX, rect.MinY, rect.MaxX, rect.MaxY);
 }
+

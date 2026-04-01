@@ -3,8 +3,9 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
@@ -96,3 +97,4 @@ public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStra
         return conflicts;
     }
 }
+

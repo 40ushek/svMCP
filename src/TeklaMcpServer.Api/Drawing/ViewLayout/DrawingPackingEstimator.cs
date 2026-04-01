@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using TeklaMcpServer.Api.Algorithms.Packing;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class DrawingPackingEstimator
 {
@@ -51,3 +52,4 @@ internal static class DrawingPackingEstimator
         return true;
     }
 }
+

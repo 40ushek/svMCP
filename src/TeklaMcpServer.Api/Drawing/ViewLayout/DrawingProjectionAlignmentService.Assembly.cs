@@ -7,8 +7,9 @@ using TeklaMcpServer.Api.Diagnostics;
 using ModelAssembly = Tekla.Structures.Model.Assembly;
 using ModelPart = Tekla.Structures.Model.Part;
 using DrawingView = Tekla.Structures.Drawing.View;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
@@ -317,3 +318,4 @@ internal sealed partial class DrawingProjectionAlignmentService
         return true;
     }
 }
+

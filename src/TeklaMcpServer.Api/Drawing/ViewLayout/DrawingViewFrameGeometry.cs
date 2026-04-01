@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class DrawingViewFrameGeometry
 {
@@ -207,3 +208,4 @@ internal static class DrawingViewFrameGeometry
         return sizes;
     }
 }
+

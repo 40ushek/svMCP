@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed class ProjectionAlignmentResult
 {
@@ -107,3 +108,4 @@ internal readonly struct ProjectionMoveRejectDecision
     public string Reason { get; }
     public IReadOnlyList<ViewPlacementBlocker> Blockers { get; }
 }
+

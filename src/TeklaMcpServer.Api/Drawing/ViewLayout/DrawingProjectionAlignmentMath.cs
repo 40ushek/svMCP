@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class DrawingProjectionAlignmentMath
 {
@@ -193,3 +194,4 @@ internal static class DrawingProjectionAlignmentMath
         return value!.Trim().ToUpperInvariant();
     }
 }
+

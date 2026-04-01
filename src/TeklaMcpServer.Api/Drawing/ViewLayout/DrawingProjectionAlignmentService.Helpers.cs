@@ -5,8 +5,9 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Diagnostics;
 using DrawingView = Tekla.Structures.Drawing.View;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
@@ -351,3 +352,4 @@ internal sealed partial class DrawingProjectionAlignmentService
         PerfTrace.Write("api-view", "fit_views_projection_skip", 0, reason);
     }
 }
+

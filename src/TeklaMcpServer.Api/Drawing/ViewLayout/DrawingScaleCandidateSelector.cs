@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal readonly struct DrawingScaleDriver
 {
@@ -91,3 +92,4 @@ internal static class DrawingScaleCandidateSelector
         return StandardScales[StandardScales.Length - 1];
     }
 }
+

@@ -1,8 +1,9 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed class NeighborSet
 {
@@ -34,3 +35,4 @@ internal sealed class NeighborSet
     public void SetRole(View view, NeighborRole role)
         => _roleById[view.GetIdentifier().ID] = role;
 }
+

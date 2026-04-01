@@ -1,5 +1,6 @@
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaBridge.Commands;
 

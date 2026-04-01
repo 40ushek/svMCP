@@ -9,8 +9,9 @@ using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi
 {
@@ -1349,3 +1350,4 @@ public sealed partial class TeklaDrawingViewApi
 
     private static double CenterY(ReservedRect rect) => (rect.MinY + rect.MaxY) / 2.0;
 }
+

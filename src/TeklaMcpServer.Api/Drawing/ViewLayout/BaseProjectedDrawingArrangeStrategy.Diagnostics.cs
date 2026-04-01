@@ -4,8 +4,9 @@ using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class BaseProjectedDrawingArrangeStrategy
 {
@@ -233,3 +234,4 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
             placement);
     }
 }
+

@@ -1,6 +1,7 @@
 using Tekla.Structures.Drawing;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal enum ViewSemanticKind
 {
@@ -61,3 +62,4 @@ internal static class ViewSemanticClassifier
     public static bool IsBaseProjected(View.ViewTypes viewType)
         => Classify(viewType) == ViewSemanticKind.BaseProjected;
 }
+

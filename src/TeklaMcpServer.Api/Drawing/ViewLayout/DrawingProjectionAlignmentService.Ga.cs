@@ -4,8 +4,9 @@ using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using DrawingView = Tekla.Structures.Drawing.View;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
@@ -300,3 +301,4 @@ internal sealed partial class DrawingProjectionAlignmentService
         }
     }
 }
+

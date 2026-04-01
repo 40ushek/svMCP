@@ -4,8 +4,9 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi
 {
@@ -267,3 +268,4 @@ public sealed partial class TeklaDrawingViewApi
         return coordinateSystem.AxisX.Cross(coordinateSystem.AxisY);
     }
 }
+

@@ -7,8 +7,9 @@ using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using ModelAssembly = Tekla.Structures.Model.Assembly;
 using ModelPart = Tekla.Structures.Model.Part;
+using TeklaMcpServer.Api.Drawing;
 
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal enum SectionPlacementSide
 {
@@ -314,3 +315,4 @@ internal sealed class SectionPlacementSideResolver
         return vector.GetNormal();
     }
 }
+

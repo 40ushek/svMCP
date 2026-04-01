@@ -7,8 +7,9 @@ using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing;
 //publish
-namespace TeklaMcpServer.Api.Drawing;
+namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewArrangeStrategy, IDrawingViewArrangeDiagnosticsStrategy
 {
@@ -2655,3 +2656,4 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         Left
     }
 }
+
