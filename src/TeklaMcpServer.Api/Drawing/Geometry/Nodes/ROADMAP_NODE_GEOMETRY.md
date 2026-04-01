@@ -120,13 +120,19 @@ Minimum output:
 
 ### Phase 3: Connection-Aware Nodes
 
-Status: planned.
+Status: done in first form.
 
 Target additions:
 
 - node-per-connection grouping
 - stronger work-point semantics
 - later contact-aware refinement
+
+Done when:
+
+- bolt-driven nodes are paired with explicit participant parts
+- each connection-aware node exposes primary and secondary participants
+- work points and reference line remain attached to the connection node
 
 ### Phase 2.5: Work-Point Semantics
 
