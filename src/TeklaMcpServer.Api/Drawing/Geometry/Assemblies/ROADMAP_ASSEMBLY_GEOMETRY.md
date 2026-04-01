@@ -62,6 +62,14 @@ Current relevant sources:
 This means the first useful assembly layer is an aggregate raw geometry layer,
 not a derived point or dimension layer.
 
+Current implemented state in the wider geometry stack:
+
+- `Assemblies`
+  - raw and derived assembly geometry are implemented
+- `Nodes`
+  - assembly geometry is already consumed by contact-free nodes,
+    work points and connection-aware nodes
+
 ## Canonical Domain Direction
 
 The target model should represent an assembly in two layers.
@@ -155,13 +163,19 @@ Done when:
 
 ### Phase 4: Node And Connection Geometry
 
-Status: deferred for now.
+Status: addressed by `Drawing/Geometry/Nodes`.
 
 Target additions:
 
 - work points
 - node reference geometry
 - later contact-aware assembly helpers
+
+Current note:
+
+- node/work-point and connection-aware layers now live in
+  `Drawing/Geometry/Nodes`
+- assembly-specific contact helpers are still open for a later stage
 
 ## Acceptance Criteria
 
@@ -176,6 +190,6 @@ The roadmap is considered successfully implemented when:
 
 The first implementation step after this roadmap should be:
 
-1. introduce `Node/WorkPoint` geometry without contacts first
-2. build node references from main part, bolt groups and assembly extremes
-3. only after that add connection-aware and contact-aware semantics
+1. keep assembly geometry aligned with node and connection consumers
+2. add richer assembly-local anchors only if a downstream consumer needs them
+3. later add contact-aware assembly helpers when contacts are introduced

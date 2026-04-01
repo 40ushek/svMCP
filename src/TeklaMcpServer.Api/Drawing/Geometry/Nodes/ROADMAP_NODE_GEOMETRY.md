@@ -60,6 +60,12 @@ Current relevant sources:
 This means the first useful node layer is a derived aggregate geometry layer,
 not a raw Tekla runtime reader.
 
+Current implemented state in this module:
+
+- contact-free node geometry is implemented
+- work-point semantics are implemented
+- connection-aware nodes without contacts are implemented
+
 ## Canonical Domain Direction
 
 The target model should represent nodes in two stages.
@@ -99,6 +105,18 @@ The later stage should expose:
 - `GetAssemblyNodesResult`
 - `IDrawingNodeGeometryApi`
 - `TeklaDrawingNodeGeometryApi`
+- `DrawingWorkPointKind`
+- `DrawingWorkPointInfo`
+- `NodeWorkPointSet`
+- `GetAssemblyWorkPointsResult`
+- `IDrawingNodeWorkPointApi`
+- `TeklaDrawingNodeWorkPointApi`
+- `DrawingConnectionParticipantRole`
+- `ConnectionNodeParticipantInfo`
+- `ConnectionNodeGeometry`
+- `GetAssemblyConnectionNodesResult`
+- `IDrawingConnectionNodeApi`
+- `TeklaDrawingConnectionNodeApi`
 
 ## Phases
 
@@ -145,6 +163,14 @@ Target additions:
 - node reference line with fallback to extreme span
 - stable anchors to main part and assembly
 
+### Remaining Major Topics
+
+The next unimplemented layers on top of `Nodes` are:
+
+- contact-aware refinement of node geometry
+- exact connection-local side/face semantics
+- optional node-local contour helpers if future consumers need them
+
 ## Acceptance Criteria
 
 The roadmap is considered successfully implemented when:
@@ -153,3 +179,13 @@ The roadmap is considered successfully implemented when:
 - one API call can expose reusable node geometry for one assembly in one view
 - node geometry reuses assemblies and bolts instead of duplicating their logic
 - later contact-aware semantics can be added without redesign
+
+## Near-Term Next Step
+
+The first implementation step after this roadmap should be:
+
+1. keep refining connection-aware nodes only when a downstream consumer needs
+   more participant semantics
+2. add contacts as the next major missing layer
+3. after contacts, refine work points and connection-local anchors using
+   real contact geometry

@@ -75,6 +75,17 @@ Current sources already available:
 This means `PartPoints` is no longer the first layer. The first layer is raw
 geometry, and points are a derived layer built on top of it.
 
+Current implemented state in the wider geometry stack:
+
+- `Parts`
+  - raw geometry and derived part points are implemented
+- `Bolts`
+  - raw and derived bolt geometry are implemented
+- `Assemblies`
+  - raw and derived assembly geometry are implemented
+- `Nodes`
+  - contact-free nodes, work points and connection-aware nodes are implemented
+
 ## Canonical Domain Direction
 
 The target model should represent a part in two explicit layers:
@@ -414,6 +425,6 @@ The first implementation step after this roadmap should be:
 1. keep extending raw geometry contracts where needed
 2. add projected outline helpers via polygon union
 3. align part points with assembly and bolt point taxonomies where useful
-4. later add contact-aware and node-aware geometry on top of the same base
+4. later add contact-aware geometry on top of the same base
 
 Contacts stay after those steps.

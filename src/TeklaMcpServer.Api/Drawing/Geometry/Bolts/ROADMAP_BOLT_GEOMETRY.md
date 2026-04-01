@@ -63,6 +63,15 @@ Current relevant sources:
 This means the first useful library layer is a raw bolt group geometry layer,
 not a dimension-driven interpretation of bolts.
 
+Current implemented state in the wider geometry stack:
+
+- `Bolts`
+  - raw bolt geometry and derived bolt points are implemented
+- `Assemblies`
+  - bolt groups are reused in aggregate assembly geometry
+- `Nodes`
+  - bolt groups are reused for work points and connection-aware nodes
+
 ## Canonical Domain Direction
 
 The target model should represent bolts in two layers.
@@ -180,12 +189,18 @@ Done when:
 
 ### Phase 4: Connection-Aware Geometry
 
-Status: deferred for now.
+Status: partially addressed outside this module.
 
 Target additions:
 
 - bolt-to-part geometric pairing
 - later contact-aware connection semantics
+
+Current note:
+
+- bolt-to-part pairing is currently consumed in `Drawing/Geometry/Nodes`
+- a richer bolt-local connection layer is still open here if bolt-specific
+  pairing rules are needed independently from nodes
 
 ## Acceptance Criteria
 
@@ -202,4 +217,4 @@ The first implementation step after this roadmap should be:
 
 1. add bolt-group axis/reference-line semantics beyond raw endpoints
 2. align bolt-derived points with assembly and node-level consumers
-3. later add connection-aware pairing and contact-aware bolt semantics
+3. later add bolt-local contact-aware semantics when contacts are introduced
