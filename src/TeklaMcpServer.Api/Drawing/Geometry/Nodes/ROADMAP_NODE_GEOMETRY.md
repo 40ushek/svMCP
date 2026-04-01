@@ -128,6 +128,17 @@ Target additions:
 - stronger work-point semantics
 - later contact-aware refinement
 
+### Phase 2.5: Work-Point Semantics
+
+Status: done in first form.
+
+Target additions:
+
+- primary work point
+- secondary work point
+- node reference line with fallback to extreme span
+- stable anchors to main part and assembly
+
 ## Acceptance Criteria
 
 The roadmap is considered successfully implemented when:
