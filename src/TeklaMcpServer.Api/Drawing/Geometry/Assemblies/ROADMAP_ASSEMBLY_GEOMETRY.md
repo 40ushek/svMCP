@@ -130,13 +130,15 @@ Minimum output:
 
 ### Phase 3: Derived Assembly Geometry
 
-Status: planned.
+Status: done in first form.
 
 Target additions:
 
 - assembly center
 - farthest-point pair for the whole assembly
 - main-part-driven reference points
+- member part centers
+- bolt-driven points
 
 ### Phase 4: Node And Connection Geometry
 
