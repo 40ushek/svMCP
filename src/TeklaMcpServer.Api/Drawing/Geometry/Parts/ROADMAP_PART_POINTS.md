@@ -18,7 +18,7 @@ Not in scope for the current stage:
 
 - MCP transport design
 - bridge command design
-- contact / bolt / connection geometry
+- contact / connection geometry
 - dimension or mark behavior
 
 ## Architectural Decision
@@ -42,6 +42,8 @@ Module split should stay explicit:
   - raw geometry and shared geometric helpers
 - `Drawing/Geometry/Parts`
   - part-specific geometry and derived geometry
+- `Drawing/Geometry/Bolts`
+  - bolt-specific geometry and bolt-to-part relations
 
 ## Current Base In Code
 
@@ -360,7 +362,6 @@ Contacts stay explicitly out of the current stage.
 Future target additions:
 
 - `ContactFace`
-- bolt-related geometry
 - later assembly/node-aware geometry
 
 Done when:
