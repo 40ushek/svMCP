@@ -89,6 +89,7 @@ The derived layer should expose:
 
 - semantic points
 - hull / outline candidates
+- exact projected outline later
 - extreme points
 - later contact-related or connection-related geometry
 
@@ -139,6 +140,7 @@ These contracts should be sufficient to:
 
 - inspect the real solid shape of a part in the current view plane
 - derive hull/extreme points without re-reading Tekla runtime objects
+- later build projected contour/outline helpers
 - later compute contacts from already extracted geometry
 
 ## Point Source Taxonomy
@@ -177,6 +179,7 @@ The roadmap should explicitly support these scenarios.
 - Read a part solid in drawing/view-local coordinates.
 - Traverse faces and loops without re-querying Tekla per downstream scenario.
 - Reuse the same extracted geometry to compute hull and extreme points.
+- Later project face loops into 2D and build an exact outline from polygon union.
 - Build a semantic point layer later on top of the same geometry.
 
 ## Design Principles
@@ -324,7 +327,31 @@ Done when:
 - derived points are computed from already extracted geometry
 - downstream consumers no longer need ad hoc hull/extreme calculations
 
-### Phase 5: Contacts And Connection Geometry
+### Phase 5: Outline And Contour Geometry
+
+Status: deferred for now.
+
+The exact contour of a part should not be modeled as a plain convex hull.
+
+Target direction:
+
+- project face loops into the drawing/view plane
+- build projected face polygons
+- run polygon union over those projected polygons
+- expose outer contour and inner holes separately
+
+Important rule:
+
+- `convex hull` is acceptable as a coarse helper or fallback
+- `convex hull` is not the target implementation for exact part contour
+
+Done when:
+
+- the library can expose a projected outer contour of the part
+- inner holes/loops can be represented separately when needed
+- outline logic is built from raw solid topology rather than bbox shortcuts
+
+### Phase 6: Contacts And Connection Geometry
 
 Status: planned.
 
@@ -370,6 +397,7 @@ The roadmap is considered successfully implemented when:
 - `Drawing/Geometry/Parts` is the single obvious home for part geometry
 - raw part geometry is available without duplicating geometry readers
 - raw solid topology is available as a library contract
+- exact outline can later be added without redesigning the raw geometry layer
 - derived points can be built on top of the same geometry model
 - future contact geometry fits into the same model without redesign
 
@@ -378,7 +406,8 @@ The roadmap is considered successfully implemented when:
 The first implementation step after this roadmap should be:
 
 1. keep extending raw geometry contracts where needed
-2. add outline / hull helpers on top of raw solid geometry
-3. only after that continue the derived point layer
+2. add hull helpers on top of raw solid geometry
+3. later add projected outline helpers via polygon union
+4. only after that continue the derived point layer
 
 Contacts stay after those steps.
