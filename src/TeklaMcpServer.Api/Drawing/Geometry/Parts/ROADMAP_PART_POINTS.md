@@ -1,19 +1,25 @@
-# Roadmap Part Points
+# Roadmap Part Geometry
 
 ## Goal
 
-Introduce a canonical semantic point layer for drawing parts under
+Introduce a canonical geometry library for drawing parts under
 `Drawing/Geometry/Parts`.
 
-This layer should answer not only "what raw geometry does the part have in the
-view", but also "which semantic points of the part are useful for dimensions,
-marks and section-related logic".
+The primary goal is to expose raw part geometry in drawing/view-local
+coordinates first, and only then derive semantic points from it.
 
-Target use cases:
+Current priority order:
 
-- stable point sources for dimension creation
-- reusable anchors for mark placement
-- canonical extreme/reference points for diagnostics and future section logic
+- raw solid geometry of a part in the drawing view
+- face / loop / vertex topology in view-local coordinates
+- reusable derived points built on top of that geometry
+
+Not in scope for the current stage:
+
+- MCP transport design
+- bridge command design
+- contact / bolt / connection geometry
+- dimension or mark behavior
 
 ## Architectural Decision
 
@@ -24,9 +30,9 @@ The canonical location for this work is:
 Reasoning:
 
 - this is geometry extraction and derivation, not `Parts` query/info transport
-- the result is broader than `Dimensions`; it should be reusable by
-  `Dimensions`, `Marks` and later `Sections`
-- this keeps raw part metadata separated from derived geometric semantics
+- raw geometry should exist independently from downstream point or dimension
+  consumers
+- this keeps low-level geometry separate from higher-level semantic point logic
 
 Module split should stay explicit:
 
@@ -35,7 +41,7 @@ Module split should stay explicit:
 - `Drawing/Geometry`
   - raw geometry and shared geometric helpers
 - `Drawing/Geometry/Parts`
-  - part-specific semantic point extraction
+  - part-specific geometry and derived geometry
 
 ## Current Base In Code
 
@@ -48,21 +54,46 @@ Current sources already available:
   - axis start/end
   - coordinate system origin
   - bbox min/max
-- `TeklaDrawingDimensionsApi`
-  - `PointList`-driven dimension workflows
-  - convex hull / farthest-point selection patterns
+- `TeklaDrawingPartSolidGeometryApi`
+  - raw solid geometry in drawing/view-local coordinates
+  - faces
+  - loops
+  - vertices
+- shared geometry helpers
+  - convex hull
+  - farthest-point pair
 - `Drawing/Parts`
   - part identity and user-facing read DTOs
 
-This means the first version of `PartPoints` should be an adapter/derivation
-layer over existing geometry, not a competing geometry API.
+This means `PartPoints` is no longer the first layer. The first layer is raw
+geometry, and points are a derived layer built on top of it.
 
 ## Canonical Domain Direction
 
-The target model should represent a part as a set of semantic point sources.
+The target model should represent a part in two explicit layers:
 
-The point layer should not be limited to one geometry origin. It should be able
-to represent several source families used by drawing workflows:
+### Layer 1: Raw Geometry
+
+The raw geometry layer should expose:
+
+- part axis / coordinate system
+- solid bbox
+- solid vertices
+- face list
+- loop list inside each face
+- stable vertex indexing for topology traversal
+
+### Layer 2: Derived Geometry
+
+The derived layer should expose:
+
+- semantic points
+- hull / outline candidates
+- extreme points
+- later contact-related or connection-related geometry
+
+The point layer should not be limited to one geometry origin. It should still
+be able to represent several source families used by drawing workflows:
 
 - `Axis`
 - `Part`
@@ -93,92 +124,95 @@ The next semantic tier should include:
 Not every kind has to be available in the first implementation, but the model
 should be designed so these kinds fit naturally without redesign.
 
+## Raw Geometry First
+
+The canonical source of truth must be raw geometry, not pre-baked point bags.
+
+At the current stage the most important geometry contracts are:
+
+- `PartSolidGeometry`
+- `PartFaceGeometry`
+- `PartLoopGeometry`
+- `PartVertexGeometry`
+
+These contracts should be sufficient to:
+
+- inspect the real solid shape of a part in the current view plane
+- derive hull/extreme points without re-reading Tekla runtime objects
+- later compute contacts from already extracted geometry
+
 ## Point Source Taxonomy
 
-The module should make point provenance explicit, because dimensions and marks
-often need not just "a point", but "a point from a specific geometric source".
+Semantic point provenance still matters, but it is secondary to the raw
+geometry layer.
 
-The intended source taxonomy is:
+The intended source taxonomy for the derived layer is:
 
 - `Axis`
-  - axis start/end
-  - axis midpoint
-  - axis-driven directional references
 - `Part`
-  - bbox corners
-  - bbox center
-  - left/right/top/bottom points in view-local coordinates
-  - extreme points derived from visible part geometry
-- `Assembly`
-  - main-part-related reference points
-  - assembly-level extrema used for overall control dimensions
-- `Node`
-  - working/reference points representing important local attachment geometry
-- `Connection`
-  - bolt positions
-  - contact-face-related points
-  - points derived from connected part relations
+- later `Assembly`
+- later `Node`
+- later `Connection`
 
-This taxonomy should appear in the API either directly in point metadata or as
-an explicit source-kind field, so consumers can reason about the origin of each
-point without re-deriving it.
+This taxonomy belongs to derived geometry, not the raw solid contracts.
 
 ## Geometry Rules To Preserve
 
 The module should preserve a few core geometry rules from practical drawing
 workflows.
 
-- The canonical output is a reusable point set, not a one-off helper return.
+- The canonical output is reusable geometry data, not a one-off helper return.
 - Point coordinates should be emitted in view-local coordinates.
-- The same part may expose several parallel semantic point families.
-- The same semantic kind may have multiple instances when geometry requires it.
-- Dimension creation should be able to consume an ordered point list directly.
-- Connection-aware points must not be collapsed into bbox-only fallbacks when
-  real connection geometry is available.
-- Contact-like points must remain semantically distinct from generic extreme
-  points even if coordinates coincide in some cases.
-- Assembly/control dimensions should be able to consume points whose semantics
-  are broader than a single part bbox.
+- Solid topology should be reusable without touching transport layers.
+- Derived points must be computed from extracted geometry, not directly from
+  Tekla runtime calls in every consumer.
+- Contacts are deferred, but when added later they must be computed from
+  already extracted geometry.
+- Derived points must not replace the raw solid geometry layer.
 
 ## Practical Consumer Scenarios
 
 The roadmap should explicitly support these scenarios.
 
-- Build a dimension from an ordered `PointList` collected from semantic point
-  sources rather than from ad hoc geometry reads inside the dimension command.
-- Choose between axis-based, part-based, assembly-based and connection-based
-  points depending on the requested dimension intent.
-- Use the same point vocabulary for mark anchors and future section helpers.
-- Support control/diagonal dimensions driven by extreme points of visible
-  geometry.
-- Support bolt-aware dimensions where the relevant points come from actual
-  connection geometry rather than only from part bounds.
+- Read a part solid in drawing/view-local coordinates.
+- Traverse faces and loops without re-querying Tekla per downstream scenario.
+- Reuse the same extracted geometry to compute hull and extreme points.
+- Build a semantic point layer later on top of the same geometry.
 
 ## Design Principles
 
 - Keep view-local coordinates canonical.
 - Reuse `TeklaDrawingPartGeometryApi` as the raw source of truth.
 - Separate raw geometry from derived semantic points.
-- Keep point extraction independent from dimension placement policy.
-- Keep point extraction independent from mark placement policy.
-- Prefer explicit point kinds over anonymous point bags.
-- Prefer stable and explainable derivation rules over heuristic-only output.
+- Keep the current stage independent from MCP and bridge transport concerns.
+- Prefer stable topology contracts over ad hoc lists of doubles.
+- Prefer explicit geometry models over anonymous point bags.
 
 ## Explicit Non-Goals
 
 This module should not become:
 
 - a replacement for `Drawing/Parts`
-- a general-purpose solid analysis engine
 - a dimension arrangement module
 - a mark placement module
+- an MCP tool surface at the current stage
 
-Those modules may consume part points, but the point layer itself should stay
-focused on extraction and normalization.
+Those modules may consume part geometry later, but the current stage should
+stay focused on extraction and normalization.
 
 ## Proposed Types
 
-Initial target surface:
+Current raw geometry surface:
+
+- `PartSolidGeometry`
+- `PartFaceGeometry`
+- `PartLoopGeometry`
+- `PartVertexGeometry`
+- `PartSolidGeometryInViewResult`
+- `IDrawingPartSolidGeometryApi`
+- `TeklaDrawingPartSolidGeometryApi`
+
+Derived geometry surface after that:
 
 - `DrawingPartPointKind`
 - `DrawingPartPointInfo`
@@ -187,6 +221,23 @@ Initial target surface:
 - `TeklaDrawingPartPointApi`
 
 Expected responsibilities:
+
+- `PartVertexGeometry`
+  - one indexed solid vertex in view-local coordinates
+- `PartLoopGeometry`
+  - one face loop as an ordered list of vertex indexes
+- `PartFaceGeometry`
+  - one solid face with normal and loops
+- `PartSolidGeometry`
+  - full part solid geometry in one view context
+- `PartSolidGeometryInViewResult`
+  - read contract for one part in one view
+- `IDrawingPartSolidGeometryApi`
+  - stable raw-geometry boundary
+- `TeklaDrawingPartSolidGeometryApi`
+  - Tekla-backed raw solid extraction
+
+Derived layer responsibilities:
 
 - `DrawingPartPointKind`
   - domain vocabulary for semantic point types
@@ -203,7 +254,7 @@ Expected responsibilities:
 
 ### Phase 1: Folder And Domain Boundary
 
-Status: planned.
+Status: done.
 
 Done when:
 
@@ -211,89 +262,85 @@ Done when:
 - roadmap and naming make the module boundary explicit
 - consumers can reference a stable intended location for future work
 
-### Phase 2: Raw Semantic Points From Existing Geometry
+### Phase 2: Raw Part Geometry In View
 
-Status: planned.
+Status: done in first form.
 
-Implement the first usable point API on top of existing geometry.
+Implement the first reusable raw geometry API in view-local coordinates.
 
 Minimum output:
 
+- `StartPoint`
+- `EndPoint`
+- `CoordinateSystemOrigin`
+- `AxisX`
+- `AxisY`
 - `AxisStart`
 - `AxisEnd`
-- `Origin`
-- `Center`
 - `BboxMin`
 - `BboxMax`
+- `SolidVertices`
 
 Done when:
 
-- one API call can return the canonical basic points for a drawing part
+- one API call can return canonical raw geometry for a drawing part
 - all returned coordinates are in view-local coordinates
-- every returned point carries enough source semantics to distinguish
-  axis-derived and part-derived points
 - no duplication of raw geometry reading logic is introduced
 
-### Phase 3: Derived Edge And Extreme Points
+### Phase 3: Raw Solid Topology
 
-Status: planned.
+Status: done in first form.
 
-Extend the point layer with direction-aware or bbox-derived semantic points.
+Add reusable solid topology contracts on top of the same view-local solid read.
 
 Target additions:
 
-- `Left`
-- `Right`
-- `Top`
-- `Bottom`
-- `ExtremePoints`
+- `PartSolidGeometry`
+- `PartFaceGeometry`
+- `PartLoopGeometry`
+- `PartVertexGeometry`
 
 Done when:
 
-- dimension tools can consume canonical directional/extreme points without
-  recomputing them ad hoc
-- control-dimension scenarios can consume ordered extreme-point candidates
-- derivation rules are documented and predictable
+- faces and loops can be traversed without new transport concerns
+- topology is stable enough for later outline/hull/contact logic
 
-### Phase 4: Connection-Aware Points
+### Phase 4: Derived Point Layer
 
 Status: planned.
 
-Introduce connection-related point sources where Tekla drawing/runtime data
-allows it.
+Introduce semantic points as a derived layer over raw geometry.
 
 Target additions:
 
-- `BoltPoints`
+- `AxisMidpoint`
+- bbox corners
+- side midpoints
+- hull vertices
+- extreme points
+
+Done when:
+
+- derived points are computed from already extracted geometry
+- downstream consumers no longer need ad hoc hull/extreme calculations
+
+### Phase 5: Contacts And Connection Geometry
+
+Status: planned.
+
+Contacts stay explicitly out of the current stage.
+
+Future target additions:
+
 - `ContactFace`
-- possible assembly/main-part reference points
+- bolt-related geometry
+- later assembly/node-aware geometry
 
 Done when:
 
-- the module can support bolt-aware dimension scenarios
-- point provenance distinguishes connection-driven geometry from generic part
-  geometry
-- connection-aware points are exposed without mixing them into unrelated DTOs
-
-### Phase 5: Consumer Integration
-
-Status: planned.
-
-Adopt the new point layer in modules that currently derive points ad hoc.
-
-Priority order:
-
-- `Dimensions`
-- `Marks`
-- later `Views` / section-related helpers where justified
-
-Done when:
-
-- dimension creation can consume canonical part point sources
-- dimension commands can choose point families intentionally:
-  `Axis` / `Part` / `Assembly` / `Node` / `Connection`
-- mark placement can reuse the same point vocabulary
-- point derivation logic is no longer duplicated across consumers
+- contacts are computed from extracted part geometry rather than from ad hoc
+  runtime lookups
+- connection-aware geometry is clearly separated from raw solid topology
 
 ## Validation
 
@@ -301,43 +348,37 @@ Three levels of validation are needed.
 
 ### Unit-Level
 
-- kind mapping is stable
-- source-kind mapping is stable
-- center/bbox/axis point derivation is deterministic
+- face/loop/vertex indexing is stable
+- bbox/axis/solid extraction is deterministic
 - missing geometry degrades predictably
 
 ### Geometry-Level
 
-- returned points stay in view-local coordinates
-- left/right/top/bottom semantics are consistent for rotated drawing views
-- extreme point selection is stable under repeated reads
-- connection-aware points remain distinct from bbox-only fallback points
+- returned geometry stays in view-local coordinates
+- loop vertex references are valid
+- hull/extreme derivation is stable under repeated reads
 
 ### Live Tekla Validation
 
-- basic points match visible drawing geometry
-- dimension creation from returned points behaves as expected
-- axis-based and bolt-aware point sets produce expected dimension inputs
-- mark anchors derived from the same points are visually sensible
+- raw solid faces and loops match visible part geometry
+- solid vertices are reusable for later derived-point calculations
 
 ## Acceptance Criteria
 
 The roadmap is considered successfully implemented when:
 
-- `Drawing/Geometry/Parts` is the single obvious home for part semantic points
-- basic part points are available without duplicating geometry readers
-- point provenance is explicit enough for consumers to distinguish
-  `Axis` / `Part` / `Assembly` / `Node` / `Connection`
-- dimensions can consume canonical part points
-- marks can consume the same point vocabulary
-- future bolt/contact-aware scenarios fit into the same model without redesign
+- `Drawing/Geometry/Parts` is the single obvious home for part geometry
+- raw part geometry is available without duplicating geometry readers
+- raw solid topology is available as a library contract
+- derived points can be built on top of the same geometry model
+- future contact geometry fits into the same model without redesign
 
 ## Near-Term Next Step
 
 The first implementation step after this roadmap should be:
 
-1. add the target types
-2. implement basic point extraction over `TeklaDrawingPartGeometryApi`
-3. wire one dimension scenario to the new point API
+1. keep extending raw geometry contracts where needed
+2. add outline / hull helpers on top of raw solid geometry
+3. only after that continue the derived point layer
 
-Only after that should bolt/contact-aware point logic be added.
+Contacts stay after those steps.
