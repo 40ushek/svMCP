@@ -61,6 +61,11 @@ Current sources already available:
   - faces
   - loops
   - vertices
+- `TeklaDrawingPartPointApi`
+  - derived characteristic points in drawing/view-local coordinates
+  - bbox corners and side midpoints
+  - hull vertices
+  - farthest-point pair / extreme points
 - shared geometry helpers
   - convex hull
   - farthest-point pair
@@ -312,7 +317,7 @@ Done when:
 
 ### Phase 4: Derived Point Layer
 
-Status: planned.
+Status: done in first form.
 
 Introduce semantic points as a derived layer over raw geometry.
 
@@ -407,8 +412,8 @@ The roadmap is considered successfully implemented when:
 The first implementation step after this roadmap should be:
 
 1. keep extending raw geometry contracts where needed
-2. add hull helpers on top of raw solid geometry
-3. later add projected outline helpers via polygon union
-4. only after that continue the derived point layer
+2. add projected outline helpers via polygon union
+3. align part points with assembly and bolt point taxonomies where useful
+4. later add contact-aware and node-aware geometry on top of the same base
 
 Contacts stay after those steps.

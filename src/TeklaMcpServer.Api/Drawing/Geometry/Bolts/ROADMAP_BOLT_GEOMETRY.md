@@ -14,6 +14,7 @@ Current priority order:
 - raw bolt positions in view-local coordinates
 - bolt group relation data to connected parts
 - reusable bolt group bbox and anchor points
+- derived bolt reference and extreme points
 
 Not in scope for the current stage:
 
@@ -100,6 +101,11 @@ At the current stage the most important geometry contracts are:
 - `PartBoltGeometryInViewResult`
 - `IDrawingBoltGeometryApi`
 - `TeklaDrawingBoltGeometryApi`
+- `DrawingBoltPointKind`
+- `DrawingBoltPointInfo`
+- `GetBoltGroupPointsResult`
+- `IDrawingBoltPointApi`
+- `TeklaDrawingBoltPointApi`
 
 These contracts should be sufficient to:
 
@@ -166,6 +172,12 @@ Target additions:
 - stable bolt-driven anchor points
 - hull and extreme points
 
+Done when:
+
+- one API call can expose reusable derived bolt points for one bolt group
+- one API call can expose derived bolt points for all bolt groups of one part
+- derived points are computed from the raw bolt geometry layer
+
 ### Phase 4: Connection-Aware Geometry
 
 Status: deferred for now.
@@ -183,3 +195,11 @@ The roadmap is considered successfully implemented when:
 - raw bolt geometry is available without MCP or bridge transport concerns
 - bolt-to-part relations are reusable from one stable library contract
 - later bolt-driven or connection-aware geometry can be added without redesign
+
+## Near-Term Next Step
+
+The first implementation step after this roadmap should be:
+
+1. add bolt-group axis/reference-line semantics beyond raw endpoints
+2. align bolt-derived points with assembly and node-level consumers
+3. later add connection-aware pairing and contact-aware bolt semantics

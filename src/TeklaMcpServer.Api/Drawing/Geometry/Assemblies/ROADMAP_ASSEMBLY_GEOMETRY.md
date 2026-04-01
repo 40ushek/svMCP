@@ -14,6 +14,7 @@ Current priority order:
 - raw member solids in view-local coordinates
 - assembly-level bbox and member list
 - connected bolt groups reused from the bolt geometry layer
+- derived assembly points and extreme geometry
 
 Not in scope for the current stage:
 
@@ -109,6 +110,11 @@ The derived layer should later expose:
 - `AssemblyGeometryInViewResult`
 - `IDrawingAssemblyGeometryApi`
 - `TeklaDrawingAssemblyGeometryApi`
+- `DrawingAssemblyPointKind`
+- `DrawingAssemblyPointInfo`
+- `GetAssemblyPointsResult`
+- `IDrawingAssemblyPointApi`
+- `TeklaDrawingAssemblyPointApi`
 
 ## Phases
 
@@ -140,6 +146,13 @@ Target additions:
 - member part centers
 - bolt-driven points
 
+Done when:
+
+- assembly bbox and aggregate member geometry can be turned into reusable
+  assembly points
+- main-part and bolt-driven references are available from one stable API
+- hull/extreme points can be computed for the whole assembly
+
 ### Phase 4: Node And Connection Geometry
 
 Status: deferred for now.
@@ -158,3 +171,11 @@ The roadmap is considered successfully implemented when:
 - one API call can expose a reusable aggregate geometry of the assembly
 - member part solids and bolt groups are reused from stable lower-level APIs
 - later node or connection logic can be added without redesign
+
+## Near-Term Next Step
+
+The first implementation step after this roadmap should be:
+
+1. introduce `Node/WorkPoint` geometry without contacts first
+2. build node references from main part, bolt groups and assembly extremes
+3. only after that add connection-aware and contact-aware semantics
