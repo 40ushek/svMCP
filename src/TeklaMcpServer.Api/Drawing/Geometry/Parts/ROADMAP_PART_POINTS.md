@@ -61,6 +61,15 @@ layer over existing geometry, not a competing geometry API.
 
 The target model should represent a part as a set of semantic point sources.
 
+The point layer should not be limited to one geometry origin. It should be able
+to represent several source families used by drawing workflows:
+
+- `Axis`
+- `Part`
+- `Assembly`
+- `Node`
+- `Connection`
+
 First-class point kinds should include:
 
 - `AxisStart`
@@ -83,6 +92,67 @@ The next semantic tier should include:
 
 Not every kind has to be available in the first implementation, but the model
 should be designed so these kinds fit naturally without redesign.
+
+## Point Source Taxonomy
+
+The module should make point provenance explicit, because dimensions and marks
+often need not just "a point", but "a point from a specific geometric source".
+
+The intended source taxonomy is:
+
+- `Axis`
+  - axis start/end
+  - axis midpoint
+  - axis-driven directional references
+- `Part`
+  - bbox corners
+  - bbox center
+  - left/right/top/bottom points in view-local coordinates
+  - extreme points derived from visible part geometry
+- `Assembly`
+  - main-part-related reference points
+  - assembly-level extrema used for overall control dimensions
+- `Node`
+  - working/reference points representing important local attachment geometry
+- `Connection`
+  - bolt positions
+  - contact-face-related points
+  - points derived from connected part relations
+
+This taxonomy should appear in the API either directly in point metadata or as
+an explicit source-kind field, so consumers can reason about the origin of each
+point without re-deriving it.
+
+## Geometry Rules To Preserve
+
+The module should preserve a few core geometry rules from practical drawing
+workflows.
+
+- The canonical output is a reusable point set, not a one-off helper return.
+- Point coordinates should be emitted in view-local coordinates.
+- The same part may expose several parallel semantic point families.
+- The same semantic kind may have multiple instances when geometry requires it.
+- Dimension creation should be able to consume an ordered point list directly.
+- Connection-aware points must not be collapsed into bbox-only fallbacks when
+  real connection geometry is available.
+- Contact-like points must remain semantically distinct from generic extreme
+  points even if coordinates coincide in some cases.
+- Assembly/control dimensions should be able to consume points whose semantics
+  are broader than a single part bbox.
+
+## Practical Consumer Scenarios
+
+The roadmap should explicitly support these scenarios.
+
+- Build a dimension from an ordered `PointList` collected from semantic point
+  sources rather than from ad hoc geometry reads inside the dimension command.
+- Choose between axis-based, part-based, assembly-based and connection-based
+  points depending on the requested dimension intent.
+- Use the same point vocabulary for mark anchors and future section helpers.
+- Support control/diagonal dimensions driven by extreme points of visible
+  geometry.
+- Support bolt-aware dimensions where the relevant points come from actual
+  connection geometry rather than only from part bounds.
 
 ## Design Principles
 
@@ -160,6 +230,8 @@ Done when:
 
 - one API call can return the canonical basic points for a drawing part
 - all returned coordinates are in view-local coordinates
+- every returned point carries enough source semantics to distinguish
+  axis-derived and part-derived points
 - no duplication of raw geometry reading logic is introduced
 
 ### Phase 3: Derived Edge And Extreme Points
@@ -180,6 +252,7 @@ Done when:
 
 - dimension tools can consume canonical directional/extreme points without
   recomputing them ad hoc
+- control-dimension scenarios can consume ordered extreme-point candidates
 - derivation rules are documented and predictable
 
 ### Phase 4: Connection-Aware Points
@@ -198,6 +271,8 @@ Target additions:
 Done when:
 
 - the module can support bolt-aware dimension scenarios
+- point provenance distinguishes connection-driven geometry from generic part
+  geometry
 - connection-aware points are exposed without mixing them into unrelated DTOs
 
 ### Phase 5: Consumer Integration
@@ -215,6 +290,8 @@ Priority order:
 Done when:
 
 - dimension creation can consume canonical part point sources
+- dimension commands can choose point families intentionally:
+  `Axis` / `Part` / `Assembly` / `Node` / `Connection`
 - mark placement can reuse the same point vocabulary
 - point derivation logic is no longer duplicated across consumers
 
@@ -225,6 +302,7 @@ Three levels of validation are needed.
 ### Unit-Level
 
 - kind mapping is stable
+- source-kind mapping is stable
 - center/bbox/axis point derivation is deterministic
 - missing geometry degrades predictably
 
@@ -233,11 +311,13 @@ Three levels of validation are needed.
 - returned points stay in view-local coordinates
 - left/right/top/bottom semantics are consistent for rotated drawing views
 - extreme point selection is stable under repeated reads
+- connection-aware points remain distinct from bbox-only fallback points
 
 ### Live Tekla Validation
 
 - basic points match visible drawing geometry
 - dimension creation from returned points behaves as expected
+- axis-based and bolt-aware point sets produce expected dimension inputs
 - mark anchors derived from the same points are visually sensible
 
 ## Acceptance Criteria
@@ -246,6 +326,8 @@ The roadmap is considered successfully implemented when:
 
 - `Drawing/Geometry/Parts` is the single obvious home for part semantic points
 - basic part points are available without duplicating geometry readers
+- point provenance is explicit enough for consumers to distinguish
+  `Axis` / `Part` / `Assembly` / `Node` / `Connection`
 - dimensions can consume canonical part points
 - marks can consume the same point vocabulary
 - future bolt/contact-aware scenarios fit into the same model without redesign

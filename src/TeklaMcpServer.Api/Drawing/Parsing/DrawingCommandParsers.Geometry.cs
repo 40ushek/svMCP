@@ -20,6 +20,22 @@ public static partial class DrawingCommandParsers
         });
     }
 
+    public static PartPointsInViewParseResult ParsePartPointsInViewRequest(string[] args)
+    {
+        if (args.Length < 3
+            || !int.TryParse(args[1], out var viewId)
+            || !int.TryParse(args[2], out var modelId))
+        {
+            return PartPointsInViewParseResult.Fail("Usage: get_part_points_in_view <viewId> <modelId>");
+        }
+
+        return PartPointsInViewParseResult.Success(new PartPointsInViewRequest
+        {
+            ViewId = viewId,
+            ModelId = modelId
+        });
+    }
+
     public static GridAxesParseResult ParseGridAxesRequest(string[] args)
     {
         if (args.Length < 2 || !int.TryParse(args[1], out var viewId))

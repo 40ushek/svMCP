@@ -14,6 +14,8 @@ internal sealed partial class DrawingCommandHandler
     {
         TeklaDrawingPartGeometryApi? partGeometryApi = null;
         TeklaDrawingPartGeometryApi GetPartGeometryApi() => partGeometryApi ??= new TeklaDrawingPartGeometryApi(_model);
+        TeklaDrawingPartPointApi? partPointApi = null;
+        TeklaDrawingPartPointApi GetPartPointApi() => partPointApi ??= new TeklaDrawingPartPointApi(_model, GetPartGeometryApi());
         TeklaDrawingGridApi? gridApi = null;
         TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
         TeklaDrawingPartsApi? partsApi = null;
@@ -30,6 +32,12 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_all_parts_geometry_in_view":
                 return HandleGetAllPartsGeometryInView(GetPartGeometryApi(), args);
+
+            case "get_part_points_in_view":
+                return HandleGetPartPointsInView(GetPartPointApi(), args);
+
+            case "get_all_part_points_in_view":
+                return HandleGetAllPartPointsInView(GetPartPointApi(), args);
 
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
@@ -91,6 +99,39 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleGetAllPartPointsInView(TeklaDrawingPartPointApi api, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_all_part_points_in_view requires viewId argument");
+            return true;
+        }
+
+        var results = api.GetAllPartPointsInView(viewId);
+        WriteJson(new
+        {
+            viewId,
+            total = results.Count,
+            parts = results.Select(r => new
+            {
+                modelId = r.ModelId,
+                type = r.Type,
+                name = r.Name,
+                partPos = r.PartPos,
+                profile = r.Profile,
+                material = r.Material,
+                points = r.Points.Select(p => new
+                {
+                    kind = p.Kind.ToString(),
+                    sourceKind = p.SourceKind.ToString(),
+                    index = p.Index,
+                    point = p.Point
+                })
+            })
+        });
+        return true;
+    }
+
     private bool HandleGetPartGeometryInView(TeklaDrawingPartGeometryApi api, string[] args)
     {
         var parseResult = DrawingCommandParsers.ParsePartGeometryInViewRequest(args);
@@ -104,6 +145,22 @@ internal sealed partial class DrawingCommandHandler
             parseResult.Request.ViewId,
             parseResult.Request.ModelId);
         WritePartGeometryInViewResult(result);
+        return true;
+    }
+
+    private bool HandleGetPartPointsInView(TeklaDrawingPartPointApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParsePartPointsInViewRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.GetPartPointsInView(
+            parseResult.Request.ViewId,
+            parseResult.Request.ModelId);
+        WritePartPointsInViewResult(result);
         return true;
     }
 
@@ -561,6 +618,29 @@ internal sealed partial class DrawingCommandHandler
             axisY = result.AxisY,
             bboxMin = result.BboxMin,
             bboxMax = result.BboxMax,
+            error = result.Error
+        });
+    }
+
+    private void WritePartPointsInViewResult(GetPartPointsResult result)
+    {
+        WriteJson(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            modelId = result.ModelId,
+            type = result.Type,
+            name = result.Name,
+            partPos = result.PartPos,
+            profile = result.Profile,
+            material = result.Material,
+            points = result.Points.Select(p => new
+            {
+                kind = p.Kind.ToString(),
+                sourceKind = p.SourceKind.ToString(),
+                index = p.Index,
+                point = p.Point
+            }),
             error = result.Error
         });
     }

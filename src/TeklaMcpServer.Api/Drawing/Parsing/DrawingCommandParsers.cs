@@ -372,6 +372,25 @@ public sealed class PartGeometryInViewParseResult
         new() { IsValid = false, Error = error };
 }
 
+public sealed class PartPointsInViewRequest
+{
+    public int ViewId { get; set; }
+    public int ModelId { get; set; }
+}
+
+public sealed class PartPointsInViewParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public PartPointsInViewRequest Request { get; private set; } = new();
+
+    public static PartPointsInViewParseResult Success(PartPointsInViewRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static PartPointsInViewParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
 public sealed class GridAxesRequest
 {
     public int ViewId { get; set; }

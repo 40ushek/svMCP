@@ -42,6 +42,40 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Get characteristic semantic points for ALL parts in a drawing view in a single call. " +
+        "Returns axis-based points, bbox-based points, center and directional points in view-local coordinates. " +
+        "Use this as the canonical source for dimension anchor point discovery.")]
+    public static string GetAllPartPointsInView(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+    {
+        return RunBridge("get_all_part_points_in_view", viewId.ToString());
+    }
+
+    [McpServerTool, Description(
+        "Get characteristic semantic points for one model part in one drawing view. " +
+        "Returns point kinds such as AxisStart, AxisEnd, Origin, Center, BboxMin, BboxMax, Left, Right, Top and Bottom. " +
+        "All coordinates are returned in the drawing view coordinate system (mm).")]
+    public static string GetPartPointsInView(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Model object ID of the part (from get_drawing_parts)")] int modelId)
+    {
+        var json = RunBridge("get_part_points_in_view",
+            viewId.ToString(),
+            modelId.ToString());
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
         "Draw developer debug overlay geometry into the active drawing. " +
         "Payload is JSON with group, clearGroupFirst and shapes[]. " +
         "Supported shape kinds: line, rectangle, polyline, polygon, text, cross. " +

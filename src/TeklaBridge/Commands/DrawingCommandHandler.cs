@@ -64,6 +64,8 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "get_part_geometry_in_view":
             case "get_all_parts_geometry_in_view":
+            case "get_part_points_in_view":
+            case "get_all_part_points_in_view":
             case "get_grid_axes":
             case "get_drawing_parts":
             case "draw_debug_overlay":
