@@ -15,6 +15,13 @@ internal static class Program
         ApplyTeklaChannelFixes();
 
         var model = new Model();
+        var part = model.SelectModelObject(new Tekla.Structures.Identifier("fd029a2f-2668-4fb1-beb7-745d94860d72"));
+        int d = 0;
+        var s = string.Empty;
+        part.GetReportProperty("HISTORY.TOUCHED", ref s);
+        part.GetReportProperty("HISTORY.MODIFIED", ref s);
+
+
         if (!model.GetConnectionStatus())
         {
             Console.WriteLine("Not connected to Tekla Structures. Open a model and try again.");

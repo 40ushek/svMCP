@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Algorithms.Packing;
-
+//publish
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class BaseProjectedDrawingArrangeStrategy
