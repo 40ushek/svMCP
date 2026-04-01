@@ -156,7 +156,7 @@ Done when:
 
 ### Phase 3: Derived Bolt Geometry
 
-Status: planned.
+Status: done in first form.
 
 Target additions:
 
@@ -164,6 +164,7 @@ Target additions:
 - bolt group axis
 - bbox corners
 - stable bolt-driven anchor points
+- hull and extreme points
 
 ### Phase 4: Connection-Aware Geometry
 
