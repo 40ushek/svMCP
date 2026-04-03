@@ -584,10 +584,10 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (viewScale <= 1e-6)
             return polygon;
 
-        if (!TryGetDimStyleLineVector(dimensionLine, out var lineVector))
+        if (!DimensionPlacementHeuristics.TryGetDimStyleLineVector(dimensionLine, out var lineVector))
             return polygon;
 
-        var alongLineOffset = viewScale / 4.0;
+        var alongLineOffset = DimensionPlacementHeuristics.GetDimStyleAlongLineOffset(viewScale);
         return OffsetPolygon(polygon, lineVector.X * alongLineOffset, lineVector.Y * alongLineOffset);
     }
 
@@ -610,11 +610,11 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             var height = GetPolygonSpanAlongDirection(placedPolygon, upDirection.X, upDirection.Y);
             if (height > 1e-6)
             {
-                var offsetFactor = placementContext.SideSign == 0 ? 1 : placementContext.SideSign;
+                var offset = DimensionPlacementHeuristics.GetAboveLineTextOffset(height, placementContext.SideSign);
                 placedPolygon = OffsetPolygon(
                 placedPolygon,
-                upDirection.X * (height / 2.0) * offsetFactor,
-                upDirection.Y * (height / 2.0) * offsetFactor);
+                upDirection.X * offset,
+                upDirection.Y * offset);
             }
         }
 
@@ -623,20 +623,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     internal static bool TryGetDimStyleLineVector(
         DrawingLineInfo dimensionLine,
-        out (double X, double Y) lineVector)
-    {
-        lineVector = default;
-        var useStartToEnd = !ComparePointsLeftToRight(
-            (dimensionLine.StartX, dimensionLine.StartY),
-            (dimensionLine.EndX, dimensionLine.EndY));
-        var rawX = useStartToEnd
-            ? dimensionLine.EndX - dimensionLine.StartX
-            : dimensionLine.StartX - dimensionLine.EndX;
-        var rawY = useStartToEnd
-            ? dimensionLine.EndY - dimensionLine.StartY
-            : dimensionLine.StartY - dimensionLine.EndY;
-        return TryNormalizeDirection(rawX, rawY, out lineVector);
-    }
+        out (double X, double Y) lineVector) => DimensionPlacementHeuristics.TryGetDimStyleLineVector(dimensionLine, out lineVector);
 
     internal static bool ComparePointsLeftToRight((double X, double Y) left, (double X, double Y) right)
     {
@@ -1201,26 +1188,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         IReadOnlyList<(double X, double Y)> points,
         (double X, double Y) upDirection,
         double distance,
-        out (double X, double Y) direction)
-    {
-        direction = default;
-        if (points.Count == 0)
-            return null;
-
-        var rawDirection = CanonicalizeDirection(-upDirection.Y, upDirection.X);
-        if (!TryNormalizeDirection(rawDirection.X, rawDirection.Y, out var normalizedDirection))
-            return null;
-
-        direction = normalizedDirection;
-
-        var offsetProjection = points.Max(point => Project(point.X, point.Y, upDirection.X, upDirection.Y)) + distance;
-        var minAlongProjection = points.Min(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
-        var maxAlongProjection = points.Max(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
-
-        var start = CreatePointOnDimensionLine(minAlongProjection, offsetProjection, normalizedDirection, upDirection);
-        var end = CreatePointOnDimensionLine(maxAlongProjection, offsetProjection, normalizedDirection, upDirection);
-        return CreateLineInfo(start.X, start.Y, end.X, end.Y);
-    }
+        out (double X, double Y) direction) => DimensionProjectionHelper.TryCreateCommonReferenceLine(points, upDirection, distance, out direction);
 
     internal static DrawingLineInfo? TryCreateReferenceLine(DimensionSegmentInfo segment)
     {
@@ -1237,12 +1205,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         double pointX,
         double pointY,
         (double X, double Y) upDirection,
-        double distance)
-    {
-        return (
-            System.Math.Round(pointX + (upDirection.X * distance), 3),
-            System.Math.Round(pointY + (upDirection.Y * distance), 3));
-    }
+        double distance) => DimensionProjectionHelper.CreateReferencePoint(pointX, pointY, upDirection, distance);
 
     internal static (double X, double Y) ProjectPointToReferenceLine(
         double pointX,
@@ -1250,24 +1213,13 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         double lineOriginX,
         double lineOriginY,
         double lineDirectionX,
-        double lineDirectionY)
-    {
-        var projection = ((pointX - lineOriginX) * lineDirectionX) + ((pointY - lineOriginY) * lineDirectionY);
-        return (
-            System.Math.Round(lineOriginX + (projection * lineDirectionX), 3),
-            System.Math.Round(lineOriginY + (projection * lineDirectionY), 3));
-    }
+        double lineDirectionY) => DimensionProjectionHelper.ProjectPointToReferenceLine(pointX, pointY, lineOriginX, lineOriginY, lineDirectionX, lineDirectionY);
 
     internal static (double X, double Y) CreatePointOnDimensionLine(
         double alongProjection,
         double offsetProjection,
         (double X, double Y) direction,
-        (double X, double Y) upDirection)
-    {
-        return (
-            System.Math.Round((direction.X * alongProjection) + (upDirection.X * offsetProjection), 3),
-            System.Math.Round((direction.Y * alongProjection) + (upDirection.Y * offsetProjection), 3));
-    }
+        (double X, double Y) upDirection) => DimensionProjectionHelper.CreatePointOnDimensionLine(alongProjection, offsetProjection, direction, upDirection);
 
     internal static List<DrawingPointInfo> BuildMeasuredPointList(
         IReadOnlyList<DimensionSegmentInfo> segments,
@@ -1464,16 +1416,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             .First();
     }
 
-    private static Vector BuildDiagonalOffsetDirection(Point start, Point end)
-    {
-        var dx = end.X - start.X;
-        var dy = end.Y - start.Y;
-        var len = System.Math.Sqrt((dx * dx) + (dy * dy));
-        if (len < 1e-6)
-            return new Vector(0, 1, 0);
-
-        return new Vector(-dy / len, dx / len, 0);
-    }
+    private static Vector BuildDiagonalOffsetDirection(Point start, Point end) => DimensionProjectionHelper.BuildPerpendicularOffsetDirection(start, end);
 
     /// <summary>
     /// Removes hull vertices that are nearly collinear with their neighbors
