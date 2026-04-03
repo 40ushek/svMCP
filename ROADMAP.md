@@ -30,7 +30,7 @@
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
-| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API уже есть, `place_control_diagonals` пока experimental |
+| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, создание/сдвиг/удаление, контрольные диагонали |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
@@ -57,16 +57,15 @@
 ## К реализации
 
 ### Размеры
-- `get_drawing_dimensions` уже расширен: `dimensionType`, `viewId/viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, `dimensionLine`, `leadLineMain/Second`
-- текущая задача по размерам: перепроектировать internal grouping и spacing по эталону `D:\repos\svMCP\dim`
-- публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
-- `add_dimension_point` — добавить точку в цепочку. Workaround: `delete` + `create` с новым набором точек
-- Cumulative тип: сохранить стиль в Tekla UI → `create_dimension(..., attributesFile="cumulative")`
-- `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
+
+Подробный план: [`src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md)
+
+Краткое состояние:
+- `get_drawing_dimensions` — rich line-based read API, группировка геометрически (Phase 3 done)
+- `arrange_dimensions` — **не реализован как полноценный layout-движок**: сейчас только базовая раздвижка параллельных стеков через `Distance`, не двигает одиночные линии, нет нормализации distance, нет учёта текста/меток
+- Следующий реалистичный шаг: нормализация (убрать дубли, выровнять близкие линии) → умная раздвижка → учёт текста и меток (Phase 4 in progress)
+- `add_dimension_point` — Workaround: `delete` + `create` с новым набором точек
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
-- ~~`place_control_diagonals`: перевести с dimension snap-точек на реальные крайние точки видимого контура~~ ✅ реализовано: hull строится по `GetSolid()` вершинам видимых деталей вида (`Hideable.IsHidden`), фильтрация по `MATERIAL_TYPE` (1=Steel, 2=Concrete, 5=Timber; misc/утеплитель исключаются)
-- ~~`place_control_diagonals`: текст второй диагонали ставится на `distance * 2` только когда диагонали пересекаются~~ ✅ реализовано (`SegmentsProperlyIntersect` + `distance * 2`)
-- ~~`place_control_diagonals`: направление диагоналей всегда снизу вверх по Y~~ ✅ нормализация `Start.Y ≤ End.Y` после построения пар
 
 ### Виды — проекционная связь (часть `fit_views_to_sheet`) ✅
 

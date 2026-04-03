@@ -63,6 +63,22 @@ public sealed class DimensionArrangementDebugStackMemberInfo
     public string Orientation { get; set; } = string.Empty;
     public double Distance { get; set; }
     public DrawingLineInfo? ReferenceLine { get; set; }
+    public DrawingLineInfo? PlanningReferenceLine { get; set; }
+    public int AlignmentClusterId { get; set; }
+    public int? AlignmentAnchorDimensionId { get; set; }
+    public string AlignmentStatus { get; set; } = string.Empty;
+    public string AlignmentReason { get; set; } = string.Empty;
+}
+
+public sealed class DimensionArrangementDebugAlignmentClusterInfo
+{
+    public int ClusterId { get; set; }
+    public int AnchorDimensionId { get; set; }
+    public DrawingLineInfo? AnchorReferenceLine { get; set; }
+    public bool Applied { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public List<int> DimensionIds { get; } = [];
 }
 
 public sealed class DimensionArrangementDebugStackInfo
@@ -75,8 +91,10 @@ public sealed class DimensionArrangementDebugStackInfo
     public double? DirectionY { get; set; }
     public int TopDirection { get; set; }
     public DrawingLineInfo? ReferenceLine { get; set; }
+    public bool AlignmentApplied { get; set; }
     public List<string> GroupingBasis { get; } = [];
     public List<DimensionArrangementDebugStackMemberInfo> Members { get; } = [];
+    public List<DimensionArrangementDebugAlignmentClusterInfo> AlignmentClusters { get; } = [];
 }
 
 public sealed class DimensionArrangementDebugProposal

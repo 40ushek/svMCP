@@ -18,6 +18,14 @@ internal sealed class DimensionStackMoveUnit
     public int DimensionId { get; set; }
     public double Distance { get; set; }
     public DrawingLineInfo? ReferenceLine { get; set; }
+    public DrawingLineInfo? PlanningReferenceLine { get; set; }
+    public double? LeadLineLength { get; set; }
+    public (double X, double Y)? Direction { get; set; }
+    public int TopDirection { get; set; }
+    public int AlignmentClusterId { get; set; }
+    public int? AlignmentAnchorDimensionId { get; set; }
+    public string AlignmentStatus { get; set; } = string.Empty;
+    public string AlignmentReason { get; set; } = string.Empty;
     public double MinOffset { get; set; }
     public double MaxOffset { get; set; }
 }
@@ -105,6 +113,11 @@ internal static class DimensionGroupSpacingAnalyzer
             .ToList();
     }
 
+    public static List<DimensionStackPlanningUnit> BuildPlanningUnits(DimensionGroupLineStack stack)
+    {
+        return DimensionStackAlignmentNormalizer.BuildPlanningUnits(stack);
+    }
+
     public static DimensionGroupSpacingAnalysis Analyze(DimensionGroup group)
     {
         var analysis = new DimensionGroupSpacingAnalysis
@@ -141,7 +154,7 @@ internal static class DimensionGroupSpacingAnalyzer
 
     internal static DimensionGroupSpacingAnalysis AnalyzeStack(DimensionGroupLineStack stack)
     {
-        var units = BuildMoveUnits(stack);
+        var units = BuildPlanningUnits(stack);
         var analysis = new DimensionGroupSpacingAnalysis
         {
             ViewId = stack.ViewId,
@@ -163,8 +176,8 @@ internal static class DimensionGroupSpacingAnalyzer
 
             analysis.Pairs.Add(new DimensionGroupPairSpacing
             {
-                FirstDimensionId = current.DimensionId,
-                SecondDimensionId = next.DimensionId,
+                FirstDimensionId = current.AnchorDimensionId,
+                SecondDimensionId = next.AnchorDimensionId,
                 Distance = distance
             });
         }
@@ -196,11 +209,23 @@ internal static class DimensionGroupSpacingAnalyzer
                     return null;
 
                 var representative = members.FirstOrDefault(static member => member.ReferenceLine != null) ?? members[0];
+                var leadLineLength = members
+                    .Select(TryGetShortestLeadLineLength)
+                    .Where(static value => value.HasValue)
+                    .Select(static value => value!.Value)
+                    .DefaultIfEmpty()
+                    .Min();
+
                 return new DimensionStackMoveUnit
                 {
                     DimensionId = group.Key,
                     Distance = representative.Distance,
                     ReferenceLine = CopyLine(representative.ReferenceLine),
+                    PlanningReferenceLine = CopyLine(representative.ReferenceLine),
+                    LeadLineLength = leadLineLength > 1e-9 ? leadLineLength : null,
+                    Direction = stack.Direction,
+                    TopDirection = stack.TopDirection,
+                    AlignmentStatus = "standalone",
                     MinOffset = offsets.Min(),
                     MaxOffset = offsets.Max()
                 };
@@ -314,6 +339,22 @@ internal static class DimensionGroupSpacingAnalyzer
         var normalY = direction.Value.X;
         var rawOffset = Project(member.ReferenceLine.StartX, member.ReferenceLine.StartY, normalX, normalY);
         return System.Math.Round(rawOffset * GetOffsetSign(stackTopDirection), 3);
+    }
+
+    private static double? TryGetShortestLeadLineLength(DimensionItem member)
+    {
+        var lengths = new[]
+            {
+                member.GetLeadLineMainLength(),
+                member.GetLeadLineSecondLength()
+            }
+            .Where(static value => value > 1e-9)
+            .ToList();
+
+        if (lengths.Count == 0)
+            return null;
+
+        return lengths.Min();
     }
 
     private static int GetRepresentativeDimensionId(DimensionGroup group)

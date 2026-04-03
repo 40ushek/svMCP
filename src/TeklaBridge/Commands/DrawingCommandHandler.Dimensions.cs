@@ -670,6 +670,7 @@ internal sealed partial class DrawingCommandHandler
                 directionY = stack.DirectionY,
                 topDirection = stack.TopDirection,
                 referenceLine = SerializeLine(stack.ReferenceLine),
+                alignmentApplied = stack.AlignmentApplied,
                 groupingBasis = stack.GroupingBasis,
                 members = stack.Members.Select(member => new
                 {
@@ -677,7 +678,22 @@ internal sealed partial class DrawingCommandHandler
                     dimensionType = member.DimensionType,
                     orientation = member.Orientation,
                     distance = member.Distance,
-                    referenceLine = SerializeLine(member.ReferenceLine)
+                    referenceLine = SerializeLine(member.ReferenceLine),
+                    planningReferenceLine = SerializeLine(member.PlanningReferenceLine),
+                    alignmentClusterId = member.AlignmentClusterId,
+                    alignmentAnchorDimensionId = member.AlignmentAnchorDimensionId,
+                    alignmentStatus = member.AlignmentStatus,
+                    alignmentReason = member.AlignmentReason
+                }),
+                alignmentClusters = stack.AlignmentClusters.Select(cluster => new
+                {
+                    clusterId = cluster.ClusterId,
+                    anchorDimensionId = cluster.AnchorDimensionId,
+                    anchorReferenceLine = SerializeLine(cluster.AnchorReferenceLine),
+                    applied = cluster.Applied,
+                    status = cluster.Status,
+                    reason = cluster.Reason,
+                    dimensionIds = cluster.DimensionIds
                 })
             }),
             spacing = result.Spacing.Select(info => new

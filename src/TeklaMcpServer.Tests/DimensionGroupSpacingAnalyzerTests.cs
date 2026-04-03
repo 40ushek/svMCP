@@ -1,3 +1,4 @@
+using System.Linq;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
@@ -161,6 +162,84 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         Assert.Equal(15, analysis.MinimumDistance.Value, 3);
     }
 
+    [Fact]
+    public void BuildPlanningUnits_AlignsCloseAxisParallelUnitsAndUsesShortestLeadLineAnchor()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (1, 0), 10, 8, 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (1, 0), 12, 8, 6));
+        stack.Groups.Add(CreateReferenceLineGroup(3, -1, (1, 0), 30, 8, 4));
+
+        var planningUnits = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+
+        Assert.Equal(2, planningUnits.Count);
+
+        var aligned = Assert.Single(planningUnits.Where(unit => unit.Units.Count == 2));
+        Assert.Equal(1, aligned.AnchorDimensionId);
+        Assert.Equal("aligned", aligned.Status);
+        Assert.Equal(new[] { 1, 2 }, aligned.Units.Select(static unit => unit.DimensionId).OrderBy(static id => id).ToArray());
+        Assert.All(aligned.Units, unit => Assert.Equal(10, unit.PlanningReferenceLine!.StartY, 3));
+    }
+
+    [Fact]
+    public void BuildPlanningUnits_FallsBackWhenAnchorSelectionIsAmbiguous()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (1, 0), 10, 8, 4));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (1, 0), 12, 8, 4));
+
+        var planningUnits = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+
+        Assert.Equal(2, planningUnits.Count);
+        Assert.All(planningUnits, unit =>
+        {
+            Assert.Equal("fallback", unit.Status);
+            Assert.Contains("ambiguous", unit.Reason);
+            Assert.Single(unit.Units);
+        });
+    }
+
+    [Fact]
+    public void BuildPlanningUnits_FallsBackForNonAxisAlignedStack()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "angled",
+            TopDirection = -1,
+            Direction = (0.707, 0.707)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (0.707, 0.707), 10, 8, 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (0.707, 0.707), 12, 8, 6));
+
+        var planningUnits = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+
+        Assert.Equal(2, planningUnits.Count);
+        Assert.All(planningUnits, unit =>
+        {
+            Assert.Equal("fallback", unit.Status);
+            Assert.Contains("axis-aligned", unit.Reason);
+        });
+    }
+
     private static DimensionGroup CreateGroup(
         DimensionGroupMember[] members,
         string orientation,
@@ -225,5 +304,77 @@ public sealed class DimensionGroupSpacingAnalyzerTests
                 }
             }
         };
+    }
+
+    private static DimensionGroup CreateReferenceLineGroup(
+        int dimensionId,
+        int topDirection,
+        (double X, double Y) direction,
+        double lineOffset,
+        double distance,
+        double leadLineLength)
+    {
+        DrawingLineInfo referenceLine;
+        DrawingLineInfo leadLine;
+        if (System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01)
+        {
+            referenceLine = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = lineOffset,
+                EndX = 100,
+                EndY = lineOffset
+            };
+            leadLine = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = 0,
+                EndX = 0,
+                EndY = leadLineLength
+            };
+        }
+        else
+        {
+            referenceLine = new DrawingLineInfo
+            {
+                StartX = lineOffset,
+                StartY = 0,
+                EndX = lineOffset,
+                EndY = 100
+            };
+            leadLine = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = 0,
+                EndX = leadLineLength,
+                EndY = 0
+            };
+        }
+
+        var group = new DimensionGroup
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01 ? "horizontal" : "vertical",
+            TopDirection = topDirection,
+            Direction = direction
+        };
+        group.Members.Add(new DimensionGroupMember
+        {
+            DimensionId = dimensionId,
+            Distance = distance,
+            DirectionX = direction.X,
+            DirectionY = direction.Y,
+            TopDirection = topDirection,
+            ReferenceLine = referenceLine,
+            LeadLineMain = leadLine,
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine),
+            Dimension = new DrawingDimensionInfo
+            {
+                Id = dimensionId
+            }
+        });
+        group.RefreshMetrics();
+        return group;
     }
 }

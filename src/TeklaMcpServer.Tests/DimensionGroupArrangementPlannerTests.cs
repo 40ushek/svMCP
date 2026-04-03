@@ -30,6 +30,29 @@ public sealed class DimensionGroupArrangementPlannerTests
     }
 
     [Fact]
+    public void BuildPlan_ForStack_UsesAlignedClusterAsSinglePlanningUnit()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 10, 8, leadLineLength: 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 12, 8, leadLineLength: 6));
+        stack.Groups.Add(CreateReferenceLineGroup(3, "horizontal", -1, (1, 0), 14, 8, leadLineLength: 4));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 5);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(3, proposal.DimensionId);
+        Assert.Equal(1, proposal.AxisShift, 3);
+    }
+
+    [Fact]
     public void BuildPlan_ReturnsNoChanges_WhenGapIsAlreadyEnough()
     {
         var group = CreateGroup(
@@ -124,7 +147,8 @@ public sealed class DimensionGroupArrangementPlannerTests
         double lineOffset,
         double startAlong,
         double endAlong,
-        double distance)
+        double distance,
+        double? leadLineLength = null)
     {
         DrawingLineInfo line;
         if (System.Math.Abs(direction.Y) <= System.Math.Abs(direction.X) * 0.01)
@@ -156,6 +180,15 @@ public sealed class DimensionGroupArrangementPlannerTests
             DirectionY = direction.Y,
             TopDirection = topDirection,
             ReferenceLine = line,
+            LeadLineMain = leadLineLength.HasValue
+                ? new DrawingLineInfo
+                {
+                    StartX = line.StartX,
+                    StartY = line.StartY,
+                    EndX = line.StartX,
+                    EndY = line.StartY + leadLineLength.Value
+                }
+                : null,
             Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line),
             Dimension = new DrawingDimensionInfo
             {

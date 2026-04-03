@@ -33,7 +33,7 @@ internal static class DimensionGroupArrangementPlanner
             TargetGapDrawing = targetGapDrawing
         };
 
-        var units = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack);
+        var units = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
         if (units.Count < 2)
             return plan;
 
@@ -57,11 +57,14 @@ internal static class DimensionGroupArrangementPlanner
 
             if (cumulativeShift > 1e-9)
             {
-                plan.Proposals.Add(new DimensionMoveProposal
+                foreach (var unit in current.Units)
                 {
-                    DimensionId = current.DimensionId,
-                    AxisShift = cumulativeShift
-                });
+                    plan.Proposals.Add(new DimensionMoveProposal
+                    {
+                        DimensionId = unit.DimensionId,
+                        AxisShift = cumulativeShift
+                    });
+                }
             }
 
             previousMax = shiftedMax;

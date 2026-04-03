@@ -74,6 +74,12 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         foreach (var stack in stacks)
         {
+            var planningUnits = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+            var stackUnitsById = planningUnits
+                .SelectMany(static unit => unit.Units)
+                .GroupBy(static unit => unit.DimensionId)
+                .ToDictionary(static group => group.Key, static group => group.First());
+
             var info = new DimensionArrangementDebugStackInfo
             {
                 ViewId = stack.ViewId,
@@ -83,7 +89,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                 DirectionX = stack.Direction?.X,
                 DirectionY = stack.Direction?.Y,
                 TopDirection = stack.TopDirection,
-                ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine)
+                ReferenceLine = CopyLine(stack.Groups.FirstOrDefault(static group => group.ReferenceLine != null)?.ReferenceLine),
+                AlignmentApplied = planningUnits.Any(static unit => unit.Units.Count > 1 && string.Equals(unit.Status, "aligned", System.StringComparison.Ordinal))
             };
 
             info.GroupingBasis.Add("same view");
@@ -98,15 +105,39 @@ public sealed partial class TeklaDrawingDimensionsApi
                              .Select(static grouped => grouped.First())
                              .OrderBy(static member => member.SortKey))
                 {
+                    stackUnitsById.TryGetValue(member.DimensionId, out var planningUnit);
                     info.Members.Add(new DimensionArrangementDebugStackMemberInfo
                     {
                         DimensionId = member.DimensionId,
                         DimensionType = member.DimensionType,
                         Orientation = member.Dimension.Orientation,
                         Distance = member.Distance,
-                        ReferenceLine = CopyLine(member.ReferenceLine)
+                        ReferenceLine = CopyLine(member.ReferenceLine),
+                        PlanningReferenceLine = CopyLine(planningUnit?.PlanningReferenceLine),
+                        AlignmentClusterId = planningUnit?.AlignmentClusterId ?? 0,
+                        AlignmentAnchorDimensionId = planningUnit?.AlignmentAnchorDimensionId,
+                        AlignmentStatus = planningUnit?.AlignmentStatus ?? string.Empty,
+                        AlignmentReason = planningUnit?.AlignmentReason ?? string.Empty
                     });
                 }
+            }
+
+            foreach (var planningUnit in planningUnits)
+            {
+                var cluster = new DimensionArrangementDebugAlignmentClusterInfo
+                {
+                    ClusterId = planningUnit.ClusterId,
+                    AnchorDimensionId = planningUnit.AnchorDimensionId,
+                    AnchorReferenceLine = CopyLine(planningUnit.AnchorReferenceLine),
+                    Applied = planningUnit.Units.Count > 1 && string.Equals(planningUnit.Status, "aligned", System.StringComparison.Ordinal),
+                    Status = planningUnit.Status,
+                    Reason = planningUnit.Reason
+                };
+
+                foreach (var unit in planningUnit.Units.OrderBy(static unit => unit.DimensionId))
+                    cluster.DimensionIds.Add(unit.DimensionId);
+
+                info.AlignmentClusters.Add(cluster);
             }
 
             result.Stacks.Add(info);
