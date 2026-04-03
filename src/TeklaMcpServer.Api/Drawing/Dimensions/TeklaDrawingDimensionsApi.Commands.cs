@@ -519,18 +519,8 @@ public sealed partial class TeklaDrawingDimensionsApi
         for (int i = 0; i + 2 < points.Length; i += 3)
             pointList.Add(new Point(points[i], points[i + 1], points[i + 2]));
 
-        Vector dirVector = (direction ?? "horizontal").ToLowerInvariant() switch
-        {
-            "vertical" or "v" => new Vector(1, 0, 0),
-            "horizontal" or "h" => new Vector(0, 1, 0),
-            _ => TryParseVector(direction) ?? new Vector(0, 1, 0)
-        };
-
-#pragma warning disable CS0618
-        var attr = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-        if (!string.IsNullOrWhiteSpace(attributesFile))
-            attr.LoadAttributes(attributesFile);
+        var dirVector = DimensionCreatePlacementHelper.ResolveDirection(direction);
+        var attr = DimensionCreatePlacementHelper.CreateAttributes(attributesFile);
 
         var dim = new StraightDimensionSetHandler().CreateDimensionSet(
             view, pointList, dirVector, distance, attr);
@@ -673,8 +663,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             // Normalize direction: always bottom (lower Y) → top (higher Y) in view coordinates
             for (var i = 0; i < pairs.Count; i++)
             {
-                if (pairs[i].Start.Y > pairs[i].End.Y)
-                    pairs[i] = (pairs[i].End, pairs[i].Start);
+                pairs[i] = DimensionDiagonalPlacementHelper.NormalizeBottomToTop(pairs[i]);
             }
 
             findExtremesSw.Stop();
@@ -689,11 +678,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             result.FarthestDistance = System.Math.Round(System.Math.Sqrt(primary.DistanceSquared), 3);
 
             var createSw = Stopwatch.StartNew();
-#pragma warning disable CS0618
-            var attributes = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-            var normalizedAttributes = string.IsNullOrWhiteSpace(attributesFile) ? "standard" : attributesFile.Trim();
-            attributes.LoadAttributes(normalizedAttributes);
+            var attributes = DimensionDiagonalPlacementHelper.CreateAttributes(attributesFile);
 
             var diagonalsIntersect = pairs.Count == 2
                 && SegmentsProperlyIntersect(pairs[0].Start, pairs[0].End, pairs[1].Start, pairs[1].End);
@@ -704,7 +689,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var pair = pairs[i];
                 var pointList = new PointList { pair.Start, pair.End };
                 var direction = BuildDiagonalOffsetDirection(pair.Start, pair.End);
-                var actualDistance = (i == 1 && diagonalsIntersect) ? distance * 2.0 : distance;
+                var actualDistance = DimensionDiagonalPlacementHelper.ResolveDistance(distance, i, diagonalsIntersect);
 
                 var dim = new StraightDimensionSetHandler().CreateDimensionSet(
                     targetView,

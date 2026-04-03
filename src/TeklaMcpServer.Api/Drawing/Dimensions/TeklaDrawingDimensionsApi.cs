@@ -1173,23 +1173,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 
-    private static Vector? TryParseVector(string? s)
-    {
-        if (string.IsNullOrWhiteSpace(s))
-            return null;
-
-        var value = s!.Trim();
-        var parts = value.Split(',');
-        if (parts.Length == 3 &&
-            double.TryParse(parts[0], out var x) &&
-            double.TryParse(parts[1], out var y) &&
-            double.TryParse(parts[2], out var z))
-        {
-            return new Vector(x, y, z);
-        }
-
-        return null;
-    }
+    private static Vector? TryParseVector(string? s) => DimensionCreatePlacementHelper.TryParseVector(s);
 
     private static IEnumerable<View> EnumerateViews(Tekla.Structures.Drawing.Drawing drawing)
     {
@@ -1219,7 +1203,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             .First();
     }
 
-    private static Vector BuildDiagonalOffsetDirection(Point start, Point end) => DimensionProjectionHelper.BuildPerpendicularOffsetDirection(start, end);
+    internal static Vector BuildDiagonalOffsetDirection(Point start, Point end) => DimensionDiagonalPlacementHelper.BuildOffsetDirection(start, end);
 
     /// <summary>
     /// Removes hull vertices that are nearly collinear with their neighbors
