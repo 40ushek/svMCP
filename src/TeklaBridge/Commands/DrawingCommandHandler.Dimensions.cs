@@ -629,9 +629,30 @@ internal sealed partial class DrawingCommandHandler
 
         WriteJson(new
         {
+            rawViewFilteredTotal = result.RawViewFilteredTotal,
             viewFilteredTotal = result.ViewFilteredTotal,
+            rawGroupCount = result.RawGroupCount,
             groupCount = result.GroupCount,
+            dedupRejectedCount = result.DedupRejectedCount,
             targetGapPaper = result.TargetGapPaper,
+            dedup = result.Dedup.Select(group => new
+            {
+                viewId = group.ViewId,
+                viewType = group.ViewType,
+                dimensionType = group.DimensionType,
+                rawMemberCount = group.RawMemberCount,
+                reducedMemberCount = group.ReducedMemberCount,
+                rejectedCount = group.RejectedCount,
+                items = group.Items.Select(item => new
+                {
+                    dimensionId = item.DimensionId,
+                    sourceKind = item.SourceKind,
+                    geometryKind = item.GeometryKind,
+                    status = item.Status,
+                    reason = item.Reason,
+                    representativeDimensionId = item.RepresentativeDimensionId
+                })
+            }),
             groups = result.Groups.Select(group => new
             {
                 viewId = group.ViewId,

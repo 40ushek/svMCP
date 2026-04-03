@@ -93,27 +93,44 @@ internal static class DimensionOperations
         var kept = new List<DimensionItem>(ordered.Count);
         foreach (var candidate in ordered)
         {
+            DimensionItem? equivalentKeeper = null;
             if (policy.EnableEquivalentSimpleReduction &&
-                IsSimpleItem(candidate) &&
-                kept.Any(existing => AreEquivalentSimpleItems(existing, candidate, policy)))
+                IsSimpleItem(candidate))
+            {
+                equivalentKeeper = kept.FirstOrDefault(existing =>
+                    IsArrangeReductionCompatible(existing, candidate, policy) &&
+                    AreEquivalentSimpleItems(existing, candidate, policy));
+            }
+
+            if (equivalentKeeper != null)
             {
                 debugByItem[candidate].Status = "rejected";
                 debugByItem[candidate].Reason = "equivalent_simple";
+                debugByItem[candidate].RepresentativeDimensionId = equivalentKeeper.DimensionId;
                 continue;
             }
 
+            DimensionItem? coverageKeeper = null;
             if (policy.EnableCoverageReduction &&
-                IsSimpleItem(candidate) &&
-                kept.Any(existing => Covers(existing, candidate, policy)))
+                IsSimpleItem(candidate))
+            {
+                coverageKeeper = kept.FirstOrDefault(existing =>
+                    IsArrangeReductionCompatible(existing, candidate, policy) &&
+                    Covers(existing, candidate, policy));
+            }
+
+            if (coverageKeeper != null)
             {
                 debugByItem[candidate].Status = "rejected";
                 debugByItem[candidate].Reason = "covered";
+                debugByItem[candidate].RepresentativeDimensionId = coverageKeeper.DimensionId;
                 continue;
             }
 
             kept.Add(candidate);
             debugByItem[candidate].Status = "kept";
             debugByItem[candidate].Reason = "kept";
+            debugByItem[candidate].RepresentativeDimensionId = candidate.DimensionId;
         }
 
         var deduplicated = kept
@@ -994,6 +1011,20 @@ internal static class DimensionOperations
     }
 
     private static bool IsSimpleItem(DimensionItem item) => item.PointList.Count <= 2;
+
+    private static bool IsArrangeReductionCompatible(
+        DimensionItem keeper,
+        DimensionItem candidate,
+        DimensionReductionPolicy policy)
+    {
+        if (policy.RequireSameSourceKindForSimpleReduction &&
+            keeper.SourceKind != candidate.SourceKind)
+        {
+            return false;
+        }
+
+        return true;
+    }
 
     private static int GetInformationRank(DimensionItem item)
     {

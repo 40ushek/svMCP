@@ -13,7 +13,9 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
 
-        var groups = GetDimensionGroups(viewId);
+        var rawGroups = GetDimensionGroups(viewId);
+        var dedup = DimensionArrangementDedup.ReduceWithDebug(rawGroups);
+        var groups = dedup.ReducedGroups;
         var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
         var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
         var plans = stacks.Select(stack =>
@@ -24,10 +26,43 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var result = new DimensionArrangementDebugResult
         {
+            RawViewFilteredTotal = rawGroups.Sum(static group => group.DimensionList.Count),
             ViewFilteredTotal = groups.Sum(static group => group.DimensionList.Count),
+            RawGroupCount = rawGroups.Count,
             GroupCount = groups.Count,
+            DedupRejectedCount = dedup.Groups.Sum(static group => group.Items.Count(static item => string.Equals(item.Status, "rejected", System.StringComparison.Ordinal))),
             TargetGapPaper = targetGap
         };
+
+        foreach (var dedupGroup in dedup.Groups)
+        {
+            var info = new DimensionArrangementDebugDedupGroupInfo
+            {
+                ViewId = dedupGroup.RawGroup.ViewId,
+                ViewType = dedupGroup.RawGroup.ViewType,
+                DimensionType = dedupGroup.RawGroup.DimensionType,
+                RawMemberCount = dedupGroup.RawGroup.DimensionList.Count,
+                ReducedMemberCount = dedupGroup.ReducedGroup.DimensionList.Count
+            };
+
+            foreach (var item in dedupGroup.Items.OrderBy(static item => item.Item.SortKey).ThenBy(static item => item.Item.DimensionId))
+            {
+                if (string.Equals(item.Status, "rejected", System.StringComparison.Ordinal))
+                    info.RejectedCount++;
+
+                info.Items.Add(new DimensionArrangementDebugDedupItemInfo
+                {
+                    DimensionId = item.Item.DimensionId,
+                    SourceKind = item.Item.SourceKind.ToString(),
+                    GeometryKind = item.Item.GeometryKind.ToString(),
+                    Status = item.Status,
+                    Reason = item.Reason,
+                    RepresentativeDimensionId = item.RepresentativeDimensionId
+                });
+            }
+
+            result.Dedup.Add(info);
+        }
 
         foreach (var group in groups)
         {
@@ -240,25 +275,30 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
     {
-        return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetDimensionGroups(viewId));
+        return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetArrangeGroups(viewId));
     }
 
     internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetDimensionGroups(viewId))
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroups(viewId))
             .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap))
             .ToList();
     }
 
     internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetDimensionGroups(viewId))
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroups(viewId))
             .Select(stack =>
             {
                 var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
                 return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
             })
             .ToList();
+    }
+
+    private List<DimensionGroup> GetArrangeGroups(int? viewId)
+    {
+        return DimensionArrangementDedup.Reduce(GetDimensionGroups(viewId));
     }
 
     internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(int? viewId, double targetGap)

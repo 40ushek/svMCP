@@ -19,6 +19,27 @@ public sealed class DimensionArrangementDebugGroupInfo
     public List<DimensionArrangementDebugMemberInfo> Members { get; } = [];
 }
 
+public sealed class DimensionArrangementDebugDedupItemInfo
+{
+    public int DimensionId { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public string GeometryKind { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public int? RepresentativeDimensionId { get; set; }
+}
+
+public sealed class DimensionArrangementDebugDedupGroupInfo
+{
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public string DimensionType { get; set; } = string.Empty;
+    public int RawMemberCount { get; set; }
+    public int ReducedMemberCount { get; set; }
+    public int RejectedCount { get; set; }
+    public List<DimensionArrangementDebugDedupItemInfo> Items { get; } = [];
+}
+
 public sealed class DimensionArrangementDebugMemberInfo
 {
     public int DimensionId { get; set; }
@@ -125,9 +146,13 @@ public sealed class DimensionArrangementDebugPlanInfo
 
 public sealed class DimensionArrangementDebugResult
 {
+    public int RawViewFilteredTotal { get; set; }
     public int ViewFilteredTotal { get; set; }
+    public int RawGroupCount { get; set; }
     public int GroupCount { get; set; }
+    public int DedupRejectedCount { get; set; }
     public double TargetGapPaper { get; set; }
+    public List<DimensionArrangementDebugDedupGroupInfo> Dedup { get; } = [];
     public List<DimensionArrangementDebugGroupInfo> Groups { get; } = [];
     public List<DimensionArrangementDebugStackInfo> Stacks { get; } = [];
     public List<DimensionArrangementDebugSpacingInfo> Spacing { get; } = [];

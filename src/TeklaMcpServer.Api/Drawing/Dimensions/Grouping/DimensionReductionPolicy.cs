@@ -14,6 +14,7 @@ internal sealed class DimensionReductionPolicy
     public double PositionTolerance { get; set; } = 3.0;
     public double LengthTolerance { get; set; } = 3.0;
     public double MeasuredLineTolerance { get; set; } = 3.0;
+    public bool RequireSameSourceKindForSimpleReduction { get; set; }
     public bool EnableEquivalentSimpleReduction { get; set; } = true;
     public bool EnableCoverageReduction { get; set; } = true;
     public bool EnableRepresentativeSelection { get; set; } = true;
