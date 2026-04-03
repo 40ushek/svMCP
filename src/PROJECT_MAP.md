@@ -112,6 +112,7 @@ Handlers:
   - стратегии: `BaseProjectedDrawingArrangeStrategy`, `GaDrawingMaxRectsArrangeStrategy`, `ShelfPackingDrawingArrangeStrategy`
 - `Drawing/Dimensions`
   - line-first dimension model и операции
+  - split на `Grouping / Arrangement / Placement`
   - ключевые сущности: `DimensionItem`, `DimensionGroup`, `DimensionOperations`
 - `Drawing/Marks`
   - чтение марок, layout, overlap resolution

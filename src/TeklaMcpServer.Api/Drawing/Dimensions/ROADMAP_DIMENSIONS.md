@@ -15,6 +15,49 @@ For `Dimensions`, the legacy `dim` project is the canonical source for:
 The current `src` implementation should adapt Tekla Open API data into that
 model, not invent a parallel model around API DTOs.
 
+## Document Split
+
+This roadmap is the strategic document for the module.
+
+It should answer:
+
+- what the target dimension architecture is
+- what still remains to align with `dim`
+- what functionality is intentionally deferred
+
+The operational/current-state description lives in
+[README.md](D:\repos\svMCP\src\TeklaMcpServer.Api\Drawing\Dimensions\README.md).
+
+That file should answer:
+
+- how the folder is structured today
+- which tools are public today
+- which APIs/debug surfaces are internal-only today
+
+## Module Shape Today
+
+The folder is now intentionally split into:
+
+- root facade/API files
+- `Grouping/`
+- `Arrangement/`
+- `Placement/`
+
+Root facade/API files:
+
+- `TeklaDrawingDimensionsApi.cs`
+- `TeklaDrawingDimensionsApi.Query.cs`
+- `TeklaDrawingDimensionsApi.Commands.cs`
+- `TeklaDrawingDimensionsApi.Arrangement.cs`
+- `IDrawingDimensionsApi.cs`
+
+Current intent of the split:
+
+- `Grouping` owns `DimensionItem` / `DimensionGroup` and reduction logic
+- `Arrangement` owns spacing analysis and `Distance` adjustment planning
+- `Placement` owns projection, create/diagonal placement, text placement and
+  text formatting helpers
+
 ## Canonical Domain Model
 
 The target internal model should follow `dim` and be centered on:
@@ -73,22 +116,40 @@ Publicly supported today:
 - `create_dimension`
 - `delete_dimension`
 - `place_control_diagonals`
-
-Debug/validation helpers currently available:
-
 - `draw_dimension_text_boxes`
+
+Bridge/internal debug helpers currently available:
+
 - `get_dimension_text_placement_debug`
+- `get_dimension_source_debug`
 - `get_dimension_groups_debug`
+- `get_dimension_arrangement_debug`
+
+Not currently exposed as public MCP tools:
+
+- arrangement apply
+- arrangement debug
+- source/group/text-placement debug helpers
 
 These helpers are for live validation only. They do not define the long-term
 domain model.
 
 Implemented in the current `src` code:
 
+- root/facade vs `Grouping` / `Arrangement` / `Placement` split is done
 - internal `DimensionItem` / `DimensionGroup` model exists
 - `get_drawing_dimensions` returns the real line-based groups, not summary
   buckets
 - grouping is geometry-first and line-first
+- arrangement layer exists as a post-processing pipeline for already-created
+  dimensions
+- placement helper layer exists for:
+  - projection math
+  - text placement
+  - create-dimension placement
+  - control-diagonal placement
+  - text value formatting via temporary Tekla dimensions
+  - mapping dimension attributes to synthetic `Text.TextAttributes`
 - first `DimensionOperations`-style reduction step exists:
   - simple redundant items can be rejected when a more informative item in the
     same group already covers the same span
@@ -380,6 +441,11 @@ especially for:
 Current status:
 
 - first elimination step is present
+- internal line-first arrangement pipeline is present:
+  - spacing analysis
+  - arrangement planning
+  - distance-adjustment translation
+  - runtime apply method
 - current elimination is intentionally conservative:
   - simple items may be rejected when a more informative item in the same group
     already covers the same span
@@ -397,6 +463,7 @@ Current status:
   - blocking reasons are exposed
   - packet preview is built from the selected representative item by default
   - no actual Tekla merge is performed yet
+- arrangement exists internally, but public MCP exposure remains deferred
 - controlled combination from `dim` is still pending as a real action layer
 
 Done when:
