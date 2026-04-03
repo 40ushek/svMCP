@@ -64,8 +64,9 @@
 - Cumulative тип: сохранить стиль в Tekla UI → `create_dimension(..., attributesFile="cumulative")`
 - `get_part_openings(modelId, viewId)` — проёмы в стенах через `part.GetBooleans()`
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
-- `place_control_diagonals`: перевести с dimension snap-точек на реальные крайние точки видимого контура через `GetProjectedShape.GetShape(partId, cs)` — сейчас hull строится по точкам существующих размеров, что даёт "точки в воздухе" при неполном набиве размеров
+- ~~`place_control_diagonals`: перевести с dimension snap-точек на реальные крайние точки видимого контура~~ ✅ реализовано: hull строится по `GetSolid()` вершинам видимых деталей вида (`Hideable.IsHidden`), фильтрация по `MATERIAL_TYPE` (1=Steel, 2=Concrete, 5=Timber; misc/утеплитель исключаются)
 - ~~`place_control_diagonals`: текст второй диагонали ставится на `distance * 2` только когда диагонали пересекаются~~ ✅ реализовано (`SegmentsProperlyIntersect` + `distance * 2`)
+- ~~`place_control_diagonals`: направление диагоналей всегда снизу вверх по Y~~ ✅ нормализация `Start.Y ≤ End.Y` после построения пар
 
 ### Виды — проекционная связь (часть `fit_views_to_sheet`) ✅
 
@@ -93,6 +94,12 @@
 
 #### Масштабы `fit_views_to_sheet` ✅
 Стандартный ряд: `1:1, 1:2, 1:5, 1:10, 1:15, 1:20, 1:25, 1:30, 1:40, 1:50, 1:60, 1:70, 1:75, 1:80, 1:100, 1:125, 1:150, 1:175, 1:200, 1:250, 1:300`
+
+#### Производительность `fit_views_to_sheet` ✅
+- `GetAllObjects(typeof(View))` вместо `GetAllObjects()` — фильтр типа на стороне Tekla, −500 мс
+- Пропуск probe `CommitChanges` когда масштаб видов не изменился — −3 с
+- Итого: ~7 с → ~3 с (~2× ускорение)
+- Ответ содержит `totalMs` и `phaseMs` (init/reserved/probe/candidateFit/arrange/postAdjust/projection/finalCommit)
 
 ### Марки
 - Obstacle-aware score (размеры, тексты, рамки видов)

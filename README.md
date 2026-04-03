@@ -196,7 +196,7 @@ src/
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
-| `place_control_diagonals` | Экспериментальный tool: поставить контрольный диагональный размер в целевом виде и вернуть тайминги этапов |
+| `place_control_diagonals` | Контрольные диагональные размеры по реальной solid-геометрии видимых деталей вида; фильтрация по `MATERIAL_TYPE` (по умолчанию сталь/бетон/дерево, без утеплителя); направление всегда снизу вверх |
 | `get_part_geometry_in_view` | Получить геометрию детали (bbox, start/end, оси) в локальной СК вида |
 | `get_all_parts_geometry_in_view` | Пакетно получить геометрию всех деталей вида за один вызов |
 | `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
