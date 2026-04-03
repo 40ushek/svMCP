@@ -199,7 +199,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         return types.Count == 1 ? types[0] : string.Empty;
     }
 
-    internal ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
+    public ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
     {
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");

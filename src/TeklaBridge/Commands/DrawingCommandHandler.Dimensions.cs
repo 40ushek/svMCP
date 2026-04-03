@@ -365,35 +365,7 @@ internal sealed partial class DrawingCommandHandler
             }
         }
 
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("ArrangeDimensions", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (method == null)
-        {
-            WriteError("Internal ArrangeDimensions() was not found.");
-            return true;
-        }
-
-        ArrangeDimensionsResult? result;
-        try
-        {
-            result = method.Invoke(api, new object?[] { viewId, targetGap }) as ArrangeDimensionsResult;
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            WriteJson(new
-            {
-                error = ex.InnerException.Message,
-                type = ex.InnerException.GetType().Name,
-                stack = ex.InnerException.StackTrace
-            });
-            return true;
-        }
-
-        if (result == null)
-        {
-            WriteError("Internal ArrangeDimensions() returned null.");
-            return true;
-        }
-
+        var result = api.ArrangeDimensions(viewId, targetGap);
         WriteArrangeDimensionsResult(result);
         return true;
     }

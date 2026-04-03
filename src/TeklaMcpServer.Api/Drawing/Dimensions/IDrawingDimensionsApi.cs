@@ -12,4 +12,5 @@ public interface IDrawingDimensionsApi
     CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);
     PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile, int[] includeMaterialTypes);
+    ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap);
 }
