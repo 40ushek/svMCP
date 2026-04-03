@@ -45,9 +45,15 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         var results = new List<PartGeometryInViewResult>();
         try
         {
-            var identifiers = dh.GetModelObjectIdentifiers(activeDrawing);
-            foreach (Tekla.Structures.Identifier id in identifiers)
+            var objEnum = view.GetObjects();
+            while (objEnum.MoveNext())
             {
+                if (objEnum.Current is not Tekla.Structures.Drawing.Part drawingPart)
+                    continue;
+                if (drawingPart.Hideable.IsHidden)
+                    continue;
+
+                var id = drawingPart.ModelIdentifier;
                 var modelObj = _model.SelectModelObject(id);
                 if (modelObj == null) continue;
 
@@ -275,7 +281,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 return;
         }
 
-        target.Add([point.X, point.Y, point.Z]);
+        target.Add([R(point.X), R(point.Y), R(point.Z)]);
     }
 
     private static bool SamePoint(double[] point, Point candidate)
@@ -289,6 +295,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
             && System.Math.Abs(point[2] - candidate.Z) <= epsilon;
     }
 
-    private static double[] ToArray(Point? p)  => p  == null ? [] : [p.X,  p.Y,  p.Z];
-    private static double[] ToArray(Vector? v) => v  == null ? [] : [v.X,  v.Y,  v.Z];
+    private static double[] ToArray(Point? p)  => p  == null ? [] : [R(p.X), R(p.Y), R(p.Z)];
+    private static double[] ToArray(Vector? v) => v  == null ? [] : [R(v.X), R(v.Y), R(v.Z)];
+    private static double R(double v) => System.Math.Round(v, 5);
 }
