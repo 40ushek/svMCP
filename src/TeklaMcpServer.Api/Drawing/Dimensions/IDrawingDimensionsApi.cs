@@ -11,5 +11,5 @@ public interface IDrawingDimensionsApi
     DrawDimensionTextBoxesResult DrawDimensionTextBoxes(int? viewId, int? dimensionId, string color, string group);
     CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);
-    PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile);
+    PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile, int[] includeMaterialTypes);
 }

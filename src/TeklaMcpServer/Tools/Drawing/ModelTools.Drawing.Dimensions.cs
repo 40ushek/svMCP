@@ -86,11 +86,12 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Place one control diagonal dimension between farthest extreme points of the assembly in the target drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used.")]
+    [McpServerTool, Description("Place one control diagonal dimension between farthest extreme points of the assembly in the target drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used. Uses real part solid geometry filtered by material type.")]
     public static string PlaceControlDiagonals(
         [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
         [Description("Dimension line offset distance in mm. Default: 60")] double distance = 60.0,
-        [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
+        [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard",
+        [Description("Comma-separated MATERIAL_TYPE codes to include (1=Steel,2=Concrete,5=Timber). Default: '1,2,5'. Empty string = include all.")] string includeMaterialTypes = "1,2,5")
     {
         if (distance <= 0)
             return "Error: 'distance' must be a positive number.";
@@ -99,7 +100,8 @@ public static partial class ModelTools
             "place_control_diagonals",
             viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             distance.ToString(CultureInfo.InvariantCulture),
-            attributesFile ?? "standard");
+            attributesFile ?? "standard",
+            includeMaterialTypes ?? string.Empty);
         try
         {
             var doc = JsonDocument.Parse(json);

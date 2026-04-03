@@ -414,7 +414,8 @@ internal sealed partial class DrawingCommandHandler
         var result = api.PlaceControlDiagonals(
             parseResult.Request.ViewId,
             parseResult.Request.Distance,
-            parseResult.Request.AttributesFile);
+            parseResult.Request.AttributesFile,
+            parseResult.Request.IncludeMaterialTypes);
 
         WriteJson(new
         {

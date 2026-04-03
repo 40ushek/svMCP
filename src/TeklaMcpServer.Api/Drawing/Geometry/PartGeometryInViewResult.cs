@@ -34,9 +34,11 @@ public sealed class PartGeometryInViewResult
     public List<double[]> SolidVertices { get; set; } = new();
 
     // Fields populated by GetAllPartsGeometryInView (not set by single-part call)
-    public string? Type     { get; set; }
-    public string? Name     { get; set; }
-    public string? PartPos  { get; set; }
-    public string? Profile  { get; set; }
-    public string? Material { get; set; }
+    public string? Type         { get; set; }
+    public string? Name         { get; set; }
+    public string? PartPos      { get; set; }
+    public string? Profile      { get; set; }
+    public string? Material     { get; set; }
+    /// <summary>Tekla MATERIAL_TYPE: 1=Steel, 2=Concrete, 5=Timber, 6=Misc. -1 if unavailable.</summary>
+    public int     MaterialType { get; set; } = -1;
 }

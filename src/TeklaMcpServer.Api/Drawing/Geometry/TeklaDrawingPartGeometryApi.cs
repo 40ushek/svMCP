@@ -56,6 +56,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 var id = drawingPart.ModelIdentifier;
                 var modelObj = _model.SelectModelObject(id);
                 if (modelObj == null) continue;
+                modelObj.Select(); // required for GetReportProperty to work
 
                 var modelId = id.ID;
                 double[] startPt = [], endPt = [], axisX = [], axisY = [], csOrigin = [];
@@ -104,6 +105,10 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 }
 
                 modelObj.GetReportProperty("PART_POS", ref partPos);
+                int materialType = -1;
+                modelObj.GetReportProperty("MATERIAL_TYPE", ref materialType);
+                if (materialType == -1)
+                    materialType = InferMaterialType(material);
 
                 results.Add(new PartGeometryInViewResult
                 {
@@ -122,7 +127,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     Name       = name,
                     PartPos    = partPos,
                     Profile    = profile,
-                    Material   = material
+                    Material   = material,
+                    MaterialType = materialType
                 });
             }
         }
@@ -298,4 +304,38 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
     private static double[] ToArray(Point? p)  => p  == null ? [] : [R(p.X), R(p.Y), R(p.Z)];
     private static double[] ToArray(Vector? v) => v  == null ? [] : [R(v.X), R(v.Y), R(v.Z)];
     private static double R(double v) => System.Math.Round(v, 5);
+
+    /// <summary>
+    /// Infers Tekla MATERIAL_TYPE (1=Steel, 2=Concrete, 5=Timber, 6=Misc) from material name string.
+    /// Used as fallback when GetReportProperty("MATERIAL_TYPE") returns -1.
+    /// </summary>
+    private static int InferMaterialType(string materialName)
+    {
+        if (string.IsNullOrWhiteSpace(materialName)) return -1;
+        var s = materialName.Trim().ToUpperInvariant();
+
+        // Misc / insulation — check first before any C-grade match
+        if (s.Contains("WOOL") || s.Contains("GLASS") || s.Contains("FOAM") ||
+            s.Contains("MINERAL") || s.Contains("INSUL") || s.Contains("GIPS") ||
+            s.Contains("GYPS") || s.Contains("EPS") || s.Contains("XPS") ||
+            s.Contains("FOIL") || s.Contains("FOLIE") || s.Contains("BITUM"))
+            return 6;
+
+        // Concrete: C<digits>/<digits>  e.g. C20/25, C30/37
+        if (s.Length > 2 && s[0] == 'C' && char.IsDigit(s[1]) && s.Contains('/'))
+            return 2;
+
+        // Timber: C<digits> (no slash)  e.g. C24, C18; GL*, KVH*, BSH*, LVL*
+        if ((s.Length > 1 && s[0] == 'C' && char.IsDigit(s[1]) && !s.Contains('/')) ||
+            s.StartsWith("GL") || s.StartsWith("KVH") || s.StartsWith("BSH") || s.StartsWith("LVL"))
+            return 5;
+
+        // Steel: S<digits>, Fe*, A3*, A5*, HE*, IPE*, RHS*, SHS*, CHS*, etc.
+        if ((s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1])) ||
+            s.StartsWith("FE") || s.StartsWith("HE") || s.StartsWith("IPE") ||
+            s.StartsWith("RHS") || s.StartsWith("SHS") || s.StartsWith("CHS"))
+            return 1;
+
+        return -1;
+    }
 }

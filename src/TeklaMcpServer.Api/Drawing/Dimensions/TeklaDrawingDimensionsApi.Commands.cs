@@ -596,12 +596,11 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
     }
 
-    public PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile)
+    public PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile, int[] includeMaterialTypes)
     {
         var total = Stopwatch.StartNew();
         var result = new PlaceControlDiagonalsResult();
         var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = false;
 
         try
         {
@@ -618,17 +617,29 @@ public sealed partial class TeklaDrawingDimensionsApi
             result.ViewType = targetView.ViewType.ToString();
             result.SelectViewMs = selectViewSw.ElapsedMilliseconds;
 
+            // Collect part geometry before disabling AutoFetch — view.GetObjects() requires it enabled
             var readGeometrySw = Stopwatch.StartNew();
-            var sourcePoints = CollectDimensionSegmentPoints(targetView, out var dimensionsScanned);
+            var partGeometryApi = new TeklaDrawingPartGeometryApi(_model);
+            var parts = partGeometryApi.GetAllPartsGeometryInView(result.ViewId);
+            var filteredParts = includeMaterialTypes.Length == 0
+                ? parts
+                : parts.Where(p => System.Array.IndexOf(includeMaterialTypes, p.MaterialType) >= 0).ToList();
+            var sourcePoints = filteredParts
+                .SelectMany(p => p.SolidVertices)
+                .Where(v => v.Length >= 2)
+                .Select(v => new Point(v[0], v[1], v.Length > 2 ? v[2] : 0.0))
+                .ToList();
             readGeometrySw.Stop();
+
+            DrawingEnumeratorBase.AutoFetch = false;
             result.ReadGeometryMs = readGeometrySw.ElapsedMilliseconds;
-            result.PartsScanned = dimensionsScanned;
-            result.SourceDimensionsScanned = dimensionsScanned;
+            result.PartsScanned = filteredParts.Count;
+            result.SourceDimensionsScanned = filteredParts.Count;
             result.CandidatePoints = sourcePoints.Count;
 
             if (sourcePoints.Count < 2)
             {
-                result.Error = "Not enough dimension points. Add dimensions on the target view first.";
+                result.Error = $"Not enough geometry points (found {sourcePoints.Count} from {filteredParts.Count} structural parts).";
                 result.TotalMs = total.ElapsedMilliseconds;
                 return result;
             }
@@ -657,6 +668,13 @@ public sealed partial class TeklaDrawingDimensionsApi
                 && TryFindSecondaryDiagonal(hull, primary.First, primary.Second, out var secondary))
             {
                 pairs.Add(secondary);
+            }
+
+            // Normalize direction: always bottom (lower Y) → top (higher Y) in view coordinates
+            for (var i = 0; i < pairs.Count; i++)
+            {
+                if (pairs[i].Start.Y > pairs[i].End.Y)
+                    pairs[i] = (pairs[i].End, pairs[i].Start);
             }
 
             findExtremesSw.Stop();

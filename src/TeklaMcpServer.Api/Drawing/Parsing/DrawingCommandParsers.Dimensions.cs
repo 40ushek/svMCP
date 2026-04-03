@@ -61,11 +61,34 @@ public static partial class DrawingCommandParsers
             ? args[3]
             : "standard";
 
+        // args[4] not present → default [1,2,5]; empty string → include all (no filter); otherwise parse list
+        int[] includeMaterialTypes;
+        if (args.Length <= 4)
+        {
+            includeMaterialTypes = new int[] { 1, 2, 5 };
+        }
+        else if (string.IsNullOrWhiteSpace(args[4]))
+        {
+            includeMaterialTypes = System.Array.Empty<int>();
+        }
+        else
+        {
+            var parts = args[4].Split(',');
+            var parsed = new System.Collections.Generic.List<int>();
+            foreach (var part in parts)
+            {
+                if (int.TryParse(part.Trim(), out var mt))
+                    parsed.Add(mt);
+            }
+            includeMaterialTypes = parsed.ToArray();
+        }
+
         return PlaceControlDiagonalsParseResult.Success(new PlaceControlDiagonalsRequest
         {
             ViewId = viewId,
             Distance = distance,
-            AttributesFile = attributesFile
+            AttributesFile = attributesFile,
+            IncludeMaterialTypes = includeMaterialTypes
         });
     }
 

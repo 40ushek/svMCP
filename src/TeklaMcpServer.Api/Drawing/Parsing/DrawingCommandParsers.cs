@@ -261,6 +261,8 @@ public sealed class PlaceControlDiagonalsRequest
     public int? ViewId { get; set; }
     public double Distance { get; set; } = 60.0;
     public string AttributesFile { get; set; } = "standard";
+    /// <summary>MATERIAL_TYPE values to include. Default: 1=Steel, 2=Concrete, 5=Timber. Empty = include all.</summary>
+    public int[] IncludeMaterialTypes { get; set; } = [1, 2, 5];
 }
 
 public sealed class PlaceControlDiagonalsParseResult
