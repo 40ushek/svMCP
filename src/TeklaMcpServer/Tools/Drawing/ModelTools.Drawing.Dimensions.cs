@@ -53,6 +53,34 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description(
+        "Arrange existing straight dimensions in the active drawing by analyzing parallel line stacks and increasing spacing where needed. " +
+        "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale.")]
+    public static string ArrangeDimensions(
+        [Description("Optional drawing view ID. Omit to process all dimensions on the active drawing.")] int? viewId = null,
+        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 50")] double targetGap = 50.0)
+    {
+        if (targetGap < 0)
+            return "Error: 'targetGap' must be a non-negative number.";
+
+        var json = RunBridge(
+            "arrange_dimensions",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            targetGap.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

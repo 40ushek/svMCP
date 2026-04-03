@@ -112,6 +112,7 @@ Not acceptable as the long-term center of the module:
 Publicly supported today:
 
 - `get_drawing_dimensions`
+- `arrange_dimensions`
 - `move_dimension`
 - `create_dimension`
 - `delete_dimension`
@@ -127,7 +128,6 @@ Bridge/internal debug helpers currently available:
 
 Not currently exposed as public MCP tools:
 
-- arrangement apply
 - arrangement debug
 - source/group/text-placement debug helpers
 
@@ -446,6 +446,7 @@ Current status:
   - arrangement planning
   - distance-adjustment translation
   - runtime apply method
+  - public MCP apply command now exists as `arrange_dimensions`
 - current elimination is intentionally conservative:
   - simple items may be rejected when a more informative item in the same group
     already covers the same span
@@ -463,7 +464,7 @@ Current status:
   - blocking reasons are exposed
   - packet preview is built from the selected representative item by default
   - no actual Tekla merge is performed yet
-- arrangement exists internally, but public MCP exposure remains deferred
+- arrangement debug remains internal/bridge-only
 - controlled combination from `dim` is still pending as a real action layer
 
 Done when:

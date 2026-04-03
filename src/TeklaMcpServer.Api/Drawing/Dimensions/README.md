@@ -77,6 +77,7 @@ In practical terms:
 Exposed through `TeklaMcpServer/Tools`:
 
 - `get_drawing_dimensions`
+- `arrange_dimensions`
 - `move_dimension`
 - `create_dimension`
 - `delete_dimension`
@@ -94,8 +95,8 @@ Available in `TeklaBridge`, but not currently surfaced as public MCP tools:
 - `get_dimension_groups_debug`
 - `get_dimension_arrangement_debug`
 
-Arrangement apply logic also exists internally in `TeklaDrawingDimensionsApi`,
-but there is no public MCP `arrange_dimensions` tool at the moment.
+Arrangement apply logic is now publicly surfaced as `arrange_dimensions`, while
+arrangement debug remains bridge/internal only.
 
 ## Document Split
 

@@ -31,6 +31,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
 
+            case "arrange_dimensions":
+                return HandleArrangeDimensions(api, args);
+
             case "move_dimension":
                 return HandleMoveDimension(api, args);
 
@@ -349,6 +352,52 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleArrangeDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var targetGap = 50.0;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)
+            {
+                WriteError("targetGap must be a non-negative number.");
+                return true;
+            }
+        }
+
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("ArrangeDimensions", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (method == null)
+        {
+            WriteError("Internal ArrangeDimensions() was not found.");
+            return true;
+        }
+
+        ArrangeDimensionsResult? result;
+        try
+        {
+            result = method.Invoke(api, new object?[] { viewId, targetGap }) as ArrangeDimensionsResult;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+            WriteJson(new
+            {
+                error = ex.InnerException.Message,
+                type = ex.InnerException.GetType().Name,
+                stack = ex.InnerException.StackTrace
+            });
+            return true;
+        }
+
+        if (result == null)
+        {
+            WriteError("Internal ArrangeDimensions() returned null.");
+            return true;
+        }
+
+        WriteArrangeDimensionsResult(result);
+        return true;
+    }
+
     private bool HandleMoveDimension(TeklaDrawingDimensionsApi api, string[] args)
     {
         var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
@@ -554,6 +603,22 @@ internal sealed partial class DrawingCommandHandler
         {
             deleted = result.Deleted,
             dimensionId = result.DimensionId
+        });
+    }
+
+    private void WriteArrangeDimensionsResult(ArrangeDimensionsResult result)
+    {
+        WriteJson(new
+        {
+            appliedCount = result.AppliedCount,
+            skippedCount = result.SkippedCount,
+            applied = result.Applied.Select(item => new
+            {
+                dimensionId = item.DimensionId,
+                distanceDelta = item.DistanceDelta,
+                newDistance = item.NewDistance
+            }),
+            skipReasons = result.SkipReasons
         });
     }
 
