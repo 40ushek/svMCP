@@ -147,6 +147,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                         DimensionType = member.DimensionType,
                         Orientation = member.Dimension.Orientation,
                         Distance = member.Distance,
+                        NormalizationDelta = planningUnit?.NormalizationDelta ?? 0,
+                        NormalizationStatus = planningUnit?.NormalizationStatus ?? string.Empty,
+                        NormalizationReason = planningUnit?.NormalizationReason ?? string.Empty,
                         ReferenceLine = CopyLine(member.ReferenceLine),
                         PlanningReferenceLine = CopyLine(planningUnit?.PlanningReferenceLine),
                         AlignmentClusterId = planningUnit?.AlignmentClusterId ?? 0,
@@ -164,13 +167,26 @@ public sealed partial class TeklaDrawingDimensionsApi
                     ClusterId = planningUnit.ClusterId,
                     AnchorDimensionId = planningUnit.AnchorDimensionId,
                     AnchorReferenceLine = CopyLine(planningUnit.AnchorReferenceLine),
+                    AnchorDistance = planningUnit.AnchorDistance,
+                    DistanceSpread = planningUnit.DistanceSpread,
                     Applied = planningUnit.Units.Count > 1 && string.Equals(planningUnit.Status, "aligned", System.StringComparison.Ordinal),
+                    NormalizationApplied = planningUnit.NormalizationApplied,
+                    NormalizationThreshold = planningUnit.NormalizationThreshold,
+                    NormalizationReason = planningUnit.NormalizationReason,
                     Status = planningUnit.Status,
                     Reason = planningUnit.Reason
                 };
 
                 foreach (var unit in planningUnit.Units.OrderBy(static unit => unit.DimensionId))
+                {
                     cluster.DimensionIds.Add(unit.DimensionId);
+                    cluster.Members.Add(new DimensionArrangementDebugAlignmentClusterMemberInfo
+                    {
+                        DimensionId = unit.DimensionId,
+                        CurrentDistance = unit.Distance,
+                        NormalizationDelta = unit.NormalizationDelta
+                    });
+                }
 
                 info.AlignmentClusters.Add(cluster);
             }
@@ -233,8 +249,12 @@ public sealed partial class TeklaDrawingDimensionsApi
                 info.Proposals.Add(new DimensionArrangementDebugProposal
                 {
                     DimensionId = proposal.DimensionId,
+                    CurrentDistance = proposal.CurrentDistance,
                     AxisShift = proposal.AxisShift,
+                    NormalizationDelta = proposal.NormalizationDelta,
+                    SpacingDelta = proposal.SpacingDelta,
                     DistanceDelta = proposal.DistanceDelta,
+                    TargetDistance = proposal.TargetDistance,
                     CanApply = proposal.CanApply,
                     Reason = proposal.Reason
                 });

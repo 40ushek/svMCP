@@ -113,6 +113,7 @@ Publicly supported today:
 
 - `get_drawing_dimensions`
 - `arrange_dimensions`
+- `combine_dimensions`
 - `move_dimension`
 - `create_dimension`
 - `delete_dimension`
@@ -170,7 +171,8 @@ Implemented in the current `src` code:
     - excessive distance delta
     - free-dimension prohibition
     - adjacent-order fallback prohibition
-- actual Tekla dimension merging is still deferred
+- controlled Tekla dimension merging now exists as a separate conservative
+  runtime action through `combine_dimensions`
 
 ## Confirmed Findings
 
@@ -442,6 +444,9 @@ Current status:
 
 - first elimination step is present
 - internal line-first arrangement pipeline is present:
+  - arrange-specific dedup
+  - align normalization for planning/stacks
+  - runtime normalization of close `Distance` values inside aligned clusters
   - spacing analysis
   - arrangement planning
   - distance-adjustment translation
@@ -463,20 +468,26 @@ Current status:
   - candidate packets are detected
   - blocking reasons are exposed
   - packet preview is built from the selected representative item by default
-  - no actual Tekla merge is performed yet
+  - conservative real merge is now available through `combine_dimensions`
 - arrangement debug remains internal/bridge-only
-- controlled combination from `dim` is still pending as a real action layer
+- combine and arrange remain separate actions:
+  - `combine_dimensions` performs controlled merge
+  - `arrange_dimensions` performs post-placement spacing and normalization
 
 ## Ближайшие шаги по `arrange_dimensions`
 
-Простыми словами, текущий `arrange_dimensions` пока делает только базовую
-раздвижку уже созданных параллельных размеров через `Distance`.
+Простыми словами, текущий `arrange_dimensions` уже делает не только базовую
+раздвижку, но все еще остается консервативным post-processing слоем, а не
+полноценным layout-движком аннотаций.
 
 Он пока не является полноценным layout-движком размеров.
 
 Что уже есть сейчас:
 
 - группировка размеров в рабочие геометрические семьи
+- arrange-specific dedup перед planning
+- align normalization для planning/stacks
+- runtime-нормализация близких `Distance` внутри align-кластера
 - line-first spacing analysis
 - план смещений по стеку параллельных размеров
 - применение смещений через `Distance`
@@ -504,14 +515,10 @@ Current status:
 
 - `alignment normalizer` уже умеет строить общий planning cluster и общую
   опорную линию для близких размеров
-- но это пока только аналитическая нормализация для planning/stacks
-- близкие размеры внутри кластера пока не приводятся к одному `Distance`
-- то есть они начинают двигаться вместе, но не схлопываются в одну физическую
-  размерную линию
-
-Отдельный следующий шаг:
-
-- runtime-нормализация `Distance` внутри align-кластера
+- `runtime distance normalizer` уже умеет приводить близкие размеры внутри
+  поддерживаемого align-кластера к `Distance` anchor-размера
+- вся эта логика пока сознательно ограничена только консервативными
+  поддерживаемыми осевыми параллельными случаями
 
 ### 2. Более умная раздвижка
 
@@ -531,6 +538,94 @@ Current status:
 - пробовать несколько вариантов размещения и выбирать лучший
 
 Это уже новый слой, а не перенос готового кода из старых проектов.
+
+## Текущий техдолг
+
+### Arrangement / layout debt
+
+- `arrange_dimensions` пока не является полноценным annotation-aware layout
+  engine
+- нет collision-aware layout для:
+  - text boxes размеров
+  - marks
+  - других annotation objects
+- нет выбора лучшей стороны размещения
+- нет retry/fallback layout strategy
+- align/runtime normalization пока рассчитаны только на консервативные
+  поддерживаемые осевые параллельные случаи
+- часть mapping logic через `Distance` остается неоднозначной для unsupported
+  cases
+
+### Combine debt
+
+- `combine_dimensions` сейчас консервативный и intentionally narrow
+- combine разрешается только там, где текущий packet analysis уже уверен, что
+  случай безопасен
+- merge не делает post-layout cleanup после создания replacement dimension
+- preview/result surface есть, но главным explain/debug surface по-прежнему
+  остается `get_dimension_groups_debug`
+- rollback/delete/create semantics нужно еще подтвердить на живом drawing
+  runtime
+- targeted combine работает только по packet'ам, полностью попавшим в выбранный
+  набор `dimensionIds`
+
+### Placement / heuristics debt
+
+- не перенесены richer placement heuristics из `xDrawer`
+- нет отдельного policy-слоя для:
+  - `Placing`
+  - `ExaggerationDirection`
+  - preset-by-source
+- scale/text-height heuristics пока базовые, не полные
+- для native moved dimension text по-прежнему нет надежно наблюдаемой позиции
+  через доступный Tekla API surface
+- synthetic text geometry остается fallback path
+
+### Tooling / debug debt
+
+- arrangement debug и group/source/text debug остаются bridge/internal-only
+- public MCP surface пока intentionally narrower, чем internal debug surface
+- если позже потребуется operator-friendly inspection, нужен отдельный
+  публичный debug/read model, а не прямой слив internal DTO
+
+### Validation / test debt
+
+- unit tests есть, но live acceptance на реальных drawings остается
+  обязательной для:
+  - arrange
+  - combine
+  - rollback/partial-failure cases
+- `TeklaMcpServer.Tests` в текущем окружении нестабилен из-за `NU1701`/warning
+  policy
+- часть новых dimension tests нельзя считать надежно подтвержденными, пока test
+  project не станет стабильно rebuild-иться
+
+## Следующий backlog
+
+### 1. Stabilize current runtime behavior
+
+- live validation `combine_dimensions`
+- live validation rollback/delete/create path
+- confirm `arrange_dimensions` behavior on real drawings
+
+### 2. Improve arrangement quality
+
+- collision-aware layout
+- mark/text avoidance
+- side switching / smarter placement policy
+
+### 3. Improve combine quality
+
+- `combine v2` only after current runtime behavior is validated
+- optional post-combine arrange handoff
+- broader but still explainable combine policy only after current conservative
+  path proves stable
+
+### 4. Placement policy expansion
+
+- preset resolver
+- `Placing` / `ExaggerationDirection` policy
+- richer scale/text-height heuristics from `xDrawer`
 
 Done when:
 
@@ -626,8 +721,8 @@ The redesign is on track when:
 - grouping and elimination rules are policy-driven rather than hard-coded
 - debug can explain why an item was kept, rejected or selected as a packet
   representative
-- packet-level combine-candidate analysis is visible before any real merge
-  action exists
+- packet-level combine-candidate analysis is visible and remains explainable
+  before `combine v2` broadens the current conservative merge path
 
 The redesign is ready to expose further arrange functionality when:
 

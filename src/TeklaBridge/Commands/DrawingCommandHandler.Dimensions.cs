@@ -34,6 +34,9 @@ internal sealed partial class DrawingCommandHandler
             case "arrange_dimensions":
                 return HandleArrangeDimensions(api, args);
 
+            case "combine_dimensions":
+                return HandleCombineDimensions(api, args);
+
             case "move_dimension":
                 return HandleMoveDimension(api, args);
 
@@ -370,6 +373,23 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleCombineDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseCombineDimensionsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.CombineDimensions(
+            parseResult.Request.ViewId,
+            parseResult.Request.DimensionIds,
+            parseResult.Request.PreviewOnly);
+        WriteCombineDimensionsResult(result);
+        return true;
+    }
+
     private bool HandleMoveDimension(TeklaDrawingDimensionsApi api, string[] args)
     {
         var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
@@ -594,6 +614,63 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+    private void WriteCombineDimensionsResult(CombineDimensionsResult result)
+    {
+        WriteJson(new
+        {
+            previewOnly = result.PreviewOnly,
+            candidateCount = result.CandidateCount,
+            combinedCount = result.CombinedCount,
+            skippedCount = result.SkippedCount,
+            combined = result.Combined.Select(item => new
+            {
+                viewId = item.ViewId,
+                viewType = item.ViewType,
+                dimensionType = item.DimensionType,
+                packetIndex = item.PacketIndex,
+                baseDimensionId = item.BaseDimensionId,
+                connectivityMode = item.ConnectivityMode,
+                previewOnly = item.PreviewOnly,
+                combined = item.Combined,
+                createdDimensionId = item.CreatedDimensionId,
+                distance = item.Distance,
+                reason = item.Reason,
+                dimensionIds = item.DimensionIds,
+                deletedDimensionIds = item.DeletedDimensionIds,
+                blockingReasons = item.BlockingReasons,
+                pointList = item.PointList.Select(point => new
+                {
+                    x = point.X,
+                    y = point.Y,
+                    order = point.Order
+                })
+            }),
+            skipped = result.Skipped.Select(item => new
+            {
+                viewId = item.ViewId,
+                viewType = item.ViewType,
+                dimensionType = item.DimensionType,
+                packetIndex = item.PacketIndex,
+                baseDimensionId = item.BaseDimensionId,
+                connectivityMode = item.ConnectivityMode,
+                previewOnly = item.PreviewOnly,
+                combined = item.Combined,
+                createdDimensionId = item.CreatedDimensionId,
+                distance = item.Distance,
+                reason = item.Reason,
+                dimensionIds = item.DimensionIds,
+                deletedDimensionIds = item.DeletedDimensionIds,
+                blockingReasons = item.BlockingReasons,
+                pointList = item.PointList.Select(point => new
+                {
+                    x = point.X,
+                    y = point.Y,
+                    order = point.Order
+                })
+            })
+        });
+    }
+
     private void WriteDimensionArrangementDebugResult(DimensionArrangementDebugResult result)
     {
         static object? SerializeLine(DrawingLineInfo? line)
@@ -699,6 +776,9 @@ internal sealed partial class DrawingCommandHandler
                     dimensionType = member.DimensionType,
                     orientation = member.Orientation,
                     distance = member.Distance,
+                    normalizationDelta = member.NormalizationDelta,
+                    normalizationStatus = member.NormalizationStatus,
+                    normalizationReason = member.NormalizationReason,
                     referenceLine = SerializeLine(member.ReferenceLine),
                     planningReferenceLine = SerializeLine(member.PlanningReferenceLine),
                     alignmentClusterId = member.AlignmentClusterId,
@@ -711,10 +791,21 @@ internal sealed partial class DrawingCommandHandler
                     clusterId = cluster.ClusterId,
                     anchorDimensionId = cluster.AnchorDimensionId,
                     anchorReferenceLine = SerializeLine(cluster.AnchorReferenceLine),
+                    anchorDistance = cluster.AnchorDistance,
+                    distanceSpread = cluster.DistanceSpread,
                     applied = cluster.Applied,
+                    normalizationApplied = cluster.NormalizationApplied,
+                    normalizationThreshold = cluster.NormalizationThreshold,
+                    normalizationReason = cluster.NormalizationReason,
                     status = cluster.Status,
                     reason = cluster.Reason,
-                    dimensionIds = cluster.DimensionIds
+                    dimensionIds = cluster.DimensionIds,
+                    members = cluster.Members.Select(member => new
+                    {
+                        dimensionId = member.DimensionId,
+                        currentDistance = member.CurrentDistance,
+                        normalizationDelta = member.NormalizationDelta
+                    })
                 })
             }),
             spacing = result.Spacing.Select(info => new
@@ -754,8 +845,12 @@ internal sealed partial class DrawingCommandHandler
                 proposals = plan.Proposals.Select(proposal => new
                 {
                     dimensionId = proposal.DimensionId,
+                    currentDistance = proposal.CurrentDistance,
                     axisShift = proposal.AxisShift,
+                    normalizationDelta = proposal.NormalizationDelta,
+                    spacingDelta = proposal.SpacingDelta,
                     distanceDelta = proposal.DistanceDelta,
+                    targetDistance = proposal.TargetDistance,
                     canApply = proposal.CanApply,
                     reason = proposal.Reason
                 })

@@ -118,4 +118,34 @@ public static partial class DrawingCommandParsers
             DimensionId = dimensionId
         });
     }
+
+    public static CombineDimensionsParseResult ParseCombineDimensionsRequest(string[] args)
+    {
+        int? viewId = null;
+        if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+        {
+            if (!int.TryParse(args[1], out var parsedViewId))
+                return CombineDimensionsParseResult.Fail("viewId must be an integer");
+            viewId = parsedViewId;
+        }
+
+        var dimensionIdsRaw = args.Length > 2 ? args[2] : string.Empty;
+        var dimensionIds = ParseIntList(dimensionIdsRaw);
+        if (!string.IsNullOrWhiteSpace(dimensionIdsRaw) && dimensionIds.Count == 0)
+            return CombineDimensionsParseResult.Fail("dimensionIds must be a comma-separated list of integers");
+
+        var previewOnly = false;
+        if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) &&
+            !bool.TryParse(args[3], out previewOnly))
+        {
+            return CombineDimensionsParseResult.Fail("previewOnly must be true or false");
+        }
+
+        return CombineDimensionsParseResult.Success(new CombineDimensionsRequest
+        {
+            ViewId = viewId,
+            DimensionIds = dimensionIds,
+            PreviewOnly = previewOnly
+        });
+    }
 }

@@ -83,6 +83,9 @@ public sealed class DimensionArrangementDebugStackMemberInfo
     public string DimensionType { get; set; } = string.Empty;
     public string Orientation { get; set; } = string.Empty;
     public double Distance { get; set; }
+    public double NormalizationDelta { get; set; }
+    public string NormalizationStatus { get; set; } = string.Empty;
+    public string NormalizationReason { get; set; } = string.Empty;
     public DrawingLineInfo? ReferenceLine { get; set; }
     public DrawingLineInfo? PlanningReferenceLine { get; set; }
     public int AlignmentClusterId { get; set; }
@@ -91,15 +94,28 @@ public sealed class DimensionArrangementDebugStackMemberInfo
     public string AlignmentReason { get; set; } = string.Empty;
 }
 
+public sealed class DimensionArrangementDebugAlignmentClusterMemberInfo
+{
+    public int DimensionId { get; set; }
+    public double CurrentDistance { get; set; }
+    public double NormalizationDelta { get; set; }
+}
+
 public sealed class DimensionArrangementDebugAlignmentClusterInfo
 {
     public int ClusterId { get; set; }
     public int AnchorDimensionId { get; set; }
     public DrawingLineInfo? AnchorReferenceLine { get; set; }
+    public double? AnchorDistance { get; set; }
+    public double? DistanceSpread { get; set; }
     public bool Applied { get; set; }
+    public bool NormalizationApplied { get; set; }
+    public double NormalizationThreshold { get; set; }
+    public string NormalizationReason { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public List<int> DimensionIds { get; } = [];
+    public List<DimensionArrangementDebugAlignmentClusterMemberInfo> Members { get; } = [];
 }
 
 public sealed class DimensionArrangementDebugStackInfo
@@ -121,8 +137,12 @@ public sealed class DimensionArrangementDebugStackInfo
 public sealed class DimensionArrangementDebugProposal
 {
     public int DimensionId { get; set; }
+    public double CurrentDistance { get; set; }
     public double AxisShift { get; set; }
+    public double NormalizationDelta { get; set; }
+    public double SpacingDelta { get; set; }
     public double DistanceDelta { get; set; }
+    public double TargetDistance { get; set; }
     public bool CanApply { get; set; }
     public string Reason { get; set; } = string.Empty;
 }

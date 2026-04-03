@@ -81,6 +81,34 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description(
+        "Combine compatible existing straight dimensions into replacement dimension sets. " +
+        "Uses the current packet-level combine analysis; optionally limit to one viewId or a comma-separated subset of dimension IDs. " +
+        "Set previewOnly=true to inspect combine candidates without modifying the drawing.")]
+    public static string CombineDimensions(
+        [Description("Optional drawing view ID. Omit to scan the whole active drawing.")] int? viewId = null,
+        [Description("Optional comma-separated list of dimension IDs. Only packets fully contained in this set are considered.")] string dimensionIds = "",
+        [Description("When true, return combine candidates and previews without modifying the drawing. Default: false")] bool previewOnly = false)
+    {
+        var json = RunBridge(
+            "combine_dimensions",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            dimensionIds ?? string.Empty,
+            previewOnly.ToString());
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

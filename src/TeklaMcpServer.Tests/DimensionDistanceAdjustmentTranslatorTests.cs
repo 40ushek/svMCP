@@ -39,6 +39,104 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
     }
 
     [Fact]
+    public void BuildPlan_ForStack_AddsNormalizationDeltaForCloseAlignedCluster()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (1, 0), 10, 8, leadLineLength: 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (1, 0), 12, 10, leadLineLength: 6));
+
+        var axisPlan = new DimensionGroupArrangementPlan
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TargetGapPaper = 5
+        };
+
+        var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.True(proposal.CanApply);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(10, proposal.CurrentDistance, 3);
+        Assert.Equal(-2, proposal.NormalizationDelta, 3);
+        Assert.Equal(0, proposal.SpacingDelta, 3);
+        Assert.Equal(-2, proposal.DistanceDelta, 3);
+        Assert.Equal(8, proposal.TargetDistance, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForStack_SkipsNormalizationWhenDistanceSpreadExceedsTolerance()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (1, 0), 10, 8, leadLineLength: 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (1, 0), 12, 12.5, leadLineLength: 6));
+
+        var axisPlan = new DimensionGroupArrangementPlan
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TargetGapPaper = 5
+        };
+
+        var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
+
+        Assert.Empty(plan.Proposals);
+    }
+
+    [Fact]
+    public void BuildPlan_ForStack_CombinesNormalizationAndSpacingDelta()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, -1, (1, 0), 10, -8, leadLineLength: 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, -1, (1, 0), 12, -6, leadLineLength: 6));
+
+        var axisPlan = new DimensionGroupArrangementPlan
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TargetGapPaper = 5
+        };
+        axisPlan.Proposals.Add(new DimensionMoveProposal { DimensionId = 2, AxisShift = 5 });
+
+        var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.True(proposal.CanApply);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(-2, proposal.NormalizationDelta, 3);
+        Assert.Equal(-5, proposal.SpacingDelta, 3);
+        Assert.Equal(-7, proposal.DistanceDelta, 3);
+        Assert.Equal(-13, proposal.TargetDistance, 3);
+    }
+
+    [Fact]
     public void BuildPlan_MapsHorizontalAxisShiftToDistanceDelta()
     {
         var group = new DimensionGroup
@@ -199,7 +297,8 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         int topDirection,
         (double X, double Y) direction,
         double lineOffset,
-        double distance)
+        double distance,
+        double? leadLineLength = null)
     {
         var line = new DrawingLineInfo
         {
@@ -225,6 +324,15 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
             DirectionY = direction.Y,
             TopDirection = topDirection,
             ReferenceLine = line,
+            LeadLineMain = leadLineLength.HasValue
+                ? new DrawingLineInfo
+                {
+                    StartX = line.StartX,
+                    StartY = line.StartY,
+                    EndX = line.StartX,
+                    EndY = line.StartY + leadLineLength.Value
+                }
+                : null,
             Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line),
             Dimension = new DrawingDimensionInfo
             {

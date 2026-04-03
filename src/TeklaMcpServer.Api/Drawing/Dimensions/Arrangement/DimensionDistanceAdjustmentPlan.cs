@@ -6,8 +6,12 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class DimensionDistanceAdjustmentProposal
 {
     public int DimensionId { get; set; }
+    public double CurrentDistance { get; set; }
     public double AxisShift { get; set; }
+    public double NormalizationDelta { get; set; }
+    public double SpacingDelta { get; set; }
     public double DistanceDelta { get; set; }
+    public double TargetDistance { get; set; }
     public bool CanApply { get; set; }
     public string Reason { get; set; } = string.Empty;
 }
@@ -36,70 +40,115 @@ internal static class DimensionDistanceAdjustmentTranslator
             TargetGapDrawing = axisPlan.TargetGapDrawing
         };
 
-        var unitsById = DimensionGroupSpacingAnalyzer.BuildMoveUnits(stack)
-            .ToDictionary(static unit => unit.DimensionId);
+        var planningUnits = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+        var unitsById = planningUnits
+            .SelectMany(static unit => unit.Units)
+            .GroupBy(static unit => unit.DimensionId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+        var axisShiftById = axisPlan.Proposals
+            .GroupBy(static proposal => proposal.DimensionId)
+            .ToDictionary(
+                static group => group.Key,
+                static group => System.Math.Round(group.Sum(static proposal => proposal.AxisShift), 3));
+        var proposalIds = unitsById.Values
+            .Where(static unit => System.Math.Abs(unit.NormalizationDelta) > 1e-9)
+            .Select(static unit => unit.DimensionId)
+            .Concat(axisShiftById.Keys)
+            .Distinct()
+            .OrderBy(static id => id)
+            .ToList();
 
-        foreach (var proposal in axisPlan.Proposals)
+        foreach (var dimensionId in proposalIds)
         {
-            if (IsSupportedForDistanceTranslation(stack, out var unsupportedReason))
+            axisShiftById.TryGetValue(dimensionId, out var axisShift);
+
+            if (!unitsById.TryGetValue(dimensionId, out var unit))
             {
-                if (!unitsById.TryGetValue(proposal.DimensionId, out var unit))
-                {
-                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
-                    {
-                        DimensionId = proposal.DimensionId,
-                        AxisShift = proposal.AxisShift,
-                        DistanceDelta = 0,
-                        CanApply = false,
-                        Reason = "Dimension move unit was not found for distance translation."
-                    });
-                    continue;
-                }
-
-                if (unit.ReferenceLine == null)
-                {
-                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
-                    {
-                        DimensionId = proposal.DimensionId,
-                        AxisShift = proposal.AxisShift,
-                        DistanceDelta = 0,
-                        CanApply = false,
-                        Reason = "Distance mapping requires a reference line."
-                    });
-                    continue;
-                }
-
-                if (System.Math.Abs(unit.Distance) <= 1e-9)
-                {
-                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
-                    {
-                        DimensionId = proposal.DimensionId,
-                        AxisShift = proposal.AxisShift,
-                        DistanceDelta = 0,
-                        CanApply = false,
-                        Reason = "Distance mapping is ambiguous for zero-distance dimensions."
-                    });
-                    continue;
-                }
-
-                var sign = System.Math.Sign(unit.Distance);
                 plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
                 {
-                    DimensionId = proposal.DimensionId,
-                    AxisShift = proposal.AxisShift,
-                    DistanceDelta = proposal.AxisShift * sign,
-                    CanApply = true
+                    DimensionId = dimensionId,
+                    AxisShift = axisShift,
+                    DistanceDelta = 0,
+                    CanApply = false,
+                    Reason = "Dimension move unit was not found for distance translation."
                 });
                 continue;
             }
 
+            var normalizationDelta = unit.NormalizationDelta;
+            var spacingDelta = 0.0;
+            var currentDistance = unit.Distance;
+            var targetDistanceBeforeSpacing = currentDistance + normalizationDelta;
+
+            if (System.Math.Abs(axisShift) > 1e-9)
+            {
+                if (IsSupportedForDistanceTranslation(stack, out var unsupportedReason))
+                {
+                    if (unit.ReferenceLine == null)
+                    {
+                        plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                        {
+                            DimensionId = dimensionId,
+                            CurrentDistance = currentDistance,
+                            AxisShift = axisShift,
+                            NormalizationDelta = normalizationDelta,
+                            SpacingDelta = 0,
+                            DistanceDelta = 0,
+                            TargetDistance = currentDistance + normalizationDelta,
+                            CanApply = false,
+                            Reason = "Distance mapping requires a reference line."
+                        });
+                        continue;
+                    }
+
+                    if (System.Math.Abs(targetDistanceBeforeSpacing) <= 1e-9)
+                    {
+                        plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                        {
+                            DimensionId = dimensionId,
+                            CurrentDistance = currentDistance,
+                            AxisShift = axisShift,
+                            NormalizationDelta = normalizationDelta,
+                            SpacingDelta = 0,
+                            DistanceDelta = 0,
+                            TargetDistance = currentDistance + normalizationDelta,
+                            CanApply = false,
+                            Reason = "Distance mapping is ambiguous for zero-distance dimensions after normalization."
+                        });
+                        continue;
+                    }
+
+                    spacingDelta = axisShift * System.Math.Sign(targetDistanceBeforeSpacing);
+                }
+                else
+                {
+                    plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
+                    {
+                        DimensionId = dimensionId,
+                        CurrentDistance = currentDistance,
+                        AxisShift = axisShift,
+                        NormalizationDelta = normalizationDelta,
+                        SpacingDelta = 0,
+                        DistanceDelta = 0,
+                        TargetDistance = currentDistance + normalizationDelta,
+                        CanApply = false,
+                        Reason = unsupportedReason
+                    });
+                    continue;
+                }
+            }
+
+            var distanceDelta = System.Math.Round(normalizationDelta + spacingDelta, 3);
             plan.Proposals.Add(new DimensionDistanceAdjustmentProposal
             {
-                DimensionId = proposal.DimensionId,
-                AxisShift = proposal.AxisShift,
-                DistanceDelta = 0,
-                CanApply = false,
-                Reason = unsupportedReason
+                DimensionId = dimensionId,
+                CurrentDistance = currentDistance,
+                AxisShift = axisShift,
+                NormalizationDelta = normalizationDelta,
+                SpacingDelta = spacingDelta,
+                DistanceDelta = distanceDelta,
+                TargetDistance = System.Math.Round(currentDistance + distanceDelta, 3),
+                CanApply = true
             });
         }
 
@@ -210,7 +259,7 @@ internal static class DimensionDistanceAdjustmentTranslator
 
         if (!stack.Groups.SelectMany(static group => group.Members).Any(static member => member.ReferenceLine != null))
         {
-            reason = "Distance mapping requires reference-line geometry.";
+            reason = "Distance mapping requires reference line geometry.";
             return false;
         }
 
@@ -243,7 +292,7 @@ internal static class DimensionDistanceAdjustmentTranslator
 
         if (!group.Members.Any(static member => member.ReferenceLine != null))
         {
-            reason = "Distance mapping requires reference-line geometry.";
+            reason = "Distance mapping requires reference line geometry.";
             return false;
         }
 

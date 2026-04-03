@@ -343,6 +343,26 @@ public sealed class DeleteDimensionRequest
     public int DimensionId { get; set; }
 }
 
+public sealed class CombineDimensionsRequest
+{
+    public int? ViewId { get; set; }
+    public List<int> DimensionIds { get; set; } = new();
+    public bool PreviewOnly { get; set; }
+}
+
+public sealed class CombineDimensionsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public CombineDimensionsRequest Request { get; private set; } = new();
+
+    public static CombineDimensionsParseResult Success(CombineDimensionsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static CombineDimensionsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
 public sealed class DeleteDimensionParseResult
 {
     public bool IsValid { get; private set; }

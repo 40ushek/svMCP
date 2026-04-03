@@ -26,6 +26,9 @@ internal sealed class DimensionStackMoveUnit
     public int? AlignmentAnchorDimensionId { get; set; }
     public string AlignmentStatus { get; set; } = string.Empty;
     public string AlignmentReason { get; set; } = string.Empty;
+    public double NormalizationDelta { get; set; }
+    public string NormalizationStatus { get; set; } = string.Empty;
+    public string NormalizationReason { get; set; } = string.Empty;
     public double MinOffset { get; set; }
     public double MaxOffset { get; set; }
 }
@@ -115,7 +118,9 @@ internal static class DimensionGroupSpacingAnalyzer
 
     public static List<DimensionStackPlanningUnit> BuildPlanningUnits(DimensionGroupLineStack stack)
     {
-        return DimensionStackAlignmentNormalizer.BuildPlanningUnits(stack);
+        var units = DimensionStackAlignmentNormalizer.BuildPlanningUnits(stack);
+        DimensionClusterDistanceNormalizer.Annotate(units);
+        return units;
     }
 
     public static DimensionGroupSpacingAnalysis Analyze(DimensionGroup group)

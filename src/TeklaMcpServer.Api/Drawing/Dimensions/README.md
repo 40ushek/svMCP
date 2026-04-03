@@ -10,7 +10,7 @@ It is responsible for:
 - projecting Tekla runtime data into the internal dimension domain model
 - grouping and reducing dimensions for analysis
 - planning and applying spacing/offset adjustments
-- creating, moving and deleting dimensions
+- creating, moving, deleting and combining dimensions
 - control-diagonal placement
 - text/debug support for dimension inspection
 
@@ -78,6 +78,7 @@ Exposed through `TeklaMcpServer/Tools`:
 
 - `get_drawing_dimensions`
 - `arrange_dimensions`
+- `combine_dimensions`
 - `move_dimension`
 - `create_dimension`
 - `delete_dimension`
@@ -85,6 +86,9 @@ Exposed through `TeklaMcpServer/Tools`:
 - `draw_dimension_text_boxes`
 
 These are the supported public tool-surface operations for dimensions.
+`combine_dimensions` is a separate controlled merge action layered on top of
+the existing packet-level combine analysis; it is intentionally not part of
+`arrange_dimensions`.
 
 ## Internal / Bridge-Only Debug Surface
 
@@ -95,8 +99,9 @@ Available in `TeklaBridge`, but not currently surfaced as public MCP tools:
 - `get_dimension_groups_debug`
 - `get_dimension_arrangement_debug`
 
-Arrangement apply logic is now publicly surfaced as `arrange_dimensions`, while
-arrangement debug remains bridge/internal only.
+Arrangement apply logic is publicly surfaced as `arrange_dimensions`, and
+controlled dimension merging is publicly surfaced as `combine_dimensions`,
+while arrangement debug remains bridge/internal only.
 
 ## Document Split
 

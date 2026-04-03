@@ -586,6 +586,246 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
     }
 
+    public CombineDimensionsResult CombineDimensions(int? viewId, IReadOnlyList<int>? dimensionIds, bool previewOnly)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var normalizedDimensionIds = dimensionIds?
+            .Where(static id => id > 0)
+            .Distinct()
+            .ToList();
+        var debug = GetDimensionGroupReductionDebug(viewId);
+        var candidates = DimensionCombineActionPlanner.BuildCandidates(debug, normalizedDimensionIds);
+        var result = new CombineDimensionsResult
+        {
+            PreviewOnly = previewOnly,
+            CandidateCount = candidates.Count
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (!candidate.CanCombine)
+            {
+                result.Skipped.Add(CreateCombineCandidateResult(candidate, previewOnly, combined: false, createdDimensionId: null, reasonOverride: candidate.Reason));
+                continue;
+            }
+
+            if (previewOnly)
+            {
+                result.Combined.Add(CreateCombineCandidateResult(candidate, previewOnly: true, combined: false, createdDimensionId: null));
+                continue;
+            }
+
+            var applyResult = TryApplyCombineCandidate(activeDrawing, candidate);
+            if (!applyResult.Success)
+            {
+                result.Skipped.Add(CreateCombineCandidateResult(candidate, previewOnly: false, combined: false, createdDimensionId: null, reasonOverride: applyResult.Reason));
+                continue;
+            }
+
+            result.Combined.Add(CreateCombineCandidateResult(
+                candidate,
+                previewOnly: false,
+                combined: true,
+                createdDimensionId: applyResult.CreatedDimensionId,
+                deletedDimensionIdsOverride: candidate.DimensionIds));
+        }
+
+        result.CombinedCount = result.Combined.Count(static item => item.Combined);
+        result.SkippedCount = result.Skipped.Count;
+        return result;
+    }
+
+    private static CombineDimensionCandidateResult CreateCombineCandidateResult(
+        DimensionCombineActionCandidate candidate,
+        bool previewOnly,
+        bool combined,
+        int? createdDimensionId,
+        IReadOnlyList<int>? deletedDimensionIdsOverride = null,
+        string? reasonOverride = null)
+    {
+        var result = new CombineDimensionCandidateResult
+        {
+            ViewId = candidate.ViewId,
+            ViewType = candidate.ViewType,
+            DimensionType = candidate.DimensionType,
+            PacketIndex = candidate.PacketIndex,
+            BaseDimensionId = candidate.BaseDimensionId,
+            ConnectivityMode = candidate.ConnectivityMode,
+            PreviewOnly = previewOnly,
+            Combined = combined,
+            CreatedDimensionId = createdDimensionId,
+            Distance = candidate.Preview?.Distance ?? 0,
+            Reason = reasonOverride ?? candidate.Reason
+        };
+
+        result.DimensionIds.AddRange(candidate.DimensionIds);
+        result.BlockingReasons.AddRange(candidate.BlockingReasons);
+        if (deletedDimensionIdsOverride != null)
+            result.DeletedDimensionIds.AddRange(deletedDimensionIdsOverride);
+
+        if (candidate.Preview != null)
+        {
+            foreach (var point in candidate.Preview.PointList.OrderBy(static point => point.Order))
+            {
+                result.PointList.Add(new DrawingPointInfo
+                {
+                    X = point.X,
+                    Y = point.Y,
+                    Order = point.Order
+                });
+            }
+        }
+
+        return result;
+    }
+
+    private (bool Success, int? CreatedDimensionId, string Reason) TryApplyCombineCandidate(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        DimensionCombineActionCandidate candidate)
+    {
+        if (candidate.Preview == null)
+            return (false, null, "combine_preview_unavailable");
+
+        var sourceDimensions = FindDimensionSetsById(activeDrawing, candidate.DimensionIds);
+        if (sourceDimensions.Count != candidate.DimensionIds.Count)
+        {
+            var missing = candidate.DimensionIds.Where(id => !sourceDimensions.ContainsKey(id)).OrderBy(static id => id);
+            return (false, null, $"source_dimensions_not_found:{string.Join(",", missing)}");
+        }
+
+        if (!sourceDimensions.TryGetValue(candidate.BaseDimensionId, out var baseDimensionSet))
+            return (false, null, "base_dimension_not_found");
+
+        if (baseDimensionSet.GetView() is not Tekla.Structures.Drawing.View view)
+            return (false, null, "base_view_not_found");
+
+        if (!TryResolveCombineOffsetVector(baseDimensionSet, out var offsetVector))
+            return (false, null, "combine_offset_vector_unavailable");
+
+        var attributes = TryGetCombineAttributes(baseDimensionSet);
+        var pointList = CreateCombinePointList(candidate.Preview);
+        if (pointList.Count < 2)
+            return (false, null, "combine_preview_has_too_few_points");
+
+        StraightDimensionSet? created = null;
+        try
+        {
+            created = new StraightDimensionSetHandler().CreateDimensionSet(
+                view,
+                pointList,
+                offsetVector,
+                candidate.Preview.Distance,
+                attributes);
+
+            if (created == null)
+                return (false, null, "CreateDimensionSet returned null");
+
+            foreach (var dimensionSet in sourceDimensions.Values)
+                dimensionSet.Delete();
+
+            activeDrawing.CommitChanges("(MCP) CombineDimensions");
+            return (true, created.GetIdentifier().ID, string.Empty);
+        }
+        catch (System.Exception ex)
+        {
+            if (created != null)
+            {
+                try
+                {
+                    created.Delete();
+                    activeDrawing.CommitChanges("(MCP) RollbackCombineDimensions");
+                }
+                catch
+                {
+                }
+            }
+
+            return (false, null, ex.Message);
+        }
+    }
+
+    private static Dictionary<int, StraightDimensionSet> FindDimensionSetsById(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        IReadOnlyCollection<int> dimensionIds)
+    {
+        var result = new Dictionary<int, StraightDimensionSet>();
+        if (dimensionIds.Count == 0)
+            return result;
+
+        var idSet = new HashSet<int>(dimensionIds);
+        var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+        while (allDims.MoveNext())
+        {
+            if (allDims.Current is not StraightDimensionSet ds)
+                continue;
+
+            var id = ds.GetIdentifier().ID;
+            if (!idSet.Contains(id))
+                continue;
+
+            result[id] = ds;
+        }
+
+        return result;
+    }
+
+    private static PointList CreateCombinePointList(DimensionCombinePreviewDebugInfo preview)
+    {
+        var pointList = new PointList();
+        foreach (var point in preview.PointList.OrderBy(static point => point.Order))
+            pointList.Add(new Point(point.X, point.Y, 0.0));
+
+        return pointList;
+    }
+
+    private static StraightDimensionSet.StraightDimensionSetAttributes TryGetCombineAttributes(StraightDimensionSet baseDimensionSet)
+    {
+        try
+        {
+            if (baseDimensionSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
+                return attributes;
+        }
+        catch
+        {
+        }
+
+        return DimensionCreatePlacementHelper.CreateAttributes(null);
+    }
+
+    private bool TryResolveCombineOffsetVector(StraightDimensionSet baseDimensionSet, out Vector vector)
+    {
+        vector = default!;
+
+        try
+        {
+            var info = BuildDimensionInfo(baseDimensionSet);
+            if (TryNormalizeDirection(info.DirectionX, info.DirectionY, out var direction) &&
+                info.TopDirection != 0)
+            {
+                var upX = -direction.Y * info.TopDirection;
+                var upY = direction.X * info.TopDirection;
+                vector = new Vector(upX, upY, 0.0);
+                return true;
+            }
+        }
+        catch
+        {
+        }
+
+        var firstSegment = EnumerateSegments(baseDimensionSet).FirstOrDefault();
+        if (firstSegment == null)
+            return false;
+
+        if (!TryGetUpDirection(firstSegment, out var upDirection))
+            return false;
+
+        vector = new Vector(upDirection.X, upDirection.Y, 0.0);
+        return true;
+    }
+
     public PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile, int[] includeMaterialTypes)
     {
         var total = Stopwatch.StartNew();

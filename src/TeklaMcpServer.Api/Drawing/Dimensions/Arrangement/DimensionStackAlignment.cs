@@ -8,8 +8,13 @@ internal sealed class DimensionStackPlanningUnit
     public int ClusterId { get; set; }
     public int AnchorDimensionId { get; set; }
     public DrawingLineInfo? AnchorReferenceLine { get; set; }
+    public double? AnchorDistance { get; set; }
+    public double? DistanceSpread { get; set; }
     public double MinOffset { get; set; }
     public double MaxOffset { get; set; }
+    public double NormalizationThreshold { get; set; }
+    public bool NormalizationApplied { get; set; }
+    public string NormalizationReason { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public List<DimensionStackMoveUnit> Units { get; } = [];
