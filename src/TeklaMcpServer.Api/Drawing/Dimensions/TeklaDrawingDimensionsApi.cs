@@ -209,7 +209,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         StraightDimensionSet dimSet,
         View view)
     {
-        var formattedValue = TryGetMeasuredValueTextFromTemporaryDimension(segment, dimSet, view);
+        var formattedValue = DimensionTextValueFormatter.TryFormatMeasuredValue(segment, dimSet, view);
         if (!string.IsNullOrWhiteSpace(formattedValue))
             return formattedValue;
 
@@ -257,189 +257,12 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
-    private static string? TryGetMeasuredValueTextFromTemporaryDimension(
-        StraightDimension segment,
-        StraightDimensionSet dimSet,
-        View view)
-    {
-        if (!TryGetDimensionFormat(dimSet, out var format))
-            return null;
-
-        var distance = System.Math.Sqrt(
-            System.Math.Pow(segment.EndPoint.X - segment.StartPoint.X, 2) +
-            System.Math.Pow(segment.EndPoint.Y - segment.StartPoint.Y, 2));
-        if (distance <= 1e-6)
-            return null;
-
-        StraightDimensionSet? temporaryDimensionSet = null;
-        StraightDimension? temporarySegment = null;
-        try
-        {
-#pragma warning disable CS0618
-            var temporaryAttributes = new StraightDimensionSet.StraightDimensionSetAttributes();
-#pragma warning restore CS0618
-            temporaryAttributes.Format = format;
-
-            var pointList = new PointList
-            {
-                new Point(0.0, 0.0, 0.0),
-                new Point(distance, 0.0, 0.0)
-            };
-
-            temporaryDimensionSet = new StraightDimensionSetHandler().CreateDimensionSet(
-                view,
-                pointList,
-                new Vector(0.0, 0.1, 0.0),
-                0.0,
-                temporaryAttributes);
-            if (temporaryDimensionSet == null)
-                return null;
-
-            var objects = temporaryDimensionSet.GetObjects();
-            while (objects.MoveNext())
-            {
-                if (objects.Current is StraightDimension straightDimension)
-                {
-                    temporarySegment = straightDimension;
-                    break;
-                }
-            }
-
-            if (temporarySegment == null)
-                return null;
-
-            var rawValue = temporarySegment.Value?.GetUnformattedString();
-            return NormalizeTemporaryDimensionValue(rawValue, format.Unit, distance < 0.0);
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            if (temporarySegment != null)
-            {
-                try
-                {
-                    temporarySegment.Delete();
-                }
-                catch
-                {
-                }
-            }
-
-            if (temporaryDimensionSet != null)
-            {
-                try
-                {
-                    temporaryDimensionSet.Delete();
-                }
-                catch
-                {
-                }
-            }
-        }
-    }
-
     internal static string NormalizeTemporaryDimensionValue(
         string? rawValue,
         DimensionSetBaseAttributes.DimensionValueUnits dimensionUnits,
-        bool negative)
-    {
-        if (string.IsNullOrEmpty(rawValue))
-            return string.Empty;
-
-        var nonNullRawValue = rawValue!;
-        var normalized = nonNullRawValue.Length > 4
-            ? nonNullRawValue.Substring(2, nonNullRawValue.Length - 4)
-            : "0";
-
-        if (negative)
-            normalized = "-" + normalized;
-
-        if (dimensionUnits == DimensionSetBaseAttributes.DimensionValueUnits.Inch
-            && !normalized.Contains('"')
-            && (normalized.Contains('-') || normalized.Contains('\\') || !normalized.Contains('\'')))
-        {
-            normalized += "\"";
-        }
-
-        return normalized;
-    }
-
-    private static bool TryGetDimensionFormat(
-        StraightDimensionSet dimSet,
-        out DimensionSetBaseAttributes.DimensionFormatAttributes format)
-    {
-        format = default!;
-        try
-        {
-            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
-            {
-                format = attributes.Format;
-                return true;
-            }
-
-            var attributesProperty = dimSet.GetType()
-                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-                .Where(static property => property.Name == "Attributes")
-                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
-                .FirstOrDefault();
-            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
-            var formatProperty = reflectedAttributes?.GetType().GetProperty("Format");
-            if (formatProperty?.GetValue(reflectedAttributes, null) is DimensionSetBaseAttributes.DimensionFormatAttributes reflectedFormat)
-            {
-                format = reflectedFormat;
-                return true;
-            }
-        }
-        catch
-        {
-        }
-
-        return false;
-    }
-
-    private static Text.TextAttributes? TryCreateDimensionTextAttributes(StraightDimensionSet dimSet)
-    {
-        try
-        {
-            if (dimSet.Attributes is not StraightDimensionSet.StraightDimensionSetAttributes attributes)
-                return null;
-
-            var textAttributes = new Text.TextAttributes
-            {
-                PreferredPlacing = PreferredTextPlacingTypes.AlongLinePlacingType(),
-                Font = attributes.Text.Font
-            };
-
-            textAttributes.Frame.Type = MapDimensionFrameType(attributes.Text.Frame);
-            textAttributes.PlacingAttributes.IsFixed = true;
-            textAttributes.PlacingAttributes.PlacingQuarter.TopLeft = true;
-            textAttributes.UseWordWrapping = false;
-
-            return textAttributes;
-        }
-        catch
-        {
-            return null;
-        }
-    }
+        bool negative) => DimensionTextValueFormatter.NormalizeTemporaryValue(rawValue, dimensionUnits, negative);
 
     private static string TryGetDimensionTextPlacing(StraightDimensionSet dimSet) => DimensionTextPlacementHelper.GetTextPlacing(dimSet);
-
-    private static FrameTypes MapDimensionFrameType(DimensionSetBaseAttributes.FrameTypes frameType)
-    {
-        return frameType switch
-        {
-            DimensionSetBaseAttributes.FrameTypes.None => FrameTypes.None,
-            DimensionSetBaseAttributes.FrameTypes.Rectangle => FrameTypes.Rectangular,
-            DimensionSetBaseAttributes.FrameTypes.RoundedRectangle => FrameTypes.Round,
-            DimensionSetBaseAttributes.FrameTypes.SharpenedRectangle => FrameTypes.Sharpened,
-            DimensionSetBaseAttributes.FrameTypes.Underline => FrameTypes.Line,
-            _ => FrameTypes.None
-        };
-    }
 
     internal static List<double[]>? TryCreateTextPolygon(
         StraightDimension segment,
@@ -456,7 +279,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (string.IsNullOrWhiteSpace(textValue))
             return null;
 
-        var textAttributes = TryCreateDimensionTextAttributes(dimSet);
+        var textAttributes = DimensionTextAttributeMapper.TryCreate(dimSet);
         if (textAttributes == null)
             return null;
 
