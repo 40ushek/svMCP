@@ -50,26 +50,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         public DrawingLineInfo ReferenceLine { get; }
     }
 
-    private readonly struct DimensionTextPlacementContext
-    {
-        public DimensionTextPlacementContext(
-            string textPlacing,
-            int sideSign,
-            double leftTagLineOffset,
-            double rightTagLineOffset)
-        {
-            TextPlacing = textPlacing;
-            SideSign = sideSign;
-            LeftTagLineOffset = leftTagLineOffset;
-            RightTagLineOffset = rightTagLineOffset;
-        }
-
-        public string TextPlacing { get; }
-        public int SideSign { get; }
-        public double LeftTagLineOffset { get; }
-        public double RightTagLineOffset { get; }
-    }
-
     private readonly Model _model;
 
     public TeklaDrawingDimensionsApi()
@@ -446,29 +426,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
-    private static string TryGetDimensionTextPlacing(StraightDimensionSet dimSet)
-    {
-        try
-        {
-            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
-                return attributes.Text.TextPlacing.ToString();
-
-            var attributesProperty = dimSet.GetType()
-                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-                .Where(static property => property.Name == "Attributes")
-                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
-                .FirstOrDefault();
-            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
-            var textProperty = reflectedAttributes?.GetType().GetProperty("Text");
-            var textAttributes = textProperty?.GetValue(reflectedAttributes, null);
-            var textPlacingProperty = textAttributes?.GetType().GetProperty("TextPlacing");
-            return textPlacingProperty?.GetValue(textAttributes, null)?.ToString() ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
-        }
-    }
+    private static string TryGetDimensionTextPlacing(StraightDimensionSet dimSet) => DimensionTextPlacementHelper.GetTextPlacing(dimSet);
 
     private static FrameTypes MapDimensionFrameType(DimensionSetBaseAttributes.FrameTypes frameType)
     {
@@ -502,6 +460,9 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (textAttributes == null)
             return null;
 
+        var upDirection = TryGetUpDirection(segment, out var resolvedUpDirection)
+            ? resolvedUpDirection
+            : ((double X, double Y)?)null;
         var placementContext = CreateDimensionTextPlacementContext(segment, dimSet);
 
         var runtimePolygon = TryCreateTextPolygonFromRuntimeTextObjects(segment, dimSet, textValue!, dimensionLine, textAttributes.Frame.Type);
@@ -518,12 +479,13 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             return null;
 
         var correctedSize = ApplyFrameSizeCorrection(size.Value.Width, size.Value.Height, textAttributes.Frame.Type);
-        var fallbackPolygon = CreateDimStyleTextPolygon(
+        return DimensionTextPolygonPlacementHelper.CreateFallbackPolygon(
             effectiveDimensionLine,
             correctedSize.Width,
             correctedSize.Height,
-            TryGetViewScale(view));
-        return ApplyDimensionTextPlacement(segment, fallbackPolygon, placementContext, effectiveDimensionLine, 0.0);
+            TryGetViewScale(view),
+            placementContext,
+            upDirection);
     }
 
     private static DrawingBoundsInfo CreateBoundsFromPolygon(IReadOnlyList<double[]> polygon)
@@ -535,91 +497,11 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             polygon.Max(static point => point[1]));
     }
 
-    private static List<double[]>? CreateOrientedTextPolygon(
-        DrawingLineInfo dimensionLine,
-        double widthAlongLine,
-        double heightPerpendicularToLine)
-    {
-        if (widthAlongLine <= 1e-6 || heightPerpendicularToLine <= 1e-6)
-            return null;
-
-        if (!TryNormalizeDirection(
-                dimensionLine.EndX - dimensionLine.StartX,
-                dimensionLine.EndY - dimensionLine.StartY,
-                out var axis))
-        {
-            return null;
-        }
-
-        var centerX = (dimensionLine.StartX + dimensionLine.EndX) / 2.0;
-        var centerY = (dimensionLine.StartY + dimensionLine.EndY) / 2.0;
-        var normalX = -axis.Y;
-        var normalY = axis.X;
-        var halfWidth = widthAlongLine / 2.0;
-        var halfHeight = heightPerpendicularToLine / 2.0;
-
-        var corners = new[]
-        {
-            (X: centerX - (axis.X * halfWidth) - (normalX * halfHeight), Y: centerY - (axis.Y * halfWidth) - (normalY * halfHeight)),
-            (X: centerX + (axis.X * halfWidth) - (normalX * halfHeight), Y: centerY + (axis.Y * halfWidth) - (normalY * halfHeight)),
-            (X: centerX + (axis.X * halfWidth) + (normalX * halfHeight), Y: centerY + (axis.Y * halfWidth) + (normalY * halfHeight)),
-            (X: centerX - (axis.X * halfWidth) + (normalX * halfHeight), Y: centerY - (axis.Y * halfWidth) + (normalY * halfHeight))
-        };
-
-        return corners
-            .Select(static corner => new[] { System.Math.Round(corner.X, 3), System.Math.Round(corner.Y, 3) })
-            .ToList();
-    }
-
     internal static List<double[]>? CreateDimStyleTextPolygon(
         DrawingLineInfo dimensionLine,
         double widthAlongLine,
         double heightPerpendicularToLine,
-        double viewScale)
-    {
-        var polygon = CreateOrientedTextPolygon(dimensionLine, widthAlongLine, heightPerpendicularToLine);
-        if (polygon == null || polygon.Count == 0)
-            return polygon;
-
-        if (viewScale <= 1e-6)
-            return polygon;
-
-        if (!DimensionPlacementHeuristics.TryGetDimStyleLineVector(dimensionLine, out var lineVector))
-            return polygon;
-
-        var alongLineOffset = DimensionPlacementHeuristics.GetDimStyleAlongLineOffset(viewScale);
-        return OffsetPolygon(polygon, lineVector.X * alongLineOffset, lineVector.Y * alongLineOffset);
-    }
-
-    private static List<double[]>? ApplyDimensionTextPlacement(
-        StraightDimension? segment,
-        List<double[]>? polygon,
-        DimensionTextPlacementContext placementContext,
-        DrawingLineInfo dimensionLine,
-        double viewScale)
-    {
-        if (polygon == null || polygon.Count == 0)
-            return polygon;
-
-        var placedPolygon = polygon;
-
-        if (string.Equals(placementContext.TextPlacing, "AboveDimensionLine", System.StringComparison.OrdinalIgnoreCase)
-            && segment != null
-            && TryGetUpDirection(segment, out var upDirection))
-        {
-            var height = GetPolygonSpanAlongDirection(placedPolygon, upDirection.X, upDirection.Y);
-            if (height > 1e-6)
-            {
-                var offset = DimensionPlacementHeuristics.GetAboveLineTextOffset(height, placementContext.SideSign);
-                placedPolygon = OffsetPolygon(
-                placedPolygon,
-                upDirection.X * offset,
-                upDirection.Y * offset);
-            }
-        }
-
-        return placedPolygon;
-    }
+        double viewScale) => DimensionTextPolygonPlacementHelper.CreateDimStyleTextPolygon(dimensionLine, widthAlongLine, heightPerpendicularToLine, viewScale);
 
     internal static bool TryGetDimStyleLineVector(
         DrawingLineInfo dimensionLine,
@@ -649,102 +531,23 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         StraightDimension segment,
         StraightDimensionSet dimSet)
     {
-        var sideSign = 1;
+        int? topDirection = null;
         if (TryGetUpDirection(segment, out var upDirection))
-            sideSign = ResolveDimensionTextSideSign(
-                GetTopDirection(upDirection.X, upDirection.Y),
-                TryGetDimensionPlacingDirectionSign(dimSet));
+            topDirection = GetTopDirection(upDirection.X, upDirection.Y);
 
-        return new DimensionTextPlacementContext(
-            TryGetDimensionTextPlacing(dimSet),
-            sideSign == 0 ? 1 : sideSign,
-            TryGetTagLineOffset(dimSet, left: true),
-            TryGetTagLineOffset(dimSet, left: false));
+        return DimensionTextPlacementHelper.CreateContext(dimSet, topDirection);
     }
 
-    internal static int ResolveDimensionTextSideSign(int topDirection, int placingDirectionSign)
-    {
-        var normalizedTopDirection = topDirection == 0 ? 1 : System.Math.Sign(topDirection);
-        var normalizedPlacingDirection = placingDirectionSign == 0 ? 1 : System.Math.Sign(placingDirectionSign);
-        return normalizedTopDirection * normalizedPlacingDirection;
-    }
+    internal static int ResolveDimensionTextSideSign(int topDirection, int placingDirectionSign) => DimensionTextPlacementHelper.ResolveTextSideSign(topDirection, placingDirectionSign);
 
-    private static int TryGetDimensionPlacingDirectionSign(StraightDimensionSet dimSet)
-    {
-        try
-        {
-            if (dimSet.Attributes is StraightDimensionSet.StraightDimensionSetAttributes attributes)
-            {
-                var positive = attributes.Placing.Direction.Positive;
-                var negative = attributes.Placing.Direction.Negative;
-                return negative && !positive ? -1 : 1;
-            }
+    private static int TryGetDimensionPlacingDirectionSign(StraightDimensionSet dimSet) => DimensionTextPlacementHelper.GetPlacingDirectionSign(dimSet);
 
-            var attributesProperty = dimSet.GetType()
-                .GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
-                .Where(static property => property.Name == "Attributes")
-                .OrderByDescending(static property => property.PropertyType == typeof(StraightDimensionSet.StraightDimensionSetAttributes))
-                .FirstOrDefault();
-            var reflectedAttributes = attributesProperty?.GetValue(dimSet, null);
-            var placingProperty = reflectedAttributes?.GetType().GetProperty("Placing");
-            var placingAttributes = placingProperty?.GetValue(reflectedAttributes, null);
-            var directionProperty = placingAttributes?.GetType().GetProperty("Direction");
-            var directionAttributes = directionProperty?.GetValue(placingAttributes, null);
-            var positiveProperty = directionAttributes?.GetType().GetProperty("Positive");
-            var negativeProperty = directionAttributes?.GetType().GetProperty("Negative");
-            var positiveReflected = positiveProperty?.GetValue(directionAttributes, null) as bool?;
-            var negativeReflected = negativeProperty?.GetValue(directionAttributes, null) as bool?;
-            return negativeReflected == true && positiveReflected != true ? -1 : 1;
-        }
-        catch
-        {
-            return 1;
-        }
-    }
-
-    private static double TryGetTagLineOffset(StraightDimensionSet dimSet, bool left)
-    {
-        try
-        {
-            var offset = left ? dimSet.LeftTagLineOffset : dimSet.RightTagLineOffset;
-            return offset > 1e-6 ? offset : 0.0;
-        }
-        catch
-        {
-            return 0.0;
-        }
-    }
+    private static double TryGetTagLineOffset(StraightDimensionSet dimSet, bool left) => DimensionTextPlacementHelper.GetTagLineOffset(dimSet, left);
 
     internal static DrawingLineInfo ApplyDimensionTextLineOffsets(
         DrawingLineInfo dimensionLine,
         double startOffset,
-        double endOffset)
-    {
-        if (startOffset <= 1e-6 && endOffset <= 1e-6)
-            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
-
-        if (!TryNormalizeDirection(
-                dimensionLine.EndX - dimensionLine.StartX,
-                dimensionLine.EndY - dimensionLine.StartY,
-                out var axis))
-        {
-            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
-        }
-
-        var length = System.Math.Sqrt(
-            System.Math.Pow(dimensionLine.EndX - dimensionLine.StartX, 2) +
-            System.Math.Pow(dimensionLine.EndY - dimensionLine.StartY, 2));
-        var clampedStartOffset = System.Math.Max(0.0, startOffset);
-        var clampedEndOffset = System.Math.Max(0.0, endOffset);
-        if ((clampedStartOffset + clampedEndOffset) >= length - 1e-6)
-            return CreateLineInfo(dimensionLine.StartX, dimensionLine.StartY, dimensionLine.EndX, dimensionLine.EndY);
-
-        return CreateLineInfo(
-            dimensionLine.StartX + (axis.X * clampedStartOffset),
-            dimensionLine.StartY + (axis.Y * clampedStartOffset),
-            dimensionLine.EndX - (axis.X * clampedEndOffset),
-            dimensionLine.EndY - (axis.Y * clampedEndOffset));
-    }
+        double endOffset) => DimensionTextPlacementHelper.ApplyLineOffsets(dimensionLine, startOffset, endOffset);
 
     private static List<double[]>? TryCreateTextPolygonFromRuntimeTextObjects(
         StraightDimension segment,
