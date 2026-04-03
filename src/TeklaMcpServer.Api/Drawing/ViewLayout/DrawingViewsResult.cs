@@ -120,6 +120,8 @@ public sealed class FitViewsResult
     public int                 ProjectionSkipped     { get; set; }
     public List<string>?       ProjectionDiagnostics { get; set; }
     public DrawingReservedAreasResult? ReservedAreas { get; set; }
+    public long                TotalMs             { get; set; }
+    public Dictionary<string, long>? PhaseMs       { get; set; }
 }
 
 public sealed class ArrangedView

@@ -318,6 +318,8 @@ internal sealed partial class DrawingCommandHandler
             projectionApplied = result.ProjectionApplied,
             projectionSkipped = result.ProjectionSkipped,
             projectionDiagnostics = result.ProjectionDiagnostics,
+            totalMs = result.TotalMs,
+            phaseMs = result.PhaseMs,
             reservedAreas = reserved == null ? null : new
             {
                 sheetMargin = reserved.SheetMargin,

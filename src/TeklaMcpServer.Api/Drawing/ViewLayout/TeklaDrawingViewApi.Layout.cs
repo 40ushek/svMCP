@@ -683,6 +683,7 @@ public sealed partial class TeklaDrawingViewApi
                 List<(double w, double h)> actualFrames;
                 DrawingArrangeContext ctx;
                 var probeSw = Stopwatch.StartNew();
+                var anyScaleChanged = false;
                 foreach (var v in currentViews)
                 {
                     var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, originalScales);
@@ -691,14 +692,20 @@ public sealed partial class TeklaDrawingViewApi
 
                     v.Attributes.Scale = targetScale;
                     v.Modify();
+                    anyScaleChanged = true;
                 }
 
-                activeDrawing.CommitChanges();
+                if (anyScaleChanged)
+                    activeDrawing.CommitChanges();
                 probeSw.Stop();
                 probeMs += probeSw.ElapsedMilliseconds;
 
-                candidateViews = EnumerateViews(activeDrawing).ToList();
-                effectiveFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews);
+                candidateViews = anyScaleChanged
+                    ? EnumerateViews(activeDrawing).ToList()
+                    : currentViews;
+                effectiveFrameSizes = anyScaleChanged
+                    ? DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews)
+                    : originalFrameSizes;
                 actualFrames = candidateViews
                     .Select(v =>
                     {
@@ -982,6 +989,20 @@ public sealed partial class TeklaDrawingViewApi
                 Tables      = layoutTables,
                 MergedAreas = mergedForOutput
             }
+        };
+
+        total.Stop();
+        result.TotalMs = total.ElapsedMilliseconds;
+        result.PhaseMs = new System.Collections.Generic.Dictionary<string, long>
+        {
+            ["init"]        = initMs,
+            ["reserved"]    = reservedMs,
+            ["probe"]       = probeMs,
+            ["candidateFit"]= candidateFitMs,
+            ["arrange"]     = arrangeMs,
+            ["postAdjust"]  = postAdjustMs,
+            ["projection"]  = projectionMs,
+            ["finalCommit"] = finalCommitMs,
         };
 
         PerfTrace.Write(

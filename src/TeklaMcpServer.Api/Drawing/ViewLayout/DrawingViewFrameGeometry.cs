@@ -47,7 +47,7 @@ internal static class DrawingViewFrameGeometry
         var result = new Dictionary<int, ReservedRect>();
         var sheet = drawing.GetSheet();
         var sheetId = sheet.GetIdentifier().ID;
-        var objects = sheet.GetAllObjects();
+        var objects = sheet.GetAllObjects(typeof(View));
         while (objects.MoveNext())
         {
             if (objects.Current is not View viewObj)
