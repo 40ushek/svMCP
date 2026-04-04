@@ -66,13 +66,13 @@ public sealed partial class TeklaDrawingDimensionsApi
     internal DimensionOrchestrationDebugResult GetDimensionOrchestrationDebug(int? viewId)
     {
         var debug = GetDimensionGroupReductionDebug(viewId);
-        return DimensionOrchestrationDebugBuilder.Build(debug, viewId);
+        return new DimensionOrchestrationEngine().BuildDebug(debug, viewId);
     }
 
     internal DimensionAiOrchestrationPlanResult GetDimensionAiOrchestrationPlan(int? viewId)
     {
         var debug = GetDimensionGroupReductionDebug(viewId);
-        return new DimensionAiAssistedOrchestrator().Build(debug, viewId);
+        return new DimensionOrchestrationEngine().BuildPlan(debug, viewId);
     }
 
     public GetDimensionsResult GetDimensions(int? viewId)
