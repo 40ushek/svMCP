@@ -9,12 +9,12 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
-    internal List<DrawingDimensionInfo> GetDimensionSnapshots(int? viewId)
+    internal List<TeklaDimensionSetSnapshot> GetDimensionSnapshots(int? viewId)
         => DimensionStableReadHelper.ReadStable(
             () => ReadDimensionSnapshotsCore(viewId),
             BuildDimensionSnapshotFingerprint);
 
-    private List<DrawingDimensionInfo> ReadDimensionSnapshotsCore(int? viewId)
+    private List<TeklaDimensionSetSnapshot> ReadDimensionSnapshotsCore(int? viewId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -36,13 +36,13 @@ public sealed partial class TeklaDrawingDimensionsApi
                 dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
             }
 
-            var dimensions = new List<DrawingDimensionInfo>();
+            var dimensions = new List<TeklaDimensionSetSnapshot>();
             while (dimObjects.MoveNext())
             {
                 if (dimObjects.Current is not StraightDimensionSet dimSet)
                     continue;
 
-                dimensions.Add(BuildDimensionInfo(dimSet));
+                dimensions.Add(BuildDimensionSnapshot(dimSet));
             }
 
             return dimensions;
@@ -53,11 +53,13 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
-    internal List<DimensionGroup> GetDimensionGroups(int? viewId) => DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId));
+    internal List<DimensionGroup> GetDimensionGroups(int? viewId)
+        => DimensionGroupFactory.BuildGroups(ProjectDimensionSnapshotsToReadModels(GetDimensionSnapshots(viewId)));
 
     internal DimensionReductionDebugResult GetDimensionGroupReductionDebug(int? viewId)
     {
-        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(
+            ProjectDimensionSnapshotsToReadModels(GetDimensionSnapshots(viewId)));
         AttachDimensionContexts(debug);
         return debug;
     }
@@ -77,18 +79,19 @@ public sealed partial class TeklaDrawingDimensionsApi
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var snapshots = GetDimensionSnapshots(viewId);
-        var groups = DimensionGroupFactory.BuildGroups(snapshots);
-        return BuildGetDimensionsResult(snapshots, groups);
+        var dimensionInfos = ProjectDimensionSnapshotsToReadModels(snapshots);
+        var groups = DimensionGroupFactory.BuildGroups(dimensionInfos);
+        return BuildGetDimensionsResult(snapshots.Count, groups);
     }
 
     private static GetDimensionsResult BuildGetDimensionsResult(
-        IReadOnlyList<DrawingDimensionInfo> snapshots,
+        int drawingDimensionCount,
         IReadOnlyList<DimensionGroup> groups)
     {
         var result = new GetDimensionsResult
         {
             Total = groups.Sum(static group => group.DimensionList.Count),
-            DrawingDimensionCount = snapshots.Count,
+            DrawingDimensionCount = drawingDimensionCount,
             RawItemCount = groups.Sum(static group => group.RawItemCount),
             ReducedItemCount = groups.Sum(static group => group.ReducedItemCount),
             GroupCount = groups.Count
@@ -149,7 +152,48 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
-    internal static string BuildDimensionSnapshotFingerprint(IReadOnlyList<DrawingDimensionInfo> snapshots)
+    internal static List<DrawingDimensionInfo> ProjectDimensionSnapshotsToReadModels(IEnumerable<TeklaDimensionSetSnapshot> snapshots)
+        => snapshots.Select(ProjectDimensionSnapshotToReadModel).ToList();
+
+    internal static DrawingDimensionInfo ProjectDimensionSnapshotToReadModel(TeklaDimensionSetSnapshot snapshot)
+    {
+        var info = new DrawingDimensionInfo
+        {
+            Id = snapshot.Id,
+            Type = snapshot.Type,
+            DimensionType = snapshot.TeklaDimensionType,
+            ViewId = snapshot.ViewId,
+            ViewType = snapshot.ViewType,
+            ViewScale = snapshot.ViewScale,
+            Orientation = snapshot.Orientation,
+            Distance = snapshot.Distance,
+            DirectionX = snapshot.DirectionX,
+            DirectionY = snapshot.DirectionY,
+            TopDirection = snapshot.TopDirection,
+            Bounds = snapshot.Bounds == null ? null : CreateBoundsInfo(
+                snapshot.Bounds.MinX,
+                snapshot.Bounds.MinY,
+                snapshot.Bounds.MaxX,
+                snapshot.Bounds.MaxY),
+            ReferenceLine = CopyLine(snapshot.ReferenceLine),
+            SourceKind = snapshot.SourceKind,
+            GeometryKind = snapshot.GeometryKind,
+            ClassifiedDimensionType = snapshot.ClassifiedDimensionType
+        };
+
+        info.MeasuredPoints.AddRange(snapshot.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        info.Segments.AddRange(snapshot.Segments.Select(ProjectDimensionSegmentSnapshotToReadModel));
+        info.SourceObjectIds.AddRange(snapshot.SourceObjectIds);
+        return info;
+    }
+
+    internal static string BuildDimensionSnapshotFingerprint(IReadOnlyList<TeklaDimensionSetSnapshot> snapshots)
     {
         var builder = new StringBuilder();
         foreach (var snapshot in snapshots.OrderBy(static item => item.Id))
@@ -177,15 +221,18 @@ public sealed partial class TeklaDrawingDimensionsApi
     }
 
     private DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)
+        => ProjectDimensionSnapshotToReadModel(BuildDimensionSnapshot(dimSet));
+
+    private TeklaDimensionSetSnapshot BuildDimensionSnapshot(StraightDimensionSet dimSet)
     {
         var (ownerViewId, ownerViewType, ownerViewScale) = GetOwnerViewInfo(dimSet);
         var segments = EnumerateSegments(dimSet);
         var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
-        var info = new DrawingDimensionInfo
+        var snapshot = new TeklaDimensionSetSnapshot
         {
             Id = dimSet.GetIdentifier().ID,
             Type = dimSet.GetType().Name,
-            DimensionType = TryGetDimensionType(dimSet),
+            TeklaDimensionType = TryGetDimensionType(dimSet),
             ViewId = ownerViewId,
             ViewType = ownerViewType,
             ViewScale = ownerViewScale,
@@ -194,48 +241,50 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
 
         foreach (var segment in segments)
-        {
-            info.Segments.Add(BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext));
-        }
+            snapshot.Segments.Add(BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext));
 
-        info.Bounds ??= CombineBounds(info.Segments.Select(static s => s.Bounds));
+        var projectedSegments = snapshot.Segments
+            .Select(ProjectDimensionSegmentSnapshotToReadModel)
+            .ToList();
+
+        snapshot.Bounds ??= CombineBounds(snapshot.Segments.Select(static s => s.Bounds));
         if (lineContext.HasValue)
         {
-            info.DirectionX = lineContext.Value.Direction.X;
-            info.DirectionY = lineContext.Value.Direction.Y;
-            info.TopDirection = lineContext.Value.TopDirection;
-            info.ReferenceLine = lineContext.Value.ReferenceLine;
+            snapshot.DirectionX = lineContext.Value.Direction.X;
+            snapshot.DirectionY = lineContext.Value.Direction.Y;
+            snapshot.TopDirection = lineContext.Value.TopDirection;
+            snapshot.ReferenceLine = lineContext.Value.ReferenceLine;
         }
         else
         {
-            var representative = info.Segments
+            var representative = projectedSegments
                 .Where(static s => s.DimensionLine != null)
                 .OrderByDescending(static s => s.DimensionLine!.Length)
                 .FirstOrDefault()
-                ?? info.Segments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
+                ?? projectedSegments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
             if (representative != null)
             {
-                info.DirectionX = representative.DirectionX;
-                info.DirectionY = representative.DirectionY;
-                info.TopDirection = representative.TopDirection;
-                info.ReferenceLine = TryCreateReferenceLine(representative);
+                snapshot.DirectionX = representative.DirectionX;
+                snapshot.DirectionY = representative.DirectionY;
+                snapshot.TopDirection = representative.TopDirection;
+                snapshot.ReferenceLine = TryCreateReferenceLine(representative);
             }
         }
 
-        info.MeasuredPoints = BuildMeasuredPointList(info.Segments, info.DirectionX, info.DirectionY);
+        snapshot.MeasuredPoints.AddRange(BuildMeasuredPointList(projectedSegments, snapshot.DirectionX, snapshot.DirectionY));
 
-        info.Orientation = DetermineDimensionOrientation(
-            info.DirectionX,
-            info.DirectionY,
-            info.ReferenceLine,
-            info.Segments);
-        info.GeometryKind = ResolveDimensionGeometryKind(info.Orientation);
+        snapshot.Orientation = DetermineDimensionOrientation(
+            snapshot.DirectionX,
+            snapshot.DirectionY,
+            snapshot.ReferenceLine,
+            projectedSegments);
+        snapshot.GeometryKind = ResolveDimensionGeometryKind(snapshot.Orientation);
         var sourceSummary = ResolveDimensionSourceSummary(dimSet, segments);
-        info.SourceKind = sourceSummary.SourceKind;
-        info.SourceObjectIds.AddRange(sourceSummary.SourceObjectIds);
-        info.ClassifiedDimensionType = DimensionGroupFactory.MapDomainDimensionType(info.SourceKind, info.GeometryKind);
+        snapshot.SourceKind = sourceSummary.SourceKind;
+        snapshot.SourceObjectIds.AddRange(sourceSummary.SourceObjectIds);
+        snapshot.ClassifiedDimensionType = DimensionGroupFactory.MapDomainDimensionType(snapshot.SourceKind, snapshot.GeometryKind);
 
-        return info;
+        return snapshot;
     }
 
     private (DimensionSourceKind SourceKind, List<int> SourceObjectIds) ResolveDimensionSourceSummary(
@@ -337,7 +386,43 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
     }
 
+    private static DimensionSegmentInfo ProjectDimensionSegmentSnapshotToReadModel(TeklaDimensionSegmentSnapshot snapshot)
+    {
+        return new DimensionSegmentInfo
+        {
+            Id = snapshot.Id,
+            StartX = snapshot.StartX,
+            StartY = snapshot.StartY,
+            EndX = snapshot.EndX,
+            EndY = snapshot.EndY,
+            Distance = snapshot.Distance,
+            DirectionX = snapshot.DirectionX,
+            DirectionY = snapshot.DirectionY,
+            TopDirection = snapshot.TopDirection,
+            Bounds = snapshot.Bounds == null ? null : CreateBoundsInfo(
+                snapshot.Bounds.MinX,
+                snapshot.Bounds.MinY,
+                snapshot.Bounds.MaxX,
+                snapshot.Bounds.MaxY),
+            TextBounds = snapshot.TextBounds == null ? null : CreateBoundsInfo(
+                snapshot.TextBounds.MinX,
+                snapshot.TextBounds.MinY,
+                snapshot.TextBounds.MaxX,
+                snapshot.TextBounds.MaxY),
+            DimensionLine = CopyLine(snapshot.DimensionLine),
+            LeadLineMain = CopyLine(snapshot.LeadLineMain),
+            LeadLineSecond = CopyLine(snapshot.LeadLineSecond)
+        };
+    }
+
     private static DimensionSegmentInfo BuildSegmentInfo(
+        StraightDimension segment,
+        StraightDimensionSet dimSet,
+        double distance,
+        DimensionLineContext? lineContext = null)
+        => ProjectDimensionSegmentSnapshotToReadModel(BuildDimensionSegmentSnapshot(segment, dimSet, distance, lineContext));
+
+    private static TeklaDimensionSegmentSnapshot BuildDimensionSegmentSnapshot(
         StraightDimension segment,
         StraightDimensionSet dimSet,
         double distance,
@@ -383,7 +468,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             TryNormalizeDirection(end.X - start.X, end.Y - start.Y, out segmentDirection);
         }
 
-        return new DimensionSegmentInfo
+        return new TeklaDimensionSegmentSnapshot
         {
             Id = segment.GetIdentifier().ID,
             StartX = System.Math.Round(start.X, 1),
