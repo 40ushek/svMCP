@@ -53,6 +53,24 @@ internal sealed class DimensionContextBuilder
             SourceKind = item.SourceKind
         };
 
+        foreach (var drawingObjectId in item.SourceReferences
+                     .Where(static source => source.DrawingObjectId.HasValue)
+                     .Select(static source => source.DrawingObjectId!.Value)
+                     .Distinct()
+                     .OrderBy(static id => id))
+        {
+            source.SnapshotSourceDrawingObjectIds.Add(drawingObjectId);
+        }
+
+        foreach (var modelId in item.SourceReferences
+                     .Where(static source => source.ModelId.HasValue)
+                     .Select(static source => source.ModelId!.Value)
+                     .Distinct()
+                     .OrderBy(static id => id))
+        {
+            source.SnapshotSourceModelIds.Add(modelId);
+        }
+
         foreach (var drawingObjectId in association.Candidates
                      .Where(static candidate => candidate.DrawingObjectId.HasValue)
                      .Select(static candidate => candidate.DrawingObjectId!.Value)

@@ -31,6 +31,12 @@ public sealed class DimensionSnapshotProjectionTests
 
         snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 200, Order = 0 });
         snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 300, Y = 200, Order = 1 });
+        snapshot.SourceReferences.Add(new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            DrawingObjectId = 501,
+            ModelId = 9001
+        });
         snapshot.SourceObjectIds.AddRange([501, 502]);
         snapshot.Segments.Add(new TeklaDimensionSegmentSnapshot
         {
@@ -114,7 +120,13 @@ public sealed class DimensionSnapshotProjectionTests
 
         snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
         snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
-        snapshot.SourceObjectIds.Add(101);
+        snapshot.SourceReferences.Add(new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            DrawingObjectId = 5001,
+            ModelId = 101
+        });
+        snapshot.SourceObjectIds.Add(5001);
         snapshot.Segments.Add(new TeklaDimensionSegmentSnapshot
         {
             Id = 4201,
@@ -138,7 +150,10 @@ public sealed class DimensionSnapshotProjectionTests
         Assert.Equal(42, item.DimensionId);
         Assert.Equal(15, item.ViewScale);
         Assert.Equal("horizontal", item.Orientation);
-        Assert.Equal([101], item.SourceObjectIds);
+        var source = Assert.Single(item.SourceReferences);
+        Assert.Equal(5001, source.DrawingObjectId);
+        Assert.Equal(101, source.ModelId);
+        Assert.Equal([5001], item.SourceObjectIds);
         Assert.Equal(2, item.MeasuredPoints.Count);
         Assert.Single(item.Segments);
     }

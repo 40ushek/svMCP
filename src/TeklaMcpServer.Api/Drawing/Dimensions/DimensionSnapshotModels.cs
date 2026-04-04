@@ -2,6 +2,13 @@ using System.Collections.Generic;
 
 namespace TeklaMcpServer.Api.Drawing;
 
+internal sealed class DimensionSourceReference
+{
+    public DimensionSourceKind SourceKind { get; set; }
+    public int? DrawingObjectId { get; set; }
+    public int? ModelId { get; set; }
+}
+
 internal sealed class TeklaDimensionSegmentSnapshot
 {
     public int Id { get; set; }
@@ -40,5 +47,6 @@ internal sealed class TeklaDimensionSetSnapshot
     public DimensionSourceKind SourceKind { get; set; }
     public DimensionGeometryKind GeometryKind { get; set; }
     public DimensionType ClassifiedDimensionType { get; set; }
+    public List<DimensionSourceReference> SourceReferences { get; } = [];
     public List<int> SourceObjectIds { get; } = [];
 }

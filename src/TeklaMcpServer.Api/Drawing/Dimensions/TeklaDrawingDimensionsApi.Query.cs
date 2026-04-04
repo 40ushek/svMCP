@@ -273,24 +273,31 @@ public sealed partial class TeklaDrawingDimensionsApi
         snapshot.GeometryKind = ResolveDimensionGeometryKind(snapshot.Orientation);
         var sourceSummary = ResolveDimensionSourceSummary(dimSet, segments);
         snapshot.SourceKind = sourceSummary.SourceKind;
+        snapshot.SourceReferences.AddRange(sourceSummary.SourceReferences.Select(static source => new DimensionSourceReference
+        {
+            SourceKind = source.SourceKind,
+            DrawingObjectId = source.DrawingObjectId,
+            ModelId = source.ModelId
+        }));
         snapshot.SourceObjectIds.AddRange(sourceSummary.SourceObjectIds);
         snapshot.ClassifiedDimensionType = DimensionGroupFactory.MapDomainDimensionType(snapshot.SourceKind, snapshot.GeometryKind);
 
         return snapshot;
     }
 
-    private (DimensionSourceKind SourceKind, List<int> SourceObjectIds) ResolveDimensionSourceSummary(
+    private (DimensionSourceKind SourceKind, List<DimensionSourceReference> SourceReferences, List<int> SourceObjectIds) ResolveDimensionSourceSummary(
         StraightDimensionSet dimSet,
         IReadOnlyList<StraightDimension> segments)
     {
         var hasPart = false;
         var hasGrid = false;
         var sourceObjectIds = new HashSet<int>();
+        var sourceReferences = new Dictionary<(DimensionSourceKind SourceKind, int? DrawingObjectId, int? ModelId), DimensionSourceReference>();
 
-        CollectDimensionSourceSummary(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceObjectIds);
+        CollectDimensionSourceSummary(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences, sourceObjectIds);
 
         foreach (var segment in segments)
-            CollectDimensionSourceSummary(segment.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceObjectIds);
+            CollectDimensionSourceSummary(segment.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences, sourceObjectIds);
 
         var sourceKind = (hasPart, hasGrid) switch
         {
@@ -299,13 +306,21 @@ public sealed partial class TeklaDrawingDimensionsApi
             _ => DimensionSourceKind.Unknown
         };
 
-        return (sourceKind, sourceObjectIds.OrderBy(static id => id).ToList());
+        return (
+            sourceKind,
+            sourceReferences.Values
+                .OrderBy(static source => source.SourceKind)
+                .ThenBy(static source => source.ModelId)
+                .ThenBy(static source => source.DrawingObjectId)
+                .ToList(),
+            sourceObjectIds.OrderBy(static id => id).ToList());
     }
 
     private void CollectDimensionSourceSummary(
         DrawingObjectEnumerator? relatedObjects,
         ref bool hasPart,
         ref bool hasGrid,
+        IDictionary<(DimensionSourceKind SourceKind, int? DrawingObjectId, int? ModelId), DimensionSourceReference> sourceReferences,
         HashSet<int> sourceObjectIds)
     {
         if (relatedObjects == null)
@@ -322,7 +337,45 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             if (DimensionRelatedObjectHelper.TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
                 sourceObjectIds.Add(sourceObjectId);
+
+            if (TryCreateSourceReference(relatedObject, sourceKind, out var sourceReference))
+            {
+                sourceReferences[(sourceReference.SourceKind, sourceReference.DrawingObjectId, sourceReference.ModelId)] = sourceReference;
+            }
         }
+    }
+
+    private static bool TryCreateSourceReference(
+        object? relatedObject,
+        DimensionSourceKind sourceKind,
+        out DimensionSourceReference sourceReference)
+    {
+        int? drawingObjectId = null;
+        int? modelId = null;
+
+        if (DimensionRelatedObjectHelper.TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
+            drawingObjectId = sourceObjectId;
+
+        if (relatedObject is Tekla.Structures.Drawing.ModelObject drawingModelObject)
+        {
+            var candidateModelId = drawingModelObject.ModelIdentifier.ID;
+            if (candidateModelId > 0)
+                modelId = candidateModelId;
+        }
+
+        if (!drawingObjectId.HasValue && !modelId.HasValue)
+        {
+            sourceReference = new DimensionSourceReference();
+            return false;
+        }
+
+        sourceReference = new DimensionSourceReference
+        {
+            SourceKind = sourceKind,
+            DrawingObjectId = drawingObjectId,
+            ModelId = modelId
+        };
+        return true;
     }
 
     private DimensionSourceKind ResolveRelatedObjectSourceKind(object? relatedObject)

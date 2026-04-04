@@ -109,7 +109,7 @@ internal sealed class DimensionSourceAssociationResolver
             Order = point.Order
         }));
 
-        CollectSnapshotSourceCandidates(result, item.SourceKind, item.SourceObjectIds, item.ViewId);
+        CollectSnapshotSourceCandidates(result, item.SourceReferences, item.SourceKind, item.SourceObjectIds, item.ViewId);
         result.PointMappings.AddRange(_mapper.Map(
             result.MeasuredPoints,
             result.Candidates,
@@ -279,10 +279,56 @@ internal sealed class DimensionSourceAssociationResolver
 
     private void CollectSnapshotSourceCandidates(
         DimensionSourceAssociationResult result,
+        IReadOnlyList<DimensionSourceReference> sourceReferences,
+        DimensionSourceKind fallbackSourceKind,
+        IReadOnlyList<int> legacySourceObjectIds,
+        int? viewId)
+    {
+        if (sourceReferences.Count == 0)
+        {
+            CollectSnapshotSourceCandidates(result, fallbackSourceKind, legacySourceObjectIds, viewId);
+            return;
+        }
+
+        foreach (var source in sourceReferences
+                     .Where(static source => source.DrawingObjectId.HasValue || source.ModelId.HasValue)
+                     .GroupBy(static source => new
+                     {
+                         source.SourceKind,
+                         source.DrawingObjectId,
+                         source.ModelId
+                     })
+                     .Select(static group => group.First())
+                     .OrderBy(static source => source.ModelId)
+                     .ThenBy(static source => source.DrawingObjectId))
+        {
+            var candidate = new DimensionSourceCandidateInfo
+            {
+                Owner = "snapshot",
+                Type = source.SourceKind == DimensionSourceKind.Unknown
+                    ? string.Empty
+                    : source.SourceKind.ToString(),
+                SourceKind = source.SourceKind.ToString(),
+                DrawingObjectId = source.DrawingObjectId,
+                ModelId = source.ModelId
+            };
+
+            if (candidate.ModelId.HasValue && candidate.ModelId.Value > 0)
+                candidate.ResolvedModelType = TrySelectModelObjectById(candidate.ModelId.Value)?.GetType().Name ?? string.Empty;
+
+            PopulateCandidateGeometry(candidate, viewId);
+            result.Candidates.Add(candidate);
+        }
+    }
+
+    private void CollectSnapshotSourceCandidates(
+        DimensionSourceAssociationResult result,
         DimensionSourceKind sourceKind,
         IReadOnlyList<int> sourceObjectIds,
         int? viewId)
     {
+        // Legacy read-model fallback: old DTO path exposes only a flat source id list,
+        // so part sources still have to assume model-id semantics here.
         if (sourceObjectIds.Count == 0)
         {
             result.Warnings.Add("no_related_sources");

@@ -20,8 +20,10 @@ public sealed class DimensionContextBuilderTests
         Assert.Equal(DimensionContextRole.External, context.Role);
         Assert.True(context.HasSourceGeometry);
         Assert.NotNull(context.LocalBounds);
-        Assert.Empty(context.SourceDrawingObjectIds);
+        Assert.Equal(new[] { 5001 }, context.SourceDrawingObjectIds);
         Assert.Equal(new[] { 101 }, context.SourceModelIds);
+        Assert.Equal(new[] { 5001 }, context.SnapshotSourceDrawingObjectIds);
+        Assert.Equal(new[] { 101 }, context.SnapshotSourceModelIds);
         Assert.Single(context.RelatedSources);
         Assert.Equal(2, context.PointAssociations.Count);
         Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));
@@ -94,6 +96,28 @@ public sealed class DimensionContextBuilderTests
 
         Assert.Equal(2, context.PointAssociations.Count);
         Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));
+    }
+
+    [Fact]
+    public void Build_DoesNotInferModelIdentityFromSnapshotDrawingObjectId()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreateBaseItem(1, DimensionType.Horizontal, DimensionSourceKind.Part, DimensionGeometryKind.Horizontal, referenceY: -20);
+        item.SourceReferences.Add(new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            DrawingObjectId = 7001
+        });
+        item.SourceObjectIds.Add(7001);
+
+        var context = builder.Build(item);
+
+        Assert.Equal(DimensionContextRole.NoSourceGeometry, context.Role);
+        Assert.Equal(new[] { 7001 }, context.SourceDrawingObjectIds);
+        Assert.Empty(context.SourceModelIds);
+        Assert.Equal(new[] { 7001 }, context.SnapshotSourceDrawingObjectIds);
+        Assert.Empty(context.SnapshotSourceModelIds);
+        Assert.Contains("model_id_unavailable", context.AssociationWarnings);
     }
 
     [Fact]
@@ -185,7 +209,13 @@ public sealed class DimensionContextBuilderTests
             DimensionSourceKind.Part,
             DimensionGeometryKind.Horizontal,
             referenceY);
-        item.SourceObjectIds.Add(101);
+        item.SourceReferences.Add(new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            DrawingObjectId = 5001,
+            ModelId = 101
+        });
+        item.SourceObjectIds.Add(5001);
         return item;
     }
 

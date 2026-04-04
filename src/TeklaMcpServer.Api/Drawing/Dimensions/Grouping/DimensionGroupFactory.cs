@@ -967,6 +967,14 @@ internal static class DimensionGroupFactory
             LeadLineSecond = CopyLine(segment.LeadLineSecond)
         }));
 
+        item.SourceReferences.Clear();
+        item.SourceReferences.AddRange(dimension.SourceReferences.Select(static source => new DimensionSourceReference
+        {
+            SourceKind = source.SourceKind,
+            DrawingObjectId = source.DrawingObjectId,
+            ModelId = source.ModelId
+        }));
+
         item.SourceObjectIds.Clear();
         item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
     }
@@ -1002,6 +1010,7 @@ internal static class DimensionGroupFactory
             LeadLineSecond = CopyLine(segment.LeadLineSecond)
         }));
 
+        item.SourceReferences.Clear();
         item.SourceObjectIds.Clear();
         item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
     }

@@ -25,6 +25,8 @@ internal sealed class DimensionContext
     public IReadOnlyList<double> RealLengthList => Geometry.RealLengthList;
     public double Distance => Geometry.Distance;
     public bool HasSourceGeometry => Geometry.LocalBounds != null;
+    public IReadOnlyList<int> SnapshotSourceDrawingObjectIds => Source.SnapshotSourceDrawingObjectIds;
+    public IReadOnlyList<int> SnapshotSourceModelIds => Source.SnapshotSourceModelIds;
     public IReadOnlyList<int> SourceDrawingObjectIds => Source.SourceDrawingObjectIds;
     public IReadOnlyList<int> SourceModelIds => Source.SourceModelIds;
     public DrawingBoundsInfo? LocalBounds => Geometry.LocalBounds;
@@ -55,6 +57,8 @@ internal sealed class DimensionContext
 internal sealed class DimensionContextSourceSummary
 {
     public DimensionSourceKind SourceKind { get; set; }
+    public List<int> SnapshotSourceDrawingObjectIds { get; } = [];
+    public List<int> SnapshotSourceModelIds { get; } = [];
     public List<int> SourceDrawingObjectIds { get; } = [];
     public List<int> SourceModelIds { get; } = [];
 }
