@@ -613,12 +613,18 @@ public sealed partial class TeklaDrawingDimensionsApi
                 continue;
             }
 
+            var handoffResult = ResolveArrangeHandoffResult(activeDrawing, candidate, applyResult.CreatedDimensionId);
+
             result.Combined.Add(CreateCombineCandidateResult(
                 candidate,
                 previewOnly: false,
                 combined: true,
                 createdDimensionId: applyResult.CreatedDimensionId,
-                deletedDimensionIdsOverride: candidate.DimensionIds));
+                deletedDimensionIdsOverride: candidate.DimensionIds,
+                arrangeHandoffAttempted: handoffResult.Attempted,
+                arrangeHandoffSucceeded: handoffResult.Succeeded,
+                arrangeHandoffReason: handoffResult.Reason,
+                arrangeHandoffAppliedDimensionIds: handoffResult.AppliedDimensionIds));
         }
 
         result.CombinedCount = result.Combined.Count(static item => item.Combined);
@@ -635,7 +641,11 @@ public sealed partial class TeklaDrawingDimensionsApi
         string? reasonOverride = null,
         bool rollbackAttempted = false,
         bool rollbackSucceeded = false,
-        string? rollbackReason = null)
+        string? rollbackReason = null,
+        bool arrangeHandoffAttempted = false,
+        bool arrangeHandoffSucceeded = false,
+        string? arrangeHandoffReason = null,
+        IReadOnlyList<int>? arrangeHandoffAppliedDimensionIds = null)
     {
         var result = new CombineDimensionCandidateResult
         {
@@ -651,6 +661,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             RollbackAttempted = rollbackAttempted,
             RollbackSucceeded = rollbackSucceeded,
             RollbackReason = rollbackReason ?? string.Empty,
+            ArrangeHandoffAttempted = arrangeHandoffAttempted,
+            ArrangeHandoffSucceeded = arrangeHandoffSucceeded,
+            ArrangeHandoffReason = arrangeHandoffReason ?? string.Empty,
             Distance = candidate.Preview?.Distance ?? 0,
             Reason = reasonOverride ?? candidate.Reason
         };
@@ -659,6 +672,8 @@ public sealed partial class TeklaDrawingDimensionsApi
         result.BlockingReasons.AddRange(candidate.BlockingReasons);
         if (deletedDimensionIdsOverride != null)
             result.DeletedDimensionIds.AddRange(deletedDimensionIdsOverride);
+        if (arrangeHandoffAppliedDimensionIds != null)
+            result.ArrangeHandoffAppliedDimensionIds.AddRange(arrangeHandoffAppliedDimensionIds);
 
         if (candidate.Preview != null)
         {
@@ -674,6 +689,35 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         return result;
+    }
+
+    private DimensionArrangeHandoffResult ResolveArrangeHandoffResult(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        DimensionCombineActionCandidate candidate,
+        int? createdDimensionId)
+    {
+        if (!createdDimensionId.HasValue)
+        {
+            return new DimensionArrangeHandoffResult
+            {
+                Reason = "created_dimension_not_available"
+            };
+        }
+
+        if (!candidate.ViewId.HasValue)
+        {
+            return new DimensionArrangeHandoffResult
+            {
+                Reason = "view_id_unavailable"
+            };
+        }
+
+        return DimensionCombineArrangeHandoffExecutor.Execute(
+            previewOnly: false,
+            applyHandoff: () => TryApplyLocalArrangeHandoff(
+                activeDrawing,
+                candidate.ViewId.Value,
+                createdDimensionId.Value));
     }
 
     private DimensionCombineApplyResult TryApplyCombineCandidate(

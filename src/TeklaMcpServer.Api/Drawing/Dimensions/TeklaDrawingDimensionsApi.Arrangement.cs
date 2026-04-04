@@ -8,6 +8,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
+    private const double DefaultArrangeTargetGapPaper = 10.0;
+
     internal DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
     {
         if (targetGap < 0)
@@ -332,12 +334,79 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
-        var result = new ArrangeDimensionsResult();
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
         var plans = PlanDimensionDistanceAdjustments(viewId, targetGap);
+        return ApplyDimensionDistanceAdjustments(activeDrawing, plans, "(MCP) ArrangeDimensions", "(MCP) RollbackArrangeDimensions");
+    }
+
+    internal DimensionArrangeHandoffResult TryApplyLocalArrangeHandoff(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        int viewId,
+        int anchorDimensionId,
+        double targetGap = DefaultArrangeTargetGapPaper)
+    {
+        var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId));
+        var stack = stacks.FirstOrDefault(candidate => candidate.Groups.Any(group => group.Members.Any(member => member.DimensionId == anchorDimensionId)));
+        if (stack == null)
+        {
+            return new DimensionArrangeHandoffResult
+            {
+                Reason = "local_stack_not_found"
+            };
+        }
+
+        var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+        var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
+        var applicableProposals = plan.Proposals
+            .Where(static proposal => proposal.CanApply && System.Math.Abs(proposal.DistanceDelta) >= 1e-9)
+            .ToList();
+        if (applicableProposals.Count == 0)
+        {
+            var reason = plan.Proposals
+                .Select(static proposal => proposal.Reason)
+                .FirstOrDefault(static reason => !string.IsNullOrWhiteSpace(reason))
+                ?? "arrange_handoff_no_changes";
+
+            return new DimensionArrangeHandoffResult
+            {
+                Reason = reason
+            };
+        }
+
+        var arrangeResult = ApplyDimensionDistanceAdjustments(
+            activeDrawing,
+            [plan],
+            "(MCP) CombineDimensionsArrangeHandoff",
+            "(MCP) RollbackCombineDimensionsArrangeHandoff");
+        if (arrangeResult.AppliedCount == 0)
+        {
+            var reason = arrangeResult.SkipReasons.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+                ?? "arrange_handoff_no_changes";
+            return new DimensionArrangeHandoffResult
+            {
+                Reason = reason
+            };
+        }
+
+        var result = new DimensionArrangeHandoffResult
+        {
+            Attempted = true,
+            Succeeded = true
+        };
+        result.AppliedDimensionIds.AddRange(arrangeResult.Applied.Select(static item => item.DimensionId));
+        return result;
+    }
+
+    private static ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        IReadOnlyList<DimensionDistanceAdjustmentPlan> plans,
+        string commitMessage,
+        string rollbackCommitMessage)
+    {
+        var result = new ArrangeDimensionsResult();
 
         var deltas = new Dictionary<int, double>();
         foreach (var plan in plans)
@@ -415,7 +484,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     modifiedIds.Add(id);
                 }
 
-                activeDrawing.CommitChanges("(MCP) ArrangeDimensions");
+                activeDrawing.CommitChanges(commitMessage);
             }
             catch
             {
@@ -432,7 +501,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 {
                     try
                     {
-                        activeDrawing.CommitChanges("(MCP) RollbackArrangeDimensions");
+                        activeDrawing.CommitChanges(rollbackCommitMessage);
                     }
                     catch
                     {

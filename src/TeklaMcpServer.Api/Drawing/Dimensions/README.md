@@ -91,6 +91,15 @@ the existing combine-candidate analysis; it is intentionally not part of
 `arrange_dimensions`.
 Its runtime result now also reports rollback status for partial-failure cases:
 `rollbackAttempted`, `rollbackSucceeded`, and `rollbackReason`.
+On successful non-preview merge it also performs a best-effort local
+post-combine arrange handoff limited to the created dimension's local
+stack/group in the same view/orientation. Handoff is reported separately via:
+`arrangeHandoffAttempted`, `arrangeHandoffSucceeded`,
+`arrangeHandoffReason`, and `arrangeHandoffAppliedDimensionIds`.
+Combine success is not rolled back if the handoff is skipped or fails.
+The merge commit and the handoff commit are intentionally independent:
+handoff is not transactional with combine, and a handoff rollback failure may
+still leave the drawing in a partially rearranged post-merge state.
 
 Current default for `arrange_dimensions`:
 

@@ -743,6 +743,8 @@ Follow-up для текущей реализации context:
 - rollback/failure path is validated via internal fault-injection seam and live
   smoke
 - `arrange_dimensions` behavior on real drawings: validated
+- `combine v2` local post-combine arrange handoff is implemented as
+  best-effort and live-smoke-validated on a real mergeable pair
 
 Этот блок по сути закрыт для current conservative runtime path.
 
@@ -754,10 +756,15 @@ Follow-up для текущей реализации context:
 
 ### 3. Improve combine quality
 
-- `combine v2` can now proceed on top of validated current runtime behavior
-- optional post-combine arrange handoff
+- `combine v2` local arrange handoff now exists
+- refine when handoff should be considered `no changes` vs `applied`
 - broader but still explainable combine policy only after current conservative
   path proves stable
+- stabilize post-mutation reread (`get_drawing_dimensions` can still lag behind
+  live sheet state immediately after combine)
+- document and keep explicit that combine commit and arrange handoff commit are
+  non-transactional; handoff rollback failure may leave partial post-merge
+  rearrangement
 
 ### 3a. Add policy recommendation layer
 

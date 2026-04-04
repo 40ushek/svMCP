@@ -16,10 +16,14 @@ public sealed class CombineDimensionCandidateResult
     public bool RollbackAttempted { get; set; }
     public bool RollbackSucceeded { get; set; }
     public string RollbackReason { get; set; } = string.Empty;
+    public bool ArrangeHandoffAttempted { get; set; }
+    public bool ArrangeHandoffSucceeded { get; set; }
+    public string ArrangeHandoffReason { get; set; } = string.Empty;
     public double Distance { get; set; }
     public string Reason { get; set; } = string.Empty;
     public List<int> DimensionIds { get; } = [];
     public List<int> DeletedDimensionIds { get; } = [];
+    public List<int> ArrangeHandoffAppliedDimensionIds { get; } = [];
     public List<string> BlockingReasons { get; } = [];
     public List<DrawingPointInfo> PointList { get; } = [];
 }
