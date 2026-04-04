@@ -6,6 +6,16 @@ namespace TeklaMcpServer.Api.Drawing;
 internal static class DimensionGroupFactory
 {
     public static List<DimensionItem> BuildItems(
+        IEnumerable<TeklaDimensionSetSnapshot> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null)
+    {
+        groupingPolicy ??= DimensionGroupingPolicy.Default;
+        return dimensions
+            .SelectMany(dimension => CreateItems(dimension, groupingPolicy))
+            .ToList();
+    }
+
+    public static List<DimensionItem> BuildItems(
         IEnumerable<DrawingDimensionInfo> dimensions,
         DimensionGroupingPolicy? groupingPolicy = null)
     {
@@ -16,12 +26,44 @@ internal static class DimensionGroupFactory
     }
 
     public static List<DimensionGroup> BuildGroups(
+        IEnumerable<TeklaDimensionSetSnapshot> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null,
+        DimensionReductionPolicy? reductionPolicy = null,
+        DimensionCombinePolicy? combinePolicy = null)
+    {
+        return BuildGroupsWithReductionDebug(dimensions, groupingPolicy, reductionPolicy, combinePolicy).ReducedGroups;
+    }
+
+    public static List<DimensionGroup> BuildGroups(
         IEnumerable<DrawingDimensionInfo> dimensions,
         DimensionGroupingPolicy? groupingPolicy = null,
         DimensionReductionPolicy? reductionPolicy = null,
         DimensionCombinePolicy? combinePolicy = null)
     {
         return BuildGroupsWithReductionDebug(dimensions, groupingPolicy, reductionPolicy, combinePolicy).ReducedGroups;
+    }
+
+    public static DimensionReductionDebugResult BuildGroupsWithReductionDebug(
+        IEnumerable<TeklaDimensionSetSnapshot> dimensions,
+        DimensionGroupingPolicy? groupingPolicy = null,
+        DimensionReductionPolicy? reductionPolicy = null,
+        DimensionCombinePolicy? combinePolicy = null)
+    {
+        groupingPolicy ??= DimensionGroupingPolicy.Default;
+        reductionPolicy ??= DimensionReductionPolicy.Default;
+        combinePolicy ??= DimensionCombinePolicy.Default;
+
+        var items = BuildItems(dimensions, groupingPolicy);
+        var groups = BuildConnectedGroups(items, groupingPolicy);
+
+        foreach (var group in groups)
+        {
+            group.SortMembers();
+            group.RefreshMetrics();
+            group.RawItemCount = group.DimensionList.Count;
+        }
+
+        return DimensionOperations.EliminateRedundantItemsWithDebug(groups, reductionPolicy, combinePolicy);
     }
 
     public static DimensionReductionDebugResult BuildGroupsWithReductionDebug(
@@ -90,6 +132,22 @@ internal static class DimensionGroupFactory
     }
 
     private static IEnumerable<DimensionItem> CreateItems(
+        TeklaDimensionSetSnapshot dimension,
+        DimensionGroupingPolicy groupingPolicy)
+    {
+        var segmentItems = dimension.Segments
+            .Select(segment => CreateItem(dimension, segment))
+            .Where(static item => item != null)
+            .Cast<DimensionItem>()
+            .ToList();
+
+        if (segmentItems.Count > 0)
+            return MergeItemsIntoChains(dimension, segmentItems, groupingPolicy);
+
+        return [CreateFallbackItem(dimension)];
+    }
+
+    private static IEnumerable<DimensionItem> CreateItems(
         DrawingDimensionInfo dimension,
         DimensionGroupingPolicy groupingPolicy)
     {
@@ -106,6 +164,18 @@ internal static class DimensionGroupFactory
     }
 
     private static IReadOnlyList<DimensionItem> MergeItemsIntoChains(
+        TeklaDimensionSetSnapshot dimension,
+        IReadOnlyList<DimensionItem> rawItems,
+        DimensionGroupingPolicy groupingPolicy)
+    {
+        if (rawItems.Count <= 1 || dimension.MeasuredPoints.Count == 0)
+            return rawItems.ToList();
+
+        var chains = BuildItemChains(rawItems, groupingPolicy);
+        return chains.Select(chain => CreateChainItem(dimension, chain)).ToList();
+    }
+
+    private static IReadOnlyList<DimensionItem> MergeItemsIntoChains(
         DrawingDimensionInfo dimension,
         IReadOnlyList<DimensionItem> rawItems,
         DimensionGroupingPolicy groupingPolicy)
@@ -113,6 +183,14 @@ internal static class DimensionGroupFactory
         if (rawItems.Count <= 1 || dimension.MeasuredPoints.Count == 0)
             return rawItems.ToList();
 
+        var chains = BuildItemChains(rawItems, groupingPolicy);
+        return chains.Select(chain => CreateChainItem(dimension, chain)).ToList();
+    }
+
+    private static List<List<DimensionItem>> BuildItemChains(
+        IReadOnlyList<DimensionItem> rawItems,
+        DimensionGroupingPolicy groupingPolicy)
+    {
         var chains = new List<List<DimensionItem>>();
         var visited = new bool[rawItems.Count];
 
@@ -148,7 +226,7 @@ internal static class DimensionGroupFactory
             chains.Add(component);
         }
 
-        return chains.Select(chain => CreateChainItem(dimension, chain)).ToList();
+        return chains;
     }
 
     private static bool CanChainItemsWithinDimension(
@@ -173,6 +251,68 @@ internal static class DimensionGroupFactory
             return false;
 
         return HaveAdjacentMeasuredPointOrders(left, right) || HaveSharedMeasuredPoint(left, right, groupingPolicy);
+    }
+
+    private static DimensionItem CreateChainItem(
+        TeklaDimensionSetSnapshot dimension,
+        IReadOnlyList<DimensionItem> chain)
+    {
+        var orderedChain = chain
+            .OrderBy(item => System.Math.Min(item.StartPointOrder, item.EndPointOrder))
+            .ThenBy(item => System.Math.Max(item.StartPointOrder, item.EndPointOrder))
+            .ToList();
+
+        var first = orderedChain[0];
+        var last = orderedChain[orderedChain.Count - 1];
+        var minOrder = orderedChain.Min(item => System.Math.Min(item.StartPointOrder, item.EndPointOrder));
+        var maxOrder = orderedChain.Max(item => System.Math.Max(item.StartPointOrder, item.EndPointOrder));
+
+        var pointList = dimension.MeasuredPoints
+            .Where(point => point.Order >= minOrder && point.Order <= maxOrder)
+            .OrderBy(point => point.Order)
+            .Select(static point => new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
+            })
+            .ToList();
+
+        if (pointList.Count < 2)
+        {
+            pointList =
+            [
+                new DrawingPointInfo { X = first.StartX, Y = first.StartY, Order = minOrder },
+                new DrawingPointInfo { X = last.EndX, Y = last.EndY, Order = maxOrder }
+            ];
+        }
+
+        var item = new DimensionItem
+        {
+            DimensionId = dimension.Id,
+            ViewId = dimension.ViewId,
+            ViewType = dimension.ViewType ?? string.Empty,
+            ViewScale = dimension.ViewScale,
+            DomainDimensionType = first.DomainDimensionType,
+            SourceKind = first.SourceKind,
+            GeometryKind = first.GeometryKind,
+            TeklaDimensionType = first.TeklaDimensionType,
+            Distance = dimension.Distance,
+            DirectionX = first.DirectionX,
+            DirectionY = first.DirectionY,
+            TopDirection = first.TopDirection,
+            Bounds = CombineItemBounds(orderedChain),
+            ReferenceLine = dimension.ReferenceLine != null ? CopyLine(dimension.ReferenceLine) : CopyLine(first.ReferenceLine),
+            LeadLineMain = CopyLine(first.LeadLineMain),
+            LeadLineSecond = CopyLine(last.LeadLineSecond)
+        };
+
+        PopulateDimensionSnapshot(item, dimension);
+        foreach (var segmentId in orderedChain.SelectMany(static item => item.SegmentIds).Distinct())
+            item.SegmentIds.Add(segmentId);
+
+        item.ReplacePointList(pointList);
+        return item;
     }
 
     private static DimensionItem CreateChainItem(
@@ -668,6 +808,58 @@ internal static class DimensionGroupFactory
         return item;
     }
 
+    private static DimensionItem CreateFallbackItem(TeklaDimensionSetSnapshot dimension)
+    {
+        var domainType = ResolveDomainDimensionType(dimension);
+        var referenceLine = CopyLine(dimension.ReferenceLine);
+        var direction = referenceLine != null &&
+                        TeklaDrawingDimensionsApi.TryNormalizeDirection(referenceLine.EndX - referenceLine.StartX, referenceLine.EndY - referenceLine.StartY, out var lineDirection)
+            ? lineDirection
+            : (dimension.DirectionX, dimension.DirectionY);
+        var pointList = dimension.MeasuredPoints
+            .Select(static point => new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
+            })
+            .ToList();
+
+        if (pointList.Count < 2)
+        {
+            pointList =
+            [
+                new DrawingPointInfo { X = referenceLine?.StartX ?? 0, Y = referenceLine?.StartY ?? 0, Order = 0 },
+                new DrawingPointInfo { X = referenceLine?.EndX ?? 0, Y = referenceLine?.EndY ?? 0, Order = 1 }
+            ];
+        }
+
+        var item = new DimensionItem
+        {
+            DimensionId = dimension.Id,
+            ViewId = dimension.ViewId,
+            ViewType = dimension.ViewType ?? string.Empty,
+            ViewScale = dimension.ViewScale,
+            DomainDimensionType = domainType,
+            SourceKind = dimension.SourceKind,
+            GeometryKind = ResolveGeometryKind(dimension),
+            TeklaDimensionType = dimension.TeklaDimensionType,
+            Distance = dimension.Distance,
+            DirectionX = direction.Item1,
+            DirectionY = direction.Item2,
+            TopDirection = dimension.TopDirection,
+            Bounds = dimension.Bounds ?? TeklaDrawingDimensionsApi.CombineBounds(dimension.Segments.Select(static s => s.Bounds)),
+            ReferenceLine = referenceLine,
+            LeadLineMain = CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineMain != null)?.LeadLineMain),
+            LeadLineSecond = CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineSecond != null)?.LeadLineSecond)
+        };
+
+        PopulateDimensionSnapshot(item, dimension);
+        item.SegmentIds.AddRange(dimension.Segments.Select(static segment => segment.Id));
+        item.ReplacePointList(pointList);
+        return item;
+    }
+
     private static DimensionItem? CreateItem(DrawingDimensionInfo dimension, DimensionSegmentInfo segment)
     {
         var domainType = ResolveDomainDimensionType(dimension, segment);
@@ -704,6 +896,79 @@ internal static class DimensionGroupFactory
 
         item.ReplacePointList(pointList);
         return item;
+    }
+
+    private static DimensionItem? CreateItem(TeklaDimensionSetSnapshot dimension, TeklaDimensionSegmentSnapshot segment)
+    {
+        var domainType = ResolveDomainDimensionType(dimension, segment);
+        var item = new DimensionItem
+        {
+            DimensionId = dimension.Id,
+            ViewId = dimension.ViewId,
+            ViewType = dimension.ViewType ?? string.Empty,
+            ViewScale = dimension.ViewScale,
+            DomainDimensionType = domainType,
+            SourceKind = dimension.SourceKind,
+            GeometryKind = ResolveGeometryKind(dimension, segment),
+            TeklaDimensionType = dimension.TeklaDimensionType,
+            Distance = segment.Distance,
+            DirectionX = segment.DirectionX != 0 || segment.DirectionY != 0 ? segment.DirectionX : dimension.DirectionX,
+            DirectionY = segment.DirectionX != 0 || segment.DirectionY != 0 ? segment.DirectionY : dimension.DirectionY,
+            TopDirection = segment.TopDirection != 0 ? segment.TopDirection : dimension.TopDirection,
+            Bounds = segment.Bounds ?? (segment.DimensionLine != null ? TeklaDrawingDimensionsApi.CreateBoundsFromLine(segment.DimensionLine) : null),
+            ReferenceLine = CopyLine(segment.DimensionLine ?? dimension.ReferenceLine),
+            LeadLineMain = CopyLine(segment.LeadLineMain),
+            LeadLineSecond = CopyLine(segment.LeadLineSecond)
+        };
+
+        PopulateDimensionSnapshot(item, dimension);
+        item.SegmentIds.Add(segment.Id);
+
+        var startOrder = FindMeasuredPointOrder(dimension.MeasuredPoints, segment.StartX, segment.StartY);
+        var endOrder = FindMeasuredPointOrder(dimension.MeasuredPoints, segment.EndX, segment.EndY);
+        var pointList = new List<DrawingPointInfo>
+        {
+            new() { X = segment.StartX, Y = segment.StartY, Order = startOrder >= 0 ? startOrder : 0 },
+            new() { X = segment.EndX, Y = segment.EndY, Order = endOrder >= 0 ? endOrder : 1 }
+        };
+
+        item.ReplacePointList(pointList);
+        return item;
+    }
+
+    private static void PopulateDimensionSnapshot(DimensionItem item, TeklaDimensionSetSnapshot dimension)
+    {
+        item.Orientation = dimension.Orientation ?? string.Empty;
+
+        item.MeasuredPoints.Clear();
+        item.MeasuredPoints.AddRange(dimension.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        item.Segments.Clear();
+        item.Segments.AddRange(dimension.Segments.Select(static segment => new DimensionSegmentInfo
+        {
+            Id = segment.Id,
+            StartX = segment.StartX,
+            StartY = segment.StartY,
+            EndX = segment.EndX,
+            EndY = segment.EndY,
+            Distance = segment.Distance,
+            DirectionX = segment.DirectionX,
+            DirectionY = segment.DirectionY,
+            TopDirection = segment.TopDirection,
+            Bounds = CopyBounds(segment.Bounds),
+            TextBounds = CopyBounds(segment.TextBounds),
+            DimensionLine = CopyLine(segment.DimensionLine),
+            LeadLineMain = CopyLine(segment.LeadLineMain),
+            LeadLineSecond = CopyLine(segment.LeadLineSecond)
+        }));
+
+        item.SourceObjectIds.Clear();
+        item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
     }
 
     private static void PopulateDimensionSnapshot(DimensionItem item, DrawingDimensionInfo dimension)
@@ -785,12 +1050,58 @@ internal static class DimensionGroupFactory
                     dimension.Segments));
     }
 
+    private static DimensionGeometryKind ResolveGeometryKind(TeklaDimensionSetSnapshot dimension, TeklaDimensionSegmentSnapshot? segment = null)
+    {
+        if (segment?.DimensionLine != null)
+        {
+            return TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(
+                TeklaDrawingDimensionsApi.DetermineDimensionOrientation(
+                    0,
+                    0,
+                    segment.DimensionLine,
+                    []));
+        }
+
+        if (dimension.GeometryKind != DimensionGeometryKind.Unknown)
+            return dimension.GeometryKind;
+
+        var projectedSegments = dimension.Segments
+            .Select(static candidate => new DimensionSegmentInfo
+            {
+                StartX = candidate.StartX,
+                StartY = candidate.StartY,
+                EndX = candidate.EndX,
+                EndY = candidate.EndY
+            })
+            .ToList();
+
+        return TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(
+            !string.IsNullOrWhiteSpace(dimension.Orientation)
+                ? dimension.Orientation
+                : TeklaDrawingDimensionsApi.DetermineDimensionOrientation(
+                    dimension.DirectionX,
+                    dimension.DirectionY,
+                    dimension.ReferenceLine,
+                    projectedSegments));
+    }
+
     private static DimensionType ResolveDomainDimensionType(DrawingDimensionInfo dimension, DimensionSegmentInfo? segment = null)
     {
         if (dimension.ClassifiedDimensionType != DimensionType.Unknown)
             return dimension.ClassifiedDimensionType;
 
         if (System.Enum.TryParse<DimensionType>(dimension.DimensionType, ignoreCase: true, out var explicitDomainType))
+            return explicitDomainType;
+
+        return MapDomainDimensionType(dimension.SourceKind, ResolveGeometryKind(dimension, segment));
+    }
+
+    private static DimensionType ResolveDomainDimensionType(TeklaDimensionSetSnapshot dimension, TeklaDimensionSegmentSnapshot? segment = null)
+    {
+        if (dimension.ClassifiedDimensionType != DimensionType.Unknown)
+            return dimension.ClassifiedDimensionType;
+
+        if (System.Enum.TryParse<DimensionType>(dimension.TeklaDimensionType, ignoreCase: true, out var explicitDomainType))
             return explicitDomainType;
 
         return MapDomainDimensionType(dimension.SourceKind, ResolveGeometryKind(dimension, segment));

@@ -91,6 +91,58 @@ public sealed class DimensionSnapshotProjectionTests
         Assert.Equal(fingerprintA, fingerprintB);
     }
 
+    [Fact]
+    public void BuildGroups_FromSnapshots_UsesSnapshotPathWithoutReadModelProjection()
+    {
+        var snapshot = new TeklaDimensionSetSnapshot
+        {
+            Id = 42,
+            ViewId = 10,
+            ViewType = "FrontView",
+            ViewScale = 15,
+            TeklaDimensionType = "Absolute",
+            Orientation = "horizontal",
+            Distance = 20,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            SourceKind = DimensionSourceKind.Part,
+            GeometryKind = DimensionGeometryKind.Horizontal,
+            ClassifiedDimensionType = DimensionType.Horizontal,
+            ReferenceLine = new DrawingLineInfo { StartX = 0, StartY = -20, EndX = 100, EndY = -20 }
+        };
+
+        snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
+        snapshot.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
+        snapshot.SourceObjectIds.Add(101);
+        snapshot.Segments.Add(new TeklaDimensionSegmentSnapshot
+        {
+            Id = 4201,
+            StartX = 0,
+            StartY = 0,
+            EndX = 100,
+            EndY = 0,
+            Distance = 20,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            DimensionLine = new DrawingLineInfo { StartX = 0, StartY = -20, EndX = 100, EndY = -20 },
+            LeadLineMain = new DrawingLineInfo { StartX = 0, StartY = 0, EndX = 0, EndY = -20 },
+            LeadLineSecond = new DrawingLineInfo { StartX = 100, StartY = 0, EndX = 100, EndY = -20 },
+            TextBounds = new DrawingBoundsInfo { MinX = 35, MinY = -28, MaxX = 65, MaxY = -18 }
+        });
+
+        var group = Assert.Single(DimensionGroupFactory.BuildGroups([snapshot]));
+        var item = Assert.Single(group.DimensionList);
+
+        Assert.Equal(42, item.DimensionId);
+        Assert.Equal(15, item.ViewScale);
+        Assert.Equal("horizontal", item.Orientation);
+        Assert.Equal([101], item.SourceObjectIds);
+        Assert.Equal(2, item.MeasuredPoints.Count);
+        Assert.Single(item.Segments);
+    }
+
     private static TeklaDimensionSetSnapshot CreateSnapshot(int id, params int[] segmentIds)
     {
         var snapshot = new TeklaDimensionSetSnapshot

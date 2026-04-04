@@ -326,9 +326,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             EnableEquivalentSimpleReduction = false,
             EnableRepresentativeSelection = false
         };
-        return DimensionGroupFactory.BuildGroups(
-            ProjectDimensionSnapshotsToReadModels(GetDimensionSnapshots(viewId)),
-            reductionPolicy: noReductionPolicy);
+        return DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId), reductionPolicy: noReductionPolicy);
     }
 
     private List<DimensionGroup> GetArrangeGroupsDeduped(int? viewId)

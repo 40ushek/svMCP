@@ -54,12 +54,11 @@ public sealed partial class TeklaDrawingDimensionsApi
     }
 
     internal List<DimensionGroup> GetDimensionGroups(int? viewId)
-        => DimensionGroupFactory.BuildGroups(ProjectDimensionSnapshotsToReadModels(GetDimensionSnapshots(viewId)));
+        => DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId));
 
     internal DimensionReductionDebugResult GetDimensionGroupReductionDebug(int? viewId)
     {
-        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(
-            ProjectDimensionSnapshotsToReadModels(GetDimensionSnapshots(viewId)));
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
         AttachDimensionContexts(debug);
         return debug;
     }
@@ -79,8 +78,7 @@ public sealed partial class TeklaDrawingDimensionsApi
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var snapshots = GetDimensionSnapshots(viewId);
-        var dimensionInfos = ProjectDimensionSnapshotsToReadModels(snapshots);
-        var groups = DimensionGroupFactory.BuildGroups(dimensionInfos);
+        var groups = DimensionGroupFactory.BuildGroups(snapshots);
         return BuildGetDimensionsResult(snapshots.Count, groups);
     }
 
@@ -151,9 +149,6 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         return result;
     }
-
-    internal static List<DrawingDimensionInfo> ProjectDimensionSnapshotsToReadModels(IEnumerable<TeklaDimensionSetSnapshot> snapshots)
-        => snapshots.Select(ProjectDimensionSnapshotToReadModel).ToList();
 
     internal static DrawingDimensionInfo ProjectDimensionSnapshotToReadModel(TeklaDimensionSetSnapshot snapshot)
     {
