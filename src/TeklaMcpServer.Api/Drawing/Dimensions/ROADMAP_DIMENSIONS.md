@@ -114,10 +114,11 @@ Purpose:
 - read Tekla API safely
 - normalize runtime data into stable internal snapshots
 
-Expected direction:
+Current baseline:
 
-- separate internal snapshot types for dimension sets and segments
-- no coupling between raw snapshot shape and public response DTOs
+- internal snapshot types exist for dimension sets and segments
+- query/stable-read paths build snapshots first
+- public/read DTOs are projected separately from snapshots and domain state
 
 Typical contents:
 
@@ -200,6 +201,11 @@ Purpose:
 - keep debug-first explainable packets
 - later support agent-facing preview/apply workflows
 
+Current baseline:
+
+- orchestration code lives in its own `Orchestration/` layer
+- query/debug plan entry points depend on a single orchestration engine boundary
+
 This layer should stay separate from:
 
 - grouping
@@ -242,7 +248,12 @@ next phase rather than a temporary experimental branch.
 
 The current baseline already includes:
 
+- explicit internal snapshot layer for dimension sets and segments
+- snapshot-native grouping/query/debug paths
+- snapshot-native helper flow for measured-point ordering, orientation and
+  reference-line reconstruction
 - internal `DimensionItem` / `DimensionGroup` modeling
+- `DimensionItem` no longer depends on `DrawingDimensionInfo`
 - geometry-first grouping and conservative reduction
 - line-first `get_drawing_dimensions`
 - arrangement planning and `Distance`-based runtime apply
@@ -252,8 +263,11 @@ The current baseline already includes:
 - bounded stable reread after mutate
 - `DimensionContext`
 - source association and point-to-object mapping
+- explicit typed source identity via `DimensionSourceReference`
+- no remaining flat source-id semantics in domain/context layers
 - debug-first `LayoutPolicy`
 - orchestration debug packets
+- orchestration extracted into a dedicated module/layer
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
 
@@ -316,45 +330,29 @@ Consequence:
 
 ## Next Phase
 
-The next phase should improve architecture before adding broad new behavior.
+The foundational architecture cleanup is largely complete.
+
+The next phase should improve naming, semantics and richer layout support on top
+of the new baseline.
 
 Priority order:
 
-### 1. Introduce a real snapshot layer
+### 1. Clarify orchestration naming
 
-Separate internal raw snapshot types from public/read DTOs.
+Current naming still overstates or obscures the deterministic baseline.
+
+Main candidates:
+
+- `DimensionAiAssistedOrchestrator*`
+- `get_dimension_ai_orchestration_plan`
 
 Target result:
 
-- Tekla query code produces snapshot objects
-- domain builders consume snapshots
-- public read models are projected from domain objects
+- names reflect plan projection/recommendation behavior accurately
+- deterministic orchestration remains clearly separate from any future
+  agent-facing execution path
 
-This is the most important architectural cleanup.
-
-### 2. Clean up source identity
-
-Make source identity explicit and stable across the stack.
-
-In particular, avoid ambiguous mixing of:
-
-- drawing object ids
-- model ids
-- snapshot/runtime source ids
-
-### 3. Make orchestration an explicit module
-
-Collect orchestration logic into a dedicated layer instead of leaving it spread
-across policy/debug/follow-up helpers.
-
-Expected responsibilities:
-
-- packet building
-- recommendation layering
-- combine/arrange sequencing
-- later preview/apply guardrails
-
-### 4. Strengthen `DimensionGeometryContext`
+### 2. Strengthen `DimensionGeometryContext`
 
 Keep growing the geometry-first summary of the annotation itself.
 
@@ -365,7 +363,7 @@ The next useful capabilities are:
 - better support for collision reasoning
 - future candidate placement generation
 
-### 5. Add candidate placements and cost-based layout support
+### 3. Add candidate placements and cost-based layout support
 
 This is the first step toward richer annotation-aware layout.
 
@@ -376,7 +374,7 @@ Expected direction:
 - evaluate them by explicit penalties
 - remain explainable
 
-### 6. Expand collision-aware layout as a supporting primitive
+### 4. Expand collision-aware layout as a supporting primitive
 
 Later work may add:
 
@@ -387,6 +385,14 @@ Later work may add:
 
 This should be built on top of the context layers above, not as more ad hoc
 `Distance` translation rules.
+
+### 5. Keep public/debug projections honest
+
+The remaining documentation and code shape should continue to reinforce:
+
+- snapshot/domain/context as the real internal model
+- debug/read DTOs as projections only
+- no regression back to DTO-first logic
 
 ## Deferred / Non-Goals
 
