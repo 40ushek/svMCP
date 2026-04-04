@@ -4,6 +4,29 @@
 
 `Drawing/Dimensions` is the line-first dimension module for drawing runtime.
 
+## Current Phase Status
+
+Current phase status: `v1 complete`.
+
+This means:
+
+- the current `Drawing/Dimensions` baseline is considered stable enough to stop
+  expanding in this cycle
+- no new behavior changes are intended inside the current phase
+- remaining improvements move to the next phase as backlog items
+
+The current `v1` baseline already includes:
+
+- internal `DimensionContext`
+- source association and point-to-object mapping
+- debug-first `LayoutPolicy`
+- `RecommendedAction`
+- validated `combine` success path
+- validated rollback/failure reporting path
+- local post-combine arrange handoff
+- stable reread after mutate
+- internal orchestration debug packets
+
 It is responsible for:
 
 - reading existing `StraightDimensionSet` objects from the active drawing
@@ -133,6 +156,12 @@ Dimension reads/debug now use a bounded best-effort consistency retry after
 runtime mutations. This is internal only: public payloads are unchanged, but
 immediate rereads after `combine`, `create`, or `delete` should more reliably
 see the fresh dimension state without requiring a separate sheet-debug path.
+
+No additional runtime orchestration is part of the current phase:
+
+- `RecommendedAction` stays debug-only
+- orchestration packets stay debug-only
+- there is no auto-apply based on policy recommendations
 
 ## Document Split
 

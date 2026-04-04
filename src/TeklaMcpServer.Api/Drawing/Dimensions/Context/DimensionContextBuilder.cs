@@ -7,6 +7,7 @@ internal sealed class DimensionContextBuilder
     private const double InternalBandTolerance = 1.0;
 
     private readonly DimensionSourceAssociationResolver _associationResolver;
+    private readonly DimensionGeometryContextBuilder _geometryContextBuilder = new();
 
     public DimensionContextBuilder(DimensionSourceAssociationResolver associationResolver)
     {
@@ -37,6 +38,7 @@ internal sealed class DimensionContextBuilder
             SourceKind = item.SourceKind,
             Source = BuildSourceSummary(item, association),
             Geometry = BuildGeometry(item, association),
+            AnnotationGeometry = _geometryContextBuilder.Build(item),
             Association = BuildAssociation(association)
         };
 

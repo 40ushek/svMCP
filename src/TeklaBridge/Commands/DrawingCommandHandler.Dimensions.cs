@@ -1124,6 +1124,19 @@ internal sealed partial class DrawingCommandHandler
             associationNoGeometryCount = GetContextPropertyValue(item, "AssociationNoGeometryCount"),
             associationNoCandidatesCount = GetContextPropertyValue(item, "AssociationNoCandidatesCount"),
             associationWarnings = (GetContextPropertyValue(item, "AssociationWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            lineDirection = SerializeDebugVector(GetContextPropertyValue(item, "AnnotationLineDirection") as DrawingVectorInfo),
+            normalDirection = SerializeDebugVector(GetContextPropertyValue(item, "AnnotationNormalDirection") as DrawingVectorInfo),
+            startAlong = GetContextPropertyValue(item, "AnnotationStartAlong"),
+            endAlong = GetContextPropertyValue(item, "AnnotationEndAlong"),
+            geometryBand = SerializeGeometryBand(
+                GetContextPropertyValue(item, "AnnotationBandStartAlong"),
+                GetContextPropertyValue(item, "AnnotationBandEndAlong"),
+                GetContextPropertyValue(item, "AnnotationBandMinOffset"),
+                GetContextPropertyValue(item, "AnnotationBandMaxOffset")),
+            segmentGeometryCount = GetContextPropertyValue(item, "AnnotationSegmentGeometryCount"),
+            hasTextBounds = GetContextPropertyValue(item, "AnnotationHasTextBounds"),
+            annotationTextBounds = SerializeDebugBounds(GetContextPropertyValue(item, "AnnotationTextBounds") as DrawingBoundsInfo),
+            annotationGeometryWarnings = (GetContextPropertyValue(item, "AnnotationGeometryWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             layoutPolicyStatus = GetLayoutPolicyPropertyValue(item, "Status")?.ToString(),
             layoutPolicyReason = GetLayoutPolicyPropertyValue(item, "Reason"),
             layoutPolicyPreferredDimensionId = GetLayoutPolicyPropertyValue(item, "PreferredDimensionId"),
@@ -1185,6 +1198,36 @@ internal sealed partial class DrawingCommandHandler
             maxY = bounds.MaxY,
             width = bounds.Width,
             height = bounds.Height
+        };
+    }
+
+    private static object? SerializeDebugVector(DrawingVectorInfo? vector)
+    {
+        if (vector == null)
+            return null;
+
+        return new
+        {
+            x = vector.X,
+            y = vector.Y
+        };
+    }
+
+    private static object? SerializeGeometryBand(
+        object? startAlong,
+        object? endAlong,
+        object? minOffset,
+        object? maxOffset)
+    {
+        if (startAlong == null && endAlong == null && minOffset == null && maxOffset == null)
+            return null;
+
+        return new
+        {
+            startAlong,
+            endAlong,
+            minOffset,
+            maxOffset
         };
     }
 }

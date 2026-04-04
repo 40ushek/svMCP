@@ -125,6 +125,7 @@ Bridge/internal debug helpers currently available:
 - `get_dimension_text_placement_debug`
 - `get_dimension_source_debug`
 - `get_dimension_groups_debug`
+- `get_dimension_orchestration_debug`
 - `get_dimension_arrangement_debug`
 
 Not currently exposed as public MCP tools:
@@ -619,6 +620,36 @@ Current status:
 
 ## Архитектурная граница ответственности
 
+## Текущий статус фазы
+
+Текущая фаза по `Drawing/Dimensions` считается завершенной как
+`v1 complete`.
+
+Что уже считается закрытым в baseline:
+
+- internal `DimensionContext`
+- source association и point-to-object mapping
+- debug-first `LayoutPolicy`
+- `RecommendedAction`
+- `combine` runtime path
+- rollback/failure validation
+- local post-combine arrange handoff
+- stable reread after mutate
+- internal orchestration debug packets
+
+Что это означает:
+
+- новых behavior changes в этой фазе больше не планируется
+- текущая реализация считается baseline для следующего этапа
+- все дальнейшие изменения идут уже как отдельная следующая фаза
+
+Осознанно не закрываются в этой фазе:
+
+- `NU1701` / warning-policy проблема test project
+- upstream cleanup source identity в snapshot/runtime source paths
+- отсутствие public MCP surface для orchestration debug
+- отсутствие transactional единства между `combine` и handoff commits
+
 Текущий устойчивый принцип такой:
 
 - `Dedup` отвечает только за явные дубли и остается консервативным
@@ -652,9 +683,11 @@ Current status:
 
 Follow-up для текущей реализации context:
 
-- не смешивать `DrawingObjectId` и `ModelId` в один канонический список ids;
-  следующий шаг здесь — разделить context summary хотя бы на
-  `SourceDrawingObjectIds` и `SourceModelIds`
+- context summary уже разделен на `SourceDrawingObjectIds` и
+  `SourceModelIds`
+- следующий follow-up здесь — upstream cleanup source identity в
+  snapshot/runtime source paths, чтобы канонические drawing/model ids выше по
+  стеку тоже не смешивались
 - warning `source_geometry_partial` считать нормальным состоянием partial
   coverage:
   - local bounds могут быть успешно построены
@@ -700,10 +733,53 @@ Follow-up для текущей реализации context:
 - mergeable cases различать так:
   - `DuplicateChain`: удаление одного размера или combine дают одинаковую
     информацию, поэтому это не strong `PreferCombine`
-  - `InformationPreservingMerge`: combine сохраняет или добавляет измерительную
+- `InformationPreservingMerge`: combine сохраняет или добавляет измерительную
     информацию, поэтому это нормальный `PreferCombine`
 
-### 4. `Candidate Placements`
+### 4. `Dimension Geometry Context`
+
+Помимо semantic/source context нужен отдельный geometry-first слой для самой
+аннотации размера на листе.
+
+Он должен отвечать не на вопрос:
+
+- что размер измеряет
+
+а на вопрос:
+
+- как размер геометрически лежит на drawing sheet
+
+Минимальный `v1` должен быть line-first и включать:
+
+- `ReferenceLine`
+- span размерной линии
+- measured points на линии
+- segment lines
+- `StartAlong` / `EndAlong`
+- line direction / normal direction
+- `Distance`
+- text anchor / text bounds, если доступны
+- local band / corridor вокруг размерной линии
+
+Приоритет:
+
+- сначала сама линия размера как главный геометрический носитель
+- выносные линии (`extension/witness lines`) добавлять следующим шагом
+
+Назначение этого слоя:
+
+- deterministic placement primitives
+- candidate placements
+- collision analysis
+- AI-assisted reasoning поверх уже explainable geometry
+
+Этот слой должен дополнять, а не заменять:
+
+- `DimensionContext`
+- source association
+- `LayoutPolicy`
+
+### 5. `Candidate Placements`
 
 Для размера или stack нужно генерировать несколько допустимых вариантов:
 
@@ -713,7 +789,7 @@ Follow-up для текущей реализации context:
 - сменить сторону
 - использовать специальные варианты для отдельных source/type сценариев
 
-### 5. `Cost Function`
+### 6. `Cost Function`
 
 Лучший вариант должен выбираться не по одному правилу, а по штрафам.
 
@@ -725,7 +801,7 @@ Follow-up для текущей реализации context:
 - излишний разлет stack-а
 - компактность и читаемость
 
-### 6. `Arrangement Orchestrator`
+### 7. `Arrangement Orchestrator`
 
 Верхний pipeline должен постепенно стать таким:
 
@@ -734,6 +810,74 @@ Follow-up для текущей реализации context:
 - `layout policy`
 - `combine`
 - `arrange`
+
+## Режимы работы
+
+### 1. Deterministic mode
+
+Текущий baseline остается детерминированным.
+
+Это основной production-режим:
+
+- одинаковый input должен давать одинаковый результат
+- решения принимаются только по явным алгоритмам и policy-правилам
+- поведение должно оставаться explainable и удобным для live-debug
+- runtime actions не должны зависеть от недетерминированного выбора
+
+Этот режим нужен как:
+
+- надежный baseline
+- инструмент разработки и regression-debug
+- безопасный fallback, даже если later появится более гибкий верхний слой
+
+### 2. AI-assisted mode
+
+Следующей отдельной фазой можно добавить второй режим поверх текущего baseline:
+
+- AI/agent получает уже подготовленный доменный контекст
+- сам AI не работает по сырым Tekla API DTO напрямую
+- AI принимает решения поверх explainable internal model
+- AI действует только через ограниченный набор безопасных инструментов
+- AI-режим должен следовать preview/apply discipline там, где это возможно
+
+Источники контекста для такого режима:
+
+- `DimensionContext`
+- `DimensionGeometryContext`
+- source association и point-to-object mapping
+- `LayoutPolicy`
+- `RecommendedAction`
+- orchestration packets
+- internal debug/read surfaces при необходимости
+
+Минимальный toolset для такого режима:
+
+- `get_drawing_dimensions`
+- `get_dimension_groups_debug`
+- `get_dimension_source_debug`
+- `get_dimension_orchestration_debug`
+- `combine_dimensions`
+- `arrange_dimensions`
+- `move_dimension`
+- `create_dimension`
+- `delete_dimension`
+
+Назначение AI-assisted режима:
+
+- разруливать спорные редакционные случаи
+- выбирать между несколькими допустимыми действиями
+- помогать там, где полностью покрыть все drafting cases детерминированными
+  правилами слишком дорого или слишком хрупко
+
+При этом:
+
+- deterministic mode остается каноническим baseline
+- AI-assisted mode не заменяет deterministic foundation
+- AI execution должен строиться как отдельный верхний слой, а не размывать
+  существующий explainable runtime path
+- deterministic placement/arrangement helpers должны развиваться как
+  supporting primitives для агента, а не как попытка заранее закодировать
+  все возможные drafting cases
 
 ## Следующий backlog
 
@@ -750,13 +894,49 @@ Follow-up для текущей реализации context:
 
 Этот блок по сути закрыт для current conservative runtime path.
 
-### 2. Improve arrangement quality
+### 2. Next phase: AI-assisted orchestration
 
+Следующая полноценная фаза должна быть не про попытку полностью закрыть
+placement жестким кодом, а про agent-facing orchestration layer поверх
+текущего deterministic baseline.
+
+Приоритеты этой фазы:
+
+- дать агенту безопасный набор инструментов действия
+- построить preview/apply workflow и guardrails
+- использовать existing `DimensionContext`, `LayoutPolicy`,
+  `RecommendedAction` и orchestration packets как входной explainable слой
+- не пускать AI в raw Tekla API DTO напрямую
+
+Цель:
+
+- чтобы агент решал спорные редакционные случаи поверх уже собранной
+  deterministic foundation
+- а не заменял собой existing runtime path
+
+Перед полноценным agent-facing execution нужен еще один foundation step:
+
+- `DimensionGeometryContext`
+- line-first geometry summary самой аннотации
+- later extension/witness lines как follow-up
+
+### 3. Deterministic supporting primitives
+
+Deterministic code остается важным, но в следующей фазе он развивается как
+поддерживающий слой для агента, а не как единственная стратегия покрытия
+реальной жизни.
+
+Сюда входят:
+
+- `DimensionGeometryContext`
 - collision-aware layout
 - mark/text avoidance
 - side switching / smarter placement policy
+- candidate placements
+- cost function
+- richer but still explainable placement heuristics
 
-### 3. Improve combine quality
+### 4. Improve combine quality
 
 - `combine v2` local arrange handoff now exists
 - refine when handoff should be considered `no changes` vs `applied`
@@ -768,14 +948,16 @@ Follow-up для текущей реализации context:
   non-transactional; handoff rollback failure may leave partial post-merge
   rearrangement
 
-### 3a. Add policy recommendation layer
+### 4a. Keep orchestration debug non-executing in `v1`
 
 - `RecommendedAction` already exists as debug-first policy output
-- orchestration suggestions now also have a dedicated internal packet-oriented
-  debug surface via `get_dimension_orchestration_debug`
-- keep recommendation explainable and separate from direct execution
+- orchestration suggestions already have an internal packet-oriented debug
+  surface via `get_dimension_orchestration_debug`
+- do not turn these signals into auto-execution inside the completed `v1`
+  phase
+- runtime orchestration consumption is explicitly deferred to the next phase
 
-### 4. Placement policy expansion
+### 5. Placement policy expansion
 
 - preset resolver
 - `Placing` / `ExaggerationDirection` policy

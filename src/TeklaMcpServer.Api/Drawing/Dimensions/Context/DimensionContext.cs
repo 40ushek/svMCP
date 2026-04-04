@@ -14,6 +14,7 @@ internal sealed class DimensionContext
     public DimensionContextRole Role { get; set; }
     public DimensionContextSourceSummary Source { get; set; } = new();
     public DimensionContextGeometry Geometry { get; set; } = new();
+    public DimensionGeometryContext AnnotationGeometry { get; set; } = new();
     public DimensionContextSourceAssociation Association { get; set; } = new();
 
     public DrawingLineInfo? ReferenceLine => Geometry.ReferenceLine;
@@ -28,6 +29,18 @@ internal sealed class DimensionContext
     public IReadOnlyList<int> SourceModelIds => Source.SourceModelIds;
     public DrawingBoundsInfo? LocalBounds => Geometry.LocalBounds;
     public IReadOnlyList<string> GeometryWarnings => Geometry.Warnings;
+    public DrawingVectorInfo? AnnotationLineDirection => AnnotationGeometry.LineDirection;
+    public DrawingVectorInfo? AnnotationNormalDirection => AnnotationGeometry.NormalDirection;
+    public double? AnnotationStartAlong => AnnotationGeometry.StartAlong;
+    public double? AnnotationEndAlong => AnnotationGeometry.EndAlong;
+    public double? AnnotationBandStartAlong => AnnotationGeometry.LocalBand?.StartAlong;
+    public double? AnnotationBandEndAlong => AnnotationGeometry.LocalBand?.EndAlong;
+    public double? AnnotationBandMinOffset => AnnotationGeometry.LocalBand?.MinOffset;
+    public double? AnnotationBandMaxOffset => AnnotationGeometry.LocalBand?.MaxOffset;
+    public int AnnotationSegmentGeometryCount => AnnotationGeometry.SegmentGeometries.Count;
+    public bool AnnotationHasTextBounds => AnnotationGeometry.HasTextBounds;
+    public DrawingBoundsInfo? AnnotationTextBounds => AnnotationGeometry.TextBounds;
+    public IReadOnlyList<string> AnnotationGeometryWarnings => AnnotationGeometry.Warnings;
     public IReadOnlyList<DrawingPointInfo> MeasuredPoints => Association.MeasuredPoints;
     public IReadOnlyList<DimensionContextRelatedSource> RelatedSources => Association.RelatedSources;
     public IReadOnlyList<DimensionContextPointAssociation> PointAssociations => Association.PointAssociations;

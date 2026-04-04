@@ -96,6 +96,58 @@ public sealed class DimensionContextBuilderTests
         Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));
     }
 
+    [Fact]
+    public void Build_PopulatesAnnotationGeometryFromSnapshotPath()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+
+        var context = builder.Build(item);
+
+        Assert.NotNull(context.AnnotationGeometry.ReferenceLine);
+        Assert.NotNull(context.AnnotationLineDirection);
+        Assert.NotNull(context.AnnotationNormalDirection);
+        Assert.Equal(0, context.AnnotationStartAlong);
+        Assert.Equal(100, context.AnnotationEndAlong);
+        Assert.Equal(1, context.AnnotationSegmentGeometryCount);
+        Assert.True(context.AnnotationHasTextBounds);
+        Assert.NotNull(context.AnnotationTextBounds);
+        Assert.NotNull(context.AnnotationGeometry.LocalBand);
+        Assert.Equal(-20, context.AnnotationBandMinOffset);
+        Assert.Equal(0, context.AnnotationBandMaxOffset);
+        Assert.Empty(context.AnnotationGeometryWarnings);
+    }
+
+    [Fact]
+    public void Build_CreatesPartialAnnotationGeometryWhenReferenceLineIsMissing()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+        item.ReferenceLine = null;
+        item.Dimension.Segments.Clear();
+
+        var context = builder.Build(item);
+
+        Assert.Null(context.AnnotationGeometry.ReferenceLine);
+        Assert.NotNull(context.AnnotationLineDirection);
+        Assert.Null(context.AnnotationGeometry.LocalBand);
+        Assert.Contains("reference_line_unavailable", context.AnnotationGeometryWarnings);
+    }
+
+    [Fact]
+    public void Build_AddsWarningWhenTextBoundsAreUnavailable()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+        item.Dimension.Segments[0].TextBounds = null;
+
+        var context = builder.Build(item);
+
+        Assert.False(context.AnnotationHasTextBounds);
+        Assert.Null(context.AnnotationTextBounds);
+        Assert.Contains("text_bounds_unavailable", context.AnnotationGeometryWarnings);
+    }
+
     private static DimensionContextBuilder CreateBuilder(IDrawingPartPointApi partPointApi)
     {
         return new DimensionContextBuilder(new DimensionSourceAssociationResolver(null, partPointApi));
@@ -130,6 +182,49 @@ public sealed class DimensionContextBuilderTests
             GeometryKind = geometryKind,
             ClassifiedDimensionType = domainType
         };
+
+        dimension.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
+        dimension.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
+        dimension.Segments.Add(new DimensionSegmentInfo
+        {
+            Id = dimensionId,
+            StartX = 0,
+            StartY = 0,
+            EndX = 100,
+            EndY = 0,
+            Distance = 20,
+            DirectionX = 1,
+            DirectionY = 0,
+            TopDirection = -1,
+            TextBounds = new DrawingBoundsInfo
+            {
+                MinX = 35,
+                MinY = -28,
+                MaxX = 65,
+                MaxY = -18
+            },
+            DimensionLine = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = referenceY,
+                EndX = 100,
+                EndY = referenceY
+            },
+            LeadLineMain = new DrawingLineInfo
+            {
+                StartX = 0,
+                StartY = 0,
+                EndX = 0,
+                EndY = referenceY
+            },
+            LeadLineSecond = new DrawingLineInfo
+            {
+                StartX = 100,
+                StartY = 0,
+                EndX = 100,
+                EndY = referenceY
+            }
+        });
 
         var item = new DimensionItem
         {
