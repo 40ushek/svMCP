@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures;
@@ -16,6 +17,21 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed partial class TeklaDrawingDimensionsApi
 {
     public DimensionSourceDebugResult GetDimensionSourceDebug(int? viewId, int? dimensionId)
+    {
+        var dimensions = DimensionStableReadHelper.ReadStable(
+            () => ReadDimensionSourceDebugInfosCore(viewId, dimensionId),
+            BuildDimensionSourceDebugFingerprint);
+
+        var result = new DimensionSourceDebugResult
+        {
+            ViewId = viewId,
+            Total = dimensions.Count
+        };
+        result.Dimensions.AddRange(dimensions);
+        return result;
+    }
+
+    private List<DimensionSourceDebugInfo> ReadDimensionSourceDebugInfosCore(int? viewId, int? dimensionId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -39,10 +55,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
             }
 
-            var result = new DimensionSourceDebugResult
-            {
-                ViewId = viewId
-            };
+            var result = new List<DimensionSourceDebugInfo>();
 
             while (dimObjects.MoveNext())
             {
@@ -92,10 +105,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                     Warning = mapping.Warning
                 }));
 
-                result.Dimensions.Add(info);
+                result.Add(info);
             }
 
-            result.Total = result.Dimensions.Count;
             return result;
         }
         finally
@@ -105,6 +117,21 @@ public sealed partial class TeklaDrawingDimensionsApi
     }
 
     public DimensionTextPlacementDebugResult GetDimensionTextPlacementDebug(int? viewId, int? dimensionId)
+    {
+        var dimensions = DimensionStableReadHelper.ReadStable(
+            () => ReadDimensionTextPlacementDebugInfosCore(viewId, dimensionId),
+            BuildDimensionTextPlacementDebugFingerprint);
+
+        var result = new DimensionTextPlacementDebugResult
+        {
+            ViewId = viewId,
+            Total = dimensions.Count
+        };
+        result.Dimensions.AddRange(dimensions);
+        return result;
+    }
+
+    private List<DimensionTextPlacementDebugInfo> ReadDimensionTextPlacementDebugInfosCore(int? viewId, int? dimensionId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -126,10 +153,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
             }
 
-            var result = new DimensionTextPlacementDebugResult
-            {
-                ViewId = viewId
-            };
+            var result = new List<DimensionTextPlacementDebugInfo>();
             using var presentationConnection = TryCreatePresentationConnection();
 
             while (dimObjects.MoveNext())
@@ -183,10 +207,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                     });
                 }
 
-                result.Dimensions.Add(info);
+                result.Add(info);
             }
 
-            result.Total = result.Dimensions.Count;
             return result;
         }
         finally
@@ -325,6 +348,52 @@ public sealed partial class TeklaDrawingDimensionsApi
                 CenterY = System.Math.Round(center.Y, 3)
             });
         }
+    }
+
+    internal static string BuildDimensionSourceDebugFingerprint(IReadOnlyList<DimensionSourceDebugInfo> dimensions)
+    {
+        var builder = new StringBuilder();
+        foreach (var dimension in dimensions.OrderBy(static item => item.DimensionId))
+        {
+            builder.Append(dimension.DimensionId).Append('|');
+            builder.Append(dimension.MeasuredPoints.Count).Append('|');
+            builder.Append(dimension.PointMappings.Count).Append('|');
+            builder.Append(dimension.Candidates.Count).Append('|');
+            foreach (var candidate in dimension.Candidates
+                         .OrderBy(static item => item.DrawingObjectId ?? int.MaxValue)
+                         .ThenBy(static item => item.ModelId ?? int.MaxValue)
+                         .ThenBy(static item => item.Owner, System.StringComparer.Ordinal))
+            {
+                builder.Append(candidate.Owner).Append(',');
+                builder.Append(candidate.DrawingObjectId).Append(',');
+                builder.Append(candidate.ModelId).Append(',');
+                builder.Append(candidate.GeometryPointCount).Append(';');
+            }
+
+            builder.Append('#');
+        }
+
+        return builder.ToString();
+    }
+
+    internal static string BuildDimensionTextPlacementDebugFingerprint(IReadOnlyList<DimensionTextPlacementDebugInfo> dimensions)
+    {
+        var builder = new StringBuilder();
+        foreach (var dimension in dimensions.OrderBy(static item => item.DimensionId))
+        {
+            builder.Append(dimension.DimensionId).Append('|');
+            builder.Append(dimension.Segments.Count).Append('|');
+            foreach (var segment in dimension.Segments.OrderBy(static item => item.SegmentId))
+            {
+                builder.Append(segment.SegmentId).Append(',');
+                builder.Append(segment.RelatedTextCandidates.Count).Append(',');
+                builder.Append(segment.SelectedSource).Append(';');
+            }
+
+            builder.Append('#');
+        }
+
+        return builder.ToString();
     }
 
     private static PresentationConnection? TryCreatePresentationConnection()

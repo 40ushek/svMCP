@@ -128,6 +128,11 @@ Arrangement apply logic is publicly surfaced as `arrange_dimensions`, and
 controlled dimension merging is publicly surfaced as `combine_dimensions`,
 while arrangement debug remains bridge/internal only.
 
+Dimension reads/debug now use a bounded best-effort consistency retry after
+runtime mutations. This is internal only: public payloads are unchanged, but
+immediate rereads after `combine`, `create`, or `delete` should more reliably
+see the fresh dimension state without requiring a separate sheet-debug path.
+
 ## Document Split
 
 Use this file as the operational description of the module:

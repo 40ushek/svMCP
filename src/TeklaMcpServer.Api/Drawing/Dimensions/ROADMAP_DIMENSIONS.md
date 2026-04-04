@@ -745,6 +745,8 @@ Follow-up для текущей реализации context:
 - `arrange_dimensions` behavior on real drawings: validated
 - `combine v2` local post-combine arrange handoff is implemented as
   best-effort and live-smoke-validated on a real mergeable pair
+- dimension read/debug paths now use bounded consistency retry to reduce the
+  immediate stale-read window after mutate commands
 
 Этот блок по сути закрыт для current conservative runtime path.
 
@@ -760,8 +762,8 @@ Follow-up для текущей реализации context:
 - refine when handoff should be considered `no changes` vs `applied`
 - broader but still explainable combine policy only after current conservative
   path proves stable
-- stabilize post-mutation reread (`get_drawing_dimensions` can still lag behind
-  live sheet state immediately after combine)
+- keep reread stabilization bounded and internal-only; do not silently grow it
+  into a generic drawing refresh layer without explicit need
 - document and keep explicit that combine commit and arrange handoff commit are
   non-transactional; handoff rollback failure may leave partial post-merge
   rearrangement

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -9,6 +10,11 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed partial class TeklaDrawingDimensionsApi
 {
     internal List<DrawingDimensionInfo> GetDimensionSnapshots(int? viewId)
+        => DimensionStableReadHelper.ReadStable(
+            () => ReadDimensionSnapshotsCore(viewId),
+            BuildDimensionSnapshotFingerprint);
+
+    private List<DrawingDimensionInfo> ReadDimensionSnapshotsCore(int? viewId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -129,6 +135,33 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         return result;
+    }
+
+    internal static string BuildDimensionSnapshotFingerprint(IReadOnlyList<DrawingDimensionInfo> snapshots)
+    {
+        var builder = new StringBuilder();
+        foreach (var snapshot in snapshots.OrderBy(static item => item.Id))
+        {
+            builder.Append(snapshot.Id).Append('|');
+            builder.Append(snapshot.Segments.Count).Append('|');
+            foreach (var segment in snapshot.Segments.OrderBy(static segment => segment.Id))
+                builder.Append(segment.Id).Append(',');
+
+            builder.Append('|');
+            builder.Append(System.Math.Round(snapshot.Distance, 3)).Append('|');
+
+            if (snapshot.ReferenceLine != null)
+            {
+                builder.Append(System.Math.Round(snapshot.ReferenceLine.StartX, 3)).Append(',');
+                builder.Append(System.Math.Round(snapshot.ReferenceLine.StartY, 3)).Append(',');
+                builder.Append(System.Math.Round(snapshot.ReferenceLine.EndX, 3)).Append(',');
+                builder.Append(System.Math.Round(snapshot.ReferenceLine.EndY, 3));
+            }
+
+            builder.Append(';');
+        }
+
+        return builder.ToString();
     }
 
     private DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)
