@@ -64,6 +64,25 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
     }
 
     [Fact]
+    public void AttachRecommendedActions_MarksEquivalentDuplicateAsSuppressCandidate()
+    {
+        var preferred = CreateFreeItem(2001, 60, [(0, 0), (100, 100)]);
+        var duplicate = CreateFreeItem(2002, 117.312, [(0, 0), (100, 100)]);
+        var contexts = new Dictionary<DimensionItem, DimensionContext>
+        {
+            [preferred] = CreateControlContext(preferred),
+            [duplicate] = CreateControlContext(duplicate)
+        };
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate([preferred, duplicate], contexts);
+
+        DimensionLayoutPolicyEvaluator.AttachRecommendedActions(decisions);
+
+        Assert.Equal(DimensionRecommendedAction.Keep, decisions[preferred].RecommendedAction);
+        Assert.Equal(DimensionRecommendedAction.SuppressCandidate, decisions[duplicate].RecommendedAction);
+    }
+
+    [Fact]
     public void AttachCombineCandidates_MarksMergeableItemsAndKeepsStatus()
     {
         var richer = CreateItem(1001, [0, 50, 100], [101]);
@@ -91,16 +110,19 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         };
 
         DimensionLayoutPolicyEvaluator.AttachCombineCandidates(itemsById, decisions, combineCandidates);
+        DimensionLayoutPolicyEvaluator.AttachRecommendedActions(decisions);
 
         Assert.True(decisions[richer].CombineCandidate);
         Assert.Equal("shared_point_neighbor_set", decisions[richer].CombineReason);
         Assert.Equal([poorer.DimensionId], decisions[richer].CombineWithDimensionIds);
         Assert.Equal(DimensionLayoutPolicyStatus.Preferred, decisions[richer].Status);
+        Assert.Equal(DimensionRecommendedAction.PreferCombine, decisions[richer].RecommendedAction);
 
         Assert.True(decisions[poorer].CombineCandidate);
         Assert.Equal("shared_point_neighbor_set", decisions[poorer].CombineReason);
         Assert.Equal([richer.DimensionId], decisions[poorer].CombineWithDimensionIds);
         Assert.Equal(DimensionLayoutPolicyStatus.LessPreferred, decisions[poorer].Status);
+        Assert.Equal(DimensionRecommendedAction.PreferCombine, decisions[poorer].RecommendedAction);
     }
 
     [Fact]
@@ -131,11 +153,33 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         };
 
         DimensionLayoutPolicyEvaluator.AttachCombineCandidates(itemsById, decisions, combineCandidates);
+        DimensionLayoutPolicyEvaluator.AttachRecommendedActions(decisions);
 
         Assert.False(decisions[left].CombineCandidate);
         Assert.False(decisions[right].CombineCandidate);
         Assert.Empty(decisions[left].CombineWithDimensionIds);
         Assert.Empty(decisions[right].CombineWithDimensionIds);
+        Assert.Equal(DimensionRecommendedAction.Keep, decisions[left].RecommendedAction);
+        Assert.Equal(DimensionRecommendedAction.Keep, decisions[right].RecommendedAction);
+    }
+
+    [Fact]
+    public void AttachRecommendedActions_MarksPoorerSubchainAsOperatorReview()
+    {
+        var richer = CreateItem(1001, [0, 50, 100], [101]);
+        var poorer = CreateItem(1002, [0, 100], [101]);
+        var contexts = new Dictionary<DimensionItem, DimensionContext>
+        {
+            [richer] = CreateContext(richer, 101),
+            [poorer] = CreateContext(poorer, 101)
+        };
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate([richer, poorer], contexts);
+
+        DimensionLayoutPolicyEvaluator.AttachRecommendedActions(decisions);
+
+        Assert.Equal(DimensionRecommendedAction.Keep, decisions[richer].RecommendedAction);
+        Assert.Equal(DimensionRecommendedAction.OperatorReview, decisions[poorer].RecommendedAction);
     }
 
     private static DimensionItem CreateItem(int dimensionId, double[] positions, int[] sourceIds)

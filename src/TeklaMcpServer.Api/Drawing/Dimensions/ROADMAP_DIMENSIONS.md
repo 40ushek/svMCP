@@ -673,6 +673,38 @@ Follow-up для текущей реализации context:
 - part vs bolt vs control vs grid
 - что оставить, что скрыть, что объединить, а что только раздвигать
 
+Текущий статус:
+
+- `Layout Policy` уже существует как debug-first слой классификации
+- текущие explainable cases уже покрывают:
+  - equivalent measured geometry
+  - richer chain vs poorer chain
+  - mergeable chain
+
+Следующий подшаг для policy:
+
+- добавить поверх classification отдельный recommendation layer
+- он не должен сам выполнять runtime action
+- он должен только давать краткий рекомендуемый вывод по размеру:
+  - `Keep`
+  - `PreferCombine`
+  - `SuppressCandidate`
+  - `OperatorReview`
+
+Назначение этого слоя:
+
+- не заменять `combine` и `arrange`
+- не смешивать classification и execution
+- стать мостом между debug-first policy и будущим orchestration
+
+Правила первой версии recommendation layer:
+
+- `SuppressCandidate` использовать только для точных дублей
+  (`equivalent_measured_geometry`)
+- если размер одновременно `LessPreferred` и `CombineCandidate`, рекомендация
+  должна быть `PreferCombine`, а не suppression
+- poorer subchain без merge verdict оставлять как `OperatorReview`
+
 ### 4. `Candidate Placements`
 
 Для размера или stack нужно генерировать несколько допустимых вариантов:
@@ -709,8 +741,8 @@ Follow-up для текущей реализации context:
 
 ### 1. Stabilize current runtime behavior
 
-- live validation `combine_dimensions`
-- live validation rollback/delete/create path
+- live validation `combine_dimensions` is still required
+- live validation rollback/delete/create path is still required
 - `arrange_dimensions` behavior on real drawings: validated
 
 ### 2. Improve arrangement quality
@@ -725,6 +757,14 @@ Follow-up для текущей реализации context:
 - optional post-combine arrange handoff
 - broader but still explainable combine policy only after current conservative
   path proves stable
+- current progress in context/policy/debug does not close the runtime validation
+  backlog for real merge execution
+
+### 3a. Add policy recommendation layer
+
+- build `RecommendedAction` on top of existing `Layout Policy`
+- keep it debug-first before any orchestration/runtime use
+- ensure recommendation stays explainable and separate from direct execution
 
 ### 4. Placement policy expansion
 

@@ -445,7 +445,12 @@ public sealed partial class TeklaDrawingDimensionsApi
         foreach (var group in debug.Groups)
         {
             DimensionLayoutPolicyEvaluator.AttachCombineCandidates(itemsByDimensionId, decisions, group.CombineCandidates);
+        }
 
+        DimensionLayoutPolicyEvaluator.AttachRecommendedActions(decisions);
+
+        foreach (var group in debug.Groups)
+        {
             foreach (var item in group.Items)
             {
                 if (decisions.TryGetValue(item.Item, out var decision))

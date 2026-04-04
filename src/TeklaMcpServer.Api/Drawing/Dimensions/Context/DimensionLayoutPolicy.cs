@@ -10,6 +10,14 @@ internal enum DimensionLayoutPolicyStatus
     LessPreferred
 }
 
+internal enum DimensionRecommendedAction
+{
+    Keep = 0,
+    PreferCombine,
+    SuppressCandidate,
+    OperatorReview
+}
+
 internal sealed class DimensionLayoutPolicyDecision
 {
     public DimensionLayoutPolicyStatus Status { get; set; }
@@ -18,6 +26,7 @@ internal sealed class DimensionLayoutPolicyDecision
     public bool CombineCandidate { get; set; }
     public string CombineReason { get; set; } = string.Empty;
     public List<int> CombineWithDimensionIds { get; } = [];
+    public DimensionRecommendedAction RecommendedAction { get; set; } = DimensionRecommendedAction.Keep;
 }
 
 internal sealed class DimensionLayoutPolicy
@@ -133,6 +142,15 @@ internal static class DimensionLayoutPolicyEvaluator
 
                 decision.CombineWithDimensionIds.Sort();
             }
+        }
+    }
+
+    public static void AttachRecommendedActions(
+        IReadOnlyDictionary<DimensionItem, DimensionLayoutPolicyDecision> decisions)
+    {
+        foreach (var decision in decisions.Values)
+        {
+            decision.RecommendedAction = GetRecommendedAction(decision);
         }
     }
 
@@ -395,4 +413,21 @@ internal static class DimensionLayoutPolicyEvaluator
     private static double GetEquivalentGeometryPriority(DimensionItem item) => System.Math.Abs(item.Distance);
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
+
+    private static DimensionRecommendedAction GetRecommendedAction(DimensionLayoutPolicyDecision decision)
+    {
+        if (decision.CombineCandidate)
+            return DimensionRecommendedAction.PreferCombine;
+
+        if (decision.Status == DimensionLayoutPolicyStatus.LessPreferred &&
+            decision.Reason == "equivalent_measured_geometry")
+        {
+            return DimensionRecommendedAction.SuppressCandidate;
+        }
+
+        if (decision.Status == DimensionLayoutPolicyStatus.LessPreferred)
+            return DimensionRecommendedAction.OperatorReview;
+
+        return DimensionRecommendedAction.Keep;
+    }
 }
