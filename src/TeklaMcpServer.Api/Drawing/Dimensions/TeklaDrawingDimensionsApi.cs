@@ -106,7 +106,62 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return DetermineDimensionOrientation(segments);
     }
 
+    internal static string DetermineDimensionOrientationFromSnapshots(
+        double directionX,
+        double directionY,
+        DrawingLineInfo? referenceLine,
+        IReadOnlyList<TeklaDimensionSegmentSnapshot> segments)
+    {
+        if (referenceLine != null)
+            return DetermineLineOrientation(referenceLine.StartX, referenceLine.StartY, referenceLine.EndX, referenceLine.EndY);
+
+        if (TryNormalizeDirection(directionX, directionY, out var normalizedDirection))
+            return DetermineDirectionOrientation(normalizedDirection.X, normalizedDirection.Y);
+
+        return DetermineDimensionOrientationFromSnapshots(segments);
+    }
+
     internal static string DetermineDimensionOrientation(IReadOnlyList<DimensionSegmentInfo> segments)
+    {
+        var hasHorizontal = false;
+        var hasVertical = false;
+        var hasAngled = false;
+
+        foreach (var segment in segments)
+        {
+            var dx = System.Math.Abs(segment.EndX - segment.StartX);
+            var dy = System.Math.Abs(segment.EndY - segment.StartY);
+            if (dx <= 1e-6 && dy <= 1e-6)
+                continue;
+
+            if (dy <= dx * AxisSummaryToleranceRatio)
+            {
+                hasHorizontal = true;
+                continue;
+            }
+
+            if (dx <= dy * AxisSummaryToleranceRatio)
+            {
+                hasVertical = true;
+                continue;
+            }
+
+            hasAngled = true;
+        }
+
+        if (hasAngled || (hasHorizontal && hasVertical))
+            return "angled";
+
+        if (hasHorizontal)
+            return "horizontal";
+
+        if (hasVertical)
+            return "vertical";
+
+        return string.Empty;
+    }
+
+    internal static string DetermineDimensionOrientationFromSnapshots(IReadOnlyList<TeklaDimensionSegmentSnapshot> segments)
     {
         var hasHorizontal = false;
         var hasVertical = false;
@@ -693,6 +748,17 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
                 segment.DimensionLine.EndY);
     }
 
+    internal static DrawingLineInfo? TryCreateReferenceLineFromSnapshot(TeklaDimensionSegmentSnapshot segment)
+    {
+        return segment.DimensionLine == null
+            ? null
+            : CreateLineInfo(
+                segment.DimensionLine.StartX,
+                segment.DimensionLine.StartY,
+                segment.DimensionLine.EndX,
+                segment.DimensionLine.EndY);
+    }
+
     internal static (double X, double Y) CreateReferencePoint(
         double pointX,
         double pointY,
@@ -715,6 +781,48 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
 
     internal static List<DrawingPointInfo> BuildMeasuredPointList(
         IReadOnlyList<DimensionSegmentInfo> segments,
+        double directionX,
+        double directionY)
+    {
+        var nodes = new Dictionary<(double X, double Y), HashSet<(double X, double Y)>>();
+
+        foreach (var segment in segments)
+        {
+            var start = (System.Math.Round(segment.StartX, 3), System.Math.Round(segment.StartY, 3));
+            var end = (System.Math.Round(segment.EndX, 3), System.Math.Round(segment.EndY, 3));
+
+            if (!nodes.TryGetValue(start, out var startNeighbours))
+            {
+                startNeighbours = [];
+                nodes[start] = startNeighbours;
+            }
+
+            if (!nodes.TryGetValue(end, out var endNeighbours))
+            {
+                endNeighbours = [];
+                nodes[end] = endNeighbours;
+            }
+
+            startNeighbours.Add(end);
+            endNeighbours.Add(start);
+        }
+
+        if (nodes.Count == 0)
+            return [];
+
+        var orderedKeys = OrderMeasuredPointKeys(nodes, directionX, directionY);
+        return orderedKeys
+            .Select((point, index) => new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = index
+            })
+            .ToList();
+    }
+
+    internal static List<DrawingPointInfo> BuildMeasuredPointListFromSnapshots(
+        IReadOnlyList<TeklaDimensionSegmentSnapshot> segments,
         double directionX,
         double directionY)
     {

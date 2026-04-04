@@ -37,7 +37,6 @@ public sealed class DimensionSnapshotProjectionTests
             DrawingObjectId = 501,
             ModelId = 9001
         });
-        snapshot.SourceObjectIds.AddRange([501, 502]);
         snapshot.Segments.Add(new TeklaDimensionSegmentSnapshot
         {
             Id = 1001,
@@ -76,7 +75,6 @@ public sealed class DimensionSnapshotProjectionTests
         Assert.Equal(DimensionSourceKind.Part, source.SourceKind);
         Assert.Equal(501, source.DrawingObjectId);
         Assert.Equal(9001, source.ModelId);
-        Assert.Equal(snapshot.SourceObjectIds, info.SourceObjectIds);
         Assert.Equal(snapshot.MeasuredPoints.Count, info.MeasuredPoints.Count);
 
         var segment = Assert.Single(info.Segments);
@@ -130,7 +128,6 @@ public sealed class DimensionSnapshotProjectionTests
             DrawingObjectId = 5001,
             ModelId = 101
         });
-        snapshot.SourceObjectIds.Add(5001);
         snapshot.Segments.Add(new TeklaDimensionSegmentSnapshot
         {
             Id = 4201,

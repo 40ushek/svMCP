@@ -190,7 +190,6 @@ public sealed partial class TeklaDrawingDimensionsApi
             DrawingObjectId = source.DrawingObjectId,
             ModelId = source.ModelId
         }));
-        info.SourceObjectIds.AddRange(snapshot.SourceObjectIds);
         return info;
     }
 
@@ -241,10 +240,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         foreach (var segment in segments)
             snapshot.Segments.Add(BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext));
 
-        var projectedSegments = snapshot.Segments
-            .Select(ProjectDimensionSegmentSnapshotToReadModel)
-            .ToList();
-
         snapshot.Bounds ??= CombineBounds(snapshot.Segments.Select(static s => s.Bounds));
         if (lineContext.HasValue)
         {
@@ -255,27 +250,27 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
         else
         {
-            var representative = projectedSegments
+            var representative = snapshot.Segments
                 .Where(static s => s.DimensionLine != null)
                 .OrderByDescending(static s => s.DimensionLine!.Length)
                 .FirstOrDefault()
-                ?? projectedSegments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
+                ?? snapshot.Segments.OrderByDescending(static s => (s.EndX - s.StartX) * (s.EndX - s.StartX) + (s.EndY - s.StartY) * (s.EndY - s.StartY)).FirstOrDefault();
             if (representative != null)
             {
                 snapshot.DirectionX = representative.DirectionX;
                 snapshot.DirectionY = representative.DirectionY;
                 snapshot.TopDirection = representative.TopDirection;
-                snapshot.ReferenceLine = TryCreateReferenceLine(representative);
+                snapshot.ReferenceLine = TryCreateReferenceLineFromSnapshot(representative);
             }
         }
 
-        snapshot.MeasuredPoints.AddRange(BuildMeasuredPointList(projectedSegments, snapshot.DirectionX, snapshot.DirectionY));
+        snapshot.MeasuredPoints.AddRange(BuildMeasuredPointListFromSnapshots(snapshot.Segments, snapshot.DirectionX, snapshot.DirectionY));
 
-        snapshot.Orientation = DetermineDimensionOrientation(
+        snapshot.Orientation = DetermineDimensionOrientationFromSnapshots(
             snapshot.DirectionX,
             snapshot.DirectionY,
             snapshot.ReferenceLine,
-            projectedSegments);
+            snapshot.Segments);
         snapshot.GeometryKind = ResolveDimensionGeometryKind(snapshot.Orientation);
         var sourceSummary = ResolveDimensionSourceSummary(dimSet, segments);
         snapshot.SourceKind = sourceSummary.SourceKind;
@@ -285,25 +280,23 @@ public sealed partial class TeklaDrawingDimensionsApi
             DrawingObjectId = source.DrawingObjectId,
             ModelId = source.ModelId
         }));
-        snapshot.SourceObjectIds.AddRange(sourceSummary.SourceObjectIds);
         snapshot.ClassifiedDimensionType = DimensionGroupFactory.MapDomainDimensionType(snapshot.SourceKind, snapshot.GeometryKind);
 
         return snapshot;
     }
 
-    private (DimensionSourceKind SourceKind, List<DimensionSourceReference> SourceReferences, List<int> SourceObjectIds) ResolveDimensionSourceSummary(
+    private (DimensionSourceKind SourceKind, List<DimensionSourceReference> SourceReferences) ResolveDimensionSourceSummary(
         StraightDimensionSet dimSet,
         IReadOnlyList<StraightDimension> segments)
     {
         var hasPart = false;
         var hasGrid = false;
-        var sourceObjectIds = new HashSet<int>();
         var sourceReferences = new Dictionary<(DimensionSourceKind SourceKind, int? DrawingObjectId, int? ModelId), DimensionSourceReference>();
 
-        CollectDimensionSourceSummary(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences, sourceObjectIds);
+        CollectDimensionSourceSummary(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences);
 
         foreach (var segment in segments)
-            CollectDimensionSourceSummary(segment.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences, sourceObjectIds);
+            CollectDimensionSourceSummary(segment.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceReferences);
 
         var sourceKind = (hasPart, hasGrid) switch
         {
@@ -318,16 +311,14 @@ public sealed partial class TeklaDrawingDimensionsApi
                 .OrderBy(static source => source.SourceKind)
                 .ThenBy(static source => source.ModelId)
                 .ThenBy(static source => source.DrawingObjectId)
-                .ToList(),
-            sourceObjectIds.OrderBy(static id => id).ToList());
+                .ToList());
     }
 
     private void CollectDimensionSourceSummary(
         DrawingObjectEnumerator? relatedObjects,
         ref bool hasPart,
         ref bool hasGrid,
-        IDictionary<(DimensionSourceKind SourceKind, int? DrawingObjectId, int? ModelId), DimensionSourceReference> sourceReferences,
-        HashSet<int> sourceObjectIds)
+        IDictionary<(DimensionSourceKind SourceKind, int? DrawingObjectId, int? ModelId), DimensionSourceReference> sourceReferences)
     {
         if (relatedObjects == null)
             return;
@@ -340,9 +331,6 @@ public sealed partial class TeklaDrawingDimensionsApi
                 hasPart = true;
             else if (sourceKind == DimensionSourceKind.Grid)
                 hasGrid = true;
-
-            if (DimensionRelatedObjectHelper.TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
-                sourceObjectIds.Add(sourceObjectId);
 
             if (TryCreateSourceReference(relatedObject, sourceKind, out var sourceReference))
             {

@@ -48,5 +48,4 @@ internal sealed class TeklaDimensionSetSnapshot
     public DimensionGeometryKind GeometryKind { get; set; }
     public DimensionType ClassifiedDimensionType { get; set; }
     public List<DimensionSourceReference> SourceReferences { get; } = [];
-    public List<int> SourceObjectIds { get; } = [];
 }

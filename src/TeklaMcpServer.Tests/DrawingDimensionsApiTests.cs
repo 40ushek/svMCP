@@ -223,6 +223,25 @@ public sealed class DrawingDimensionsApiTests
     }
 
     [Fact]
+    public void BuildMeasuredPointList_FromSnapshotSegments_OrdersChainPointsAlongTraversedPath()
+    {
+        var points = TeklaDrawingDimensionsApi.BuildMeasuredPointListFromSnapshots(
+        [
+            new TeklaDimensionSegmentSnapshot { StartX = 0, StartY = 10, EndX = 0, EndY = 20 },
+            new TeklaDimensionSegmentSnapshot { StartX = 50, StartY = 30, EndX = 0, EndY = 20 },
+            new TeklaDimensionSegmentSnapshot { StartX = 50, StartY = 30, EndX = 50, EndY = 40 }
+        ], 0, 1);
+
+        Assert.Equal(4, points.Count);
+        Assert.Collection(
+            points,
+            p => { Assert.Equal(50, p.X, 3); Assert.Equal(40, p.Y, 3); Assert.Equal(0, p.Order); },
+            p => { Assert.Equal(50, p.X, 3); Assert.Equal(30, p.Y, 3); Assert.Equal(1, p.Order); },
+            p => { Assert.Equal(0, p.X, 3); Assert.Equal(20, p.Y, 3); Assert.Equal(2, p.Order); },
+            p => { Assert.Equal(0, p.X, 3); Assert.Equal(10, p.Y, 3); Assert.Equal(3, p.Order); });
+    }
+
+    [Fact]
     public void ApplyFrameSizeCorrection_UsesLegacyWidthBasedCoefficients()
     {
         var corrected = TeklaDrawingDimensionsApi.ApplyFrameSizeCorrection(100, 20, FrameTypes.Rectangular);
