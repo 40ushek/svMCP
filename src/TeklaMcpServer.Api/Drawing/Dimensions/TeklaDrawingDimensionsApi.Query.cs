@@ -654,7 +654,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (reducedItems.Count <= 1)
             return;
 
-        var decisions = DimensionLayoutPolicyEvaluator.Evaluate(reducedItems, contexts);
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate(debug.DecisionContext, reducedItems);
         var itemsByDimensionId = reducedItems.ToDictionary(static item => item.DimensionId);
         foreach (var group in debug.Groups)
         {

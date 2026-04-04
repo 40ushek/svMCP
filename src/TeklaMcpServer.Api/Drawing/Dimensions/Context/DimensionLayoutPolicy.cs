@@ -52,6 +52,19 @@ internal sealed class DimensionLayoutPolicy
 internal static class DimensionLayoutPolicyEvaluator
 {
     public static IReadOnlyDictionary<DimensionItem, DimensionLayoutPolicyDecision> Evaluate(
+        DimensionDecisionContext decisionContext,
+        IReadOnlyList<DimensionItem> items,
+        DimensionLayoutPolicy? policy = null)
+    {
+        var contexts = decisionContext.Dimensions
+            .Where(static context => context.Item != null)
+            .GroupBy(static context => context.Item)
+            .ToDictionary(static group => group.Key, static group => group.First());
+
+        return Evaluate(items, contexts, policy);
+    }
+
+    public static IReadOnlyDictionary<DimensionItem, DimensionLayoutPolicyDecision> Evaluate(
         IReadOnlyList<DimensionItem> items,
         IReadOnlyDictionary<DimensionItem, DimensionContext> contexts,
         DimensionLayoutPolicy? policy = null)

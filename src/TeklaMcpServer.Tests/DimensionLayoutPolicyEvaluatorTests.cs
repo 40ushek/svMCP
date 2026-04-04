@@ -245,6 +245,22 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         Assert.Equal(DimensionRecommendedAction.OperatorReview, decision.RecommendedAction);
     }
 
+    [Fact]
+    public void Evaluate_UsesDecisionContextAsPrimaryInput()
+    {
+        var richer = CreateItem(1001, [0, 50, 100], [101]);
+        var poorer = CreateItem(1002, [0, 100], [101]);
+        var decisionContext = new DimensionDecisionContext();
+        decisionContext.Dimensions.Add(CreateContext(richer, 101));
+        decisionContext.Dimensions.Add(CreateContext(poorer, 101));
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate(decisionContext, [richer, poorer]);
+
+        Assert.Equal(DimensionLayoutPolicyStatus.Preferred, decisions[richer].Status);
+        Assert.Equal(DimensionLayoutPolicyStatus.LessPreferred, decisions[poorer].Status);
+        Assert.Equal(1001, decisions[poorer].PreferredDimensionId);
+    }
+
     private static DimensionItem CreateItem(int dimensionId, double[] positions, int[] sourceIds)
     {
         var item = new DimensionItem
