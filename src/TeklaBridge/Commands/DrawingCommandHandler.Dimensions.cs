@@ -1023,6 +1023,9 @@ internal sealed partial class DrawingCommandHandler
             associationNoGeometryCount = GetContextPropertyValue(item, "AssociationNoGeometryCount"),
             associationNoCandidatesCount = GetContextPropertyValue(item, "AssociationNoCandidatesCount"),
             associationWarnings = (GetContextPropertyValue(item, "AssociationWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            layoutPolicyStatus = GetLayoutPolicyPropertyValue(item, "Status")?.ToString(),
+            layoutPolicyReason = GetLayoutPolicyPropertyValue(item, "Reason"),
+            layoutPolicyPreferredDimensionId = GetLayoutPolicyPropertyValue(item, "PreferredDimensionId"),
             member = SerializeMembers(new[]
             {
                 item.GetType().GetProperty("Item")?.GetValue(item)
@@ -1037,6 +1040,15 @@ internal sealed partial class DrawingCommandHandler
             return null;
 
         return context.GetType().GetProperty(propertyName)?.GetValue(context);
+    }
+
+    private static object? GetLayoutPolicyPropertyValue(object item, string propertyName)
+    {
+        var layoutPolicy = item.GetType().GetProperty("LayoutPolicy")?.GetValue(item);
+        if (layoutPolicy == null)
+            return null;
+
+        return layoutPolicy.GetType().GetProperty(propertyName)?.GetValue(layoutPolicy);
     }
 
     private static object? SerializeDebugLine(DrawingLineInfo? line)
