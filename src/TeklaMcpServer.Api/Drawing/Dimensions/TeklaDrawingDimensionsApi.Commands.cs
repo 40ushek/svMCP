@@ -601,7 +601,15 @@ public sealed partial class TeklaDrawingDimensionsApi
             var applyResult = TryApplyCombineCandidate(activeDrawing, candidate);
             if (!applyResult.Success)
             {
-                result.Skipped.Add(CreateCombineCandidateResult(candidate, previewOnly: false, combined: false, createdDimensionId: null, reasonOverride: applyResult.Reason));
+                result.Skipped.Add(CreateCombineCandidateResult(
+                    candidate,
+                    previewOnly: false,
+                    combined: false,
+                    createdDimensionId: null,
+                    reasonOverride: applyResult.Reason,
+                    rollbackAttempted: applyResult.RollbackAttempted,
+                    rollbackSucceeded: applyResult.RollbackSucceeded,
+                    rollbackReason: applyResult.RollbackReason));
                 continue;
             }
 
@@ -624,7 +632,10 @@ public sealed partial class TeklaDrawingDimensionsApi
         bool combined,
         int? createdDimensionId,
         IReadOnlyList<int>? deletedDimensionIdsOverride = null,
-        string? reasonOverride = null)
+        string? reasonOverride = null,
+        bool rollbackAttempted = false,
+        bool rollbackSucceeded = false,
+        string? rollbackReason = null)
     {
         var result = new CombineDimensionCandidateResult
         {
@@ -637,6 +648,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             PreviewOnly = previewOnly,
             Combined = combined,
             CreatedDimensionId = createdDimensionId,
+            RollbackAttempted = rollbackAttempted,
+            RollbackSucceeded = rollbackSucceeded,
+            RollbackReason = rollbackReason ?? string.Empty,
             Distance = candidate.Preview?.Distance ?? 0,
             Reason = reasonOverride ?? candidate.Reason
         };
@@ -662,33 +676,77 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
-    private (bool Success, int? CreatedDimensionId, string Reason) TryApplyCombineCandidate(
+    private sealed class CombineApplyResult
+    {
+        public bool Success { get; set; }
+        public int? CreatedDimensionId { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        public bool RollbackAttempted { get; set; }
+        public bool RollbackSucceeded { get; set; }
+        public string RollbackReason { get; set; } = string.Empty;
+    }
+
+    private CombineApplyResult TryApplyCombineCandidate(
         Tekla.Structures.Drawing.Drawing activeDrawing,
         DimensionCombineActionCandidate candidate)
     {
         if (candidate.Preview == null)
-            return (false, null, "combine_preview_unavailable");
+        {
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = "combine_preview_unavailable"
+            };
+        }
 
         var sourceDimensions = FindDimensionSetsById(activeDrawing, candidate.DimensionIds);
         if (sourceDimensions.Count != candidate.DimensionIds.Count)
         {
             var missing = candidate.DimensionIds.Where(id => !sourceDimensions.ContainsKey(id)).OrderBy(static id => id);
-            return (false, null, $"source_dimensions_not_found:{string.Join(",", missing)}");
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = $"source_dimensions_not_found:{string.Join(",", missing)}"
+            };
         }
 
         if (!sourceDimensions.TryGetValue(candidate.BaseDimensionId, out var baseDimensionSet))
-            return (false, null, "base_dimension_not_found");
+        {
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = "base_dimension_not_found"
+            };
+        }
 
         if (baseDimensionSet.GetView() is not Tekla.Structures.Drawing.View view)
-            return (false, null, "base_view_not_found");
+        {
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = "base_view_not_found"
+            };
+        }
 
         if (!TryResolveCombineOffsetVector(baseDimensionSet, out var offsetVector))
-            return (false, null, "combine_offset_vector_unavailable");
+        {
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = "combine_offset_vector_unavailable"
+            };
+        }
 
         var attributes = TryGetCombineAttributes(baseDimensionSet);
         var pointList = CreateCombinePointList(candidate.Preview);
         if (pointList.Count < 2)
-            return (false, null, "combine_preview_has_too_few_points");
+        {
+            return new CombineApplyResult
+            {
+                Success = false,
+                Reason = "combine_preview_has_too_few_points"
+            };
+        }
 
         StraightDimensionSet? created = null;
         try
@@ -701,29 +759,50 @@ public sealed partial class TeklaDrawingDimensionsApi
                 attributes);
 
             if (created == null)
-                return (false, null, "CreateDimensionSet returned null");
+            {
+                return new CombineApplyResult
+                {
+                    Success = false,
+                    Reason = "CreateDimensionSet returned null"
+                };
+            }
 
             foreach (var dimensionSet in sourceDimensions.Values)
                 dimensionSet.Delete();
 
             activeDrawing.CommitChanges("(MCP) CombineDimensions");
-            return (true, created.GetIdentifier().ID, string.Empty);
+            return new CombineApplyResult
+            {
+                Success = true,
+                CreatedDimensionId = created.GetIdentifier().ID,
+                Reason = string.Empty
+            };
         }
         catch (System.Exception ex)
         {
-            if (created != null)
+            var result = new CombineApplyResult
             {
-                try
-                {
-                    created.Delete();
-                    activeDrawing.CommitChanges("(MCP) RollbackCombineDimensions");
-                }
-                catch
-                {
-                }
+                Success = false,
+                Reason = ex.Message
+            };
+
+            if (created == null)
+                return result;
+
+            result.RollbackAttempted = true;
+            try
+            {
+                created.Delete();
+                activeDrawing.CommitChanges("(MCP) RollbackCombineDimensions");
+                result.RollbackSucceeded = true;
+            }
+            catch (System.Exception rollbackEx)
+            {
+                result.RollbackSucceeded = false;
+                result.RollbackReason = rollbackEx.Message;
             }
 
-            return (false, null, ex.Message);
+            return result;
         }
     }
 

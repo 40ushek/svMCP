@@ -13,6 +13,9 @@ public sealed class CombineDimensionCandidateResult
     public bool PreviewOnly { get; set; }
     public bool Combined { get; set; }
     public int? CreatedDimensionId { get; set; }
+    public bool RollbackAttempted { get; set; }
+    public bool RollbackSucceeded { get; set; }
+    public string RollbackReason { get; set; } = string.Empty;
     public double Distance { get; set; }
     public string Reason { get; set; } = string.Empty;
     public List<int> DimensionIds { get; } = [];
