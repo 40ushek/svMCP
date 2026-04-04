@@ -771,7 +771,8 @@ Follow-up для текущей реализации context:
 ### 3a. Add policy recommendation layer
 
 - `RecommendedAction` already exists as debug-first policy output
-- next step here is orchestration/runtime consumption, not another debug layer
+- orchestration suggestions now also have a dedicated internal packet-oriented
+  debug surface via `get_dimension_orchestration_debug`
 - keep recommendation explainable and separate from direct execution
 
 ### 4. Placement policy expansion

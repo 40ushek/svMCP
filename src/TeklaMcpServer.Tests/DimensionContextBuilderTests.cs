@@ -20,7 +20,8 @@ public sealed class DimensionContextBuilderTests
         Assert.Equal(DimensionContextRole.External, context.Role);
         Assert.True(context.HasSourceGeometry);
         Assert.NotNull(context.LocalBounds);
-        Assert.Equal(new[] { 101 }, context.SourceObjectIds);
+        Assert.Empty(context.SourceDrawingObjectIds);
+        Assert.Equal(new[] { 101 }, context.SourceModelIds);
         Assert.Single(context.RelatedSources);
         Assert.Equal(2, context.PointAssociations.Count);
         Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));

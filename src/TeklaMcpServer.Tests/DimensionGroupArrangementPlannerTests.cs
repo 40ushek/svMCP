@@ -41,9 +41,9 @@ public sealed class DimensionGroupArrangementPlannerTests
             Direction = (1, 0)
         };
 
-        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 10, 8, leadLineLength: 2));
-        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 12, 8, leadLineLength: 6));
-        stack.Groups.Add(CreateReferenceLineGroup(3, "horizontal", -1, (1, 0), 14, 8, leadLineLength: 4));
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 10, 0, 100, 8, leadLineLength: 2));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 12, 0, 100, 8, leadLineLength: 6));
+        stack.Groups.Add(CreateReferenceLineGroup(3, "horizontal", -1, (1, 0), 14, 0, 100, 8, leadLineLength: 4));
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 5);
 

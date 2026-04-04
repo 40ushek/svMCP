@@ -449,7 +449,19 @@ internal static class DimensionLayoutPolicyEvaluator
         if (richerSourceKeys.Count > 0 && poorerSourceKeys.Count > 0)
             return richerSourceKeys.Overlaps(poorerSourceKeys);
 
-        return richer.SourceObjectIds.Intersect(poorer.SourceObjectIds).Any();
+        if (richer.SourceModelIds.Count > 0 && poorer.SourceModelIds.Count > 0 &&
+            richer.SourceModelIds.Intersect(poorer.SourceModelIds).Any())
+        {
+            return true;
+        }
+
+        if (richer.SourceDrawingObjectIds.Count > 0 && poorer.SourceDrawingObjectIds.Count > 0 &&
+            richer.SourceDrawingObjectIds.Intersect(poorer.SourceDrawingObjectIds).Any())
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static HashSet<int> GetSourceKeys(DimensionContext context)

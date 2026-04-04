@@ -28,6 +28,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_groups_debug":
                 return HandleGetDimensionGroupsDebug(api, args);
 
+            case "get_dimension_orchestration_debug":
+                return HandleGetDimensionOrchestrationDebug(api, args);
+
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
 
@@ -284,6 +287,55 @@ internal sealed partial class DrawingCommandHandler
         });
 
         WriteJson(new { groups = payload });
+        return true;
+    }
+
+    private bool HandleGetDimensionOrchestrationDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionOrchestrationDebug", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (method == null)
+        {
+            WriteError("Internal GetDimensionOrchestrationDebug() was not found.");
+            return true;
+        }
+
+        object? result;
+        try
+        {
+            result = method.Invoke(api, new object?[] { viewId });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+            WriteJson(new
+            {
+                error = ex.InnerException.Message,
+                type = ex.InnerException.GetType().Name,
+                stack = ex.InnerException.StackTrace
+            });
+            return true;
+        }
+
+        if (result == null)
+        {
+            WriteError("Internal GetDimensionOrchestrationDebug() returned null.");
+            return true;
+        }
+
+        var resultType = result.GetType();
+        var packets = resultType.GetProperty("Packets")?.GetValue(result) as System.Collections.IEnumerable;
+        if (packets == null)
+        {
+            WriteError("Orchestration debug packets were not found.");
+            return true;
+        }
+
+        WriteJson(new
+        {
+            viewId = resultType.GetProperty("ViewId")?.GetValue(result),
+            packetCount = packets.Cast<object>().Count(),
+            packets = SerializeOrchestrationPackets(packets)
+        });
         return true;
     }
 
@@ -660,6 +712,40 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+    private static IEnumerable<object> SerializeOrchestrationPackets(System.Collections.IEnumerable? packets)
+    {
+        if (packets == null)
+            return [];
+
+        return packets.Cast<object>().Select(packet =>
+        {
+            var type = packet.GetType();
+            var evidence = type.GetProperty("Evidence")?.GetValue(packet);
+            return new
+            {
+                action = type.GetProperty("Action")?.GetValue(packet)?.ToString(),
+                dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                primaryDimensionId = type.GetProperty("PrimaryDimensionId")?.GetValue(packet),
+                relatedDimensionIds = (type.GetProperty("RelatedDimensionIds")?.GetValue(packet) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                viewId = type.GetProperty("ViewId")?.GetValue(packet),
+                dimensionType = type.GetProperty("DimensionType")?.GetValue(packet),
+                reason = type.GetProperty("Reason")?.GetValue(packet),
+                source = type.GetProperty("Source")?.GetValue(packet),
+                evidence = evidence == null ? null : new
+                {
+                    layoutPolicyStatus = evidence.GetType().GetProperty("LayoutPolicyStatus")?.GetValue(evidence),
+                    layoutRecommendedAction = evidence.GetType().GetProperty("LayoutRecommendedAction")?.GetValue(evidence),
+                    layoutCombineClassification = evidence.GetType().GetProperty("LayoutCombineClassification")?.GetValue(evidence),
+                    reductionStatus = evidence.GetType().GetProperty("ReductionStatus")?.GetValue(evidence),
+                    reductionReason = evidence.GetType().GetProperty("ReductionReason")?.GetValue(evidence),
+                    combineConnectivityMode = evidence.GetType().GetProperty("CombineConnectivityMode")?.GetValue(evidence),
+                    preferredDimensionId = evidence.GetType().GetProperty("PreferredDimensionId")?.GetValue(evidence),
+                    representativeDimensionId = evidence.GetType().GetProperty("RepresentativeDimensionId")?.GetValue(evidence)
+                }
+            };
+        });
+    }
+
     private void WriteCombineDimensionsResult(CombineDimensionsResult result)
     {
         WriteJson(new
@@ -1028,7 +1114,8 @@ internal sealed partial class DrawingCommandHandler
             representativeDimensionId = item.GetType().GetProperty("RepresentativeDimensionId")?.GetValue(item),
             role = GetContextPropertyValue(item, "Role"),
             hasSourceGeometry = GetContextPropertyValue(item, "HasSourceGeometry"),
-            sourceObjectIds = (GetContextPropertyValue(item, "SourceObjectIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            sourceDrawingObjectIds = (GetContextPropertyValue(item, "SourceDrawingObjectIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            sourceModelIds = (GetContextPropertyValue(item, "SourceModelIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             localBounds = SerializeDebugBounds(GetContextPropertyValue(item, "LocalBounds") as DrawingBoundsInfo),
             geometryWarnings = (GetContextPropertyValue(item, "GeometryWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             relatedSourceCount = GetContextPropertyValue(item, "RelatedSourceCount"),

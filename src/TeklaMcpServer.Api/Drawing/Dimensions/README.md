@@ -122,6 +122,7 @@ Available in `TeklaBridge`, but not currently surfaced as public MCP tools:
 - `get_dimension_text_placement_debug`
 - `get_dimension_source_debug`
 - `get_dimension_groups_debug`
+- `get_dimension_orchestration_debug`
 - `get_dimension_arrangement_debug`
 
 Arrangement apply logic is publicly surfaced as `arrange_dimensions`, and

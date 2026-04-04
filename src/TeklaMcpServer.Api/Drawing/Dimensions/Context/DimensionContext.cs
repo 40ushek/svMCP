@@ -24,7 +24,8 @@ internal sealed class DimensionContext
     public IReadOnlyList<double> RealLengthList => Geometry.RealLengthList;
     public double Distance => Geometry.Distance;
     public bool HasSourceGeometry => Geometry.LocalBounds != null;
-    public IReadOnlyList<int> SourceObjectIds => Source.SourceObjectIds;
+    public IReadOnlyList<int> SourceDrawingObjectIds => Source.SourceDrawingObjectIds;
+    public IReadOnlyList<int> SourceModelIds => Source.SourceModelIds;
     public DrawingBoundsInfo? LocalBounds => Geometry.LocalBounds;
     public IReadOnlyList<string> GeometryWarnings => Geometry.Warnings;
     public IReadOnlyList<DrawingPointInfo> MeasuredPoints => Association.MeasuredPoints;
@@ -41,7 +42,8 @@ internal sealed class DimensionContext
 internal sealed class DimensionContextSourceSummary
 {
     public DimensionSourceKind SourceKind { get; set; }
-    public List<int> SourceObjectIds { get; } = [];
+    public List<int> SourceDrawingObjectIds { get; } = [];
+    public List<int> SourceModelIds { get; } = [];
 }
 
 internal sealed class DimensionContextSourceAssociation

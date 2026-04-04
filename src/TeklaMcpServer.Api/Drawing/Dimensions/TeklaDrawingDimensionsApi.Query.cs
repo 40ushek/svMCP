@@ -62,6 +62,12 @@ public sealed partial class TeklaDrawingDimensionsApi
         return debug;
     }
 
+    internal DimensionOrchestrationDebugResult GetDimensionOrchestrationDebug(int? viewId)
+    {
+        var debug = GetDimensionGroupReductionDebug(viewId);
+        return DimensionOrchestrationDebugBuilder.Build(debug, viewId);
+    }
+
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var snapshots = GetDimensionSnapshots(viewId);

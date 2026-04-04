@@ -369,7 +369,7 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         };
 
         context.Source.SourceKind = DimensionSourceKind.Part;
-        context.Source.SourceObjectIds.Add(sourceId);
+        context.Source.SourceModelIds.Add(sourceId);
         foreach (var point in item.PointList)
         {
             context.Association.PointAssociations.Add(new DimensionContextPointAssociation
