@@ -18,6 +18,11 @@ public sealed partial class TeklaDrawingDimensionsApi
         var rawGroups = GetArrangeGroups(viewId);
         var dedup = DimensionArrangementDedup.ReduceWithDebug(rawGroups);
         var groups = dedup.ReducedGroups;
+        var arrangeItems = groups
+            .SelectMany(static group => group.DimensionList)
+            .Distinct()
+            .ToList();
+        var decisionContext = BuildDecisionContext(arrangeItems, viewId);
         var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
         var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
         var plans = stacks.Select(stack =>
@@ -35,6 +40,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             DedupRejectedCount = dedup.Groups.Sum(static g => g.Items.Count(static item => string.Equals(item.Status, "rejected", System.StringComparison.Ordinal))),
             TargetGapPaper = targetGap
         };
+        result.DecisionContext = decisionContext;
+        foreach (var warning in decisionContext.Warnings.Concat(decisionContext.View.Warnings).Distinct())
+            result.Warnings.Add(warning);
 
         foreach (var dedupGroup in dedup.Groups)
         {

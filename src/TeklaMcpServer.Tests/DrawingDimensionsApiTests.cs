@@ -204,6 +204,36 @@ public sealed class DrawingDimensionsApiTests
     }
 
     [Fact]
+    public void DimensionArrangementDebugResult_StoresDecisionContextAndSerializesWarnings()
+    {
+        var result = new DimensionArrangementDebugResult
+        {
+            TargetGapPaper = 10
+        };
+        result.DecisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 20,
+                ViewScale = 15
+            }
+        };
+        result.DecisionContext.Dimensions.Add(new DimensionContext
+        {
+            DimensionId = 10,
+            ViewId = 20,
+            ViewScale = 15
+        });
+        result.Warnings.Add("single_view_required");
+
+        var json = JsonSerializer.Serialize(result);
+
+        Assert.Equal(10, result.DecisionContext.FindDimension(10)?.DimensionId);
+        Assert.Contains("\"Warnings\":[\"single_view_required\"]", json);
+        Assert.DoesNotContain("\"DecisionContext\":", json);
+    }
+
+    [Fact]
     public void BuildMeasuredPointList_OrdersChainPointsAlongTraversedPath()
     {
         var points = TeklaDrawingDimensionsApi.BuildMeasuredPointList(

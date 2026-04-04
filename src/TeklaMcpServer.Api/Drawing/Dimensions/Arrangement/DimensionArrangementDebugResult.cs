@@ -172,6 +172,8 @@ public sealed class DimensionArrangementDebugResult
     public int GroupCount { get; set; }
     public int DedupRejectedCount { get; set; }
     public double TargetGapPaper { get; set; }
+    internal DimensionDecisionContext DecisionContext { get; set; } = new();
+    public List<string> Warnings { get; } = [];
     public List<DimensionArrangementDebugDedupGroupInfo> Dedup { get; } = [];
     public List<DimensionArrangementDebugGroupInfo> Groups { get; } = [];
     public List<DimensionArrangementDebugStackInfo> Stacks { get; } = [];

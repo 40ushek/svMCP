@@ -574,19 +574,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             return;
         }
 
-        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
-        var builder = new DimensionContextBuilder(associationResolver);
-        var contexts = builder.Build(items)
-            .Contexts
-            .Where(static context => context.Item != null)
-            .ToDictionary(static context => context.Item);
-
-        var decisionContext = new DimensionDecisionContext();
-        decisionContext.Dimensions.AddRange(
-            contexts.Values
-                .OrderBy(static context => context.ViewId)
-                .ThenBy(static context => context.DimensionId));
-        decisionContext.View = BuildDecisionViewContext(items, requestedViewId, decisionContext.Warnings);
+        var decisionContext = BuildDecisionContext(items, requestedViewId, out var contexts);
         debug.DecisionContext = decisionContext;
 
         foreach (var group in debug.Groups)
@@ -599,6 +587,40 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         AttachLayoutPolicyDecisions(debug, contexts);
+    }
+
+    private DimensionDecisionContext BuildDecisionContext(
+        IReadOnlyList<DimensionItem> items,
+        int? requestedViewId)
+    {
+        return BuildDecisionContext(items, requestedViewId, out _);
+    }
+
+    private DimensionDecisionContext BuildDecisionContext(
+        IReadOnlyList<DimensionItem> items,
+        int? requestedViewId,
+        out IReadOnlyDictionary<DimensionItem, DimensionContext> contexts)
+    {
+        if (items.Count == 0)
+        {
+            contexts = new Dictionary<DimensionItem, DimensionContext>();
+            return new DimensionDecisionContext();
+        }
+
+        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
+        var builder = new DimensionContextBuilder(associationResolver);
+        contexts = builder.Build(items)
+            .Contexts
+            .Where(static context => context.Item != null)
+            .ToDictionary(static context => context.Item);
+
+        var decisionContext = new DimensionDecisionContext();
+        decisionContext.Dimensions.AddRange(
+            contexts.Values
+                .OrderBy(static context => context.ViewId)
+                .ThenBy(static context => context.DimensionId));
+        decisionContext.View = BuildDecisionViewContext(items, requestedViewId, decisionContext.Warnings);
+        return decisionContext;
     }
 
     private DimensionViewContext BuildDecisionViewContext(
