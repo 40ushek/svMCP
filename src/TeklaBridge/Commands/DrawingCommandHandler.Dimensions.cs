@@ -327,7 +327,7 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var targetGap = 50.0;
+        var targetGap = 10.0;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)
@@ -358,7 +358,7 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleArrangeDimensions(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var targetGap = 50.0;
+        var targetGap = 10.0;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)

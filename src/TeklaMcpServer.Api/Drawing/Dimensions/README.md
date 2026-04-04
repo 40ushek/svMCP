@@ -90,6 +90,20 @@ These are the supported public tool-surface operations for dimensions.
 the existing packet-level combine analysis; it is intentionally not part of
 `arrange_dimensions`.
 
+Current default for `arrange_dimensions`:
+
+- `targetGap = 10 mm` on paper
+
+Current arrangement semantics in practice:
+
+- only parallel stack members are considered together
+- the first surviving dimension in a stack acts as the fixed anchor
+- later dimensions are moved relative to that anchor
+- if the gap is smaller than target, the later dimension is pushed outward
+- if the gap is larger than target, the later dimension may be pulled inward
+- single-dimension stacks are left unchanged
+- runtime apply still changes only `StraightDimensionSet.Distance`
+
 ## Internal / Bridge-Only Debug Surface
 
 Available in `TeklaBridge`, but not currently surfaced as public MCP tools:

@@ -182,6 +182,7 @@ Confirmed on the current implementation and live drawings:
 - paper-gap semantics are valid:
   - paper gap in
   - drawing gap via `viewScale`
+- current public default for `arrange_dimensions` is `10 mm` paper gap
 - line-based grouping/spacing foundation already exists
 
 Confirmed limitation for native dimension value text:
@@ -452,6 +453,11 @@ Current status:
   - distance-adjustment translation
   - runtime apply method
   - public MCP apply command now exists as `arrange_dimensions`
+- current stack planner is anchor-based:
+  - the first surviving dimension in a stack remains fixed
+  - later dimensions are moved relative to that anchor
+  - they may be pushed outward or pulled inward toward target gap
+  - single-dimension stacks are not moved
 - current elimination is intentionally conservative:
   - simple items may be rejected when a more informative item in the same group
     already covers the same span
@@ -489,8 +495,20 @@ Current status:
 - align normalization для planning/stacks
 - runtime-нормализация близких `Distance` внутри align-кластера
 - line-first spacing analysis
-- план смещений по стеку параллельных размеров
+- anchor-based план смещений по стеку параллельных размеров
 - применение смещений через `Distance`
+- входной `targetGap` задается в мм бумаги, текущий public default `10 мм`
+
+Как это работает сейчас:
+
+- из стека сначала убираются только явные дубли и консервативно покрытые
+  случаи
+- первый surviving dimension в stack остается anchor-ом
+- следующие размеры приводятся к target gap относительно anchor-а и уже
+  выставленных соседей
+- если gap меньше target, размер толкается наружу
+- если gap больше target, размер может быть подтянут ближе
+- если после dedup в stack остался один размер, он не двигается
 
 Чего пока нет в готовом виде ни здесь, ни в `dim`, ни в `xDrawer`:
 
@@ -545,6 +563,8 @@ Current status:
 
 - `arrange_dimensions` пока не является полноценным annotation-aware layout
   engine
+- stack planner сейчас anchor-based и не умеет выбирать более удачный anchor
+  или подтягивать весь stack ближе к детали как единый блок
 - нет collision-aware layout для:
   - text boxes размеров
   - marks

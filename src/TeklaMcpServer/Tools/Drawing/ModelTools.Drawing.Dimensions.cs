@@ -58,7 +58,7 @@ public static partial class ModelTools
         "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale.")]
     public static string ArrangeDimensions(
         [Description("Optional drawing view ID. Omit to process all dimensions on the active drawing.")] int? viewId = null,
-        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 50")] double targetGap = 50.0)
+        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 10")] double targetGap = 10.0)
     {
         if (targetGap < 0)
             return "Error: 'targetGap' must be a non-negative number.";
