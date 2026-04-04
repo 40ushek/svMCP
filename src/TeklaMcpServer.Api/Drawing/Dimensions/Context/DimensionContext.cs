@@ -14,6 +14,7 @@ internal sealed class DimensionContext
     public DimensionContextRole Role { get; set; }
     public DimensionContextSourceSummary Source { get; set; } = new();
     public DimensionContextGeometry Geometry { get; set; } = new();
+    public DimensionContextSourceAssociation Association { get; set; } = new();
 
     public DrawingLineInfo? ReferenceLine => Geometry.ReferenceLine;
     public DrawingLineInfo? LeadLineMain => Geometry.LeadLineMain;
@@ -26,12 +27,52 @@ internal sealed class DimensionContext
     public IReadOnlyList<int> SourceObjectIds => Source.SourceObjectIds;
     public DrawingBoundsInfo? LocalBounds => Geometry.LocalBounds;
     public IReadOnlyList<string> GeometryWarnings => Geometry.Warnings;
+    public IReadOnlyList<DrawingPointInfo> MeasuredPoints => Association.MeasuredPoints;
+    public IReadOnlyList<DimensionContextRelatedSource> RelatedSources => Association.RelatedSources;
+    public IReadOnlyList<DimensionContextPointAssociation> PointAssociations => Association.PointAssociations;
+    public IReadOnlyList<string> AssociationWarnings => Association.Warnings;
+    public int RelatedSourceCount => Association.RelatedSources.Count;
+    public int AssociationMatchedCount => Association.PointAssociations.Count(static association => association.Status == DimensionPointObjectMappingStatus.Matched);
+    public int AssociationAmbiguousCount => Association.PointAssociations.Count(static association => association.Status == DimensionPointObjectMappingStatus.Ambiguous);
+    public int AssociationNoGeometryCount => Association.PointAssociations.Count(static association => association.Status == DimensionPointObjectMappingStatus.NoGeometry);
+    public int AssociationNoCandidatesCount => Association.PointAssociations.Count(static association => association.Status == DimensionPointObjectMappingStatus.NoCandidates);
 }
 
 internal sealed class DimensionContextSourceSummary
 {
     public DimensionSourceKind SourceKind { get; set; }
     public List<int> SourceObjectIds { get; } = [];
+}
+
+internal sealed class DimensionContextSourceAssociation
+{
+    public List<DrawingPointInfo> MeasuredPoints { get; } = [];
+    public List<DimensionContextRelatedSource> RelatedSources { get; } = [];
+    public List<DimensionContextPointAssociation> PointAssociations { get; } = [];
+    public List<string> Warnings { get; } = [];
+}
+
+internal sealed class DimensionContextRelatedSource
+{
+    public string Owner { get; set; } = string.Empty;
+    public int? DrawingObjectId { get; set; }
+    public int? ModelId { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string SourceKind { get; set; } = string.Empty;
+    public bool HasGeometry { get; set; }
+    public DrawingBoundsInfo? GeometryBounds { get; set; }
+}
+
+internal sealed class DimensionContextPointAssociation
+{
+    public int Order { get; set; }
+    public DimensionPointObjectMappingStatus Status { get; set; }
+    public string MatchedOwner { get; set; } = string.Empty;
+    public int? MatchedDrawingObjectId { get; set; }
+    public int? MatchedModelId { get; set; }
+    public string MatchedType { get; set; } = string.Empty;
+    public string MatchedSourceKind { get; set; } = string.Empty;
+    public double? DistanceToGeometry { get; set; }
 }
 
 internal sealed class DimensionContextGeometry

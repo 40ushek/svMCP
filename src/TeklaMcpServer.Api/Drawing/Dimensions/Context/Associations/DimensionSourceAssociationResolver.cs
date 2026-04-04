@@ -10,15 +10,16 @@ internal sealed class DimensionSourceAssociationResult
     public List<DrawingPointInfo> MeasuredPoints { get; } = [];
     public List<DimensionSourceCandidateInfo> Candidates { get; } = [];
     public List<DimensionPointObjectMapping> PointMappings { get; } = [];
+    public List<string> Warnings { get; } = [];
 }
 
 internal sealed class DimensionSourceAssociationResolver
 {
-    private readonly Model _model;
+    private readonly Model? _model;
     private readonly IDrawingPartPointApi _partPointApi;
     private readonly DimensionPointObjectMapper _mapper = new();
 
-    public DimensionSourceAssociationResolver(Model model, IDrawingPartPointApi partPointApi)
+    public DimensionSourceAssociationResolver(Model? model, IDrawingPartPointApi partPointApi)
     {
         _model = model;
         _partPointApi = partPointApi;
@@ -49,6 +50,24 @@ internal sealed class DimensionSourceAssociationResolver
             result.Candidates,
             BuildPreferredOwnersByPointOrder(result.MeasuredPoints, dimensionInfo.Segments)));
 
+        return result;
+    }
+
+    public DimensionSourceAssociationResult Resolve(DrawingDimensionInfo dimensionInfo)
+    {
+        var result = new DimensionSourceAssociationResult();
+        result.MeasuredPoints.AddRange(dimensionInfo.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        CollectSnapshotSourceCandidates(result, dimensionInfo);
+        result.PointMappings.AddRange(_mapper.Map(
+            result.MeasuredPoints,
+            result.Candidates,
+            new Dictionary<int, IReadOnlyList<string>>()));
         return result;
     }
 
@@ -181,6 +200,37 @@ internal sealed class DimensionSourceAssociationResolver
                && System.Math.Abs(point.Y - y) <= tolerance;
     }
 
+    private void CollectSnapshotSourceCandidates(DimensionSourceAssociationResult result, DrawingDimensionInfo dimensionInfo)
+    {
+        if (dimensionInfo.SourceObjectIds.Count == 0)
+        {
+            result.Warnings.Add("no_related_sources");
+            return;
+        }
+
+        foreach (var sourceObjectId in dimensionInfo.SourceObjectIds.Distinct().OrderBy(static id => id))
+        {
+            var candidate = new DimensionSourceCandidateInfo
+            {
+                Owner = "snapshot",
+                Type = dimensionInfo.SourceKind == DimensionSourceKind.Unknown
+                    ? string.Empty
+                    : dimensionInfo.SourceKind.ToString(),
+                SourceKind = dimensionInfo.SourceKind.ToString(),
+                DrawingObjectId = sourceObjectId
+            };
+
+            if (dimensionInfo.SourceKind == DimensionSourceKind.Part)
+            {
+                candidate.ModelId = sourceObjectId;
+                candidate.ResolvedModelType = TrySelectModelObjectById(sourceObjectId)?.GetType().Name ?? string.Empty;
+            }
+
+            PopulateCandidateGeometry(candidate, dimensionInfo.ViewId);
+            result.Candidates.Add(candidate);
+        }
+    }
+
     private DimensionSourceKind ResolveRelatedObjectSourceKind(object? relatedObject)
     {
         if (relatedObject == null)
@@ -213,9 +263,27 @@ internal sealed class DimensionSourceAssociationResolver
 
     private Tekla.Structures.Model.ModelObject? TrySelectRelatedModelObject(Tekla.Structures.Drawing.ModelObject drawingModelObject)
     {
+        if (_model == null)
+            return null;
+
         try
         {
             return _model.SelectModelObject(drawingModelObject.ModelIdentifier);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private Tekla.Structures.Model.ModelObject? TrySelectModelObjectById(int modelId)
+    {
+        if (_model == null || modelId <= 0)
+            return null;
+
+        try
+        {
+            return _model.SelectModelObject(new Tekla.Structures.Identifier(modelId));
         }
         catch
         {

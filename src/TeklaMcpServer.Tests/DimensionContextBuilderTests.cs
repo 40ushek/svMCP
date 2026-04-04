@@ -21,6 +21,9 @@ public sealed class DimensionContextBuilderTests
         Assert.True(context.HasSourceGeometry);
         Assert.NotNull(context.LocalBounds);
         Assert.Equal(new[] { 101 }, context.SourceObjectIds);
+        Assert.Single(context.RelatedSources);
+        Assert.Equal(2, context.PointAssociations.Count);
+        Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));
     }
 
     [Fact]
@@ -74,11 +77,12 @@ public sealed class DimensionContextBuilderTests
         Assert.Equal(DimensionContextRole.NoSourceGeometry, context.Role);
         Assert.False(context.HasSourceGeometry);
         Assert.Contains("source_geometry_unavailable", context.GeometryWarnings);
+        Assert.Contains("missing", context.AssociationWarnings);
     }
 
     private static DimensionContextBuilder CreateBuilder(IDrawingPartPointApi partPointApi)
     {
-        return new DimensionContextBuilder(partPointApi);
+        return new DimensionContextBuilder(new DimensionSourceAssociationResolver(null, partPointApi));
     }
 
     private static DimensionItem CreatePartItem(int dimensionId, double referenceY)

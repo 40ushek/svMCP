@@ -1017,6 +1017,12 @@ internal sealed partial class DrawingCommandHandler
             sourceObjectIds = (GetContextPropertyValue(item, "SourceObjectIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             localBounds = SerializeDebugBounds(GetContextPropertyValue(item, "LocalBounds") as DrawingBoundsInfo),
             geometryWarnings = (GetContextPropertyValue(item, "GeometryWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            relatedSourceCount = GetContextPropertyValue(item, "RelatedSourceCount"),
+            associationMatchedCount = GetContextPropertyValue(item, "AssociationMatchedCount"),
+            associationAmbiguousCount = GetContextPropertyValue(item, "AssociationAmbiguousCount"),
+            associationNoGeometryCount = GetContextPropertyValue(item, "AssociationNoGeometryCount"),
+            associationNoCandidatesCount = GetContextPropertyValue(item, "AssociationNoCandidatesCount"),
+            associationWarnings = (GetContextPropertyValue(item, "AssociationWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             member = SerializeMembers(new[]
             {
                 item.GetType().GetProperty("Item")?.GetValue(item)

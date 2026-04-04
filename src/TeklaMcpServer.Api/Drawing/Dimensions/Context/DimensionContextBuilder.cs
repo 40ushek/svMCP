@@ -6,11 +6,11 @@ internal sealed class DimensionContextBuilder
 {
     private const double InternalBandTolerance = 1.0;
 
-    private readonly IDrawingPartPointApi _partPointApi;
+    private readonly DimensionSourceAssociationResolver _associationResolver;
 
-    public DimensionContextBuilder(IDrawingPartPointApi partPointApi)
+    public DimensionContextBuilder(DimensionSourceAssociationResolver associationResolver)
     {
-        _partPointApi = partPointApi;
+        _associationResolver = associationResolver;
     }
 
     public DimensionContextBuildResult Build(IEnumerable<DimensionItem> items)
@@ -26,6 +26,7 @@ internal sealed class DimensionContextBuilder
 
     public DimensionContext Build(DimensionItem item)
     {
+        var association = _associationResolver.Resolve(item.Dimension);
         var context = new DimensionContext
         {
             DimensionId = item.DimensionId,
@@ -34,28 +35,33 @@ internal sealed class DimensionContextBuilder
             ViewType = item.ViewType,
             ViewScale = item.ViewScale,
             SourceKind = item.SourceKind,
-            Source = BuildSourceSummary(item),
-            Geometry = BuildGeometry(item)
+            Source = BuildSourceSummary(item, association),
+            Geometry = BuildGeometry(item, association),
+            Association = BuildAssociation(association)
         };
 
         context.Role = ClassifyRole(context);
         return context;
     }
 
-    private static DimensionContextSourceSummary BuildSourceSummary(DimensionItem item)
+    private static DimensionContextSourceSummary BuildSourceSummary(DimensionItem item, DimensionSourceAssociationResult association)
     {
         var source = new DimensionContextSourceSummary
         {
             SourceKind = item.SourceKind
         };
 
-        foreach (var id in item.Dimension.SourceObjectIds.Distinct())
+        foreach (var id in item.Dimension.SourceObjectIds
+                     .Concat(association.Candidates.Where(static candidate => candidate.ModelId.HasValue).Select(static candidate => candidate.ModelId!.Value))
+                     .Concat(association.Candidates.Where(static candidate => candidate.DrawingObjectId.HasValue).Select(static candidate => candidate.DrawingObjectId!.Value))
+                     .Distinct()
+                     .OrderBy(static id => id))
             source.SourceObjectIds.Add(id);
 
         return source;
     }
 
-    private DimensionContextGeometry BuildGeometry(DimensionItem item)
+    private DimensionContextGeometry BuildGeometry(DimensionItem item, DimensionSourceAssociationResult association)
     {
         var geometry = new DimensionContextGeometry
         {
@@ -73,8 +79,59 @@ internal sealed class DimensionContextBuilder
         }));
         geometry.LengthList.AddRange(item.LengthList);
         geometry.RealLengthList.AddRange(item.RealLengthList);
-        geometry.LocalBounds = TryResolveLocalBounds(item, geometry.Warnings);
+        geometry.LocalBounds = TryResolveLocalBounds(association, geometry.Warnings);
         return geometry;
+    }
+
+    private static DimensionContextSourceAssociation BuildAssociation(DimensionSourceAssociationResult association)
+    {
+        var result = new DimensionContextSourceAssociation();
+        result.MeasuredPoints.AddRange(association.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+        result.RelatedSources.AddRange(association.Candidates.Select(static candidate => new DimensionContextRelatedSource
+        {
+            Owner = candidate.Owner,
+            DrawingObjectId = candidate.DrawingObjectId,
+            ModelId = candidate.ModelId,
+            Type = candidate.Type,
+            SourceKind = candidate.SourceKind,
+            HasGeometry = candidate.HasGeometry,
+            GeometryBounds = candidate.GeometryBounds == null
+                ? null
+                : TeklaDrawingDimensionsApi.CreateBoundsInfo(
+                    candidate.GeometryBounds.MinX,
+                    candidate.GeometryBounds.MinY,
+                    candidate.GeometryBounds.MaxX,
+                    candidate.GeometryBounds.MaxY)
+        }));
+        result.PointAssociations.AddRange(association.PointMappings.Select(static mapping => new DimensionContextPointAssociation
+        {
+            Order = mapping.Point.Order,
+            Status = mapping.Status,
+            MatchedOwner = mapping.MatchedCandidate?.Owner ?? string.Empty,
+            MatchedDrawingObjectId = mapping.MatchedCandidate?.DrawingObjectId,
+            MatchedModelId = mapping.MatchedCandidate?.ModelId,
+            MatchedType = mapping.MatchedCandidate?.Type ?? string.Empty,
+            MatchedSourceKind = mapping.MatchedCandidate?.SourceKind ?? string.Empty,
+            DistanceToGeometry = mapping.DistanceToGeometry
+        }));
+
+        foreach (var warning in association.Warnings.Distinct())
+            result.Warnings.Add(warning);
+
+        foreach (var warning in association.Candidates
+                     .SelectMany(static candidate => candidate.GeometryWarnings)
+                     .Where(static warning => !string.IsNullOrWhiteSpace(warning))
+                     .Distinct())
+        {
+            result.Warnings.Add(warning);
+        }
+
+        return result;
     }
 
     private static DrawingLineInfo? CopyLine(DrawingLineInfo? line)
@@ -84,77 +141,32 @@ internal sealed class DimensionContextBuilder
             : TeklaDrawingDimensionsApi.CreateLineInfo(line.StartX, line.StartY, line.EndX, line.EndY);
     }
 
-    private DrawingBoundsInfo? TryResolveLocalBounds(DimensionItem item, List<string> warnings)
+    private static DrawingBoundsInfo? TryResolveLocalBounds(DimensionSourceAssociationResult association, List<string> warnings)
     {
-        if (item.SourceKind != DimensionSourceKind.Part)
-            return null;
-
-        if (!item.ViewId.HasValue)
-        {
-            warnings.Add("view_unavailable");
-            return null;
-        }
-
-        if (item.Dimension.SourceObjectIds.Count == 0)
-        {
-            warnings.Add("source_geometry_unavailable");
-            return null;
-        }
-
-        var boundsList = new List<DrawingBoundsInfo>();
-        foreach (var modelId in item.Dimension.SourceObjectIds.Distinct())
-        {
-            GetPartPointsResult partPoints;
-            try
+        var candidateGroups = association.Candidates
+            .Where(static candidate => candidate.HasGeometry && candidate.GeometryBounds != null)
+            .GroupBy(static candidate => new
             {
-                partPoints = _partPointApi.GetPartPointsInView(item.ViewId.Value, modelId);
-            }
-            catch
-            {
-                warnings.Add($"part_points_failed:{modelId}");
-                continue;
-            }
+                candidate.Owner,
+                candidate.DrawingObjectId,
+                candidate.ModelId,
+                candidate.Type,
+                candidate.SourceKind
+            })
+            .Select(static group => group.First().GeometryBounds!)
+            .ToList();
 
-            if (!partPoints.Success || partPoints.Points.Count == 0)
-            {
-                warnings.Add($"part_points_unavailable:{modelId}");
-                continue;
-            }
-
-            var bounds = TryCreateBounds(partPoints.Points.Select(static point => point.Point));
-            if (bounds == null)
-            {
-                warnings.Add($"part_points_empty:{modelId}");
-                continue;
-            }
-
-            boundsList.Add(bounds);
-        }
-
-        if (boundsList.Count == 0)
+        if (candidateGroups.Count == 0)
         {
             if (warnings.Count == 0)
                 warnings.Add("source_geometry_unavailable");
             return null;
         }
 
-        return TeklaDrawingDimensionsApi.CombineBounds(boundsList);
-    }
+        if (association.Candidates.Any(static candidate => !candidate.HasGeometry))
+            warnings.Add("source_geometry_partial");
 
-    private static DrawingBoundsInfo? TryCreateBounds(IEnumerable<double[]> points)
-    {
-        var projected = points
-            .Where(static point => point.Length >= 2)
-            .Select(static point => (X: point[0], Y: point[1]))
-            .ToList();
-        if (projected.Count == 0)
-            return null;
-
-        return TeklaDrawingDimensionsApi.CreateBoundsInfo(
-            projected.Min(static point => point.X),
-            projected.Min(static point => point.Y),
-            projected.Max(static point => point.X),
-            projected.Max(static point => point.Y));
+        return TeklaDrawingDimensionsApi.CombineBounds(candidateGroups);
     }
 
     private static DimensionContextRole ClassifyRole(DimensionContext context)

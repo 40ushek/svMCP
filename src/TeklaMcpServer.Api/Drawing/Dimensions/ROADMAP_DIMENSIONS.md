@@ -651,6 +651,17 @@ Current status:
 
 Без этого более умный layout остается полуслепым.
 
+Follow-up для текущей реализации context:
+
+- не смешивать `DrawingObjectId` и `ModelId` в один канонический список ids;
+  следующий шаг здесь — разделить context summary хотя бы на
+  `SourceDrawingObjectIds` и `SourceModelIds`
+- warning `source_geometry_partial` считать нормальным состоянием partial
+  coverage:
+  - local bounds могут быть успешно построены
+  - но не по всем source candidates
+  - это не failure, а признак неполного geometry coverage
+
 ### 3. `Layout Policy`
 
 Правила layout должны зависеть от контекста размера.

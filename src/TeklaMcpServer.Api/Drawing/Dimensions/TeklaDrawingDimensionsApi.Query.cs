@@ -409,7 +409,8 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (items.Count == 0)
             return;
 
-        var builder = new DimensionContextBuilder(new TeklaDrawingPartPointApi(_model));
+        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
+        var builder = new DimensionContextBuilder(associationResolver);
         var contexts = builder.Build(items)
             .Contexts
             .Where(static context => context.Item != null)
