@@ -51,7 +51,9 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal DimensionReductionDebugResult GetDimensionGroupReductionDebug(int? viewId)
     {
-        return DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
+        var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
+        AttachDimensionContexts(debug);
+        return debug;
     }
 
     public GetDimensionsResult GetDimensions(int? viewId)
@@ -183,48 +185,99 @@ public sealed partial class TeklaDrawingDimensionsApi
             info.ReferenceLine,
             info.Segments);
         info.GeometryKind = ResolveDimensionGeometryKind(info.Orientation);
-        info.SourceKind = ResolveDimensionSourceKind(dimSet, segments);
+        var sourceSummary = ResolveDimensionSourceSummary(dimSet, segments);
+        info.SourceKind = sourceSummary.SourceKind;
+        info.SourceObjectIds.AddRange(sourceSummary.SourceObjectIds);
         info.ClassifiedDimensionType = DimensionGroupFactory.MapDomainDimensionType(info.SourceKind, info.GeometryKind);
 
         return info;
     }
 
-    private DimensionSourceKind ResolveDimensionSourceKind(
+    private (DimensionSourceKind SourceKind, List<int> SourceObjectIds) ResolveDimensionSourceSummary(
         StraightDimensionSet dimSet,
         IReadOnlyList<StraightDimension> segments)
     {
         var hasPart = false;
         var hasGrid = false;
+        var sourceObjectIds = new HashSet<int>();
 
-        CollectDimensionSourceKinds(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid);
+        CollectDimensionSourceSummary(dimSet.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceObjectIds);
 
         foreach (var segment in segments)
-            CollectDimensionSourceKinds(segment.GetRelatedObjects(), ref hasPart, ref hasGrid);
+            CollectDimensionSourceSummary(segment.GetRelatedObjects(), ref hasPart, ref hasGrid, sourceObjectIds);
 
-        return (hasPart, hasGrid) switch
+        var sourceKind = (hasPart, hasGrid) switch
         {
             (true, false) => DimensionSourceKind.Part,
             (false, true) => DimensionSourceKind.Grid,
             _ => DimensionSourceKind.Unknown
         };
+
+        return (sourceKind, sourceObjectIds.OrderBy(static id => id).ToList());
     }
 
-    private void CollectDimensionSourceKinds(
+    private void CollectDimensionSourceSummary(
         DrawingObjectEnumerator? relatedObjects,
         ref bool hasPart,
-        ref bool hasGrid)
+        ref bool hasGrid,
+        HashSet<int> sourceObjectIds)
     {
         if (relatedObjects == null)
             return;
 
         while (relatedObjects.MoveNext())
         {
-            var sourceKind = ResolveRelatedObjectSourceKind(relatedObjects.Current);
+            var relatedObject = relatedObjects.Current;
+            var sourceKind = ResolveRelatedObjectSourceKind(relatedObject);
             if (sourceKind == DimensionSourceKind.Part)
                 hasPart = true;
             else if (sourceKind == DimensionSourceKind.Grid)
                 hasGrid = true;
+
+            if (TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
+                sourceObjectIds.Add(sourceObjectId);
         }
+    }
+
+    private static bool TryGetRelatedObjectId(object? relatedObject, out int id)
+    {
+        id = 0;
+        if (relatedObject == null)
+            return false;
+
+        if (relatedObject is Tekla.Structures.Drawing.ModelObject drawingModelObject)
+        {
+            try
+            {
+                var modelId = drawingModelObject.ModelIdentifier.ID;
+                if (modelId > 0)
+                {
+                    id = modelId;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        if (relatedObject is DrawingObject drawingObject)
+        {
+            try
+            {
+                var drawingId = drawingObject.GetIdentifier().ID;
+                if (drawingId > 0)
+                {
+                    id = drawingId;
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return false;
     }
 
     private DimensionSourceKind ResolveRelatedObjectSourceKind(object? relatedObject)
@@ -385,5 +438,35 @@ public sealed partial class TeklaDrawingDimensionsApi
             direction,
             GetTopDirection(upDirection.X, upDirection.Y),
             referenceLine);
+    }
+
+    private void AttachDimensionContexts(DimensionReductionDebugResult debug)
+    {
+        var items = debug.Groups
+            .SelectMany(static group => group.Items)
+            .Select(static item => item.Item)
+            .Distinct()
+            .ToList();
+        if (items.Count == 0)
+            return;
+
+        var builder = new DimensionContextBuilder(
+            _model,
+            new TeklaDrawingPartPointApi(_model),
+            new TeklaDrawingAssemblyPointApi(_model),
+            new TeklaDrawingBoltPointApi(_model));
+        var contexts = builder.Build(items)
+            .Contexts
+            .Where(static context => context.Item != null)
+            .ToDictionary(static context => context.Item);
+
+        foreach (var group in debug.Groups)
+        {
+            foreach (var item in group.Items)
+            {
+                if (contexts.TryGetValue(item.Item, out var context))
+                    item.Context = context;
+            }
+        }
     }
 }

@@ -72,6 +72,7 @@ public sealed class DrawingDimensionInfo
     internal DimensionSourceKind      SourceKind    { get; set; }
     internal DimensionGeometryKind    GeometryKind  { get; set; }
     internal DimensionType            ClassifiedDimensionType { get; set; }
+    internal List<int>                SourceObjectIds { get; } = [];
 }
 
 public sealed class DimensionItemInfo

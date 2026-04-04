@@ -24,6 +24,7 @@ internal sealed class DimensionReductionItemDebugInfo
     public string Reason { get; set; } = string.Empty;
     public int? PacketIndex { get; set; }
     public int? RepresentativeDimensionId { get; set; }
+    public DimensionContext? Context { get; set; }
 }
 
 internal sealed class DimensionRepresentativePacketDebugInfo

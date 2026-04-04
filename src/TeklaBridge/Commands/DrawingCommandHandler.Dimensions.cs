@@ -966,11 +966,25 @@ internal sealed partial class DrawingCommandHandler
             reason = item.GetType().GetProperty("Reason")?.GetValue(item),
             packetIndex = item.GetType().GetProperty("PacketIndex")?.GetValue(item),
             representativeDimensionId = item.GetType().GetProperty("RepresentativeDimensionId")?.GetValue(item),
+            role = GetContextPropertyValue(item, "Role"),
+            hasSourceGeometry = GetContextPropertyValue(item, "HasSourceGeometry"),
+            sourceObjectIds = (GetContextPropertyValue(item, "SourceObjectIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            localBounds = SerializeDebugBounds(GetContextPropertyValue(item, "LocalBounds") as DrawingBoundsInfo),
+            geometryWarnings = (GetContextPropertyValue(item, "GeometryWarnings") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             member = SerializeMembers(new[]
             {
                 item.GetType().GetProperty("Item")?.GetValue(item)
             }.Where(static value => value != null)) as object
         });
+    }
+
+    private static object? GetContextPropertyValue(object item, string propertyName)
+    {
+        var context = item.GetType().GetProperty("Context")?.GetValue(item);
+        if (context == null)
+            return null;
+
+        return context.GetType().GetProperty(propertyName)?.GetValue(context);
     }
 
     private static object? SerializeDebugLine(DrawingLineInfo? line)
