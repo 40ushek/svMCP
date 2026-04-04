@@ -53,6 +53,34 @@ internal sealed class DimensionSourceAssociationResolver
         return result;
     }
 
+    public DimensionSourceAssociationResult Resolve(StraightDimensionSet dimSet, TeklaDimensionSetSnapshot dimensionSnapshot)
+    {
+        var result = new DimensionSourceAssociationResult();
+        result.MeasuredPoints.AddRange(dimensionSnapshot.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        var ownerViewId = dimensionSnapshot.ViewId;
+        CollectDimensionSourceCandidates(result.Candidates, dimSet.GetRelatedObjects(), "dimensionSet", ownerViewId);
+        var actualSegments = EnumerateSegments(dimSet);
+        for (var i = 0; i < actualSegments.Count; i++)
+        {
+            var segmentId = i < dimensionSnapshot.Segments.Count ? dimensionSnapshot.Segments[i].Id : 0;
+            var owner = segmentId > 0 ? $"segment:{segmentId}" : $"segmentIndex:{i}";
+            CollectDimensionSourceCandidates(result.Candidates, actualSegments[i].GetRelatedObjects(), owner, ownerViewId);
+        }
+
+        result.PointMappings.AddRange(_mapper.Map(
+            result.MeasuredPoints,
+            result.Candidates,
+            BuildPreferredOwnersByPointOrder(result.MeasuredPoints, dimensionSnapshot.Segments)));
+
+        return result;
+    }
+
     public DimensionSourceAssociationResult Resolve(DrawingDimensionInfo dimensionInfo)
     {
         var result = new DimensionSourceAssociationResult();
@@ -206,7 +234,33 @@ internal sealed class DimensionSourceAssociationResolver
         return result;
     }
 
+    private static IReadOnlyDictionary<int, IReadOnlyList<string>> BuildPreferredOwnersByPointOrder(
+        IReadOnlyList<DrawingPointInfo> measuredPoints,
+        IReadOnlyList<TeklaDimensionSegmentSnapshot> segments)
+    {
+        var result = new Dictionary<int, IReadOnlyList<string>>();
+        foreach (var point in measuredPoints)
+        {
+            var owners = segments
+                .Where(segment => PointMatchesSegmentEndpoint(point, segment))
+                .Select(static segment => $"segment:{segment.Id}")
+                .Distinct()
+                .OrderBy(static owner => owner)
+                .ToList();
+            if (owners.Count > 0)
+                result[point.Order] = owners;
+        }
+
+        return result;
+    }
+
     private static bool PointMatchesSegmentEndpoint(DrawingPointInfo point, DimensionSegmentInfo segment, double tolerance = 0.5)
+    {
+        return MatchesPoint(point, segment.StartX, segment.StartY, tolerance)
+            || MatchesPoint(point, segment.EndX, segment.EndY, tolerance);
+    }
+
+    private static bool PointMatchesSegmentEndpoint(DrawingPointInfo point, TeklaDimensionSegmentSnapshot segment, double tolerance = 0.5)
     {
         return MatchesPoint(point, segment.StartX, segment.StartY, tolerance)
             || MatchesPoint(point, segment.EndX, segment.EndY, tolerance);

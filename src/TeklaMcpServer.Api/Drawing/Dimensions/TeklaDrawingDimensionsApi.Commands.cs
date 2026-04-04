@@ -72,8 +72,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                     DimensionType = TryGetDimensionType(dimSet),
                     TeklaDimensionType = TryGetDimensionType(dimSet)
                 };
-                var dimensionInfo = BuildDimensionInfo(dimSet);
-                var association = associationResolver.Resolve(dimSet, dimensionInfo);
+                var dimensionSnapshot = BuildDimensionSnapshot(dimSet);
+                var association = associationResolver.Resolve(dimSet, dimensionSnapshot);
                 info.MeasuredPoints.AddRange(association.MeasuredPoints.Select(static point => new DrawingPointInfo
                 {
                     X = point.X,
@@ -180,16 +180,16 @@ public sealed partial class TeklaDrawingDimensionsApi
 
                 foreach (var segment in segments)
                 {
-                    var segmentInfo = BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext);
+                    var segmentSnapshot = BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext);
                     var expectedText = string.Empty;
                     if (segment.GetView() is Tekla.Structures.Drawing.View ownerView)
                         expectedText = TryGetMeasuredValueText(segment, dimSet, ownerView) ?? string.Empty;
 
                     var candidateList = new List<RelatedTextCandidateDebugInfo>();
                     var runtimeTextBoxes = DimensionTextBoxCollector.Collect(segment, dimSet, FrameTypes.None);
-                    CollectRuntimeTextDebug(candidateList, runtimeTextBoxes, expectedText, segmentInfo.DimensionLine);
-                    CollectPresentationTextDebug(candidateList, presentationConnection, segment.GetIdentifier().ID, "presentation:segment", expectedText, segmentInfo.DimensionLine);
-                    CollectPresentationTextDebug(candidateList, presentationConnection, currentDimensionId, "presentation:dimensionSet", expectedText, segmentInfo.DimensionLine);
+                    CollectRuntimeTextDebug(candidateList, runtimeTextBoxes, expectedText, segmentSnapshot.DimensionLine);
+                    CollectPresentationTextDebug(candidateList, presentationConnection, segment.GetIdentifier().ID, "presentation:segment", expectedText, segmentSnapshot.DimensionLine);
+                    CollectPresentationTextDebug(candidateList, presentationConnection, currentDimensionId, "presentation:dimensionSet", expectedText, segmentSnapshot.DimensionLine);
 
                     var selectedSource = candidateList.Any(static candidate => candidate.MatchesExpected)
                         ? "runtime"
@@ -199,7 +199,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     {
                         SegmentId = segment.GetIdentifier().ID,
                         ExpectedText = expectedText,
-                        DimensionLine = segmentInfo.DimensionLine,
+                        DimensionLine = segmentSnapshot.DimensionLine,
                         SelectedSource = selectedSource,
                         RelatedTextCandidates = candidateList
                             .OrderBy(static candidate => candidate.Score)
@@ -265,14 +265,14 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
                 foreach (var segment in segments)
                 {
-                    var info = BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext);
+                    var segmentSnapshot = BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext);
                     var polygons = DimensionTextBoxCollector.Collect(segment, dimSet, FrameTypes.None)
                         .Select(static candidate => candidate.Polygon)
                         .Where(static polygon => polygon.Count >= 4)
                         .ToList();
                     if (polygons.Count == 0)
                     {
-                        var fallback = TryCreateTextPolygon(segment, dimSet, info.DimensionLine);
+                        var fallback = TryCreateTextPolygon(segment, dimSet, segmentSnapshot.DimensionLine);
                         if (fallback != null && fallback.Count >= 4)
                             polygons.Add(fallback);
                     }
@@ -937,12 +937,12 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         try
         {
-            var info = BuildDimensionInfo(baseDimensionSet);
-            if (TryNormalizeDirection(info.DirectionX, info.DirectionY, out var direction) &&
-                info.TopDirection != 0)
+            var snapshot = BuildDimensionSnapshot(baseDimensionSet);
+            if (TryNormalizeDirection(snapshot.DirectionX, snapshot.DirectionY, out var direction) &&
+                snapshot.TopDirection != 0)
             {
-                var upX = -direction.Y * info.TopDirection;
-                var upY = direction.X * info.TopDirection;
+                var upX = -direction.Y * snapshot.TopDirection;
+                var upY = direction.X * snapshot.TopDirection;
                 vector = new Vector(upX, upY, 0.0);
                 return true;
             }

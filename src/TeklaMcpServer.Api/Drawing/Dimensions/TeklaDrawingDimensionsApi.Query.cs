@@ -215,9 +215,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         return builder.ToString();
     }
 
-    private DrawingDimensionInfo BuildDimensionInfo(StraightDimensionSet dimSet)
-        => ProjectDimensionSnapshotToReadModel(BuildDimensionSnapshot(dimSet));
-
     private TeklaDimensionSetSnapshot BuildDimensionSnapshot(StraightDimensionSet dimSet)
     {
         var (ownerViewId, ownerViewType, ownerViewScale) = GetOwnerViewInfo(dimSet);
@@ -409,13 +406,6 @@ public sealed partial class TeklaDrawingDimensionsApi
             LeadLineSecond = CopyLine(snapshot.LeadLineSecond)
         };
     }
-
-    private static DimensionSegmentInfo BuildSegmentInfo(
-        StraightDimension segment,
-        StraightDimensionSet dimSet,
-        double distance,
-        DimensionLineContext? lineContext = null)
-        => ProjectDimensionSegmentSnapshotToReadModel(BuildDimensionSegmentSnapshot(segment, dimSet, distance, lineContext));
 
     private static TeklaDimensionSegmentSnapshot BuildDimensionSegmentSnapshot(
         StraightDimension segment,
