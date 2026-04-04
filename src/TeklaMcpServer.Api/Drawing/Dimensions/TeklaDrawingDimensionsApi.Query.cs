@@ -234,50 +234,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             else if (sourceKind == DimensionSourceKind.Grid)
                 hasGrid = true;
 
-            if (TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
+            if (DimensionRelatedObjectHelper.TryGetRelatedObjectId(relatedObject, out var sourceObjectId))
                 sourceObjectIds.Add(sourceObjectId);
         }
-    }
-
-    private static bool TryGetRelatedObjectId(object? relatedObject, out int id)
-    {
-        id = 0;
-        if (relatedObject == null)
-            return false;
-
-        if (relatedObject is Tekla.Structures.Drawing.ModelObject drawingModelObject)
-        {
-            try
-            {
-                var modelId = drawingModelObject.ModelIdentifier.ID;
-                if (modelId > 0)
-                {
-                    id = modelId;
-                    return true;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        if (relatedObject is DrawingObject drawingObject)
-        {
-            try
-            {
-                var drawingId = drawingObject.GetIdentifier().ID;
-                if (drawingId > 0)
-                {
-                    id = drawingId;
-                    return true;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        return false;
     }
 
     private DimensionSourceKind ResolveRelatedObjectSourceKind(object? relatedObject)

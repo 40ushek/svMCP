@@ -26,6 +26,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         try
         {
             var partPointApi = new TeklaDrawingPartPointApi(_model);
+            var associationResolver = new DimensionSourceAssociationResolver(_model, partPointApi);
             DrawingObjectEnumerator dimObjects;
             if (viewId.HasValue)
             {
@@ -58,24 +59,16 @@ public sealed partial class TeklaDrawingDimensionsApi
                     DimensionType = TryGetDimensionType(dimSet),
                     TeklaDimensionType = TryGetDimensionType(dimSet)
                 };
-                var ownerViewId = dimSet.GetView()?.GetIdentifier().ID;
                 var dimensionInfo = BuildDimensionInfo(dimSet);
-                info.MeasuredPoints.AddRange(dimensionInfo.MeasuredPoints.Select(static point => new DrawingPointInfo
+                var association = associationResolver.Resolve(dimSet, dimensionInfo);
+                info.MeasuredPoints.AddRange(association.MeasuredPoints.Select(static point => new DrawingPointInfo
                 {
                     X = point.X,
                     Y = point.Y,
                     Order = point.Order
                 }));
-
-                CollectDimensionSourceCandidates(info.Candidates, dimSet.GetRelatedObjects(), "dimensionSet", ownerViewId, partPointApi);
-                foreach (var segment in EnumerateSegments(dimSet))
-                    CollectDimensionSourceCandidates(info.Candidates, segment.GetRelatedObjects(), $"segment:{segment.GetIdentifier().ID}", ownerViewId, partPointApi);
-                var mapper = new DimensionPointObjectMapper();
-                var pointMappings = mapper.Map(
-                    info.MeasuredPoints,
-                    info.Candidates,
-                    BuildPreferredOwnersByPointOrder(info.MeasuredPoints, dimensionInfo.Segments));
-                info.PointMappings.AddRange(pointMappings.Select(static mapping => new DimensionPointObjectMappingInfo
+                info.Candidates.AddRange(association.Candidates);
+                info.PointMappings.AddRange(association.PointMappings.Select(static mapping => new DimensionPointObjectMappingInfo
                 {
                     Order = mapping.Point.Order,
                     X = mapping.Point.X,
@@ -310,136 +303,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
-    }
-
-    private void CollectDimensionSourceCandidates(
-        List<DimensionSourceCandidateInfo> target,
-        DrawingObjectEnumerator? relatedObjects,
-        string owner,
-        int? ownerViewId,
-        IDrawingPartPointApi partPointApi)
-    {
-        if (relatedObjects == null)
-            return;
-
-        while (relatedObjects.MoveNext())
-        {
-            var current = relatedObjects.Current;
-            var candidate = new DimensionSourceCandidateInfo
-            {
-                Owner = owner,
-                Type = current?.GetType().Name ?? string.Empty,
-                SourceKind = ResolveRelatedObjectSourceKind(current).ToString()
-            };
-
-            if (current is DrawingObject drawingObject)
-                candidate.DrawingObjectId = drawingObject.GetIdentifier().ID;
-
-            if (current is Tekla.Structures.Drawing.ModelObject drawingModelObject)
-            {
-                candidate.ModelId = drawingModelObject.ModelIdentifier.ID;
-                candidate.ResolvedModelType = TrySelectRelatedModelObject(drawingModelObject)?.GetType().Name ?? string.Empty;
-            }
-
-            PopulateCandidateGeometry(candidate, ownerViewId, partPointApi);
-            target.Add(candidate);
-        }
-    }
-
-    private static IReadOnlyDictionary<int, IReadOnlyList<string>> BuildPreferredOwnersByPointOrder(
-        IReadOnlyList<DrawingPointInfo> measuredPoints,
-        IReadOnlyList<DimensionSegmentInfo> segments)
-    {
-        var result = new Dictionary<int, IReadOnlyList<string>>();
-        foreach (var point in measuredPoints)
-        {
-            var owners = segments
-                .Where(segment => PointMatchesSegmentEndpoint(point, segment))
-                .Select(static segment => $"segment:{segment.Id}")
-                .Distinct()
-                .OrderBy(static owner => owner)
-                .ToList();
-            if (owners.Count > 0)
-                result[point.Order] = owners;
-        }
-
-        return result;
-    }
-
-    private static bool PointMatchesSegmentEndpoint(DrawingPointInfo point, DimensionSegmentInfo segment, double tolerance = 0.5)
-    {
-        return MatchesPoint(point, segment.StartX, segment.StartY, tolerance)
-            || MatchesPoint(point, segment.EndX, segment.EndY, tolerance);
-    }
-
-    private static bool MatchesPoint(DrawingPointInfo point, double x, double y, double tolerance)
-    {
-        return System.Math.Abs(point.X - x) <= tolerance
-            && System.Math.Abs(point.Y - y) <= tolerance;
-    }
-
-    private void PopulateCandidateGeometry(DimensionSourceCandidateInfo candidate, int? ownerViewId, IDrawingPartPointApi partPointApi)
-    {
-        if (!ownerViewId.HasValue)
-        {
-            candidate.GeometryWarnings.Add("view_unavailable");
-            return;
-        }
-
-        if (!candidate.ModelId.HasValue || candidate.ModelId.Value <= 0)
-        {
-            candidate.GeometryWarnings.Add("model_id_unavailable");
-            return;
-        }
-
-        if (!string.Equals(candidate.SourceKind, DimensionSourceKind.Part.ToString(), System.StringComparison.Ordinal))
-        {
-            candidate.GeometryWarnings.Add("geometry_probe_not_supported_for_source_kind");
-            return;
-        }
-
-        candidate.GeometrySource = "part_points";
-
-        GetPartPointsResult partPoints;
-        try
-        {
-            partPoints = partPointApi.GetPartPointsInView(ownerViewId.Value, candidate.ModelId.Value);
-        }
-        catch
-        {
-            candidate.GeometryWarnings.Add("part_points_failed");
-            return;
-        }
-
-        if (!partPoints.Success)
-        {
-            candidate.GeometryWarnings.Add(partPoints.Error ?? "part_points_unavailable");
-            return;
-        }
-
-        foreach (var point in partPoints.Points.Where(static point => point.Point.Length >= 2))
-        {
-            candidate.GeometryPoints.Add(new DrawingPointInfo
-            {
-                X = System.Math.Round(point.Point[0], 3),
-                Y = System.Math.Round(point.Point[1], 3),
-                Order = point.Index
-            });
-        }
-
-        candidate.GeometryPointCount = candidate.GeometryPoints.Count;
-        if (candidate.GeometryPoints.Count == 0)
-        {
-            candidate.GeometryWarnings.Add("geometry_points_empty");
-            return;
-        }
-
-        candidate.HasGeometry = true;
-        candidate.GeometryBounds = TeklaDrawingDimensionsApi.CreateBoundsInfo(
-            candidate.GeometryPoints.Min(static point => point.X),
-            candidate.GeometryPoints.Min(static point => point.Y),
-            candidate.GeometryPoints.Max(static point => point.X),
-            candidate.GeometryPoints.Max(static point => point.Y));
     }
 
     private static void CollectRuntimeTextDebug(
