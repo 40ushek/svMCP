@@ -89,6 +89,8 @@ These are the supported public tool-surface operations for dimensions.
 `combine_dimensions` is a separate controlled merge action layered on top of
 the existing combine-candidate analysis; it is intentionally not part of
 `arrange_dimensions`.
+Its runtime result now also reports rollback status for partial-failure cases:
+`rollbackAttempted`, `rollbackSucceeded`, and `rollbackReason`.
 
 Current default for `arrange_dimensions`:
 

@@ -676,23 +676,13 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
-    private sealed class CombineApplyResult
-    {
-        public bool Success { get; set; }
-        public int? CreatedDimensionId { get; set; }
-        public string Reason { get; set; } = string.Empty;
-        public bool RollbackAttempted { get; set; }
-        public bool RollbackSucceeded { get; set; }
-        public string RollbackReason { get; set; } = string.Empty;
-    }
-
-    private CombineApplyResult TryApplyCombineCandidate(
+    private DimensionCombineApplyResult TryApplyCombineCandidate(
         Tekla.Structures.Drawing.Drawing activeDrawing,
         DimensionCombineActionCandidate candidate)
     {
         if (candidate.Preview == null)
         {
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = "combine_preview_unavailable"
@@ -703,7 +693,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (sourceDimensions.Count != candidate.DimensionIds.Count)
         {
             var missing = candidate.DimensionIds.Where(id => !sourceDimensions.ContainsKey(id)).OrderBy(static id => id);
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = $"source_dimensions_not_found:{string.Join(",", missing)}"
@@ -712,7 +702,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (!sourceDimensions.TryGetValue(candidate.BaseDimensionId, out var baseDimensionSet))
         {
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = "base_dimension_not_found"
@@ -721,7 +711,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (baseDimensionSet.GetView() is not Tekla.Structures.Drawing.View view)
         {
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = "base_view_not_found"
@@ -730,7 +720,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (!TryResolveCombineOffsetVector(baseDimensionSet, out var offsetVector))
         {
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = "combine_offset_vector_unavailable"
@@ -741,7 +731,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         var pointList = CreateCombinePointList(candidate.Preview);
         if (pointList.Count < 2)
         {
-            return new CombineApplyResult
+            return new DimensionCombineApplyResult
             {
                 Success = false,
                 Reason = "combine_preview_has_too_few_points"
@@ -749,61 +739,35 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         StraightDimensionSet? created = null;
-        try
-        {
-            created = new StraightDimensionSetHandler().CreateDimensionSet(
-                view,
-                pointList,
-                offsetVector,
-                candidate.Preview.Distance,
-                attributes);
+        var orderedSourceDimensions = candidate.DimensionIds
+            .Where(sourceDimensions.ContainsKey)
+            .Select(dimensionId => sourceDimensions[dimensionId])
+            .ToList();
 
-            if (created == null)
+        return DimensionCombineApplyExecutor.Execute(
+            createDimension: () =>
             {
-                return new CombineApplyResult
-                {
-                    Success = false,
-                    Reason = "CreateDimensionSet returned null"
-                };
-            }
+                created = new StraightDimensionSetHandler().CreateDimensionSet(
+                    view,
+                    pointList,
+                    offsetVector,
+                    candidate.Preview.Distance,
+                    attributes);
 
-            foreach (var dimensionSet in sourceDimensions.Values)
-                dimensionSet.Delete();
-
-            activeDrawing.CommitChanges("(MCP) CombineDimensions");
-            return new CombineApplyResult
+                return created?.GetIdentifier().ID;
+            },
+            deleteSourceDimensions: orderedSourceDimensions
+                .Select(static dimensionSet => (System.Action)(() => dimensionSet.Delete()))
+                .ToList(),
+            commitCombine: () => activeDrawing.CommitChanges("(MCP) CombineDimensions"),
+            rollbackDeleteCreatedDimension: () =>
             {
-                Success = true,
-                CreatedDimensionId = created.GetIdentifier().ID,
-                Reason = string.Empty
-            };
-        }
-        catch (System.Exception ex)
-        {
-            var result = new CombineApplyResult
-            {
-                Success = false,
-                Reason = ex.Message
-            };
+                if (created == null)
+                    throw new System.InvalidOperationException("rollback_created_dimension_missing");
 
-            if (created == null)
-                return result;
-
-            result.RollbackAttempted = true;
-            try
-            {
                 created.Delete();
-                activeDrawing.CommitChanges("(MCP) RollbackCombineDimensions");
-                result.RollbackSucceeded = true;
-            }
-            catch (System.Exception rollbackEx)
-            {
-                result.RollbackSucceeded = false;
-                result.RollbackReason = rollbackEx.Message;
-            }
-
-            return result;
-        }
+            },
+            commitRollback: () => activeDrawing.CommitChanges("(MCP) RollbackCombineDimensions"));
     }
 
     private static Dictionary<int, StraightDimensionSet> FindDimensionSetsById(

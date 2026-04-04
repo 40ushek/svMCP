@@ -166,6 +166,44 @@ public sealed class DrawingDimensionsApiTests
     }
 
     [Fact]
+    public void CombineDimensionsResult_SerializesExistingAndRollbackFields()
+    {
+        var result = new CombineDimensionsResult
+        {
+            PreviewOnly = false,
+            CandidateCount = 1,
+            CombinedCount = 0,
+            SkippedCount = 1
+        };
+        result.Skipped.Add(new CombineDimensionCandidateResult
+        {
+            ViewId = 20,
+            ViewType = "FrontView",
+            DimensionType = "Vertical",
+            PacketIndex = 0,
+            BaseDimensionId = 1001,
+            ConnectivityMode = "shared_point_neighbor_set",
+            PreviewOnly = false,
+            Combined = false,
+            CreatedDimensionId = null,
+            RollbackAttempted = true,
+            RollbackSucceeded = true,
+            RollbackReason = string.Empty,
+            Distance = 42.5,
+            Reason = "fault_injection:after_create_before_delete"
+        });
+
+        var json = JsonSerializer.Serialize(result);
+
+        Assert.Contains("\"CandidateCount\":1", json);
+        Assert.Contains("\"SkippedCount\":1", json);
+        Assert.Contains("\"ConnectivityMode\":\"shared_point_neighbor_set\"", json);
+        Assert.Contains("\"RollbackAttempted\":true", json);
+        Assert.Contains("\"RollbackSucceeded\":true", json);
+        Assert.Contains("\"Reason\":\"fault_injection:after_create_before_delete\"", json);
+    }
+
+    [Fact]
     public void BuildMeasuredPointList_OrdersChainPointsAlongTraversedPath()
     {
         var points = TeklaDrawingDimensionsApi.BuildMeasuredPointList(

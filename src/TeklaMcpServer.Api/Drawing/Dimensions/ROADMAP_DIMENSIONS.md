@@ -751,8 +751,9 @@ Follow-up для текущей реализации context:
 
 ### 1. Stabilize current runtime behavior
 
-- live validation `combine_dimensions` is still required
-- live validation rollback/delete/create path is still required
+- `combine_dimensions` success-path is live-validated
+- rollback/failure path is validated via internal fault-injection seam and live
+  smoke
 - `arrange_dimensions` behavior on real drawings: validated
 
 ### 2. Improve arrangement quality
