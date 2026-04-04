@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
@@ -296,7 +297,11 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         item.CenterX = (positions[0] + positions[^1]) / 2.0;
         item.CenterY = 0;
         item.SegmentIds.Add(dimensionId);
-        item.SourceObjectIds.AddRange(sourceIds);
+        item.SourceReferences.AddRange(sourceIds.Select(static sourceId => new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            ModelId = sourceId
+        }));
         return item;
     }
 

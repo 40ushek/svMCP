@@ -108,7 +108,6 @@ public sealed class DimensionContextBuilderTests
             SourceKind = DimensionSourceKind.Part,
             DrawingObjectId = 7001
         });
-        item.SourceObjectIds.Add(7001);
 
         var context = builder.Build(item);
 
@@ -215,7 +214,6 @@ public sealed class DimensionContextBuilderTests
             DrawingObjectId = 5001,
             ModelId = 101
         });
-        item.SourceObjectIds.Add(5001);
         return item;
     }
 

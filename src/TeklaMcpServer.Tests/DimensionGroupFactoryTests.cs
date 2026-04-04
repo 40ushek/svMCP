@@ -97,7 +97,6 @@ public sealed class DimensionGroupFactoryTests
             DrawingObjectId = 5001,
             ModelId = 101
         });
-        dimension.SourceObjectIds.Add(5001);
 
         var item = Assert.Single(DimensionGroupFactory.BuildItems([dimension]));
 
@@ -105,7 +104,6 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(DimensionSourceKind.Part, source.SourceKind);
         Assert.Equal(5001, source.DrawingObjectId);
         Assert.Equal(101, source.ModelId);
-        Assert.Equal([5001], item.SourceObjectIds);
     }
 
     [Fact]

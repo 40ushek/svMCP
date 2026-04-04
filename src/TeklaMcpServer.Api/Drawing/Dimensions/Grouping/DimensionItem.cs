@@ -40,7 +40,6 @@ internal class DimensionItem
     public List<DrawingPointInfo> MeasuredPoints { get; } = [];
     public List<DimensionSegmentInfo> Segments { get; } = [];
     public List<DimensionSourceReference> SourceReferences { get; } = [];
-    public List<int> SourceObjectIds { get; } = [];
 
     public (double X, double Y)? Direction =>
         TeklaDrawingDimensionsApi.TryNormalizeDirection(DirectionX, DirectionY, out var direction)

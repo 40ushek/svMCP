@@ -157,7 +157,6 @@ public sealed class DimensionSnapshotProjectionTests
         var source = Assert.Single(item.SourceReferences);
         Assert.Equal(5001, source.DrawingObjectId);
         Assert.Equal(101, source.ModelId);
-        Assert.Equal([5001], item.SourceObjectIds);
         Assert.Equal(2, item.MeasuredPoints.Count);
         Assert.Single(item.Segments);
     }

@@ -975,8 +975,6 @@ internal static class DimensionGroupFactory
             ModelId = source.ModelId
         }));
 
-        item.SourceObjectIds.Clear();
-        item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
     }
 
     private static void PopulateDimensionSnapshot(DimensionItem item, DrawingDimensionInfo dimension)
@@ -1017,8 +1015,6 @@ internal static class DimensionGroupFactory
             DrawingObjectId = source.DrawingObjectId,
             ModelId = source.ModelId
         }));
-        item.SourceObjectIds.Clear();
-        item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
     }
 
     private static DrawingBoundsInfo? CopyBounds(DrawingBoundsInfo? bounds)
