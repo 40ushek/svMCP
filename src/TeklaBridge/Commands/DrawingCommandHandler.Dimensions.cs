@@ -1029,6 +1029,7 @@ internal sealed partial class DrawingCommandHandler
             layoutRecommendedAction = GetLayoutPolicyPropertyValue(item, "RecommendedAction")?.ToString(),
             layoutCombineCandidate = GetLayoutPolicyPropertyValue(item, "CombineCandidate"),
             layoutCombineReason = GetLayoutPolicyPropertyValue(item, "CombineReason"),
+            layoutCombineClassification = GetLayoutPolicyPropertyValue(item, "CombineClassification")?.ToString(),
             layoutCombineWithDimensionIds = (GetLayoutPolicyPropertyValue(item, "CombineWithDimensionIds") as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
             member = SerializeMembers(new[]
             {

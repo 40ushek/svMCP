@@ -682,6 +682,9 @@ Follow-up для текущей реализации context:
   - equivalent measured geometry
   - richer chain vs poorer chain
   - mergeable chain
+  - distinction between:
+    - `DuplicateChain`
+    - `InformationPreservingMerge`
 
 Следующий подшаг для policy:
 
@@ -706,6 +709,11 @@ Follow-up для текущей реализации context:
 - если размер одновременно `LessPreferred` и `CombineCandidate`, рекомендация
   должна быть `PreferCombine`, а не suppression
 - poorer subchain без merge verdict оставлять как `OperatorReview`
+- mergeable cases различать так:
+  - `DuplicateChain`: удаление одного размера или combine дают одинаковую
+    информацию, поэтому это не strong `PreferCombine`
+  - `InformationPreservingMerge`: combine сохраняет или добавляет измерительную
+    информацию, поэтому это нормальный `PreferCombine`
 
 ### 4. `Candidate Placements`
 

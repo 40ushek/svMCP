@@ -18,6 +18,13 @@ internal enum DimensionRecommendedAction
     OperatorReview
 }
 
+internal enum DimensionCombineClassification
+{
+    None = 0,
+    DuplicateChain,
+    InformationPreservingMerge
+}
+
 internal sealed class DimensionLayoutPolicyDecision
 {
     public DimensionLayoutPolicyStatus Status { get; set; }
@@ -26,6 +33,7 @@ internal sealed class DimensionLayoutPolicyDecision
     public bool CombineCandidate { get; set; }
     public string CombineReason { get; set; } = string.Empty;
     public List<int> CombineWithDimensionIds { get; } = [];
+    public DimensionCombineClassification CombineClassification { get; set; }
     public DimensionRecommendedAction RecommendedAction { get; set; } = DimensionRecommendedAction.Keep;
 }
 
@@ -104,8 +112,10 @@ internal static class DimensionLayoutPolicyEvaluator
     public static void AttachCombineCandidates(
         IReadOnlyDictionary<int, DimensionItem> itemsByDimensionId,
         IReadOnlyDictionary<DimensionItem, DimensionLayoutPolicyDecision> decisions,
-        IReadOnlyList<DimensionCombineCandidateDebugInfo> combineCandidates)
+        IReadOnlyList<DimensionCombineCandidateDebugInfo> combineCandidates,
+        DimensionLayoutPolicy? policy = null)
     {
+        policy ??= DimensionLayoutPolicy.Default;
         foreach (var candidate in combineCandidates)
         {
             if (!candidate.IsCombineCandidate || candidate.DimensionIds.Count <= 1)
@@ -119,12 +129,15 @@ internal static class DimensionLayoutPolicyEvaluator
             if (matchedItems.Count <= 1)
                 continue;
 
+            var combineClassification = ClassifyCombineCandidate(matchedItems, candidate, policy);
+
             foreach (var item in matchedItems)
             {
                 if (!decisions.TryGetValue(item, out var decision))
                     continue;
 
                 decision.CombineCandidate = true;
+                decision.CombineClassification = combineClassification;
                 if (string.IsNullOrWhiteSpace(decision.CombineReason) &&
                     !string.IsNullOrWhiteSpace(candidate.CombineConnectivityMode))
                 {
@@ -373,6 +386,51 @@ internal static class DimensionLayoutPolicyEvaluator
         return true;
     }
 
+    private static DimensionCombineClassification ClassifyCombineCandidate(
+        IReadOnlyList<DimensionItem> matchedItems,
+        DimensionCombineCandidateDebugInfo candidate,
+        DimensionLayoutPolicy policy)
+    {
+        var previewPoints = candidate.CombinePreview?.PointList;
+        if (previewPoints == null || previewPoints.Count == 0)
+            return DimensionCombineClassification.InformationPreservingMerge;
+
+        var normalizedPreviewPoints = NormalizePointSet(previewPoints, policy.EquivalentGeometryPointTolerance);
+        foreach (var item in matchedItems)
+        {
+            var normalizedItemPoints = NormalizePointSet(item.PointList, policy.EquivalentGeometryPointTolerance);
+            if (HaveEquivalentPointSets(normalizedItemPoints, normalizedPreviewPoints, policy.EquivalentGeometryPointTolerance))
+                return DimensionCombineClassification.DuplicateChain;
+        }
+
+        return DimensionCombineClassification.InformationPreservingMerge;
+    }
+
+    private static List<DrawingPointInfo> NormalizePointSet(
+        IReadOnlyList<DrawingPointInfo> points,
+        double tolerance)
+    {
+        var normalized = new List<DrawingPointInfo>(points.Count);
+        foreach (var point in points)
+        {
+            if (normalized.Any(existing =>
+                System.Math.Abs(existing.X - point.X) <= tolerance &&
+                System.Math.Abs(existing.Y - point.Y) <= tolerance))
+            {
+                continue;
+            }
+
+            normalized.Add(new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
+            });
+        }
+
+        return normalized;
+    }
+
     private static bool ShouldSkipRole(DimensionContextRole role)
     {
         return role == DimensionContextRole.Control || role == DimensionContextRole.Grid;
@@ -416,14 +474,28 @@ internal static class DimensionLayoutPolicyEvaluator
 
     private static DimensionRecommendedAction GetRecommendedAction(DimensionLayoutPolicyDecision decision)
     {
-        if (decision.CombineCandidate)
+        if (decision.CombineCandidate &&
+            decision.CombineClassification == DimensionCombineClassification.InformationPreservingMerge)
+        {
             return DimensionRecommendedAction.PreferCombine;
+        }
 
         if (decision.Status == DimensionLayoutPolicyStatus.LessPreferred &&
             decision.Reason == "equivalent_measured_geometry")
         {
             return DimensionRecommendedAction.SuppressCandidate;
         }
+
+        if (decision.CombineCandidate &&
+            decision.CombineClassification == DimensionCombineClassification.DuplicateChain)
+        {
+            return decision.Status == DimensionLayoutPolicyStatus.LessPreferred
+                ? DimensionRecommendedAction.OperatorReview
+                : DimensionRecommendedAction.Keep;
+        }
+
+        if (decision.CombineCandidate)
+            return DimensionRecommendedAction.OperatorReview;
 
         if (decision.Status == DimensionLayoutPolicyStatus.LessPreferred)
             return DimensionRecommendedAction.OperatorReview;
