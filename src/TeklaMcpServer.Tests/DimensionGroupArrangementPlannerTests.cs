@@ -53,12 +53,12 @@ public sealed class DimensionGroupArrangementPlannerTests
     }
 
     [Fact]
-    public void BuildPlan_ReturnsNoChanges_WhenGapIsAlreadyEnough()
+    public void BuildPlan_ReturnsNoChanges_WhenGapMatchesTarget()
     {
         var group = CreateGroup(
         [
             CreateMember(1, 10, 10, 100, 20),
-            CreateMember(2, 10, 30, 100, 40)
+            CreateMember(2, 10, 25, 100, 35)
         ], "horizontal");
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 5);
@@ -103,7 +103,23 @@ public sealed class DimensionGroupArrangementPlannerTests
     }
 
     [Fact]
-    public void BuildPlan_PropagatesExistingCumulativeShift_ToLaterNonOverlappingMembers()
+    public void BuildPlan_PullsLaterMemberCloser_WhenGapIsTooLarge()
+    {
+        var group = CreateGroup(
+        [
+            CreateMember(1, 10, 10, 100, 20),
+            CreateMember(2, 10, 35, 100, 45)
+        ], "horizontal");
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 5);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(-10, proposal.AxisShift, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_DoesNotPropagateEarlierExpansion_IntoAlreadyCorrectLaterGap()
     {
         var group = CreateGroup(
         [
@@ -115,13 +131,9 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 5);
 
-        Assert.Equal(3, plan.Proposals.Count);
-        Assert.Equal(2, plan.Proposals[0].DimensionId);
-        Assert.Equal(10, plan.Proposals[0].AxisShift, 3);
-        Assert.Equal(3, plan.Proposals[1].DimensionId);
-        Assert.Equal(10, plan.Proposals[1].AxisShift, 3);
-        Assert.Equal(4, plan.Proposals[2].DimensionId);
-        Assert.Equal(10, plan.Proposals[2].AxisShift, 3);
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(10, proposal.AxisShift, 3);
     }
 
     private static DimensionGroup CreateGroup(DimensionGroupMember[] members, string orientation)
