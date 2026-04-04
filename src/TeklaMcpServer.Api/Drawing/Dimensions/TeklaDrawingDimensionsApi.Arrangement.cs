@@ -13,7 +13,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
 
-        var rawGroups = GetDimensionGroups(viewId);
+        var rawGroups = GetArrangeGroups(viewId);
         var dedup = DimensionArrangementDedup.ReduceWithDebug(rawGroups);
         var groups = dedup.ReducedGroups;
         var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
@@ -30,7 +30,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             ViewFilteredTotal = groups.Sum(static group => group.DimensionList.Count),
             RawGroupCount = rawGroups.Count,
             GroupCount = groups.Count,
-            DedupRejectedCount = dedup.Groups.Sum(static group => group.Items.Count(static item => string.Equals(item.Status, "rejected", System.StringComparison.Ordinal))),
+            DedupRejectedCount = dedup.Groups.Sum(static g => g.Items.Count(static item => string.Equals(item.Status, "rejected", System.StringComparison.Ordinal))),
             TargetGapPaper = targetGap
         };
 
@@ -295,19 +295,19 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
     {
-        return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetArrangeGroups(viewId));
+        return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetArrangeGroupsDeduped(viewId));
     }
 
     internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroups(viewId))
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId))
             .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap))
             .ToList();
     }
 
     internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroups(viewId))
+        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId))
             .Select(stack =>
             {
                 var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
@@ -318,8 +318,17 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     private List<DimensionGroup> GetArrangeGroups(int? viewId)
     {
-        return DimensionArrangementDedup.Reduce(GetDimensionGroups(viewId));
+        var noReductionPolicy = new DimensionReductionPolicy
+        {
+            EnableCoverageReduction = false,
+            EnableEquivalentSimpleReduction = false,
+            EnableRepresentativeSelection = false
+        };
+        return DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId), reductionPolicy: noReductionPolicy);
     }
+
+    private List<DimensionGroup> GetArrangeGroupsDeduped(int? viewId)
+        => DimensionArrangementDedup.Reduce(GetArrangeGroups(viewId));
 
     internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
