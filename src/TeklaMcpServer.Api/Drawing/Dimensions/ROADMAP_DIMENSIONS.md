@@ -584,8 +584,6 @@ Current status:
 - merge не делает post-layout cleanup после создания replacement dimension
 - preview/result surface есть, но главным explain/debug surface по-прежнему
   остается `get_dimension_groups_debug`
-- rollback/delete/create semantics нужно еще подтвердить на живом drawing
-  runtime
 - targeted combine работает только по combine-candidates, полностью попавшим в
   выбранный набор `dimensionIds`
 
@@ -613,8 +611,7 @@ Current status:
 - unit tests есть, но live acceptance на реальных drawings остается
   обязательной для:
   - arrange
-  - combine
-  - rollback/partial-failure cases
+  - combine policy/layout follow-up changes
 - `TeklaMcpServer.Tests` в текущем окружении нестабилен из-за `NU1701`/warning
   policy
 - часть новых dimension tests нельзя считать надежно подтвержденными, пока test
@@ -678,6 +675,7 @@ Follow-up для текущей реализации context:
 Текущий статус:
 
 - `Layout Policy` уже существует как debug-first слой классификации
+- `RecommendedAction` уже существует как debug-first слой поверх classification
 - текущие explainable cases уже покрывают:
   - equivalent measured geometry
   - richer chain vs poorer chain
@@ -685,16 +683,6 @@ Follow-up для текущей реализации context:
   - distinction between:
     - `DuplicateChain`
     - `InformationPreservingMerge`
-
-Следующий подшаг для policy:
-
-- добавить поверх classification отдельный recommendation layer
-- он не должен сам выполнять runtime action
-- он должен только давать краткий рекомендуемый вывод по размеру:
-  - `Keep`
-  - `PreferCombine`
-  - `SuppressCandidate`
-  - `OperatorReview`
 
 Назначение этого слоя:
 
@@ -756,6 +744,8 @@ Follow-up для текущей реализации context:
   smoke
 - `arrange_dimensions` behavior on real drawings: validated
 
+Этот блок по сути закрыт для current conservative runtime path.
+
 ### 2. Improve arrangement quality
 
 - collision-aware layout
@@ -764,18 +754,16 @@ Follow-up для текущей реализации context:
 
 ### 3. Improve combine quality
 
-- `combine v2` only after current runtime behavior is validated
+- `combine v2` can now proceed on top of validated current runtime behavior
 - optional post-combine arrange handoff
 - broader but still explainable combine policy only after current conservative
   path proves stable
-- current progress in context/policy/debug does not close the runtime validation
-  backlog for real merge execution
 
 ### 3a. Add policy recommendation layer
 
-- build `RecommendedAction` on top of existing `Layout Policy`
-- keep it debug-first before any orchestration/runtime use
-- ensure recommendation stays explainable and separate from direct execution
+- `RecommendedAction` already exists as debug-first policy output
+- next step here is orchestration/runtime consumption, not another debug layer
+- keep recommendation explainable and separate from direct execution
 
 ### 4. Placement policy expansion
 
