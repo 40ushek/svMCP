@@ -59,7 +59,7 @@ public sealed partial class TeklaDrawingDimensionsApi
     internal DimensionReductionDebugResult GetDimensionGroupReductionDebug(int? viewId)
     {
         var debug = DimensionGroupFactory.BuildGroupsWithReductionDebug(GetDimensionSnapshots(viewId));
-        AttachDimensionContexts(debug);
+        AttachDimensionContexts(debug, viewId);
         return debug;
     }
 
@@ -561,7 +561,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             referenceLine);
     }
 
-    private void AttachDimensionContexts(DimensionReductionDebugResult debug)
+    private void AttachDimensionContexts(DimensionReductionDebugResult debug, int? requestedViewId)
     {
         var items = debug.Groups
             .SelectMany(static group => group.Items)
@@ -569,7 +569,10 @@ public sealed partial class TeklaDrawingDimensionsApi
             .Distinct()
             .ToList();
         if (items.Count == 0)
+        {
+            debug.DecisionContext = new DimensionDecisionContext();
             return;
+        }
 
         var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
         var builder = new DimensionContextBuilder(associationResolver);
@@ -577,6 +580,14 @@ public sealed partial class TeklaDrawingDimensionsApi
             .Contexts
             .Where(static context => context.Item != null)
             .ToDictionary(static context => context.Item);
+
+        var decisionContext = new DimensionDecisionContext();
+        decisionContext.Dimensions.AddRange(
+            contexts.Values
+                .OrderBy(static context => context.ViewId)
+                .ThenBy(static context => context.DimensionId));
+        decisionContext.View = BuildDecisionViewContext(items, requestedViewId, decisionContext.Warnings);
+        debug.DecisionContext = decisionContext;
 
         foreach (var group in debug.Groups)
         {
@@ -588,6 +599,47 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         AttachLayoutPolicyDecisions(debug, contexts);
+    }
+
+    private DimensionViewContext BuildDecisionViewContext(
+        IReadOnlyList<DimensionItem> items,
+        int? requestedViewId,
+        List<string> warnings)
+    {
+        var effectiveViewId = requestedViewId;
+        if (!effectiveViewId.HasValue)
+        {
+            var distinctViewIds = items
+                .Where(static item => item.ViewId.HasValue)
+                .Select(static item => item.ViewId!.Value)
+                .Distinct()
+                .OrderBy(static id => id)
+                .ToList();
+
+            if (distinctViewIds.Count == 1)
+            {
+                effectiveViewId = distinctViewIds[0];
+            }
+            else
+            {
+                warnings.Add("single_view_required");
+                return new DimensionViewContext();
+            }
+        }
+
+        var viewScales = items
+            .Where(item => item.ViewId == effectiveViewId)
+            .Select(static item => item.ViewScale)
+            .Distinct()
+            .ToList();
+        var viewScale = viewScales.Count > 0 ? viewScales[0] : 0.0;
+        if (viewScales.Count > 1)
+            warnings.Add("view_scale_inconsistent");
+
+        var builder = new DimensionViewContextBuilder(
+            new TeklaDrawingPartGeometryApi(_model),
+            new TeklaDrawingBoltGeometryApi(_model));
+        return builder.Build(effectiveViewId.Value, viewScale);
     }
 
     private static void AttachLayoutPolicyDecisions(

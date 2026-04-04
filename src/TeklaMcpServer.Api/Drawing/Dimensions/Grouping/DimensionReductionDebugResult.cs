@@ -6,6 +6,7 @@ internal sealed class DimensionReductionDebugResult
 {
     public List<DimensionGroup> ReducedGroups { get; } = [];
     public List<DimensionGroupReductionDebugInfo> Groups { get; } = [];
+    public DimensionDecisionContext DecisionContext { get; set; } = new();
 }
 
 internal sealed class DimensionGroupReductionDebugInfo
