@@ -184,6 +184,12 @@ public sealed partial class TeklaDrawingDimensionsApi
         }));
 
         info.Segments.AddRange(snapshot.Segments.Select(ProjectDimensionSegmentSnapshotToReadModel));
+        info.SourceReferences.AddRange(snapshot.SourceReferences.Select(static source => new DimensionSourceReference
+        {
+            SourceKind = source.SourceKind,
+            DrawingObjectId = source.DrawingObjectId,
+            ModelId = source.ModelId
+        }));
         info.SourceObjectIds.AddRange(snapshot.SourceObjectIds);
         return info;
     }

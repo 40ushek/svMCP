@@ -72,6 +72,10 @@ public sealed class DimensionSnapshotProjectionTests
         Assert.Equal(snapshot.SourceKind, info.SourceKind);
         Assert.Equal(snapshot.GeometryKind, info.GeometryKind);
         Assert.Equal(snapshot.ClassifiedDimensionType, info.ClassifiedDimensionType);
+        var source = Assert.Single(info.SourceReferences);
+        Assert.Equal(DimensionSourceKind.Part, source.SourceKind);
+        Assert.Equal(501, source.DrawingObjectId);
+        Assert.Equal(9001, source.ModelId);
         Assert.Equal(snapshot.SourceObjectIds, info.SourceObjectIds);
         Assert.Equal(snapshot.MeasuredPoints.Count, info.MeasuredPoints.Count);
 

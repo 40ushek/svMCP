@@ -88,6 +88,27 @@ public sealed class DimensionGroupFactoryTests
     }
 
     [Fact]
+    public void BuildItems_FromReadModel_PreservesSourceReferences()
+    {
+        var dimension = CreateDimension(1, 10, "FrontView", "Horizontal", "horizontal", 40, 1, 0, -1, 0, -1, 0, 100, 5, 8, 105, 12);
+        dimension.SourceReferences.Add(new DimensionSourceReference
+        {
+            SourceKind = DimensionSourceKind.Part,
+            DrawingObjectId = 5001,
+            ModelId = 101
+        });
+        dimension.SourceObjectIds.Add(5001);
+
+        var item = Assert.Single(DimensionGroupFactory.BuildItems([dimension]));
+
+        var source = Assert.Single(item.SourceReferences);
+        Assert.Equal(DimensionSourceKind.Part, source.SourceKind);
+        Assert.Equal(5001, source.DrawingObjectId);
+        Assert.Equal(101, source.ModelId);
+        Assert.Equal([5001], item.SourceObjectIds);
+    }
+
+    [Fact]
     public void BuildItems_MapsRawTeklaTypeToDomainTypeUsingSourceAndGeometry()
     {
         var item = Assert.Single(DimensionGroupFactory.BuildItems(

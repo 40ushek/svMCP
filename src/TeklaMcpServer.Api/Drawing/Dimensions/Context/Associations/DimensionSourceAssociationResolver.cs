@@ -274,7 +274,7 @@ internal sealed class DimensionSourceAssociationResolver
 
     private void CollectSnapshotSourceCandidates(DimensionSourceAssociationResult result, DrawingDimensionInfo dimensionInfo)
     {
-        CollectSnapshotSourceCandidates(result, dimensionInfo.SourceKind, dimensionInfo.SourceObjectIds, dimensionInfo.ViewId);
+        CollectSnapshotSourceCandidates(result, dimensionInfo.SourceReferences, dimensionInfo.SourceKind, dimensionInfo.SourceObjectIds, dimensionInfo.ViewId);
     }
 
     private void CollectSnapshotSourceCandidates(
