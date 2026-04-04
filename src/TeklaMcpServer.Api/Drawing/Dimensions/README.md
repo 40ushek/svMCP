@@ -153,6 +153,14 @@ Arrangement apply logic is publicly surfaced as `arrange_dimensions`, and
 controlled dimension merging is publicly surfaced as `combine_dimensions`,
 while arrangement debug remains bridge/internal only.
 
+`get_dimension_ai_orchestration_plan` should be read narrowly:
+
+- it is implemented today
+- it is bridge/internal only
+- it is not part of the public MCP tool surface
+- it builds a debug-first action/recommendation plan
+- it does not perform autonomous execution
+
 Dimension reads/debug now use a bounded best-effort consistency retry after
 runtime mutations. This is internal only: public payloads are unchanged, but
 immediate rereads after `combine`, `create`, or `delete` should more reliably
@@ -164,6 +172,49 @@ No additional runtime orchestration is part of the current phase:
 - orchestration packets stay debug-only
 - AI-assisted orchestration plan stays debug-only
 - there is no auto-apply based on policy recommendations
+
+## Validated Findings
+
+The following runtime facts are already confirmed and should be treated as
+working constraints rather than open questions.
+
+- `viewScale` is read correctly from the owning view
+- paper-gap semantics are valid:
+  - paper gap in
+  - drawing gap via `viewScale`
+- current public default for `arrange_dimensions` is `10 mm` paper gap
+- `arrange_dimensions` has already been live-validated on real drawings:
+  - a second run with the same target gap can be idempotent
+  - push works when lines are too close
+  - pull works when lines are too far apart
+- negative `Distance` values occur on real drawings
+- sign semantics for negative-distance dimensions remain a known risk area for
+  future policy/layout work
+- line-based grouping and spacing foundation already exists
+
+## Observed Constraint: Native Dimension Text Position
+
+The following limitation is already confirmed on the validated Tekla API
+surface currently available to this module.
+
+- native dimension value text can be moved manually in Tekla
+- the moved text position is not currently observable through the checked Tekla
+  Open API surface
+
+Checked sources so far:
+
+- `StraightDimension.GetRelatedObjects()`
+- `StraightDimensionSet.GetRelatedObjects()`
+- recursive `GetObjects()` traversal where available
+- drawing presentation model text primitives
+- reflected public/nonpublic members on `StraightDimension`,
+  `StraightDimensionSet` and related attributes
+
+Consequence:
+
+- text polygon debug may use runtime text geometry when Tekla exposes it
+- otherwise text geometry remains synthetic fallback
+- this constraint should not distort the core domain redesign
 
 ## Document Split
 
