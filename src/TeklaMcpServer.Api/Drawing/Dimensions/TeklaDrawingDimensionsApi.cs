@@ -379,41 +379,28 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         DrawingLineInfo dimensionLine,
         FrameTypes frameType)
     {
-        var polygon = TrySelectTextPolygon(segment.GetRelatedObjects(), expectedText, dimensionLine, frameType);
-        if (polygon != null)
-            return polygon;
-
-        polygon = TrySelectTextPolygon(dimSet.GetRelatedObjects(), expectedText, dimensionLine, frameType);
-        if (polygon != null)
-            return polygon;
-
-        polygon = TrySelectTextPolygon(segment, expectedText, dimensionLine, frameType);
-        if (polygon != null)
-            return polygon;
-
-        return TrySelectTextPolygon(dimSet, expectedText, dimensionLine, frameType);
+        var candidates = DimensionTextBoxCollector.Collect(segment, dimSet, frameType);
+        return TrySelectTextPolygon(candidates, expectedText, dimensionLine);
     }
 
     private static List<double[]>? TrySelectTextPolygon(
-        DrawingObjectEnumerator relatedObjects,
+        IReadOnlyList<DimensionTextBoxCandidate> candidates,
         string expectedText,
-        DrawingLineInfo dimensionLine,
-        FrameTypes frameType)
+        DrawingLineInfo dimensionLine)
     {
         var exactMatches = new List<(double Score, List<double[]> Polygon)>();
         var fallbackMatches = new List<(double Score, List<double[]> Polygon)>();
-        while (relatedObjects.MoveNext())
+
+        foreach (var candidate in candidates)
         {
-            if (!TryCreateRelatedTextCandidate(relatedObjects.Current, frameType, out var candidateText, out var polygon))
-                continue;
-            var score = ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine);
-            if (MatchesDimensionText(candidateText, expectedText))
+            var score = ScoreTextPolygonAgainstDimensionLine(candidate.Polygon, dimensionLine);
+            if (MatchesDimensionText(candidate.Text, expectedText))
             {
-                exactMatches.Add((score, polygon));
+                exactMatches.Add((score, candidate.Polygon));
                 continue;
             }
 
-            fallbackMatches.Add((score, polygon));
+            fallbackMatches.Add((score, candidate.Polygon));
         }
 
         if (exactMatches.Count > 0)
@@ -422,127 +409,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return fallbackMatches.Count == 1
             ? fallbackMatches[0].Polygon
             : null;
-    }
-
-    private static List<double[]>? TrySelectTextPolygon(
-        DrawingObject owner,
-        string expectedText,
-        DrawingLineInfo dimensionLine,
-        FrameTypes frameType)
-    {
-        var exactMatches = new List<(double Score, List<double[]> Polygon)>();
-        var fallbackMatches = new List<(double Score, List<double[]> Polygon)>();
-
-        foreach (var candidate in EnumerateNestedDrawingObjects(owner))
-        {
-            if (!TryCreateRelatedTextCandidate(candidate, frameType, out var candidateText, out var polygon))
-                continue;
-
-            var score = ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine);
-            if (MatchesDimensionText(candidateText, expectedText))
-            {
-                exactMatches.Add((score, polygon));
-                continue;
-            }
-
-            fallbackMatches.Add((score, polygon));
-        }
-
-        if (exactMatches.Count > 0)
-            return exactMatches.OrderBy(static candidate => candidate.Score).First().Polygon;
-
-        return fallbackMatches.Count == 1
-            ? fallbackMatches[0].Polygon
-            : null;
-    }
-
-    private static IEnumerable<object?> EnumerateNestedDrawingObjects(object owner)
-    {
-        if (!TryGetChildObjects(owner, out var children))
-        {
-            yield break;
-        }
-
-        while (children.MoveNext())
-        {
-            var child = children.Current;
-            yield return child;
-
-            if (child != null)
-            {
-                foreach (var nestedChild in EnumerateNestedDrawingObjects(child))
-                    yield return nestedChild;
-            }
-        }
-    }
-
-    private static bool TryGetChildObjects(object owner, out DrawingObjectEnumerator children)
-    {
-        children = null!;
-
-        try
-        {
-            var getObjectsMethod = owner.GetType().GetMethod(
-                "GetObjects",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public,
-                binder: null,
-                types: System.Type.EmptyTypes,
-                modifiers: null);
-            if (getObjectsMethod?.Invoke(owner, null) is not DrawingObjectEnumerator enumerator)
-                return false;
-
-            children = enumerator;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool TryCreateRelatedTextCandidate(
-        object? relatedObject,
-        FrameTypes frameType,
-        out string? textValue,
-        out List<double[]> polygon)
-    {
-        textValue = null;
-        polygon = [];
-        if (relatedObject == null)
-            return false;
-
-        try
-        {
-            if (relatedObject is Text text)
-            {
-                textValue = text.TextString;
-                polygon = CreatePolygonFromObjectAlignedBox(text.GetObjectAlignedBoundingBox(), frameType);
-                return true;
-            }
-
-            var type = relatedObject.GetType();
-            var textProperty = type.GetProperty(
-                "TextString",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-            var looksLikeText = textProperty != null
-                || type.Name.IndexOf("Text", System.StringComparison.OrdinalIgnoreCase) >= 0;
-            if (!looksLikeText)
-                return false;
-
-            var objectAlignedMethod = type.GetMethod(
-                "GetObjectAlignedBoundingBox",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
-            if (objectAlignedMethod?.Invoke(relatedObject, null) is not RectangleBoundingBox objectAlignedBoundingBox)
-                return false;
-
-            textValue = textProperty?.GetValue(relatedObject, null)?.ToString();
-            polygon = CreatePolygonFromObjectAlignedBox(objectAlignedBoundingBox, frameType);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static bool MatchesDimensionText(string? candidateText, string expectedText)
@@ -737,7 +603,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             .ToList();
     }
 
-    private static List<double[]> CreatePolygonFromObjectAlignedBox(
+    internal static List<double[]> CreatePolygonFromObjectAlignedBox(
         RectangleBoundingBox objectAlignedBoundingBox,
         FrameTypes frameType)
     {

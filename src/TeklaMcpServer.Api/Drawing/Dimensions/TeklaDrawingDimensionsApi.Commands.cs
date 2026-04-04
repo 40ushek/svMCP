@@ -132,10 +132,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                         expectedText = TryGetMeasuredValueText(segment, dimSet, ownerView) ?? string.Empty;
 
                     var candidateList = new List<RelatedTextCandidateDebugInfo>();
-                    CollectRelatedTextDebug(candidateList, segment.GetRelatedObjects(), "segment", expectedText, segmentInfo.DimensionLine);
-                    CollectRelatedTextDebug(candidateList, dimSet.GetRelatedObjects(), "dimensionSet", expectedText, segmentInfo.DimensionLine);
-                    CollectNestedTextDebug(candidateList, segment, "segment.objects", expectedText, segmentInfo.DimensionLine);
-                    CollectNestedTextDebug(candidateList, dimSet, "dimensionSet.objects", expectedText, segmentInfo.DimensionLine);
+                    var runtimeTextBoxes = DimensionTextBoxCollector.Collect(segment, dimSet, FrameTypes.None);
+                    CollectRuntimeTextDebug(candidateList, runtimeTextBoxes, expectedText, segmentInfo.DimensionLine);
                     CollectPresentationTextDebug(candidateList, presentationConnection, segment.GetIdentifier().ID, "presentation:segment", expectedText, segmentInfo.DimensionLine);
                     CollectPresentationTextDebug(candidateList, presentationConnection, currentDimensionId, "presentation:dimensionSet", expectedText, segmentInfo.DimensionLine);
 
@@ -215,20 +213,33 @@ public sealed partial class TeklaDrawingDimensionsApi
                 foreach (var segment in segments)
                 {
                     var info = BuildSegmentInfo(segment, dimSet, dimSet.Distance, lineContext);
-                    var polygon = TryCreateTextPolygon(segment, dimSet, info.DimensionLine);
-                    if (polygon == null || polygon.Count < 4)
+                    var polygons = DimensionTextBoxCollector.Collect(segment, dimSet, FrameTypes.None)
+                        .Select(static candidate => candidate.Polygon)
+                        .Where(static polygon => polygon.Count >= 4)
+                        .ToList();
+                    if (polygons.Count == 0)
+                    {
+                        var fallback = TryCreateTextPolygon(segment, dimSet, info.DimensionLine);
+                        if (fallback != null && fallback.Count >= 4)
+                            polygons.Add(fallback);
+                    }
+
+                    if (polygons.Count == 0)
                         continue;
 
-                    request.Shapes.Add(new DrawingDebugShape
+                    foreach (var polygon in polygons)
                     {
-                        Kind = "polygon",
-                        ViewId = ownerViewId,
-                        Points = polygon,
-                        Color = normalizedColor,
-                        LineType = "DashDot"
-                    });
+                        request.Shapes.Add(new DrawingDebugShape
+                        {
+                            Kind = "polygon",
+                            ViewId = ownerViewId,
+                            Points = polygon,
+                            Color = normalizedColor,
+                            LineType = "DashDot"
+                        });
 
-                    segmentCount++;
+                        segmentCount++;
+                    }
                     dimensionIds.Add(currentDimensionId);
                 }
             }
@@ -264,32 +275,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
-    private static void CollectRelatedTextDebug(
-        List<RelatedTextCandidateDebugInfo> target,
-        DrawingObjectEnumerator relatedObjects,
-        string owner,
-        string expectedText,
-        DrawingLineInfo? dimensionLine)
-    {
-        while (relatedObjects.MoveNext())
-        {
-            if (!TryCreateRelatedTextCandidate(relatedObjects.Current, FrameTypes.None, out var candidateText, out var polygon))
-                continue;
-
-            var center = GetPolygonCenter(polygon);
-            target.Add(new RelatedTextCandidateDebugInfo
-            {
-                Owner = owner,
-                Type = relatedObjects.Current.GetType().FullName ?? relatedObjects.Current.GetType().Name,
-                Text = candidateText ?? string.Empty,
-                MatchesExpected = MatchesDimensionText(candidateText, expectedText),
-                Score = dimensionLine == null ? double.MaxValue : ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine),
-                CenterX = System.Math.Round(center.X, 3),
-                CenterY = System.Math.Round(center.Y, 3)
-            });
-        }
-    }
-
     private void CollectDimensionSourceCandidates(
         List<DimensionSourceCandidateInfo> target,
         DrawingObjectEnumerator? relatedObjects,
@@ -321,26 +306,22 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
-    private static void CollectNestedTextDebug(
+    private static void CollectRuntimeTextDebug(
         List<RelatedTextCandidateDebugInfo> target,
-        object ownerObject,
-        string owner,
+        IReadOnlyList<DimensionTextBoxCandidate> candidates,
         string expectedText,
         DrawingLineInfo? dimensionLine)
     {
-        foreach (var candidate in EnumerateNestedDrawingObjects(ownerObject))
+        foreach (var candidate in candidates)
         {
-            if (!TryCreateRelatedTextCandidate(candidate, FrameTypes.None, out var candidateText, out var polygon))
-                continue;
-
-            var center = GetPolygonCenter(polygon);
+            var center = GetPolygonCenter(candidate.Polygon);
             target.Add(new RelatedTextCandidateDebugInfo
             {
-                Owner = owner,
-                Type = candidate?.GetType().FullName ?? candidate?.GetType().Name ?? string.Empty,
-                Text = candidateText ?? string.Empty,
-                MatchesExpected = MatchesDimensionText(candidateText, expectedText),
-                Score = dimensionLine == null ? double.MaxValue : ScoreTextPolygonAgainstDimensionLine(polygon, dimensionLine),
+                Owner = candidate.Owner,
+                Type = candidate.Type,
+                Text = candidate.Text,
+                MatchesExpected = MatchesDimensionText(candidate.Text, expectedText),
+                Score = dimensionLine == null ? double.MaxValue : ScoreTextPolygonAgainstDimensionLine(candidate.Polygon, dimensionLine),
                 CenterX = System.Math.Round(center.X, 3),
                 CenterY = System.Math.Round(center.Y, 3)
             });
