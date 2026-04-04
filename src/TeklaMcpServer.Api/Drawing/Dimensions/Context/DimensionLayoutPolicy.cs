@@ -15,6 +15,9 @@ internal sealed class DimensionLayoutPolicyDecision
     public DimensionLayoutPolicyStatus Status { get; set; }
     public string Reason { get; set; } = string.Empty;
     public int? PreferredDimensionId { get; set; }
+    public bool CombineCandidate { get; set; }
+    public string CombineReason { get; set; } = string.Empty;
+    public List<int> CombineWithDimensionIds { get; } = [];
 }
 
 internal sealed class DimensionLayoutPolicy
@@ -87,6 +90,50 @@ internal static class DimensionLayoutPolicyEvaluator
         }
 
         return decisions;
+    }
+
+    public static void AttachCombineCandidates(
+        IReadOnlyDictionary<int, DimensionItem> itemsByDimensionId,
+        IReadOnlyDictionary<DimensionItem, DimensionLayoutPolicyDecision> decisions,
+        IReadOnlyList<DimensionCombineCandidateDebugInfo> combineCandidates)
+    {
+        foreach (var candidate in combineCandidates)
+        {
+            if (!candidate.IsCombineCandidate || candidate.DimensionIds.Count <= 1)
+                continue;
+
+            var matchedItems = candidate.DimensionIds
+                .Where(itemsByDimensionId.ContainsKey)
+                .Select(dimensionId => itemsByDimensionId[dimensionId])
+                .Distinct()
+                .ToList();
+            if (matchedItems.Count <= 1)
+                continue;
+
+            foreach (var item in matchedItems)
+            {
+                if (!decisions.TryGetValue(item, out var decision))
+                    continue;
+
+                decision.CombineCandidate = true;
+                if (string.IsNullOrWhiteSpace(decision.CombineReason) &&
+                    !string.IsNullOrWhiteSpace(candidate.CombineConnectivityMode))
+                {
+                    decision.CombineReason = candidate.CombineConnectivityMode;
+                }
+
+                foreach (var other in matchedItems)
+                {
+                    if (ReferenceEquals(other, item))
+                        continue;
+
+                    if (!decision.CombineWithDimensionIds.Contains(other.DimensionId))
+                        decision.CombineWithDimensionIds.Add(other.DimensionId);
+                }
+
+                decision.CombineWithDimensionIds.Sort();
+            }
+        }
     }
 
     private static void ApplyEquivalentGeometryPreferences(

@@ -80,6 +80,21 @@ public sealed class DimensionContextBuilderTests
         Assert.Contains("missing", context.AssociationWarnings);
     }
 
+    [Fact]
+    public void Build_UsesSnapshotCandidatesForPointAssociations()
+    {
+        var builder = CreateBuilder(new FakePartPointApi(new Dictionary<int, GetPartPointsResult>
+        {
+            [101] = CreatePartPointsResult(101, [0, 0], [100, 40])
+        }));
+        var item = CreatePartItem(1, referenceY: -20);
+
+        var context = builder.Build(item);
+
+        Assert.Equal(2, context.PointAssociations.Count);
+        Assert.All(context.PointAssociations, static association => Assert.Equal(DimensionPointObjectMappingStatus.Matched, association.Status));
+    }
+
     private static DimensionContextBuilder CreateBuilder(IDrawingPartPointApi partPointApi)
     {
         return new DimensionContextBuilder(new DimensionSourceAssociationResolver(null, partPointApi));

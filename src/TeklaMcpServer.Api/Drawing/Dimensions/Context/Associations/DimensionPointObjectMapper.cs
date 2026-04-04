@@ -68,6 +68,12 @@ internal sealed class DimensionPointObjectMapper
         if (dimensionSetPool.Count > 0)
             return dimensionSetPool;
 
+        var snapshotPool = DistinctCandidates(candidates
+            .Where(static candidate => string.Equals(candidate.Owner, "snapshot", System.StringComparison.Ordinal))
+            .ToList());
+        if (snapshotPool.Count > 0)
+            return snapshotPool;
+
         return [];
     }
 

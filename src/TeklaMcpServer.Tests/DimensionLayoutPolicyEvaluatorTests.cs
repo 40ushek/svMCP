@@ -63,6 +63,81 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         Assert.Equal(2001, decisions[duplicate].PreferredDimensionId);
     }
 
+    [Fact]
+    public void AttachCombineCandidates_MarksMergeableItemsAndKeepsStatus()
+    {
+        var richer = CreateItem(1001, [0, 50, 100], [101]);
+        var poorer = CreateItem(1002, [0, 100], [101]);
+        var contexts = new Dictionary<DimensionItem, DimensionContext>
+        {
+            [richer] = CreateContext(richer, 101),
+            [poorer] = CreateContext(poorer, 101)
+        };
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate([richer, poorer], contexts);
+        var itemsById = new Dictionary<int, DimensionItem>
+        {
+            [richer.DimensionId] = richer,
+            [poorer.DimensionId] = poorer
+        };
+        var combineCandidates = new[]
+        {
+            new DimensionCombineCandidateDebugInfo
+            {
+                IsCombineCandidate = true,
+                CombineConnectivityMode = "shared_point_neighbor_set",
+                DimensionIds = { richer.DimensionId, poorer.DimensionId }
+            }
+        };
+
+        DimensionLayoutPolicyEvaluator.AttachCombineCandidates(itemsById, decisions, combineCandidates);
+
+        Assert.True(decisions[richer].CombineCandidate);
+        Assert.Equal("shared_point_neighbor_set", decisions[richer].CombineReason);
+        Assert.Equal([poorer.DimensionId], decisions[richer].CombineWithDimensionIds);
+        Assert.Equal(DimensionLayoutPolicyStatus.Preferred, decisions[richer].Status);
+
+        Assert.True(decisions[poorer].CombineCandidate);
+        Assert.Equal("shared_point_neighbor_set", decisions[poorer].CombineReason);
+        Assert.Equal([richer.DimensionId], decisions[poorer].CombineWithDimensionIds);
+        Assert.Equal(DimensionLayoutPolicyStatus.LessPreferred, decisions[poorer].Status);
+    }
+
+    [Fact]
+    public void AttachCombineCandidates_IgnoresBlockedCandidates()
+    {
+        var left = CreateItem(1001, [0, 100], [101]);
+        var right = CreateItem(1002, [100, 200], [101]);
+        var contexts = new Dictionary<DimensionItem, DimensionContext>
+        {
+            [left] = CreateContext(left, 101),
+            [right] = CreateContext(right, 101)
+        };
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate([left, right], contexts);
+        var itemsById = new Dictionary<int, DimensionItem>
+        {
+            [left.DimensionId] = left,
+            [right.DimensionId] = right
+        };
+        var combineCandidates = new[]
+        {
+            new DimensionCombineCandidateDebugInfo
+            {
+                IsCombineCandidate = false,
+                CombineConnectivityMode = "blocked_case",
+                DimensionIds = { left.DimensionId, right.DimensionId }
+            }
+        };
+
+        DimensionLayoutPolicyEvaluator.AttachCombineCandidates(itemsById, decisions, combineCandidates);
+
+        Assert.False(decisions[left].CombineCandidate);
+        Assert.False(decisions[right].CombineCandidate);
+        Assert.Empty(decisions[left].CombineWithDimensionIds);
+        Assert.Empty(decisions[right].CombineWithDimensionIds);
+    }
+
     private static DimensionItem CreateItem(int dimensionId, double[] positions, int[] sourceIds)
     {
         var dimension = new DrawingDimensionInfo
