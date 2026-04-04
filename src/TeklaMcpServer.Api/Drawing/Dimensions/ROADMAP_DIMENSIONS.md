@@ -183,6 +183,13 @@ Confirmed on the current implementation and live drawings:
   - paper gap in
   - drawing gap via `viewScale`
 - current public default for `arrange_dimensions` is `10 mm` paper gap
+- `arrange_dimensions` live validated on real drawings:
+  - idempotent: second run with same targetGap produces `appliedCount: 0`
+  - push works: lines too close are moved outward
+  - pull works: lines too far apart are moved inward toward target gap
+- negative `Distance` values occur on real drawings (observed: `distance=-280.467`
+  on a Horizontal/Relative dimension); sign semantics for
+  negative-distance dimensions remains a risk area for future policy/layout work
 - line-based grouping/spacing foundation already exists
 
 Confirmed limitation for native dimension value text:
@@ -529,15 +536,6 @@ Current status:
 
 Эта часть в основном уже есть в `dim` как источник правил и приемов.
 
-Текущее состояние:
-
-- `alignment normalizer` уже умеет строить общий planning cluster и общую
-  опорную линию для близких размеров
-- `runtime distance normalizer` уже умеет приводить близкие размеры внутри
-  поддерживаемого align-кластера к `Distance` anchor-размера
-- вся эта логика пока сознательно ограничена только консервативными
-  поддерживаемыми осевыми параллельными случаями
-
 ### 2. Более умная раздвижка
 
 После нормализации:
@@ -620,54 +618,81 @@ Current status:
 - часть новых dimension tests нельзя считать надежно подтвержденными, пока test
   project не станет стабильно rebuild-иться
 
-## Архитектурное разделение: `Dedup` / `Layout Policy` / `Orchestrator`
+## Архитектурная граница ответственности
 
-Это стоит держать как отдельную границу ответственности.
+Текущий устойчивый принцип такой:
 
-### `Dedup`
+- `Dedup` отвечает только за явные дубли и остается консервативным
+- спорные решения уходят в `Layout Policy`
+- верхний порядок шагов собирает `Arrangement Orchestrator`
 
-Удаление дублей должно оставаться простым, консервативным и безопасным.
+Ниже этот следующий этап уже разложен подробнее как согласованный roadmap.
 
-`Dedup` отвечает только за явные дубли:
+## Кратко согласованный roadmap
 
-- почти одинаковая геометрия
-- тот же смысл размера
-- тот же тип и совместимый источник
-- удаление одного размера не меняет смысл dimension set'а
+### 1. `Dedup`
 
-`Dedup` не должен принимать спорные редакционные решения.
+- убирать только явные дубли
+- не принимать спорные layout-решения
+- оставаться простым, консервативным и безопасным
 
-### `Layout Policy`
+### 2. `Dimension Context`
 
-Все неочевидные случаи должны решаться не через `Dedup`, а через отдельную
-policy-логику.
+У каждого размера должен появиться собственный контекст.
 
-Сюда относятся:
+Минимально он должен отвечать на вопросы:
+
+- что именно размерится
+- от каких точек построен размер
+- какие детали / болты / grid / control-объекты являются источником
+- какая локальная геометрия и видимые границы относятся к этому размеру
+- внешний это размер, внутренний, bolt-chain, control dimension или другой
+  сценарий
+
+Без этого более умный layout остается полуслепым.
+
+### 3. `Layout Policy`
+
+Правила layout должны зависеть от контекста размера.
+
+Сюда входят решения:
 
 - richer chain vs poorer chain
-- partial overlap между цепочками
-- subchain внутри более богатой цепочки
-- `absolute` vs `relative`
-- решение, что оставить, что объединить, что скрыть, а что только раздвигать
+- partial overlap / subchain
+- part vs bolt vs control vs grid
+- что оставить, что скрыть, что объединить, а что только раздвигать
 
-Это уже не "удаление дубля", а осознанная политика layout/редукции.
+### 4. `Candidate Placements`
 
-### `Arrangement Orchestrator`
+Для размера или stack нужно генерировать несколько допустимых вариантов:
 
-Нужен верхний слой, который собирает pipeline из отдельных безопасных шагов.
+- оставить как есть
+- придвинуть ближе
+- отодвинуть дальше
+- сменить сторону
+- использовать специальные варианты для отдельных source/type сценариев
 
-Базовая последовательность должна быть такой:
+### 5. `Cost Function`
+
+Лучший вариант должен выбираться не по одному правилу, а по штрафам.
+
+Минимально нужно учитывать:
+
+- пересечения с геометрией
+- пересечения с текстом размеров
+- пересечения с marks и другими annotation objects
+- излишний разлет stack-а
+- компактность и читаемость
+
+### 6. `Arrangement Orchestrator`
+
+Верхний pipeline должен постепенно стать таким:
 
 - `dedup`
+- `dimension context`
 - `layout policy`
 - `combine`
 - `arrange`
-
-То есть:
-
-- `Dedup` отвечает за очевидный мусор
-- `Layout Policy` отвечает за спорные и редакционные решения
-- `Orchestrator` отвечает за порядок шагов и согласованность всего pipeline
 
 ## Следующий backlog
 
@@ -675,7 +700,7 @@ policy-логику.
 
 - live validation `combine_dimensions`
 - live validation rollback/delete/create path
-- confirm `arrange_dimensions` behavior on real drawings
+- `arrange_dimensions` behavior on real drawings: validated
 
 ### 2. Improve arrangement quality
 
