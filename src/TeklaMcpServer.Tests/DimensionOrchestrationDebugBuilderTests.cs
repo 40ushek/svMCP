@@ -99,6 +99,24 @@ public sealed class DimensionOrchestrationDebugBuilderTests
         Assert.Equal(2001, packet.PrimaryDimensionId);
     }
 
+    [Fact]
+    public void Build_UsesDecisionContextViewAndWarningsWhenViewArgumentIsMissing()
+    {
+        var debug = new DimensionReductionDebugResult();
+        var group = CreateGroup(10, DimensionType.Vertical);
+        group.Items.Add(CreateItem(2001, "kept", "kept", DimensionLayoutPolicyStatus.Neutral, "neutral", DimensionRecommendedAction.Keep, DimensionCombineClassification.None));
+        debug.Groups.Add(group);
+        debug.DecisionContext.View.ViewId = 10;
+        debug.DecisionContext.Warnings.Add("single_view_required");
+        debug.DecisionContext.View.Warnings.Add("bolt-part:101:missing");
+
+        var result = DimensionOrchestrationDebugBuilder.Build(debug, viewId: null);
+
+        Assert.Equal(10, result.ViewId);
+        Assert.Contains("single_view_required", result.Warnings);
+        Assert.Contains("bolt-part:101:missing", result.Warnings);
+    }
+
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)
     {
         return new DimensionGroupReductionDebugInfo

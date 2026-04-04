@@ -39,4 +39,5 @@ internal sealed class DimensionOrchestrationDebugResult
 {
     public int? ViewId { get; set; }
     public List<DimensionOrchestrationActionPacket> Packets { get; } = [];
+    public List<string> Warnings { get; } = [];
 }

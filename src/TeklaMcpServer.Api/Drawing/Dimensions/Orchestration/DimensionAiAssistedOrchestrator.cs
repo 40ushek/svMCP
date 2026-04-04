@@ -7,32 +7,38 @@ internal sealed class DimensionAiAssistedOrchestrator
 {
     public DimensionAiOrchestrationPlanResult Build(DimensionReductionDebugResult debug, int? viewId)
     {
+        var effectiveViewId = viewId ?? debug.DecisionContext.View.ViewId;
         var result = new DimensionAiOrchestrationPlanResult
         {
-            ViewId = viewId
+            ViewId = effectiveViewId
         };
+        foreach (var warning in debug.DecisionContext.Warnings.Concat(debug.DecisionContext.View.Warnings).Distinct())
+            result.Warnings.Add(warning);
 
-        var packets = DimensionOrchestrationDebugBuilder.Build(debug, viewId).Packets;
+        var packets = DimensionOrchestrationDebugBuilder.Build(debug, effectiveViewId).Packets;
         var itemsById = debug.Groups
             .SelectMany(static group => group.Items)
             .Where(static item => item.Item != null)
             .GroupBy(static item => item.Item.DimensionId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+        var contextsById = debug.DecisionContext.Dimensions
+            .GroupBy(static context => context.DimensionId)
             .ToDictionary(static group => group.Key, static group => group.First());
 
         var stepOrder = 1;
 
         foreach (var packet in packets.Where(static packet => packet.Action == DimensionOrchestrationAction.Combine))
         {
-            var step = CreateCombineStep(packet, itemsById, stepOrder++);
+            var step = CreateCombineStep(packet, itemsById, contextsById, stepOrder++);
             result.Steps.Add(step);
 
-            var arrangeStep = CreateArrangeFollowUpStep(packet, itemsById, stepOrder++);
+            var arrangeStep = CreateArrangeFollowUpStep(packet, itemsById, contextsById, stepOrder++);
             result.Steps.Add(arrangeStep);
         }
 
         foreach (var packet in packets.Where(static packet => packet.Action == DimensionOrchestrationAction.Suppress || packet.Action == DimensionOrchestrationAction.Review))
         {
-            result.Steps.Add(CreateReviewStep(packet, itemsById, stepOrder++));
+            result.Steps.Add(CreateReviewStep(packet, itemsById, contextsById, stepOrder++));
         }
 
         return result;
@@ -41,9 +47,10 @@ internal sealed class DimensionAiAssistedOrchestrator
     private static DimensionAiOrchestrationPlanStep CreateCombineStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.Combine);
+        var step = CreateBaseStep(packet, itemsById, contextsById, stepOrder, DimensionAiAssistedAction.Combine);
         step.ToolName = "combine_dimensions";
         step.PreviewOnly = true;
         step.ToolArguments = new DimensionAiOrchestrationToolArguments
@@ -64,9 +71,10 @@ internal sealed class DimensionAiAssistedOrchestrator
     private static DimensionAiOrchestrationPlanStep CreateArrangeFollowUpStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.Arrange);
+        var step = CreateBaseStep(packet, itemsById, contextsById, stepOrder, DimensionAiAssistedAction.Arrange);
         step.Reason = "post_combine_arrange_followup";
         step.Source = "ai_orchestrator";
         step.ToolName = "arrange_dimensions";
@@ -86,9 +94,10 @@ internal sealed class DimensionAiAssistedOrchestrator
     private static DimensionAiOrchestrationPlanStep CreateReviewStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.ReviewOnly);
+        var step = CreateBaseStep(packet, itemsById, contextsById, stepOrder, DimensionAiAssistedAction.ReviewOnly);
         step.PreviewOnly = true;
         return step;
     }
@@ -96,10 +105,12 @@ internal sealed class DimensionAiAssistedOrchestrator
     private static DimensionAiOrchestrationPlanStep CreateBaseStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
         int stepOrder,
         DimensionAiAssistedAction action)
     {
         itemsById.TryGetValue(packet.PrimaryDimensionId, out var primaryItem);
+        contextsById.TryGetValue(packet.PrimaryDimensionId, out var primaryContext);
         var step = new DimensionAiOrchestrationPlanStep
         {
             StepOrder = stepOrder,
@@ -109,7 +120,7 @@ internal sealed class DimensionAiAssistedOrchestrator
             DimensionType = packet.DimensionType,
             Reason = packet.Reason,
             Source = packet.Source,
-            Evidence = CreateEvidence(packet.Evidence, primaryItem?.Context)
+            Evidence = CreateEvidence(packet.Evidence, primaryContext ?? primaryItem?.Context)
         };
 
         step.DimensionIds.AddRange(packet.DimensionIds);

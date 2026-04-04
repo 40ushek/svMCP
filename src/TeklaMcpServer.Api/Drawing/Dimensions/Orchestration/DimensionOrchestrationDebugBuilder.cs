@@ -7,23 +7,20 @@ internal static class DimensionOrchestrationDebugBuilder
 {
     public static DimensionOrchestrationDebugResult Build(DimensionReductionDebugResult debug, int? viewId)
     {
+        var effectiveViewId = viewId ?? debug.DecisionContext.View.ViewId;
         var result = new DimensionOrchestrationDebugResult
         {
-            ViewId = viewId
+            ViewId = effectiveViewId
         };
+        foreach (var warning in debug.DecisionContext.Warnings.Concat(debug.DecisionContext.View.Warnings).Distinct())
+            result.Warnings.Add(warning);
 
-        var orderedItems = debug.Groups
+        var itemsById = debug.Groups
             .SelectMany(static group => group.Items)
             .Where(static item => item.Item != null)
             .GroupBy(static item => item.Item.DimensionId)
-            .Select(static grouping => grouping.First())
-            .OrderBy(static item => item.Item.ViewId)
-            .ThenBy(static item => item.Item.DimensionType)
-            .ThenBy(static item => item.Item.SortKey)
-            .ThenBy(static item => item.Item.DimensionId)
-            .ToList();
-
-        var itemsById = orderedItems.ToDictionary(static item => item.Item.DimensionId);
+            .ToDictionary(static grouping => grouping.Key, static grouping => grouping.First());
+        var orderedItems = OrderItems(debug.DecisionContext, itemsById);
         var claimedDimensionIds = new HashSet<int>();
 
         foreach (var packet in BuildCombinePackets(debug.Groups, itemsById, claimedDimensionIds))
@@ -39,6 +36,27 @@ internal static class DimensionOrchestrationDebugBuilder
             result.Packets.Add(packet);
 
         return result;
+    }
+
+    private static List<DimensionReductionItemDebugInfo> OrderItems(
+        DimensionDecisionContext decisionContext,
+        IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById)
+    {
+        if (decisionContext.Dimensions.Count > 0)
+        {
+            return decisionContext.Dimensions
+                .Select(context => itemsById.TryGetValue(context.DimensionId, out var item) ? item : null)
+                .Where(static item => item != null)
+                .Distinct()
+                .ToList()!;
+        }
+
+        return itemsById.Values
+            .OrderBy(static item => item.Item.ViewId)
+            .ThenBy(static item => item.Item.DimensionType)
+            .ThenBy(static item => item.Item.SortKey)
+            .ThenBy(static item => item.Item.DimensionId)
+            .ToList();
     }
 
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildCombinePackets(

@@ -59,4 +59,5 @@ internal sealed class DimensionAiOrchestrationPlanResult
 {
     public int? ViewId { get; set; }
     public List<DimensionAiOrchestrationPlanStep> Steps { get; } = [];
+    public List<string> Warnings { get; } = [];
 }

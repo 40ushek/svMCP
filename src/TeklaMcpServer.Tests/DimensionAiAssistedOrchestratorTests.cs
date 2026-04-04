@@ -98,6 +98,27 @@ public sealed class DimensionAiAssistedOrchestratorTests
         Assert.True(evidence.HasTextBounds);
     }
 
+    [Fact]
+    public void Build_UsesDecisionContextAndWarningsWhenAvailable()
+    {
+        var debug = new DimensionReductionDebugResult();
+        var group = CreateGroup(10, DimensionType.Vertical);
+        group.Items.Add(CreateItem(2001, "kept", "kept", DimensionLayoutPolicyStatus.Preferred, "covers_poorer_chain", DimensionRecommendedAction.PreferCombine, DimensionCombineClassification.InformationPreservingMerge));
+        group.Items.Add(CreateItem(2002, "kept", "kept", DimensionLayoutPolicyStatus.LessPreferred, "subchain_of_richer_dimension", DimensionRecommendedAction.PreferCombine, DimensionCombineClassification.InformationPreservingMerge));
+        group.CombineCandidates.Add(CreateCombineCandidate(new[] { 2001, 2002 }, "shared_point_neighbor_set", 2001));
+        debug.Groups.Add(group);
+        debug.DecisionContext.View.ViewId = 10;
+        debug.DecisionContext.Warnings.Add("single_view_required");
+        debug.DecisionContext.Dimensions.Add(CreateContext(group.Items[0].Item));
+
+        var result = new DimensionAiAssistedOrchestrator().Build(debug, viewId: null);
+
+        Assert.Equal(10, result.ViewId);
+        Assert.Contains("single_view_required", result.Warnings);
+        Assert.NotNull(result.Steps[0].Evidence.LineDirection);
+        Assert.Equal(1, result.Steps[0].Evidence.SegmentGeometryCount);
+    }
+
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)
     {
         return new DimensionGroupReductionDebugInfo
