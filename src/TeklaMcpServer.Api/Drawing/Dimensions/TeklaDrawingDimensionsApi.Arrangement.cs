@@ -18,16 +18,12 @@ public sealed partial class TeklaDrawingDimensionsApi
         var rawGroups = GetArrangeGroups(viewId);
         var dedup = DimensionArrangementDedup.ReduceWithDebug(rawGroups);
         var groups = dedup.ReducedGroups;
-        var arrangeItems = groups
-            .SelectMany(static group => group.DimensionList)
-            .Distinct()
-            .ToList();
-        var decisionContext = BuildDecisionContext(arrangeItems, viewId);
+        var decisionContext = BuildArrangeDecisionContext(groups, viewId);
         var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
         var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
         var plans = stacks.Select(stack =>
         {
-            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext);
             return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
         }).ToList();
 
@@ -310,17 +306,21 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId))
-            .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap))
+        var groups = GetArrangeGroupsDeduped(viewId);
+        var decisionContext = BuildArrangeDecisionContext(groups, viewId);
+        return DimensionGroupSpacingAnalyzer.BuildStacks(groups)
+            .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext))
             .ToList();
     }
 
     internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
     {
-        return DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId))
+        var groups = GetArrangeGroupsDeduped(viewId);
+        var decisionContext = BuildArrangeDecisionContext(groups, viewId);
+        return DimensionGroupSpacingAnalyzer.BuildStacks(groups)
             .Select(stack =>
             {
-                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext);
                 return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
             })
             .ToList();
@@ -356,7 +356,9 @@ public sealed partial class TeklaDrawingDimensionsApi
         int anchorDimensionId,
         double targetGap = DefaultArrangeTargetGapPaper)
     {
-        var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(GetArrangeGroupsDeduped(viewId));
+        var groups = GetArrangeGroupsDeduped(viewId);
+        var decisionContext = BuildArrangeDecisionContext(groups, viewId);
+        var stacks = DimensionGroupSpacingAnalyzer.BuildStacks(groups);
         var stack = stacks.FirstOrDefault(candidate => candidate.Groups.Any(group => group.Members.Any(member => member.DimensionId == anchorDimensionId)));
         if (stack == null)
         {
@@ -366,7 +368,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             };
         }
 
-        var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap);
+        var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext);
         var plan = DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
         var applicableProposals = plan.Proposals
             .Where(static proposal => proposal.CanApply && System.Math.Abs(proposal.DistanceDelta) >= 1e-9)
@@ -406,6 +408,17 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
         result.AppliedDimensionIds.AddRange(arrangeResult.Applied.Select(static item => item.DimensionId));
         return result;
+    }
+
+    private DimensionDecisionContext BuildArrangeDecisionContext(
+        IReadOnlyList<DimensionGroup> groups,
+        int? requestedViewId)
+    {
+        var items = groups
+            .SelectMany(static group => group.DimensionList)
+            .Distinct()
+            .ToList();
+        return BuildDecisionContext(items, requestedViewId);
     }
 
     private static ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(

@@ -53,6 +53,35 @@ public sealed class DimensionGroupArrangementPlannerTests
     }
 
     [Fact]
+    public void BuildPlan_ForStack_PrefersDecisionContextViewScale()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 10, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 20, 0, 100, 0));
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 20
+            }
+        };
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 5, decisionContext);
+
+        Assert.Equal(100, plan.TargetGapDrawing, 3);
+    }
+
+    [Fact]
     public void BuildPlan_ReturnsNoChanges_WhenGapMatchesTarget()
     {
         var group = CreateGroup(
@@ -65,6 +94,31 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         Assert.False(plan.HasChanges);
         Assert.Empty(plan.Proposals);
+    }
+
+    [Fact]
+    public void BuildPlan_ForGroup_FallsBackToMemberScaleWhenDecisionContextViewDoesNotMatch()
+    {
+        var group = CreateGroup(
+        [
+            CreateMember(1, 10, 10, 100, 20),
+            CreateMember(2, 10, 25, 100, 35)
+        ], "horizontal");
+        group.Members[0].ViewScale = 3;
+        group.Members[1].ViewScale = 3;
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 20,
+                ViewScale = 50
+            }
+        };
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 5, decisionContext);
+
+        Assert.Equal(15, plan.TargetGapDrawing, 3);
     }
 
     [Fact]

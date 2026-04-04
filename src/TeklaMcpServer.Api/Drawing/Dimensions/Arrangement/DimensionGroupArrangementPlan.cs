@@ -21,9 +21,12 @@ internal sealed class DimensionGroupArrangementPlan
 
 internal static class DimensionGroupArrangementPlanner
 {
-    public static DimensionGroupArrangementPlan BuildPlan(DimensionGroupLineStack stack, double targetGap)
+    public static DimensionGroupArrangementPlan BuildPlan(
+        DimensionGroupLineStack stack,
+        double targetGap,
+        DimensionDecisionContext? decisionContext = null)
     {
-        var targetGapDrawing = ResolveTargetGapDrawing(stack, targetGap);
+        var targetGapDrawing = ResolveTargetGapDrawing(stack, targetGap, decisionContext);
         var plan = new DimensionGroupArrangementPlan
         {
             ViewId = stack.ViewId,
@@ -63,9 +66,12 @@ internal static class DimensionGroupArrangementPlanner
         return plan;
     }
 
-    public static DimensionGroupArrangementPlan BuildPlan(DimensionGroup group, double targetGap)
+    public static DimensionGroupArrangementPlan BuildPlan(
+        DimensionGroup group,
+        double targetGap,
+        DimensionDecisionContext? decisionContext = null)
     {
-        var targetGapDrawing = ResolveTargetGapDrawing(group, targetGap);
+        var targetGapDrawing = ResolveTargetGapDrawing(group, targetGap, decisionContext);
         var plan = new DimensionGroupArrangementPlan
         {
             ViewId = group.ViewId,
@@ -102,9 +108,12 @@ internal static class DimensionGroupArrangementPlanner
         return plan;
     }
 
-    private static double ResolveTargetGapDrawing(DimensionGroupLineStack stack, double targetGapPaper)
+    private static double ResolveTargetGapDrawing(
+        DimensionGroupLineStack stack,
+        double targetGapPaper,
+        DimensionDecisionContext? decisionContext)
     {
-        var scale = stack.Groups
+        var scale = ResolveViewScale(decisionContext, stack.ViewId) ?? stack.Groups
             .SelectMany(static group => group.Members)
             .Select(static member => member.ViewScale)
             .FirstOrDefault(static scale => scale > 0);
@@ -112,12 +121,26 @@ internal static class DimensionGroupArrangementPlanner
         return System.Math.Round(targetGapPaper * (scale > 0 ? scale : 1.0), 3);
     }
 
-    private static double ResolveTargetGapDrawing(DimensionGroup group, double targetGapPaper)
+    private static double ResolveTargetGapDrawing(
+        DimensionGroup group,
+        double targetGapPaper,
+        DimensionDecisionContext? decisionContext)
     {
-        var scale = group.Members
+        var scale = ResolveViewScale(decisionContext, group.ViewId) ?? group.Members
             .Select(static member => member.ViewScale)
             .FirstOrDefault(static value => value > 0);
 
         return System.Math.Round(targetGapPaper * (scale > 0 ? scale : 1.0), 3);
+    }
+
+    private static double? ResolveViewScale(DimensionDecisionContext? decisionContext, int? viewId)
+    {
+        if (decisionContext?.View == null)
+            return null;
+
+        if (!viewId.HasValue || decisionContext.View.ViewId != viewId)
+            return null;
+
+        return decisionContext.View.ViewScale > 0 ? decisionContext.View.ViewScale : null;
     }
 }
