@@ -126,6 +126,7 @@ Bridge/internal debug helpers currently available:
 - `get_dimension_source_debug`
 - `get_dimension_groups_debug`
 - `get_dimension_orchestration_debug`
+- `get_dimension_ai_orchestration_plan`
 - `get_dimension_arrangement_debug`
 
 Not currently exposed as public MCP tools:
@@ -913,6 +914,12 @@ placement жестким кодом, а про agent-facing orchestration layer 
 - чтобы агент решал спорные редакционные случаи поверх уже собранной
   deterministic foundation
 - а не заменял собой existing runtime path
+
+Первый шаг этой фазы уже может существовать как internal debug-first слой:
+
+- `DimensionAiAssistedOrchestrator`
+- bridge-only `get_dimension_ai_orchestration_plan`
+- только plan/preview без auto-execution
 
 Перед полноценным agent-facing execution нужен еще один foundation step:
 

@@ -8,7 +8,7 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
-    private const double DefaultArrangeTargetGapPaper = 10.0;
+    internal const double DefaultArrangeTargetGapPaper = 10.0;
 
     internal DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
     {

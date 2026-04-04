@@ -31,6 +31,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_orchestration_debug":
                 return HandleGetDimensionOrchestrationDebug(api, args);
 
+            case "get_dimension_ai_orchestration_plan":
+                return HandleGetDimensionAiOrchestrationPlan(api, args);
+
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
 
@@ -335,6 +338,55 @@ internal sealed partial class DrawingCommandHandler
             viewId = resultType.GetProperty("ViewId")?.GetValue(result),
             packetCount = packets.Cast<object>().Count(),
             packets = SerializeOrchestrationPackets(packets)
+        });
+        return true;
+    }
+
+    private bool HandleGetDimensionAiOrchestrationPlan(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionAiOrchestrationPlan", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (method == null)
+        {
+            WriteError("Internal GetDimensionAiOrchestrationPlan() was not found.");
+            return true;
+        }
+
+        object? result;
+        try
+        {
+            result = method.Invoke(api, new object?[] { viewId });
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+            WriteJson(new
+            {
+                error = ex.InnerException.Message,
+                type = ex.InnerException.GetType().Name,
+                stack = ex.InnerException.StackTrace
+            });
+            return true;
+        }
+
+        if (result == null)
+        {
+            WriteError("Internal GetDimensionAiOrchestrationPlan() returned null.");
+            return true;
+        }
+
+        var resultType = result.GetType();
+        var steps = resultType.GetProperty("Steps")?.GetValue(result) as System.Collections.IEnumerable;
+        if (steps == null)
+        {
+            WriteError("AI orchestration plan steps were not found.");
+            return true;
+        }
+
+        WriteJson(new
+        {
+            viewId = resultType.GetProperty("ViewId")?.GetValue(result),
+            stepCount = steps.Cast<object>().Count(),
+            steps = SerializeAiOrchestrationPlanSteps(steps)
         });
         return true;
     }
@@ -710,6 +762,73 @@ internal sealed partial class DrawingCommandHandler
             }),
             skipReasons = result.SkipReasons
         });
+    }
+
+    private static IEnumerable<object> SerializeAiOrchestrationPlanSteps(System.Collections.IEnumerable? steps)
+    {
+        if (steps == null)
+            return [];
+
+        return steps.Cast<object>().Select(step =>
+        {
+            var type = step.GetType();
+            var evidence = type.GetProperty("Evidence")?.GetValue(step);
+            return new
+            {
+                stepOrder = type.GetProperty("StepOrder")?.GetValue(step),
+                action = type.GetProperty("Action")?.GetValue(step)?.ToString(),
+                dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(step) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                primaryDimensionId = type.GetProperty("PrimaryDimensionId")?.GetValue(step),
+                relatedDimensionIds = (type.GetProperty("RelatedDimensionIds")?.GetValue(step) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+                viewId = type.GetProperty("ViewId")?.GetValue(step),
+                dimensionType = type.GetProperty("DimensionType")?.GetValue(step),
+                reason = type.GetProperty("Reason")?.GetValue(step),
+                source = type.GetProperty("Source")?.GetValue(step),
+                toolName = type.GetProperty("ToolName")?.GetValue(step),
+                toolArguments = SerializeAiToolArguments(type.GetProperty("ToolArguments")?.GetValue(step)),
+                applyToolArguments = SerializeAiToolArguments(type.GetProperty("ApplyToolArguments")?.GetValue(step)),
+                previewOnly = type.GetProperty("PreviewOnly")?.GetValue(step),
+                evidence = evidence == null
+                    ? null
+                    : new
+                    {
+                        layoutPolicyStatus = evidence.GetType().GetProperty("LayoutPolicyStatus")?.GetValue(evidence),
+                        layoutRecommendedAction = evidence.GetType().GetProperty("LayoutRecommendedAction")?.GetValue(evidence),
+                        layoutCombineClassification = evidence.GetType().GetProperty("LayoutCombineClassification")?.GetValue(evidence),
+                        reductionStatus = evidence.GetType().GetProperty("ReductionStatus")?.GetValue(evidence),
+                        reductionReason = evidence.GetType().GetProperty("ReductionReason")?.GetValue(evidence),
+                        combineConnectivityMode = evidence.GetType().GetProperty("CombineConnectivityMode")?.GetValue(evidence),
+                        preferredDimensionId = evidence.GetType().GetProperty("PreferredDimensionId")?.GetValue(evidence),
+                        representativeDimensionId = evidence.GetType().GetProperty("RepresentativeDimensionId")?.GetValue(evidence),
+                        lineDirection = SerializeDebugVector(evidence.GetType().GetProperty("LineDirection")?.GetValue(evidence) as DrawingVectorInfo),
+                        normalDirection = SerializeDebugVector(evidence.GetType().GetProperty("NormalDirection")?.GetValue(evidence) as DrawingVectorInfo),
+                        startAlong = evidence.GetType().GetProperty("StartAlong")?.GetValue(evidence),
+                        endAlong = evidence.GetType().GetProperty("EndAlong")?.GetValue(evidence),
+                        geometryBand = SerializeGeometryBand(
+                            evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)?.GetType().GetProperty("StartAlong")?.GetValue(evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)),
+                            evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)?.GetType().GetProperty("EndAlong")?.GetValue(evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)),
+                            evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)?.GetType().GetProperty("MinOffset")?.GetValue(evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)),
+                            evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence)?.GetType().GetProperty("MaxOffset")?.GetValue(evidence.GetType().GetProperty("GeometryBand")?.GetValue(evidence))),
+                        segmentGeometryCount = evidence.GetType().GetProperty("SegmentGeometryCount")?.GetValue(evidence),
+                        hasTextBounds = evidence.GetType().GetProperty("HasTextBounds")?.GetValue(evidence)
+                    }
+            };
+        });
+    }
+
+    private static object? SerializeAiToolArguments(object? arguments)
+    {
+        if (arguments == null)
+            return null;
+
+        var type = arguments.GetType();
+        return new
+        {
+            viewId = type.GetProperty("ViewId")?.GetValue(arguments),
+            dimensionIds = (type.GetProperty("DimensionIds")?.GetValue(arguments) as System.Collections.IEnumerable)?.Cast<object>().ToArray(),
+            targetGap = type.GetProperty("TargetGap")?.GetValue(arguments),
+            previewOnly = type.GetProperty("PreviewOnly")?.GetValue(arguments)
+        };
     }
 
     private static IEnumerable<object> SerializeOrchestrationPackets(System.Collections.IEnumerable? packets)

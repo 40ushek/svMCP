@@ -1,0 +1,169 @@
+using System.Collections.Generic;
+using System.Linq;
+
+namespace TeklaMcpServer.Api.Drawing;
+
+internal sealed class DimensionAiAssistedOrchestrator
+{
+    public DimensionAiOrchestrationPlanResult Build(DimensionReductionDebugResult debug, int? viewId)
+    {
+        var result = new DimensionAiOrchestrationPlanResult
+        {
+            ViewId = viewId
+        };
+
+        var packets = DimensionOrchestrationDebugBuilder.Build(debug, viewId).Packets;
+        var itemsById = debug.Groups
+            .SelectMany(static group => group.Items)
+            .Where(static item => item.Item != null)
+            .GroupBy(static item => item.Item.DimensionId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+
+        var stepOrder = 1;
+
+        foreach (var packet in packets.Where(static packet => packet.Action == DimensionOrchestrationAction.Combine))
+        {
+            var step = CreateCombineStep(packet, itemsById, stepOrder++);
+            result.Steps.Add(step);
+
+            var arrangeStep = CreateArrangeFollowUpStep(packet, itemsById, stepOrder++);
+            result.Steps.Add(arrangeStep);
+        }
+
+        foreach (var packet in packets.Where(static packet => packet.Action == DimensionOrchestrationAction.Suppress || packet.Action == DimensionOrchestrationAction.Review))
+        {
+            result.Steps.Add(CreateReviewStep(packet, itemsById, stepOrder++));
+        }
+
+        return result;
+    }
+
+    private static DimensionAiOrchestrationPlanStep CreateCombineStep(
+        DimensionOrchestrationActionPacket packet,
+        IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        int stepOrder)
+    {
+        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.Combine);
+        step.ToolName = "combine_dimensions";
+        step.PreviewOnly = true;
+        step.ToolArguments = new DimensionAiOrchestrationToolArguments
+        {
+            ViewId = packet.ViewId,
+            PreviewOnly = true
+        };
+        step.ApplyToolArguments = new DimensionAiOrchestrationToolArguments
+        {
+            ViewId = packet.ViewId,
+            PreviewOnly = false
+        };
+        step.ToolArguments.DimensionIds.AddRange(packet.DimensionIds);
+        step.ApplyToolArguments.DimensionIds.AddRange(packet.DimensionIds);
+        return step;
+    }
+
+    private static DimensionAiOrchestrationPlanStep CreateArrangeFollowUpStep(
+        DimensionOrchestrationActionPacket packet,
+        IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        int stepOrder)
+    {
+        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.Arrange);
+        step.Reason = "post_combine_arrange_followup";
+        step.Source = "ai_orchestrator";
+        step.ToolName = "arrange_dimensions";
+        step.PreviewOnly = false;
+        step.ToolArguments = new DimensionAiOrchestrationToolArguments
+        {
+            ViewId = packet.ViewId,
+            TargetGap = TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper
+        };
+        step.DimensionIds.Clear();
+        step.DimensionIds.AddRange(packet.DimensionIds);
+        step.RelatedDimensionIds.Clear();
+        step.RelatedDimensionIds.AddRange(packet.RelatedDimensionIds);
+        return step;
+    }
+
+    private static DimensionAiOrchestrationPlanStep CreateReviewStep(
+        DimensionOrchestrationActionPacket packet,
+        IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        int stepOrder)
+    {
+        var step = CreateBaseStep(packet, itemsById, stepOrder, DimensionAiAssistedAction.ReviewOnly);
+        step.PreviewOnly = true;
+        return step;
+    }
+
+    private static DimensionAiOrchestrationPlanStep CreateBaseStep(
+        DimensionOrchestrationActionPacket packet,
+        IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        int stepOrder,
+        DimensionAiAssistedAction action)
+    {
+        itemsById.TryGetValue(packet.PrimaryDimensionId, out var primaryItem);
+        var step = new DimensionAiOrchestrationPlanStep
+        {
+            StepOrder = stepOrder,
+            Action = action,
+            PrimaryDimensionId = packet.PrimaryDimensionId,
+            ViewId = packet.ViewId,
+            DimensionType = packet.DimensionType,
+            Reason = packet.Reason,
+            Source = packet.Source,
+            Evidence = CreateEvidence(packet.Evidence, primaryItem?.Context)
+        };
+
+        step.DimensionIds.AddRange(packet.DimensionIds);
+        step.RelatedDimensionIds.AddRange(packet.RelatedDimensionIds);
+        return step;
+    }
+
+    private static DimensionAiOrchestrationEvidence CreateEvidence(
+        DimensionOrchestrationEvidence evidence,
+        DimensionContext? context)
+    {
+        return new DimensionAiOrchestrationEvidence
+        {
+            LayoutPolicyStatus = evidence.LayoutPolicyStatus,
+            LayoutRecommendedAction = evidence.LayoutRecommendedAction,
+            LayoutCombineClassification = evidence.LayoutCombineClassification,
+            ReductionStatus = evidence.ReductionStatus,
+            ReductionReason = evidence.ReductionReason,
+            CombineConnectivityMode = evidence.CombineConnectivityMode,
+            PreferredDimensionId = evidence.PreferredDimensionId,
+            RepresentativeDimensionId = evidence.RepresentativeDimensionId,
+            LineDirection = CopyVector(context?.AnnotationLineDirection),
+            NormalDirection = CopyVector(context?.AnnotationNormalDirection),
+            StartAlong = context?.AnnotationStartAlong,
+            EndAlong = context?.AnnotationEndAlong,
+            GeometryBand = CopyBand(context?.AnnotationGeometry.LocalBand),
+            SegmentGeometryCount = context?.AnnotationSegmentGeometryCount ?? 0,
+            HasTextBounds = context?.AnnotationHasTextBounds ?? false
+        };
+    }
+
+    private static DrawingVectorInfo? CopyVector(DrawingVectorInfo? vector)
+    {
+        if (vector == null)
+            return null;
+
+        return new DrawingVectorInfo
+        {
+            X = vector.X,
+            Y = vector.Y
+        };
+    }
+
+    private static DimensionGeometryBand? CopyBand(DimensionGeometryBand? band)
+    {
+        if (band == null)
+            return null;
+
+        return new DimensionGeometryBand
+        {
+            StartAlong = band.StartAlong,
+            EndAlong = band.EndAlong,
+            MinOffset = band.MinOffset,
+            MaxOffset = band.MaxOffset
+        };
+    }
+}
