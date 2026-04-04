@@ -19,7 +19,7 @@ internal sealed class DimensionGeometryContext
     public DimensionGeometryBand? LocalBand { get; set; }
     public List<string> Warnings { get; } = [];
 
-    public bool HasTextBounds => TextBounds != null || SegmentGeometries.Any(static geometry => geometry.TextBounds != null);
+    public bool HasTextBounds => TextBounds != null;
 }
 
 internal sealed class DimensionSegmentGeometry

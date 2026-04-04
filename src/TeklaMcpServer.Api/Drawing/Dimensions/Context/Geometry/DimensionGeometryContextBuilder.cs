@@ -39,12 +39,32 @@ internal sealed class DimensionGeometryContextBuilder
         foreach (var segment in BuildSegmentGeometries(item))
             context.SegmentGeometries.Add(segment);
 
+        var dimensionLine = ResolveDimensionLine(context);
+        if (dimensionLine != null)
+        {
+            context.DimensionLineStart = new DrawingPointInfo
+            {
+                X = dimensionLine.StartX,
+                Y = dimensionLine.StartY,
+                Order = -1
+            };
+            context.DimensionLineEnd = new DrawingPointInfo
+            {
+                X = dimensionLine.EndX,
+                Y = dimensionLine.EndY,
+                Order = -1
+            };
+        }
+
+        if (context.ReferenceLine == null)
+            context.Warnings.Add("reference_line_unavailable");
+
         context.TextBounds = TeklaDrawingDimensionsApi.CombineBounds(
             context.SegmentGeometries.Select(static segment => segment.TextBounds));
         if (!context.HasTextBounds)
             context.Warnings.Add("text_bounds_unavailable");
 
-        if (!TryResolveLineDirection(item, context.ReferenceLine, out var lineDirection))
+        if (!TryResolveLineDirection(item, dimensionLine ?? context.ReferenceLine, out var lineDirection))
         {
             context.Warnings.Add("line_direction_unavailable");
             return context;
@@ -53,11 +73,11 @@ internal sealed class DimensionGeometryContextBuilder
         context.LineDirection = CreateVector(lineDirection.X, lineDirection.Y);
         context.NormalDirection = CreateNormalDirection(lineDirection.X, lineDirection.Y, item.TopDirection, context.Warnings);
 
-        if (context.ReferenceLine == null || context.NormalDirection == null)
+        if (dimensionLine == null)
             return context;
 
-        var originX = context.ReferenceLine.StartX;
-        var originY = context.ReferenceLine.StartY;
+        var originX = dimensionLine.StartX;
+        var originY = dimensionLine.StartY;
 
         if (context.MeasuredPoints.Count > 0)
         {
@@ -72,10 +92,10 @@ internal sealed class DimensionGeometryContextBuilder
         {
             context.Warnings.Add("measured_points_unavailable");
             context.StartAlong = 0;
-            context.EndAlong = Round(context.ReferenceLine.Length);
+            context.EndAlong = Round(dimensionLine.Length);
         }
 
-        context.LocalBand = TryBuildBand(context, originX, originY, lineDirection);
+        context.LocalBand = TryBuildBand(context, dimensionLine, originX, originY, lineDirection);
         return context;
     }
 
@@ -190,15 +210,17 @@ internal sealed class DimensionGeometryContextBuilder
 
     private static DimensionGeometryBand? TryBuildBand(
         DimensionGeometryContext context,
+        DrawingLineInfo dimensionLine,
         double originX,
         double originY,
         (double X, double Y) lineDirection)
     {
-        if (context.NormalDirection == null)
+        var normalDirection = context.NormalDirection;
+        if (normalDirection == null)
             return null;
 
         var samples = new List<(double X, double Y)>();
-        AddLineSamples(samples, context.ReferenceLine);
+        AddLineSamples(samples, dimensionLine);
 
         foreach (var point in context.MeasuredPoints)
             samples.Add((point.X, point.Y));
@@ -216,7 +238,7 @@ internal sealed class DimensionGeometryContextBuilder
             .Select(sample => Project(sample.X - originX, sample.Y - originY, lineDirection.X, lineDirection.Y))
             .ToList();
         var offsetValues = samples
-            .Select(sample => Project(sample.X - originX, sample.Y - originY, context.NormalDirection.X, context.NormalDirection.Y))
+            .Select(sample => Project(sample.X - originX, sample.Y - originY, normalDirection.X, normalDirection.Y))
             .ToList();
 
         return new DimensionGeometryBand
@@ -226,6 +248,14 @@ internal sealed class DimensionGeometryContextBuilder
             MinOffset = Round(offsetValues.Min()),
             MaxOffset = Round(offsetValues.Max())
         };
+    }
+
+    private static DrawingLineInfo? ResolveDimensionLine(DimensionGeometryContext context)
+    {
+        return context.SegmentGeometries
+            .Select(static segment => segment.DimensionLine)
+            .FirstOrDefault(static line => line != null)
+            ?? context.ReferenceLine;
     }
 
     private static void AddLineSamples(List<(double X, double Y)> samples, DrawingLineInfo? line)

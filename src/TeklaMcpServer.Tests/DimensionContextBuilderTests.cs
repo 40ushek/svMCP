@@ -112,6 +112,10 @@ public sealed class DimensionContextBuilderTests
         Assert.Equal(1, context.AnnotationSegmentGeometryCount);
         Assert.True(context.AnnotationHasTextBounds);
         Assert.NotNull(context.AnnotationTextBounds);
+        Assert.NotNull(context.AnnotationGeometry.DimensionLineStart);
+        Assert.NotNull(context.AnnotationGeometry.DimensionLineEnd);
+        Assert.Equal(-20, context.AnnotationGeometry.DimensionLineStart!.Y);
+        Assert.Equal(-20, context.AnnotationGeometry.DimensionLineEnd!.Y);
         Assert.NotNull(context.AnnotationGeometry.LocalBand);
         Assert.Equal(-20, context.AnnotationBandMinOffset);
         Assert.Equal(0, context.AnnotationBandMaxOffset);
@@ -131,6 +135,26 @@ public sealed class DimensionContextBuilderTests
         Assert.Null(context.AnnotationGeometry.ReferenceLine);
         Assert.NotNull(context.AnnotationLineDirection);
         Assert.Null(context.AnnotationGeometry.LocalBand);
+        Assert.Contains("reference_line_unavailable", context.AnnotationGeometryWarnings);
+    }
+
+    [Fact]
+    public void Build_UsesSegmentDimensionLineWhenReferenceLineIsMissing()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+        item.ReferenceLine = null;
+
+        var context = builder.Build(item);
+
+        Assert.Null(context.AnnotationGeometry.ReferenceLine);
+        Assert.NotNull(context.AnnotationGeometry.DimensionLineStart);
+        Assert.NotNull(context.AnnotationGeometry.DimensionLineEnd);
+        Assert.Equal(-20, context.AnnotationGeometry.DimensionLineStart!.Y);
+        Assert.Equal(-20, context.AnnotationGeometry.DimensionLineEnd!.Y);
+        Assert.Equal(0, context.AnnotationStartAlong);
+        Assert.Equal(100, context.AnnotationEndAlong);
+        Assert.NotNull(context.AnnotationGeometry.LocalBand);
         Assert.Contains("reference_line_unavailable", context.AnnotationGeometryWarnings);
     }
 
