@@ -59,10 +59,45 @@ public sealed partial class TeklaDrawingDimensionsApi
                     TeklaDimensionType = TryGetDimensionType(dimSet)
                 };
                 var ownerViewId = dimSet.GetView()?.GetIdentifier().ID;
+                var dimensionInfo = BuildDimensionInfo(dimSet);
+                info.MeasuredPoints.AddRange(dimensionInfo.MeasuredPoints.Select(static point => new DrawingPointInfo
+                {
+                    X = point.X,
+                    Y = point.Y,
+                    Order = point.Order
+                }));
 
                 CollectDimensionSourceCandidates(info.Candidates, dimSet.GetRelatedObjects(), "dimensionSet", ownerViewId, partPointApi);
                 foreach (var segment in EnumerateSegments(dimSet))
                     CollectDimensionSourceCandidates(info.Candidates, segment.GetRelatedObjects(), $"segment:{segment.GetIdentifier().ID}", ownerViewId, partPointApi);
+                var mapper = new DimensionPointObjectMapper();
+                var pointMappings = mapper.Map(
+                    info.MeasuredPoints,
+                    info.Candidates,
+                    BuildPreferredOwnersByPointOrder(info.MeasuredPoints, dimensionInfo.Segments));
+                info.PointMappings.AddRange(pointMappings.Select(static mapping => new DimensionPointObjectMappingInfo
+                {
+                    Order = mapping.Point.Order,
+                    X = mapping.Point.X,
+                    Y = mapping.Point.Y,
+                    Status = mapping.Status.ToString(),
+                    MatchedOwner = mapping.MatchedCandidate?.Owner ?? string.Empty,
+                    MatchedDrawingObjectId = mapping.MatchedCandidate?.DrawingObjectId,
+                    MatchedModelId = mapping.MatchedCandidate?.ModelId,
+                    MatchedType = mapping.MatchedCandidate?.Type ?? string.Empty,
+                    MatchedSourceKind = mapping.MatchedCandidate?.SourceKind ?? string.Empty,
+                    DistanceToGeometry = mapping.DistanceToGeometry,
+                    NearestGeometryPoint = mapping.NearestGeometryPoint == null
+                        ? null
+                        : new DrawingPointInfo
+                        {
+                            X = mapping.NearestGeometryPoint.X,
+                            Y = mapping.NearestGeometryPoint.Y,
+                            Order = mapping.NearestGeometryPoint.Order
+                        },
+                    CandidateCount = mapping.CandidateCount,
+                    Warning = mapping.Warning
+                }));
 
                 result.Dimensions.Add(info);
             }
@@ -309,6 +344,38 @@ public sealed partial class TeklaDrawingDimensionsApi
             PopulateCandidateGeometry(candidate, ownerViewId, partPointApi);
             target.Add(candidate);
         }
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyList<string>> BuildPreferredOwnersByPointOrder(
+        IReadOnlyList<DrawingPointInfo> measuredPoints,
+        IReadOnlyList<DimensionSegmentInfo> segments)
+    {
+        var result = new Dictionary<int, IReadOnlyList<string>>();
+        foreach (var point in measuredPoints)
+        {
+            var owners = segments
+                .Where(segment => PointMatchesSegmentEndpoint(point, segment))
+                .Select(static segment => $"segment:{segment.Id}")
+                .Distinct()
+                .OrderBy(static owner => owner)
+                .ToList();
+            if (owners.Count > 0)
+                result[point.Order] = owners;
+        }
+
+        return result;
+    }
+
+    private static bool PointMatchesSegmentEndpoint(DrawingPointInfo point, DimensionSegmentInfo segment, double tolerance = 0.5)
+    {
+        return MatchesPoint(point, segment.StartX, segment.StartY, tolerance)
+            || MatchesPoint(point, segment.EndX, segment.EndY, tolerance);
+    }
+
+    private static bool MatchesPoint(DrawingPointInfo point, double x, double y, double tolerance)
+    {
+        return System.Math.Abs(point.X - x) <= tolerance
+            && System.Math.Abs(point.Y - y) <= tolerance;
     }
 
     private void PopulateCandidateGeometry(DimensionSourceCandidateInfo candidate, int? ownerViewId, IDrawingPartPointApi partPointApi)

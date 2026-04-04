@@ -194,7 +194,26 @@ public sealed class DimensionSourceDebugInfo
     public int DimensionId { get; set; }
     public string DimensionType { get; set; } = string.Empty;
     public string TeklaDimensionType { get; set; } = string.Empty;
+    public List<DrawingPointInfo> MeasuredPoints { get; set; } = new();
+    public List<DimensionPointObjectMappingInfo> PointMappings { get; set; } = new();
     public List<DimensionSourceCandidateInfo> Candidates { get; set; } = new();
+}
+
+public sealed class DimensionPointObjectMappingInfo
+{
+    public int Order { get; set; }
+    public double X { get; set; }
+    public double Y { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string MatchedOwner { get; set; } = string.Empty;
+    public int? MatchedDrawingObjectId { get; set; }
+    public int? MatchedModelId { get; set; }
+    public string MatchedType { get; set; } = string.Empty;
+    public string MatchedSourceKind { get; set; } = string.Empty;
+    public double? DistanceToGeometry { get; set; }
+    public DrawingPointInfo? NearestGeometryPoint { get; set; }
+    public int CandidateCount { get; set; }
+    public string Warning { get; set; } = string.Empty;
 }
 
 public sealed class DimensionSourceCandidateInfo

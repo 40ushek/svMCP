@@ -174,6 +174,33 @@ internal sealed partial class DrawingCommandHandler
                 dimensionId = d.DimensionId,
                 dimensionType = d.DimensionType,
                 teklaDimensionType = d.TeklaDimensionType,
+                measuredPoints = d.MeasuredPoints.Select(point => new
+                {
+                    x = point.X,
+                    y = point.Y,
+                    order = point.Order
+                }),
+                pointMappings = d.PointMappings.Select(mapping => new
+                {
+                    order = mapping.Order,
+                    x = mapping.X,
+                    y = mapping.Y,
+                    status = mapping.Status,
+                    matchedOwner = mapping.MatchedOwner,
+                    matchedDrawingObjectId = mapping.MatchedDrawingObjectId,
+                    matchedModelId = mapping.MatchedModelId,
+                    matchedType = mapping.MatchedType,
+                    matchedSourceKind = mapping.MatchedSourceKind,
+                    distanceToGeometry = mapping.DistanceToGeometry,
+                    nearestGeometryPoint = mapping.NearestGeometryPoint == null ? null : new
+                    {
+                        x = mapping.NearestGeometryPoint.X,
+                        y = mapping.NearestGeometryPoint.Y,
+                        order = mapping.NearestGeometryPoint.Order
+                    },
+                    candidateCount = mapping.CandidateCount,
+                    warning = mapping.Warning
+                }),
                 candidates = d.Candidates.Select(c => new
                 {
                     owner = c.Owner,
