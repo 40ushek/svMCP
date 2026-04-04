@@ -43,6 +43,26 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         Assert.Equal(DimensionLayoutPolicyStatus.Neutral, decisions[poorer].Status);
     }
 
+    [Fact]
+    public void Evaluate_MarksEquivalentControlGeometryAsLessPreferredUsingSmallerDistance()
+    {
+        var preferred = CreateFreeItem(2001, 60, [(0, 0), (100, 100)]);
+        var duplicate = CreateFreeItem(2002, 117.312, [(0, 0), (100, 100)]);
+        var contexts = new Dictionary<DimensionItem, DimensionContext>
+        {
+            [preferred] = CreateControlContext(preferred),
+            [duplicate] = CreateControlContext(duplicate)
+        };
+
+        var decisions = DimensionLayoutPolicyEvaluator.Evaluate([preferred, duplicate], contexts);
+
+        Assert.Equal(DimensionLayoutPolicyStatus.Preferred, decisions[preferred].Status);
+        Assert.Equal("keeps_compact_equivalent_geometry", decisions[preferred].Reason);
+        Assert.Equal(DimensionLayoutPolicyStatus.LessPreferred, decisions[duplicate].Status);
+        Assert.Equal("equivalent_measured_geometry", decisions[duplicate].Reason);
+        Assert.Equal(2001, decisions[duplicate].PreferredDimensionId);
+    }
+
     private static DimensionItem CreateItem(int dimensionId, double[] positions, int[] sourceIds)
     {
         var dimension = new DrawingDimensionInfo
@@ -105,6 +125,58 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         return item;
     }
 
+    private static DimensionItem CreateFreeItem(int dimensionId, double distance, (double X, double Y)[] points)
+    {
+        var dimension = new DrawingDimensionInfo
+        {
+            Id = dimensionId,
+            ViewId = 10,
+            ViewType = "FrontView",
+            ViewScale = 15,
+            SourceKind = DimensionSourceKind.Unknown,
+            GeometryKind = DimensionGeometryKind.Free,
+            ClassifiedDimensionType = DimensionType.Free
+        };
+
+        var item = new DimensionItem
+        {
+            DimensionId = dimensionId,
+            ViewId = 10,
+            ViewType = "FrontView",
+            ViewScale = 15,
+            DomainDimensionType = DimensionType.Free,
+            SourceKind = DimensionSourceKind.Unknown,
+            GeometryKind = DimensionGeometryKind.Free,
+            TeklaDimensionType = "Free",
+            Distance = distance,
+            DirectionX = 0.70710678,
+            DirectionY = 0.70710678,
+            TopDirection = 1,
+            Dimension = dimension
+        };
+
+        for (var i = 0; i < points.Length; i++)
+        {
+            item.PointList.Add(new DrawingPointInfo
+            {
+                X = points[i].X,
+                Y = points[i].Y,
+                Order = i
+            });
+        }
+
+        item.StartX = points[0].X;
+        item.StartY = points[0].Y;
+        item.EndX = points[^1].X;
+        item.EndY = points[^1].Y;
+        item.StartPointOrder = 0;
+        item.EndPointOrder = points.Length - 1;
+        item.CenterX = (points[0].X + points[^1].X) / 2.0;
+        item.CenterY = (points[0].Y + points[^1].Y) / 2.0;
+        item.SegmentIds.Add(dimensionId);
+        return item;
+    }
+
     private static DimensionContext CreateContext(DimensionItem item, int sourceId)
     {
         var context = new DimensionContext
@@ -129,5 +201,16 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         }
 
         return context;
+    }
+
+    private static DimensionContext CreateControlContext(DimensionItem item)
+    {
+        return new DimensionContext
+        {
+            DimensionId = item.DimensionId,
+            Item = item,
+            SourceKind = DimensionSourceKind.Unknown,
+            Role = DimensionContextRole.Control
+        };
     }
 }

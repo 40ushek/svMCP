@@ -423,26 +423,31 @@ public sealed partial class TeklaDrawingDimensionsApi
                 if (contexts.TryGetValue(item.Item, out var context))
                     item.Context = context;
             }
-
-            AttachLayoutPolicyDecisions(group, contexts);
         }
+
+        AttachLayoutPolicyDecisions(debug, contexts);
     }
 
     private static void AttachLayoutPolicyDecisions(
-        DimensionGroupReductionDebugInfo group,
+        DimensionReductionDebugResult debug,
         IReadOnlyDictionary<DimensionItem, DimensionContext> contexts)
     {
-        var reducedItems = group.ReducedGroup.DimensionList
+        var reducedItems = debug.Groups
+            .SelectMany(static group => group.ReducedGroup.DimensionList)
+            .Distinct()
             .Where(contexts.ContainsKey)
             .ToList();
         if (reducedItems.Count <= 1)
             return;
 
         var decisions = DimensionLayoutPolicyEvaluator.Evaluate(reducedItems, contexts);
-        foreach (var item in group.Items)
+        foreach (var group in debug.Groups)
         {
-            if (decisions.TryGetValue(item.Item, out var decision))
-                item.LayoutPolicy = decision;
+            foreach (var item in group.Items)
+            {
+                if (decisions.TryGetValue(item.Item, out var decision))
+                    item.LayoutPolicy = decision;
+            }
         }
     }
 }

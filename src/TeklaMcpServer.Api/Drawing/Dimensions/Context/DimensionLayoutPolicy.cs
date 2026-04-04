@@ -22,6 +22,7 @@ internal sealed class DimensionLayoutPolicy
     public static DimensionLayoutPolicy Default => new();
 
     public double PointMatchTolerance { get; set; } = 3.0;
+    public double EquivalentGeometryPointTolerance { get; set; } = 3.0;
     public double ProjectedExtentTolerance { get; set; } = 3.0;
     public int AllowedMissingSharedPoints { get; set; } = 1;
     public bool RequireSameSourceKind { get; set; } = true;
@@ -44,6 +45,8 @@ internal static class DimensionLayoutPolicyEvaluator
                 Reason = "neutral"
             });
 
+        ApplyEquivalentGeometryPreferences(items, contexts, policy, decisions);
+
         var ordered = items
             .OrderByDescending(GetInformationRank)
             .ThenBy(static item => item.DimensionId)
@@ -51,6 +54,9 @@ internal static class DimensionLayoutPolicyEvaluator
 
         foreach (var poorer in ordered.OrderBy(static item => item.PointList.Count).ThenBy(static item => item.DimensionId))
         {
+            if (decisions[poorer].Status != DimensionLayoutPolicyStatus.Neutral)
+                continue;
+
             foreach (var richer in ordered)
             {
                 if (ReferenceEquals(richer, poorer))
@@ -81,6 +87,49 @@ internal static class DimensionLayoutPolicyEvaluator
         }
 
         return decisions;
+    }
+
+    private static void ApplyEquivalentGeometryPreferences(
+        IReadOnlyList<DimensionItem> items,
+        IReadOnlyDictionary<DimensionItem, DimensionContext> contexts,
+        DimensionLayoutPolicy policy,
+        Dictionary<DimensionItem, DimensionLayoutPolicyDecision> decisions)
+    {
+        var ordered = items
+            .OrderBy(GetEquivalentGeometryPriority)
+            .ThenBy(static item => item.DimensionId)
+            .ToList();
+
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            var preferred = ordered[i];
+            for (var j = i + 1; j < ordered.Count; j++)
+            {
+                var duplicate = ordered[j];
+                if (decisions[duplicate].Status != DimensionLayoutPolicyStatus.Neutral)
+                    continue;
+
+                if (!IsEquivalentMeasuredGeometryCandidate(preferred, duplicate, contexts, policy))
+                    continue;
+
+                decisions[duplicate] = new DimensionLayoutPolicyDecision
+                {
+                    Status = DimensionLayoutPolicyStatus.LessPreferred,
+                    Reason = "equivalent_measured_geometry",
+                    PreferredDimensionId = preferred.DimensionId
+                };
+
+                if (decisions[preferred].Status == DimensionLayoutPolicyStatus.Neutral)
+                {
+                    decisions[preferred] = new DimensionLayoutPolicyDecision
+                    {
+                        Status = DimensionLayoutPolicyStatus.Preferred,
+                        Reason = "keeps_compact_equivalent_geometry",
+                        PreferredDimensionId = preferred.DimensionId
+                    };
+                }
+            }
+        }
     }
 
     private static bool IsRicherSubchainCandidate(
@@ -122,6 +171,47 @@ internal static class DimensionLayoutPolicyEvaluator
 
         if (policy.RequireSharedSourceIdentity &&
             !HaveSharedSourceIdentity(richerContext, poorerContext))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsEquivalentMeasuredGeometryCandidate(
+        DimensionItem preferred,
+        DimensionItem duplicate,
+        IReadOnlyDictionary<DimensionItem, DimensionContext> contexts,
+        DimensionLayoutPolicy policy)
+    {
+        if (preferred.ViewId != duplicate.ViewId)
+            return false;
+
+        if (preferred.DomainDimensionType != duplicate.DomainDimensionType ||
+            preferred.GeometryKind != duplicate.GeometryKind ||
+            preferred.PointList.Count != duplicate.PointList.Count)
+        {
+            return false;
+        }
+
+        if (policy.RequireSameSourceKind && preferred.SourceKind != duplicate.SourceKind)
+            return false;
+
+        if (!HaveEquivalentPointSets(preferred.PointList, duplicate.PointList, policy.EquivalentGeometryPointTolerance))
+            return false;
+
+        if (!contexts.TryGetValue(preferred, out var preferredContext) ||
+            !contexts.TryGetValue(duplicate, out var duplicateContext))
+        {
+            return false;
+        }
+
+        if (preferredContext.Role == DimensionContextRole.Grid || duplicateContext.Role == DimensionContextRole.Grid)
+            return false;
+
+        if (ShouldRequireSharedSourceIdentity(preferredContext, duplicateContext) &&
+            policy.RequireSharedSourceIdentity &&
+            !HaveSharedSourceIdentity(preferredContext, duplicateContext))
         {
             return false;
         }
@@ -183,9 +273,50 @@ internal static class DimensionLayoutPolicyEvaluator
                 System.Math.Abs(point.Y - candidate.Y) <= tolerance));
     }
 
+    private static bool HaveEquivalentPointSets(
+        IReadOnlyList<DrawingPointInfo> left,
+        IReadOnlyList<DrawingPointInfo> right,
+        double tolerance)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        var matched = new bool[right.Count];
+        foreach (var point in left)
+        {
+            var found = false;
+            for (var i = 0; i < right.Count; i++)
+            {
+                if (matched[i])
+                    continue;
+
+                if (System.Math.Abs(point.X - right[i].X) > tolerance ||
+                    System.Math.Abs(point.Y - right[i].Y) > tolerance)
+                {
+                    continue;
+                }
+
+                matched[i] = true;
+                found = true;
+                break;
+            }
+
+            if (!found)
+                return false;
+        }
+
+        return true;
+    }
+
     private static bool ShouldSkipRole(DimensionContextRole role)
     {
         return role == DimensionContextRole.Control || role == DimensionContextRole.Grid;
+    }
+
+    private static bool ShouldRequireSharedSourceIdentity(DimensionContext left, DimensionContext right)
+    {
+        return left.Role != DimensionContextRole.Control &&
+               right.Role != DimensionContextRole.Control;
     }
 
     private static bool HaveSharedSourceIdentity(DimensionContext richer, DimensionContext poorer)
@@ -213,6 +344,8 @@ internal static class DimensionLayoutPolicyEvaluator
     }
 
     private static int GetInformationRank(DimensionItem item) => (item.PointList.Count * 1000) + item.SegmentIds.Count;
+
+    private static double GetEquivalentGeometryPriority(DimensionItem item) => System.Math.Abs(item.Distance);
 
     private static double Project(double x, double y, double axisX, double axisY) => (x * axisX) + (y * axisY);
 }
