@@ -147,7 +147,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     {
                         DimensionId = member.DimensionId,
                         DimensionType = member.DimensionType,
-                        Orientation = member.Dimension.Orientation,
+                        Orientation = member.Orientation,
                         Distance = member.Distance,
                         NormalizationDelta = planningUnit?.NormalizationDelta ?? 0,
                         NormalizationStatus = planningUnit?.NormalizationStatus ?? string.Empty,

@@ -277,6 +277,7 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         return new DimensionGroupMember
         {
             DimensionId = dimensionId,
+            ViewScale = 1,
             SortKey = lineStartX + lineStartY,
             Bounds = new DrawingBoundsInfo
             {
@@ -291,17 +292,6 @@ public sealed class DimensionGroupSpacingAnalyzerTests
                 StartY = lineStartY,
                 EndX = lineEndX,
                 EndY = lineEndY
-            },
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId,
-                Bounds = new DrawingBoundsInfo
-                {
-                    MinX = minX,
-                    MinY = minY,
-                    MaxX = maxX,
-                    MaxY = maxY
-                }
             }
         };
     }
@@ -362,17 +352,15 @@ public sealed class DimensionGroupSpacingAnalyzerTests
         group.Members.Add(new DimensionGroupMember
         {
             DimensionId = dimensionId,
+            ViewScale = 1,
+            Orientation = group.Orientation,
             Distance = distance,
             DirectionX = direction.X,
             DirectionY = direction.Y,
             TopDirection = topDirection,
             ReferenceLine = referenceLine,
             LeadLineMain = leadLine,
-            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine),
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId
-            }
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine)
         });
         group.RefreshMetrics();
         return group;

@@ -101,8 +101,8 @@ internal sealed class DimensionGeometryContextBuilder
 
     private static IReadOnlyList<DrawingPointInfo> GetMeasuredPoints(DimensionItem item)
     {
-        var points = item.Dimension.MeasuredPoints.Count > 0
-            ? item.Dimension.MeasuredPoints
+        var points = item.MeasuredPoints.Count > 0
+            ? item.MeasuredPoints
             : item.PointList;
 
         return points
@@ -118,9 +118,9 @@ internal sealed class DimensionGeometryContextBuilder
 
     private static IReadOnlyList<DimensionSegmentGeometry> BuildSegmentGeometries(DimensionItem item)
     {
-        if (item.Dimension.Segments.Count > 0)
+        if (item.Segments.Count > 0)
         {
-            return item.Dimension.Segments.Select(static segment => new DimensionSegmentGeometry
+            return item.Segments.Select(static segment => new DimensionSegmentGeometry
             {
                 SegmentId = segment.Id,
                 DimensionLine = CopyLine(segment.DimensionLine),

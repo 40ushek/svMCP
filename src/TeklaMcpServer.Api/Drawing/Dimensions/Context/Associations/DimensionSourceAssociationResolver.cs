@@ -71,6 +71,24 @@ internal sealed class DimensionSourceAssociationResolver
         return result;
     }
 
+    public DimensionSourceAssociationResult Resolve(DimensionItem item)
+    {
+        var result = new DimensionSourceAssociationResult();
+        result.MeasuredPoints.AddRange(item.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        CollectSnapshotSourceCandidates(result, item.SourceKind, item.SourceObjectIds, item.ViewId);
+        result.PointMappings.AddRange(_mapper.Map(
+            result.MeasuredPoints,
+            result.Candidates,
+            BuildPreferredOwnersByPointOrder(result.MeasuredPoints, item.Segments)));
+        return result;
+    }
+
     private void CollectDimensionSourceCandidates(
         List<DimensionSourceCandidateInfo> target,
         DrawingObjectEnumerator? relatedObjects,
@@ -202,31 +220,40 @@ internal sealed class DimensionSourceAssociationResolver
 
     private void CollectSnapshotSourceCandidates(DimensionSourceAssociationResult result, DrawingDimensionInfo dimensionInfo)
     {
-        if (dimensionInfo.SourceObjectIds.Count == 0)
+        CollectSnapshotSourceCandidates(result, dimensionInfo.SourceKind, dimensionInfo.SourceObjectIds, dimensionInfo.ViewId);
+    }
+
+    private void CollectSnapshotSourceCandidates(
+        DimensionSourceAssociationResult result,
+        DimensionSourceKind sourceKind,
+        IReadOnlyList<int> sourceObjectIds,
+        int? viewId)
+    {
+        if (sourceObjectIds.Count == 0)
         {
             result.Warnings.Add("no_related_sources");
             return;
         }
 
-        foreach (var sourceObjectId in dimensionInfo.SourceObjectIds.Distinct().OrderBy(static id => id))
+        foreach (var sourceObjectId in sourceObjectIds.Distinct().OrderBy(static id => id))
         {
             var candidate = new DimensionSourceCandidateInfo
             {
                 Owner = "snapshot",
-                Type = dimensionInfo.SourceKind == DimensionSourceKind.Unknown
+                Type = sourceKind == DimensionSourceKind.Unknown
                     ? string.Empty
-                    : dimensionInfo.SourceKind.ToString(),
-                SourceKind = dimensionInfo.SourceKind.ToString(),
+                    : sourceKind.ToString(),
+                SourceKind = sourceKind.ToString(),
                 DrawingObjectId = sourceObjectId
             };
 
-            if (dimensionInfo.SourceKind == DimensionSourceKind.Part)
+            if (sourceKind == DimensionSourceKind.Part)
             {
                 candidate.ModelId = sourceObjectId;
                 candidate.ResolvedModelType = TrySelectModelObjectById(sourceObjectId)?.GetType().Name ?? string.Empty;
             }
 
-            PopulateCandidateGeometry(candidate, dimensionInfo.ViewId);
+            PopulateCandidateGeometry(candidate, viewId);
             result.Candidates.Add(candidate);
         }
     }

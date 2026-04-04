@@ -246,20 +246,6 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
 
     private static DimensionItem CreateItem(int dimensionId, double[] positions, int[] sourceIds)
     {
-        var dimension = new DrawingDimensionInfo
-        {
-            Id = dimensionId,
-            ViewId = 10,
-            ViewType = "FrontView",
-            ViewScale = 15,
-            SourceKind = DimensionSourceKind.Part,
-            GeometryKind = DimensionGeometryKind.Horizontal,
-            ClassifiedDimensionType = DimensionType.Horizontal
-        };
-
-        foreach (var sourceId in sourceIds)
-            dimension.SourceObjectIds.Add(sourceId);
-
         var item = new DimensionItem
         {
             DimensionId = dimensionId,
@@ -281,16 +267,23 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
                 EndX = positions[^1],
                 EndY = -20
             },
-            Dimension = dimension
+            Orientation = "horizontal"
         };
 
         for (var i = 0; i < positions.Length; i++)
         {
-            item.PointList.Add(new DrawingPointInfo
+            var point = new DrawingPointInfo
             {
                 X = positions[i],
                 Y = 0,
                 Order = i
+            };
+            item.PointList.Add(point);
+            item.MeasuredPoints.Add(new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
             });
         }
 
@@ -303,22 +296,12 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         item.CenterX = (positions[0] + positions[^1]) / 2.0;
         item.CenterY = 0;
         item.SegmentIds.Add(dimensionId);
+        item.SourceObjectIds.AddRange(sourceIds);
         return item;
     }
 
     private static DimensionItem CreateFreeItem(int dimensionId, double distance, (double X, double Y)[] points)
     {
-        var dimension = new DrawingDimensionInfo
-        {
-            Id = dimensionId,
-            ViewId = 10,
-            ViewType = "FrontView",
-            ViewScale = 15,
-            SourceKind = DimensionSourceKind.Unknown,
-            GeometryKind = DimensionGeometryKind.Free,
-            ClassifiedDimensionType = DimensionType.Free
-        };
-
         var item = new DimensionItem
         {
             DimensionId = dimensionId,
@@ -333,16 +316,23 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
             DirectionX = 0.70710678,
             DirectionY = 0.70710678,
             TopDirection = 1,
-            Dimension = dimension
+            Orientation = "angled"
         };
 
         for (var i = 0; i < points.Length; i++)
         {
-            item.PointList.Add(new DrawingPointInfo
+            var point = new DrawingPointInfo
             {
                 X = points[i].X,
                 Y = points[i].Y,
                 Order = i
+            };
+            item.PointList.Add(point);
+            item.MeasuredPoints.Add(new DrawingPointInfo
+            {
+                X = point.X,
+                Y = point.Y,
+                Order = point.Order
             });
         }
 

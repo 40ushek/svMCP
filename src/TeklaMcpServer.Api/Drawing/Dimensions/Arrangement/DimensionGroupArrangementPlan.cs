@@ -106,7 +106,7 @@ internal static class DimensionGroupArrangementPlanner
     {
         var scale = stack.Groups
             .SelectMany(static group => group.Members)
-            .Select(static member => member.Dimension.ViewScale)
+            .Select(static member => member.ViewScale)
             .FirstOrDefault(static scale => scale > 0);
 
         return System.Math.Round(targetGapPaper * (scale > 0 ? scale : 1.0), 3);
@@ -115,7 +115,7 @@ internal static class DimensionGroupArrangementPlanner
     private static double ResolveTargetGapDrawing(DimensionGroup group, double targetGapPaper)
     {
         var scale = group.Members
-            .Select(static member => member.Dimension.ViewScale)
+            .Select(static member => member.ViewScale)
             .FirstOrDefault(static value => value > 0);
 
         return System.Math.Round(targetGapPaper * (scale > 0 ? scale : 1.0), 3);

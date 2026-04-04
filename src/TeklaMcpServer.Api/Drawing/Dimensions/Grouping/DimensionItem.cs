@@ -33,10 +33,13 @@ internal class DimensionItem
     public DrawingLineInfo? ReferenceLine { get; set; }
     public DrawingLineInfo? LeadLineMain { get; set; }
     public DrawingLineInfo? LeadLineSecond { get; set; }
+    public string Orientation { get; set; } = string.Empty;
     public List<DrawingPointInfo> PointList { get; } = [];
     public List<double> LengthList { get; } = [];
     public List<double> RealLengthList { get; } = [];
-    public DrawingDimensionInfo Dimension { get; set; } = new();
+    public List<DrawingPointInfo> MeasuredPoints { get; } = [];
+    public List<DimensionSegmentInfo> Segments { get; } = [];
+    public List<int> SourceObjectIds { get; } = [];
 
     public (double X, double Y)? Direction =>
         TeklaDrawingDimensionsApi.TryNormalizeDirection(DirectionX, DirectionY, out var direction)

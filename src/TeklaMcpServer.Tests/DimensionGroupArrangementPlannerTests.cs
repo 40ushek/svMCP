@@ -187,6 +187,8 @@ public sealed class DimensionGroupArrangementPlannerTests
         var member = new DimensionGroupMember
         {
             DimensionId = dimensionId,
+            ViewScale = 1,
+            Orientation = orientation,
             Distance = distance,
             DirectionX = direction.X,
             DirectionY = direction.Y,
@@ -201,11 +203,7 @@ public sealed class DimensionGroupArrangementPlannerTests
                     EndY = line.StartY + leadLineLength.Value
                 }
                 : null,
-            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line),
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId
-            }
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line)
         };
 
         var group = new DimensionGroup
@@ -226,6 +224,8 @@ public sealed class DimensionGroupArrangementPlannerTests
         return new DimensionGroupMember
         {
             DimensionId = dimensionId,
+            ViewScale = 1,
+            Orientation = "horizontal",
             SortKey = minX + minY,
             Bounds = new DrawingBoundsInfo
             {
@@ -233,17 +233,6 @@ public sealed class DimensionGroupArrangementPlannerTests
                 MinY = minY,
                 MaxX = maxX,
                 MaxY = maxY
-            },
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId,
-                Bounds = new DrawingBoundsInfo
-                {
-                    MinX = minX,
-                    MinY = minY,
-                    MaxX = maxX,
-                    MaxY = maxY
-                }
             }
         };
     }

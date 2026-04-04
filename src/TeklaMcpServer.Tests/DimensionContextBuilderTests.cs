@@ -128,7 +128,7 @@ public sealed class DimensionContextBuilderTests
         var builder = CreateBuilder(new FakePartPointApi([]));
         var item = CreatePartItem(1, referenceY: -20);
         item.ReferenceLine = null;
-        item.Dimension.Segments.Clear();
+        item.Segments.Clear();
 
         var context = builder.Build(item);
 
@@ -163,7 +163,7 @@ public sealed class DimensionContextBuilderTests
     {
         var builder = CreateBuilder(new FakePartPointApi([]));
         var item = CreatePartItem(1, referenceY: -20);
-        item.Dimension.Segments[0].TextBounds = null;
+        item.Segments[0].TextBounds = null;
 
         var context = builder.Build(item);
 
@@ -185,7 +185,7 @@ public sealed class DimensionContextBuilderTests
             DimensionSourceKind.Part,
             DimensionGeometryKind.Horizontal,
             referenceY);
-        item.Dimension.SourceObjectIds.Add(101);
+        item.SourceObjectIds.Add(101);
         return item;
     }
 
@@ -196,20 +196,7 @@ public sealed class DimensionContextBuilderTests
         DimensionGeometryKind geometryKind,
         double referenceY)
     {
-        var dimension = new DrawingDimensionInfo
-        {
-            Id = dimensionId,
-            ViewId = 10,
-            ViewType = "FrontView",
-            ViewScale = 15,
-            SourceKind = sourceKind,
-            GeometryKind = geometryKind,
-            ClassifiedDimensionType = domainType
-        };
-
-        dimension.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
-        dimension.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
-        dimension.Segments.Add(new DimensionSegmentInfo
+        var segment = new DimensionSegmentInfo
         {
             Id = dimensionId,
             StartX = 0,
@@ -248,7 +235,7 @@ public sealed class DimensionContextBuilderTests
                 EndX = 100,
                 EndY = referenceY
             }
-        });
+        };
 
         var item = new DimensionItem
         {
@@ -293,11 +280,14 @@ public sealed class DimensionContextBuilderTests
                 EndX = 100,
                 EndY = referenceY
             },
-            Dimension = dimension
+            Orientation = domainType == DimensionType.Free ? "angled" : "horizontal"
         };
 
         item.PointList.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
         item.PointList.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
+        item.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
+        item.MeasuredPoints.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
+        item.Segments.Add(segment);
         item.LengthList.Add(100);
         item.RealLengthList.Add(100);
         return item;

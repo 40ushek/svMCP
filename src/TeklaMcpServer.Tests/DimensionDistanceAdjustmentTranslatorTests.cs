@@ -319,6 +319,8 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
         group.Members.Add(new DimensionGroupMember
         {
             DimensionId = dimensionId,
+            ViewScale = 1,
+            Orientation = "horizontal",
             Distance = distance,
             DirectionX = direction.X,
             DirectionY = direction.Y,
@@ -333,11 +335,7 @@ public sealed class DimensionDistanceAdjustmentTranslatorTests
                     EndY = line.StartY + leadLineLength.Value
                 }
                 : null,
-            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line),
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId
-            }
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line)
         });
         group.RefreshMetrics();
         return group;

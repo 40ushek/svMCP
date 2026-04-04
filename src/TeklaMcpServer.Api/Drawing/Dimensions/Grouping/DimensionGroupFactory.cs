@@ -226,10 +226,10 @@ internal static class DimensionGroupFactory
             Bounds = CombineItemBounds(orderedChain),
             ReferenceLine = dimension.ReferenceLine != null ? CopyLine(dimension.ReferenceLine) : CopyLine(first.ReferenceLine),
             LeadLineMain = CopyLine(first.LeadLineMain),
-            LeadLineSecond = CopyLine(last.LeadLineSecond),
-            Dimension = dimension
+            LeadLineSecond = CopyLine(last.LeadLineSecond)
         };
 
+        PopulateDimensionSnapshot(item, dimension);
         foreach (var segmentId in orderedChain.SelectMany(static item => item.SegmentIds).Distinct())
             item.SegmentIds.Add(segmentId);
 
@@ -557,7 +557,7 @@ internal static class DimensionGroupFactory
         if (item.ReferenceLine != null)
             return TeklaDrawingDimensionsApi.DetermineDimensionOrientation(0, 0, item.ReferenceLine, []);
 
-        return item.Dimension.Orientation ?? string.Empty;
+        return item.Orientation ?? string.Empty;
     }
 
     private static DimensionType ResolveGroupDimensionType(IReadOnlyList<DimensionItem> items)
@@ -659,10 +659,10 @@ internal static class DimensionGroupFactory
             Bounds = dimension.Bounds ?? TeklaDrawingDimensionsApi.CombineBounds(dimension.Segments.Select(static s => s.Bounds)),
             ReferenceLine = referenceLine,
             LeadLineMain = CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineMain != null)?.LeadLineMain),
-            LeadLineSecond = CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineSecond != null)?.LeadLineSecond),
-            Dimension = dimension
+            LeadLineSecond = CopyLine(dimension.Segments.FirstOrDefault(static s => s.LeadLineSecond != null)?.LeadLineSecond)
         };
 
+        PopulateDimensionSnapshot(item, dimension);
         item.SegmentIds.AddRange(dimension.Segments.Select(static segment => segment.Id));
         item.ReplacePointList(pointList);
         return item;
@@ -688,10 +688,10 @@ internal static class DimensionGroupFactory
             Bounds = segment.Bounds ?? (segment.DimensionLine != null ? TeklaDrawingDimensionsApi.CreateBoundsFromLine(segment.DimensionLine) : null),
             ReferenceLine = CopyLine(segment.DimensionLine ?? dimension.ReferenceLine),
             LeadLineMain = CopyLine(segment.LeadLineMain),
-            LeadLineSecond = CopyLine(segment.LeadLineSecond),
-            Dimension = dimension
+            LeadLineSecond = CopyLine(segment.LeadLineSecond)
         };
 
+        PopulateDimensionSnapshot(item, dimension);
         item.SegmentIds.Add(segment.Id);
 
         var startOrder = FindMeasuredPointOrder(dimension.MeasuredPoints, segment.StartX, segment.StartY);
@@ -704,6 +704,48 @@ internal static class DimensionGroupFactory
 
         item.ReplacePointList(pointList);
         return item;
+    }
+
+    private static void PopulateDimensionSnapshot(DimensionItem item, DrawingDimensionInfo dimension)
+    {
+        item.Orientation = dimension.Orientation ?? string.Empty;
+
+        item.MeasuredPoints.Clear();
+        item.MeasuredPoints.AddRange(dimension.MeasuredPoints.Select(static point => new DrawingPointInfo
+        {
+            X = point.X,
+            Y = point.Y,
+            Order = point.Order
+        }));
+
+        item.Segments.Clear();
+        item.Segments.AddRange(dimension.Segments.Select(static segment => new DimensionSegmentInfo
+        {
+            Id = segment.Id,
+            StartX = segment.StartX,
+            StartY = segment.StartY,
+            EndX = segment.EndX,
+            EndY = segment.EndY,
+            Distance = segment.Distance,
+            DirectionX = segment.DirectionX,
+            DirectionY = segment.DirectionY,
+            TopDirection = segment.TopDirection,
+            Bounds = CopyBounds(segment.Bounds),
+            TextBounds = CopyBounds(segment.TextBounds),
+            DimensionLine = CopyLine(segment.DimensionLine),
+            LeadLineMain = CopyLine(segment.LeadLineMain),
+            LeadLineSecond = CopyLine(segment.LeadLineSecond)
+        }));
+
+        item.SourceObjectIds.Clear();
+        item.SourceObjectIds.AddRange(dimension.SourceObjectIds);
+    }
+
+    private static DrawingBoundsInfo? CopyBounds(DrawingBoundsInfo? bounds)
+    {
+        return bounds == null
+            ? null
+            : TeklaDrawingDimensionsApi.CreateBoundsInfo(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY);
     }
 
     private static int FindMeasuredPointOrder(IEnumerable<DrawingPointInfo> points, double x, double y)

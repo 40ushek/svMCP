@@ -151,9 +151,11 @@ public sealed class DimensionArrangementDedupTests
             DimensionId = dimensionId,
             ViewId = 10,
             ViewType = "FrontView",
+            ViewScale = 1,
             DomainDimensionType = DimensionType.Horizontal,
             SourceKind = sourceKind,
             GeometryKind = DimensionGeometryKind.Horizontal,
+            Orientation = "horizontal",
             Distance = distance,
             SortKey = referenceLine.StartY,
             DirectionX = 1,
@@ -162,14 +164,7 @@ public sealed class DimensionArrangementDedupTests
             ReferenceLine = referenceLine,
             LeadLineMain = leadLineMain,
             LeadLineSecond = leadLineSecond,
-            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine),
-            Dimension = new DrawingDimensionInfo
-            {
-                Id = dimensionId,
-                Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine),
-                Orientation = "horizontal",
-                ViewScale = 1
-            }
+            Bounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(referenceLine)
         };
 
         item.ReplacePointList(points);

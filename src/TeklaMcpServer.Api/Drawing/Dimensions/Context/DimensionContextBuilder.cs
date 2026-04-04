@@ -27,7 +27,7 @@ internal sealed class DimensionContextBuilder
 
     public DimensionContext Build(DimensionItem item)
     {
-        var association = _associationResolver.Resolve(item.Dimension);
+        var association = _associationResolver.Resolve(item);
         var context = new DimensionContext
         {
             DimensionId = item.DimensionId,
