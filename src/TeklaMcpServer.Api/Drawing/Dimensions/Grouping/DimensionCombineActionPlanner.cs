@@ -31,21 +31,26 @@ internal static class DimensionCombineActionPlanner
 
         foreach (var group in reductionDebug.Groups)
         {
-            foreach (var packet in group.Packets.OrderBy(static packet => packet.PacketIndex))
+            var candidateIndex = 0;
+            foreach (var debugCandidate in group.CombineCandidates
+                .Where(static candidate => candidate.DimensionIds.Count > 0)
+                .GroupBy(CreateCandidateKey)
+                .Select(static grouping => grouping.First())
+                .OrderBy(static candidate => candidate.DimensionIds.Min()))
             {
                 var candidate = new DimensionCombineActionCandidate
                 {
                     ViewId = group.RawGroup.ViewId,
                     ViewType = group.RawGroup.ViewType,
                     DimensionType = group.RawGroup.DimensionType,
-                    PacketIndex = packet.PacketIndex,
-                    BaseDimensionId = packet.CombinePreview?.BaseDimensionId ?? packet.RepresentativeDimensionId,
-                    ConnectivityMode = packet.CombineConnectivityMode,
-                    Preview = packet.CombinePreview
+                    PacketIndex = candidateIndex++,
+                    BaseDimensionId = debugCandidate.CombinePreview?.BaseDimensionId ?? debugCandidate.DimensionIds.First(),
+                    ConnectivityMode = debugCandidate.CombineConnectivityMode,
+                    Preview = debugCandidate.CombinePreview
                 };
 
-                candidate.DimensionIds.AddRange(packet.DimensionIds);
-                candidate.BlockingReasons.AddRange(packet.BlockingReasons);
+                candidate.DimensionIds.AddRange(debugCandidate.DimensionIds.Distinct().OrderBy(static id => id));
+                candidate.BlockingReasons.AddRange(debugCandidate.BlockingReasons);
 
                 if (candidate.DimensionIds.Count <= 1)
                 {
@@ -61,7 +66,7 @@ internal static class DimensionCombineActionPlanner
                     continue;
                 }
 
-                if (!packet.IsCombineCandidate)
+                if (!debugCandidate.IsCombineCandidate)
                 {
                     candidate.Reason = candidate.BlockingReasons.FirstOrDefault() ?? "not_combine_candidate";
                     result.Add(candidate);
@@ -89,5 +94,11 @@ internal static class DimensionCombineActionPlanner
         }
 
         return result;
+    }
+
+    private static string CreateCandidateKey(DimensionCombineCandidateDebugInfo candidate)
+    {
+        var dimensionIds = string.Join(",", candidate.DimensionIds.Distinct().OrderBy(static id => id));
+        return $"{candidate.CombineConnectivityMode}|{dimensionIds}";
     }
 }

@@ -173,6 +173,8 @@ Implemented in the current `src` code:
     - adjacent-order fallback prohibition
 - controlled Tekla dimension merging now exists as a separate conservative
   runtime action through `combine_dimensions`
+- current runtime combine action is now driven by `group.CombineCandidates`,
+  while representative packets remain a separate reduction/debug concept
 
 ## Confirmed Findings
 
@@ -477,10 +479,10 @@ Current status:
   - per-item rejection reasons such as `covered`, `equivalent_simple` and
     `representative_packet`
   - representative packet structure and selection data
-- conservative combine-candidate analysis is present at packet level:
-  - candidate packets are detected
+- conservative combine-candidate analysis is present:
+  - candidate sets are detected
   - blocking reasons are exposed
-  - packet preview is built from the selected representative item by default
+  - combine preview is built from the candidate analysis
   - conservative real merge is now available through `combine_dimensions`
 - arrangement debug remains internal/bridge-only
 - combine and arrange remain separate actions:
@@ -577,15 +579,15 @@ Current status:
 ### Combine debt
 
 - `combine_dimensions` сейчас консервативный и intentionally narrow
-- combine разрешается только там, где текущий packet analysis уже уверен, что
-  случай безопасен
+- combine разрешается только там, где текущий combine-candidate analysis уже
+  уверен, что случай безопасен
 - merge не делает post-layout cleanup после создания replacement dimension
 - preview/result surface есть, но главным explain/debug surface по-прежнему
   остается `get_dimension_groups_debug`
 - rollback/delete/create semantics нужно еще подтвердить на живом drawing
   runtime
-- targeted combine работает только по packet'ам, полностью попавшим в выбранный
-  набор `dimensionIds`
+- targeted combine работает только по combine-candidates, полностью попавшим в
+  выбранный набор `dimensionIds`
 
 ### Placement / heuristics debt
 
@@ -866,8 +868,8 @@ The redesign is on track when:
 - grouping and elimination rules are policy-driven rather than hard-coded
 - debug can explain why an item was kept, rejected or selected as a packet
   representative
-- packet-level combine-candidate analysis is visible and remains explainable
-  before `combine v2` broadens the current conservative merge path
+- combine-candidate analysis remains visible and explainable before
+  `combine v2` broadens the current conservative merge path
 
 The redesign is ready to expose further arrange functionality when:
 

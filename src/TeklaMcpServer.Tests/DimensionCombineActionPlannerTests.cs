@@ -62,10 +62,8 @@ public sealed class DimensionCombineActionPlannerTests
             RawGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal },
             ReducedGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal }
         };
-        group.Packets.Add(new DimensionRepresentativePacketDebugInfo
+        group.CombineCandidates.Add(new DimensionCombineCandidateDebugInfo
         {
-            PacketIndex = 0,
-            RepresentativeDimensionId = 42,
             IsCombineCandidate = true,
             CombineConnectivityMode = "shared_point_chain",
             CombinePreview = new DimensionCombinePreviewDebugInfo
@@ -74,14 +72,77 @@ public sealed class DimensionCombineActionPlannerTests
                 Distance = 40
             }
         });
-        group.Packets[0].DimensionIds.Add(41);
-        group.Packets[0].DimensionIds.Add(42);
+        group.CombineCandidates[0].DimensionIds.Add(41);
+        group.CombineCandidates[0].DimensionIds.Add(42);
         debug.Groups.Add(group);
 
         var candidate = Assert.Single(DimensionCombineActionPlanner.BuildCandidates(debug));
 
         Assert.False(candidate.CanCombine);
         Assert.Equal("combine_preview_has_too_few_points", candidate.Reason);
+    }
+
+    [Fact]
+    public void BuildCandidates_DeduplicatesEquivalentCombineCandidates()
+    {
+        var debug = new DimensionReductionDebugResult();
+        var group = new DimensionGroupReductionDebugInfo
+        {
+            RawGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal },
+            ReducedGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal }
+        };
+
+        group.CombineCandidates.Add(CreateCombineCandidate([41, 42], true, "shared_point_neighbor_set"));
+        group.CombineCandidates.Add(CreateCombineCandidate([42, 41], true, "shared_point_neighbor_set"));
+        debug.Groups.Add(group);
+
+        var candidate = Assert.Single(DimensionCombineActionPlanner.BuildCandidates(debug));
+
+        Assert.True(candidate.CanCombine);
+        Assert.Equal(new[] { 41, 42 }, candidate.DimensionIds.ToArray());
+    }
+
+    [Fact]
+    public void BuildCandidates_RequiresWholeCombineCandidateInsideTargetFilter()
+    {
+        var debug = new DimensionReductionDebugResult();
+        var group = new DimensionGroupReductionDebugInfo
+        {
+            RawGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal },
+            ReducedGroup = new DimensionGroup { ViewId = 10, ViewType = "FrontView", DomainDimensionType = DimensionType.Horizontal }
+        };
+
+        group.CombineCandidates.Add(CreateCombineCandidate([41, 42], true, "shared_point_neighbor_set"));
+        debug.Groups.Add(group);
+
+        var candidate = Assert.Single(DimensionCombineActionPlanner.BuildCandidates(debug, [41]));
+
+        Assert.False(candidate.CanCombine);
+        Assert.Equal("target_filter_mismatch", candidate.Reason);
+    }
+
+    private static DimensionCombineCandidateDebugInfo CreateCombineCandidate(
+        int[] dimensionIds,
+        bool isCombineCandidate,
+        string connectivityMode)
+    {
+        var candidate = new DimensionCombineCandidateDebugInfo
+        {
+            IsCombineCandidate = isCombineCandidate,
+            CombineConnectivityMode = connectivityMode,
+            CombinePreview = new DimensionCombinePreviewDebugInfo
+            {
+                BaseDimensionId = dimensionIds[0],
+                Distance = 40
+            }
+        };
+
+        foreach (var dimensionId in dimensionIds)
+            candidate.DimensionIds.Add(dimensionId);
+
+        candidate.CombinePreview.PointList.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
+        candidate.CombinePreview.PointList.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
+        return candidate;
     }
 
     private static DrawingDimensionInfo CreateDimension(

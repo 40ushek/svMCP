@@ -87,7 +87,7 @@ Exposed through `TeklaMcpServer/Tools`:
 
 These are the supported public tool-surface operations for dimensions.
 `combine_dimensions` is a separate controlled merge action layered on top of
-the existing packet-level combine analysis; it is intentionally not part of
+the existing combine-candidate analysis; it is intentionally not part of
 `arrange_dimensions`.
 
 Current default for `arrange_dimensions`:
