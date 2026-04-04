@@ -205,4 +205,10 @@ public sealed class DimensionSourceCandidateInfo
     public int? ModelId { get; set; }
     public string ResolvedModelType { get; set; } = string.Empty;
     public string SourceKind { get; set; } = string.Empty;
+    public string GeometrySource { get; set; } = string.Empty;
+    public bool HasGeometry { get; set; }
+    public int GeometryPointCount { get; set; }
+    public DrawingBoundsInfo? GeometryBounds { get; set; }
+    public List<DrawingPointInfo> GeometryPoints { get; set; } = new();
+    public List<string> GeometryWarnings { get; set; } = new();
 }

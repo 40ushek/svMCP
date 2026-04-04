@@ -181,7 +181,26 @@ internal sealed partial class DrawingCommandHandler
                     drawingObjectId = c.DrawingObjectId,
                     modelId = c.ModelId,
                     resolvedModelType = c.ResolvedModelType,
-                    sourceKind = c.SourceKind
+                    sourceKind = c.SourceKind,
+                    geometrySource = c.GeometrySource,
+                    hasGeometry = c.HasGeometry,
+                    geometryPointCount = c.GeometryPointCount,
+                    geometryBounds = c.GeometryBounds == null ? null : new
+                    {
+                        minX = c.GeometryBounds.MinX,
+                        minY = c.GeometryBounds.MinY,
+                        maxX = c.GeometryBounds.MaxX,
+                        maxY = c.GeometryBounds.MaxY,
+                        width = c.GeometryBounds.Width,
+                        height = c.GeometryBounds.Height
+                    },
+                    geometryPoints = c.GeometryPoints.Select(point => new
+                    {
+                        x = point.X,
+                        y = point.Y,
+                        order = point.Order
+                    }),
+                    geometryWarnings = c.GeometryWarnings
                 })
             })
         });

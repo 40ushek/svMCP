@@ -1,28 +1,16 @@
 using System.Collections.Generic;
 using System.Linq;
-using Tekla.Structures.Model;
-
 namespace TeklaMcpServer.Api.Drawing;
 
 internal sealed class DimensionContextBuilder
 {
     private const double InternalBandTolerance = 1.0;
 
-    private readonly Model _model;
     private readonly IDrawingPartPointApi _partPointApi;
-    private readonly IDrawingAssemblyPointApi _assemblyPointApi;
-    private readonly IDrawingBoltPointApi _boltPointApi;
 
-    public DimensionContextBuilder(
-        Model model,
-        IDrawingPartPointApi partPointApi,
-        IDrawingAssemblyPointApi assemblyPointApi,
-        IDrawingBoltPointApi boltPointApi)
+    public DimensionContextBuilder(IDrawingPartPointApi partPointApi)
     {
-        _model = model ?? new Model();
         _partPointApi = partPointApi;
-        _assemblyPointApi = assemblyPointApi;
-        _boltPointApi = boltPointApi;
     }
 
     public DimensionContextBuildResult Build(IEnumerable<DimensionItem> items)
@@ -145,7 +133,8 @@ internal sealed class DimensionContextBuilder
 
         if (boundsList.Count == 0)
         {
-            warnings.Add("source_geometry_unavailable");
+            if (warnings.Count == 0)
+                warnings.Add("source_geometry_unavailable");
             return null;
         }
 
@@ -178,6 +167,9 @@ internal sealed class DimensionContextBuilder
 
         if (context.SourceKind == DimensionSourceKind.Grid)
             return DimensionContextRole.Grid;
+
+        if (context.SourceKind == DimensionSourceKind.Part && !context.HasSourceGeometry)
+            return DimensionContextRole.NoSourceGeometry;
 
         if (context.SourceKind != DimensionSourceKind.Part ||
             context.ReferenceLine == null ||

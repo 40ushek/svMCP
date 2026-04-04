@@ -25,6 +25,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
+            var partPointApi = new TeklaDrawingPartPointApi(_model);
             DrawingObjectEnumerator dimObjects;
             if (viewId.HasValue)
             {
@@ -57,10 +58,11 @@ public sealed partial class TeklaDrawingDimensionsApi
                     DimensionType = TryGetDimensionType(dimSet),
                     TeklaDimensionType = TryGetDimensionType(dimSet)
                 };
+                var ownerViewId = dimSet.GetView()?.GetIdentifier().ID;
 
-                CollectDimensionSourceCandidates(info.Candidates, dimSet.GetRelatedObjects(), "dimensionSet");
+                CollectDimensionSourceCandidates(info.Candidates, dimSet.GetRelatedObjects(), "dimensionSet", ownerViewId, partPointApi);
                 foreach (var segment in EnumerateSegments(dimSet))
-                    CollectDimensionSourceCandidates(info.Candidates, segment.GetRelatedObjects(), $"segment:{segment.GetIdentifier().ID}");
+                    CollectDimensionSourceCandidates(info.Candidates, segment.GetRelatedObjects(), $"segment:{segment.GetIdentifier().ID}", ownerViewId, partPointApi);
 
                 result.Dimensions.Add(info);
             }
@@ -278,7 +280,9 @@ public sealed partial class TeklaDrawingDimensionsApi
     private void CollectDimensionSourceCandidates(
         List<DimensionSourceCandidateInfo> target,
         DrawingObjectEnumerator? relatedObjects,
-        string owner)
+        string owner,
+        int? ownerViewId,
+        IDrawingPartPointApi partPointApi)
     {
         if (relatedObjects == null)
             return;
@@ -302,8 +306,73 @@ public sealed partial class TeklaDrawingDimensionsApi
                 candidate.ResolvedModelType = TrySelectRelatedModelObject(drawingModelObject)?.GetType().Name ?? string.Empty;
             }
 
+            PopulateCandidateGeometry(candidate, ownerViewId, partPointApi);
             target.Add(candidate);
         }
+    }
+
+    private void PopulateCandidateGeometry(DimensionSourceCandidateInfo candidate, int? ownerViewId, IDrawingPartPointApi partPointApi)
+    {
+        if (!ownerViewId.HasValue)
+        {
+            candidate.GeometryWarnings.Add("view_unavailable");
+            return;
+        }
+
+        if (!candidate.ModelId.HasValue || candidate.ModelId.Value <= 0)
+        {
+            candidate.GeometryWarnings.Add("model_id_unavailable");
+            return;
+        }
+
+        if (!string.Equals(candidate.SourceKind, DimensionSourceKind.Part.ToString(), System.StringComparison.Ordinal))
+        {
+            candidate.GeometryWarnings.Add("geometry_probe_not_supported_for_source_kind");
+            return;
+        }
+
+        candidate.GeometrySource = "part_points";
+
+        GetPartPointsResult partPoints;
+        try
+        {
+            partPoints = partPointApi.GetPartPointsInView(ownerViewId.Value, candidate.ModelId.Value);
+        }
+        catch
+        {
+            candidate.GeometryWarnings.Add("part_points_failed");
+            return;
+        }
+
+        if (!partPoints.Success)
+        {
+            candidate.GeometryWarnings.Add(partPoints.Error ?? "part_points_unavailable");
+            return;
+        }
+
+        foreach (var point in partPoints.Points.Where(static point => point.Point.Length >= 2))
+        {
+            candidate.GeometryPoints.Add(new DrawingPointInfo
+            {
+                X = System.Math.Round(point.Point[0], 3),
+                Y = System.Math.Round(point.Point[1], 3),
+                Order = point.Index
+            });
+        }
+
+        candidate.GeometryPointCount = candidate.GeometryPoints.Count;
+        if (candidate.GeometryPoints.Count == 0)
+        {
+            candidate.GeometryWarnings.Add("geometry_points_empty");
+            return;
+        }
+
+        candidate.HasGeometry = true;
+        candidate.GeometryBounds = TeklaDrawingDimensionsApi.CreateBoundsInfo(
+            candidate.GeometryPoints.Min(static point => point.X),
+            candidate.GeometryPoints.Min(static point => point.Y),
+            candidate.GeometryPoints.Max(static point => point.X),
+            candidate.GeometryPoints.Max(static point => point.Y));
     }
 
     private static void CollectRuntimeTextDebug(

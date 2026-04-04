@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
@@ -72,18 +71,14 @@ public sealed class DimensionContextBuilderTests
 
         var context = builder.Build(item);
 
-        Assert.Equal(DimensionContextRole.Unknown, context.Role);
+        Assert.Equal(DimensionContextRole.NoSourceGeometry, context.Role);
         Assert.False(context.HasSourceGeometry);
         Assert.Contains("source_geometry_unavailable", context.GeometryWarnings);
     }
 
     private static DimensionContextBuilder CreateBuilder(IDrawingPartPointApi partPointApi)
     {
-        return new DimensionContextBuilder(
-            new Model(),
-            partPointApi,
-            new FakeAssemblyPointApi(),
-            new FakeBoltPointApi());
+        return new DimensionContextBuilder(partPointApi);
     }
 
     private static DimensionItem CreatePartItem(int dimensionId, double referenceY)
@@ -202,31 +197,5 @@ public sealed class DimensionContextBuilderTests
         }
 
         public List<GetPartPointsResult> GetAllPartPointsInView(int viewId) => [];
-    }
-
-    private sealed class FakeAssemblyPointApi : IDrawingAssemblyPointApi
-    {
-        public GetAssemblyPointsResult GetAssemblyPointsInView(int viewId, int modelId) =>
-            new()
-            {
-                Success = false,
-                ViewId = viewId,
-                ModelId = modelId,
-                Error = "unused"
-            };
-    }
-
-    private sealed class FakeBoltPointApi : IDrawingBoltPointApi
-    {
-        public GetBoltGroupPointsResult GetBoltGroupPointsInView(int viewId, int modelId) =>
-            new()
-            {
-                Success = false,
-                ViewId = viewId,
-                ModelId = modelId,
-                Error = "unused"
-            };
-
-        public List<GetBoltGroupPointsResult> GetPartBoltPointsInView(int viewId, int partId) => [];
     }
 }
