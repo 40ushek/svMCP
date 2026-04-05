@@ -174,6 +174,7 @@ Purpose:
 This layer should continue to grow around:
 
 - `DimensionContext`
+- `DimensionViewContext`
 - source association and point-to-object mapping
 - `DimensionGeometryContext`
 - `LayoutPolicy`
@@ -262,6 +263,7 @@ The current baseline already includes:
 - local post-combine arrange handoff
 - bounded stable reread after mutate
 - `DimensionContext`
+- minimal `DimensionViewContext`
 - source association and point-to-object mapping
 - explicit typed source identity via `DimensionSourceReference`
 - no remaining flat source-id semantics in domain/context layers
@@ -270,6 +272,15 @@ The current baseline already includes:
 - orchestration extracted into a dedicated module/layer
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
+
+Current `DimensionViewContext` baseline should be interpreted carefully:
+
+- it currently builds a single-view geometry context
+- it currently includes all successful `Parts` and deduplicated `Bolts` from
+  that view
+- this is a good baseline for assembly-oriented drawing scenarios
+- this is not yet the target strategy for heavy GA drawings where a full-view
+  object set may be too large to load or reason over directly
 
 What the baseline does not claim:
 
@@ -363,7 +374,24 @@ The next useful capabilities are:
 - better support for collision reasoning
 - future candidate placement generation
 
-### 3. Add candidate placements and cost-based layout support
+### 3. Add GA-safe `DimensionViewContext` selection strategy
+
+Current `DimensionViewContext` construction is intentionally simple:
+
+- single view
+- all parts in view
+- all related bolts in view
+
+This is acceptable for assembly-oriented drawing work, but it should not be
+assumed to scale to heavy GA views with very large object counts.
+
+The next phase should likely add a more selective strategy for GA-sized views:
+
+- keep the current full-view path for assembly scenarios where it is practical
+- add a relevance/filtering mode for large GA contexts
+- avoid turning `DimensionViewContext` into an unconditional full drawing dump
+
+### 4. Add candidate placements and cost-based layout support
 
 This is the first step toward richer annotation-aware layout.
 
@@ -374,7 +402,7 @@ Expected direction:
 - evaluate them by explicit penalties
 - remain explainable
 
-### 4. Expand collision-aware layout as a supporting primitive
+### 5. Expand collision-aware layout as a supporting primitive
 
 Later work may add:
 
@@ -386,7 +414,7 @@ Later work may add:
 This should be built on top of the context layers above, not as more ad hoc
 `Distance` translation rules.
 
-### 5. Keep public/debug projections honest
+### 6. Keep public/debug projections honest
 
 The remaining documentation and code shape should continue to reinforce:
 

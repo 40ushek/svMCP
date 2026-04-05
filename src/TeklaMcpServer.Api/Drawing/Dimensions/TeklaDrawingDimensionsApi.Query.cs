@@ -660,7 +660,8 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var builder = new DimensionViewContextBuilder(
             new TeklaDrawingPartGeometryApi(_model),
-            new TeklaDrawingBoltGeometryApi(_model));
+            new TeklaDrawingBoltGeometryApi(_model),
+            new TeklaDrawingGridApi());
         return builder.Build(effectiveViewId.Value, viewScale);
     }
 
