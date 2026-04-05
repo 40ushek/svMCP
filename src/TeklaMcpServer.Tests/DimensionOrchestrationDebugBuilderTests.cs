@@ -131,6 +131,12 @@ public sealed class DimensionOrchestrationDebugBuilderTests
         Assert.Equal(0, result.Packets[0].Evidence.Distance, 3);
         Assert.Equal(0, result.Packets[0].Evidence.TopDirection);
         Assert.Equal(0, result.Packets[0].Evidence.ViewScale, 3);
+        Assert.True(result.Packets[0].Evidence.CanEvaluatePartsBoundsGap);
+        Assert.Equal(20, result.Packets[0].Evidence.CurrentPartsBoundsGapDrawing, 3);
+        Assert.Equal(10, result.Packets[0].Evidence.TargetPartsBoundsGapPaper, 3);
+        Assert.Equal(10, result.Packets[0].Evidence.TargetPartsBoundsGapDrawing, 3);
+        Assert.False(result.Packets[0].Evidence.RequiresPartsBoundsGapCorrection);
+        Assert.Equal(0, result.Packets[0].Evidence.SuggestedOutwardDeltaFromPartsBounds, 3);
     }
 
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)

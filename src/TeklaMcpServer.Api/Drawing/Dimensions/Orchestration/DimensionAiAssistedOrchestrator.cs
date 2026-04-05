@@ -138,6 +138,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionViewContext viewContext)
     {
         var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);
+        var partsBoundsGap = DimensionPartsBoundsGapPolicy.Evaluate(viewPlacement);
         return new DimensionAiOrchestrationEvidence
         {
             LayoutPolicyStatus = evidence.LayoutPolicyStatus,
@@ -163,7 +164,13 @@ internal sealed class DimensionAiAssistedOrchestrator
             ReferenceLineLength = viewPlacement.ReferenceLineLength,
             Distance = viewPlacement.Distance,
             TopDirection = viewPlacement.TopDirection,
-            ViewScale = viewPlacement.ViewScale
+            ViewScale = viewPlacement.ViewScale,
+            CanEvaluatePartsBoundsGap = partsBoundsGap.CanEvaluate,
+            CurrentPartsBoundsGapDrawing = partsBoundsGap.CurrentGapDrawing,
+            TargetPartsBoundsGapPaper = partsBoundsGap.TargetGapPaper,
+            TargetPartsBoundsGapDrawing = partsBoundsGap.TargetGapDrawing,
+            RequiresPartsBoundsGapCorrection = partsBoundsGap.RequiresOutwardCorrection,
+            SuggestedOutwardDeltaFromPartsBounds = partsBoundsGap.SuggestedOutwardDeltaDrawing
         };
     }
 

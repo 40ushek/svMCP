@@ -44,6 +44,12 @@ internal sealed class DimensionAiOrchestrationEvidence
     public double Distance { get; set; }
     public int TopDirection { get; set; }
     public double ViewScale { get; set; }
+    public bool CanEvaluatePartsBoundsGap { get; set; }
+    public double CurrentPartsBoundsGapDrawing { get; set; }
+    public double TargetPartsBoundsGapPaper { get; set; }
+    public double TargetPartsBoundsGapDrawing { get; set; }
+    public bool RequiresPartsBoundsGapCorrection { get; set; }
+    public double SuggestedOutwardDeltaFromPartsBounds { get; set; }
 }
 
 internal sealed class DimensionAiOrchestrationPlanStep
