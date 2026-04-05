@@ -36,6 +36,8 @@ The current `v1` baseline already includes:
   metrics
 - narrow deterministic consumption of `PartsBounds` gap-policy signals during
   arrangement planning
+- validated view-local part-geometry contract for both `SolidVertices` and
+  `BboxMin` / `BboxMax`
 - stable reread after mutate
 - internal orchestration debug packets
 - internal orchestration plan/preview packets
@@ -215,6 +217,12 @@ working constraints rather than open questions.
   - a second run with the same target gap can be idempotent
   - push works when lines are too close
   - pull works when lines are too far apart
+- `place_control_diagonals` has been live-validated on a real view using
+  `SolidVertices`-driven hull/extreme-point selection
+- `DimensionViewContext.PartsBounds` has been live-validated against debug
+  overlay on a real view after restoring the view-local bbox contract
+- `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
+  path enabled, including outward shifts relative to the overall parts box
 - negative `Distance` values occur on real drawings
 - sign semantics for negative-distance dimensions remain a known risk area for
   future policy/layout work

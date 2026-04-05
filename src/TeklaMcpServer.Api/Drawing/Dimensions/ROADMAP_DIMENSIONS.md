@@ -280,6 +280,8 @@ The current baseline already includes:
 - `PartsBounds` / `PartsHull` / `GridIds` added to `DimensionViewContext`
 - per-dimension `PartsBounds` placement classification and exact placement metrics
 - `PartsBounds` gap-policy signals exposed in deterministic debug/orchestration evidence
+- validated view-local part-geometry contract for both `SolidVertices` and
+  `BboxMin` / `BboxMax`
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
 
@@ -289,6 +291,8 @@ Current `DimensionViewContext` baseline should be interpreted carefully:
 - it currently includes all successful `Parts` and deduplicated `Bolts` from
   that view
 - it currently derives `PartsBounds` and `PartsHull` from part geometry only
+- it currently assumes part geometry for this context is already normalized into
+  the owning view coordinate system before bounds/hull aggregation
 - it currently carries `GridIds` when grids are present on the drawing view
 - this is a good baseline for assembly-oriented drawing scenarios
 - this is not yet the target strategy for heavy GA drawings where a full-view
@@ -341,6 +345,12 @@ on the current implementation and should constrain future work.
   - idempotent second run with the same target gap can produce no changes
   - push works when lines are too close
   - pull works when lines are too far apart
+- `place_control_diagonals` has been live-validated on a real view using
+  `SolidVertices`-driven hull/extreme-point selection
+- `DimensionViewContext.PartsBounds` has been live-validated against debug
+  overlay on a real view after restoring the view-local bbox contract
+- `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
+  path enabled, including outward shifts relative to the overall parts box
 - negative `Distance` values occur on real drawings
 - sign semantics for negative-distance dimensions remain a risk area for future
   policy/layout work
