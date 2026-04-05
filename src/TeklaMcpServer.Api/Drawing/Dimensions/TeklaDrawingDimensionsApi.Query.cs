@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 

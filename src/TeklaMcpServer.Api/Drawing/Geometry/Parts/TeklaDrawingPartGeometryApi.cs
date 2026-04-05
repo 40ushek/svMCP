@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -23,7 +22,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         var dh = new DrawingHandler();
         var activeDrawing = dh.GetActiveDrawing();
         if (activeDrawing == null)
-            return new List<PartGeometryInViewResult>();
+            return new();
 
         View? view = null;
         var viewEnum = activeDrawing.GetSheet().GetViews();
@@ -36,11 +35,13 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
             }
         }
         if (view == null)
-            return new List<PartGeometryInViewResult>();
+            return new();
 
         var workPlaneHandler = _model.GetWorkPlaneHandler();
-        var originalPlane    = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.DisplayCoordinateSystem));
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+        var viewPlane = new TransformationPlane(view.ViewCoordinateSystem);
+        workPlaneHandler.SetCurrentTransformationPlane(viewPlane);
+        //_model.CommitChanges();
 
         var results = new List<PartGeometryInViewResult>();
         try
@@ -54,28 +55,30 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     continue;
 
                 var id = drawingPart.ModelIdentifier;
-                var modelObj = _model.SelectModelObject(id);
-                if (modelObj == null) continue;
-                modelObj.Select(); // required for GetReportProperty to work
+                var modelPart = _model.SelectModelObject(id) as ModelPart;
+                if (modelPart == null) continue;
+                modelPart.Select(); // required for GetReportProperty to work
 
                 var modelId = id.ID;
                 double[] startPt = [], endPt = [], axisX = [], axisY = [], csOrigin = [];
 
-                string typeName = modelObj.GetType().Name;
+                string typeName = modelPart.GetType().Name;
+
                 string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
                 double[] bboxMin = [], bboxMax = [];
                 List<double[]> solidVertices = new();
 
-                if (modelObj is Beam beam)
+                if (modelPart is Beam beam)
                 {
-                    startPt  = ToArray(beam.StartPoint);
-                    endPt    = ToArray(beam.EndPoint);
-                    var cs   = beam.GetCoordinateSystem();
+
+                    startPt = ToArray(beam.StartPoint);
+                    endPt = ToArray(beam.EndPoint);
+                    var cs = beam.GetCoordinateSystem();
                     csOrigin = ToArray(cs.Origin);
-                    axisX    = ToArray(cs.AxisX);
-                    axisY    = ToArray(cs.AxisY);
-                    name     = beam.Name;
-                    profile  = beam.Profile.ProfileString;
+                    axisX = ToArray(cs.AxisX);
+                    axisY = ToArray(cs.AxisY);
+                    name = beam.Name;
+                    profile = beam.Profile.ProfileString;
                     material = beam.Material.MaterialString;
                     var solid = beam.GetSolid();
                     if (solid != null)
@@ -84,15 +87,20 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                         bboxMax = ToArray(solid.MaximumPoint);
                         solidVertices = CollectSolidVertices(solid);
                     }
+
+                    //var rect1 = new Rectangle(view, solid.MinimumPoint, solid.MaximumPoint);
+                    //rect1.Attributes.Line.Color = DrawingColors.Magenta;
+                    //rect1.Insert();
+
                 }
-                else if (modelObj is ModelPart part)
+                else if (modelPart is ModelPart part)
                 {
-                    var cs   = part.GetCoordinateSystem();
-                    startPt  = ToArray(cs.Origin);
+                    var cs = part.GetCoordinateSystem();
+                    startPt = ToArray(cs.Origin);
                     csOrigin = ToArray(cs.Origin);
-                    axisX    = ToArray(cs.AxisX);
-                    axisY    = ToArray(cs.AxisY);
-                    name     = part.Name;
+                    axisX = ToArray(cs.AxisX);
+                    axisY = ToArray(cs.AxisY);
+                    name = part.Name;
                     var solid = part.GetSolid();
                     if (solid != null)
                     {
@@ -100,34 +108,34 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                         bboxMax = ToArray(solid.MaximumPoint);
                         solidVertices = CollectSolidVertices(solid);
                     }
-                    part.GetReportProperty("PROFILE",  ref profile);
+                    part.GetReportProperty("PROFILE", ref profile);
                     part.GetReportProperty("MATERIAL", ref material);
                 }
 
-                modelObj.GetReportProperty("PART_POS", ref partPos);
+                modelPart.GetReportProperty("PART_POS", ref partPos);
                 int materialType = -1;
-                modelObj.GetReportProperty("MATERIAL_TYPE", ref materialType);
+                modelPart.GetReportProperty("MATERIAL_TYPE", ref materialType);
                 if (materialType == -1)
                     materialType = InferMaterialType(material);
 
                 results.Add(new PartGeometryInViewResult
                 {
-                    Success    = true,
-                    ViewId     = viewId,
-                    ModelId    = modelId,
+                    Success = true,
+                    ViewId = viewId,
+                    ModelId = modelId,
                     StartPoint = startPt,
-                    EndPoint   = endPt,
+                    EndPoint = endPt,
                     CoordinateSystemOrigin = csOrigin,
-                    AxisX      = axisX,
-                    AxisY      = axisY,
-                    BboxMin    = bboxMin,
-                    BboxMax    = bboxMax,
+                    AxisX = axisX,
+                    AxisY = axisY,
+                    BboxMin = bboxMin,
+                    BboxMax = bboxMax,
                     SolidVertices = solidVertices,
-                    Type       = typeName,
-                    Name       = name,
-                    PartPos    = partPos,
-                    Profile    = profile,
-                    Material   = material,
+                    Type = typeName,
+                    Name = name,
+                    PartPos = partPos,
+                    Profile = profile,
+                    Material = material,
                     MaterialType = materialType
                 });
             }
@@ -135,6 +143,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         finally
         {
             workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+            //_model.CommitChanges();
         }
         return results;
     }
@@ -164,41 +173,41 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         // Set work plane to view's DisplayCoordinateSystem so that all model
         // coordinates are returned in view-local space.
         var workPlaneHandler = _model.GetWorkPlaneHandler();
-        var originalPlane    = workPlaneHandler.GetCurrentTransformationPlane();
-        var displayCS        = view.DisplayCoordinateSystem;
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+        var viewCS = view.ViewCoordinateSystem;
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(viewCS));
+        //_model.CommitChanges();
 
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(displayCS));
         try
         {
             var identifier = new Identifier(modelId);
-            var modelObj   = _model.SelectModelObject(identifier);
+            var modelObj = _model.SelectModelObject(identifier);
             if (modelObj == null)
                 return Fail(viewId, modelId, $"Model object {modelId} not found.");
-
             modelObj.Select();
 
             double[] startPt = [];
-            double[] endPt   = [];
-            double[] axisX   = [];
-            double[] axisY   = [];
+            double[] endPt = [];
+            double[] axisX = [];
+            double[] axisY = [];
             double[] csOrigin = [];
 
             if (modelObj is Beam beam)
             {
                 startPt = ToArray(beam.StartPoint);
-                endPt   = ToArray(beam.EndPoint);
-                var cs  = beam.GetCoordinateSystem();
+                endPt = ToArray(beam.EndPoint);
+                var cs = beam.GetCoordinateSystem();
                 csOrigin = ToArray(cs.Origin);
-                axisX   = ToArray(cs.AxisX);
-                axisY   = ToArray(cs.AxisY);
+                axisX = ToArray(cs.AxisX);
+                axisY = ToArray(cs.AxisY);
             }
             else if (modelObj is ModelPart part)
             {
                 var cs = part.GetCoordinateSystem();
                 startPt = ToArray(cs.Origin);
                 csOrigin = ToArray(cs.Origin);
-                axisX   = ToArray(cs.AxisX);
-                axisY   = ToArray(cs.AxisY);
+                axisX = ToArray(cs.AxisX);
+                axisY = ToArray(cs.AxisY);
             }
 
             double[] bboxMin = [];
@@ -217,16 +226,16 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
 
             return new PartGeometryInViewResult
             {
-                Success    = true,
-                ViewId     = viewId,
-                ModelId    = modelId,
+                Success = true,
+                ViewId = viewId,
+                ModelId = modelId,
                 StartPoint = startPt,
-                EndPoint   = endPt,
+                EndPoint = endPt,
                 CoordinateSystemOrigin = csOrigin,
-                AxisX      = axisX,
-                AxisY      = axisY,
-                BboxMin    = bboxMin,
-                BboxMax    = bboxMax
+                AxisX = axisX,
+                AxisY = axisY,
+                BboxMin = bboxMin,
+                BboxMax = bboxMax
                 ,
                 SolidVertices = solidVertices
             };
@@ -234,6 +243,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         finally
         {
             workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+            //_model.CommitChanges();
         }
     }
 
@@ -296,14 +306,14 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         if (point.Length < 3)
             return false;
 
-        return System.Math.Abs(point[0] - candidate.X) <= epsilon
-            && System.Math.Abs(point[1] - candidate.Y) <= epsilon
-            && System.Math.Abs(point[2] - candidate.Z) <= epsilon;
+        return Math.Abs(point[0] - candidate.X) <= epsilon
+            && Math.Abs(point[1] - candidate.Y) <= epsilon
+            && Math.Abs(point[2] - candidate.Z) <= epsilon;
     }
 
-    private static double[] ToArray(Point? p)  => p  == null ? [] : [R(p.X), R(p.Y), R(p.Z)];
-    private static double[] ToArray(Vector? v) => v  == null ? [] : [R(v.X), R(v.Y), R(v.Z)];
-    private static double R(double v) => System.Math.Round(v, 5);
+    private static double[] ToArray(Point? p) => p == null ? [] : [R(p.X), R(p.Y), R(p.Z)];
+    private static double[] ToArray(Vector? v) => v == null ? [] : [R(v.X), R(v.Y), R(v.Z)];
+    private static double R(double v) => Math.Round(v, 5);
 
     /// <summary>
     /// Infers Tekla MATERIAL_TYPE (1=Steel, 2=Concrete, 5=Timber, 6=Misc) from material name string.
@@ -326,12 +336,12 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
             return 2;
 
         // Timber: C<digits> (no slash)  e.g. C24, C18; GL*, KVH*, BSH*, LVL*
-        if ((s.Length > 1 && s[0] == 'C' && char.IsDigit(s[1]) && !s.Contains('/')) ||
+        if (s.Length > 1 && s[0] == 'C' && char.IsDigit(s[1]) && !s.Contains('/') ||
             s.StartsWith("GL") || s.StartsWith("KVH") || s.StartsWith("BSH") || s.StartsWith("LVL"))
             return 5;
 
         // Steel: S<digits>, Fe*, A3*, A5*, HE*, IPE*, RHS*, SHS*, CHS*, etc.
-        if ((s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1])) ||
+        if (s.Length > 1 && s[0] == 'S' && char.IsDigit(s[1]) ||
             s.StartsWith("FE") || s.StartsWith("HE") || s.StartsWith("IPE") ||
             s.StartsWith("RHS") || s.StartsWith("SHS") || s.StartsWith("CHS"))
             return 1;

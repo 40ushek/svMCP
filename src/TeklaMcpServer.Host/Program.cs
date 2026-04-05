@@ -12,6 +12,10 @@ internal static class Program
     [STAThread]
     static void Main()
     {
+
+        //var dr = new TeklaMcpServer.Api.Drawing.TeklaDrawingPartGeometryApi(new Model());
+        //var g = dr.GetAllPartsGeometryInView(3700);
+
         ApplyTeklaChannelFixes();
 
         var model = new Model();

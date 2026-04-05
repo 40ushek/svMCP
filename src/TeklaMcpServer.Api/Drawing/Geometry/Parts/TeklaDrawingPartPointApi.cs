@@ -3,6 +3,7 @@ using System.Linq;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing;
 
