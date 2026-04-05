@@ -40,6 +40,10 @@ internal sealed class DimensionAiOrchestrationEvidence
     public bool IsOutsidePartsBounds { get; set; }
     public bool IntersectsPartsBounds { get; set; }
     public double? OffsetFromPartsBounds { get; set; }
+    public double? ReferenceLineLength { get; set; }
+    public double Distance { get; set; }
+    public int TopDirection { get; set; }
+    public double ViewScale { get; set; }
 }
 
 internal sealed class DimensionAiOrchestrationPlanStep

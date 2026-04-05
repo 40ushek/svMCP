@@ -377,7 +377,7 @@ internal static class DimensionOrchestrationDebugBuilder
         DimensionViewContext viewContext,
         string? combineConnectivityMode = null)
     {
-        var viewPlacement = DimensionViewPlacementAnalyzer.Analyze(context, viewContext);
+        var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);
         return new DimensionOrchestrationEvidence
         {
             LayoutPolicyStatus = item.LayoutPolicy?.Status.ToString() ?? string.Empty,
@@ -392,7 +392,11 @@ internal static class DimensionOrchestrationDebugBuilder
             PartsBoundsSide = viewPlacement.PartsBoundsSide,
             IsOutsidePartsBounds = viewPlacement.IsOutsidePartsBounds,
             IntersectsPartsBounds = viewPlacement.IntersectsPartsBounds,
-            OffsetFromPartsBounds = viewPlacement.OffsetFromPartsBounds
+            OffsetFromPartsBounds = viewPlacement.OffsetFromPartsBounds,
+            ReferenceLineLength = viewPlacement.ReferenceLineLength,
+            Distance = viewPlacement.Distance,
+            TopDirection = viewPlacement.TopDirection,
+            ViewScale = viewPlacement.ViewScale
         };
     }
 

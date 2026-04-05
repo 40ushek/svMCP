@@ -137,7 +137,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionContext? context,
         DimensionViewContext viewContext)
     {
-        var viewPlacement = DimensionViewPlacementAnalyzer.Analyze(context, viewContext);
+        var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);
         return new DimensionAiOrchestrationEvidence
         {
             LayoutPolicyStatus = evidence.LayoutPolicyStatus,
@@ -159,7 +159,11 @@ internal sealed class DimensionAiAssistedOrchestrator
             PartsBoundsSide = viewPlacement.PartsBoundsSide,
             IsOutsidePartsBounds = viewPlacement.IsOutsidePartsBounds,
             IntersectsPartsBounds = viewPlacement.IntersectsPartsBounds,
-            OffsetFromPartsBounds = viewPlacement.OffsetFromPartsBounds
+            OffsetFromPartsBounds = viewPlacement.OffsetFromPartsBounds,
+            ReferenceLineLength = viewPlacement.ReferenceLineLength,
+            Distance = viewPlacement.Distance,
+            TopDirection = viewPlacement.TopDirection,
+            ViewScale = viewPlacement.ViewScale
         };
     }
 

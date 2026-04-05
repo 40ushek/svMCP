@@ -127,6 +127,10 @@ public sealed class DimensionOrchestrationDebugBuilderTests
         Assert.Equal("top", result.Packets[0].Evidence.PartsBoundsSide);
         Assert.True(result.Packets[0].Evidence.IsOutsidePartsBounds);
         Assert.Equal(20, result.Packets[0].Evidence.OffsetFromPartsBounds, 3);
+        Assert.Equal(100, result.Packets[0].Evidence.ReferenceLineLength, 3);
+        Assert.Equal(0, result.Packets[0].Evidence.Distance, 3);
+        Assert.Equal(0, result.Packets[0].Evidence.TopDirection);
+        Assert.Equal(0, result.Packets[0].Evidence.ViewScale, 3);
     }
 
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)

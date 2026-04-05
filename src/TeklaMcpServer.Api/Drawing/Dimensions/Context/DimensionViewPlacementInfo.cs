@@ -1,34 +1,42 @@
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class DimensionViewPlacementAnalysis
+internal sealed class DimensionViewPlacementInfo
 {
     public bool HasPartsBounds { get; set; }
     public string PartsBoundsSide { get; set; } = string.Empty;
     public bool IsOutsidePartsBounds { get; set; }
     public bool IntersectsPartsBounds { get; set; }
     public double? OffsetFromPartsBounds { get; set; }
+    public double? ReferenceLineLength { get; set; }
+    public double Distance { get; set; }
+    public int TopDirection { get; set; }
+    public double ViewScale { get; set; }
 }
 
-internal static class DimensionViewPlacementAnalyzer
+internal static class DimensionViewPlacementInfoBuilder
 {
     private const double BoundsTolerance = 1.0;
 
-    public static DimensionViewPlacementAnalysis Analyze(
+    public static DimensionViewPlacementInfo Build(
         DimensionContext? dimensionContext,
         DimensionViewContext? viewContext)
     {
-        var analysis = new DimensionViewPlacementAnalysis
+        var info = new DimensionViewPlacementInfo
         {
-            HasPartsBounds = viewContext?.PartsBounds != null
+            HasPartsBounds = viewContext?.PartsBounds != null,
+            ReferenceLineLength = dimensionContext?.ReferenceLine?.Length,
+            Distance = dimensionContext?.Distance ?? 0,
+            TopDirection = dimensionContext?.Item.TopDirection ?? 0,
+            ViewScale = dimensionContext?.ViewScale ?? viewContext?.ViewScale ?? 0
         };
 
         if (dimensionContext?.ReferenceLine == null || viewContext?.PartsBounds == null)
-            return analysis;
+            return info;
 
         var line = dimensionContext.ReferenceLine;
         var bounds = viewContext.PartsBounds;
         var lineBounds = TeklaDrawingDimensionsApi.CreateBoundsFromLine(line);
-        analysis.IntersectsPartsBounds = Intersects(bounds, lineBounds);
+        info.IntersectsPartsBounds = Intersects(bounds, lineBounds);
 
         var dx = line.EndX - line.StartX;
         var dy = line.EndY - line.StartY;
@@ -41,46 +49,46 @@ internal static class DimensionViewPlacementAnalyzer
         {
             if (midY > bounds.MaxY + BoundsTolerance)
             {
-                analysis.PartsBoundsSide = "top";
-                analysis.IsOutsidePartsBounds = true;
-                analysis.OffsetFromPartsBounds = System.Math.Round(midY - bounds.MaxY, 3);
-                return analysis;
+                info.PartsBoundsSide = "top";
+                info.IsOutsidePartsBounds = true;
+                info.OffsetFromPartsBounds = System.Math.Round(midY - bounds.MaxY, 3);
+                return info;
             }
 
             if (midY < bounds.MinY - BoundsTolerance)
             {
-                analysis.PartsBoundsSide = "bottom";
-                analysis.IsOutsidePartsBounds = true;
-                analysis.OffsetFromPartsBounds = System.Math.Round(bounds.MinY - midY, 3);
-                return analysis;
+                info.PartsBoundsSide = "bottom";
+                info.IsOutsidePartsBounds = true;
+                info.OffsetFromPartsBounds = System.Math.Round(bounds.MinY - midY, 3);
+                return info;
             }
 
-            analysis.PartsBoundsSide = "overlap";
-            analysis.OffsetFromPartsBounds = 0;
-            return analysis;
+            info.PartsBoundsSide = "overlap";
+            info.OffsetFromPartsBounds = 0;
+            return info;
         }
 
         if (isVertical)
         {
             if (midX > bounds.MaxX + BoundsTolerance)
             {
-                analysis.PartsBoundsSide = "right";
-                analysis.IsOutsidePartsBounds = true;
-                analysis.OffsetFromPartsBounds = System.Math.Round(midX - bounds.MaxX, 3);
-                return analysis;
+                info.PartsBoundsSide = "right";
+                info.IsOutsidePartsBounds = true;
+                info.OffsetFromPartsBounds = System.Math.Round(midX - bounds.MaxX, 3);
+                return info;
             }
 
             if (midX < bounds.MinX - BoundsTolerance)
             {
-                analysis.PartsBoundsSide = "left";
-                analysis.IsOutsidePartsBounds = true;
-                analysis.OffsetFromPartsBounds = System.Math.Round(bounds.MinX - midX, 3);
-                return analysis;
+                info.PartsBoundsSide = "left";
+                info.IsOutsidePartsBounds = true;
+                info.OffsetFromPartsBounds = System.Math.Round(bounds.MinX - midX, 3);
+                return info;
             }
 
-            analysis.PartsBoundsSide = "overlap";
-            analysis.OffsetFromPartsBounds = 0;
-            return analysis;
+            info.PartsBoundsSide = "overlap";
+            info.OffsetFromPartsBounds = 0;
+            return info;
         }
 
         var topDistance = midY - bounds.MaxY;
@@ -115,18 +123,18 @@ internal static class DimensionViewPlacementAnalyzer
             side = "right";
         }
 
-        analysis.PartsBoundsSide = side;
+        info.PartsBoundsSide = side;
         if (maxDistance > BoundsTolerance)
         {
-            analysis.IsOutsidePartsBounds = true;
-            analysis.OffsetFromPartsBounds = System.Math.Round(maxDistance, 3);
+            info.IsOutsidePartsBounds = true;
+            info.OffsetFromPartsBounds = System.Math.Round(maxDistance, 3);
         }
         else
         {
-            analysis.OffsetFromPartsBounds = 0;
+            info.OffsetFromPartsBounds = 0;
         }
 
-        return analysis;
+        return info;
     }
 
     private static bool Intersects(DrawingBoundsInfo bounds, DrawingBoundsInfo lineBounds)
