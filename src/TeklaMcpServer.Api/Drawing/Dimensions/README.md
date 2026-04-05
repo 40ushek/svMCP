@@ -38,6 +38,10 @@ The current `v1` baseline already includes:
   arrangement planning
 - validated view-local part-geometry contract for both `SolidVertices` and
   `BboxMin` / `BboxMax`
+- validated `ViewCoordinateSystem` as the accepted work-plane contract for the
+  dimension / `PartsBounds` geometry path
+- `DisplayCoordinateSystem` is rejected for this path because it risks mixing
+  coordinate spaces between part geometry, dimensions, and debug overlays
 - stable reread after mutate
 - internal orchestration debug packets
 - internal orchestration plan/preview packets
@@ -223,6 +227,9 @@ working constraints rather than open questions.
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box
+- for the validated part-geometry pipeline, `ViewCoordinateSystem` is the
+  accepted runtime contract; `DisplayCoordinateSystem` should not be reused
+  there
 - negative `Distance` values occur on real drawings
 - sign semantics for negative-distance dimensions remain a known risk area for
   future policy/layout work

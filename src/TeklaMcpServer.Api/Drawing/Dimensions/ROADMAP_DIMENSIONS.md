@@ -282,6 +282,10 @@ The current baseline already includes:
 - `PartsBounds` gap-policy signals exposed in deterministic debug/orchestration evidence
 - validated view-local part-geometry contract for both `SolidVertices` and
   `BboxMin` / `BboxMax`
+- validated `ViewCoordinateSystem` as the accepted work-plane contract for the
+  dimension / `PartsBounds` geometry path
+- `DisplayCoordinateSystem` is rejected for this path because it risks mixing
+  coordinate spaces between part geometry, dimensions, and debug overlays
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
 
@@ -293,6 +297,8 @@ Current `DimensionViewContext` baseline should be interpreted carefully:
 - it currently derives `PartsBounds` and `PartsHull` from part geometry only
 - it currently assumes part geometry for this context is already normalized into
   the owning view coordinate system before bounds/hull aggregation
+- for the validated runtime path, that normalization is expected to come from
+  `ViewCoordinateSystem`, not `DisplayCoordinateSystem`
 - it currently carries `GridIds` when grids are present on the drawing view
 - this is a good baseline for assembly-oriented drawing scenarios
 - this is not yet the target strategy for heavy GA drawings where a full-view
@@ -351,6 +357,9 @@ on the current implementation and should constrain future work.
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box
+- for the validated part-geometry pipeline, `ViewCoordinateSystem` is the
+  accepted runtime contract; `DisplayCoordinateSystem` should not be reused
+  there
 - negative `Distance` values occur on real drawings
 - sign semantics for negative-distance dimensions remain a risk area for future
   policy/layout work
