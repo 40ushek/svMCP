@@ -41,7 +41,7 @@ public sealed class DimensionArrangementDedupTests
     }
 
     [Fact]
-    public void ReduceWithDebug_PrefersMoreInformativeCoveringItem()
+    public void ReduceWithDebug_DoesNotRemoveCoveredSimpleItem_ForArrangement()
     {
         var group = CreateGroup(
             CreateChainItem(1, DimensionSourceKind.Part, yOffset: 40, distance: 8),
@@ -50,13 +50,8 @@ public sealed class DimensionArrangementDedupTests
         var result = DimensionArrangementDedup.ReduceWithDebug([group]);
 
         var reducedGroup = Assert.Single(result.ReducedGroups);
-        var kept = Assert.Single(reducedGroup.DimensionList);
-        Assert.Equal(1, kept.DimensionId);
-
-        var debugGroup = Assert.Single(result.Groups);
-        var rejected = Assert.Single(debugGroup.Items.Where(static item => item.Item.DimensionId == 2));
-        Assert.Equal("covered", rejected.Reason);
-        Assert.Equal(1, rejected.RepresentativeDimensionId);
+        Assert.Equal(2, reducedGroup.DimensionList.Count);
+        Assert.All(result.Groups.SelectMany(static groupInfo => groupInfo.Items), item => Assert.Equal("kept", item.Status));
     }
 
     [Fact]

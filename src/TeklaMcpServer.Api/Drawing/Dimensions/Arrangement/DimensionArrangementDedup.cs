@@ -10,7 +10,7 @@ internal static class DimensionArrangementDedup
         {
             RequireSameSourceKindForSimpleReduction = true,
             EnableEquivalentSimpleReduction = true,
-            EnableCoverageReduction = true,
+            EnableCoverageReduction = false,
             EnableRepresentativeSelection = false
         };
     }
