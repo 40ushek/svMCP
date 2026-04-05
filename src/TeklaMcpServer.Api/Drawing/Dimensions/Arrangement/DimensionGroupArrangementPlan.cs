@@ -207,12 +207,7 @@ internal static class DimensionGroupArrangementPlanner
         if (System.Math.Abs(outwardDelta) <= 1e-9)
             return 0;
 
-        var outwardSign = ResolveRawOutwardSign(side);
-        if (!outwardSign.HasValue)
-            return 0;
-
-        var stackSign = stack.TopDirection == 0 ? 1 : stack.TopDirection;
-        return System.Math.Round(outwardDelta * outwardSign.Value * stackSign, 3);
+        return System.Math.Round(outwardDelta, 3);
     }
 
     private static double ResolvePartsBoundsAxisShift(
@@ -253,8 +248,7 @@ internal static class DimensionGroupArrangementPlanner
         if (System.Math.Abs(outwardDelta) <= 1e-9)
             return 0;
 
-        var outwardSign = ResolveRawOutwardSign(side);
-        return !outwardSign.HasValue ? 0 : System.Math.Round(outwardDelta * outwardSign.Value, 3);
+        return System.Math.Round(outwardDelta, 3);
     }
 
     private static (bool CanEvaluate, string Side, double CurrentGapDrawing, double DeltaDrawing)? TryEvaluatePartsBoundsGap(
@@ -272,17 +266,5 @@ internal static class DimensionGroupArrangementPlanner
         var placement = DimensionViewPlacementInfoBuilder.Build(context, decisionContext.View);
         var gap = DimensionPartsBoundsGapPolicy.Evaluate(placement, targetGapPaper);
         return (gap.CanEvaluate, placement.PartsBoundsSide, gap.CurrentGapDrawing, gap.SuggestedOutwardDeltaDrawing);
-    }
-
-    private static int? ResolveRawOutwardSign(string side)
-    {
-        return side switch
-        {
-            "top" => 1,
-            "right" => 1,
-            "bottom" => -1,
-            "left" => -1,
-            _ => null
-        };
     }
 }

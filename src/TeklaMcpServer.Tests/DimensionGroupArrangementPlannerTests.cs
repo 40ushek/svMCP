@@ -87,12 +87,12 @@ public sealed class DimensionGroupArrangementPlannerTests
             ViewId = 10,
             ViewType = "FrontView",
             Orientation = "horizontal",
-            TopDirection = -1,
+            TopDirection = 1,
             Direction = (1, 0)
         };
 
-        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 105, 0, 100, 0));
-        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 115, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", 1, (1, 0), 105, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", 1, (1, 0), 115, 0, 100, 0));
 
         var decisionContext = new DimensionDecisionContext
         {
@@ -117,9 +117,9 @@ public sealed class DimensionGroupArrangementPlannerTests
         Assert.Equal(2, plan.Proposals.Count);
         var sorted3 = plan.Proposals.OrderBy(static p => p.DimensionId).ToList();
         Assert.Equal(1, sorted3[0].DimensionId);
-        Assert.Equal(-5, sorted3[0].AxisShift, 3);
+        Assert.Equal(5, sorted3[0].AxisShift, 3);
         Assert.Equal(2, sorted3[1].DimensionId);
-        Assert.Equal(-5, sorted3[1].AxisShift, 3);
+        Assert.Equal(5, sorted3[1].AxisShift, 3);
     }
 
     [Fact]
@@ -191,11 +191,47 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 10, decisionContext);
 
-        Assert.Equal(2, plan.Proposals.Count);
-        Assert.Equal(1, plan.Proposals[0].DimensionId);
-        Assert.Equal(5, plan.Proposals[0].AxisShift, 3);
-        Assert.Equal(2, plan.Proposals[1].DimensionId);
-        Assert.Equal(10, plan.Proposals[1].AxisShift, 3);
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(5, proposal.AxisShift, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForStack_UsesPositiveSignedOffsetForVerticalLeftPartsBoundsCorrection()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "vertical",
+            TopDirection = 1,
+            Direction = (0, 1)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "vertical", 1, (0, 1), -120, 0, 100, 120));
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = -5,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateVerticalContext(1, -120, 1));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10, decisionContext);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(1, proposal.DimensionId);
+        Assert.Equal(25, proposal.AxisShift, 3);
     }
 
     [Fact]
@@ -437,6 +473,32 @@ public sealed class DimensionGroupArrangementPlannerTests
             StartY = referenceY,
             EndX = 100,
             EndY = referenceY
+        };
+        return context;
+    }
+
+    private static DimensionContext CreateVerticalContext(int dimensionId, double referenceX, double viewScale)
+    {
+        var item = new DimensionItem
+        {
+            DimensionId = dimensionId,
+            ViewId = 10,
+            TopDirection = 1
+        };
+
+        var context = new DimensionContext
+        {
+            DimensionId = dimensionId,
+            ViewId = 10,
+            ViewScale = viewScale,
+            Item = item
+        };
+        context.Geometry.ReferenceLine = new DrawingLineInfo
+        {
+            StartX = referenceX,
+            StartY = 0,
+            EndX = referenceX,
+            EndY = 100
         };
         return context;
     }
