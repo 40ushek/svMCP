@@ -109,12 +109,24 @@ public sealed class DimensionOrchestrationDebugBuilderTests
         debug.DecisionContext.View.ViewId = 10;
         debug.DecisionContext.Warnings.Add("single_view_required");
         debug.DecisionContext.View.Warnings.Add("bolt-part:101:missing");
+        debug.DecisionContext.Dimensions.Add(CreateContext(group.Items[0].Item));
+        debug.DecisionContext.View.PartsBounds = new DrawingBoundsInfo
+        {
+            MinX = 0,
+            MinY = 0,
+            MaxX = 100,
+            MaxY = 100
+        };
 
         var result = DimensionOrchestrationDebugBuilder.Build(debug, viewId: null);
 
         Assert.Equal(10, result.ViewId);
         Assert.Contains("single_view_required", result.Warnings);
         Assert.Contains("bolt-part:101:missing", result.Warnings);
+        Assert.True(result.Packets[0].Evidence.HasPartsBounds);
+        Assert.Equal("top", result.Packets[0].Evidence.PartsBoundsSide);
+        Assert.True(result.Packets[0].Evidence.IsOutsidePartsBounds);
+        Assert.Equal(20, result.Packets[0].Evidence.OffsetFromPartsBounds, 3);
     }
 
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)
@@ -194,5 +206,23 @@ public sealed class DimensionOrchestrationDebugBuilderTests
         candidate.CombinePreview.PointList.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
         candidate.CombinePreview.PointList.Add(new DrawingPointInfo { X = 100, Y = 0, Order = 1 });
         return candidate;
+    }
+
+    private static DimensionContext CreateContext(DimensionItem item)
+    {
+        var context = new DimensionContext
+        {
+            DimensionId = item.DimensionId,
+            Item = item
+        };
+
+        context.Geometry.ReferenceLine = new DrawingLineInfo
+        {
+            StartX = 0,
+            StartY = 120,
+            EndX = 100,
+            EndY = 120
+        };
+        return context;
     }
 }

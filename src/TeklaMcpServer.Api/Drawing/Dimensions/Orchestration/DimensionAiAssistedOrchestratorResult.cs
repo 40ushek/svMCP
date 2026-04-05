@@ -35,6 +35,11 @@ internal sealed class DimensionAiOrchestrationEvidence
     public DimensionGeometryBand? GeometryBand { get; set; }
     public int SegmentGeometryCount { get; set; }
     public bool HasTextBounds { get; set; }
+    public bool HasPartsBounds { get; set; }
+    public string PartsBoundsSide { get; set; } = string.Empty;
+    public bool IsOutsidePartsBounds { get; set; }
+    public bool IntersectsPartsBounds { get; set; }
+    public double? OffsetFromPartsBounds { get; set; }
 }
 
 internal sealed class DimensionAiOrchestrationPlanStep

@@ -20,19 +20,22 @@ internal static class DimensionOrchestrationDebugBuilder
             .Where(static item => item.Item != null)
             .GroupBy(static item => item.Item.DimensionId)
             .ToDictionary(static grouping => grouping.Key, static grouping => grouping.First());
+        var contextsById = debug.DecisionContext.Dimensions
+            .GroupBy(static context => context.DimensionId)
+            .ToDictionary(static group => group.Key, static group => group.First());
         var orderedItems = OrderItems(debug.DecisionContext, itemsById);
         var claimedDimensionIds = new HashSet<int>();
 
-        foreach (var packet in BuildCombinePackets(debug.Groups, itemsById, claimedDimensionIds))
+        foreach (var packet in BuildCombinePackets(debug.Groups, itemsById, contextsById, debug.DecisionContext.View, claimedDimensionIds))
             result.Packets.Add(packet);
 
-        foreach (var packet in BuildSuppressPackets(orderedItems, claimedDimensionIds))
+        foreach (var packet in BuildSuppressPackets(orderedItems, contextsById, debug.DecisionContext.View, claimedDimensionIds))
             result.Packets.Add(packet);
 
-        foreach (var packet in BuildReviewPackets(orderedItems, claimedDimensionIds))
+        foreach (var packet in BuildReviewPackets(orderedItems, contextsById, debug.DecisionContext.View, claimedDimensionIds))
             result.Packets.Add(packet);
 
-        foreach (var packet in BuildKeepPackets(orderedItems, claimedDimensionIds))
+        foreach (var packet in BuildKeepPackets(orderedItems, contextsById, debug.DecisionContext.View, claimedDimensionIds))
             result.Packets.Add(packet);
 
         return result;
@@ -62,6 +65,8 @@ internal static class DimensionOrchestrationDebugBuilder
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildCombinePackets(
         IReadOnlyList<DimensionGroupReductionDebugInfo> groups,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
+        DimensionViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var group in groups)
@@ -88,7 +93,13 @@ internal static class DimensionOrchestrationDebugBuilder
                 .ToHashSet();
             if (overlappingIds.Count > 0)
             {
-                foreach (var packet in BuildOverlappingCombineReviewPackets(eligibleCandidates, overlappingIds, itemsById, claimedDimensionIds))
+                foreach (var packet in BuildOverlappingCombineReviewPackets(
+                             eligibleCandidates,
+                             overlappingIds,
+                             itemsById,
+                             contextsById,
+                             viewContext,
+                             claimedDimensionIds))
                     yield return packet;
             }
 
@@ -119,7 +130,11 @@ internal static class DimensionOrchestrationDebugBuilder
                     DimensionType = primaryItem.Item.DimensionType,
                     Reason = "information_preserving_merge",
                     Source = "fused",
-                    Evidence = CreateEvidence(primaryItem, candidate.CombineConnectivityMode)
+                    Evidence = CreateEvidence(
+                        primaryItem,
+                        contextsById.TryGetValue(primaryDimensionId, out var primaryContext) ? primaryContext : primaryItem.Context,
+                        viewContext,
+                        candidate.CombineConnectivityMode)
                 };
 
                 packet.DimensionIds.AddRange(candidateDimensionIds);
@@ -136,6 +151,8 @@ internal static class DimensionOrchestrationDebugBuilder
         IReadOnlyList<DimensionCombineCandidateDebugInfo> eligibleCandidates,
         HashSet<int> overlappingIds,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
+        DimensionViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         var overlappingCandidates = eligibleCandidates
@@ -208,7 +225,11 @@ internal static class DimensionOrchestrationDebugBuilder
                 DimensionType = primaryItem.Item.DimensionType,
                 Reason = "overlapping_combine_candidates",
                 Source = "fused",
-                Evidence = CreateEvidence(primaryItem, combineConnectivityMode)
+                Evidence = CreateEvidence(
+                    primaryItem,
+                    contextsById.TryGetValue(primaryDimensionId, out var primaryContext) ? primaryContext : primaryItem.Context,
+                    viewContext,
+                    combineConnectivityMode)
             };
 
             packet.DimensionIds.AddRange(component);
@@ -223,6 +244,8 @@ internal static class DimensionOrchestrationDebugBuilder
 
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildSuppressPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
+        DimensionViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -249,7 +272,10 @@ internal static class DimensionOrchestrationDebugBuilder
                     : hasLayoutSuppress
                         ? "layout_policy"
                         : "reduction",
-                Evidence = CreateEvidence(item)
+                Evidence = CreateEvidence(
+                    item,
+                    contextsById.TryGetValue(dimensionId, out var context) ? context : item.Context,
+                    viewContext)
             };
 
             packet.DimensionIds.Add(dimensionId);
@@ -260,6 +286,8 @@ internal static class DimensionOrchestrationDebugBuilder
 
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildReviewPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
+        DimensionViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -283,7 +311,10 @@ internal static class DimensionOrchestrationDebugBuilder
                 Source = string.IsNullOrWhiteSpace(item.Status)
                     ? "layout_policy"
                     : "fused",
-                Evidence = CreateEvidence(item)
+                Evidence = CreateEvidence(
+                    item,
+                    contextsById.TryGetValue(dimensionId, out var context) ? context : item.Context,
+                    viewContext)
             };
 
             packet.DimensionIds.Add(dimensionId);
@@ -294,6 +325,8 @@ internal static class DimensionOrchestrationDebugBuilder
 
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildKeepPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
+        IReadOnlyDictionary<int, DimensionContext> contextsById,
+        DimensionViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -310,7 +343,10 @@ internal static class DimensionOrchestrationDebugBuilder
                 DimensionType = item.Item.DimensionType,
                 Reason = "keep",
                 Source = item.LayoutPolicy != null ? "fused" : "reduction",
-                Evidence = CreateEvidence(item)
+                Evidence = CreateEvidence(
+                    item,
+                    contextsById.TryGetValue(dimensionId, out var context) ? context : item.Context,
+                    viewContext)
             };
 
             packet.DimensionIds.Add(dimensionId);
@@ -337,8 +373,11 @@ internal static class DimensionOrchestrationDebugBuilder
 
     private static DimensionOrchestrationEvidence CreateEvidence(
         DimensionReductionItemDebugInfo item,
+        DimensionContext? context,
+        DimensionViewContext viewContext,
         string? combineConnectivityMode = null)
     {
+        var viewPlacement = DimensionViewPlacementAnalyzer.Analyze(context, viewContext);
         return new DimensionOrchestrationEvidence
         {
             LayoutPolicyStatus = item.LayoutPolicy?.Status.ToString() ?? string.Empty,
@@ -348,7 +387,12 @@ internal static class DimensionOrchestrationDebugBuilder
             ReductionReason = item.Reason,
             CombineConnectivityMode = combineConnectivityMode ?? item.LayoutPolicy?.CombineReason ?? string.Empty,
             PreferredDimensionId = item.LayoutPolicy?.PreferredDimensionId,
-            RepresentativeDimensionId = item.RepresentativeDimensionId
+            RepresentativeDimensionId = item.RepresentativeDimensionId,
+            HasPartsBounds = viewPlacement.HasPartsBounds,
+            PartsBoundsSide = viewPlacement.PartsBoundsSide,
+            IsOutsidePartsBounds = viewPlacement.IsOutsidePartsBounds,
+            IntersectsPartsBounds = viewPlacement.IntersectsPartsBounds,
+            OffsetFromPartsBounds = viewPlacement.OffsetFromPartsBounds
         };
     }
 

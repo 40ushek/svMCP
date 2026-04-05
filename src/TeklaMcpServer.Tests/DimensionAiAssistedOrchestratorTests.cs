@@ -110,6 +110,13 @@ public sealed class DimensionAiAssistedOrchestratorTests
         debug.DecisionContext.View.ViewId = 10;
         debug.DecisionContext.Warnings.Add("single_view_required");
         debug.DecisionContext.Dimensions.Add(CreateContext(group.Items[0].Item));
+        debug.DecisionContext.View.PartsBounds = new DrawingBoundsInfo
+        {
+            MinX = 0,
+            MinY = 0,
+            MaxX = 100,
+            MaxY = 100
+        };
 
         var result = new DimensionAiAssistedOrchestrator().Build(debug, viewId: null);
 
@@ -117,6 +124,10 @@ public sealed class DimensionAiAssistedOrchestratorTests
         Assert.Contains("single_view_required", result.Warnings);
         Assert.NotNull(result.Steps[0].Evidence.LineDirection);
         Assert.Equal(1, result.Steps[0].Evidence.SegmentGeometryCount);
+        Assert.True(result.Steps[0].Evidence.HasPartsBounds);
+        Assert.Equal("top", result.Steps[0].Evidence.PartsBoundsSide);
+        Assert.True(result.Steps[0].Evidence.IsOutsidePartsBounds);
+        Assert.Equal(20, result.Steps[0].Evidence.OffsetFromPartsBounds, 3);
     }
 
     private static DimensionGroupReductionDebugInfo CreateGroup(int? viewId, DimensionType dimensionType)
@@ -190,6 +201,13 @@ public sealed class DimensionAiAssistedOrchestratorTests
         context.AnnotationGeometry.NormalDirection = new DrawingVectorInfo { X = 0, Y = -1 };
         context.AnnotationGeometry.StartAlong = 0;
         context.AnnotationGeometry.EndAlong = 100;
+        context.Geometry.ReferenceLine = new DrawingLineInfo
+        {
+            StartX = 0,
+            StartY = 120,
+            EndX = 100,
+            EndY = 120
+        };
         context.AnnotationGeometry.TextBounds = new DrawingBoundsInfo
         {
             MinX = 40,
