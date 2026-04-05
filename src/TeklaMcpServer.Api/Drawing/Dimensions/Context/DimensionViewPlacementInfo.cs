@@ -27,7 +27,7 @@ internal static class DimensionViewPlacementInfoBuilder
             ReferenceLineLength = dimensionContext?.ReferenceLine?.Length,
             Distance = dimensionContext?.Distance ?? 0,
             TopDirection = dimensionContext?.Item.TopDirection ?? 0,
-            ViewScale = dimensionContext?.ViewScale ?? viewContext?.ViewScale ?? 0
+            ViewScale = viewContext?.ViewScale ?? dimensionContext?.ViewScale ?? 0
         };
 
         if (dimensionContext?.ReferenceLine == null || viewContext?.PartsBounds == null)

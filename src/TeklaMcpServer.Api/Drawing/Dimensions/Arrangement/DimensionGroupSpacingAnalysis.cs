@@ -281,6 +281,16 @@ internal static class DimensionGroupSpacingAnalyzer
         if (bounds == null)
             return null;
 
+        if (!group.Direction.HasValue)
+        {
+            return group.Orientation switch
+            {
+                "horizontal" => new AxisInterval(bounds.MinY, bounds.MaxY),
+                "vertical" => new AxisInterval(bounds.MinX, bounds.MaxX),
+                _ => TryGetProjectedInterval(bounds, group.Direction)
+            };
+        }
+
         return TryGetProjectedInterval(bounds, group.Direction);
     }
 

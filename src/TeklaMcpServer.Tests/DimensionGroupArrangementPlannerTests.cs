@@ -25,7 +25,7 @@ public sealed class DimensionGroupArrangementPlannerTests
         var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10);
 
         var proposal = Assert.Single(plan.Proposals);
-        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(1, proposal.DimensionId);
         Assert.Equal(5, proposal.AxisShift, 3);
     }
 
@@ -47,9 +47,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 5);
 
-        var proposal = Assert.Single(plan.Proposals);
-        Assert.Equal(3, proposal.DimensionId);
-        Assert.Equal(1, proposal.AxisShift, 3);
+        Assert.False(plan.HasChanges);
     }
 
     [Fact]
@@ -79,6 +77,49 @@ public sealed class DimensionGroupArrangementPlannerTests
         var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 5, decisionContext);
 
         Assert.Equal(100, plan.TargetGapDrawing, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForStack_ShiftsAllUnitsOutward_WhenFirstChainGapFromPartsBoundsIsTooSmall()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = -1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", -1, (1, 0), 105, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", -1, (1, 0), 115, 0, 100, 0));
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateContext(1, 105, 10));
+        decisionContext.Dimensions.Add(CreateContext(2, 115, 10));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10, decisionContext);
+
+        Assert.Equal(2, plan.Proposals.Count);
+        var sorted3 = plan.Proposals.OrderBy(static p => p.DimensionId).ToList();
+        Assert.Equal(1, sorted3[0].DimensionId);
+        Assert.Equal(-5, sorted3[0].AxisShift, 3);
+        Assert.Equal(2, sorted3[1].DimensionId);
+        Assert.Equal(-5, sorted3[1].AxisShift, 3);
     }
 
     [Fact]
@@ -119,6 +160,75 @@ public sealed class DimensionGroupArrangementPlannerTests
         var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 5, decisionContext);
 
         Assert.Equal(15, plan.TargetGapDrawing, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForGroup_CombinesPartsBoundsAnchorShift_WithRegularSpacingShift()
+    {
+        var group = CreateGroup(
+        [
+            CreateMember(1, 0, 105, 100, 115, referenceY: 110),
+            CreateMember(2, 0, 120, 100, 130, referenceY: 125)
+        ], "horizontal");
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateContext(1, 110, 10));
+        decisionContext.Dimensions.Add(CreateContext(2, 125, 10));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 10, decisionContext);
+
+        Assert.Equal(2, plan.Proposals.Count);
+        Assert.Equal(1, plan.Proposals[0].DimensionId);
+        Assert.Equal(5, plan.Proposals[0].AxisShift, 3);
+        Assert.Equal(2, plan.Proposals[1].DimensionId);
+        Assert.Equal(10, plan.Proposals[1].AxisShift, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForGroup_DoesNotApplyPartsBoundsShift_WhenDecisionContextIsIncomplete()
+    {
+        var group = CreateGroup(
+        [
+            CreateMember(1, 0, 105, 100, 115, referenceY: 110),
+            CreateMember(2, 0, 120, 100, 130, referenceY: 125)
+        ], "horizontal");
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateContext(1, 110, 10));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(group, 10, decisionContext);
+
+        var proposal = Assert.Single(plan.Proposals);
+        Assert.Equal(2, proposal.DimensionId);
+        Assert.Equal(5, proposal.AxisShift, 3);
     }
 
     [Fact]
@@ -273,7 +383,13 @@ public sealed class DimensionGroupArrangementPlannerTests
         return group;
     }
 
-    private static DimensionGroupMember CreateMember(int dimensionId, double minX, double minY, double maxX, double maxY)
+    private static DimensionGroupMember CreateMember(
+        int dimensionId,
+        double minX,
+        double minY,
+        double maxX,
+        double maxY,
+        double? referenceY = null)
     {
         return new DimensionGroupMember
         {
@@ -281,6 +397,15 @@ public sealed class DimensionGroupArrangementPlannerTests
             ViewScale = 1,
             Orientation = "horizontal",
             SortKey = minX + minY,
+            ReferenceLine = referenceY.HasValue
+                ? new DrawingLineInfo
+                {
+                    StartX = minX,
+                    StartY = referenceY.Value,
+                    EndX = maxX,
+                    EndY = referenceY.Value
+                }
+                : null,
             Bounds = new DrawingBoundsInfo
             {
                 MinX = minX,
@@ -289,5 +414,30 @@ public sealed class DimensionGroupArrangementPlannerTests
                 MaxY = maxY
             }
         };
+    }
+
+    private static DimensionContext CreateContext(int dimensionId, double referenceY, double viewScale)
+    {
+        var item = new DimensionItem
+        {
+            DimensionId = dimensionId,
+            ViewId = 10
+        };
+
+        var context = new DimensionContext
+        {
+            DimensionId = dimensionId,
+            ViewId = 10,
+            ViewScale = viewScale,
+            Item = item
+        };
+        context.Geometry.ReferenceLine = new DrawingLineInfo
+        {
+            StartX = 0,
+            StartY = referenceY,
+            EndX = 100,
+            EndY = referenceY
+        };
+        return context;
     }
 }

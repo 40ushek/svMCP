@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -37,6 +38,13 @@ internal static class DimensionGroupArrangementPlanner
         };
 
         var units = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
+        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(stack, units, targetGap, decisionContext);
+        if (System.Math.Abs(partsBoundsAxisShift) > 1e-9)
+        {
+            foreach (var unit in units.SelectMany(static unit => unit.Units))
+                AddOrAccumulateProposal(plan, unit.DimensionId, partsBoundsAxisShift);
+        }
+
         if (units.Count < 2)
             return plan;
 
@@ -51,13 +59,7 @@ internal static class DimensionGroupArrangementPlanner
             if (System.Math.Abs(axisShift) > 1e-9)
             {
                 foreach (var unit in current.Units)
-                {
-                    plan.Proposals.Add(new DimensionMoveProposal
-                    {
-                        DimensionId = unit.DimensionId,
-                        AxisShift = axisShift
-                    });
-                }
+                    AddOrAccumulateProposal(plan, unit.DimensionId, axisShift);
             }
 
             previousMax = shiftedMax;
@@ -82,6 +84,13 @@ internal static class DimensionGroupArrangementPlanner
         };
 
         var intervals = DimensionGroupSpacingAnalyzer.GetOrderedIntervals(group);
+        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(group, targetGap, decisionContext);
+        if (System.Math.Abs(partsBoundsAxisShift) > 1e-9)
+        {
+            foreach (var interval in intervals)
+                AddOrAccumulateProposal(plan, interval.Member.DimensionId, partsBoundsAxisShift);
+        }
+
         if (intervals.Count < 2)
             return plan;
 
@@ -94,13 +103,7 @@ internal static class DimensionGroupArrangementPlanner
             var shiftedMax = current.Max + axisShift;
 
             if (System.Math.Abs(axisShift) > 1e-9)
-            {
-                plan.Proposals.Add(new DimensionMoveProposal
-                {
-                    DimensionId = current.Member.DimensionId,
-                    AxisShift = axisShift
-                });
-            }
+                AddOrAccumulateProposal(plan, current.Member.DimensionId, axisShift);
 
             previousMax = shiftedMax;
         }
@@ -142,5 +145,144 @@ internal static class DimensionGroupArrangementPlanner
             return null;
 
         return decisionContext.View.ViewScale > 0 ? decisionContext.View.ViewScale : null;
+    }
+
+    private static void AddOrAccumulateProposal(DimensionGroupArrangementPlan plan, int dimensionId, double axisShift)
+    {
+        if (System.Math.Abs(axisShift) <= 1e-9)
+            return;
+
+        var existing = plan.Proposals.FirstOrDefault(proposal => proposal.DimensionId == dimensionId);
+        if (existing != null)
+        {
+            existing.AxisShift = System.Math.Round(existing.AxisShift + axisShift, 3);
+            return;
+        }
+
+        plan.Proposals.Add(new DimensionMoveProposal
+        {
+            DimensionId = dimensionId,
+            AxisShift = System.Math.Round(axisShift, 3)
+        });
+    }
+
+    private static double ResolvePartsBoundsAxisShift(
+        DimensionGroupLineStack stack,
+        IReadOnlyList<DimensionStackPlanningUnit> units,
+        double targetGapPaper,
+        DimensionDecisionContext? decisionContext)
+    {
+        var expectedDimensionIds = units
+            .SelectMany(static unit => unit.Units)
+            .Select(static unit => unit.DimensionId)
+            .Distinct()
+            .OrderBy(static id => id)
+            .ToList();
+        var sideAndDelta = units
+            .SelectMany(static unit => unit.Units)
+            .Select(unit => (unit.DimensionId, Gap: TryEvaluatePartsBoundsGap(unit.DimensionId, targetGapPaper, decisionContext)))
+            .Where(static item => item.Gap != null && item.Gap.Value.CanEvaluate)
+            .GroupBy(static item => item.DimensionId)
+            .Select(static group => (DimensionId: group.Key, Gap: group.First().Gap!.Value))
+            .Select(static item => (item.DimensionId, Side: item.Gap.Side, Delta: item.Gap.DeltaDrawing, CurrentGap: item.Gap.CurrentGapDrawing))
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Side))
+            .OrderBy(static item => item.CurrentGap)
+            .ToList();
+
+        if (sideAndDelta.Count == 0)
+            return 0;
+
+        var evaluatedDimensionIds = sideAndDelta
+            .Select(static item => item.DimensionId)
+            .OrderBy(static id => id)
+            .ToList();
+        if (!expectedDimensionIds.SequenceEqual(evaluatedDimensionIds))
+            return 0;
+
+        var side = sideAndDelta[0].Side;
+        if (sideAndDelta.Any(item => !string.Equals(item.Side, side, System.StringComparison.Ordinal)))
+            return 0;
+
+        var outwardDelta = sideAndDelta[0].Delta;
+        if (System.Math.Abs(outwardDelta) <= 1e-9)
+            return 0;
+
+        var outwardSign = ResolveRawOutwardSign(side);
+        if (!outwardSign.HasValue)
+            return 0;
+
+        var stackSign = stack.TopDirection == 0 ? 1 : stack.TopDirection;
+        return System.Math.Round(outwardDelta * outwardSign.Value * stackSign, 3);
+    }
+
+    private static double ResolvePartsBoundsAxisShift(
+        DimensionGroup group,
+        double targetGapPaper,
+        DimensionDecisionContext? decisionContext)
+    {
+        var expectedDimensionIds = group.Members
+            .Select(static member => member.DimensionId)
+            .Distinct()
+            .OrderBy(static id => id)
+            .ToList();
+        var sideAndDelta = group.Members
+            .Select(member => (member.DimensionId, Gap: TryEvaluatePartsBoundsGap(member.DimensionId, targetGapPaper, decisionContext)))
+            .Where(static item => item.Gap != null && item.Gap.Value.CanEvaluate)
+            .GroupBy(static item => item.DimensionId)
+            .Select(static group => (DimensionId: group.Key, Gap: group.First().Gap!.Value))
+            .Select(static item => (item.DimensionId, Side: item.Gap.Side, Delta: item.Gap.DeltaDrawing, CurrentGap: item.Gap.CurrentGapDrawing))
+            .Where(static item => !string.IsNullOrWhiteSpace(item.Side))
+            .OrderBy(static item => item.CurrentGap)
+            .ToList();
+
+        if (sideAndDelta.Count == 0)
+            return 0;
+
+        var evaluatedDimensionIds = sideAndDelta
+            .Select(static item => item.DimensionId)
+            .OrderBy(static id => id)
+            .ToList();
+        if (!expectedDimensionIds.SequenceEqual(evaluatedDimensionIds))
+            return 0;
+
+        var side = sideAndDelta[0].Side;
+        if (sideAndDelta.Any(item => !string.Equals(item.Side, side, System.StringComparison.Ordinal)))
+            return 0;
+
+        var outwardDelta = sideAndDelta[0].Delta;
+        if (System.Math.Abs(outwardDelta) <= 1e-9)
+            return 0;
+
+        var outwardSign = ResolveRawOutwardSign(side);
+        return !outwardSign.HasValue ? 0 : System.Math.Round(outwardDelta * outwardSign.Value, 3);
+    }
+
+    private static (bool CanEvaluate, string Side, double CurrentGapDrawing, double DeltaDrawing)? TryEvaluatePartsBoundsGap(
+        int dimensionId,
+        double targetGapPaper,
+        DimensionDecisionContext? decisionContext)
+    {
+        if (decisionContext?.View == null)
+            return null;
+
+        var context = decisionContext.FindDimension(dimensionId);
+        if (context == null)
+            return null;
+
+        var placement = DimensionViewPlacementInfoBuilder.Build(context, decisionContext.View);
+        var gap = DimensionPartsBoundsGapPolicy.Evaluate(placement, targetGapPaper);
+        return (gap.CanEvaluate, placement.PartsBoundsSide, gap.CurrentGapDrawing, gap.SuggestedOutwardDeltaDrawing);
+    }
+
+    private static int? ResolveRawOutwardSign(string side)
+    {
+        return side switch
+        {
+            "top" => 1,
+            "right" => 1,
+            "bottom" => -1,
+            "left" => -1,
+            _ => null
+        };
     }
 }

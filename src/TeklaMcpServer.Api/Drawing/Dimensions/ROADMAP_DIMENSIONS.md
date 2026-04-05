@@ -175,6 +175,8 @@ This layer should continue to grow around:
 
 - `DimensionContext`
 - `DimensionViewContext`
+- `DimensionDecisionContext`
+- `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
 - `DimensionGeometryContext`
 - `LayoutPolicy`
@@ -263,13 +265,21 @@ The current baseline already includes:
 - local post-combine arrange handoff
 - bounded stable reread after mutate
 - `DimensionContext`
-- minimal `DimensionViewContext`
+- `DimensionViewContext`
+- `DimensionDecisionContext`
+- `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
 - explicit typed source identity via `DimensionSourceReference`
 - no remaining flat source-id semantics in domain/context layers
 - debug-first `LayoutPolicy`
+- deterministic layout-policy evaluation through `DimensionDecisionContext`
+- deterministic orchestration/debug paths using `DimensionDecisionContext`
+- arrangement planning using `DimensionDecisionContext` for view-scale-aware gap translation
 - orchestration debug packets
 - orchestration extracted into a dedicated module/layer
+- `PartsBounds` / `PartsHull` / `GridIds` added to `DimensionViewContext`
+- per-dimension `PartsBounds` placement classification and exact placement metrics
+- `PartsBounds` gap-policy signals exposed in deterministic debug/orchestration evidence
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
 
@@ -278,9 +288,28 @@ Current `DimensionViewContext` baseline should be interpreted carefully:
 - it currently builds a single-view geometry context
 - it currently includes all successful `Parts` and deduplicated `Bolts` from
   that view
+- it currently derives `PartsBounds` and `PartsHull` from part geometry only
+- it currently carries `GridIds` when grids are present on the drawing view
 - this is a good baseline for assembly-oriented drawing scenarios
 - this is not yet the target strategy for heavy GA drawings where a full-view
   object set may be too large to load or reason over directly
+
+Current decision/placement baseline should also be interpreted explicitly:
+
+- `DimensionDecisionContext` is now the shared runtime decision container for:
+  - layout policy
+  - orchestration/debug
+  - arrangement debug/planning support
+- `DimensionViewPlacementInfo` is a computed per-dimension placement summary
+  relative to `DimensionViewContext`
+- `DimensionPartsBoundsGapPolicy` currently evaluates desired gap from
+  `PartsBounds` and exposes:
+  - current gap
+  - target gap
+  - whether outward correction is needed
+  - suggested outward delta
+- these placement/gap signals are currently explainable evidence, not yet a
+  full replacement for deterministic arrangement rules
 
 What the baseline does not claim:
 
@@ -391,7 +420,24 @@ The next phase should likely add a more selective strategy for GA-sized views:
 - add a relevance/filtering mode for large GA contexts
 - avoid turning `DimensionViewContext` into an unconditional full drawing dump
 
-### 4. Add candidate placements and cost-based layout support
+### 4. Start consuming placement and gap signals in deterministic arrangement
+
+The module already computes:
+
+- `DimensionViewPlacementInfo`
+- `DimensionPartsBoundsGapPolicy`
+
+The next step is to let deterministic placement use them directly, not only
+project them into debug/orchestration evidence.
+
+Expected direction:
+
+- use `PartsBounds` as the anchor for the first chain on a side
+- preserve minimum gap from part envelope to the nearest chain
+- use chain ordering signals before applying `Distance` translations
+- keep the first implementation narrow and explainable
+
+### 5. Add candidate placements and cost-based layout support
 
 This is the first step toward richer annotation-aware layout.
 
@@ -402,7 +448,17 @@ Expected direction:
 - evaluate them by explicit penalties
 - remain explainable
 
-### 5. Expand collision-aware layout as a supporting primitive
+Deterministic ordering should also start using view-context geometry more
+explicitly:
+
+- treat `PartsBounds` as the baseline anchor for the first chain on a side
+- preserve a minimum gap between part envelope and the nearest chain
+- prefer chain orderings that reduce crossings between extension lines and main
+  dimension lines
+- when crossing counts are comparable, prefer richer / denser chains closer to
+  the part envelope than overall-only chains
+
+### 6. Expand collision-aware layout as a supporting primitive
 
 Later work may add:
 
@@ -414,7 +470,7 @@ Later work may add:
 This should be built on top of the context layers above, not as more ad hoc
 `Distance` translation rules.
 
-### 6. Keep public/debug projections honest
+### 7. Keep public/debug projections honest
 
 The remaining documentation and code shape should continue to reinforce:
 
