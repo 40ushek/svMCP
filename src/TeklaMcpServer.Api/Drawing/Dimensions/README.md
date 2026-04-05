@@ -18,14 +18,27 @@ This means:
 The current `v1` baseline already includes:
 
 - internal `DimensionContext`
+- internal `DimensionViewContext`
+- internal `DimensionDecisionContext`
+- internal `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
+- explicit typed source identity via `DimensionSourceReference`
 - debug-first `LayoutPolicy`
 - `RecommendedAction`
+- deterministic layout-policy evaluation through `DimensionDecisionContext`
 - validated `combine` success path
 - validated rollback/failure reporting path
 - local post-combine arrange handoff
+- arrangement planning using `DimensionDecisionContext` for view-scale-aware
+  gap translation
+- `PartsBounds` / `PartsHull` / `GridIds` in `DimensionViewContext`
+- per-dimension `PartsBounds` placement classification and exact placement
+  metrics
+- narrow deterministic consumption of `PartsBounds` gap-policy signals during
+  arrangement planning
 - stable reread after mutate
 - internal orchestration debug packets
+- internal orchestration plan/preview packets
 
 It is responsible for:
 
@@ -73,6 +86,14 @@ Internal layers:
   - arrangement planning
   - distance-adjustment translation
   - arrangement debug/apply result types
+- `Context/`
+  - `DimensionContext`
+  - `DimensionViewContext`
+  - `DimensionDecisionContext`
+  - geometry, placement, source-association, and layout-policy helpers
+- `Orchestration/`
+  - orchestration debug/result builders
+  - internal action-plan / preview generation
 - `Placement/`
   - projection helpers
   - placement heuristics
@@ -85,15 +106,20 @@ Internal layers:
 
 The current internal flow is:
 
-`Tekla runtime snapshot -> grouping/reduction -> arrangement planning -> placement math -> commands/debug`
+`Tekla runtime snapshot -> domain model -> context/policy -> arrangement/orchestration -> placement/apply/debug`
 
 In practical terms:
 
-1. `Query` reads dimensions and view ownership from Tekla.
+1. `Query` reads Tekla dimensions into internal snapshots and domain items.
 2. `Grouping` turns runtime data into `DimensionItem` / `DimensionGroup`.
-3. `Arrangement` analyzes stacks/gaps and plans `Distance` changes.
-4. `Placement` owns geometry/text placement helpers.
-5. `Commands` and debug endpoints expose runtime actions.
+3. `Context` builds `DimensionContext`, `DimensionViewContext`, and
+   `DimensionDecisionContext`.
+4. `LayoutPolicy` and orchestration/debug paths evaluate explainable decisions
+   from that shared context.
+5. `Arrangement` analyzes stacks/gaps and plans `Distance` changes, including
+   the current narrow `PartsBounds`-gap correction path.
+6. `Placement` owns geometry/text placement helpers for create/debug support.
+7. `Commands` and debug endpoints expose runtime actions and debug projections.
 
 ## Public MCP Tools Today
 
@@ -133,6 +159,8 @@ Current arrangement semantics in practice:
 - only parallel stack members are considered together
 - the first surviving dimension in a stack acts as the fixed anchor
 - later dimensions are moved relative to that anchor
+- arrangement planning already applies a narrow `PartsBounds`-based outward
+  correction when the stack has consistent evaluated side/gap evidence
 - if the gap is smaller than target, the later dimension is pushed outward
 - if the gap is larger than target, the later dimension may be pulled inward
 - single-dimension stacks are left unchanged

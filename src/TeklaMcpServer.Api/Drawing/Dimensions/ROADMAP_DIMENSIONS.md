@@ -299,7 +299,7 @@ Current decision/placement baseline should also be interpreted explicitly:
 - `DimensionDecisionContext` is now the shared runtime decision container for:
   - layout policy
   - orchestration/debug
-  - arrangement debug/planning support
+  - arrangement planning/debug support
 - `DimensionViewPlacementInfo` is a computed per-dimension placement summary
   relative to `DimensionViewContext`
 - `DimensionPartsBoundsGapPolicy` currently evaluates desired gap from
@@ -308,8 +308,10 @@ Current decision/placement baseline should also be interpreted explicitly:
   - target gap
   - whether outward correction is needed
   - suggested outward delta
-- these placement/gap signals are currently explainable evidence, not yet a
-  full replacement for deterministic arrangement rules
+- these placement/gap signals are already consumed by the current
+  deterministic arrangement pipeline in a narrow, explainable way
+- they are not yet a full replacement for deterministic arrangement rules or a
+  complete annotation-layout engine
 
 What the baseline does not claim:
 
@@ -420,15 +422,15 @@ The next phase should likely add a more selective strategy for GA-sized views:
 - add a relevance/filtering mode for large GA contexts
 - avoid turning `DimensionViewContext` into an unconditional full drawing dump
 
-### 4. Start consuming placement and gap signals in deterministic arrangement
+### 4. Broaden deterministic use of placement and gap signals
 
 The module already computes:
 
 - `DimensionViewPlacementInfo`
 - `DimensionPartsBoundsGapPolicy`
 
-The next step is to let deterministic placement use them directly, not only
-project them into debug/orchestration evidence.
+The next step is to broaden and formalize the current narrow consumption path
+already present in deterministic arrangement planning.
 
 Expected direction:
 
