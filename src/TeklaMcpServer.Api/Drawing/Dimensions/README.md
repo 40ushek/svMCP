@@ -165,8 +165,12 @@ Current arrangement semantics in practice:
 - only parallel stack members are considered together
 - the first surviving dimension in a stack acts as the fixed anchor
 - later dimensions are moved relative to that anchor
-- arrangement planning already applies a narrow `PartsBounds`-based outward
-  correction when the stack has consistent evaluated side/gap evidence
+- arrangement planning now uses a narrow `PartsBounds`-based first-chain anchor
+  when the stack has consistent evaluated side/gap evidence
+- the nearest chain on that side is anchored to the target gap from
+  `PartsBounds`
+- later chains in the same stack are then arranged sequentially from that
+  anchored chain
 - if the gap is smaller than target, the later dimension is pushed outward
 - if the gap is larger than target, the later dimension may be pulled inward
 - single-dimension stacks are left unchanged
@@ -227,6 +231,8 @@ working constraints rather than open questions.
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box
+- `arrange_dimensions` now treats `PartsBounds` as an exact-gap anchor for the
+  nearest chain in the validated deterministic path
 - for the validated part-geometry pipeline, `ViewCoordinateSystem` is the
   accepted runtime contract; `DisplayCoordinateSystem` should not be reused
   there

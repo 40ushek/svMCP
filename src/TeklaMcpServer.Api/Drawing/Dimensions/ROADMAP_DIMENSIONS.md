@@ -316,10 +316,12 @@ Current decision/placement baseline should also be interpreted explicitly:
   `PartsBounds` and exposes:
   - current gap
   - target gap
-  - whether outward correction is needed
-  - suggested outward delta
+  - whether correction is needed
+  - signed axis delta for the nearest chain
 - these placement/gap signals are already consumed by the current
-  deterministic arrangement pipeline in a narrow, explainable way
+  deterministic arrangement pipeline in a narrow, explainable way:
+  - the nearest chain on a side can be anchored to `PartsBounds`
+  - later chains in the same stack are then arranged from that anchored chain
 - they are not yet a full replacement for deterministic arrangement rules or a
   complete annotation-layout engine
 
@@ -357,6 +359,8 @@ on the current implementation and should constrain future work.
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box
+- `arrange_dimensions` now treats `PartsBounds` as an exact-gap anchor for the
+  nearest chain in the validated deterministic path
 - for the validated part-geometry pipeline, `ViewCoordinateSystem` is the
   accepted runtime contract; `DisplayCoordinateSystem` should not be reused
   there
@@ -448,14 +452,15 @@ The module already computes:
 - `DimensionViewPlacementInfo`
 - `DimensionPartsBoundsGapPolicy`
 
-The next step is to broaden and formalize the current narrow consumption path
-already present in deterministic arrangement planning.
+The next step is to broaden and formalize the current narrow anchored layout
+path already present in deterministic arrangement planning.
 
 Expected direction:
 
 - use `PartsBounds` as the anchor for the first chain on a side
-- preserve minimum gap from part envelope to the nearest chain
-- use chain ordering signals before applying `Distance` translations
+- preserve the exact target gap from part envelope to the nearest chain
+- order later chains from that anchored first chain before applying `Distance`
+  translations
 - keep the first implementation narrow and explainable
 
 ### 5. Add candidate placements and cost-based layout support

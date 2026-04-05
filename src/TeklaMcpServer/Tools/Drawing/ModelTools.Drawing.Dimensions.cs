@@ -55,10 +55,12 @@ public static partial class ModelTools
 
     [McpServerTool, Description(
         "Arrange existing straight dimensions in the active drawing by analyzing parallel line stacks and increasing spacing where needed. " +
-        "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale.")]
+        "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale. " +
+        "When allowInwardCorrectionFromPartsBounds=true, the nearest chain may also be pulled toward the overall parts box to restore the exact target gap.")]
     public static string ArrangeDimensions(
         [Description("Optional drawing view ID. Omit to process all dimensions on the active drawing.")] int? viewId = null,
-        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 10")] double targetGap = 10.0)
+        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 10")] double targetGap = 10.0,
+        [Description("When true, also pull the nearest chain toward PartsBounds if it is farther than the target gap. Default: false")] bool allowInwardCorrectionFromPartsBounds = false)
     {
         if (targetGap < 0)
             return "Error: 'targetGap' must be a non-negative number.";
@@ -66,7 +68,8 @@ public static partial class ModelTools
         var json = RunBridge(
             "arrange_dimensions",
             viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-            targetGap.ToString(CultureInfo.InvariantCulture));
+            targetGap.ToString(CultureInfo.InvariantCulture),
+            allowInwardCorrectionFromPartsBounds.ToString(CultureInfo.InvariantCulture));
         try
         {
             var doc = JsonDocument.Parse(json);

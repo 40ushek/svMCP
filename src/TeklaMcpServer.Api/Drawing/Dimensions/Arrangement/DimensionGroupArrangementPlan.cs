@@ -25,7 +25,8 @@ internal static class DimensionGroupArrangementPlanner
     public static DimensionGroupArrangementPlan BuildPlan(
         DimensionGroupLineStack stack,
         double targetGap,
-        DimensionDecisionContext? decisionContext = null)
+        DimensionDecisionContext? decisionContext = null,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         var targetGapDrawing = ResolveTargetGapDrawing(stack, targetGap, decisionContext);
         var plan = new DimensionGroupArrangementPlan
@@ -38,17 +39,21 @@ internal static class DimensionGroupArrangementPlanner
         };
 
         var units = DimensionGroupSpacingAnalyzer.BuildPlanningUnits(stack);
-        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(stack, units, targetGap, decisionContext);
+        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(stack, units, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
+        if (units.Count == 0)
+            return plan;
+
+        var previousMax = units[0].MaxOffset;
         if (System.Math.Abs(partsBoundsAxisShift) > 1e-9)
         {
-            foreach (var unit in units.SelectMany(static unit => unit.Units))
+            foreach (var unit in units[0].Units)
                 AddOrAccumulateProposal(plan, unit.DimensionId, partsBoundsAxisShift);
+
+            previousMax = System.Math.Round(previousMax + partsBoundsAxisShift, 3);
         }
 
         if (units.Count < 2)
             return plan;
-
-        var previousMax = units[0].MaxOffset;
 
         for (var i = 1; i < units.Count; i++)
         {
@@ -71,7 +76,8 @@ internal static class DimensionGroupArrangementPlanner
     public static DimensionGroupArrangementPlan BuildPlan(
         DimensionGroup group,
         double targetGap,
-        DimensionDecisionContext? decisionContext = null)
+        DimensionDecisionContext? decisionContext = null,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         var targetGapDrawing = ResolveTargetGapDrawing(group, targetGap, decisionContext);
         var plan = new DimensionGroupArrangementPlan
@@ -84,17 +90,19 @@ internal static class DimensionGroupArrangementPlanner
         };
 
         var intervals = DimensionGroupSpacingAnalyzer.GetOrderedIntervals(group);
-        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(group, targetGap, decisionContext);
+        var partsBoundsAxisShift = ResolvePartsBoundsAxisShift(group, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
+        if (intervals.Count == 0)
+            return plan;
+
+        var previousMax = intervals[0].Max;
         if (System.Math.Abs(partsBoundsAxisShift) > 1e-9)
         {
-            foreach (var interval in intervals)
-                AddOrAccumulateProposal(plan, interval.Member.DimensionId, partsBoundsAxisShift);
+            AddOrAccumulateProposal(plan, intervals[0].Member.DimensionId, partsBoundsAxisShift);
+            previousMax = System.Math.Round(previousMax + partsBoundsAxisShift, 3);
         }
 
         if (intervals.Count < 2)
             return plan;
-
-        var previousMax = intervals[0].Max;
 
         for (var i = 1; i < intervals.Count; i++)
         {
@@ -170,7 +178,8 @@ internal static class DimensionGroupArrangementPlanner
         DimensionGroupLineStack stack,
         IReadOnlyList<DimensionStackPlanningUnit> units,
         double targetGapPaper,
-        DimensionDecisionContext? decisionContext)
+        DimensionDecisionContext? decisionContext,
+        bool allowInwardCorrectionFromPartsBounds)
     {
         var expectedDimensionIds = units
             .SelectMany(static unit => unit.Units)
@@ -180,7 +189,7 @@ internal static class DimensionGroupArrangementPlanner
             .ToList();
         var sideAndDelta = units
             .SelectMany(static unit => unit.Units)
-            .Select(unit => (unit.DimensionId, Gap: TryEvaluatePartsBoundsGap(unit.DimensionId, targetGapPaper, decisionContext)))
+            .Select(unit => (unit.DimensionId, Gap: TryEvaluatePartsBoundsGap(unit.DimensionId, targetGapPaper, decisionContext, allowInwardCorrectionFromPartsBounds)))
             .Where(static item => item.Gap != null && item.Gap.Value.CanEvaluate)
             .GroupBy(static item => item.DimensionId)
             .Select(static group => (DimensionId: group.Key, Gap: group.First().Gap!.Value))
@@ -213,7 +222,8 @@ internal static class DimensionGroupArrangementPlanner
     private static double ResolvePartsBoundsAxisShift(
         DimensionGroup group,
         double targetGapPaper,
-        DimensionDecisionContext? decisionContext)
+        DimensionDecisionContext? decisionContext,
+        bool allowInwardCorrectionFromPartsBounds)
     {
         var expectedDimensionIds = group.Members
             .Select(static member => member.DimensionId)
@@ -221,7 +231,7 @@ internal static class DimensionGroupArrangementPlanner
             .OrderBy(static id => id)
             .ToList();
         var sideAndDelta = group.Members
-            .Select(member => (member.DimensionId, Gap: TryEvaluatePartsBoundsGap(member.DimensionId, targetGapPaper, decisionContext)))
+            .Select(member => (member.DimensionId, Gap: TryEvaluatePartsBoundsGap(member.DimensionId, targetGapPaper, decisionContext, allowInwardCorrectionFromPartsBounds)))
             .Where(static item => item.Gap != null && item.Gap.Value.CanEvaluate)
             .GroupBy(static item => item.DimensionId)
             .Select(static group => (DimensionId: group.Key, Gap: group.First().Gap!.Value))
@@ -254,7 +264,8 @@ internal static class DimensionGroupArrangementPlanner
     private static (bool CanEvaluate, string Side, double CurrentGapDrawing, double DeltaDrawing)? TryEvaluatePartsBoundsGap(
         int dimensionId,
         double targetGapPaper,
-        DimensionDecisionContext? decisionContext)
+        DimensionDecisionContext? decisionContext,
+        bool allowInwardCorrectionFromPartsBounds)
     {
         if (decisionContext?.View == null)
             return null;
@@ -264,7 +275,7 @@ internal static class DimensionGroupArrangementPlanner
             return null;
 
         var placement = DimensionViewPlacementInfoBuilder.Build(context, decisionContext.View);
-        var gap = DimensionPartsBoundsGapPolicy.Evaluate(placement, targetGapPaper);
-        return (gap.CanEvaluate, placement.PartsBoundsSide, gap.CurrentGapDrawing, gap.SuggestedOutwardDeltaDrawing);
+        var gap = DimensionPartsBoundsGapPolicy.Evaluate(placement, targetGapPaper, allowInwardCorrectionFromPartsBounds);
+        return (gap.CanEvaluate, placement.PartsBoundsSide, gap.CurrentGapDrawing, gap.SuggestedAxisDeltaDrawing);
     }
 }

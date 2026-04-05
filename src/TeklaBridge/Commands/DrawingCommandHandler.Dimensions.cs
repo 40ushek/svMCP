@@ -478,6 +478,7 @@ internal sealed partial class DrawingCommandHandler
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
         var targetGap = 10.0;
+        var allowInwardCorrectionFromPartsBounds = false;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)
@@ -485,6 +486,12 @@ internal sealed partial class DrawingCommandHandler
                 WriteError("targetGap must be a non-negative number.");
                 return true;
             }
+        }
+        if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) &&
+            !bool.TryParse(args[3], out allowInwardCorrectionFromPartsBounds))
+        {
+            WriteError("allowInwardCorrectionFromPartsBounds must be true or false.");
+            return true;
         }
 
         var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionArrangementDebug", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -494,7 +501,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = method.Invoke(api, new object?[] { viewId, targetGap }) as DimensionArrangementDebugResult;
+        var result = method.Invoke(api, new object?[] { viewId, targetGap, allowInwardCorrectionFromPartsBounds }) as DimensionArrangementDebugResult;
         if (result == null)
         {
             WriteError("Internal GetDimensionArrangementDebug() returned null.");
@@ -509,6 +516,7 @@ internal sealed partial class DrawingCommandHandler
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
         var targetGap = 10.0;
+        var allowInwardCorrectionFromPartsBounds = false;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out targetGap) || targetGap < 0)
@@ -517,8 +525,14 @@ internal sealed partial class DrawingCommandHandler
                 return true;
             }
         }
+        if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]) &&
+            !bool.TryParse(args[3], out allowInwardCorrectionFromPartsBounds))
+        {
+            WriteError("allowInwardCorrectionFromPartsBounds must be true or false.");
+            return true;
+        }
 
-        var result = api.ArrangeDimensions(viewId, targetGap);
+        var result = api.ArrangeDimensions(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
         WriteArrangeDimensionsResult(result);
         return true;
     }

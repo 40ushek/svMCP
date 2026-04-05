@@ -10,7 +10,10 @@ public sealed partial class TeklaDrawingDimensionsApi
 {
     internal const double DefaultArrangeTargetGapPaper = 10.0;
 
-    internal DimensionArrangementDebugResult GetDimensionArrangementDebug(int? viewId, double targetGap)
+    internal DimensionArrangementDebugResult GetDimensionArrangementDebug(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
@@ -23,7 +26,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         var spacing = DimensionGroupSpacingAnalyzer.AnalyzeStacks(groups);
         var plans = stacks.Select(stack =>
         {
-            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext);
+            var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
             return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
         }).ToList();
 
@@ -291,12 +294,15 @@ public sealed partial class TeklaDrawingDimensionsApi
         return types.Count == 1 ? types[0] : string.Empty;
     }
 
-    public ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap)
+    public ArrangeDimensionsResult ArrangeDimensions(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
 
-        return ApplyDimensionDistanceAdjustments(viewId, targetGap);
+        return ApplyDimensionDistanceAdjustments(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
     }
 
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
@@ -304,23 +310,29 @@ public sealed partial class TeklaDrawingDimensionsApi
         return DimensionGroupSpacingAnalyzer.AnalyzeStacks(GetArrangeGroupsDeduped(viewId));
     }
 
-    internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(int? viewId, double targetGap)
+    internal List<DimensionGroupArrangementPlan> PlanDimensionGroupSpacing(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         var groups = GetArrangeGroupsDeduped(viewId);
         var decisionContext = BuildArrangeDecisionContext(groups, viewId);
         return DimensionGroupSpacingAnalyzer.BuildStacks(groups)
-            .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext))
+            .Select(stack => DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds))
             .ToList();
     }
 
-    internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(int? viewId, double targetGap)
+    internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         var groups = GetArrangeGroupsDeduped(viewId);
         var decisionContext = BuildArrangeDecisionContext(groups, viewId);
         return DimensionGroupSpacingAnalyzer.BuildStacks(groups)
             .Select(stack =>
             {
-                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext);
+                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
                 return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
             })
             .ToList();
@@ -340,13 +352,16 @@ public sealed partial class TeklaDrawingDimensionsApi
     private List<DimensionGroup> GetArrangeGroupsDeduped(int? viewId)
         => DimensionArrangementDedup.Reduce(GetArrangeGroups(viewId));
 
-    internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(int? viewId, double targetGap)
+    internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds = false)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
-        var plans = PlanDimensionDistanceAdjustments(viewId, targetGap);
+        var plans = PlanDimensionDistanceAdjustments(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
         return ApplyDimensionDistanceAdjustments(activeDrawing, plans, "(MCP) ArrangeDimensions", "(MCP) RollbackArrangeDimensions");
     }
 

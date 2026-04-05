@@ -197,6 +197,85 @@ public sealed class DimensionGroupArrangementPlannerTests
     }
 
     [Fact]
+    public void BuildPlan_ForStack_AnchorsFirstUnitToPartsBounds_ThenRepositionsLaterUnitsFromIt_WhenOptionEnabled()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = 1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", 1, (1, 0), 120, 0, 100, 0));
+        stack.Groups.Add(CreateReferenceLineGroup(2, "horizontal", 1, (1, 0), 135, 0, 100, 0));
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateContext(1, 120, 1));
+        decisionContext.Dimensions.Add(CreateContext(2, 135, 1));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10, decisionContext, allowInwardCorrectionFromPartsBounds: true);
+
+        Assert.Equal(2, plan.Proposals.Count);
+        var sorted = plan.Proposals.OrderBy(static p => p.DimensionId).ToList();
+        Assert.Equal(1, sorted[0].DimensionId);
+        Assert.Equal(-10, sorted[0].AxisShift, 3);
+        Assert.Equal(2, sorted[1].DimensionId);
+        Assert.Equal(-15, sorted[1].AxisShift, 3);
+    }
+
+    [Fact]
+    public void BuildPlan_ForStack_DoesNotPullTowardPartsBounds_WhenNearestChainIsTooFar_AndOptionDisabled()
+    {
+        var stack = new DimensionGroupLineStack
+        {
+            ViewId = 10,
+            ViewType = "FrontView",
+            Orientation = "horizontal",
+            TopDirection = 1,
+            Direction = (1, 0)
+        };
+
+        stack.Groups.Add(CreateReferenceLineGroup(1, "horizontal", 1, (1, 0), 120, 0, 100, 0));
+
+        var decisionContext = new DimensionDecisionContext
+        {
+            View = new DimensionViewContext
+            {
+                ViewId = 10,
+                ViewScale = 1,
+                PartsBounds = new DrawingBoundsInfo
+                {
+                    MinX = 0,
+                    MinY = 0,
+                    MaxX = 100,
+                    MaxY = 100
+                }
+            }
+        };
+        decisionContext.Dimensions.Add(CreateContext(1, 120, 1));
+
+        var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10, decisionContext);
+
+        Assert.False(plan.HasChanges);
+    }
+
+    [Fact]
     public void BuildPlan_ForStack_UsesPositiveSignedOffsetForVerticalLeftPartsBoundsCorrection()
     {
         var stack = new DimensionGroupLineStack
