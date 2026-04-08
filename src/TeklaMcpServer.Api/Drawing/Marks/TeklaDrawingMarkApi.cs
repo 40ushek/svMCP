@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
 

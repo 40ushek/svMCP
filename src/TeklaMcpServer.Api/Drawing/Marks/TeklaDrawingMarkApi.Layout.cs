@@ -1,7 +1,5 @@
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Algorithms.Marks;

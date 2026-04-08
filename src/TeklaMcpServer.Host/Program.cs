@@ -12,6 +12,7 @@ internal static class Program
     [STAThread]
     static void Main()
     {
+        ViewTest.CheckView();
 
         //var dr = new TeklaMcpServer.Api.Drawing.TeklaDrawingPartGeometryApi(new Model());
         //var g = dr.GetAllPartsGeometryInView(3700);
