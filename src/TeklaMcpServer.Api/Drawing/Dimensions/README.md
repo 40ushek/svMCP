@@ -18,7 +18,7 @@ This means:
 The current `v1` baseline already includes:
 
 - internal `DimensionContext`
-- internal `DimensionViewContext`
+- internal `DrawingViewContext`
 - internal `DimensionDecisionContext`
 - internal `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
@@ -31,7 +31,7 @@ The current `v1` baseline already includes:
 - local post-combine arrange handoff
 - arrangement planning using `DimensionDecisionContext` for view-scale-aware
   gap translation
-- `PartsBounds` / `PartsHull` / `GridIds` in `DimensionViewContext`
+- `PartsBounds` / `PartsHull` / `GridIds` in `DrawingViewContext`
 - per-dimension `PartsBounds` placement classification and exact placement
   metrics
 - narrow deterministic consumption of `PartsBounds` gap-policy signals during
@@ -94,7 +94,7 @@ Internal layers:
   - arrangement debug/apply result types
 - `Context/`
   - `DimensionContext`
-  - `DimensionViewContext`
+  - `DrawingViewContext`
   - `DimensionDecisionContext`
   - geometry, placement, source-association, and layout-policy helpers
 - `Orchestration/`
@@ -118,7 +118,7 @@ In practical terms:
 
 1. `Query` reads Tekla dimensions into internal snapshots and domain items.
 2. `Grouping` turns runtime data into `DimensionItem` / `DimensionGroup`.
-3. `Context` builds `DimensionContext`, `DimensionViewContext`, and
+3. `Context` builds `DimensionContext`, `DrawingViewContext`, and
    `DimensionDecisionContext`.
 4. `LayoutPolicy` and orchestration/debug paths evaluate explainable decisions
    from that shared context.
@@ -227,7 +227,7 @@ working constraints rather than open questions.
   - pull works when lines are too far apart
 - `place_control_diagonals` has been live-validated on a real view using
   `SolidVertices`-driven hull/extreme-point selection
-- `DimensionViewContext.PartsBounds` has been live-validated against debug
+- `DrawingViewContext.PartsBounds` has been live-validated against debug
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box

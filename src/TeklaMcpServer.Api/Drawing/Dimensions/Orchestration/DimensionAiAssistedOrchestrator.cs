@@ -48,7 +48,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         int stepOrder)
     {
         var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.Combine);
@@ -73,7 +73,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         int stepOrder)
     {
         var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.Arrange);
@@ -97,7 +97,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         int stepOrder)
     {
         var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.ReviewOnly);
@@ -109,7 +109,7 @@ internal sealed class DimensionAiAssistedOrchestrator
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         int stepOrder,
         DimensionAiAssistedAction action)
     {
@@ -135,7 +135,7 @@ internal sealed class DimensionAiAssistedOrchestrator
     private static DimensionAiOrchestrationEvidence CreateEvidence(
         DimensionOrchestrationEvidence evidence,
         DimensionContext? context,
-        DimensionViewContext viewContext)
+        DrawingViewContext viewContext)
     {
         var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);
         var partsBoundsGap = DimensionPartsBoundsGapPolicy.Evaluate(viewPlacement);

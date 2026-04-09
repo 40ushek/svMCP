@@ -19,7 +19,7 @@ internal static class DimensionViewPlacementInfoBuilder
 
     public static DimensionViewPlacementInfo Build(
         DimensionContext? dimensionContext,
-        DimensionViewContext? viewContext)
+        DrawingViewContext? viewContext)
     {
         var info = new DimensionViewPlacementInfo
         {

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class DimensionViewContext
+internal sealed class DrawingViewContext
 {
     public int? ViewId { get; set; }
     public double ViewScale { get; set; }

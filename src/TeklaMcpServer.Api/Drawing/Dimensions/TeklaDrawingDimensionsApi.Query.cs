@@ -616,11 +616,11 @@ public sealed partial class TeklaDrawingDimensionsApi
             contexts.Values
                 .OrderBy(static context => context.ViewId)
                 .ThenBy(static context => context.DimensionId));
-        decisionContext.View = BuildDecisionViewContext(items, requestedViewId, decisionContext.Warnings);
+        decisionContext.View = BuildDrawingViewContext(items, requestedViewId, decisionContext.Warnings);
         return decisionContext;
     }
 
-    private DimensionViewContext BuildDecisionViewContext(
+    private DrawingViewContext BuildDrawingViewContext(
         IReadOnlyList<DimensionItem> items,
         int? requestedViewId,
         List<string> warnings)
@@ -642,7 +642,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             else
             {
                 warnings.Add("single_view_required");
-                return new DimensionViewContext();
+                return new DrawingViewContext();
             }
         }
 
@@ -655,7 +655,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (viewScales.Count > 1)
             warnings.Add("view_scale_inconsistent");
 
-        var builder = new DimensionViewContextBuilder(
+        var builder = new DrawingViewContextBuilder(
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());

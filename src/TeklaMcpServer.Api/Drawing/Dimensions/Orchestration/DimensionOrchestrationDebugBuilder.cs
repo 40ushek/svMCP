@@ -66,7 +66,7 @@ internal static class DimensionOrchestrationDebugBuilder
         IReadOnlyList<DimensionGroupReductionDebugInfo> groups,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var group in groups)
@@ -152,7 +152,7 @@ internal static class DimensionOrchestrationDebugBuilder
         HashSet<int> overlappingIds,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         var overlappingCandidates = eligibleCandidates
@@ -245,7 +245,7 @@ internal static class DimensionOrchestrationDebugBuilder
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildSuppressPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -287,7 +287,7 @@ internal static class DimensionOrchestrationDebugBuilder
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildReviewPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -326,7 +326,7 @@ internal static class DimensionOrchestrationDebugBuilder
     private static IEnumerable<DimensionOrchestrationActionPacket> BuildKeepPackets(
         IReadOnlyList<DimensionReductionItemDebugInfo> orderedItems,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         HashSet<int> claimedDimensionIds)
     {
         foreach (var item in orderedItems)
@@ -374,7 +374,7 @@ internal static class DimensionOrchestrationDebugBuilder
     private static DimensionOrchestrationEvidence CreateEvidence(
         DimensionReductionItemDebugInfo item,
         DimensionContext? context,
-        DimensionViewContext viewContext,
+        DrawingViewContext viewContext,
         string? combineConnectivityMode = null)
     {
         var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);

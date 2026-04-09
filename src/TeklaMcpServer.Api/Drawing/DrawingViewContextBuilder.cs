@@ -5,13 +5,13 @@ using Tekla.Structures.Geometry3d;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class DimensionViewContextBuilder
+internal sealed class DrawingViewContextBuilder
 {
     private readonly IDrawingPartGeometryApi _partGeometryApi;
     private readonly IDrawingBoltGeometryApi _boltGeometryApi;
     private readonly IDrawingGridApi _gridApi;
 
-    public DimensionViewContextBuilder(
+    public DrawingViewContextBuilder(
         IDrawingPartGeometryApi partGeometryApi,
         IDrawingBoltGeometryApi boltGeometryApi,
         IDrawingGridApi gridApi)
@@ -21,9 +21,9 @@ internal sealed class DimensionViewContextBuilder
         _gridApi = gridApi;
     }
 
-    public DimensionViewContext Build(int viewId, double viewScale)
+    public DrawingViewContext Build(int viewId, double viewScale)
     {
-        var context = new DimensionViewContext
+        var context = new DrawingViewContext
         {
             ViewId = viewId,
             ViewScale = viewScale

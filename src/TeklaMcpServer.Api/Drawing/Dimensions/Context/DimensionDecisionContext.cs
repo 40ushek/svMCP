@@ -6,7 +6,7 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class DimensionDecisionContext
 {
     public List<DimensionContext> Dimensions { get; } = [];
-    public DimensionViewContext View { get; set; } = new();
+    public DrawingViewContext View { get; set; } = new();
     public List<string> Warnings { get; } = [];
 
     public bool HasDimensions => Dimensions.Count > 0;

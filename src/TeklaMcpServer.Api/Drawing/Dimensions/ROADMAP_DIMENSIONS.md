@@ -174,7 +174,7 @@ Purpose:
 This layer should continue to grow around:
 
 - `DimensionContext`
-- `DimensionViewContext`
+- `DrawingViewContext`
 - `DimensionDecisionContext`
 - `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
@@ -265,7 +265,7 @@ The current baseline already includes:
 - local post-combine arrange handoff
 - bounded stable reread after mutate
 - `DimensionContext`
-- `DimensionViewContext`
+- `DrawingViewContext`
 - `DimensionDecisionContext`
 - `DimensionViewPlacementInfo`
 - source association and point-to-object mapping
@@ -277,7 +277,7 @@ The current baseline already includes:
 - arrangement planning using `DimensionDecisionContext` for view-scale-aware gap translation
 - orchestration debug packets
 - orchestration extracted into a dedicated module/layer
-- `PartsBounds` / `PartsHull` / `GridIds` added to `DimensionViewContext`
+- `PartsBounds` / `PartsHull` / `GridIds` added to `DrawingViewContext`
 - per-dimension `PartsBounds` placement classification and exact placement metrics
 - `PartsBounds` gap-policy signals exposed in deterministic debug/orchestration evidence
 - validated view-local part-geometry contract for both `SolidVertices` and
@@ -289,7 +289,7 @@ The current baseline already includes:
 - internal/debug-first action-plan generation surface currently exposed through
   the bridge helper named `get_dimension_ai_orchestration_plan`
 
-Current `DimensionViewContext` baseline should be interpreted carefully:
+Current `DrawingViewContext` baseline should be interpreted carefully:
 
 - it currently builds a single-view geometry context
 - it currently includes all successful `Parts` and deduplicated `Bolts` from
@@ -311,7 +311,7 @@ Current decision/placement baseline should also be interpreted explicitly:
   - orchestration/debug
   - arrangement planning/debug support
 - `DimensionViewPlacementInfo` is a computed per-dimension placement summary
-  relative to `DimensionViewContext`
+  relative to `DrawingViewContext`
 - `DimensionPartsBoundsGapPolicy` currently evaluates desired gap from
   `PartsBounds` and exposes:
   - current gap
@@ -355,7 +355,7 @@ on the current implementation and should constrain future work.
   - pull works when lines are too far apart
 - `place_control_diagonals` has been live-validated on a real view using
   `SolidVertices`-driven hull/extreme-point selection
-- `DimensionViewContext.PartsBounds` has been live-validated against debug
+- `DrawingViewContext.PartsBounds` has been live-validated against debug
   overlay on a real view after restoring the view-local bbox contract
 - `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
   path enabled, including outward shifts relative to the overall parts box
@@ -428,9 +428,9 @@ The next useful capabilities are:
 - better support for collision reasoning
 - future candidate placement generation
 
-### 3. Add GA-safe `DimensionViewContext` selection strategy
+### 3. Add GA-safe `DrawingViewContext` selection strategy
 
-Current `DimensionViewContext` construction is intentionally simple:
+Current `DrawingViewContext` construction is intentionally simple:
 
 - single view
 - all parts in view
@@ -443,7 +443,7 @@ The next phase should likely add a more selective strategy for GA-sized views:
 
 - keep the current full-view path for assembly scenarios where it is practical
 - add a relevance/filtering mode for large GA contexts
-- avoid turning `DimensionViewContext` into an unconditional full drawing dump
+- avoid turning `DrawingViewContext` into an unconditional full drawing dump
 
 ### 4. Broaden deterministic use of placement and gap signals
 
