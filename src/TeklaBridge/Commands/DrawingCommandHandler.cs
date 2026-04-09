@@ -41,6 +41,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
                 return TryHandleDrawingInteractionCommands(command, args);
 
             case "get_drawing_views":
+            case "get_drawing_layout_context":
             case "get_drawing_section_sides":
             case "get_drawing_detail_marks":
             case "get_drawing_section_marks":

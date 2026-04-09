@@ -36,19 +36,20 @@ public sealed partial class TeklaDrawingViewApi
         return result;
     }
 
-    public DrawingReservedAreasResult GetReservedAreas(double margin)
+    public DrawingReservedAreasResult GetReservedAreas(double? margin = null)
     {
         var drawing = new DrawingHandler().GetActiveDrawing()
             ?? throw new DrawingNotOpenException();
 
         var (sheetMargin, tables) = DrawingReservedAreaReader.ReadLayoutInfo();
-        var merged = DrawingReservedAreaReader.Read(drawing, margin, 0.0, preloadedTables: tables);
+        var effectiveMargin = margin ?? sheetMargin ?? 10.0;
+        var merged = DrawingReservedAreaReader.Read(drawing, effectiveMargin, 0.0, preloadedTables: tables);
 
         return new DrawingReservedAreasResult
         {
             SheetWidth  = drawing.Layout.SheetSize.Width,
             SheetHeight = drawing.Layout.SheetSize.Height,
-            Margin      = margin,
+            Margin      = effectiveMargin,
             SheetMargin = sheetMargin,
             Tables      = tables,
             MergedAreas = merged

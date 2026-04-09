@@ -7,6 +7,27 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
+    [McpServerTool, Description(
+        "Get the coarse sheet-level drawing context for the active drawing. " +
+        "Returns drawing metadata, sheet size, coarse view boxes and reserved/table layout areas. " +
+        "Use this for view layout and sheet-level reasoning, not for detailed per-view geometry.")]
+    public static string GetDrawingLayoutContext()
+    {
+        var json = RunBridge("get_drawing_layout_context");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Get all views in the active drawing with position, scale, size, and sheet dimensions (sheetWidth/sheetHeight in mm)")]
     public static string GetDrawingViews()
     {

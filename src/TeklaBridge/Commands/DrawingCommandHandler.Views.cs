@@ -9,11 +9,16 @@ internal sealed partial class DrawingCommandHandler
     private bool TryHandleViewCommands(string command, string[] args)
     {
         var api = new TeklaDrawingViewApi();
+        TeklaDrawingContextApi? contextApi = null;
+        TeklaDrawingContextApi GetContextApi() => contextApi ??= new TeklaDrawingContextApi();
 
         switch (command)
         {
             case "get_drawing_views":
                 return HandleGetDrawingViews(api);
+
+            case "get_drawing_layout_context":
+                return HandleGetDrawingLayoutContext(GetContextApi());
 
             case "get_drawing_section_sides":
                 return HandleGetDrawingSectionSides(api);
@@ -39,6 +44,13 @@ internal sealed partial class DrawingCommandHandler
             default:
                 return false;
         }
+    }
+
+    private bool HandleGetDrawingLayoutContext(TeklaDrawingContextApi api)
+    {
+        var result = api.GetLayoutContext();
+        WriteJson(result);
+        return true;
     }
 
     private bool HandleGetDrawingViews(TeklaDrawingViewApi api)
@@ -218,7 +230,7 @@ internal sealed partial class DrawingCommandHandler
 
     private bool HandleGetDrawingReservedAreas()
     {
-        var result = new TeklaDrawingViewApi().GetReservedAreas(margin: 0.0);
+        var result = new TeklaDrawingViewApi().GetReservedAreas();
         WriteJson(new
         {
             sheetWidth  = result.SheetWidth,
