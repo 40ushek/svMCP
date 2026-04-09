@@ -89,15 +89,7 @@
 
 ### 1. `DrawingContext`
 
-Минимальный состав:
-
-- drawing identity / drawing type
-- `Sheet`
-- `Views`
-- `ReservedLayout`
-- warnings
-
-Предпочтительная форма:
+Состав:
 
 - `Drawing`
 - `Sheet`
@@ -267,6 +259,110 @@
 - `DrawingContext` -> sheet-level planning
 - `DrawingViewContext` -> per-view geometry
 - domain contexts -> dimensions / marks / future annotation logic
+
+## Phase 6. Сохранять кейсы как before/after contexts
+
+### 6a. Сохранение снэпшотов
+
+Следующий практический слой после самого `DrawingContext`:
+
+- использовать один и тот же `get_drawing_layout_context`
+- читать состояние чертежа до изменений
+- читать состояние чертежа после изменений
+- сохранять это как пример трансформации
+
+Минимальный формат кейса:
+
+- папка кейса
+- `before.json`
+- `after.json`
+- `meta.json`
+
+Где:
+
+- `before.json` = `DrawingContext` до layout/manual edits
+- `after.json` = `DrawingContext` после layout/manual edits
+- `meta.json` = краткое описание кейса + оценка качества
+
+Минимальный `meta.json`:
+
+- `case_id`
+- `operation`
+- `note`
+- `score` — результат `score_drawing_layout` для `after`
+
+Важно:
+
+- не нужен отдельный synthetic `layout_result.json`
+- канонический результат кейса это новый `DrawingContext` после изменений
+- для dataset/agent examples нужно хранить именно пару состояний:
+  - before
+  - after
+
+Реализация:
+
+- команда `save_drawing_snapshot` — читает `DrawingContext` и сохраняет JSON в указанную папку с указанным именем файла
+
+### 6b. Оценка качества компоновки
+
+`score_drawing_layout` — инструмент который принимает `DrawingContext` и возвращает числовую оценку компоновки.
+
+Критерии (все считаются из `DrawingContext`):
+
+- **Заполнение листа** — `суммарная площадь видов / доступная площадь листа`
+- **Единый масштаб** — штраф за разнобой масштабов между видами
+- **Проекционная связь** — количество корректных проекционных связей по drawing-type-specific rules:
+  - `GA` — через grid / оси
+  - `assembly` / `SK` — от системы координат главной детали
+- **Hard constraints** — перекрытия видов между собой или с таблицами (штраф)
+
+Первый practical scope scorer:
+
+- overlap между видами
+- overlap с `ReservedLayout`
+- `fill_ratio`
+- `uniform_scale`
+
+Правила расчёта:
+
+- для overlap использовать `BBox` вида как основной rect
+- если `BBox` недоступен, использовать fallback `Origin + Width/Height`
+- `fill_ratio` считать по формуле:
+  - `sum(view area) / available sheet area`
+- `available sheet area` считать как:
+  - `sheet area - union(ReservedLayout.Areas)`
+- для `ReservedLayout.Areas` нельзя использовать простую сумму площадей, если rect'ы перекрываются
+- `uniform_scale` считать без `detail views`
+- для этого использовать `SemanticKind` вида
+
+Нормализация и веса:
+
+- дефолтные веса должны быть заданы явно с первого запуска
+- пока не будет отдельной target policy, не вводить самостоятельный `scale_score`
+- первый scorer не должен допускать, чтобы один ненормализованный scale-сигнал доминировал над остальными
+
+Расширенная формула:
+
+```
+score = w1 * fill_ratio
+      + w2 * uniform_scale_score
+      + w3 * projection_score
+      - penalty(overlaps)
+```
+
+Важно:
+
+- `projection_score` не должен считаться как универсальная эвристика только по bbox
+- правила должны зависеть от типа чертежа и доступных sheet-level signals в `DrawingContext`
+- `projection_score` не входит в первый минимальный scorer и добавляется отдельным шагом
+
+Веса подбираются на реальных кейсах.
+
+Зачем это нужно:
+
+- детерминированный алгоритм и агентный результат оцениваются по одной метрике
+- before/after автоматически получает числовую метрику без ручной оценки
+- агент может сравнивать варианты и выбирать лучший
 
 ## Что не нужно делать
 
