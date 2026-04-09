@@ -92,10 +92,18 @@
 Минимальный состав:
 
 - drawing identity / drawing type
-- sheet info
-- coarse list of views
-- reserved areas / table layout
+- `Sheet`
+- `Views`
+- `ReservedLayout`
 - warnings
+
+Предпочтительная форма:
+
+- `Drawing`
+- `Sheet`
+- `Views`
+- `ReservedLayout`
+- `Warnings`
 
 `Views` здесь должны быть только в грубом формате:
 

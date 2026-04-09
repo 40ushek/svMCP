@@ -13,13 +13,19 @@ public sealed class DrawingContextBuilder
         return new DrawingContext
         {
             Drawing = CloneDrawing(drawing),
-            SheetWidth = views.SheetWidth,
-            SheetHeight = views.SheetHeight,
-            Margin = reservedAreas.Margin,
-            SheetMargin = reservedAreas.SheetMargin,
+            Sheet = new DrawingSheetContext
+            {
+                Width = views.SheetWidth,
+                Height = views.SheetHeight
+            },
             Views = views.Views.Select(CloneView).ToList(),
-            Tables = reservedAreas.Tables.Select(CloneTable).ToList(),
-            ReservedAreas = reservedAreas.MergedAreas.Select(CloneReservedRect).ToList()
+            ReservedLayout = new DrawingReservedLayoutContext
+            {
+                Margin = reservedAreas.Margin,
+                SheetMargin = reservedAreas.SheetMargin,
+                Tables = reservedAreas.Tables.Select(CloneTable).ToList(),
+                Areas = reservedAreas.MergedAreas.Select(CloneReservedRect).ToList()
+            }
         };
     }
 
