@@ -277,16 +277,38 @@
 - `before.json`
 - `after.json`
 - `meta.json`
+- `views/` (опционально, для per-view contexts)
 
 Где:
 
 - `before.json` = `DrawingContext` до layout/manual edits
 - `after.json` = `DrawingContext` после layout/manual edits
 - `meta.json` = краткое описание кейса + оценка качества
+- `views/` = дополнительные данные по отдельным видам, если кейс расширяется контекстами размеров/меток
+
+Структура dataset:
+
+- `drawing_cases/`
+  - `assembly/`
+    - `{drawing_guid}/`
+  - `ga/`
+    - `{drawing_guid}/`
+  - `single_part/`
+    - `{drawing_guid}/`
+  - `cast_element/`
+    - `{drawing_guid}/`
+
+Идентификатор кейса:
+
+- использовать существующий `drawing_guid`
+- это соответствует уже существующей семантике `ListDrawings()` / drawing catalog API
+- `drawing_guid` является каноническим id кейса чертежа
 
 Минимальный `meta.json`:
 
-- `case_id`
+- `drawing_guid`
+- `drawing_type`
+- `drawing_name`
 - `operation`
 - `note`
 - `score` — результат `score_drawing_layout` для `after`
@@ -302,6 +324,14 @@
 Реализация:
 
 - команда `save_drawing_snapshot` — читает `DrawingContext` и сохраняет JSON в указанную папку с указанным именем файла
+
+Per-view расширение:
+
+- размеры и метки остаются view-level данными
+- они не включаются в `DrawingContext`
+- если кейс потом расширяется:
+  - использовать подпапку `views/`
+  - внутри хранить per-view context по `view_id`
 
 ### 6b. Оценка качества компоновки
 
