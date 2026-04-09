@@ -419,6 +419,11 @@ public sealed class GridAxesRequest
     public int ViewId { get; set; }
 }
 
+public sealed class DimensionContextsRequest
+{
+    public int ViewId { get; set; }
+}
+
 public sealed class DrawingViewContextRequest
 {
     public int ViewId { get; set; }
@@ -447,6 +452,19 @@ public sealed class DrawingViewContextParseResult
         new() { IsValid = true, Request = request };
 
     public static DrawingViewContextParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class DimensionContextsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public DimensionContextsRequest Request { get; private set; } = new();
+
+    public static DimensionContextsParseResult Success(DimensionContextsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static DimensionContextsParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

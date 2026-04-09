@@ -108,6 +108,17 @@ public static partial class DrawingCommandParsers
         });
     }
 
+    public static DimensionContextsParseResult ParseDimensionContextsRequest(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+            return DimensionContextsParseResult.Fail("Usage: get_dimension_contexts <viewId>");
+
+        return DimensionContextsParseResult.Success(new DimensionContextsRequest
+        {
+            ViewId = viewId
+        });
+    }
+
     public static DeleteDimensionParseResult ParseDeleteDimensionRequest(string[] args)
     {
         if (args.Length < 2 || !int.TryParse(args[1], out var dimensionId))

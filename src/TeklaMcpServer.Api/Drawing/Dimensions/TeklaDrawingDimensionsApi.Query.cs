@@ -79,6 +79,20 @@ public sealed partial class TeklaDrawingDimensionsApi
         return BuildGetDimensionsResult(snapshots.Count, groups);
     }
 
+    public GetDimensionContextsResult GetDimensionContexts(int viewId)
+    {
+        var items = GetDimensionGroups(viewId)
+            .SelectMany(static group => group.DimensionList)
+            .Distinct()
+            .OrderBy(static item => item.DimensionId)
+            .ToList();
+        if (items.Count == 0)
+            return new GetDimensionContextsResult { ViewId = viewId };
+
+        var contexts = BuildDimensionContexts(items, out var warnings);
+        return DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+    }
+
     private static GetDimensionsResult BuildGetDimensionsResult(
         int drawingDimensionCount,
         IReadOnlyList<DimensionGroup> groups)
@@ -618,6 +632,26 @@ public sealed partial class TeklaDrawingDimensionsApi
                 .ThenBy(static context => context.DimensionId));
         decisionContext.View = BuildDrawingViewContext(items, requestedViewId, decisionContext.Warnings);
         return decisionContext;
+    }
+
+    private IReadOnlyList<DimensionContext> BuildDimensionContexts(
+        IReadOnlyList<DimensionItem> items,
+        out IReadOnlyList<string> warnings)
+    {
+        if (items.Count == 0)
+        {
+            warnings = [];
+            return [];
+        }
+
+        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
+        var builder = new DimensionContextBuilder(associationResolver);
+        var result = builder.Build(items);
+        warnings = result.Warnings;
+        return result.Contexts
+            .OrderBy(static context => context.ViewId)
+            .ThenBy(static context => context.DimensionId)
+            .ToList();
     }
 
     private DrawingViewContext BuildDrawingViewContext(

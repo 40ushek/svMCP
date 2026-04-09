@@ -51,6 +51,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
                 return TryHandleViewCommands(command, args);
 
             case "get_drawing_dimensions":
+            case "get_dimension_contexts":
             case "draw_dimension_text_boxes":
             case "get_dimension_text_placement_debug":
             case "get_dimension_source_debug":

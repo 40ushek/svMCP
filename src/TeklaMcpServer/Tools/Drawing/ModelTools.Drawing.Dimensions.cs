@@ -7,6 +7,28 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
+    [McpServerTool, Description(
+        "Get dimension contexts for one drawing view. " +
+        "Returns reduced dimension-item contexts with geometry, role classification, source associations and annotation geometry. " +
+        "Use together with get_drawing_view_context for external reasoning about dimensions.")]
+    public static string GetDimensionContexts(
+        [Description("View ID to read dimension contexts from (from get_drawing_views).")] int viewId)
+    {
+        var json = RunBridge("get_dimension_contexts", viewId.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Delete a straight dimension set from the active drawing by its ID (from get_drawing_dimensions).")]
     public static string DeleteDimension(
         [Description("ID of the StraightDimensionSet to delete")] int dimensionId)

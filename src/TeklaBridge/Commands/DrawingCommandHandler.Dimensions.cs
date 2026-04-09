@@ -16,6 +16,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_drawing_dimensions":
                 return HandleGetDrawingDimensions(api, args);
 
+            case "get_dimension_contexts":
+                return HandleGetDimensionContexts(api, args);
+
             case "draw_dimension_text_boxes":
                 return HandleDrawDimensionTextBoxes(api, args);
 
@@ -65,6 +68,20 @@ internal sealed partial class DrawingCommandHandler
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
         var result = api.GetDimensions(viewId);
         WriteGetDimensionsResult(result);
+        return true;
+    }
+
+    private bool HandleGetDimensionContexts(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseDimensionContextsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.GetDimensionContexts(parseResult.Request.ViewId);
+        WriteJson(result);
         return true;
     }
 
