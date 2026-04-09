@@ -4,6 +4,7 @@ using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -204,8 +205,8 @@ public sealed partial class TeklaDrawingMarkApi
             var overlapsDetected =
                 a.ResolvedGeometry?.Corners is { Count: >= 3 } aCorners &&
                 b.ResolvedGeometry?.Corners is { Count: >= 3 } bCorners
-                    ? MarkGeometryHelper.PolygonsIntersect(aCorners, bCorners)
-                    : MarkGeometryHelper.RectanglesOverlap(
+                    ? PolygonGeometry.Intersects(aCorners, bCorners)
+                    : PolygonGeometry.RectanglesOverlap(
                         a.ResolvedGeometry?.MinX ?? a.BboxMinX,
                         a.ResolvedGeometry?.MinY ?? a.BboxMinY,
                         a.ResolvedGeometry?.MaxX ?? a.BboxMaxX,

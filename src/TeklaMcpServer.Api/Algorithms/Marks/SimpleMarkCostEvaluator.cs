@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
@@ -39,14 +40,14 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
     {
         if (item.LocalCorners.Count >= 3 && placement.LocalCorners.Count >= 3)
         {
-            var candidatePolygon = MarkGeometryHelper.TranslateLocalCorners(item.LocalCorners, candidate.X, candidate.Y);
-            var placementPolygon = MarkGeometryHelper.TranslateLocalCorners(placement.LocalCorners, placement.X, placement.Y);
-            if (!MarkGeometryHelper.PolygonsIntersect(candidatePolygon, placementPolygon))
+            var candidatePolygon = PolygonGeometry.Translate(item.LocalCorners, candidate.X, candidate.Y);
+            var placementPolygon = PolygonGeometry.Translate(placement.LocalCorners, placement.X, placement.Y);
+            if (!PolygonGeometry.Intersects(candidatePolygon, placementPolygon))
             {
-                MarkGeometryHelper.GetPolygonBounds(candidatePolygon, out var candidateMinX, out var candidateMinY, out var candidateMaxX, out var candidateMaxY);
-                MarkGeometryHelper.GetPolygonBounds(placementPolygon, out var placementMinX, out var placementMinY, out var placementMaxX, out var placementMaxY);
+                PolygonGeometry.GetBounds(candidatePolygon, out var candidateMinX, out var candidateMinY, out var candidateMaxX, out var candidateMaxY);
+                PolygonGeometry.GetBounds(placementPolygon, out var placementMinX, out var placementMinY, out var placementMaxX, out var placementMaxY);
 
-                if (!MarkGeometryHelper.RectanglesOverlap(
+                if (!PolygonGeometry.RectanglesOverlap(
                         candidateMinX - (options.Gap / 2.0),
                         candidateMinY - (options.Gap / 2.0),
                         candidateMaxX + (options.Gap / 2.0),

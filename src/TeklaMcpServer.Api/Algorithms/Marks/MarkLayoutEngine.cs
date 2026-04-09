@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
@@ -106,16 +107,16 @@ public sealed class MarkLayoutEngine
         // which should not happen in normal operation.
         if (a.LocalCorners.Count >= 3 && b.LocalCorners.Count >= 3)
         {
-            var aPolygon = MarkGeometryHelper.TranslateLocalCorners(a.LocalCorners, a.CurrentX, a.CurrentY);
-            var bPolygon = MarkGeometryHelper.TranslateLocalCorners(b.LocalCorners, b.CurrentX, b.CurrentY);
+            var aPolygon = PolygonGeometry.Translate(a.LocalCorners, a.CurrentX, a.CurrentY);
+            var bPolygon = PolygonGeometry.Translate(b.LocalCorners, b.CurrentX, b.CurrentY);
 
-            if (MarkGeometryHelper.PolygonsIntersect(aPolygon, bPolygon))
+            if (PolygonGeometry.Intersects(aPolygon, bPolygon))
                 return true;
 
-            MarkGeometryHelper.GetPolygonBounds(aPolygon, out var aMinX, out var aMinY, out var aMaxX, out var aMaxY);
-            MarkGeometryHelper.GetPolygonBounds(bPolygon, out var bMinX, out var bMinY, out var bMaxX, out var bMaxY);
+            PolygonGeometry.GetBounds(aPolygon, out var aMinX, out var aMinY, out var aMaxX, out var aMaxY);
+            PolygonGeometry.GetBounds(bPolygon, out var bMinX, out var bMinY, out var bMaxX, out var bMaxY);
 
-            return MarkGeometryHelper.RectanglesOverlap(
+            return PolygonGeometry.RectanglesOverlap(
                 aMinX - (gap / 2.0),
                 aMinY - (gap / 2.0),
                 aMaxX + (gap / 2.0),

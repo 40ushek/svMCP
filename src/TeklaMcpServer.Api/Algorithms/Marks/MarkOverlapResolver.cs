@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
@@ -595,7 +596,7 @@ public sealed class MarkOverlapResolver
         {
             var aPolygon = TranslateCorners(a);
             var bPolygon = TranslateCorners(b);
-            return MarkGeometryHelper.PolygonsIntersect(aPolygon, bPolygon);
+            return PolygonGeometry.Intersects(aPolygon, bPolygon);
         }
 
         var overlapX = Math.Min(a.X + (a.Width / 2.0), b.X + (b.Width / 2.0))
@@ -625,7 +626,7 @@ public sealed class MarkOverlapResolver
         {
             var aPolygon = TranslateCorners(a);
             var bPolygon = TranslateCorners(b);
-            if (!MarkGeometryHelper.TryGetMinimumTranslationVector(aPolygon, bPolygon, out separationAxisX, out separationAxisY, out separationDepth))
+            if (!PolygonGeometry.TryGetMinimumTranslationVector(aPolygon, bPolygon, out separationAxisX, out separationAxisY, out separationDepth))
                 return false;
 
             overlapX = Math.Abs(separationAxisX * separationDepth);
@@ -650,6 +651,6 @@ public sealed class MarkOverlapResolver
 
     private static List<double[]> TranslateCorners(MarkLayoutPlacement placement)
     {
-        return MarkGeometryHelper.TranslateLocalCorners(placement.LocalCorners, placement.X, placement.Y);
+        return PolygonGeometry.Translate(placement.LocalCorners, placement.X, placement.Y);
     }
 }
