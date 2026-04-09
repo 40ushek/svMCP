@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
+using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -40,6 +41,7 @@ internal sealed class DrawingLayoutContextBuilder
     {
         return new DrawingInfo
         {
+            Guid = drawing.GetIdentifier().GUID.ToString(),
             Name = drawing.Name,
             Mark = drawing.Mark,
             Title1 = drawing.Title1,
