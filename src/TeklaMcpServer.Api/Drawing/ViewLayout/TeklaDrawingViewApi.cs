@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -42,6 +43,32 @@ public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
             BBoxMaxX = hasBBox ? bbox.MaxX : null,
             BBoxMaxY = hasBBox ? bbox.MaxY : null
         };
+    }
+
+    internal static DrawingViewsResult BuildViewsResult(
+        Tekla.Structures.Drawing.Drawing drawing,
+        IReadOnlyList<View>? views = null,
+        IReadOnlyDictionary<int, ReservedRect>? actualRects = null)
+    {
+        double sheetW = 0;
+        double sheetH = 0;
+        try
+        {
+            var ss = drawing.Layout.SheetSize;
+            sheetW = ss.Width;
+            sheetH = ss.Height;
+        }
+        catch
+        {
+        }
+
+        var currentViews = views ?? EnumerateViews(drawing).ToList();
+        var rects = actualRects ?? DrawingViewFrameGeometry.BuildActualViewRects(drawing);
+        var result = new DrawingViewsResult { SheetWidth = sheetW, SheetHeight = sheetH };
+        foreach (var view in currentViews)
+            result.Views.Add(ToInfo(view, rects));
+
+        return result;
     }
 }
 

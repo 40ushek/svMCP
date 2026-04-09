@@ -466,46 +466,38 @@ public sealed partial class TeklaDrawingViewApi
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
-        // null -> auto-read from drawing layout; read tables in the same editor-open pass
-        var (autoMargin, layoutTables) = DrawingReservedAreaReader.ReadLayoutInfo();
-        var effectiveMargin = margin ?? autoMargin ?? 10.0;
-
         var init = Stopwatch.StartNew();
 
         var views = EnumerateViews(activeDrawing).ToList();
         viewsCount = views.Count;
         if (views.Count == 0)
             throw new System.InvalidOperationException("No views found in active drawing.");
+        var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+        var viewsResult = BuildViewsResult(activeDrawing, views, actualRects);
         var semanticKindById = views.ToDictionary(
             v => v.GetIdentifier().ID,
             v => ViewSemanticClassifier.Classify(v));
         List<View> scaleDriverViews;
 
-        double sheetW = 0;
-        double sheetH = 0;
-        try
-        {
-            var ss = activeDrawing.Layout.SheetSize;
-            sheetW = ss.Width;
-            sheetH = ss.Height;
-        }
-        catch
-        {
-        }
+        var viewIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
+        var reservedRead = Stopwatch.StartNew();
+        var drawingContext = new DrawingLayoutContextBuilder().Build(
+            activeDrawing,
+            viewsResult,
+            margin,
+            titleBlockHeight,
+            viewIds);
+        reservedRead.Stop();
+        reservedMs = reservedRead.ElapsedMilliseconds;
+        var effectiveMargin = drawingContext.Margin;
+        var autoMargin = drawingContext.SheetMargin;
+        var layoutTables = drawingContext.Tables;
+        var sheetW = drawingContext.SheetWidth;
+        var sheetH = drawingContext.SheetHeight;
+        IReadOnlyList<ReservedRect> reservedAreas = drawingContext.ReservedAreas;
 
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
-
-        var viewIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
-        var reservedRead = Stopwatch.StartNew();
-        IReadOnlyList<ReservedRect> reservedAreas = DrawingReservedAreaReader.Read(
-            activeDrawing,
-            effectiveMargin,
-            titleBlockHeight,
-            viewIds,
-            layoutTables);
-        reservedRead.Stop();
-        reservedMs = reservedRead.ElapsedMilliseconds;
 
         var availW = sheetW - (2 * effectiveMargin);
         var availH = sheetH - (2 * effectiveMargin);
@@ -516,7 +508,6 @@ public sealed partial class TeklaDrawingViewApi
         // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
-        var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
         var oversizedStandardSectionScaleDriverIds = uniformAllNonDetail
             ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, semanticKindById, originalFrameSizes, gap)
@@ -1371,4 +1362,3 @@ public sealed partial class TeklaDrawingViewApi
 
     private static double CenterY(ReservedRect rect) => (rect.MinY + rect.MaxY) / 2.0;
 }
-

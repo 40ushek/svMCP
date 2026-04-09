@@ -16,24 +16,9 @@ public sealed partial class TeklaDrawingViewApi
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
 
-        double sheetW = 0;
-        double sheetH = 0;
-        try
-        {
-            var ss = activeDrawing.Layout.SheetSize;
-            sheetW = ss.Width;
-            sheetH = ss.Height;
-        }
-        catch
-        {
-        }
-
+        var views = EnumerateViews(activeDrawing).ToList();
         var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
-        var result = new DrawingViewsResult { SheetWidth = sheetW, SheetHeight = sheetH };
-        foreach (var v in EnumerateViews(activeDrawing))
-            result.Views.Add(ToInfo(v, actualRects));
-
-        return result;
+        return BuildViewsResult(activeDrawing, views, actualRects);
     }
 
     public DrawingReservedAreasResult GetReservedAreas(double? margin = null)
@@ -43,7 +28,12 @@ public sealed partial class TeklaDrawingViewApi
 
         var (sheetMargin, tables) = DrawingReservedAreaReader.ReadLayoutInfo();
         var effectiveMargin = margin ?? sheetMargin ?? 10.0;
-        var merged = DrawingReservedAreaReader.Read(drawing, effectiveMargin, 0.0, preloadedTables: tables);
+        var merged = DrawingReservedAreaReader.Read(
+            drawing,
+            effectiveMargin,
+            0.0,
+            null,
+            tables);
 
         return new DrawingReservedAreasResult
         {
