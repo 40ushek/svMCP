@@ -18,6 +18,27 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Get the shared drawing view context for one drawing view. " +
+        "Returns view-local part geometry, deduplicated bolt groups, parts bounds, parts hull, grid IDs, warnings and view scale. " +
+        "Use this as the common read context for dimension and mark reasoning.")]
+    public static string GetDrawingViewContext(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+    {
+        var json = RunBridge("get_drawing_view_context", viewId.ToString());
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
         "Get the geometry of a model part (beam, plate, etc.) expressed in the coordinate system of a specific drawing view. " +
         "Returns start/end points, bounding box, solid vertices and local axes — all in view-local coordinates (mm). " +
         "Use these coordinates to compute correct dimension points for create_dimension.")]

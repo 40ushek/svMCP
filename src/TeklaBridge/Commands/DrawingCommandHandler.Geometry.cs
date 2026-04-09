@@ -18,6 +18,8 @@ internal sealed partial class DrawingCommandHandler
         TeklaDrawingPartPointApi GetPartPointApi() => partPointApi ??= new TeklaDrawingPartPointApi(_model, GetPartGeometryApi());
         TeklaDrawingGridApi? gridApi = null;
         TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
+        TeklaDrawingViewContextApi? viewContextApi = null;
+        TeklaDrawingViewContextApi GetViewContextApi() => viewContextApi ??= new TeklaDrawingViewContextApi(_model);
         TeklaDrawingPartsApi? partsApi = null;
         TeklaDrawingPartsApi GetPartsApi() => partsApi ??= new TeklaDrawingPartsApi(_model);
         TeklaDrawingMarkApi? markApi = null;
@@ -41,6 +43,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
+
+            case "get_drawing_view_context":
+                return HandleGetDrawingViewContext(GetViewContextApi(), args);
 
             case "get_drawing_parts":
                 return HandleGetDrawingParts(GetPartsApi());
@@ -184,6 +189,20 @@ internal sealed partial class DrawingCommandHandler
     {
         var result = api.GetDrawingParts();
         WriteGetDrawingPartsResult(result);
+        return true;
+    }
+
+    private bool HandleGetDrawingViewContext(TeklaDrawingViewContextApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseDrawingViewContextRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.GetViewContext(parseResult.Request.ViewId);
+        WriteJson(result);
         return true;
     }
 

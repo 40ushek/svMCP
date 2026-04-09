@@ -419,6 +419,11 @@ public sealed class GridAxesRequest
     public int ViewId { get; set; }
 }
 
+public sealed class DrawingViewContextRequest
+{
+    public int ViewId { get; set; }
+}
+
 public sealed class GridAxesParseResult
 {
     public bool IsValid { get; private set; }
@@ -429,6 +434,19 @@ public sealed class GridAxesParseResult
         new() { IsValid = true, Request = request };
 
     public static GridAxesParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class DrawingViewContextParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public DrawingViewContextRequest Request { get; private set; } = new();
+
+    public static DrawingViewContextParseResult Success(DrawingViewContextRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static DrawingViewContextParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

@@ -46,4 +46,15 @@ public static partial class DrawingCommandParsers
             ViewId = viewId
         });
     }
+
+    public static DrawingViewContextParseResult ParseDrawingViewContextRequest(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+            return DrawingViewContextParseResult.Fail("Usage: get_drawing_view_context <viewId>");
+
+        return DrawingViewContextParseResult.Success(new DrawingViewContextRequest
+        {
+            ViewId = viewId
+        });
+    }
 }

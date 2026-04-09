@@ -300,6 +300,9 @@ Current `DrawingViewContext` baseline should be interpreted carefully:
 - for the validated runtime path, that normalization is expected to come from
   `ViewCoordinateSystem`, not `DisplayCoordinateSystem`
 - it currently carries `GridIds` when grids are present on the drawing view
+- the current external projection deep-copies `Parts` / `Bolts` mainly as a
+  defensive public-contract boundary; this can be relaxed later if transport
+  cost becomes significant
 - this is a good baseline for assembly-oriented drawing scenarios
 - this is not yet the target strategy for heavy GA drawings where a full-view
   object set may be too large to load or reason over directly
