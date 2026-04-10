@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -305,7 +307,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var textBoxes = MarkTextGeometryHelper.CollectTextBoxes(mark);
+        var textBoxes = CollectMarkTextBoxes(mark);
         var request = new DrawingDebugOverlayRequest
         {
             Group = "selected-mark-text-boxes",
@@ -687,6 +689,135 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+    private static List<DebugMarkTextBoxInfo> CollectMarkTextBoxes(Mark mark)
+    {
+        var results = new List<DebugMarkTextBoxInfo>();
+        var visited = new HashSet<int>();
+        CollectTextBoxesFromChildren(mark.GetObjects(), "mark.objects", results, visited, depth: 0);
+        return results;
+    }
+
+    private static void CollectTextBoxesFromChildren(
+        DrawingObjectEnumerator? enumerator,
+        string source,
+        List<DebugMarkTextBoxInfo> results,
+        HashSet<int> visited,
+        int depth)
+    {
+        if (enumerator == null || depth > 4)
+            return;
+
+        while (enumerator.MoveNext())
+            CollectTextBoxesFromObject(enumerator.Current, source, results, visited, depth);
+    }
+
+    private static void CollectTextBoxesFromObject(
+        object? candidate,
+        string source,
+        List<DebugMarkTextBoxInfo> results,
+        HashSet<int> visited,
+        int depth)
+    {
+        if (candidate == null)
+            return;
+
+        var visitId = RuntimeHelpers.GetHashCode(candidate);
+        if (!visited.Add(visitId))
+            return;
+
+        if (TryCreateDebugTextBox(candidate, source, out var textBox))
+            results.Add(textBox);
+
+        if (depth >= 4)
+            return;
+
+        try
+        {
+            var getObjectsMethod = candidate.GetType().GetMethod(
+                "GetObjects",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                binder: null,
+                types: Type.EmptyTypes,
+                modifiers: null);
+            if (getObjectsMethod?.Invoke(candidate, null) is DrawingObjectEnumerator childEnumerator)
+                CollectTextBoxesFromChildren(childEnumerator, $"{source}>{candidate.GetType().Name}", results, visited, depth + 1);
+        }
+        catch
+        {
+            // Ignore objects that do not expose recursive child enumeration.
+        }
+    }
+
+    private static bool TryCreateDebugTextBox(object candidate, string source, out DebugMarkTextBoxInfo textBox)
+    {
+        textBox = new DebugMarkTextBoxInfo();
+
+        try
+        {
+            if (candidate is Text text)
+            {
+                textBox = CreateDebugTextBox(text.GetObjectAlignedBoundingBox(), source, text.GetType().Name, text.TextString);
+                return true;
+            }
+
+            var type = candidate.GetType();
+            var textProperty = type.GetProperty(
+                "TextString",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var looksLikeText = textProperty != null
+                || type.Name.IndexOf("Text", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!looksLikeText)
+                return false;
+
+            var objectAlignedMethod = type.GetMethod(
+                "GetObjectAlignedBoundingBox",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (objectAlignedMethod?.Invoke(candidate, null) is not RectangleBoundingBox objectAlignedBoundingBox)
+                return false;
+
+            textBox = CreateDebugTextBox(
+                objectAlignedBoundingBox,
+                source,
+                type.Name,
+                textProperty?.GetValue(candidate, null)?.ToString() ?? string.Empty);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static DebugMarkTextBoxInfo CreateDebugTextBox(
+        RectangleBoundingBox box,
+        string source,
+        string objectType,
+        string text)
+    {
+        return new DebugMarkTextBoxInfo
+        {
+            Source = source,
+            ObjectType = objectType,
+            Text = text,
+            Width = Round2(box.Width),
+            Height = Round2(box.Height),
+            AngleToAxis = Round2(box.AngleToAxis),
+            CenterX = Round2((box.MinPoint.X + box.MaxPoint.X) / 2.0),
+            CenterY = Round2((box.MinPoint.Y + box.MaxPoint.Y) / 2.0),
+            MinX = Round2(box.MinPoint.X),
+            MinY = Round2(box.MinPoint.Y),
+            MaxX = Round2(box.MaxPoint.X),
+            MaxY = Round2(box.MaxPoint.Y),
+            Corners =
+            [
+                [Round2(box.LowerLeft.X), Round2(box.LowerLeft.Y)],
+                [Round2(box.UpperLeft.X), Round2(box.UpperLeft.Y)],
+                [Round2(box.UpperRight.X), Round2(box.UpperRight.Y)],
+                [Round2(box.LowerRight.X), Round2(box.LowerRight.Y)]
+            ]
+        };
+    }
+
     private static double Round2(double value) => Math.Round(value, 2);
 
     private static bool ParseOptionalBoolArg(string[] args, int index, bool defaultValue)
@@ -706,5 +837,22 @@ internal sealed partial class DrawingCommandHandler
             "no" => false,
             _ => defaultValue
         };
+    }
+
+    private sealed class DebugMarkTextBoxInfo
+    {
+        public string Source { get; set; } = string.Empty;
+        public string ObjectType { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public double AngleToAxis { get; set; }
+        public double CenterX { get; set; }
+        public double CenterY { get; set; }
+        public double MinX { get; set; }
+        public double MinY { get; set; }
+        public double MaxX { get; set; }
+        public double MaxY { get; set; }
+        public List<double[]> Corners { get; set; } = [];
     }
 }
