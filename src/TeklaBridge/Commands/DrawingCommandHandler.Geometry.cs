@@ -61,6 +61,7 @@ internal sealed partial class DrawingCommandHandler
             case "draw_selected_mark_text_boxes":
                 return HandleDrawSelectedMarkTextBoxes(GetDebugOverlayApi());
 
+            case "draw_selected_mark_resolved_geometry":
             case "draw_selected_mark_object_aligned_box":
                 return HandleDrawSelectedMarkObjectAlignedBox(GetDebugOverlayApi());
 
@@ -396,7 +397,7 @@ internal sealed partial class DrawingCommandHandler
 
         var request = new DrawingDebugOverlayRequest
         {
-            Group = "selected-mark-object-aligned-box",
+            Group = "selected-mark-resolved-geometry",
             ClearGroupFirst = true,
             Shapes = new List<DrawingDebugShape>
             {

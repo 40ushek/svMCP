@@ -138,11 +138,11 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
-        "Draw the raw GetObjectAlignedBoundingBox polygon for the currently selected drawing mark. " +
-        "Requires exactly one selected Mark. This is the direct Tekla OBB without any custom reconstruction.")]
-    public static string DrawSelectedMarkObjectAlignedBox()
+        "Draw the resolved geometry polygon for the currently selected drawing mark. " +
+        "Requires exactly one selected Mark. This uses the same canonical resolved geometry path as mark layout and collision detection.")]
+    public static string DrawSelectedMarkResolvedGeometry()
     {
-        var json = RunBridge("draw_selected_mark_object_aligned_box");
+        var json = RunBridge("draw_selected_mark_resolved_geometry");
         try
         {
             var doc = JsonDocument.Parse(json);
