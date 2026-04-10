@@ -196,14 +196,22 @@
 - `get_dimension_contexts`
 - `ViewLayout` с развитой layout-логикой
 - `DrawingReservedAreaReader`
+- `DrawingContext`
+- `DrawingLayoutContextBuilder`
+- `get_drawing_layout_context`
+- `DrawingLayoutScorer`
+- `DrawingCaseSnapshotWriter`
+- `DrawingCaseCaptureService`
 
-То есть detailed per-view путь уже появился.
+То есть базовый drawing-level слой уже введён:
 
-Следующий естественный шаг:
-
-- ввести coarse `DrawingContext`
+- coarse `DrawingContext` есть
+- `ViewLayout` уже читает `DrawingContext`
+- before/after snapshot pipeline для drawing layout уже собран
 
 ## Phase 1. Ввести `DrawingContext`
+
+Статус: выполнено.
 
 Нужно сделать:
 
@@ -220,6 +228,8 @@
 
 ## Phase 2. Добавить `TableLayout` / reserved areas
 
+Статус: выполнено.
+
 Нужно включить в `DrawingContext`:
 
 - reserved rects
@@ -229,6 +239,8 @@
 Это сделает `DrawingContext` полезным для реального `ViewLayout`.
 
 ## Phase 3. Добавить coarse view geometry
+
+Статус: выполнено.
 
 В `DrawingContext.Views` нужно зафиксировать:
 
@@ -240,6 +252,8 @@
 Это должно стать каноническим coarse source of truth для компоновки видов.
 
 ## Phase 4. Перевести `ViewLayout` на `DrawingContext`
+
+Статус: выполнено для `fit_views_to_sheet`.
 
 Дальше `ViewLayout` должен использовать:
 
@@ -254,6 +268,8 @@
 
 ## Phase 5. Использовать те же уровни в других модулях
 
+Статус: начато.
+
 После этого архитектура должна выглядеть так:
 
 - `DrawingContext` -> sheet-level planning
@@ -263,6 +279,8 @@
 ## Phase 6. Сохранять кейсы как before/after contexts
 
 ### 6a. Сохранение снэпшотов
+
+Статус: базовый pipeline собран.
 
 Следующий практический слой после самого `DrawingContext`:
 
@@ -311,7 +329,8 @@
 - `drawing_name`
 - `operation`
 - `note`
-- `score` — результат `score_drawing_layout` для `after`
+- `score_before`
+- `score_after`
 
 Важно:
 
@@ -323,7 +342,16 @@
 
 Реализация:
 
-- команда `save_drawing_snapshot` — читает `DrawingContext` и сохраняет JSON в указанную папку с указанным именем файла
+- `DrawingCaseSnapshotWriter` — пишет `before.json` / `after.json` / `meta.json`
+- `DrawingCaseCaptureService`:
+  - читает текущий `DrawingContext`
+  - считает `score_before` / `score_after`
+  - сохраняет кейс через writer
+
+Важно:
+
+- операция layout/fit выполняется снаружи
+- `DrawingCaseCaptureService` не должен сам вызывать `fit_views_to_sheet`
 
 Per-view расширение:
 
@@ -334,6 +362,8 @@ Per-view расширение:
   - внутри хранить per-view context по `view_id`
 
 ### 6b. Оценка качества компоновки
+
+Статус: минимальный scorer реализован.
 
 `score_drawing_layout` — инструмент который принимает `DrawingContext` и возвращает числовую оценку компоновки.
 
@@ -393,6 +423,22 @@ score = w1 * fill_ratio
 - детерминированный алгоритм и агентный результат оцениваются по одной метрике
 - before/after автоматически получает числовую метрику без ручной оценки
 - агент может сравнивать варианты и выбирать лучший
+
+## Следующий этап
+
+После стабилизации drawing-level слоя следующий целевой consumer:
+
+- marks
+
+Направление:
+
+- сохранить тот же паттерн:
+  - context
+  - scorer/evaluator
+  - snapshot writer
+  - capture service
+- начать с view-level mark context
+- не вводить общий интерфейс заранее
 
 ## Что не нужно делать
 

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -17,11 +18,15 @@ internal sealed class DrawingLayoutContextBuilder
         var viewResult = views ?? TeklaDrawingViewApi.BuildViewsResult(drawing);
         var (sheetMargin, tables) = DrawingReservedAreaReader.ReadLayoutInfo();
         var effectiveMargin = margin ?? sheetMargin ?? 10.0;
+        // When caller does not specify excludeViewIds, auto-exclude all drawing views so that
+        // view bounding boxes are not included in ReservedLayout.Areas. The scorer uses Areas
+        // only for fixed obstacles (tables, margins); view-view overlap is tracked separately.
+        var effectiveExcludeViewIds = ResolveExcludeViewIds(viewResult, excludeViewIds);
         var mergedAreas = DrawingReservedAreaReader.Read(
             drawing,
             effectiveMargin,
             titleBlockHeight,
-            excludeViewIds,
+            effectiveExcludeViewIds,
             tables);
 
         var reservedAreas = new DrawingReservedAreasResult
@@ -35,6 +40,16 @@ internal sealed class DrawingLayoutContextBuilder
         };
 
         return new DrawingContextBuilder().Build(CreateDrawingInfo(drawing), viewResult, reservedAreas);
+    }
+
+    internal static IReadOnlyCollection<int> ResolveExcludeViewIds(
+        DrawingViewsResult viewResult,
+        IReadOnlyCollection<int>? excludeViewIds)
+    {
+        if (viewResult == null)
+            throw new System.ArgumentNullException(nameof(viewResult));
+
+        return excludeViewIds ?? new HashSet<int>(viewResult.Views.Select(static v => v.Id));
     }
 
     private static DrawingInfo CreateDrawingInfo(Tekla.Structures.Drawing.Drawing drawing)
