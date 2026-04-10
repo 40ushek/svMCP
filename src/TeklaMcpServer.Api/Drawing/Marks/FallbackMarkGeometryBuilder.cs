@@ -9,6 +9,9 @@ internal static class FallbackMarkGeometryBuilder
         if (MarkBodyGeometryCollector.TryCollectBodyPolygon(mark, out var polygon))
             return MarkGeometryFactory.BuildFromPolygon(polygon, "ChildObjectGeometryFallback", isReliable: false);
 
+        if (MarkGeometryFactory.TryGetObjectAlignedBoundingBox(mark, out var box))
+            return MarkGeometryFactory.BuildFromObjectAlignedBox(box, "ObjectAlignedBoxFallback", isReliable: false);
+
         return MarkGeometryFactory.BuildFromInsertionPoint(
             mark.InsertionPoint.X,
             mark.InsertionPoint.Y,

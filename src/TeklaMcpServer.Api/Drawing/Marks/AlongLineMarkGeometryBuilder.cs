@@ -7,13 +7,13 @@ internal static class AlongLineMarkGeometryBuilder
 {
     public static MarkGeometryInfo Build(Mark mark, Model model, int? viewId)
     {
-        if (!MarkBodyGeometryCollector.TryCollectBodyPolygon(mark, out var polygon))
+        if (!MarkGeometryFactory.TryGetObjectAlignedBoundingBox(mark, out var box))
             return FallbackMarkGeometryBuilder.Build(mark);
 
         if (MarkPlacementAxisResolver.TryGetRelatedPartAxisInView(mark, model, viewId, out var partAxisDx, out var partAxisDy))
         {
-            return MarkGeometryFactory.BuildFromProjectedPolygon(
-                polygon,
+            return MarkGeometryFactory.BuildFromObjectAlignedBoxAndAxis(
+                box,
                 partAxisDx,
                 partAxisDy,
                 "RelatedPartAxis",
@@ -22,8 +22,8 @@ internal static class AlongLineMarkGeometryBuilder
 
         if (MarkPlacementAxisResolver.TryGetPlacingLineAxis(mark.Placing, out var placingAxisDx, out var placingAxisDy))
         {
-            return MarkGeometryFactory.BuildFromProjectedPolygon(
-                polygon,
+            return MarkGeometryFactory.BuildFromObjectAlignedBoxAndAxis(
+                box,
                 placingAxisDx,
                 placingAxisDy,
                 "AlongLinePlacingAxisFallback",
@@ -32,8 +32,8 @@ internal static class AlongLineMarkGeometryBuilder
 
         if (MarkPlacementAxisResolver.TryGetAngleAxis(mark.Attributes.Angle, out var angleDx, out var angleDy))
         {
-            return MarkGeometryFactory.BuildFromProjectedPolygon(
-                polygon,
+            return MarkGeometryFactory.BuildFromObjectAlignedBoxAndAxis(
+                box,
                 angleDx,
                 angleDy,
                 "MarkAngleFallback",
