@@ -8,7 +8,7 @@ public sealed class MarkContextContractsTests
     [Fact]
     public void Default_Constructors_InitializeCollections()
     {
-        var viewContext = new MarkViewContext();
+        var viewContext = new MarksViewContext();
         var markContext = new MarkContext();
         var geometry = new MarkGeometryContext();
         var buildResult = new MarkContextBuildResult();
@@ -22,9 +22,9 @@ public sealed class MarkContextContractsTests
     }
 
     [Fact]
-    public void MarkViewContext_IsEmpty_DependsOnlyOnMarks()
+    public void MarksViewContext_IsEmpty_DependsOnlyOnMarks()
     {
-        var context = new MarkViewContext();
+        var context = new MarksViewContext();
         context.Warnings.Add("warn");
 
         Assert.True(context.IsEmpty);

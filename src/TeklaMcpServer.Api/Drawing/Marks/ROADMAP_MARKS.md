@@ -41,7 +41,7 @@
 
 Это внешний read model, пригодный для query/debug.
 
-### 2. `MarkViewContext`
+### 2. `MarksViewContext`
 
 Это внутренний factual layer одного вида.
 
@@ -77,7 +77,7 @@
 
 ## Целевая модель
 
-### 1. `MarkViewContext`
+### 1. `MarksViewContext`
 
 Это контекст одного вида для mark reasoning.
 
@@ -135,7 +135,7 @@
 
 Следующий естественный шаг:
 
-- выделить стабильный `MarkViewContext`
+- выделить стабильный `MarksViewContext`
 
 ## Этапы
 
@@ -143,7 +143,7 @@
 
 Нужно сделать:
 
-- ввести `MarkViewContext`;
+- ввести `MarksViewContext`;
 - ввести `MarkContext`;
 - ввести `MarkGeometry` как отдельный geometry block внутри context layer;
 - зафиксировать границу между:
@@ -153,7 +153,7 @@
 
 ### Phase 2. Context builder
 
-Нужно сделать builder, который собирает `MarkViewContext` из текущего runtime path:
+Нужно сделать builder, который собирает `MarksViewContext` из текущего runtime path:
 
 - active drawing view
 - runtime marks
@@ -207,7 +207,7 @@
 
 Работа считается успешной, когда:
 
-1. Есть явный `MarkViewContext` как factual view-level model для marks.
+1. Есть явный `MarksViewContext` как factual view-level model для marks.
 2. Есть отдельный `MarkContext` как canonical internal mark unit.
 3. `DrawingMarkInfo` остаётся projection/debug DTO, а не единственной внутренней моделью.
 4. `MarkLayoutItem` остаётся execution-level model для layout engine.
@@ -217,7 +217,7 @@
 
 Первый практический шаг:
 
-- зафиксировать contracts `MarkViewContext` и `MarkContext`
+- зафиксировать contracts `MarksViewContext` и `MarkContext`
 
 Только после этого:
 

@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class MarkViewContext
+internal sealed class MarksViewContext
 {
     public int? ViewId { get; set; }
     public double ViewScale { get; set; }
