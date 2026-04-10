@@ -137,6 +137,90 @@
 
 - выделить стабильный `MarksViewContext`
 
+## Runtime placing hierarchy
+
+Для geometry/layout reasoning нужно различать:
+
+- **actual runtime placing** (`mark.Placing`)
+- **preferred placing intent** (`mark.Attributes.PreferredPlacing`)
+
+Это не одно и то же.
+
+`PreferredPlacing` задаёт желаемое Tekla-поведение,
+но не является каноническим источником фактической geometry/collision semantics.
+
+Для geometry helper и layout logic каноническим источником является именно:
+
+- `mark.Placing`
+
+Минимальная runtime hierarchy, которую нужно учитывать:
+
+- `LeaderLinePlacing`
+- `BaseLinePlacing`
+- `AlongLinePlacing`
+- `PointPlacing`
+- прочие / unknown placing types
+
+## Canonical geometry rules by placing type
+
+Следующий geometry refactor должен исходить из разных правил для разных `PlacingType`.
+
+### `LeaderLinePlacing`
+
+- anchor source: `LeaderLinePlacing.StartPoint`
+- movement semantics: двигается mark body, `StartPoint` не меняется
+- collision geometry source: object-aligned / resolved geometry самой mark
+- axis source: не обязателен как основной signal
+- fallback: raw Tekla geometry
+
+### `BaseLinePlacing`
+
+- anchor source: baseline/baseline-related placement semantics
+- movement semantics: mark привязана к базовой линии
+- canonical axis source: связанная деталь в текущем виде
+- collision geometry source: width/height mark geometry + axis from related part
+- fallback axis source:
+  - baseline line itself
+  - `mark.Attributes.Angle`
+- raw Tekla OBB/BBox не считаются каноническим collision source
+
+### `AlongLinePlacing`
+
+- anchor source: along-line placement semantics
+- movement semantics: mark ориентирована вдоль линии
+- canonical axis source: связанная деталь в текущем виде
+- collision geometry source: width/height mark geometry + axis from related part
+- fallback axis source:
+  - along-line geometry itself
+  - `mark.Attributes.Angle`
+- raw Tekla OBB/BBox не считаются каноническим collision source
+
+### `PointPlacing` и прочие fallback cases
+
+- anchor source: point/current mark position
+- collision geometry source: raw/resolved mark geometry
+- axis source: отсутствует или secondary
+- fallback: raw Tekla geometry
+
+## Known API limitation
+
+Для части runtime mark types Tekla raw boxes недостаточны как канонический источник
+layout/collision geometry.
+
+Практически подтверждённая проблема:
+
+- для `BaseLinePlacing` / `AlongLinePlacing` оригинальные Tekla bbox/obb могут давать
+  геометрически неверный box для collision reasoning
+- из-за этого overlap detection на сыром bbox/obb тоже может быть неверным
+
+Следствие:
+
+- `MarkGeometryHelper` должен оставаться canonical resolved-geometry path
+- raw Tekla bbox/obb должны использоваться только как:
+  - debug data
+  - display data
+  - fallback path
+
 ## Этапы
 
 ### Phase 1. Naming and context boundary

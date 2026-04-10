@@ -26,11 +26,11 @@
 | `export_drawings_to_pdf` | Экспорт в PDF |
 | `create_general_arrangement_drawing` / `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж |
 | `get_drawing_context` / `get_drawing_layout_context` / `get_drawing_view_context` / `get_sheet_objects_debug` / `select_drawing_objects` / `filter_drawing_objects` | Контекст, диагностика и выделение |
-| `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
+| `get_drawing_views` / `get_drawing_reserved_areas` / `get_drawing_section_sides` | Виды, reserved areas и стороны секций |
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
-| `get_drawing_dimensions` / `get_dimension_contexts` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, создание/сдвиг/удаление, контрольные диагонали |
+| `get_drawing_dimensions` / `get_dimension_contexts` / `arrange_dimensions` / `combine_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, arrange/combine, создание/сдвиг/удаление, контрольные диагонали |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
@@ -65,7 +65,8 @@
 Краткое состояние:
 - `get_drawing_dimensions` — rich line-based read API, группировка геометрически (Phase 3 done)
 - `get_dimension_contexts` — отдельный внутренний/context read path уже введён
-- `arrange_dimensions` — **не реализован как полноценный layout-движок**: сейчас только базовая раздвижка параллельных стеков через `Distance`, не двигает одиночные линии, нет нормализации distance, нет учёта текста/меток
+- `arrange_dimensions` — реализован, но **не является полноценным layout-движком**: сейчас это базовая раздвижка параллельных стеков через `Distance`, без нормализации distance и без полного учёта текста/меток
+- `combine_dimensions` — реализован как controlled combine path поверх grouping/reduction logic
 - Следующий реалистичный шаг: нормализация (убрать дубли, выровнять близкие линии) → умная раздвижка → учёт текста и меток (Phase 4 in progress)
 - `add_dimension_point` — Workaround: `delete` + `create` с новым набором точек
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`

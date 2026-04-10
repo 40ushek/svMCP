@@ -186,6 +186,8 @@ src/
 | `filter_drawing_objects` | Фильтр объектов чертежа по типу (Mark, Part, DimensionBase…) |
 | `set_mark_content` | Изменить содержимое и шрифт марок |
 | `get_drawing_views` | Все виды активного чертежа: позиция, масштаб, размер, размеры листа |
+| `get_drawing_reserved_areas` | Reserved areas листа: таблицы, margins и итоговые blocked zones |
+| `get_drawing_section_sides` | Стороны секционных видов относительно базового вида |
 | `move_view` | Переместить вид на листе (абсолютно или на смещение) |
 | `set_view_scale` | Изменить масштаб одного или нескольких видов |
 | `fit_views_to_sheet` | Основной путь авторасстановки видов: подбор стандартного масштаба, ортографическая раскладка без перекрытий и post-alignment по проекционной связи |
@@ -195,6 +197,8 @@ src/
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, `dimensionType`, distance, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, bbox set/segments, `dimensionLine`, `leadLineMain/Second`, `textBounds` |
 | `get_dimension_contexts` | Internal/context read path для размеров по виду |
+| `arrange_dimensions` | Детерминированная раздвижка параллельных стеков размеров через `Distance` |
+| `combine_dimensions` | Controlled combine path для совместимых наборов размеров |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
@@ -241,6 +245,8 @@ src/
 Размеры сейчас устроены так:
 - `get_drawing_dimensions` уже возвращает line-based read model: `dimensionType`, `viewId/viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, bbox set/segments и `dimensionLine/leadLineMain/leadLineSecond`
 - `get_dimension_contexts` даёт отдельный context path поверх того же drawing/view-level слоя
+- `arrange_dimensions` уже работает, но это не полный layout engine, а conservative deterministic spacing path для параллельных стеков
+- `combine_dimensions` уже работает как controlled combine path и не тождественен обычной группировке
 - `TextBounds` пока остаётся `null`, пока Tekla-side text geometry не подтверждена runtime-spike'ом
 - блок `Drawing/Dimensions` сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
 - публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
