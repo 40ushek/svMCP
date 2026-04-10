@@ -50,13 +50,13 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
 
                 // CRITICAL: All mark polygon geometry for layout and collision detection
-                // MUST come from MarkGeometryHelper.Build(). Do NOT use Tekla's raw
+                // MUST come from MarkGeometryResolver.Build(). Do NOT use Tekla's raw
                 // GetAxisAlignedBoundingBox() or GetObjectAlignedBoundingBox() here —
                 // they return AABB/OBB that ignore part axis orientation for BaseLinePlacing marks.
-                // MarkGeometryHelper resolves the true axis from the related part, the baseline
+                // MarkGeometryResolver resolves the true axis from the related part, the baseline
                 // placing line, or mark.Attributes.Angle as fallback, producing correctly oriented
                 // OBB corners. These corners are what gets drawn by draw_debug_overlay.
-                var geometry = MarkGeometryHelper.Build(mark, model, viewId);
+                var geometry = MarkGeometryResolver.Build(mark, model, viewId);
                 var centerLocalX = geometry.CenterX;
                 var centerLocalY = geometry.CenterY;
                 var widthLocal = geometry.MaxX - geometry.MinX;
@@ -76,7 +76,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var anchorLocalY = centerLocalY;
                 var hasLeaderLine = false;
 
-                // Canonical baseline movement axis comes from MarkGeometryHelper so
+                // Canonical baseline movement axis comes from MarkGeometryResolver so
                 // collision geometry and movement stay aligned. Only fall back to
                 // mark angle when geometry could not resolve a usable axis.
                 var hasAxis = false;
@@ -84,7 +84,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var axisDy = 0.0;
                 if (mark.Placing is BaseLinePlacing)
                 {
-                    // Use MarkGeometryHelper axis (from TryGetRelatedPartAxisInView → TryGetBaselineAxis → MarkAngleFallback).
+                    // Use resolved geometry axis (from related part → placing line → mark angle fallback).
                     // This MUST match the polygon orientation used for collision detection.
                     // mark.Attributes.Angle is the text rotation angle and may differ from the part axis
                     // (e.g. 90° text on a horizontal beam), causing marks to move perpendicular to the overlap.

@@ -1,0 +1,75 @@
+using TeklaMcpServer.Api.Algorithms.Geometry;
+
+namespace TeklaMcpServer.Api.Drawing;
+
+internal static class MarkGeometryMath
+{
+    public static (double WidthAlongAxis, double HeightPerpendicularToAxis) ResolveDimensionsForAxis(
+        double objectWidth,
+        double objectHeight,
+        double axisDx,
+        double axisDy,
+        double textAngleDeg)
+    {
+        var axisAngleDeg = Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI);
+        var normalizedDelta = NormalizeAngleDelta180(textAngleDeg - axisAngleDeg);
+
+        return normalizedDelta > 45.0
+            ? (objectHeight, objectWidth)
+            : (objectWidth, objectHeight);
+    }
+
+    public static bool PolygonsIntersect(IReadOnlyList<double[]> first, IReadOnlyList<double[]> second)
+    {
+        return PolygonGeometry.Intersects(first, second);
+    }
+
+    public static bool TryGetMinimumTranslationVector(
+        IReadOnlyList<double[]> first,
+        IReadOnlyList<double[]> second,
+        out double axisX,
+        out double axisY,
+        out double depth)
+    {
+        return PolygonGeometry.TryGetMinimumTranslationVector(first, second, out axisX, out axisY, out depth);
+    }
+
+    public static List<double[]> TranslateLocalCorners(IReadOnlyList<double[]> localCorners, double centerX, double centerY)
+    {
+        return PolygonGeometry.Translate(localCorners, centerX, centerY);
+    }
+
+    public static void GetPolygonBounds(
+        IReadOnlyList<double[]> polygon,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        PolygonGeometry.GetBounds(polygon, out minX, out minY, out maxX, out maxY);
+    }
+
+    public static bool RectanglesOverlap(
+        double firstMinX,
+        double firstMinY,
+        double firstMaxX,
+        double firstMaxY,
+        double secondMinX,
+        double secondMinY,
+        double secondMaxX,
+        double secondMaxY)
+    {
+        return PolygonGeometry.RectanglesOverlap(firstMinX, firstMinY, firstMaxX, firstMaxY, secondMinX, secondMinY, secondMaxX, secondMaxY);
+    }
+
+    private static double NormalizeAngleDelta180(double angleDeg)
+    {
+        var normalized = angleDeg % 180.0;
+        if (normalized < 0)
+            normalized += 180.0;
+
+        return normalized > 90.0
+            ? 180.0 - normalized
+            : normalized;
+    }
+}

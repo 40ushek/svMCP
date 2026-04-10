@@ -75,7 +75,7 @@ public sealed partial class TeklaDrawingMarkApi
                         ObjectAlignedBoundingBox = CreateObjectAlignedBoundingBoxInfo(obb),
                         ResolvedGeometry = markContext?.Geometry != null
                             ? CreateResolvedGeometryInfo(markContext.Geometry)
-                            : CreateResolvedGeometryInfo(MarkGeometryHelper.Build(mark, _model, vid)),
+                            : CreateResolvedGeometryInfo(MarkGeometryResolver.Build(mark, _model, vid)),
                         ArrowHead = CreateArrowHeadInfo(mark)
                     };
 

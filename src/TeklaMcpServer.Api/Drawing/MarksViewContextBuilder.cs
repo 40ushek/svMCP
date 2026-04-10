@@ -168,7 +168,7 @@ internal sealed class MarksViewContextBuilder
 
     private static MarkContext? BuildMarkContext(Mark mark, Model model, int viewId, double viewScale)
     {
-        var geometryInfo = MarkGeometryHelper.Build(mark, model, viewId);
+        var geometryInfo = MarkGeometryResolver.Build(mark, model, viewId);
         if (geometryInfo.Width < GeometryEpsilon && geometryInfo.Height < GeometryEpsilon)
             return null;
 
