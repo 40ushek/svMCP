@@ -212,7 +212,7 @@ public sealed class DrawingDimensionsApiTests
         };
         result.DecisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 20,
                 ViewScale = 15

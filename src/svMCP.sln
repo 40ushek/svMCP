@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36930.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "svMCP", "svMCP\svMCP.csproj", "{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer", "TeklaMcpServer\TeklaMcpServer.csproj", "{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Api", "TeklaMcpServer.Api\TeklaMcpServer.Api.csproj", "{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}"
@@ -25,18 +23,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|x64.Build.0 = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Debug|x86.Build.0 = Debug|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|x64.ActiveCfg = Release|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|x64.Build.0 = Release|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|x86.ActiveCfg = Release|Any CPU
-		{1D13A93C-19D4-8A85-7938-ED4FE0C994E1}.Release|x86.Build.0 = Release|Any CPU
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}.Debug|x64.ActiveCfg = Debug|Any CPU

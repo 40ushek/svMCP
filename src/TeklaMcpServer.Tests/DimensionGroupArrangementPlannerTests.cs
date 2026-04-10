@@ -67,7 +67,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 20
@@ -96,7 +96,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,
@@ -150,7 +150,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 20,
                 ViewScale = 50
@@ -173,7 +173,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,
@@ -213,7 +213,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,
@@ -255,7 +255,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,
@@ -291,7 +291,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,
@@ -324,7 +324,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var decisionContext = new DimensionDecisionContext
         {
-            View = new DimensionViewContext
+            View = new DrawingViewContext
             {
                 ViewId = 10,
                 ViewScale = 1,

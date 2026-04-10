@@ -3,6 +3,7 @@ using System.IO;
 using System.Text.Json;
 using TeklaMcpServer.Api.Drawing;
 using TeklaMcpServer.Api.Drawing.ViewLayout;
+using Xunit;
 
 namespace TeklaMcpServer.Tests;
 

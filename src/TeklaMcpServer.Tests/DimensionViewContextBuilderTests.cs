@@ -4,12 +4,12 @@ using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
-public sealed class DimensionViewContextBuilderTests
+public sealed class DrawingViewContextBuilderTests
 {
     [Fact]
     public void Build_CollectsPartsAndDeduplicatesBoltGroups()
     {
-        var builder = new DimensionViewContextBuilder(
+        var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi(
             [
                 new PartGeometryInViewResult
@@ -101,7 +101,7 @@ public sealed class DimensionViewContextBuilderTests
     [Fact]
     public void Build_AddsWarningWhenBoltGeometryForPartIsUnavailable()
     {
-        var builder = new DimensionViewContextBuilder(
+        var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi(
             [
                 new PartGeometryInViewResult { Success = true, ViewId = 10, ModelId = 101 }
@@ -134,7 +134,7 @@ public sealed class DimensionViewContextBuilderTests
     [Fact]
     public void Build_FallsBackToGridLabelWhenGuidIsUnavailable()
     {
-        var builder = new DimensionViewContextBuilder(
+        var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi([]),
             new FakeBoltGeometryApi(new Dictionary<int, PartBoltGeometryInViewResult>()),
             new FakeGridApi(new GetGridAxesResult
