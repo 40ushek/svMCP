@@ -46,8 +46,9 @@ public sealed partial class TeklaDrawingMarkApi
                         continue;
 
                     contextsById.TryGetValue(markId, out var markContext);
-                    var bbox = mark.GetAxisAlignedBoundingBox();
-                    var obb = mark.GetObjectAlignedBoundingBox();
+                    var resolvedGeometry = markContext?.Geometry != null
+                        ? CreateResolvedGeometryInfo(markContext.Geometry)
+                        : CreateResolvedGeometryInfo(MarkGeometryResolver.Build(mark, _model, vid));
                     var ins = mark.InsertionPoint;
                     var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
                     var info = new DrawingMarkInfo
@@ -56,12 +57,12 @@ public sealed partial class TeklaDrawingMarkApi
                         ViewId = markContext?.ViewId ?? vid,
                         InsertionX = Math.Round(ins.X, 1),
                         InsertionY = Math.Round(ins.Y, 1),
-                        BboxMinX = Math.Round(bbox.MinPoint.X, 1),
-                        BboxMinY = Math.Round(bbox.MinPoint.Y, 1),
-                        BboxMaxX = Math.Round(bbox.MaxPoint.X, 1),
-                        BboxMaxY = Math.Round(bbox.MaxPoint.Y, 1),
-                        CenterX = Math.Round((bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0, 2),
-                        CenterY = Math.Round((bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0, 2),
+                        BboxMinX = resolvedGeometry.MinX,
+                        BboxMinY = resolvedGeometry.MinY,
+                        BboxMaxX = resolvedGeometry.MaxX,
+                        BboxMaxY = resolvedGeometry.MaxY,
+                        CenterX = resolvedGeometry.CenterX,
+                        CenterY = resolvedGeometry.CenterY,
                         PlacingType = markContext?.PlacingType ?? mark.Placing?.GetType().Name ?? "null",
                         PlacingX = markContext?.HasLeaderLine == true
                             ? Math.Round(markContext.Anchor?.X ?? 0.0, 2)
@@ -72,10 +73,7 @@ public sealed partial class TeklaDrawingMarkApi
                         Angle = Math.Round(mark.Attributes.Angle, 2),
                         RotationAngle = markContext?.RotationAngle ?? Math.Round(mark.Attributes.RotationAngle, 2),
                         TextAlignment = markContext?.TextAlignment ?? mark.Attributes.TextAlignment.ToString(),
-                        ObjectAlignedBoundingBox = CreateObjectAlignedBoundingBoxInfo(obb),
-                        ResolvedGeometry = markContext?.Geometry != null
-                            ? CreateResolvedGeometryInfo(markContext.Geometry)
-                            : CreateResolvedGeometryInfo(MarkGeometryResolver.Build(mark, _model, vid)),
+                        ResolvedGeometry = resolvedGeometry,
                         ArrowHead = CreateArrowHeadInfo(mark)
                     };
 
@@ -196,14 +194,14 @@ public sealed partial class TeklaDrawingMarkApi
                 b.ResolvedGeometry?.Corners is { Count: >= 3 } bCorners
                     ? PolygonGeometry.Intersects(aCorners, bCorners)
                     : PolygonGeometry.RectanglesOverlap(
-                        a.ResolvedGeometry?.MinX ?? a.BboxMinX,
-                        a.ResolvedGeometry?.MinY ?? a.BboxMinY,
-                        a.ResolvedGeometry?.MaxX ?? a.BboxMaxX,
-                        a.ResolvedGeometry?.MaxY ?? a.BboxMaxY,
-                        b.ResolvedGeometry?.MinX ?? b.BboxMinX,
-                        b.ResolvedGeometry?.MinY ?? b.BboxMinY,
-                        b.ResolvedGeometry?.MaxX ?? b.BboxMaxX,
-                        b.ResolvedGeometry?.MaxY ?? b.BboxMaxY);
+                        a.BboxMinX,
+                        a.BboxMinY,
+                        a.BboxMaxX,
+                        a.BboxMaxY,
+                        b.BboxMinX,
+                        b.BboxMinY,
+                        b.BboxMaxX,
+                        b.BboxMaxY);
 
             if (overlapsDetected)
                 overlaps.Add(new MarkOverlap { IdA = a.Id, IdB = b.Id });
@@ -215,29 +213,6 @@ public sealed partial class TeklaDrawingMarkApi
     internal static bool ShouldSkipOverlapComparison(DrawingMarkInfo mark)
         => (mark.ResolvedGeometry?.Width ?? 0) < 0.1
            && (mark.ResolvedGeometry?.Height ?? 0) < 0.1;
-
-    internal static MarkObjectAlignedBoundingBoxInfo CreateObjectAlignedBoundingBoxInfo(RectangleBoundingBox obb)
-    {
-        return new MarkObjectAlignedBoundingBoxInfo
-        {
-            Width = Math.Round(obb.Width, 2),
-            Height = Math.Round(obb.Height, 2),
-            AngleToAxis = Math.Round(obb.AngleToAxis, 2),
-            CenterX = Math.Round((obb.MinPoint.X + obb.MaxPoint.X) / 2.0, 2),
-            CenterY = Math.Round((obb.MinPoint.Y + obb.MaxPoint.Y) / 2.0, 2),
-            MinX = Math.Round(obb.MinPoint.X, 2),
-            MinY = Math.Round(obb.MinPoint.Y, 2),
-            MaxX = Math.Round(obb.MaxPoint.X, 2),
-            MaxY = Math.Round(obb.MaxPoint.Y, 2),
-            Corners = new List<double[]>
-            {
-                new[] { Math.Round(obb.LowerLeft.X, 2), Math.Round(obb.LowerLeft.Y, 2) },
-                new[] { Math.Round(obb.UpperLeft.X, 2), Math.Round(obb.UpperLeft.Y, 2) },
-                new[] { Math.Round(obb.UpperRight.X, 2), Math.Round(obb.UpperRight.Y, 2) },
-                new[] { Math.Round(obb.LowerRight.X, 2), Math.Round(obb.LowerRight.Y, 2) }
-            }
-        };
-    }
 
     internal static MarkResolvedGeometryInfo CreateResolvedGeometryInfo(MarkGeometryInfo geometry)
     {

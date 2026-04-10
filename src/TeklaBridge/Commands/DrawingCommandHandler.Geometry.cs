@@ -246,9 +246,9 @@ internal sealed partial class DrawingCommandHandler
         var skippedDegenerate = 0;
         foreach (var mark in markResult.Marks)
         {
-            if (mark.ObjectAlignedBoundingBox?.Corners is not { Count: >= 3 } corners
-                || mark.ObjectAlignedBoundingBox.Width < 0.1
-                || mark.ObjectAlignedBoundingBox.Height < 0.1)
+            if (mark.ResolvedGeometry?.Corners is not { Count: >= 3 } corners
+                || mark.ResolvedGeometry.Width < 0.1
+                || mark.ResolvedGeometry.Height < 0.1)
             {
                 skippedDegenerate++;
                 continue;
@@ -389,14 +389,10 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var objectAligned = mark.GetObjectAlignedBoundingBox();
-        var corners = new List<double[]>
-        {
-            new[] { Round2(objectAligned.LowerLeft.X), Round2(objectAligned.LowerLeft.Y) },
-            new[] { Round2(objectAligned.UpperLeft.X), Round2(objectAligned.UpperLeft.Y) },
-            new[] { Round2(objectAligned.UpperRight.X), Round2(objectAligned.UpperRight.Y) },
-            new[] { Round2(objectAligned.LowerRight.X), Round2(objectAligned.LowerRight.Y) }
-        };
+        var resolved = MarkGeometryHelper.Build(mark, _model, view.GetIdentifier().ID);
+        var corners = resolved.Corners
+            .Select(c => new[] { Round2(c[0]), Round2(c[1]) })
+            .ToList();
 
         var request = new DrawingDebugOverlayRequest
         {
@@ -421,13 +417,15 @@ internal sealed partial class DrawingCommandHandler
             markId = mark.GetIdentifier().ID,
             viewId = view.GetIdentifier().ID,
             placingType = mark.Placing?.GetType().Name ?? "null",
-            width = Round2(objectAligned.Width),
-            height = Round2(objectAligned.Height),
-            angleToAxis = Round2(objectAligned.AngleToAxis),
-            minX = Round2(objectAligned.MinPoint.X),
-            minY = Round2(objectAligned.MinPoint.Y),
-            maxX = Round2(objectAligned.MaxPoint.X),
-            maxY = Round2(objectAligned.MaxPoint.Y),
+            source = resolved.Source,
+            isReliable = resolved.IsReliable,
+            width = Round2(resolved.Width),
+            height = Round2(resolved.Height),
+            angleDeg = Round2(resolved.AngleDeg),
+            minX = Round2(resolved.MinX),
+            minY = Round2(resolved.MinY),
+            maxX = Round2(resolved.MaxX),
+            maxY = Round2(resolved.MaxY),
             corners,
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,
@@ -511,23 +509,16 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var bbox = mark.GetAxisAlignedBoundingBox();
-        var objectAligned = mark.GetObjectAlignedBoundingBox();
-        var centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-        var centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
-        var halfWidth = objectAligned.Width / 2.0;
-        var halfHeight = objectAligned.Height / 2.0;
+        var resolved = MarkGeometryHelper.Build(mark, _model, view.GetIdentifier().ID);
+        var centerX = resolved.CenterX;
+        var centerY = resolved.CenterY;
+        var corners = resolved.Corners
+            .Select(c => new[] { Round2(c[0]), Round2(c[1]) })
+            .ToList();
         var ux = axisDx / axisLength;
         var uy = axisDy / axisLength;
-        var vx = -uy;
-        var vy = ux;
 
-        var p1 = new[] { Round2(centerX - (ux * halfWidth) - (vx * halfHeight)), Round2(centerY - (uy * halfWidth) - (vy * halfHeight)) };
-        var p2 = new[] { Round2(centerX + (ux * halfWidth) - (vx * halfHeight)), Round2(centerY + (uy * halfWidth) - (vy * halfHeight)) };
-        var p3 = new[] { Round2(centerX + (ux * halfWidth) + (vx * halfHeight)), Round2(centerY + (uy * halfWidth) + (vy * halfHeight)) };
-        var p4 = new[] { Round2(centerX - (ux * halfWidth) + (vx * halfHeight)), Round2(centerY - (uy * halfWidth) + (vy * halfHeight)) };
-
-        var axisHalf = Math.Min(objectAligned.Width * 0.6, 250.0);
+        var axisHalf = Math.Min(resolved.Width * 0.6, 250.0);
         var axisStart = new[] { Round2(centerX - (ux * axisHalf)), Round2(centerY - (uy * axisHalf)) };
         var axisEnd = new[] { Round2(centerX + (ux * axisHalf)), Round2(centerY + (uy * axisHalf)) };
         var angleDeg = Round2(Math.Atan2(uy, ux) * (180.0 / Math.PI));
@@ -542,7 +533,7 @@ internal sealed partial class DrawingCommandHandler
                 {
                     Kind = "polygon",
                     ViewId = view.GetIdentifier().ID,
-                    Points = new List<double[]> { p1, p2, p3, p4 },
+                    Points = corners,
                     Color = "Green",
                     LineType = "DashDot"
                 },
@@ -587,8 +578,9 @@ internal sealed partial class DrawingCommandHandler
             modelId = modelId.Value,
             centerX = Round2(centerX),
             centerY = Round2(centerY),
-            objectWidth = Round2(objectAligned.Width),
-            objectHeight = Round2(objectAligned.Height),
+            source = resolved.Source,
+            objectWidth = Round2(resolved.Width),
+            objectHeight = Round2(resolved.Height),
             partAxisAngleDeg = angleDeg,
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,

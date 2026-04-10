@@ -42,20 +42,6 @@ public sealed class MarkAxisInfo
     public bool IsReliable { get; set; }
 }
 
-public sealed class MarkObjectAlignedBoundingBoxInfo
-{
-    public double Width { get; set; }
-    public double Height { get; set; }
-    public double AngleToAxis { get; set; }
-    public double CenterX { get; set; }
-    public double CenterY { get; set; }
-    public double MinX { get; set; }
-    public double MinY { get; set; }
-    public double MaxX { get; set; }
-    public double MaxY { get; set; }
-    public List<double[]> Corners { get; set; } = new();
-}
-
 public sealed class MarkResolvedGeometryInfo
 {
     public string Source { get; set; } = string.Empty;
@@ -94,7 +80,6 @@ public sealed class DrawingMarkInfo
     public double                  RotationAngle { get; set; }
     public string                  TextAlignment { get; set; } = string.Empty;
     public MarkAxisInfo?           Axis         { get; set; }
-    public MarkObjectAlignedBoundingBoxInfo? ObjectAlignedBoundingBox { get; set; }
     public MarkResolvedGeometryInfo? ResolvedGeometry { get; set; }
     public MarkArrowheadInfo       ArrowHead    { get; set; } = new();
     public List<MarkLeaderLineInfo> LeaderLines { get; set; } = new();
