@@ -49,16 +49,20 @@ public sealed class MarkGeometryResolverSupportTests
     }
 
     [Fact]
-    public void BuildFromAxis_CreatesResolvedAxisGeometry()
+    public void BuildFromProjectedPolygon_CreatesResolvedAxisGeometry()
     {
-        var geometry = MarkGeometryFactory.BuildFromAxis(
-            centerX: 100,
-            centerY: 50,
-            objectWidth: 40,
-            objectHeight: 10,
+        var polygon = new List<double[]>
+        {
+            new[] { 80.0, 45.0 },
+            new[] { 120.0, 45.0 },
+            new[] { 120.0, 55.0 },
+            new[] { 80.0, 55.0 }
+        };
+
+        var geometry = MarkGeometryFactory.BuildFromProjectedPolygon(
+            polygon,
             axisDx: 1,
             axisDy: 0,
-            textAngleDeg: 0,
             source: "Axis",
             isReliable: true);
 

@@ -76,32 +76,4 @@ public sealed class MarkGeometryHelperTests
         Assert.True(depth > 0);
         Assert.True(System.Math.Abs(axisX) > 0 || System.Math.Abs(axisY) > 0);
     }
-
-    [Fact]
-    public void ResolveDimensionsForAxis_LeavesDimensionsWhenTextIsParallelToAxis()
-    {
-        var result = MarkGeometryHelper.ResolveDimensionsForAxis(
-            objectWidth: 378.0,
-            objectHeight: 111.0,
-            axisDx: 1.0,
-            axisDy: 0.0,
-            textAngleDeg: 0.0);
-
-        Assert.Equal(378.0, result.WidthAlongAxis, 6);
-        Assert.Equal(111.0, result.HeightPerpendicularToAxis, 6);
-    }
-
-    [Fact]
-    public void ResolveDimensionsForAxis_SwapsDimensionsWhenTextIsPerpendicularToAxis()
-    {
-        var result = MarkGeometryHelper.ResolveDimensionsForAxis(
-            objectWidth: 378.0,
-            objectHeight: 111.0,
-            axisDx: 1.0,
-            axisDy: 0.0,
-            textAngleDeg: 270.0);
-
-        Assert.Equal(111.0, result.WidthAlongAxis, 6);
-        Assert.Equal(378.0, result.HeightPerpendicularToAxis, 6);
-    }
 }

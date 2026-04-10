@@ -6,9 +6,13 @@ internal static class FallbackMarkGeometryBuilder
 {
     public static MarkGeometryInfo Build(Mark mark)
     {
-        return MarkGeometryFactory.BuildFromObjectAlignedBox(
-            mark.GetObjectAlignedBoundingBox(),
-            "ObjectAlignedBoundingBoxFallback",
+        if (MarkBodyGeometryCollector.TryCollectBodyPolygon(mark, out var polygon))
+            return MarkGeometryFactory.BuildFromPolygon(polygon, "ChildObjectGeometryFallback", isReliable: false);
+
+        return MarkGeometryFactory.BuildFromInsertionPoint(
+            mark.InsertionPoint.X,
+            mark.InsertionPoint.Y,
+            "InsertionPointFallback",
             isReliable: false);
     }
 }

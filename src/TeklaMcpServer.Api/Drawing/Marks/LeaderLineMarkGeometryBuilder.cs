@@ -6,9 +6,13 @@ internal static class LeaderLineMarkGeometryBuilder
 {
     public static MarkGeometryInfo Build(Mark mark)
     {
-        return MarkGeometryFactory.BuildFromObjectAlignedBox(
-            mark.GetObjectAlignedBoundingBox(),
-            "ObjectAlignedBoundingBox",
-            isReliable: true);
+        if (MarkBodyGeometryCollector.TryCollectBodyPolygon(mark, out var polygon))
+            return MarkGeometryFactory.BuildFromPolygon(polygon, "ChildObjectGeometry", isReliable: true);
+
+        return MarkGeometryFactory.BuildFromInsertionPoint(
+            mark.InsertionPoint.X,
+            mark.InsertionPoint.Y,
+            "InsertionPointFallback",
+            isReliable: false);
     }
 }

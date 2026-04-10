@@ -69,7 +69,7 @@ public sealed partial class TeklaDrawingMarkApi
                 var resolvedById = resolved.ToDictionary(x => x.Id);
 
                 var apply = Stopwatch.StartNew();
-                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById));
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, resolvedById, _model));
                 apply.Stop();
                 totalIterations += iterations;
 
@@ -142,7 +142,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
                 var apply = Stopwatch.StartNew();
-                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById));
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model));
                 apply.Stop();
                 totalIterations += layoutResult.Iterations;
                 totalRemainingOverlaps += layoutResult.RemainingOverlaps;

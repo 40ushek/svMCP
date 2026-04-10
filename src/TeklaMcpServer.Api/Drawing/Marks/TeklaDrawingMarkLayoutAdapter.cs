@@ -148,7 +148,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
     public static List<int> ApplyPlacements(
         IReadOnlyList<TeklaDrawingMarkLayoutEntry> entries,
-        IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById)
+        IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById,
+        Model model)
     {
         var movedIds = new List<int>();
 
@@ -180,7 +181,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
             if (!entry.Mark.Modify())
                 continue;
 
-            if (!TryReloadMarkState(entry.Mark, entry.ViewId, out var actualInsertion, out var actualCenterX, out var actualCenterY))
+            if (!TryReloadMarkState(entry.Mark, entry.ViewId, model, out var actualInsertion, out var actualCenterX, out var actualCenterY))
                 continue;
 
             var insertionChanged =
@@ -204,6 +205,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
     private static bool TryReloadMarkState(
         Mark mark,
         int viewId,
+        Model model,
         out Point insertionPoint,
         out double centerX,
         out double centerY)
@@ -213,10 +215,10 @@ internal static class TeklaDrawingMarkLayoutAdapter
         centerY = 0.0;
         try
         {
-            var bbox = mark.GetAxisAlignedBoundingBox();
+            var geometry = MarkGeometryHelper.Build(mark, model, viewId);
             insertionPoint = mark.InsertionPoint;
-            centerX = (bbox.MinPoint.X + bbox.MaxPoint.X) / 2.0;
-            centerY = (bbox.MinPoint.Y + bbox.MaxPoint.Y) / 2.0;
+            centerX = geometry.CenterX;
+            centerY = geometry.CenterY;
             return true;
         }
         catch

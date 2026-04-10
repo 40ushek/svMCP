@@ -32,16 +32,6 @@ public static class MarkGeometryHelper
         return MarkGeometryResolver.Build(mark, model, viewId);
     }
 
-    internal static (double WidthAlongAxis, double HeightPerpendicularToAxis) ResolveDimensionsForAxis(
-        double objectWidth,
-        double objectHeight,
-        double axisDx,
-        double axisDy,
-        double textAngleDeg)
-    {
-        return MarkGeometryMath.ResolveDimensionsForAxis(objectWidth, objectHeight, axisDx, axisDy, textAngleDeg);
-    }
-
     public static bool PolygonsIntersect(IReadOnlyList<double[]> first, IReadOnlyList<double[]> second)
     {
         return MarkGeometryMath.PolygonsIntersect(first, second);

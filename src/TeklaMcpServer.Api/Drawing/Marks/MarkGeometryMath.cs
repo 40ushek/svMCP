@@ -4,21 +4,6 @@ namespace TeklaMcpServer.Api.Drawing;
 
 internal static class MarkGeometryMath
 {
-    public static (double WidthAlongAxis, double HeightPerpendicularToAxis) ResolveDimensionsForAxis(
-        double objectWidth,
-        double objectHeight,
-        double axisDx,
-        double axisDy,
-        double textAngleDeg)
-    {
-        var axisAngleDeg = Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI);
-        var normalizedDelta = NormalizeAngleDelta180(textAngleDeg - axisAngleDeg);
-
-        return normalizedDelta > 45.0
-            ? (objectHeight, objectWidth)
-            : (objectWidth, objectHeight);
-    }
-
     public static bool PolygonsIntersect(IReadOnlyList<double[]> first, IReadOnlyList<double[]> second)
     {
         return PolygonGeometry.Intersects(first, second);
@@ -60,16 +45,5 @@ internal static class MarkGeometryMath
         double secondMaxY)
     {
         return PolygonGeometry.RectanglesOverlap(firstMinX, firstMinY, firstMaxX, firstMaxY, secondMinX, secondMinY, secondMaxX, secondMaxY);
-    }
-
-    private static double NormalizeAngleDelta180(double angleDeg)
-    {
-        var normalized = angleDeg % 180.0;
-        if (normalized < 0)
-            normalized += 180.0;
-
-        return normalized > 90.0
-            ? 180.0 - normalized
-            : normalized;
     }
 }

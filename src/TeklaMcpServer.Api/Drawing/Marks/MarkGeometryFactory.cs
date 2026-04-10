@@ -1,35 +1,23 @@
-using Tekla.Structures.Drawing;
-
 namespace TeklaMcpServer.Api.Drawing;
 
 internal static class MarkGeometryFactory
 {
-    public static MarkGeometryInfo BuildFromObjectAlignedBox(RectangleBoundingBox objectAligned, string source, bool isReliable)
+    public static MarkGeometryInfo BuildFromPolygon(IReadOnlyList<double[]> polygon, string source, bool isReliable)
     {
-        var corners = new List<double[]>
-        {
-            new[] { objectAligned.LowerLeft.X, objectAligned.LowerLeft.Y },
-            new[] { objectAligned.UpperLeft.X, objectAligned.UpperLeft.Y },
-            new[] { objectAligned.UpperRight.X, objectAligned.UpperRight.Y },
-            new[] { objectAligned.LowerRight.X, objectAligned.LowerRight.Y }
-        };
-
-        var minX = Math.Min(Math.Min(corners[0][0], corners[1][0]), Math.Min(corners[2][0], corners[3][0]));
-        var maxX = Math.Max(Math.Max(corners[0][0], corners[1][0]), Math.Max(corners[2][0], corners[3][0]));
-        var minY = Math.Min(Math.Min(corners[0][1], corners[1][1]), Math.Min(corners[2][1], corners[3][1]));
-        var maxY = Math.Max(Math.Max(corners[0][1], corners[1][1]), Math.Max(corners[2][1], corners[3][1]));
+        MarkGeometryMath.GetPolygonBounds(polygon, out var minX, out var minY, out var maxX, out var maxY);
+        var corners = polygon.Select(static point => new[] { point[0], point[1] }).ToList();
 
         return new MarkGeometryInfo
         {
-            CenterX = (objectAligned.MinPoint.X + objectAligned.MaxPoint.X) / 2.0,
-            CenterY = (objectAligned.MinPoint.Y + objectAligned.MaxPoint.Y) / 2.0,
-            Width = objectAligned.Width,
-            Height = objectAligned.Height,
+            CenterX = (minX + maxX) / 2.0,
+            CenterY = (minY + maxY) / 2.0,
+            Width = maxX - minX,
+            Height = maxY - minY,
             MinX = minX,
             MinY = minY,
             MaxX = maxX,
             MaxY = maxY,
-            AngleDeg = objectAligned.AngleToAxis,
+            AngleDeg = 0.0,
             HasAxis = false,
             IsReliable = isReliable,
             Source = source,
@@ -37,25 +25,42 @@ internal static class MarkGeometryFactory
         };
     }
 
-    public static MarkGeometryInfo BuildFromAxis(
-        double centerX,
-        double centerY,
-        double objectWidth,
-        double objectHeight,
+    public static MarkGeometryInfo BuildFromProjectedPolygon(
+        IReadOnlyList<double[]> polygon,
         double axisDx,
         double axisDy,
-        double textAngleDeg,
         string source,
         bool isReliable)
     {
+        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+        if (axisLength < 0.001)
+            return BuildFromPolygon(polygon, source, isReliable: false);
+
+        axisDx /= axisLength;
+        axisDy /= axisLength;
         var vx = -axisDy;
         var vy = axisDx;
-        var (widthAlongAxis, heightPerpendicularToAxis) = MarkGeometryMath.ResolveDimensionsForAxis(
-            objectWidth,
-            objectHeight,
-            axisDx,
-            axisDy,
-            textAngleDeg);
+
+        var minU = double.MaxValue;
+        var maxU = double.MinValue;
+        var minV = double.MaxValue;
+        var maxV = double.MinValue;
+        foreach (var point in polygon)
+        {
+            var u = (point[0] * axisDx) + (point[1] * axisDy);
+            var v = (point[0] * vx) + (point[1] * vy);
+            minU = Math.Min(minU, u);
+            maxU = Math.Max(maxU, u);
+            minV = Math.Min(minV, v);
+            maxV = Math.Max(maxV, v);
+        }
+
+        var widthAlongAxis = maxU - minU;
+        var heightPerpendicularToAxis = maxV - minV;
+        var centerU = (minU + maxU) / 2.0;
+        var centerV = (minV + maxV) / 2.0;
+        var centerX = (axisDx * centerU) + (vx * centerV);
+        var centerY = (axisDy * centerU) + (vy * centerV);
         var halfWidth = widthAlongAxis / 2.0;
         var halfHeight = heightPerpendicularToAxis / 2.0;
 
@@ -86,6 +91,26 @@ internal static class MarkGeometryFactory
             IsReliable = isReliable,
             Source = source,
             Corners = new List<double[]> { p1, p2, p3, p4 }
+        };
+    }
+
+    public static MarkGeometryInfo BuildFromInsertionPoint(double x, double y, string source, bool isReliable)
+    {
+        return new MarkGeometryInfo
+        {
+            CenterX = x,
+            CenterY = y,
+            Width = 0.0,
+            Height = 0.0,
+            MinX = x,
+            MinY = y,
+            MaxX = x,
+            MaxY = y,
+            AngleDeg = 0.0,
+            HasAxis = false,
+            IsReliable = isReliable,
+            Source = source,
+            Corners = new List<double[]> { new[] { x, y } }
         };
     }
 }
