@@ -111,9 +111,8 @@ src/
 │   ├── Selection/            # IModelSelectionApi, ModelObjectInfo, TeklaModelSelectionApi
 │   │                         # ISelectionCacheManager, SelectionCacheManager
 │   │                         # SelectionResult, ToolInputSelectionHandler
-│   ├── Drawing/              # IDrawingQueryApi, DrawingInfo
-│   │                         # IDrawingViewApi, TeklaDrawingViewApi
-│   │                         # IDrawingMarkApi, TeklaDrawingMarkApi
+│   ├── Drawing/              # Общий drawing-layer: DrawingContext, DrawingViewContext,
+│   │                         # MarksViewContext, API/DTO/builder-ы по views/marks/dimensions
 │   │                         # DrawingViewInfo, DrawingViewsResult, DrawingMarkInfo, …
 │   ├── Algorithms/
 │   │   ├── Packing/          # MaxRectsBinPacker
@@ -180,6 +179,8 @@ src/
 | `create_single_part_drawing` | Создать Single Part drawing через Tekla Open API |
 | `create_assembly_drawing` | Создать Assembly drawing через Tekla Open API |
 | `get_drawing_context` | Активный чертёж и выделенные объекты |
+| `get_drawing_layout_context` | Coarse `DrawingContext`: drawing/sheet/views/reserved layout |
+| `get_drawing_view_context` | Detailed `DrawingViewContext` для одного вида |
 | `get_sheet_objects_debug` | Dev/debug: все объекты листа, их bbox и кандидаты reserved areas |
 | `select_drawing_objects` | Выделить объекты чертежа по ID модельных объектов |
 | `filter_drawing_objects` | Фильтр объектов чертежа по типу (Mark, Part, DimensionBase…) |
@@ -193,6 +194,7 @@ src/
 | `delete_all_marks` | Удалить все марки на активном чертеже |
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, `dimensionType`, distance, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, bbox set/segments, `dimensionLine`, `leadLineMain/Second`, `textBounds` |
+| `get_dimension_contexts` | Internal/context read path для размеров по виду |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |
 | `create_dimension` | Создать `StraightDimensionSet` по набору точек |
 | `delete_dimension` | Удалить `StraightDimensionSet` по ID |
@@ -209,16 +211,28 @@ src/
 
 Раскладка марок сейчас устроена так:
 - единица обработки — один `View`, а не весь drawing sheet
+- factual слой марок теперь оформлен как `MarksViewContext` + `MarksViewContextBuilder`
+- `get_drawing_marks` уже строится поверх этого context layer, но сохраняет прежний внешний DTO `DrawingMarkInfo`
 - все вычисления layout engine идут в локальной системе координат вида
 - Tekla-слой только собирает нейтральные `MarkLayoutItem` и переводит смещения между координатами вида и листа
 - `resolve_mark_overlaps` использует только локальный `MarkOverlapResolver` для минимальных сдвигов внутри вида
 - `arrange_marks` использует `MarkLayoutEngine`: candidate generation, scoring, greedy placement и затем локальный overlap resolver
 - для leader-line marks якорь берется из `LeaderLinePlacing.StartPoint` в координатах вида; `StartPoint` не меняется, двигается только `InsertionPoint`
-- геометрия метки теперь централизована в `MarkGeometryHelper`: `LeaderLinePlacing` берет `ObjectAlignedBoundingBox`, `BaseLinePlacing` пытается брать ось связанной детали в текущем виде, fallback — `ObjectAlignedBoundingBox`
+- геометрия метки централизована в `MarkGeometryHelper` и зависит от `PlacingType`:
+  - `LeaderLinePlacing` — object-aligned geometry самой метки
+  - `BaseLinePlacing` / `AlongLinePlacing` — направление от связанной детали в текущем виде
+  - fallback path — raw Tekla geometry, но она не считается канонической для collision/layout reasoning
+
+Контексты drawing-слоя сейчас устроены так:
+- `DrawingContext` — coarse sheet-level context для layout видов, reserved areas и `before/after` кейсов
+- `DrawingViewContext` — detailed per-view geometry context
+- `MarksViewContext` — factual mark context одного вида
+- dimensions идут в ту же сторону через `get_dimension_contexts`
 
 Раскладка видов сейчас устроена так:
 - legacy `PlaceViews()` удалён из MCP/bridge слоя и больше не является поддерживаемым tool
 - основной путь авторасстановки видов — `fit_views_to_sheet`
+- sheet-level reasoning теперь опирается на `DrawingContext` (`get_drawing_layout_context`)
 - post-processing проекционной связи выполняется внутри `DrawingProjectionAlignmentService`
 - reserved areas таблиц: `DrawingReservedAreaReader.ReadLayoutTableGeometries()` использует `TableLayout.GetCurrentTables()` → `PresentationConnection.GetObjectPresentation()` → canvas-маркеры (`Segment.Primitives[0/2]`) → точный bbox. Таблицы с `OverlapVithViews=true` пропускаются.
 - отступы листа: `TableLayout.GetMarginsAndSpaces()` возвращает реальные margins (обычно 5–10мм), используются как `sheetMargin` в ответе
@@ -226,6 +240,7 @@ src/
 
 Размеры сейчас устроены так:
 - `get_drawing_dimensions` уже возвращает line-based read model: `dimensionType`, `viewId/viewType`, `orientation`, `direction`, `topDirection`, `referenceLine`, bbox set/segments и `dimensionLine/leadLineMain/leadLineSecond`
+- `get_dimension_contexts` даёт отдельный context path поверх того же drawing/view-level слоя
 - `TextBounds` пока остаётся `null`, пока Tekla-side text geometry не подтверждена runtime-spike'ом
 - блок `Drawing/Dimensions` сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
 - публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign

@@ -25,12 +25,12 @@
 | `open_drawing` / `close_drawing` | Открыть / закрыть |
 | `export_drawings_to_pdf` | Экспорт в PDF |
 | `create_general_arrangement_drawing` / `create_single_part_drawing` / `create_assembly_drawing` | Создать чертёж |
-| `get_drawing_context` / `get_sheet_objects_debug` / `select_drawing_objects` / `filter_drawing_objects` | Контекст, диагностика и выделение |
+| `get_drawing_context` / `get_drawing_layout_context` / `get_drawing_view_context` / `get_sheet_objects_debug` / `select_drawing_objects` / `filter_drawing_objects` | Контекст, диагностика и выделение |
 | `get_drawing_views` | Виды + размеры листа (sheetWidth, sheetHeight) |
 | `move_view` / `set_view_scale` / `fit_views_to_sheet` | Управление видами |
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
-| `get_drawing_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, создание/сдвиг/удаление, контрольные диагонали |
+| `get_drawing_dimensions` / `get_dimension_contexts` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, создание/сдвиг/удаление, контрольные диагонали |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
@@ -38,8 +38,9 @@
 **Архитектура**
 - Персистентный TeklaBridge (`--loop`): существенно снижает latency повторных вызовов, bridge живёт всю сессию
 - TS2021 + TS2025 поддержка
-- `MarkGeometryHelper`: единая точка расчета геометрии меток для diagnostics/debug overlay
-- `Drawing/` разнесён по подпапкам `Views`, `Marks`, `Geometry`, `Dimensions`, `Interaction`, `Query`, `Parsing`, `Creation`, `Parts`, `DebugOverlay`
+- `DrawingContext` = coarse sheet-level context; `DrawingViewContext` = detailed per-view context
+- `MarksViewContext` + `MarksViewContextBuilder`: внутренний factual/context layer для марок
+- `MarkGeometryHelper`: канонический geometry path для layout/collision по меткам; raw Tekla bbox/obb остаются diagnostic/fallback path
 - Legacy `place_views` удалён; основной путь расстановки видов — `fit_views_to_sheet`
 - `ViewPlacementSearchArea`: единый параметр границ поиска вместо отдельных freeMinX/freeMaxX/freeMinY/freeMaxY — все overload-ы в `BaseProjectedDrawingArrangeStrategy` принимают searchArea
 - `ViewPlacementGeometryService`: централизованный helper для создания кандидатных прямоугольников (`TryGetBoundingRectAtOrigin` + centered fallback)
@@ -59,9 +60,11 @@
 ### Размеры
 
 Подробный план: [`src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md)
+Общий drawing-level план: [`src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`](src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md)
 
 Краткое состояние:
 - `get_drawing_dimensions` — rich line-based read API, группировка геометрически (Phase 3 done)
+- `get_dimension_contexts` — отдельный внутренний/context read path уже введён
 - `arrange_dimensions` — **не реализован как полноценный layout-движок**: сейчас только базовая раздвижка параллельных стеков через `Distance`, не двигает одиночные линии, нет нормализации distance, нет учёта текста/меток
 - Следующий реалистичный шаг: нормализация (убрать дубли, выровнять близкие линии) → умная раздвижка → учёт текста и меток (Phase 4 in progress)
 - `add_dimension_point` — Workaround: `delete` + `create` с новым набором точек
@@ -101,9 +104,16 @@
 - Ответ содержит `totalMs` и `phaseMs` (init/reserved/probe/candidateFit/arrange/postAdjust/projection/finalCommit)
 
 ### Марки
-- Obstacle-aware score (размеры, тексты, рамки видов)
-- COG как якорь: `part.GetReportProperty("COG_X/Y/Z")` + трансформация в локальную СК вида
-- Использовать `MarkGeometryHelper` внутри resolver/arrange, чтобы debug и layout считали одну и ту же геометрию
+Подробный план: [`src/TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`](src/TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md)
+
+Краткое состояние:
+- `MarksViewContext` и `MarksViewContextBuilder` уже введены как internal factual layer
+- `get_drawing_marks` уже строится поверх `MarksViewContextBuilder`, внешний контракт не менялся
+- каноническая geometry path для marks зависит от `PlacingType`:
+  - `LeaderLinePlacing` → object-aligned geometry mark itself
+  - `BaseLinePlacing` / `AlongLinePlacing` → ось связанной детали в текущем виде, затем width/height из mark geometry
+- raw Tekla bbox/obb нельзя считать каноническим collision source для всех типов marks; это known API limitation
+- следующий шаг: стабилизировать geometry/workaround layer вокруг известных API багов, потом evaluator/snapshot pipeline
 
 ### Виды
 - Добрать regression tests на `fit_views_to_sheet` для реальных sheet scenarios: reserved areas, tight packing, projection alignment после arrange
