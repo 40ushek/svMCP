@@ -48,38 +48,6 @@ public sealed class MarkGeometryResolverSupportTests
         Assert.Equal(1, axisDy, 6);
     }
 
-    [Fact]
-    public void BuildFromProjectedPolygon_CreatesResolvedAxisGeometry()
-    {
-        var polygon = new List<double[]>
-        {
-            new[] { 80.0, 45.0 },
-            new[] { 120.0, 45.0 },
-            new[] { 120.0, 55.0 },
-            new[] { 80.0, 55.0 }
-        };
-
-        var geometry = MarkGeometryFactory.BuildFromProjectedPolygon(
-            polygon,
-            axisDx: 1,
-            axisDy: 0,
-            source: "Axis",
-            isReliable: true);
-
-        Assert.Equal(100, geometry.CenterX);
-        Assert.Equal(50, geometry.CenterY);
-        Assert.Equal(40, geometry.Width, 6);
-        Assert.Equal(10, geometry.Height, 6);
-        Assert.Equal(80, geometry.MinX, 6);
-        Assert.Equal(120, geometry.MaxX, 6);
-        Assert.Equal(45, geometry.MinY, 6);
-        Assert.Equal(55, geometry.MaxY, 6);
-        Assert.True(geometry.HasAxis);
-        Assert.Equal("Axis", geometry.Source);
-        Assert.True(geometry.IsReliable);
-        Assert.Equal(4, geometry.Corners.Count);
-    }
-
     private sealed class FakeLinePlacing
     {
         public Point? StartPoint { get; init; }

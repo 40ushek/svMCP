@@ -25,8 +25,8 @@ public sealed class MarkGeometryHelperTests
             new[] { 1216.14, 3888.9 }
         };
 
-        Assert.False(MarkGeometryHelper.PolygonsIntersect(vertical, horizontal));
-        Assert.False(MarkGeometryHelper.RectanglesOverlap(
+        Assert.False(MarkGeometryMath.PolygonsIntersect(vertical, horizontal));
+        Assert.False(MarkGeometryMath.RectanglesOverlap(
             1397.3, 4019.37, 1508.3, 4402.69,
             1216.14, 3777.9, 1599.46, 3888.9));
     }
@@ -50,7 +50,7 @@ public sealed class MarkGeometryHelperTests
             new[] { 700.0, 4350.0 }
         };
 
-        Assert.True(MarkGeometryHelper.PolygonsIntersect(first, second));
+        Assert.True(MarkGeometryMath.PolygonsIntersect(first, second));
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class MarkGeometryHelperTests
             new[] { 3.0, 3.0 }
         };
 
-        Assert.True(MarkGeometryHelper.TryGetMinimumTranslationVector(first, second, out var axisX, out var axisY, out var depth));
+        Assert.True(MarkGeometryMath.TryGetMinimumTranslationVector(first, second, out var axisX, out var axisY, out var depth));
         Assert.True(depth > 0);
         Assert.True(System.Math.Abs(axisX) > 0 || System.Math.Abs(axisY) > 0);
     }

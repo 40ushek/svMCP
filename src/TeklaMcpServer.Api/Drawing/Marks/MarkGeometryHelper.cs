@@ -32,46 +32,4 @@ public static class MarkGeometryHelper
         return MarkGeometryResolver.Build(mark, model, viewId);
     }
 
-    public static bool PolygonsIntersect(IReadOnlyList<double[]> first, IReadOnlyList<double[]> second)
-    {
-        return MarkGeometryMath.PolygonsIntersect(first, second);
-    }
-
-    public static bool TryGetMinimumTranslationVector(
-        IReadOnlyList<double[]> first,
-        IReadOnlyList<double[]> second,
-        out double axisX,
-        out double axisY,
-        out double depth)
-    {
-        return MarkGeometryMath.TryGetMinimumTranslationVector(first, second, out axisX, out axisY, out depth);
-    }
-
-    public static List<double[]> TranslateLocalCorners(IReadOnlyList<double[]> localCorners, double centerX, double centerY)
-    {
-        return MarkGeometryMath.TranslateLocalCorners(localCorners, centerX, centerY);
-    }
-
-    public static void GetPolygonBounds(
-        IReadOnlyList<double[]> polygon,
-        out double minX,
-        out double minY,
-        out double maxX,
-        out double maxY)
-    {
-        MarkGeometryMath.GetPolygonBounds(polygon, out minX, out minY, out maxX, out maxY);
-    }
-
-    public static bool RectanglesOverlap(
-        double firstMinX,
-        double firstMinY,
-        double firstMaxX,
-        double firstMaxY,
-        double secondMinX,
-        double secondMinY,
-        double secondMaxX,
-        double secondMaxY)
-    {
-        return MarkGeometryMath.RectanglesOverlap(firstMinX, firstMinY, firstMaxX, firstMaxY, secondMinX, secondMinY, secondMaxX, secondMaxY);
-    }
 }
