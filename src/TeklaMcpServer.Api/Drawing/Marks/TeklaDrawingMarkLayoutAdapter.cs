@@ -10,6 +10,8 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 {
     public Mark Mark { get; set; } = null!;
 
+    public MarkContext MarkContext { get; set; } = null!;
+
     public int ViewId { get; set; }
 
     public double ViewScale { get; set; }
@@ -28,6 +30,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
     private const double LeaderAnchorDepthPaperMm = 10.0;
     private const double LeaderAnchorFarEdgeClearancePaperMm = 5.0;
     private const double LeaderAnchorNoOpEpsilon = 0.5;
+    private const double LeaderLengthRegressionEpsilon = 0.01;
 
     public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(
         View view,
@@ -52,6 +55,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
             entries.Add(new TeklaDrawingMarkLayoutEntry
             {
                 Mark = mark,
+                MarkContext = markContext,
                 ViewId = marksViewContext.ViewId ?? view.GetIdentifier().ID,
                 ViewScale = marksViewContext.ViewScale,
                 CenterX = item.CurrentX,
@@ -185,13 +189,12 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
             }
 
-            var viewScale = entry.ViewScale > 0 ? entry.ViewScale : 1.0;
-            if (!LeaderAnchorResolver.TryResolveAnchorTarget(
-                    polygon,
+            if (!TryResolvePreferredLeaderAnchorTarget(
+                    entry.MarkContext,
                     entry.CenterX,
                     entry.CenterY,
-                    LeaderAnchorDepthPaperMm * viewScale,
-                    LeaderAnchorFarEdgeClearancePaperMm * viewScale,
+                    entry.ViewScale,
+                    polygon,
                     out var targetX,
                     out var targetY))
                 continue;
@@ -214,6 +217,55 @@ internal static class TeklaDrawingMarkLayoutAdapter
         return updatedIds;
     }
 
+    internal static bool TryResolvePreferredLeaderAnchorTarget(
+        MarkContext markContext,
+        double centerX,
+        double centerY,
+        double viewScale,
+        IReadOnlyList<double[]> polygon,
+        out double targetX,
+        out double targetY)
+    {
+        targetX = 0.0;
+        targetY = 0.0;
+
+        var resolvedViewScale = viewScale > 0 ? viewScale : 1.0;
+        var depthMm = LeaderAnchorDepthPaperMm * resolvedViewScale;
+        var farEdgeClearanceMm = LeaderAnchorFarEdgeClearancePaperMm * resolvedViewScale;
+        var snapshot = markContext.LeaderSnapshot;
+        if (snapshot?.AnchorPoint != null)
+        {
+            var candidates = LeaderAnchorCandidateGenerator.CreateCandidates(
+                polygon,
+                snapshot,
+                depthMm,
+                farEdgeClearanceMm);
+            var bestCandidate = LeaderAnchorCandidateScorer.SelectBestCandidate(candidates);
+            if (bestCandidate?.AnchorPoint != null)
+            {
+                var referencePoint = snapshot.LeaderEndPoint ?? snapshot.InsertionPoint ?? snapshot.AnchorPoint;
+                if (referencePoint == null || bestCandidate.LineLengthToLeaderEnd <= Distance(referencePoint.X, referencePoint.Y, snapshot.AnchorPoint.X, snapshot.AnchorPoint.Y) + LeaderLengthRegressionEpsilon)
+                {
+                    targetX = bestCandidate.AnchorPoint.X;
+                    targetY = bestCandidate.AnchorPoint.Y;
+                    return true;
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
+        return LeaderAnchorResolver.TryResolveAnchorTarget(
+            polygon,
+            centerX,
+            centerY,
+            depthMm,
+            farEdgeClearanceMm,
+            out targetX,
+            out targetY);
+    }
 
     private static bool TryReloadMarkState(
         Mark mark,
@@ -259,5 +311,12 @@ internal static class TeklaDrawingMarkLayoutAdapter
         axisDx = markContext.Axis.Direction.X;
         axisDy = markContext.Axis.Direction.Y;
         return Math.Abs(axisDx) >= 0.001 || Math.Abs(axisDy) >= 0.001;
+    }
+
+    private static double Distance(double ax, double ay, double bx, double by)
+    {
+        var dx = ax - bx;
+        var dy = ay - by;
+        return Math.Sqrt((dx * dx) + (dy * dy));
     }
 }

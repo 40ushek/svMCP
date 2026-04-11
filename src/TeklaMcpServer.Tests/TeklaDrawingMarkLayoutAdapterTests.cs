@@ -171,6 +171,77 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
         Assert.True(second.X > secondItem.CurrentX);
     }
 
+    [Fact]
+    public void TryResolvePreferredLeaderAnchorTarget_UsesBestCandidateFromLeaderSnapshot()
+    {
+        var polygon = TeklaDrawingMarkLayoutAdapterTestFactory.CreateRectangle(width: 100.0, height: 50.0);
+        var markContext = TeklaDrawingMarkLayoutAdapterTestFactory.CreateLeaderMarkContext(
+            anchorX: 90.0,
+            anchorY: 2.0,
+            leaderEndX: 140.0,
+            leaderEndY: 12.0);
+
+        var resolved = TeklaDrawingMarkLayoutAdapter.TryResolvePreferredLeaderAnchorTarget(
+            markContext,
+            centerX: 140.0,
+            centerY: 2.0,
+            viewScale: 1.0,
+            polygon,
+            out var targetX,
+            out var targetY);
+
+        Assert.True(resolved);
+        Assert.Equal(90.0, targetX, 6);
+        Assert.Equal(12.0, targetY, 6);
+    }
+
+    [Fact]
+    public void TryResolvePreferredLeaderAnchorTarget_FallsBackToDirectResolver_WhenLeaderSnapshotMissing()
+    {
+        var polygon = TeklaDrawingMarkLayoutAdapterTestFactory.CreateRectangle(width: 100.0, height: 50.0);
+        var markContext = TeklaDrawingMarkLayoutAdapterTestFactory.CreateLeaderMarkContext(
+            anchorX: 90.0,
+            anchorY: 25.0,
+            leaderEndX: 140.0,
+            leaderEndY: 25.0);
+        markContext.LeaderSnapshot = null;
+
+        var resolved = TeklaDrawingMarkLayoutAdapter.TryResolvePreferredLeaderAnchorTarget(
+            markContext,
+            centerX: 140.0,
+            centerY: 25.0,
+            viewScale: 1.0,
+            polygon,
+            out var targetX,
+            out var targetY);
+
+        Assert.True(resolved);
+        Assert.Equal(90.0, targetX, 6);
+        Assert.Equal(25.0, targetY, 6);
+    }
+
+    [Fact]
+    public void TryResolvePreferredLeaderAnchorTarget_SkipsCandidateThatWouldLengthenLine()
+    {
+        var polygon = TeklaDrawingMarkLayoutAdapterTestFactory.CreateRectangle(width: 100.0, height: 50.0);
+        var markContext = TeklaDrawingMarkLayoutAdapterTestFactory.CreateLeaderMarkContext(
+            anchorX: 97.0,
+            anchorY: 25.0,
+            leaderEndX: 95.0,
+            leaderEndY: 25.0);
+
+        var resolved = TeklaDrawingMarkLayoutAdapter.TryResolvePreferredLeaderAnchorTarget(
+            markContext,
+            centerX: 140.0,
+            centerY: 25.0,
+            viewScale: 1.0,
+            polygon,
+            out _,
+            out _);
+
+        Assert.False(resolved);
+    }
+
     private static MarksViewContext CreateMarksViewContext() => new()
     {
         ViewId = 11,
@@ -243,6 +314,68 @@ internal static class TeklaDrawingMarkLayoutAdapterTestExtensions
     {
         markContext.Geometry.Corners.AddRange(corners);
         return markContext;
+    }
+}
+
+internal static partial class TeklaDrawingMarkLayoutAdapterTestFactory
+{
+    internal static MarkContext CreateLeaderMarkContext(
+        double anchorX,
+        double anchorY,
+        double leaderEndX,
+        double leaderEndY)
+    {
+        return new MarkContext
+        {
+            MarkId = 17,
+            SourceKind = nameof(MarkLayoutSourceKind.Part),
+            ModelId = 42,
+            ViewId = 11,
+            ViewScale = 1.0,
+            PlacingType = "LeaderLinePlacing",
+            Anchor = new DrawingPointInfo { X = anchorX, Y = anchorY },
+            CurrentCenter = new DrawingPointInfo { X = 140.0, Y = leaderEndY },
+            HasLeaderLine = true,
+            CanMove = true,
+            Geometry = new MarkGeometryContext
+            {
+                Bounds = new DrawingBoundsInfo
+                {
+                    MinX = 120.0,
+                    MinY = leaderEndY - 10.0,
+                    MaxX = 160.0,
+                    MaxY = leaderEndY + 10.0
+                },
+                Center = new DrawingPointInfo { X = 140.0, Y = leaderEndY },
+                Width = 40.0,
+                Height = 20.0,
+                IsReliable = true
+            },
+            LeaderSnapshot = new LeaderSnapshot
+            {
+                MarkId = 17,
+                AnchorPoint = new DrawingPointInfo { X = anchorX, Y = anchorY },
+                LeaderEndPoint = new DrawingPointInfo { X = leaderEndX, Y = leaderEndY },
+                InsertionPoint = new DrawingPointInfo { X = 160.0, Y = leaderEndY + 5.0 },
+                LeaderLength = System.Math.Sqrt(System.Math.Pow(anchorX - leaderEndX, 2) + System.Math.Pow(anchorY - leaderEndY, 2)),
+                Delta = new DrawingVectorInfo { X = 20.0, Y = 5.0 }
+            }
+        }.WithCorners(
+            new DrawingPointInfo { X = 120.0, Y = leaderEndY - 10.0, Order = 0 },
+            new DrawingPointInfo { X = 160.0, Y = leaderEndY - 10.0, Order = 1 },
+            new DrawingPointInfo { X = 160.0, Y = leaderEndY + 10.0, Order = 2 },
+            new DrawingPointInfo { X = 120.0, Y = leaderEndY + 10.0, Order = 3 });
+    }
+
+    internal static double[][] CreateRectangle(double width, double height)
+    {
+        return
+        [
+            [0.0, 0.0],
+            [width, 0.0],
+            [width, height],
+            [0.0, height],
+        ];
     }
 }
 
