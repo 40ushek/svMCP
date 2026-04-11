@@ -171,49 +171,6 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
         Assert.True(second.X > secondItem.CurrentX);
     }
 
-    [Fact]
-    public void TryResolveLeaderAnchorTarget_PlacesAnchorInsidePolygonNearNearestContour()
-    {
-        var polygon = new[]
-        {
-            new[] { 0.0, 0.0 },
-            new[] { 100.0, 0.0 },
-            new[] { 100.0, 50.0 },
-            new[] { 0.0, 50.0 }
-        };
-
-        var resolved = TeklaDrawingMarkLayoutAdapter.TryResolveLeaderAnchorTarget(
-            polygon,
-            bodyCenterX: 140.0,
-            bodyCenterY: 25.0,
-            out var anchorX,
-            out var anchorY);
-
-        Assert.True(resolved);
-        Assert.True(anchorX < 100.0);
-        Assert.Equal(25.0, anchorY, 6);
-        Assert.True(anchorX >= 90.0);
-    }
-
-    [Fact]
-    public void TryResolveLeaderAnchorTarget_ReturnsFalseForDegeneratePolygon()
-    {
-        var polygon = new[]
-        {
-            new[] { 0.0, 0.0 },
-            new[] { 50.0, 0.0 }
-        };
-
-        var resolved = TeklaDrawingMarkLayoutAdapter.TryResolveLeaderAnchorTarget(
-            polygon,
-            bodyCenterX: 100.0,
-            bodyCenterY: 20.0,
-            out _,
-            out _);
-
-        Assert.False(resolved);
-    }
-
     private static MarksViewContext CreateMarksViewContext() => new()
     {
         ViewId = 11,

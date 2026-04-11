@@ -2,7 +2,6 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
-using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Algorithms.Marks;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -24,9 +23,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
 {
     private const double MovementVerificationEpsilon = 0.05;
     private const double LayoutBoundsMargin = 10.0;
-    private const double LeaderAnchorInsetDistance = 10.0;
+    private const double LeaderAnchorDepthMm = 10.0;
     private const double LeaderAnchorNoOpEpsilon = 0.5;
-    private const double LeaderAnchorMinInsetDistance = 0.5;
 
     public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(
         View view,
@@ -183,7 +181,13 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
             }
 
-            if (!TryResolveLeaderAnchorTarget(polygon, entry.CenterX, entry.CenterY, out var targetX, out var targetY))
+            if (!LeaderAnchorResolver.TryResolveAnchorTarget(
+                    polygon,
+                    entry.CenterX,
+                    entry.CenterY,
+                    LeaderAnchorDepthMm,
+                    out var targetX,
+                    out var targetY))
                 continue;
 
             if (Math.Abs(leaderLinePlacing.StartPoint.X - targetX) < LeaderAnchorNoOpEpsilon &&
@@ -228,98 +232,6 @@ internal static class TeklaDrawingMarkLayoutAdapter
             return false;
         }
     }
-
-    internal static bool TryResolveLeaderAnchorTarget(
-        IReadOnlyList<double[]> polygon,
-        double bodyCenterX,
-        double bodyCenterY,
-        out double anchorX,
-        out double anchorY)
-    {
-        anchorX = 0.0;
-        anchorY = 0.0;
-
-        if (polygon.Count < 3)
-            return false;
-
-        FindNearestPointOnPolygon(polygon, bodyCenterX, bodyCenterY, out var nearestX, out var nearestY);
-
-        var centroidX = polygon.Average(static point => point[0]);
-        var centroidY = polygon.Average(static point => point[1]);
-        var inwardDx = centroidX - nearestX;
-        var inwardDy = centroidY - nearestY;
-        var inwardLength = Math.Sqrt((inwardDx * inwardDx) + (inwardDy * inwardDy));
-        if (inwardLength < 0.001)
-            return false;
-
-        inwardDx /= inwardLength;
-        inwardDy /= inwardLength;
-
-        var offset = Math.Min(LeaderAnchorInsetDistance, inwardLength * 0.5);
-        while (offset >= LeaderAnchorMinInsetDistance)
-        {
-            var candidateX = nearestX + (inwardDx * offset);
-            var candidateY = nearestY + (inwardDy * offset);
-            if (PolygonGeometry.ContainsPoint(polygon, candidateX, candidateY))
-            {
-                anchorX = candidateX;
-                anchorY = candidateY;
-                return true;
-            }
-
-            offset *= 0.5;
-        }
-
-        return false;
-    }
-
-    private static void FindNearestPointOnPolygon(
-        IReadOnlyList<double[]> polygon,
-        double x,
-        double y,
-        out double nearestX,
-        out double nearestY)
-    {
-        nearestX = polygon[0][0];
-        nearestY = polygon[0][1];
-        var bestDistanceSquared = double.MaxValue;
-
-        for (var i = 0; i < polygon.Count; i++)
-        {
-            var start = polygon[i];
-            var end = polygon[(i + 1) % polygon.Count];
-            var point = GetNearestPointOnSegment(x, y, start[0], start[1], end[0], end[1]);
-            var dx = x - point.X;
-            var dy = y - point.Y;
-            var distanceSquared = (dx * dx) + (dy * dy);
-            if (distanceSquared >= bestDistanceSquared)
-                continue;
-
-            bestDistanceSquared = distanceSquared;
-            nearestX = point.X;
-            nearestY = point.Y;
-        }
-    }
-
-    private static (double X, double Y) GetNearestPointOnSegment(
-        double px,
-        double py,
-        double ax,
-        double ay,
-        double bx,
-        double by)
-    {
-        var abx = bx - ax;
-        var aby = by - ay;
-        var lengthSquared = (abx * abx) + (aby * aby);
-        if (lengthSquared < 0.000001)
-            return (ax, ay);
-
-        var t = (((px - ax) * abx) + ((py - ay) * aby)) / lengthSquared;
-        t = Math.Max(0.0, Math.Min(1.0, t));
-        return (ax + (abx * t), ay + (aby * t));
-    }
-
     private static MarkSourceReference CreateSourceReference(MarkContext markContext)
     {
         var hasSourceKind = Enum.TryParse<MarkLayoutSourceKind>(markContext.SourceKind, ignoreCase: true, out var sourceKind);
