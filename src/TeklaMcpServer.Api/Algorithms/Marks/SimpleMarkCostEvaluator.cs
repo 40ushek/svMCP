@@ -29,6 +29,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         score += CalculateOwnPartContainmentPenalty(candidate, item, options);
         score += CalculateForeignPartOverlapPenalty(item, options, candidatePolygon);
         score += CalculatePreferredSidePenalty(candidate, item, options);
+        score += CalculateLeaderCrossingPenalty(candidate, item, placements, options);
 
         if (item.HasLeaderLine)
             score += Distance(candidate.X, candidate.Y, item.AnchorX, item.AnchorY) * options.LeaderLengthWeight;
@@ -201,6 +202,52 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
             penalty += options.PreferredSidePenaltyWeight;
 
         return penalty;
+    }
+
+    private static double CalculateLeaderCrossingPenalty(
+        MarkCandidate candidate,
+        MarkLayoutItem item,
+        IReadOnlyList<MarkLayoutPlacement> placements,
+        MarkLayoutOptions options)
+    {
+        if (!item.HasLeaderLine || options.LeaderCrossingPenalty <= 0)
+            return 0;
+
+        var crossings = 0;
+        foreach (var placement in placements)
+        {
+            if (!placement.HasLeaderLine)
+                continue;
+
+            if (SegmentsProperlyIntersect(
+                    candidate.X, candidate.Y, item.AnchorX, item.AnchorY,
+                    placement.X, placement.Y, placement.AnchorX, placement.AnchorY))
+            {
+                crossings++;
+            }
+        }
+
+        return crossings * options.LeaderCrossingPenalty;
+    }
+
+    /// <summary>
+    /// Returns true if segment AB properly crosses segment CD (no endpoint touches).
+    /// </summary>
+    private static bool SegmentsProperlyIntersect(
+        double ax, double ay, double bx, double by,
+        double cx, double cy, double dx, double dy)
+    {
+        var d1x = bx - ax;
+        var d1y = by - ay;
+        var d2x = dx - cx;
+        var d2y = dy - cy;
+        var cross = (d1x * d2y) - (d1y * d2x);
+        if (Math.Abs(cross) < 1e-10)
+            return false;
+
+        var t = (((cx - ax) * d2y) - ((cy - ay) * d2x)) / cross;
+        var u = (((cx - ax) * d1y) - ((cy - ay) * d1x)) / cross;
+        return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
     }
 
     private static int GetSign(double value)

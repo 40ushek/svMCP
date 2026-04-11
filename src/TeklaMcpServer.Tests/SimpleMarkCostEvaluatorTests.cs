@@ -190,4 +190,66 @@ public sealed class SimpleMarkCostEvaluatorTests
 
         Assert.True(clear < overlappingForeign);
     }
+
+    [Fact]
+    public void EvaluateCandidate_PenalizesCandidateWhoseLeaderCrossesAnotherLeader()
+    {
+        var evaluator = new SimpleMarkCostEvaluator();
+        var item = new MarkLayoutItem
+        {
+            Id = 1,
+            CurrentX = 100,
+            CurrentY = 100,
+            AnchorX = 0,
+            AnchorY = 0,
+            Width = 10,
+            Height = 10,
+            HasLeaderLine = true,
+            CanMove = true
+        };
+
+        // Placed mark: body at (0,100), anchor at (100,0) — its leader goes from (0,100)→(100,0)
+        var crossingPlacement = new MarkLayoutPlacement
+        {
+            Id = 2,
+            X = 0,
+            Y = 100,
+            Width = 10,
+            Height = 10,
+            AnchorX = 100,
+            AnchorY = 0,
+            HasLeaderLine = true,
+            CanMove = false
+        };
+
+        var options = new MarkLayoutOptions
+        {
+            CurrentPositionWeight = 0,
+            AnchorDistanceWeight = 0,
+            SourceDistanceWeight = 0,
+            CandidatePriorityWeight = 0,
+            CrowdingPenaltyWeight = 0,
+            PreferredSidePenaltyWeight = 0,
+            LeaderLengthWeight = 0,
+            OverlapPenalty = 0,
+            LeaderCrossingPenalty = 500.0
+        };
+
+        // Candidate at (100,0): leader goes (100,0)→(0,0) — does NOT cross (0,100)→(100,0)
+        var noCross = evaluator.EvaluateCandidate(
+            item,
+            new MarkCandidate { X = 100, Y = 0 },
+            new List<MarkLayoutPlacement> { crossingPlacement },
+            options);
+
+        // Candidate at (100,100): leader goes (100,100)→(0,0) — CROSSES (0,100)→(100,0)
+        var withCross = evaluator.EvaluateCandidate(
+            item,
+            new MarkCandidate { X = 100, Y = 100 },
+            new List<MarkLayoutPlacement> { crossingPlacement },
+            options);
+
+        Assert.True(noCross < withCross);
+        Assert.Equal(500.0, withCross - noCross, 6);
+    }
 }

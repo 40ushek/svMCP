@@ -42,6 +42,12 @@ public sealed class MarkLayoutOptions
 
     public double LeaderLengthWeight { get; set; } = 0.05;
 
+    /// <summary>
+    /// Penalty applied for each leader line that crosses another placed leader line.
+    /// Set to 0 to disable. Only applies to leader-line marks.
+    /// </summary>
+    public double LeaderCrossingPenalty { get; set; } = 0.0;
+
     public double CandidatePriorityWeight { get; set; } = 0.25;
 
     public double CrowdingPenaltyWeight { get; set; } = 5.0;

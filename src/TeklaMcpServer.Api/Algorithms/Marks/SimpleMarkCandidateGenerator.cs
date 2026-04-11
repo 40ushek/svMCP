@@ -120,7 +120,9 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
     }
 
     /// <summary>
-    /// For non-leader marks: rings around the current position at each distance multiplier.
+    /// For non-leader marks: rings around the source center (when known) or current position.
+    /// Using the source center as the ring origin keeps marks near their associated objects
+    /// rather than drifting with the current mark position across successive arrange passes.
     /// </summary>
     private static List<MarkCandidate> BuildLocalCandidates(
         MarkLayoutItem item,
@@ -128,6 +130,10 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         double baseOffsetY,
         double[] multipliers)
     {
+        // Prefer source center as ring origin so candidates cluster near the associated part.
+        var ringX = item.HasSourceCenter ? item.SourceCenterX!.Value : item.CurrentX;
+        var ringY = item.HasSourceCenter ? item.SourceCenterY!.Value : item.CurrentY;
+
         var result = new List<MarkCandidate>
         {
             new() { X = item.CurrentX, Y = item.CurrentY, Priority = 0 }
@@ -143,8 +149,8 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
             {
                 result.Add(new MarkCandidate
                 {
-                    X        = item.CurrentX + dx * ox,
-                    Y        = item.CurrentY + dy * oy,
+                    X        = ringX + dx * ox,
+                    Y        = ringY + dy * oy,
                     Priority = priority++
                 });
             }
@@ -182,17 +188,27 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         if (options.MaxDistanceFromAnchor <= 0)
             return true;
 
-        var maxDistance = options.MaxDistanceFromAnchor;
-
-        // For non-axis, non-leader marks: limit drift to the mark's shorter dimension.
-        // For axis marks (baseline): movement is already constrained to the axis in
-        // ApplyPlacements, so only use MaxDistanceFromAnchor.
+        // For non-leader, non-axis marks with a known source center: allow movement up to
+        // MaxDistanceFromAnchor from the source center so marks can reach their objects.
+        // Without a source center, fall back to the tight anchor-relative clamp.
         if (!item.HasLeaderLine && !item.HasAxis)
-            maxDistance = Math.Min(maxDistance, Math.Min(item.Width, item.Height) + options.Gap);
+        {
+            if (item.HasSourceCenter)
+            {
+                var dsx = candidate.X - item.SourceCenterX!.Value;
+                var dsy = candidate.Y - item.SourceCenterY!.Value;
+                return Math.Sqrt((dsx * dsx) + (dsy * dsy)) <= options.MaxDistanceFromAnchor;
+            }
 
-        var dx = candidate.X - item.AnchorX;
-        var dy = candidate.Y - item.AnchorY;
-        return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
+            var maxDistance = Math.Min(options.MaxDistanceFromAnchor, Math.Min(item.Width, item.Height) + options.Gap);
+            var dx = candidate.X - item.AnchorX;
+            var dy = candidate.Y - item.AnchorY;
+            return Math.Sqrt((dx * dx) + (dy * dy)) <= maxDistance;
+        }
+
+        var ddx = candidate.X - item.AnchorX;
+        var ddy = candidate.Y - item.AnchorY;
+        return Math.Sqrt((ddx * ddx) + (ddy * ddy)) <= options.MaxDistanceFromAnchor;
     }
 
     /// <summary>
