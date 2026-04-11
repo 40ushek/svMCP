@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -22,11 +23,30 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         var baseOffsetX = (item.Width  / 2.0) + options.CandidateOffset + options.Gap;
         var baseOffsetY = (item.Height / 2.0) + options.CandidateOffset + options.Gap;
 
-        var candidates = item.HasLeaderLine
-            ? BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
-            : item.HasAxis
+        if (item.HasLeaderLine)
+        {
+            if (TryBuildSourceAwareLeaderCandidates(item, options, baseOffsetX, baseOffsetY, out var sourceAwareCandidates))
+            {
+                var filteredSourceAware = sourceAwareCandidates
+                    .Where(c => IsWithinAnchorDistance(c, item, options))
+                    .Where(c => !item.HasBounds || IsWithinBounds(c, item))
+                    .ToList();
+
+                if (filteredSourceAware.Count > 0)
+                    return RemoveNearDuplicates(filteredSourceAware);
+            }
+
+            var ringCandidates = BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
+                .Where(c => IsWithinAnchorDistance(c, item, options))
+                .Where(c => !item.HasBounds || IsWithinBounds(c, item))
+                .ToList();
+
+            return RemoveNearDuplicates(ringCandidates);
+        }
+
+        var candidates = item.HasAxis
                 ? BuildAxisCandidates(item, ComputeAxisBaseOffset(item, options), options.CandidateDistanceMultipliers)
-            : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
+                : BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers);
 
         var filtered = candidates
             .Where(c => IsWithinAnchorDistance(c, item, options))
@@ -34,6 +54,159 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
             .ToList();
 
         return RemoveNearDuplicates(filtered);
+    }
+
+    private static bool TryBuildSourceAwareLeaderCandidates(
+        MarkLayoutItem item,
+        MarkLayoutOptions options,
+        double baseOffsetX,
+        double baseOffsetY,
+        out List<MarkCandidate> candidates)
+    {
+        candidates = new List<MarkCandidate>();
+
+        if (item.SourceKind != MarkLayoutSourceKind.Part ||
+            !item.SourceModelId.HasValue ||
+            !options.PartPolygonsByModelId.TryGetValue(item.SourceModelId.Value, out var polygon) ||
+            polygon.Count < 3 ||
+            !TryGetPolygonBounds(polygon, out var minX, out var minY, out var maxX, out var maxY))
+        {
+            return false;
+        }
+
+        var sourceWidth = maxX - minX;
+        var sourceHeight = maxY - minY;
+        var centerX = (minX + maxX) / 2.0;
+        var centerY = (minY + maxY) / 2.0;
+        var shiftX = item.Width + options.Gap;
+        var shiftY = item.Height + options.Gap;
+        var aboveY = maxY + baseOffsetY;
+        var belowY = minY - baseOffsetY;
+        var leftX = minX - baseOffsetX;
+        var rightX = maxX + baseOffsetX;
+        var priority = 1;
+
+        candidates.Add(new MarkCandidate { X = item.CurrentX, Y = item.CurrentY, Priority = 0 });
+
+        if (sourceWidth >= sourceHeight * 1.5)
+        {
+            AddHorizontalCandidates(candidates, centerX, aboveY, belowY, shiftX, item.CurrentX, priority);
+            return true;
+        }
+
+        if (sourceHeight >= sourceWidth * 1.5)
+        {
+            AddVerticalCandidates(candidates, leftX, rightX, centerY, shiftY, item.CurrentY, priority);
+            return true;
+        }
+
+        AddCompactCandidates(candidates, centerX, centerY, aboveY, belowY, leftX, rightX, shiftX, shiftY, item.CurrentX, item.CurrentY, priority);
+        return true;
+    }
+
+    private static void AddHorizontalCandidates(
+        List<MarkCandidate> candidates,
+        double centerX,
+        double aboveY,
+        double belowY,
+        double shiftX,
+        double currentX,
+        int priority)
+    {
+        var preferredShift = GetPreferredShift(currentX - centerX, shiftX);
+        var oppositeShift = -preferredShift;
+
+        candidates.Add(new MarkCandidate { X = centerX, Y = aboveY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX, Y = belowY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX + preferredShift, Y = aboveY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX + oppositeShift, Y = aboveY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX + preferredShift, Y = belowY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX + oppositeShift, Y = belowY, Priority = priority });
+    }
+
+    private static void AddVerticalCandidates(
+        List<MarkCandidate> candidates,
+        double leftX,
+        double rightX,
+        double centerY,
+        double shiftY,
+        double currentY,
+        int priority)
+    {
+        var preferredShift = GetPreferredShift(currentY - centerY, shiftY);
+        var oppositeShift = -preferredShift;
+
+        candidates.Add(new MarkCandidate { X = leftX, Y = centerY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = rightX, Y = centerY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = leftX, Y = centerY + preferredShift, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = leftX, Y = centerY + oppositeShift, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = rightX, Y = centerY + preferredShift, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = rightX, Y = centerY + oppositeShift, Priority = priority });
+    }
+
+    private static void AddCompactCandidates(
+        List<MarkCandidate> candidates,
+        double centerX,
+        double centerY,
+        double aboveY,
+        double belowY,
+        double leftX,
+        double rightX,
+        double shiftX,
+        double shiftY,
+        double currentX,
+        double currentY,
+        int priority)
+    {
+        candidates.Add(new MarkCandidate { X = centerX, Y = aboveY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX, Y = belowY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = leftX, Y = centerY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = rightX, Y = centerY, Priority = priority++ });
+
+        var horizontalShift = GetPreferredShift(currentX - centerX, shiftX);
+        var verticalShift = GetPreferredShift(currentY - centerY, shiftY);
+
+        candidates.Add(new MarkCandidate { X = centerX + horizontalShift, Y = aboveY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = centerX + horizontalShift, Y = belowY, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = leftX, Y = centerY + verticalShift, Priority = priority++ });
+        candidates.Add(new MarkCandidate { X = rightX, Y = centerY + verticalShift, Priority = priority });
+    }
+
+    private static double GetPreferredShift(double delta, double shift)
+    {
+        var sign = Math.Sign(delta);
+        if (sign == 0)
+            sign = 1;
+
+        return sign * shift;
+    }
+
+    private static bool TryGetPolygonBounds(
+        IReadOnlyList<double[]> polygon,
+        out double minX,
+        out double minY,
+        out double maxX,
+        out double maxY)
+    {
+        minX = double.MaxValue;
+        minY = double.MaxValue;
+        maxX = double.MinValue;
+        maxY = double.MinValue;
+
+        var hasPoint = false;
+        foreach (var point in polygon)
+        {
+            if (point.Length < 2)
+                continue;
+
+            hasPoint = true;
+            minX = Math.Min(minX, point[0]);
+            minY = Math.Min(minY, point[1]);
+            maxX = Math.Max(maxX, point[0]);
+            maxY = Math.Max(maxY, point[1]);
+        }
+
+        return hasPoint;
     }
 
     /// <summary>
