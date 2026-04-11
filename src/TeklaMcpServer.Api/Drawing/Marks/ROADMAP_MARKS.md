@@ -58,6 +58,33 @@
 
 Это уже execution-level shape для `MarkLayoutEngine`, а не канонический context.
 
+## Связь с `DrawingViewContext`
+
+Marks не должны вводить отдельный базовый view-context.
+
+Архитектурное правило:
+
+- общий `DrawingViewContext` остаётся каноническим контекстом вида;
+- `Marks` являются consumer этого общего view-level context;
+- marks-specific logic строится поверх общего `DrawingViewContext`, а не вместо него.
+
+Это должно совпадать с архитектурой размеров:
+
+- `DrawingViewContext` = общие факты вида;
+- mark layout = marks-specific reasoning поверх этих фактов.
+
+Первый практический consumer path для marks:
+
+- сначала `Parts` как каноническая геометрия деталей в виде;
+- затем `Bolts` как дополнительные obstacles/signals;
+- `PartsBounds` и `PartsHull` не считаются обязательными входами для marks на первом этапе.
+
+Текущий evolution path layout logic:
+
+- `arrange_marks` должен становиться context-aware consumer общего `DrawingViewContext`;
+- `resolve_mark_overlaps` остаётся локальным secondary post-process;
+- основной рост качества marks layout должен идти через context-aware placement/scoring, а не через усложнение overlap-only path.
+
 ## Почему это нужно
 
 Сейчас mark-layer уже силён, но логика размазана между:
