@@ -11,12 +11,16 @@ public sealed class MarkContextContractsTests
         var viewContext = new MarksViewContext();
         var markContext = new MarkContext();
         var geometry = new MarkGeometryContext();
+        var leaderSnapshot = new LeaderSnapshot();
+        var leaderLineSnapshot = new LeaderLineSnapshot();
         var buildResult = new MarkContextBuildResult();
 
         Assert.NotNull(viewContext.Marks);
         Assert.NotNull(viewContext.Warnings);
         Assert.NotNull(markContext.Properties);
         Assert.NotNull(geometry.Corners);
+        Assert.NotNull(leaderSnapshot.LeaderLines);
+        Assert.NotNull(leaderLineSnapshot.ElbowPoints);
         Assert.NotNull(buildResult.Contexts);
         Assert.NotNull(buildResult.Warnings);
     }

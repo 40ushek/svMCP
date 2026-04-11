@@ -123,4 +123,57 @@ public sealed class MarksViewContextBuilderTests
         Assert.Equal(50, anchor.X);
         Assert.Equal(25, anchor.Y);
     }
+
+    [Fact]
+    public void CreateLeaderSnapshot_UsesPrimaryLeaderLineAndPreservesDelta()
+    {
+        var anchor = new DrawingPointInfo { X = 10, Y = 20 };
+        var leaderLines = new List<LeaderLineSnapshot>
+        {
+            new()
+            {
+                Type = "SupportLeaderLine",
+                StartPoint = new DrawingPointInfo { X = 1, Y = 2 },
+                EndPoint = new DrawingPointInfo { X = 3, Y = 4 },
+            },
+            new()
+            {
+                Type = "NormalLeaderLine",
+                StartPoint = new DrawingPointInfo { X = 10, Y = 20 },
+                EndPoint = new DrawingPointInfo { X = 30, Y = 40 },
+            }
+        };
+
+        var snapshot = MarksViewContextBuilder.CreateLeaderSnapshot(
+            markId: 42,
+            anchor: anchor,
+            insertionX: 55,
+            insertionY: 70,
+            leaderLines: leaderLines);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(42, snapshot!.MarkId);
+        Assert.Equal(10, snapshot.AnchorPoint!.X);
+        Assert.Equal(30, snapshot.LeaderEndPoint!.X);
+        Assert.Equal(40, snapshot.LeaderEndPoint.Y);
+        Assert.Equal(55, snapshot.InsertionPoint!.X);
+        Assert.Equal(70, snapshot.InsertionPoint.Y);
+        Assert.Equal(System.Math.Sqrt(800), snapshot.LeaderLength, 6);
+        Assert.Equal(25, snapshot.Delta!.X);
+        Assert.Equal(30, snapshot.Delta.Y);
+        Assert.Equal(2, snapshot.LeaderLines.Count);
+    }
+
+    [Fact]
+    public void CreateLeaderSnapshot_ReturnsNull_WhenAnchorMissing()
+    {
+        var snapshot = MarksViewContextBuilder.CreateLeaderSnapshot(
+            markId: 7,
+            anchor: null,
+            insertionX: 10,
+            insertionY: 20,
+            leaderLines: []);
+
+        Assert.Null(snapshot);
+    }
 }

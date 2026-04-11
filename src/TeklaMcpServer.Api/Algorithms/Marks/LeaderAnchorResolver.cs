@@ -29,17 +29,60 @@ internal static class LeaderAnchorResolver
         if (!TryFindNearestEdgeHit(polygon, bodyCenterX, bodyCenterY, out var hit))
             return false;
 
-        var edgeDx = hit.EndX - hit.StartX;
-        var edgeDy = hit.EndY - hit.StartY;
+        return TryResolveAnchorTargetFromEdgePoint(
+            polygon,
+            hit.StartX,
+            hit.StartY,
+            hit.EndX,
+            hit.EndY,
+            hit.T,
+            depthMm,
+            minFarEdgeClearanceMm,
+            out _,
+            out _,
+            out anchorX,
+            out anchorY,
+            out _,
+            out _);
+    }
+
+    internal static bool TryResolveAnchorTargetFromEdgePoint(
+        IReadOnlyList<double[]> polygon,
+        double edgeStartX,
+        double edgeStartY,
+        double edgeEndX,
+        double edgeEndY,
+        double edgeT,
+        double depthMm,
+        double minFarEdgeClearanceMm,
+        out double edgePointX,
+        out double edgePointY,
+        out double anchorX,
+        out double anchorY,
+        out double cornerDistance,
+        out double farEdgeClearanceMm)
+    {
+        edgePointX = 0.0;
+        edgePointY = 0.0;
+        anchorX = 0.0;
+        anchorY = 0.0;
+        cornerDistance = 0.0;
+        farEdgeClearanceMm = 0.0;
+
+        var edgeDx = edgeEndX - edgeStartX;
+        var edgeDy = edgeEndY - edgeStartY;
         var edgeLength = Math.Sqrt((edgeDx * edgeDx) + (edgeDy * edgeDy));
-        if (edgeLength < 0.000001)
+        if (polygon.Count < 3 || depthMm < MinDepthMm || edgeLength < 0.000001)
             return false;
 
-        var safeT = ClampAwayFromCorners(hit.T, edgeLength);
-        var baseX = hit.StartX + (edgeDx * safeT);
-        var baseY = hit.StartY + (edgeDy * safeT);
+        var safeT = ClampAwayFromCorners(edgeT, edgeLength);
+        var baseX = edgeStartX + (edgeDx * safeT);
+        var baseY = edgeStartY + (edgeDy * safeT);
         var unitEdgeX = edgeDx / edgeLength;
         var unitEdgeY = edgeDy / edgeLength;
+        edgePointX = baseX;
+        edgePointY = baseY;
+        cornerDistance = Math.Min(safeT, 1.0 - safeT) * edgeLength;
 
         if (!TryResolveInwardNormal(polygon, baseX, baseY, unitEdgeX, unitEdgeY, depthMm, out var inwardNx, out var inwardNy))
             return false;
@@ -60,6 +103,7 @@ internal static class LeaderAnchorResolver
             {
                 anchorX = candidateX;
                 anchorY = candidateY;
+                farEdgeClearanceMm = Math.Max(0.0, availableDepth - offset);
                 return true;
             }
 
@@ -69,7 +113,7 @@ internal static class LeaderAnchorResolver
         return false;
     }
 
-    private static bool TryResolveAvailableDepth(
+    internal static bool TryResolveAvailableDepth(
         IReadOnlyList<double[]> polygon,
         double originX,
         double originY,
@@ -104,7 +148,7 @@ internal static class LeaderAnchorResolver
         return availableDepth < double.MaxValue;
     }
 
-    private static bool TryFindNearestEdgeHit(
+    internal static bool TryFindNearestEdgeHit(
         IReadOnlyList<double[]> polygon,
         double x,
         double y,
@@ -125,13 +169,13 @@ internal static class LeaderAnchorResolver
                 continue;
 
             bestDistanceSquared = distanceSquared;
-            hit = new EdgeHit(start[0], start[1], end[0], end[1], point.X, point.Y, t);
+            hit = new EdgeHit(i, start[0], start[1], end[0], end[1], point.X, point.Y, t);
         }
 
         return bestDistanceSquared < double.MaxValue;
     }
 
-    private static double ClampAwayFromCorners(double t, double edgeLength)
+    internal static double ClampAwayFromCorners(double t, double edgeLength)
     {
         var clearance = Math.Min(CornerClearanceMm, edgeLength * 0.25);
         if (clearance <= 0.0 || edgeLength < 0.000001)
@@ -145,7 +189,7 @@ internal static class LeaderAnchorResolver
         return Math.Max(minT, Math.Min(maxT, t));
     }
 
-    private static bool TryResolveInwardNormal(
+    internal static bool TryResolveInwardNormal(
         IReadOnlyList<double[]> polygon,
         double x,
         double y,
@@ -272,9 +316,10 @@ internal static class LeaderAnchorResolver
 
     private static double Cross(double ax, double ay, double bx, double by) => (ax * by) - (ay * bx);
 
-    private readonly struct EdgeHit
+    internal readonly struct EdgeHit
     {
         public EdgeHit(
+            int edgeIndex,
             double startX,
             double startY,
             double endX,
@@ -283,6 +328,7 @@ internal static class LeaderAnchorResolver
             double pointY,
             double t)
         {
+            EdgeIndex = edgeIndex;
             StartX = startX;
             StartY = startY;
             EndX = endX;
@@ -291,6 +337,8 @@ internal static class LeaderAnchorResolver
             PointY = pointY;
             T = t;
         }
+
+        public int EdgeIndex { get; }
 
         public double StartX { get; }
 

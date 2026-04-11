@@ -166,6 +166,71 @@ internal sealed class MarksViewContextBuilder
         return 1.0;
     }
 
+    internal static LeaderSnapshot? CreateLeaderSnapshot(
+        int markId,
+        DrawingPointInfo? anchor,
+        double insertionX,
+        double insertionY,
+        IReadOnlyList<LeaderLineSnapshot> leaderLines)
+    {
+        if (anchor == null)
+            return null;
+
+        if (leaderLines == null)
+            throw new ArgumentNullException(nameof(leaderLines));
+
+        var snapshot = new LeaderSnapshot
+        {
+            MarkId = markId,
+            AnchorPoint = CreatePoint(anchor.X, anchor.Y, anchor.Order),
+            InsertionPoint = CreatePoint(insertionX, insertionY),
+        };
+
+        foreach (var leaderLine in leaderLines)
+        {
+            var clone = new LeaderLineSnapshot
+            {
+                Type = leaderLine.Type,
+                StartPoint = leaderLine.StartPoint == null
+                    ? null
+                    : CreatePoint(leaderLine.StartPoint.X, leaderLine.StartPoint.Y, leaderLine.StartPoint.Order),
+                EndPoint = leaderLine.EndPoint == null
+                    ? null
+                    : CreatePoint(leaderLine.EndPoint.X, leaderLine.EndPoint.Y, leaderLine.EndPoint.Order),
+            };
+
+            clone.ElbowPoints.AddRange(leaderLine.ElbowPoints.Select(static point =>
+                new DrawingPointInfo { X = point.X, Y = point.Y, Order = point.Order }));
+            snapshot.LeaderLines.Add(clone);
+        }
+
+        var primaryLeaderLine = snapshot.LeaderLines
+            .FirstOrDefault(static line => string.Equals(line.Type, "NormalLeaderLine", StringComparison.Ordinal))
+            ?? snapshot.LeaderLines.FirstOrDefault();
+        if (primaryLeaderLine?.EndPoint == null)
+            return snapshot;
+
+        snapshot.LeaderEndPoint = CreatePoint(
+            primaryLeaderLine.EndPoint.X,
+            primaryLeaderLine.EndPoint.Y,
+            primaryLeaderLine.EndPoint.Order);
+
+        if (primaryLeaderLine.StartPoint != null)
+        {
+            snapshot.LeaderLength = Math.Sqrt(
+                Math.Pow(primaryLeaderLine.EndPoint.X - primaryLeaderLine.StartPoint.X, 2) +
+                Math.Pow(primaryLeaderLine.EndPoint.Y - primaryLeaderLine.StartPoint.Y, 2));
+        }
+
+        snapshot.Delta = new DrawingVectorInfo
+        {
+            X = insertionX - primaryLeaderLine.EndPoint.X,
+            Y = insertionY - primaryLeaderLine.EndPoint.Y,
+        };
+
+        return snapshot;
+    }
+
     private static MarkContext BuildMarkContext(Mark mark, Model model, int viewId, double viewScale)
     {
         var geometryInfo = MarkGeometryResolver.Build(mark, model, viewId);
@@ -175,6 +240,14 @@ internal sealed class MarksViewContextBuilder
         var anchor = leaderLinePlacing != null
             ? CreateAnchor(geometry, true, leaderLinePlacing.StartPoint.X, leaderLinePlacing.StartPoint.Y)
             : CreateAnchor(geometry, false, 0.0, 0.0);
+        var leaderSnapshot = hasLeaderLine
+            ? CreateLeaderSnapshot(
+                mark.GetIdentifier().ID,
+                anchor,
+                mark.InsertionPoint.X,
+                mark.InsertionPoint.Y,
+                MarkLeaderLineReader.ReadSnapshots(mark))
+            : null;
 
         var source = MarkSourceResolver.Resolve(mark);
         var context = new MarkContext
@@ -192,6 +265,7 @@ internal sealed class MarksViewContextBuilder
             Geometry = geometry,
             HasLeaderLine = hasLeaderLine,
             CanMove = true,
+            LeaderSnapshot = leaderSnapshot,
         };
 
         if (mark.Placing is BaseLinePlacing baseLinePlacing)

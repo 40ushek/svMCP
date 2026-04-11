@@ -241,35 +241,5 @@ public sealed partial class TeklaDrawingMarkApi
     }
 
     internal static List<MarkLeaderLineInfo> CreateLeaderLineInfos(Mark mark)
-    {
-        var result = new List<MarkLeaderLineInfo>();
-        var children = mark.GetObjects();
-        while (children.MoveNext())
-        {
-            if (children.Current is not LeaderLine leaderLine)
-                continue;
-
-            var leaderInfo = new MarkLeaderLineInfo
-            {
-                Type = leaderLine.LeaderLineType.ToString(),
-                StartX = Math.Round(leaderLine.StartPoint.X, 2),
-                StartY = Math.Round(leaderLine.StartPoint.Y, 2),
-                EndX = Math.Round(leaderLine.EndPoint.X, 2),
-                EndY = Math.Round(leaderLine.EndPoint.Y, 2)
-            };
-
-            foreach (Point elbowPoint in leaderLine.ElbowPoints)
-            {
-                leaderInfo.ElbowPoints.Add(new[]
-                {
-                    Math.Round(elbowPoint.X, 2),
-                    Math.Round(elbowPoint.Y, 2)
-                });
-            }
-
-            result.Add(leaderInfo);
-        }
-
-        return result;
-    }
+        => MarkLeaderLineReader.CreateInfos(mark);
 }

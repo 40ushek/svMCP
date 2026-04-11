@@ -30,7 +30,27 @@ internal sealed class MarkContext
     public MarkAxisContext? Axis { get; set; }
     public bool HasLeaderLine { get; set; }
     public bool CanMove { get; set; }
+    public LeaderSnapshot? LeaderSnapshot { get; set; }
     public List<MarkContextProperty> Properties { get; } = [];
+}
+
+internal sealed class LeaderSnapshot
+{
+    public int MarkId { get; set; }
+    public DrawingPointInfo? AnchorPoint { get; set; }
+    public DrawingPointInfo? LeaderEndPoint { get; set; }
+    public DrawingPointInfo? InsertionPoint { get; set; }
+    public double LeaderLength { get; set; }
+    public DrawingVectorInfo? Delta { get; set; }
+    public List<LeaderLineSnapshot> LeaderLines { get; } = [];
+}
+
+internal sealed class LeaderLineSnapshot
+{
+    public string Type { get; set; } = string.Empty;
+    public DrawingPointInfo? StartPoint { get; set; }
+    public DrawingPointInfo? EndPoint { get; set; }
+    public List<DrawingPointInfo> ElbowPoints { get; } = [];
 }
 
 internal sealed class MarkGeometryContext
