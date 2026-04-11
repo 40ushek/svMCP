@@ -158,6 +158,7 @@ Marks не должны вводить отдельный базовый view-co
 - [MarkGeometryHelper.cs](/d:/repos/svMCP/src/TeklaMcpServer.Api/Drawing/Marks/MarkGeometryHelper.cs) как compatibility facade
 - [MarkLayoutEngine.cs](/d:/repos/svMCP/src/TeklaMcpServer.Api/Algorithms/Marks/MarkLayoutEngine.cs)
 - [MarkOverlapResolver.cs](/d:/repos/svMCP/src/TeklaMcpServer.Api/Algorithms/Marks/MarkOverlapResolver.cs)
+- [LeaderAnchorResolver.cs](/d:/repos/svMCP/src/TeklaMcpServer.Api/Algorithms/Marks/LeaderAnchorResolver.cs)
 
 То есть execution path уже есть.
 
@@ -168,6 +169,39 @@ Marks не должны вводить отдельный базовый view-co
 - `get_drawing_marks` использует context-based projection;
 - `arrange_marks` использует `MarkContext -> MarkLayoutItem`;
 - `resolve_mark_overlaps` использует тот же context-based layout path.
+- базовая `leader-anchor` оптимизация уже встроена в `arrange_marks` как отдельный post-step после `ApplyPlacements`;
+- `leader-anchor` path уже учитывает:
+  - inward shift от ближайшей грани через нормаль к ребру;
+  - corner avoidance (2mm clearance от вершин полигона);
+  - halve-until-inside fallback для тонких деталей.
+
+## Текущее состояние лидеров
+
+### Что есть в `MarkContext`
+
+- `HasLeaderLine` — флаг
+- `Anchor` — `DrawingPointInfo?` — это `LeaderLinePlacing.StartPoint`
+- `PlacingType` — строка `"LeaderLinePlacing"`
+
+Никакого leader geometry snapshot нет: нет `LeaderEndPoint`, нет `LeaderLines`, нет `LeaderLength`, нет elbow points.
+
+### Инверсия: public DTO богаче internal context
+
+`DrawingMarkInfo` (public) содержит:
+
+- `LeaderLines: List<MarkLeaderLineInfo>` — с `StartX/Y`, `EndX/Y`, `ElbowPoints`
+- `ArrowHead`
+
+Internal `MarkContext` по лидерам беднее, чем public DTO.
+Это нужно исправить в Phase 5.1 — вынести leader snapshot во внутренний слой.
+
+### Что есть в алгоритмах
+
+- `BuildLeaderCandidates` — кандидаты вокруг `AnchorX/Y` с quadrant affinity
+- `CalculateLeaderCrossingPenalty` — штраф за пересечение лидеров через `SegmentsProperlyIntersect`
+- `CalculatePreferredSidePenalty` — держит марку на той же стороне от якоря
+- `LeaderLengthWeight` — штраф за длину лидера
+- `LeaderAnchorResolver` — после arrange двигает `StartPoint` к ближайшей грани детали
 
 ## Runtime placing hierarchy
 
@@ -200,7 +234,9 @@ Marks не должны вводить отдельный базовый view-co
 ### `LeaderLinePlacing`
 
 - anchor source: `LeaderLinePlacing.StartPoint`
-- movement semantics: двигается mark body, `StartPoint` не меняется
+- movement semantics:
+  - на основном arrange-pass двигается body/insertion point;
+  - на отдельном post-step может двигаться и `LeaderLinePlacing.StartPoint`
 - collision geometry source: object-aligned / resolved geometry самой mark
 - axis source: не обязателен как основной signal
 - fallback: raw Tekla geometry
@@ -289,7 +325,115 @@ layout/collision geometry.
 - сделать clean read projection for debug/query;
 - обновить `get_drawing_marks`, если context-builder даёт тот же набор данных чище, с меньшим дублированием и без потери runtime detail.
 
-### Phase 4. Evaluator
+### Phase 4. Leader-anchor basic post-step — completed
+
+После стабилизации context/layout path выполнено:
+
+- вынести базовый выбор точки anchor в отдельный algorithm/helper;
+- встроить post-step после `ApplyPlacements` только для leader marks;
+- использовать `PartPolygonsByModelId` как runtime source polygon;
+- выбирать anchor как inward point от ближайшей грани;
+- учитывать:
+  - paper-mm semantics через `viewScale`;
+  - corner avoidance;
+  - minimum clearance from far edge.
+
+Это structural/runtime quality step, а не full leader-shape system.
+
+### Phase 5. Leader geometry snapshot and candidate selection
+
+Следующий практический бакет:
+
+- ввести отдельный internal runtime block для leader geometry по аналогии с reference-tooling:
+  - `AnchorPoint`
+  - `LeaderEndPoint`
+  - `InsertionPoint`
+  - `LeaderLines`
+  - `LeaderLength`
+  - `Delta`
+- не смешивать этот слой с `DrawingMarkInfo`;
+- не тащить сразу full evaluator;
+- сначала собрать factual runtime snapshot лидера;
+- затем добавить маленький candidate-based selector для leader shape / anchor pair.
+
+Именно здесь должны появиться:
+
+- несколько candidate points на ближайшей грани;
+- выбор лучшей пары `part anchor <-> mark body point`;
+- первые style modes:
+  - straight
+  - angled
+  - horizontal elbow
+  - vertical elbow.
+
+Рекомендуемая последовательность реализации:
+
+#### Step 5.1. Internal leader runtime snapshot
+
+- ввести отдельный internal block для factual leader geometry;
+- собирать его из runtime `LeaderLine`, `LeaderLinePlacing`, `InsertionPoint`;
+- не смешивать его с `DrawingMarkInfo` и не тащить в public DTO заранее;
+- использовать как вход для последующих leader-shape algorithms.
+
+Минимальный состав snapshot:
+
+- `MarkId`
+- `AnchorPoint`
+- `LeaderEndPoint`
+- `InsertionPoint`
+- `LeaderLines`
+- `LeaderLength`
+- `Delta`
+
+#### Step 5.2. Candidate points on nearest edge
+
+- для текущей ближайшей грани детали строить не одну точку, а небольшой набор кандидатов;
+- минимум:
+  - nearest point
+  - point shifted left along edge
+  - point shifted right along edge
+- для каждой candidate point сохранять:
+  - inward anchor
+  - corner distance
+  - far-edge clearance
+  - line length to mark body.
+
+#### Step 5.3. Candidate-based pair selection
+
+- оценивать не только точку anchor на детали, но пару:
+  - `part anchor point`
+  - `mark body point` / `leader end point`
+- для первого шага использовать маленький deterministic score:
+  - shorter line is better
+  - less corner-adjacent is better
+  - larger far-edge clearance is better
+  - fewer awkward acute angles is better
+- не вводить full evaluator framework на этом шаге.
+
+#### Step 5.4. First leader shape modes
+
+- после появления pair-selection добавить первые shape modes:
+  - `straight`
+  - `angled`
+  - `horizontal elbow`
+  - `vertical elbow`
+- shape mode пока держать internal/runtime preference;
+- public command parameter выносить только после стабилизации default behavior.
+
+#### Step 5.5. Reference-guided refinement
+
+- использовать local reference project `markAligner/` как source of practical ideas;
+- особенно полезны:
+  - `TeklaMarksEditor.Logic.AlignMarks`
+  - `TeklaMarksEditor.Logic.Annotation`
+- заимствовать оттуда не код целиком, а decomposition:
+  - anchor point
+  - leader end point
+  - insertion point
+  - elbow manipulation
+  - leader length / delta semantics.
+
+### Phase 6. Evaluator
 
 После стабилизации context:
 
@@ -298,11 +442,11 @@ layout/collision geometry.
   - overlaps
   - outside/inside quality
   - leader-line quality
-  - distance / readability signals
+- distance / readability signals
 
 Но это не первый шаг.
 
-### Phase 5. Snapshot pipeline
+### Phase 7. Snapshot pipeline
 
 После evaluator:
 
@@ -342,18 +486,41 @@ layout/collision geometry.
 - тело марки притянулось к source center (из-за `SourceDistanceWeight`)
 - якорь тоже оказался в центре → оба оказались внутри детали → марки поверх конструкции
 
-**Правильная стратегия (не реализована):**
-1. Сначала разместить тело марки рядом с деталью но снаружи
-2. Затем переместить якорь лидера в точку на контуре детали, ближайшую к телу марки
+**Что уже реализовано базово:**
+1. Сначала `arrange_marks` размещает тело марки
+2. Затем отдельный post-step перемещает якорь лидера в безопасную внутреннюю точку рядом с ближайшей гранью детали
+
+Текущий базовый algorithm:
+
+- nearest edge on part polygon;
+- inward normal;
+- depth in paper mm through `viewScale`;
+- halve-until-inside fallback;
+- corner avoidance;
+- far-edge clearance.
+
+**Что ещё не реализовано:**
+
+- выбор из нескольких candidate points на одной грани;
+- совместный выбор пары `anchor point` + `leader end point`;
+- explicit leader-shape modes (`angled`, `horz elbow`, `vert elbow`);
+- angle/style preference в public command surface.
 
 Для этого нужны:
-- контур детали (уже есть в `PartPolygonsByModelId`)
-- позиция тела марки после `ApplyPlacements`
-- функция "ближайшая точка на полигоне к заданной точке"
+- отдельный internal leader snapshot/runtime model;
+- candidate-based selection around nearest edge;
+- optional reuse of practical ideas from local reference project `markAligner/` (`TeklaMarksEditor.Logic.AlignMarks`, `Annotation`).
 
 ## Следующий практический шаг
 
 Следующий практический шаг:
 
-- evaluator
-- snapshots
+- internal leader geometry snapshot
+- candidate-based leader shape / anchor selection
+
+В рабочем порядке это значит:
+
+1. Сначала собрать internal leader snapshot layer.
+2. Затем добавить 3-point candidate selection на ближайшей грани.
+3. После этого перейти к выбору лучшей пары `anchor <-> leader end`.
+4. И только потом добавлять `angled` / `horz elbow` / `vert elbow` modes.
