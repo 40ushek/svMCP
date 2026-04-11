@@ -14,10 +14,11 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         MarkLayoutOptions options)
     {
         var score = 0.0;
+        var candidatePolygon = GetCandidatePolygon(item, candidate);
 
         foreach (var placement in placements)
         {
-            score += CalculateOverlapPenalty(candidate, item, placement, options);
+            score += CalculateOverlapPenalty(candidate, item, placement, options, candidatePolygon);
             score += CalculateCrowdingPenalty(candidate, item, placement, options);
         }
 
@@ -26,6 +27,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         score += Distance(candidate.X, candidate.Y, item.AnchorX, item.AnchorY) * options.AnchorDistanceWeight;
         score += CalculateSourceDistancePenalty(candidate, item, options);
         score += CalculateOwnPartContainmentPenalty(candidate, item, options);
+        score += CalculateForeignPartOverlapPenalty(item, options, candidatePolygon);
         score += CalculatePreferredSidePenalty(candidate, item, options);
 
         if (item.HasLeaderLine)
@@ -38,11 +40,11 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         MarkCandidate candidate,
         MarkLayoutItem item,
         MarkLayoutPlacement placement,
-        MarkLayoutOptions options)
+        MarkLayoutOptions options,
+        IReadOnlyList<double[]>? candidatePolygon)
     {
-        if (item.LocalCorners.Count >= 3 && placement.LocalCorners.Count >= 3)
+        if (candidatePolygon != null && placement.LocalCorners.Count >= 3)
         {
-            var candidatePolygon = PolygonGeometry.Translate(item.LocalCorners, candidate.X, candidate.Y);
             var placementPolygon = PolygonGeometry.Translate(placement.LocalCorners, placement.X, placement.Y);
             if (!PolygonGeometry.Intersects(candidatePolygon, placementPolygon))
             {
@@ -151,6 +153,36 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
             : options.SourceOutsideOwnPartPenalty;
     }
 
+    private static double CalculateForeignPartOverlapPenalty(
+        MarkLayoutItem item,
+        MarkLayoutOptions options,
+        IReadOnlyList<double[]>? candidatePolygon)
+    {
+        if (candidatePolygon == null ||
+            item.SourceKind != MarkLayoutSourceKind.Part ||
+            !item.SourceModelId.HasValue ||
+            options.ForeignPartOverlapPenalty <= 0 ||
+            options.ViewContext == null)
+        {
+            return 0;
+        }
+
+        var overlapCount = 0;
+        foreach (var part in options.ViewContext.Parts)
+        {
+            if (!part.Success || part.ModelId == item.SourceModelId.Value)
+                continue;
+
+            if (!MarkSourceResolver.TryResolvePartPolygon(part, out var partPolygon))
+                continue;
+
+            if (PolygonGeometry.Intersects(candidatePolygon, partPolygon))
+                overlapCount++;
+        }
+
+        return overlapCount * options.ForeignPartOverlapPenalty;
+    }
+
     private static double CalculatePreferredSidePenalty(
         MarkCandidate candidate,
         MarkLayoutItem item,
@@ -186,5 +218,13 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         var dx = x1 - x2;
         var dy = y1 - y2;
         return Math.Sqrt((dx * dx) + (dy * dy));
+    }
+
+    private static IReadOnlyList<double[]>? GetCandidatePolygon(MarkLayoutItem item, MarkCandidate candidate)
+    {
+        if (item.LocalCorners.Count < 3)
+            return null;
+
+        return PolygonGeometry.Translate(item.LocalCorners, candidate.X, candidate.Y);
     }
 }

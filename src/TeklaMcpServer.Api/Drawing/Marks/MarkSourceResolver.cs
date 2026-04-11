@@ -110,6 +110,25 @@ internal static class MarkSourceResolver
         return true;
     }
 
+    internal static bool TryResolvePartPolygon(
+        PartGeometryInViewResult part,
+        out List<double[]> polygon)
+    {
+        polygon = [];
+
+        if (!part.Success)
+            return false;
+
+        var hullPoints = BuildPartHull(part);
+        if (hullPoints.Count < 3)
+            return false;
+
+        polygon = hullPoints
+            .Select(static point => new[] { point.X, point.Y })
+            .ToList();
+        return true;
+    }
+
     internal static bool TryResolveBoltCenter(
         IReadOnlyList<BoltGroupGeometry> bolts,
         int modelId,

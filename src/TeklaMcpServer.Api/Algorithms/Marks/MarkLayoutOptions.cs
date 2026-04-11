@@ -31,6 +31,8 @@ public sealed class MarkLayoutOptions
 
     public double SourceOutsideOwnPartPenalty { get; set; } = 0.0;
 
+    public double ForeignPartOverlapPenalty { get; set; } = 0.0;
+
     /// <summary>
     /// Maximum allowed distance from mark anchor to generated candidate center.
     /// Set <= 0 to disable.

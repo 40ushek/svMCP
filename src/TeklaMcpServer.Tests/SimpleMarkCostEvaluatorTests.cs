@@ -125,4 +125,67 @@ public sealed class SimpleMarkCostEvaluatorTests
 
         Assert.True(inside < outside);
     }
+
+    [Fact]
+    public void EvaluateCandidate_PenalizesCandidateOverlappingForeignPart()
+    {
+        var evaluator = new SimpleMarkCostEvaluator();
+        var item = new MarkLayoutItem
+        {
+            Id = 1,
+            CurrentX = 100,
+            CurrentY = 100,
+            AnchorX = 100,
+            AnchorY = 100,
+            Width = 20,
+            Height = 10,
+            SourceKind = MarkLayoutSourceKind.Part,
+            SourceModelId = 42,
+            SourceCenterX = 100,
+            SourceCenterY = 100,
+            CanMove = true,
+            LocalCorners =
+            {
+                new[] { -10.0, -5.0 },
+                new[] { 10.0, -5.0 },
+                new[] { 10.0, 5.0 },
+                new[] { -10.0, 5.0 }
+            }
+        };
+        var viewContext = new DrawingViewContext();
+        viewContext.Parts.Add(new PartGeometryInViewResult
+        {
+            Success = true,
+            ModelId = 42,
+            BboxMin = [80.0, 80.0],
+            BboxMax = [120.0, 120.0]
+        });
+        viewContext.Parts.Add(new PartGeometryInViewResult
+        {
+            Success = true,
+            ModelId = 99,
+            BboxMin = [140.0, 90.0],
+            BboxMax = [180.0, 110.0]
+        });
+
+        var options = new MarkLayoutOptions
+        {
+            CurrentPositionWeight = 0,
+            AnchorDistanceWeight = 0,
+            SourceDistanceWeight = 0,
+            SourceOutsideOwnPartPenalty = 0,
+            ForeignPartOverlapPenalty = 100.0,
+            CandidatePriorityWeight = 0,
+            CrowdingPenaltyWeight = 0,
+            PreferredSidePenaltyWeight = 0,
+            LeaderLengthWeight = 0,
+            OverlapPenalty = 0,
+            ViewContext = viewContext
+        };
+
+        var clear = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 100, Y = 100 }, new List<MarkLayoutPlacement>(), options);
+        var overlappingForeign = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 150, Y = 100 }, new List<MarkLayoutPlacement>(), options);
+
+        Assert.True(clear < overlappingForeign);
+    }
 }
