@@ -179,10 +179,12 @@ internal sealed class MarksViewContextBuilder
             ? CreateAnchor(geometry, true, leaderLinePlacing.StartPoint.X, leaderLinePlacing.StartPoint.Y)
             : CreateAnchor(geometry, false, 0.0, 0.0);
 
+        var source = MarkSourceResolver.Resolve(mark);
         var context = new MarkContext
         {
             MarkId = mark.GetIdentifier().ID,
-            ModelId = TryResolveModelId(mark),
+            SourceKind = source.Kind.ToString(),
+            ModelId = source.ModelId,
             ViewId = viewId,
             ViewScale = viewScale,
             PlacingType = mark.Placing?.GetType().Name ?? "null",
@@ -219,18 +221,6 @@ internal sealed class MarksViewContextBuilder
         }
 
         return context;
-    }
-
-    private static int? TryResolveModelId(Mark mark)
-    {
-        var related = mark.GetRelatedObjects();
-        while (related.MoveNext())
-        {
-            if (related.Current is Tekla.Structures.Drawing.ModelObject drawingModelObject)
-                return drawingModelObject.ModelIdentifier.ID;
-        }
-
-        return null;
     }
 
     private static DrawingPointInfo CreatePoint(double x, double y, int order = -1) => new()

@@ -24,6 +24,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         score += candidate.Priority * options.CandidatePriorityWeight;
         score += Distance(candidate.X, candidate.Y, item.CurrentX, item.CurrentY) * options.CurrentPositionWeight;
         score += Distance(candidate.X, candidate.Y, item.AnchorX, item.AnchorY) * options.AnchorDistanceWeight;
+        score += CalculateSourceDistancePenalty(candidate, item, options);
         score += CalculatePreferredSidePenalty(candidate, item, options);
 
         if (item.HasLeaderLine)
@@ -109,6 +110,22 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         var shortfallX = desiredDx - actualDx;
         var shortfallY = desiredDy - actualDy;
         return (shortfallX + shortfallY) * options.CrowdingPenaltyWeight;
+    }
+
+    private static double CalculateSourceDistancePenalty(
+        MarkCandidate candidate,
+        MarkLayoutItem item,
+        MarkLayoutOptions options)
+    {
+        if (item.HasLeaderLine || !item.HasSourceCenter || options.SourceDistanceWeight <= 0)
+            return 0;
+
+        return Distance(
+                   candidate.X,
+                   candidate.Y,
+                   item.SourceCenterX!.Value,
+                   item.SourceCenterY!.Value)
+               * options.SourceDistanceWeight;
     }
 
     private static double CalculatePreferredSidePenalty(

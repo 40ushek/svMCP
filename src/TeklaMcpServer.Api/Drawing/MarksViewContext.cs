@@ -17,6 +17,7 @@ internal sealed class MarksViewContext
 internal sealed class MarkContext
 {
     public int MarkId { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
     public int? ModelId { get; set; }
     public int? ViewId { get; set; }
     public double ViewScale { get; set; }

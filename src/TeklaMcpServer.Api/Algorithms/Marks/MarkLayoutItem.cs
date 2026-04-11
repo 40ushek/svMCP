@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -38,4 +39,14 @@ public sealed class MarkLayoutItem
     public double BoundsMaxY { get; set; }
 
     public bool HasBounds => BoundsMaxX > BoundsMinX && BoundsMaxY > BoundsMinY;
+
+    internal MarkLayoutSourceKind SourceKind { get; set; }
+
+    internal int? SourceModelId { get; set; }
+
+    internal double? SourceCenterX { get; set; }
+
+    internal double? SourceCenterY { get; set; }
+
+    internal bool HasSourceCenter => SourceCenterX.HasValue && SourceCenterY.HasValue;
 }
