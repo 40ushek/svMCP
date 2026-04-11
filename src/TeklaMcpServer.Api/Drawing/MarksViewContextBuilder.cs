@@ -42,7 +42,7 @@ internal sealed class MarksViewContextBuilder
             try
             {
                 var item = BuildMarkContext(mark, model, viewId, viewScale);
-                if (item == null)
+                if (IsDegenerateGeometry(item.Geometry))
                 {
                     context.Warnings.Add($"mark:{markId}:degenerate_geometry");
                     continue;
@@ -166,12 +166,9 @@ internal sealed class MarksViewContextBuilder
         return 1.0;
     }
 
-    private static MarkContext? BuildMarkContext(Mark mark, Model model, int viewId, double viewScale)
+    private static MarkContext BuildMarkContext(Mark mark, Model model, int viewId, double viewScale)
     {
         var geometryInfo = MarkGeometryResolver.Build(mark, model, viewId);
-        if (geometryInfo.Width < GeometryEpsilon && geometryInfo.Height < GeometryEpsilon)
-            return null;
-
         var geometry = CreateGeometryContext(geometryInfo);
         var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
         var hasLeaderLine = leaderLinePlacing != null;
@@ -222,6 +219,9 @@ internal sealed class MarksViewContextBuilder
 
         return context;
     }
+
+    private static bool IsDegenerateGeometry(MarkGeometryContext geometry) =>
+        geometry.Width < GeometryEpsilon && geometry.Height < GeometryEpsilon;
 
     private static DrawingPointInfo CreatePoint(double x, double y, int order = -1) => new()
     {

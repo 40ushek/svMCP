@@ -31,7 +31,6 @@ public sealed partial class TeklaDrawingMarkApi
 
             foreach (var view in viewsToQuery)
             {
-                var vid = view.GetIdentifier().ID;
                 var viewContext = contextBuilder.Build(view, _model);
                 var contextsById = viewContext.Marks.ToDictionary(item => item.MarkId);
                 var markObjects = view.GetAllObjects(typeof(Mark));
@@ -45,125 +44,18 @@ public sealed partial class TeklaDrawingMarkApi
                     if (!seenIds.Add(markId))
                         continue;
 
-                    contextsById.TryGetValue(markId, out var markContext);
-                    var resolvedGeometry = markContext?.Geometry != null
-                        ? CreateResolvedGeometryInfo(markContext.Geometry)
-                        : CreateResolvedGeometryInfo(MarkGeometryResolver.Build(mark, _model, vid));
                     var ins = mark.InsertionPoint;
-                    var leaderLinePlacing = mark.Placing as LeaderLinePlacing;
-                    var info = new DrawingMarkInfo
-                    {
-                        Id = markId,
-                        ViewId = markContext?.ViewId ?? vid,
-                        InsertionX = Math.Round(ins.X, 1),
-                        InsertionY = Math.Round(ins.Y, 1),
-                        BboxMinX = resolvedGeometry.MinX,
-                        BboxMinY = resolvedGeometry.MinY,
-                        BboxMaxX = resolvedGeometry.MaxX,
-                        BboxMaxY = resolvedGeometry.MaxY,
-                        CenterX = resolvedGeometry.CenterX,
-                        CenterY = resolvedGeometry.CenterY,
-                        PlacingType = markContext?.PlacingType ?? mark.Placing?.GetType().Name ?? "null",
-                        PlacingX = markContext?.HasLeaderLine == true
-                            ? Math.Round(markContext.Anchor?.X ?? 0.0, 2)
-                            : leaderLinePlacing != null ? Math.Round(leaderLinePlacing.StartPoint.X, 2) : 0,
-                        PlacingY = markContext?.HasLeaderLine == true
-                            ? Math.Round(markContext.Anchor?.Y ?? 0.0, 2)
-                            : leaderLinePlacing != null ? Math.Round(leaderLinePlacing.StartPoint.Y, 2) : 0,
-                        Angle = Math.Round(mark.Attributes.Angle, 2),
-                        RotationAngle = markContext?.RotationAngle ?? Math.Round(mark.Attributes.RotationAngle, 2),
-                        TextAlignment = markContext?.TextAlignment ?? mark.Attributes.TextAlignment.ToString(),
-                        ResolvedGeometry = resolvedGeometry,
-                        ArrowHead = CreateArrowHeadInfo(mark)
-                    };
+                    if (!contextsById.TryGetValue(markId, out var markContext))
+                        continue;
 
-                    if (markContext?.Axis != null)
-                    {
-                        info.Axis = CreateAxisInfo(markContext.Axis);
-                    }
-                    else if (mark.Placing is BaseLinePlacing baseLinePlacing)
-                    {
-                        var axisDx = baseLinePlacing.EndPoint.X - baseLinePlacing.StartPoint.X;
-                        var axisDy = baseLinePlacing.EndPoint.Y - baseLinePlacing.StartPoint.Y;
-                        var axisLength = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
-                        var normalizedDx = axisLength >= 0.001 ? axisDx / axisLength : 0.0;
-                        var normalizedDy = axisLength >= 0.001 ? axisDy / axisLength : 0.0;
-
-                        info.Axis = new MarkAxisInfo
-                        {
-                            StartX = Math.Round(baseLinePlacing.StartPoint.X, 2),
-                            StartY = Math.Round(baseLinePlacing.StartPoint.Y, 2),
-                            EndX = Math.Round(baseLinePlacing.EndPoint.X, 2),
-                            EndY = Math.Round(baseLinePlacing.EndPoint.Y, 2),
-                            Dx = Math.Round(normalizedDx, 4),
-                            Dy = Math.Round(normalizedDy, 4),
-                            Length = Math.Round(axisLength, 2),
-                            AngleDeg = Math.Round(Math.Atan2(axisDy, axisDx) * (180.0 / Math.PI), 2),
-                            IsReliable = axisLength >= 0.001
-                        };
-                    }
-
-                    if (markContext?.ModelId != null)
-                    {
-                        info.ModelId = markContext.ModelId;
-                    }
-                    else
-                    {
-                        var related = mark.GetRelatedObjects();
-                        while (related.MoveNext())
-                        {
-                            if (related.Current is Tekla.Structures.Drawing.ModelObject mo)
-                            {
-                                info.ModelId = mo.ModelIdentifier.ID;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (markContext?.Properties.Count > 0)
-                    {
-                        info.Properties.AddRange(markContext.Properties.Select(static property => new MarkPropertyValue
-                        {
-                            Name = property.Name,
-                            Value = property.Value,
-                        }));
-                    }
-                    else
-                    {
-                        var contentEnum = mark.Attributes.Content.GetEnumerator();
-                        while (contentEnum.MoveNext())
-                        {
-                            if (contentEnum.Current is PropertyElement prop)
-                                info.Properties.Add(new MarkPropertyValue { Name = prop.Name, Value = prop.Value });
-                        }
-                    }
-
-                    var children = mark.GetObjects();
-                    while (children.MoveNext())
-                    {
-                        if (children.Current is not LeaderLine leaderLine)
-                            continue;
-
-                        var leaderInfo = new MarkLeaderLineInfo
-                        {
-                            Type = leaderLine.LeaderLineType.ToString(),
-                            StartX = Math.Round(leaderLine.StartPoint.X, 2),
-                            StartY = Math.Round(leaderLine.StartPoint.Y, 2),
-                            EndX = Math.Round(leaderLine.EndPoint.X, 2),
-                            EndY = Math.Round(leaderLine.EndPoint.Y, 2)
-                        };
-
-                        foreach (Point elbowPoint in leaderLine.ElbowPoints)
-                        {
-                            leaderInfo.ElbowPoints.Add(new[]
-                            {
-                                Math.Round(elbowPoint.X, 2),
-                                Math.Round(elbowPoint.Y, 2)
-                            });
-                        }
-
-                        info.LeaderLines.Add(leaderInfo);
-                    }
+                    var info = CreateDrawingMarkInfo(
+                        markId,
+                        ins.X,
+                        ins.Y,
+                        mark.Attributes.Angle,
+                        CreateArrowHeadInfo(mark),
+                        CreateLeaderLineInfos(mark),
+                        markContext);
 
                     marks.Add(info);
                 }
@@ -292,6 +184,51 @@ public sealed partial class TeklaDrawingMarkApi
         };
     }
 
+    internal static DrawingMarkInfo CreateDrawingMarkInfo(
+        int markId,
+        double insertionX,
+        double insertionY,
+        double angle,
+        MarkArrowheadInfo arrowHead,
+        IReadOnlyList<MarkLeaderLineInfo> leaderLines,
+        MarkContext markContext)
+    {
+        var resolvedGeometry = CreateResolvedGeometryInfo(markContext.Geometry);
+        var info = new DrawingMarkInfo
+        {
+            Id = markId,
+            ViewId = markContext.ViewId ?? 0,
+            ModelId = markContext.ModelId,
+            InsertionX = Math.Round(insertionX, 1),
+            InsertionY = Math.Round(insertionY, 1),
+            BboxMinX = resolvedGeometry.MinX,
+            BboxMinY = resolvedGeometry.MinY,
+            BboxMaxX = resolvedGeometry.MaxX,
+            BboxMaxY = resolvedGeometry.MaxY,
+            CenterX = resolvedGeometry.CenterX,
+            CenterY = resolvedGeometry.CenterY,
+            PlacingType = markContext.PlacingType,
+            PlacingX = markContext.HasLeaderLine ? Math.Round(markContext.Anchor?.X ?? 0.0, 2) : 0,
+            PlacingY = markContext.HasLeaderLine ? Math.Round(markContext.Anchor?.Y ?? 0.0, 2) : 0,
+            Angle = Math.Round(angle, 2),
+            RotationAngle = markContext.RotationAngle,
+            TextAlignment = markContext.TextAlignment,
+            ResolvedGeometry = resolvedGeometry,
+            ArrowHead = arrowHead
+        };
+
+        if (markContext.Axis != null)
+            info.Axis = CreateAxisInfo(markContext.Axis);
+
+        info.Properties.AddRange(markContext.Properties.Select(static property => new MarkPropertyValue
+        {
+            Name = property.Name,
+            Value = property.Value,
+        }));
+        info.LeaderLines.AddRange(leaderLines);
+        return info;
+    }
+
     internal static MarkArrowheadInfo CreateArrowHeadInfo(Mark mark)
     {
         return new MarkArrowheadInfo
@@ -301,5 +238,38 @@ public sealed partial class TeklaDrawingMarkApi
             Height = Math.Round(mark.Attributes.ArrowHead.Height, 2),
             Width = Math.Round(mark.Attributes.ArrowHead.Width, 2)
         };
+    }
+
+    internal static List<MarkLeaderLineInfo> CreateLeaderLineInfos(Mark mark)
+    {
+        var result = new List<MarkLeaderLineInfo>();
+        var children = mark.GetObjects();
+        while (children.MoveNext())
+        {
+            if (children.Current is not LeaderLine leaderLine)
+                continue;
+
+            var leaderInfo = new MarkLeaderLineInfo
+            {
+                Type = leaderLine.LeaderLineType.ToString(),
+                StartX = Math.Round(leaderLine.StartPoint.X, 2),
+                StartY = Math.Round(leaderLine.StartPoint.Y, 2),
+                EndX = Math.Round(leaderLine.EndPoint.X, 2),
+                EndY = Math.Round(leaderLine.EndPoint.Y, 2)
+            };
+
+            foreach (Point elbowPoint in leaderLine.ElbowPoints)
+            {
+                leaderInfo.ElbowPoints.Add(new[]
+                {
+                    Math.Round(elbowPoint.X, 2),
+                    Math.Round(elbowPoint.Y, 2)
+                });
+            }
+
+            result.Add(leaderInfo);
+        }
+
+        return result;
     }
 }

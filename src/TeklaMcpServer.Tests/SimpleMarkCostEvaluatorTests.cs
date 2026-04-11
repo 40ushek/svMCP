@@ -117,7 +117,8 @@ public sealed class SimpleMarkCostEvaluatorTests
             PreferredSidePenaltyWeight = 0,
             LeaderLengthWeight = 0,
             OverlapPenalty = 0,
-            ViewContext = viewContext
+            ViewContext = viewContext,
+            PartPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts)
         };
 
         var inside = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 100, Y = 100 }, new List<MarkLayoutPlacement>(), options);
@@ -180,7 +181,8 @@ public sealed class SimpleMarkCostEvaluatorTests
             PreferredSidePenaltyWeight = 0,
             LeaderLengthWeight = 0,
             OverlapPenalty = 0,
-            ViewContext = viewContext
+            ViewContext = viewContext,
+            PartPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts)
         };
 
         var clear = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 100, Y = 100 }, new List<MarkLayoutPlacement>(), options);

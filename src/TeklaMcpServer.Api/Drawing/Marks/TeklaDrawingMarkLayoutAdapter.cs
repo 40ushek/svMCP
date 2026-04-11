@@ -68,6 +68,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 if (widthLocal < 0.1 && heightLocal < 0.1)
                     continue;
                 // LocalCorners are geometry.Corners expressed relative to the mark center.
+                // geometry.Corners stay in view-local coordinates in MarkGeometryResolver / MarkContext;
+                // any future MarkContext -> MarkLayoutItem adapter must preserve this
+                // center-relative conversion exactly.
                 // They are the authoritative collision shape used by MarkLayoutEngine.Intersects.
                 var localCorners = geometry.Corners
                     .Select(c => new[] { c[0] - centerLocalX, c[1] - centerLocalY })
