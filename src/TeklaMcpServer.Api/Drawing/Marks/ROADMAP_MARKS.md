@@ -543,3 +543,94 @@ Phase 5 частично реализована.
 2. `3-point candidate selection` на ближайшей грани уже есть.
 3. Следующий шаг — перейти к выбору лучшей пары `anchor <-> leader end/body point`.
 4. И только потом добавлять `angled` / `horz elbow` / `vert elbow` modes.
+
+## Phase 8. Multi-mark layout по аналогии с cartographic labeling
+
+После стабилизации leader pair-selection следующий уровень качества должен идти уже не только через leader geometry, а через placement самих mark bodies.
+
+Проблема:
+
+- одна mark зависит от другой;
+- хорошего local anchor tweak недостаточно, если тело mark уже стоит слишком далеко или в плохой зоне;
+- для нескольких деталей и нескольких marks нужна раскладка множества marks, а не только локальная оптимизация одной линии.
+
+Практический deterministic path здесь должен быть вдохновлён cartographic labeling, но адаптирован под drawing marks:
+
+- candidate positions для body каждой mark;
+- deterministic score;
+- greedy placement с учётом уже размещённых marks;
+- короткий local-improvement pass после первичной раскладки.
+
+Это должно быть эволюцией текущего `MarkLayoutEngine`, а не его заменой:
+
+- существующий candidate/scoring pipeline уже есть;
+- `SimpleMarkCandidateGenerator` и `SimpleMarkCostEvaluator` уже решают первую базовую версию;
+- следующий шаг — расширить этот pipeline новыми candidate signals, ordering и local improvement.
+
+### Candidate positions for mark body
+
+Для каждой leader mark нужно строить небольшой конечный набор body-candidates, а не искать position в непрерывном пространстве.
+
+Минимальный practical набор:
+
+- текущая позиция;
+- позиция ближе к детали по текущему направлению;
+- позиция около середины длинной стороны детали;
+- соседние позиции с небольшим сдвигом вдоль этой стороны;
+- при необходимости 1-2 запасных candidates около альтернативной стороны детали.
+
+Для вытянутых деталей типа балки candidate generation должен учитывать aspect ratio:
+
+- для горизонтально вытянутой детали основные body-candidates — над/под длинной стороной около её середины;
+- для вертикально вытянутой детали — слева/справа около середины высоты;
+- simple "center of detail" недостаточен без учёта главной оси детали.
+
+### Candidate scoring
+
+Для первой deterministic версии score должен быть explainable и быстрым.
+
+Минимальные penalties/signals:
+
+- overlap с уже размещёнными marks;
+- overlap с geometry детали;
+- длина leader line;
+- crossing лидеров;
+- выход за bounds вида;
+- слишком близкое или слишком далёкое положение от детали.
+
+### Placement strategy
+
+Первый practical algorithm не должен быть global stochastic optimizer.
+
+Нужен такой порядок:
+
+1. для каждой mark построить небольшой candidate set;
+2. отсортировать marks по сложности/риску конфликта;
+3. размещать marks greedily по одной;
+4. на каждом шаге выбирать лучший candidate с учётом уже поставленных marks;
+5. после первичной раскладки делать короткий local-improvement pass.
+
+Это даст:
+
+- deterministic поведение;
+- explainable score;
+- быстрый runtime path;
+- хороший базовый слой для будущего AI-agent orchestration.
+
+### Что не делать на первом шаге
+
+Пока не идти в:
+
+- simulated annealing;
+- integer programming;
+- непрерывный глобальный поиск position.
+
+Первый production-worthy шаг:
+
+- `candidate positions + greedy placement + local improvement`
+
+Уже после стабилизации этого deterministic слоя можно думать про:
+
+- richer pair-selection;
+- more advanced leader styles;
+- AI-agent как orchestrator поверх candidate/scoring pipeline.
