@@ -101,8 +101,8 @@ public sealed class GetMarksResult
 
 public sealed class ResolveMarksResult
 {
-    public int        MarksMovedCount { get; set; }
-    public List<int>  MovedIds        { get; set; } = new();
-    public int        Iterations      { get; set; }
-    public int        RemainingOverlaps { get; set; }
+    public int        MarksMovedCount      { get; set; }
+    public List<int>  MovedIds             { get; set; } = new();
+    public int        Iterations           { get; set; }
+    public int        RemainingOverlaps    { get; set; }
 }
