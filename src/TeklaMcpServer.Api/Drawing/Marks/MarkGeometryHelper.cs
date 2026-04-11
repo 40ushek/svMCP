@@ -3,9 +3,9 @@ using Tekla.Structures.Model;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-// Compatibility facade. Canonical geometry resolution lives in MarkGeometryResolver.
-// Keep this public wrapper so TeklaBridge (cross-assembly) can call Build() without
-// accessing internal MarkGeometryResolver directly.
+// Public bridge entry point for TeklaBridge (net48), which cannot access internal
+// MarkGeometryResolver directly. All code within TeklaMcpServer.Api should call
+// MarkGeometryResolver.Build() instead.
 public static class MarkGeometryHelper
 {
     public static MarkGeometryInfo Build(Mark mark, Model model, int? viewId = null)

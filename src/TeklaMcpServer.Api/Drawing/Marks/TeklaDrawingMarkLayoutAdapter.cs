@@ -215,7 +215,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
         centerY = 0.0;
         try
         {
-            var geometry = MarkGeometryHelper.Build(mark, model, viewId);
+            var geometry = MarkGeometryResolver.Build(mark, model, viewId);
             insertionPoint = mark.InsertionPoint;
             centerX = geometry.CenterX;
             centerY = geometry.CenterY;
