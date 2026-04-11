@@ -126,6 +126,7 @@ public sealed partial class TeklaDrawingMarkApi
                     continue;
                 }
 
+                var viewContext = BuildDrawingViewContext(view);
                 var arrange = Stopwatch.StartNew();
                 var layoutResult = engine.Arrange(
                     markEntries.Select(x => x.Item),
@@ -137,6 +138,7 @@ public sealed partial class TeklaDrawingMarkApi
                         MaxDistanceFromAnchor = 600.0,
                         CandidateDistanceMultipliers = new[] { 1.0, 2.0, 4.0, 8.0, 16.0 },
                         LeaderLengthWeight = 15.0,
+                        ViewContext = viewContext
                     });
                 arrange.Stop();
 
@@ -165,5 +167,16 @@ public sealed partial class TeklaDrawingMarkApi
             PerfTrace.Write("api-mark", "arrange_marks_total", total.ElapsedMilliseconds, $"gap={gap.ToString(CultureInfo.InvariantCulture)}");
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
+    }
+
+    private DrawingViewContext BuildDrawingViewContext(View view)
+    {
+        var viewId = view.GetIdentifier().ID;
+        var viewScale = MarksViewContextBuilder.ResolveViewScale(view);
+        var builder = new DrawingViewContextBuilder(
+            new TeklaDrawingPartGeometryApi(_model),
+            new TeklaDrawingBoltGeometryApi(_model),
+            new TeklaDrawingGridApi());
+        return builder.Build(viewId, viewScale);
     }
 }

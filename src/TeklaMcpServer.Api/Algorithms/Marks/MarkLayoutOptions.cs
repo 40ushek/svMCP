@@ -1,4 +1,5 @@
 using System.Linq;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -45,6 +46,8 @@ public sealed class MarkLayoutOptions
     public bool EnableOverlapResolver { get; set; } = true;
 
     public int MaxResolverIterations { get; set; } = 10;
+
+    internal DrawingViewContext? ViewContext { get; set; }
 
     private static double[] NormalizeCandidateDistanceMultipliers(double[]? values)
     {
