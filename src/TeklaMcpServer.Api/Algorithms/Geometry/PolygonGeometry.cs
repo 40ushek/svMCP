@@ -109,7 +109,7 @@ public static class PolygonGeometry
             var next = polygon[(i + 1) % polygon.Count];
 
             var intersects = ((current[1] > y) != (next[1] > y)) &&
-                             (x < (((next[0] - current[0]) * (y - current[1])) / ((next[1] - current[1]) + Epsilon)) + current[0]);
+                             (x < (((next[0] - current[0]) * (y - current[1])) / (next[1] - current[1])) + current[0]);
             if (intersects)
                 inside = !inside;
         }

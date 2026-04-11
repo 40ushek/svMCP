@@ -110,6 +110,20 @@ internal static class MarkSourceResolver
         return true;
     }
 
+    internal static Dictionary<int, List<double[]>> BuildPartPolygons(IReadOnlyList<PartGeometryInViewResult> parts)
+    {
+        var result = new Dictionary<int, List<double[]>>();
+        foreach (var part in parts.Where(static part => part.Success && part.ModelId > 0))
+        {
+            if (!TryResolvePartPolygon(part, out var polygon))
+                continue;
+
+            result[part.ModelId] = polygon;
+        }
+
+        return result;
+    }
+
     internal static bool TryResolvePartPolygon(
         PartGeometryInViewResult part,
         out List<double[]> polygon)

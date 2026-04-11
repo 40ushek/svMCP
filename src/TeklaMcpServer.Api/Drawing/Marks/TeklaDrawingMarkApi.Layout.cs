@@ -141,7 +141,8 @@ public sealed partial class TeklaDrawingMarkApi
                         MaxDistanceFromAnchor = 600.0,
                         CandidateDistanceMultipliers = new[] { 1.0, 2.0, 4.0, 8.0, 16.0 },
                         LeaderLengthWeight = 15.0,
-                        ViewContext = viewContext
+                        ViewContext = viewContext,
+                        PartPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts)
                     });
                 arrange.Stop();
 

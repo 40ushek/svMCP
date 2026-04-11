@@ -140,12 +140,12 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
             item.SourceKind != MarkLayoutSourceKind.Part ||
             !item.SourceModelId.HasValue ||
             options.SourceOutsideOwnPartPenalty <= 0 ||
-            options.ViewContext == null)
+            options.PartPolygonsByModelId.Count == 0)
         {
             return 0;
         }
 
-        if (!MarkSourceResolver.TryResolvePartPolygon(options.ViewContext.Parts, item.SourceModelId.Value, out var polygon))
+        if (!options.PartPolygonsByModelId.TryGetValue(item.SourceModelId.Value, out var polygon))
             return 0;
 
         return PolygonGeometry.ContainsPoint(polygon, candidate.X, candidate.Y)
@@ -162,21 +162,18 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
             item.SourceKind != MarkLayoutSourceKind.Part ||
             !item.SourceModelId.HasValue ||
             options.ForeignPartOverlapPenalty <= 0 ||
-            options.ViewContext == null)
+            options.PartPolygonsByModelId.Count == 0)
         {
             return 0;
         }
 
         var overlapCount = 0;
-        foreach (var part in options.ViewContext.Parts)
+        foreach (var pair in options.PartPolygonsByModelId)
         {
-            if (!part.Success || part.ModelId == item.SourceModelId.Value)
+            if (pair.Key == item.SourceModelId.Value)
                 continue;
 
-            if (!MarkSourceResolver.TryResolvePartPolygon(part, out var partPolygon))
-                continue;
-
-            if (PolygonGeometry.Intersects(candidatePolygon, partPolygon))
+            if (PolygonGeometry.Intersects(candidatePolygon, pair.Value))
                 overlapCount++;
         }
 

@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Collections.Generic;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
@@ -54,6 +55,8 @@ public sealed class MarkLayoutOptions
     public int MaxResolverIterations { get; set; } = 10;
 
     internal DrawingViewContext? ViewContext { get; set; }
+
+    internal Dictionary<int, List<double[]>> PartPolygonsByModelId { get; set; } = [];
 
     private static double[] NormalizeCandidateDistanceMultipliers(double[]? values)
     {
