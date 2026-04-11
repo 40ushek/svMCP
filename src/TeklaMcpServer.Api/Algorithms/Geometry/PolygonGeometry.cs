@@ -94,6 +94,29 @@ public static class PolygonGeometry
                secondMaxY > firstMinY;
     }
 
+    public static bool ContainsPoint(
+        IReadOnlyList<double[]> polygon,
+        double x,
+        double y)
+    {
+        if (polygon.Count < 3)
+            return false;
+
+        var inside = false;
+        for (var i = 0; i < polygon.Count; i++)
+        {
+            var current = polygon[i];
+            var next = polygon[(i + 1) % polygon.Count];
+
+            var intersects = ((current[1] > y) != (next[1] > y)) &&
+                             (x < (((next[0] - current[0]) * (y - current[1])) / ((next[1] - current[1]) + Epsilon)) + current[0]);
+            if (intersects)
+                inside = !inside;
+        }
+
+        return inside;
+    }
+
     private static bool HasSeparatingAxis(IReadOnlyList<double[]> polygonA, IReadOnlyList<double[]> polygonB)
     {
         for (var i = 0; i < polygonA.Count; i++)

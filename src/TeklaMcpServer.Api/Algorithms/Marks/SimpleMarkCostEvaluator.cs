@@ -25,6 +25,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         score += Distance(candidate.X, candidate.Y, item.CurrentX, item.CurrentY) * options.CurrentPositionWeight;
         score += Distance(candidate.X, candidate.Y, item.AnchorX, item.AnchorY) * options.AnchorDistanceWeight;
         score += CalculateSourceDistancePenalty(candidate, item, options);
+        score += CalculateOwnPartContainmentPenalty(candidate, item, options);
         score += CalculatePreferredSidePenalty(candidate, item, options);
 
         if (item.HasLeaderLine)
@@ -126,6 +127,28 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
                    item.SourceCenterX!.Value,
                    item.SourceCenterY!.Value)
                * options.SourceDistanceWeight;
+    }
+
+    private static double CalculateOwnPartContainmentPenalty(
+        MarkCandidate candidate,
+        MarkLayoutItem item,
+        MarkLayoutOptions options)
+    {
+        if (item.HasLeaderLine ||
+            item.SourceKind != MarkLayoutSourceKind.Part ||
+            !item.SourceModelId.HasValue ||
+            options.SourceOutsideOwnPartPenalty <= 0 ||
+            options.ViewContext == null)
+        {
+            return 0;
+        }
+
+        if (!MarkSourceResolver.TryResolvePartPolygon(options.ViewContext.Parts, item.SourceModelId.Value, out var polygon))
+            return 0;
+
+        return PolygonGeometry.ContainsPoint(polygon, candidate.X, candidate.Y)
+            ? 0
+            : options.SourceOutsideOwnPartPenalty;
     }
 
     private static double CalculatePreferredSidePenalty(

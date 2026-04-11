@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
+using Tekla.Structures.Geometry3d;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -87,6 +89,27 @@ internal static class MarkSourceResolver
         return TryResolveVertexBoundsCenter(part.SolidVertices, out centerX, out centerY);
     }
 
+    internal static bool TryResolvePartPolygon(
+        IReadOnlyList<PartGeometryInViewResult> parts,
+        int modelId,
+        out List<double[]> polygon)
+    {
+        polygon = [];
+
+        var part = parts.FirstOrDefault(candidate => candidate.Success && candidate.ModelId == modelId);
+        if (part == null)
+            return false;
+
+        var hullPoints = BuildPartHull(part);
+        if (hullPoints.Count < 3)
+            return false;
+
+        polygon = hullPoints
+            .Select(static point => new[] { point.X, point.Y })
+            .ToList();
+        return true;
+    }
+
     internal static bool TryResolveBoltCenter(
         IReadOnlyList<BoltGroupGeometry> bolts,
         int modelId,
@@ -126,6 +149,23 @@ internal static class MarkSourceResolver
 
     private static MarkSourceReference CreateReference(MarkLayoutSourceKind kind, int modelId) =>
         new(kind, modelId > 0 ? modelId : null);
+
+    private static IReadOnlyList<Point> BuildPartHull(PartGeometryInViewResult part)
+    {
+        var sourcePoints = new List<Point>();
+        foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
+            sourcePoints.Add(new Point(vertex[0], vertex[1], vertex.Length > 2 ? vertex[2] : 0.0));
+
+        if (sourcePoints.Count == 0 && part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
+        {
+            sourcePoints.Add(new Point(part.BboxMin[0], part.BboxMin[1], 0.0));
+            sourcePoints.Add(new Point(part.BboxMin[0], part.BboxMax[1], 0.0));
+            sourcePoints.Add(new Point(part.BboxMax[0], part.BboxMax[1], 0.0));
+            sourcePoints.Add(new Point(part.BboxMax[0], part.BboxMin[1], 0.0));
+        }
+
+        return sourcePoints.Count == 0 ? [] : ConvexHull.Compute(sourcePoints);
+    }
 
     private static bool TryResolveBoundsCenter(
         IReadOnlyList<double> min,

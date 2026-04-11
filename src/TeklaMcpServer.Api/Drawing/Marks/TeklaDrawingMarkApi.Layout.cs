@@ -136,6 +136,7 @@ public sealed partial class TeklaDrawingMarkApi
                         CurrentPositionWeight = 1.2,
                         AnchorDistanceWeight = 2.5,
                         SourceDistanceWeight = 1.25,
+                        SourceOutsideOwnPartPenalty = 150.0,
                         MaxDistanceFromAnchor = 600.0,
                         CandidateDistanceMultipliers = new[] { 1.0, 2.0, 4.0, 8.0, 16.0 },
                         LeaderLengthWeight = 15.0,

@@ -118,4 +118,50 @@ public sealed class MarkSourceResolverTests
         Assert.Equal(10.0, centerX, 3);
         Assert.Equal(20.0, centerY, 3);
     }
+
+    [Fact]
+    public void TryResolvePartPolygon_UsesSolidVerticesHull_WhenAvailable()
+    {
+        var parts = new List<PartGeometryInViewResult>
+        {
+            new()
+            {
+                Success = true,
+                ModelId = 42,
+                SolidVertices =
+                {
+                    new[] { 0.0, 0.0 },
+                    new[] { 10.0, 0.0 },
+                    new[] { 10.0, 10.0 },
+                    new[] { 0.0, 10.0 },
+                    new[] { 5.0, 5.0 }
+                }
+            }
+        };
+
+        var resolved = MarkSourceResolver.TryResolvePartPolygon(parts, 42, out var polygon);
+
+        Assert.True(resolved);
+        Assert.Equal(4, polygon.Count);
+    }
+
+    [Fact]
+    public void TryResolvePartPolygon_FallsBackToBoundingBox()
+    {
+        var parts = new List<PartGeometryInViewResult>
+        {
+            new()
+            {
+                Success = true,
+                ModelId = 42,
+                BboxMin = [10.0, 20.0],
+                BboxMax = [30.0, 60.0]
+            }
+        };
+
+        var resolved = MarkSourceResolver.TryResolvePartPolygon(parts, 42, out var polygon);
+
+        Assert.True(resolved);
+        Assert.Equal(4, polygon.Count);
+    }
 }

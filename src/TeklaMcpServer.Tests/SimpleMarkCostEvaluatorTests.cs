@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TeklaMcpServer.Api.Algorithms.Marks;
+using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
@@ -75,5 +76,53 @@ public sealed class SimpleMarkCostEvaluatorTests
         var right = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 120, Y = 100 }, new List<MarkLayoutPlacement>(), options);
 
         Assert.Equal(left, right, 6);
+    }
+
+    [Fact]
+    public void EvaluateCandidate_PrefersCandidateInsideOwnPartGeometry_ForNonLeaderPartMark()
+    {
+        var evaluator = new SimpleMarkCostEvaluator();
+        var item = new MarkLayoutItem
+        {
+            Id = 1,
+            CurrentX = 100,
+            CurrentY = 100,
+            AnchorX = 100,
+            AnchorY = 100,
+            Width = 20,
+            Height = 10,
+            SourceKind = MarkLayoutSourceKind.Part,
+            SourceModelId = 42,
+            SourceCenterX = 100,
+            SourceCenterY = 100,
+            CanMove = true
+        };
+        var viewContext = new DrawingViewContext();
+        viewContext.Parts.Add(new PartGeometryInViewResult
+        {
+            Success = true,
+            ModelId = 42,
+            BboxMin = [80.0, 80.0],
+            BboxMax = [120.0, 120.0]
+        });
+
+        var options = new MarkLayoutOptions
+        {
+            CurrentPositionWeight = 0,
+            AnchorDistanceWeight = 0,
+            SourceDistanceWeight = 0,
+            SourceOutsideOwnPartPenalty = 100.0,
+            CandidatePriorityWeight = 0,
+            CrowdingPenaltyWeight = 0,
+            PreferredSidePenaltyWeight = 0,
+            LeaderLengthWeight = 0,
+            OverlapPenalty = 0,
+            ViewContext = viewContext
+        };
+
+        var inside = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 100, Y = 100 }, new List<MarkLayoutPlacement>(), options);
+        var outside = evaluator.EvaluateCandidate(item, new MarkCandidate { X = 140, Y = 100 }, new List<MarkLayoutPlacement>(), options);
+
+        Assert.True(inside < outside);
     }
 }
