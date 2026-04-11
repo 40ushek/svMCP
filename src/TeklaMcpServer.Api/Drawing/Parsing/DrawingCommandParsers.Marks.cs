@@ -90,4 +90,23 @@ public static partial class DrawingCommandParsers
 
     public static NonNegativeDoubleParseResult ParseResolveMarkOverlapsMargin(string[] args) =>
         ParseOptionalNonNegativeDoubleArg(args, 1, 2.0, "margin");
+
+    public static MoveMarkParseResult ParseMoveMarkRequest(string[] args)
+    {
+        if (args.Length < 4 || !int.TryParse(args[1], out var markId))
+            return MoveMarkParseResult.Fail("Usage: move_mark <markId> <insertionX> <insertionY>");
+
+        if (!double.TryParse(args[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var insertionX))
+            return MoveMarkParseResult.Fail("insertionX must be a number");
+
+        if (!double.TryParse(args[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var insertionY))
+            return MoveMarkParseResult.Fail("insertionY must be a number");
+
+        return MoveMarkParseResult.Success(new MoveMarkRequest
+        {
+            MarkId = markId,
+            InsertionX = insertionX,
+            InsertionY = insertionY
+        });
+    }
 }

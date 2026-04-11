@@ -9,6 +9,7 @@ public interface IDrawingMarkApi
     GetMarksResult    GetMarks(int? viewId);
     ResolveMarksResult ResolveMarkOverlaps(double margin);
     ResolveMarksResult ArrangeMarks(double gap);
+    MoveMarkResult MoveMark(int markId, double insertionX, double insertionY);
 
     CreateMarksResult CreatePartMarks(string contentAttributesCsv, string markAttributesFile, string frameType, string arrowheadType);
     DeleteAllMarksResult DeleteAllMarks();

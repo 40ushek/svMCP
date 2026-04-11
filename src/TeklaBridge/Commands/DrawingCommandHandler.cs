@@ -86,6 +86,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
 
             case "arrange_marks":
             case "arrange_marks_no_collisions":
+            case "move_mark":
             case "create_part_marks":
             case "set_mark_content":
             case "delete_all_marks":

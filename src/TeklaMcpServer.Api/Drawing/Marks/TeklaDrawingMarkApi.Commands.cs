@@ -9,6 +9,53 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingMarkApi
 {
+    public MoveMarkResult MoveMark(int markId, double insertionX, double insertionY)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            Mark? targetMark = null;
+            var drawingObjects = activeDrawing.GetSheet().GetAllObjects();
+            while (drawingObjects.MoveNext())
+            {
+                if (drawingObjects.Current is not Mark mark)
+                    continue;
+
+                if (mark.GetIdentifier().ID != markId)
+                    continue;
+
+                targetMark = mark;
+                break;
+            }
+
+            if (targetMark == null)
+                throw new Exception($"Mark {markId} not found");
+
+            targetMark.InsertionPoint = new Point(insertionX, insertionY, 0);
+            if (!targetMark.Modify())
+                throw new Exception($"Mark {markId} modify failed");
+
+            activeDrawing.CommitChanges("(MCP) MoveMark");
+
+            return new MoveMarkResult
+            {
+                Moved = true,
+                MarkId = markId,
+                InsertionX = insertionX,
+                InsertionY = insertionY
+            };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     public CreateMarksResult CreatePartMarks(string contentAttributesCsv, string markAttributesFile, string frameType, string arrowheadType)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();

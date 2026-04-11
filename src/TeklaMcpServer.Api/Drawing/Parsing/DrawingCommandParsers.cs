@@ -316,6 +316,26 @@ public sealed class MoveDimensionRequest
     public double Delta { get; set; }
 }
 
+public sealed class MoveMarkRequest
+{
+    public int MarkId { get; set; }
+    public double InsertionX { get; set; }
+    public double InsertionY { get; set; }
+}
+
+public sealed class MoveMarkParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public MoveMarkRequest Request { get; private set; } = new();
+
+    public static MoveMarkParseResult Success(MoveMarkRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static MoveMarkParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
 public sealed class MoveDimensionParseResult
 {
     public bool IsValid { get; private set; }

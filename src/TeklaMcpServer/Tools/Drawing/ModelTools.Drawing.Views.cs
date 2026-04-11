@@ -241,6 +241,34 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Move one drawing mark by drawing object ID to a new insertion point.")]
+    public static string MoveMark(
+        [Description("Drawing mark ID from get_drawing_marks")] int markId,
+        [Description("New insertion X in view-local drawing coordinates")] double insertionX,
+        [Description("New insertion Y in view-local drawing coordinates")] double insertionY)
+    {
+        if (markId <= 0)
+            return "Error: 'markId' must be a positive integer.";
+
+        var json = RunBridge(
+            "move_mark",
+            markId.ToString(CultureInfo.InvariantCulture),
+            insertionX.ToString(CultureInfo.InvariantCulture),
+            insertionY.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("One command for mark collision cleanup: runs arrange_marks, then resolve_mark_overlaps repeatedly until no overlaps remain or maxPasses is reached.")]
     public static string ArrangeMarksNoCollisions(
         [Description("Minimum gap for arrange_marks (mm). Default: 2.")] double gap = 2.0,
