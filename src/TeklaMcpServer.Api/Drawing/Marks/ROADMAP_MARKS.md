@@ -342,25 +342,25 @@ layout/collision geometry.
 
 ### Phase 5. Leader geometry snapshot and candidate selection
 
-Следующий практический бакет:
+Phase 5 частично реализована.
 
-- ввести отдельный internal runtime block для leader geometry по аналогии с reference-tooling:
+Уже выполнено:
+
+- введён отдельный internal runtime block для leader geometry:
   - `AnchorPoint`
   - `LeaderEndPoint`
   - `InsertionPoint`
   - `LeaderLines`
   - `LeaderLength`
   - `Delta`
-- не смешивать этот слой с `DrawingMarkInfo`;
-- не тащить сразу full evaluator;
-- сначала собрать factual runtime snapshot лидера;
-- затем добавить маленький candidate-based selector для leader shape / anchor pair.
+- этот слой не смешан с `DrawingMarkInfo`;
+- собран factual runtime snapshot лидера;
+- добавлен маленький candidate-based selector для выбора anchor на ближайшей грани.
 
-Именно здесь должны появиться:
+Что остаётся в рамках Phase 5:
 
-- несколько candidate points на ближайшей грани;
-- выбор лучшей пары `part anchor <-> mark body point`;
-- первые style modes:
+- перейти от выбора только `anchor point` к совместному выбору пары `part anchor <-> mark body point / leader end`;
+- после этого добавить первые style modes:
   - straight
   - angled
   - horizontal elbow
@@ -368,15 +368,17 @@ layout/collision geometry.
 
 Рекомендуемая последовательность реализации:
 
-#### Step 5.1. Internal leader runtime snapshot
+#### Step 5.1. Internal leader runtime snapshot — completed
 
-- ввести отдельный internal block для factual leader geometry;
-- держать его как отдельный `LeaderSnapshot` рядом с `MarkContext`, а не смешивать всё прямо в `MarkContext`;
-- собирать его из runtime `LeaderLine`, `LeaderLinePlacing`, `InsertionPoint`;
-- не смешивать его с `DrawingMarkInfo` и не тащить в public DTO заранее;
-- использовать как вход для последующих leader-shape algorithms.
+Выполнено:
 
-Минимальный состав snapshot:
+- введён отдельный internal block для factual leader geometry;
+- он хранится как отдельный `LeaderSnapshot` рядом с `MarkContext`;
+- snapshot собирается из runtime `LeaderLine`, `LeaderLinePlacing`, `InsertionPoint`;
+- он не смешан с `DrawingMarkInfo` и не вынесен в public DTO;
+- используется как factual input для последующих leader-shape algorithms.
+
+Текущий состав snapshot:
 
 - `MarkId`
 - `AnchorPoint`
@@ -386,30 +388,37 @@ layout/collision geometry.
 - `LeaderLength`
 - `Delta = InsertionPoint - LeaderEndPoint`
 
-#### Step 5.2. Candidate points on nearest edge
+#### Step 5.2. Candidate points on nearest edge — completed
 
-- для текущей ближайшей грани детали строить не одну точку, а небольшой набор кандидатов;
+Выполнено:
+
+- для текущей ближайшей грани детали строится не одна точка, а небольшой набор кандидатов;
 - минимум:
   - nearest point
   - point shifted left along edge
   - point shifted right along edge
-- для каждой candidate point сохранять:
+- для каждой candidate point сохраняются:
   - inward anchor
   - corner distance
   - far-edge clearance
-  - line length to mark body.
+  - line length to fixed `LeaderEndPoint`
 
-#### Step 5.3. Candidate-based pair selection
+#### Step 5.3. Candidate-based pair selection — partially completed
 
-- оценивать не только точку anchor на детали, но пару:
+Текущая реализованная версия уже использует маленький deterministic score, но только для выбора лучшего `anchor` при фиксированном `LeaderEndPoint`:
+
+- shorter line is better
+- less corner-adjacent is better
+- larger far-edge clearance is better
+- tie-breaker: nearest, then shifted-left, then shifted-right
+
+Что ещё не сделано в полном Step 5.3:
+
+- оценивать уже не только `anchor`, а полную пару:
   - `part anchor point`
   - `mark body point` / `leader end point`
-- для первого шага использовать маленький deterministic score:
-  - shorter line is better
-  - less corner-adjacent is better
-  - larger far-edge clearance is better
-  - fewer awkward acute angles is better
-- не вводить full evaluator framework на этом шаге.
+- добавить явный angle/style preference поверх длины линии;
+- по-прежнему не вводить full evaluator framework на этом шаге.
 
 #### Step 5.4. First leader shape modes
 
@@ -500,28 +509,37 @@ layout/collision geometry.
 - corner avoidance;
 - far-edge clearance.
 
+**Что уже реализовано сверх базовой версии:**
+
+- internal `LeaderSnapshot` / `LeaderLineSnapshot`;
+- shared `MarkLeaderLineReader`;
+- 3 candidate points на той же ближайшей грани:
+  - nearest
+  - shifted-left
+  - shifted-right
+- deterministic best-anchor selection against fixed `LeaderEndPoint`.
+
 **Что ещё не реализовано:**
 
-- выбор из нескольких candidate points на одной грани;
 - совместный выбор пары `anchor point` + `leader end point`;
 - explicit leader-shape modes (`angled`, `horz elbow`, `vert elbow`);
 - angle/style preference в public command surface.
 
-Для этого нужны:
-- отдельный internal leader snapshot/runtime model;
-- candidate-based selection around nearest edge;
+Для этого ещё нужны:
+- full pair-selection поверх уже существующего snapshot/candidate layer;
+- explicit leader-shape selection;
 - optional reuse of practical ideas from local reference project `markAligner/` (`TeklaMarksEditor.Logic.AlignMarks`, `Annotation`).
 
 ## Следующий практический шаг
 
 Следующий практический шаг:
 
-- internal leader geometry snapshot
-- candidate-based leader shape / anchor selection
+- full pair-selection для `anchor point` + `leader end point / mark body point`
+- затем explicit leader-shape modes
 
 В рабочем порядке это значит:
 
-1. Сначала собрать internal leader snapshot layer.
-2. Затем добавить 3-point candidate selection на ближайшей грани.
-3. После этого перейти к выбору лучшей пары `anchor <-> leader end`.
+1. `LeaderSnapshot` layer уже есть.
+2. `3-point candidate selection` на ближайшей грани уже есть.
+3. Следующий шаг — перейти к выбору лучшей пары `anchor <-> leader end/body point`.
 4. И только потом добавлять `angled` / `horz elbow` / `vert elbow` modes.
