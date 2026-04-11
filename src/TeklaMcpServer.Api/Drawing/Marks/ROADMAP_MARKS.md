@@ -371,6 +371,7 @@ layout/collision geometry.
 #### Step 5.1. Internal leader runtime snapshot
 
 - ввести отдельный internal block для factual leader geometry;
+- держать его как отдельный `LeaderSnapshot` рядом с `MarkContext`, а не смешивать всё прямо в `MarkContext`;
 - собирать его из runtime `LeaderLine`, `LeaderLinePlacing`, `InsertionPoint`;
 - не смешивать его с `DrawingMarkInfo` и не тащить в public DTO заранее;
 - использовать как вход для последующих leader-shape algorithms.
@@ -383,7 +384,7 @@ layout/collision geometry.
 - `InsertionPoint`
 - `LeaderLines`
 - `LeaderLength`
-- `Delta`
+- `Delta = InsertionPoint - LeaderEndPoint`
 
 #### Step 5.2. Candidate points on nearest edge
 
