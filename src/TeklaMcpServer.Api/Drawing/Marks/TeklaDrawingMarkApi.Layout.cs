@@ -119,7 +119,8 @@ public sealed partial class TeklaDrawingMarkApi
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
                 var viewContext = BuildDrawingViewContext(view);
-                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model, viewContext);
+                var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
                 collect.Stop();
                 if (markEntries.Count == 0)
                 {

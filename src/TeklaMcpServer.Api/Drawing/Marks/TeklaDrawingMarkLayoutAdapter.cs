@@ -22,6 +22,7 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 internal static class TeklaDrawingMarkLayoutAdapter
 {
     private const double MovementVerificationEpsilon = 0.05;
+    private const double LayoutBoundsMargin = 10.0;
 
     public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view, Model model, DrawingViewContext? viewContext = null)
     {
@@ -155,6 +156,89 @@ internal static class TeklaDrawingMarkLayoutAdapter
         return entries;
     }
 
+    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(
+        View view,
+        MarksViewContext marksViewContext,
+        DrawingViewContext? viewContext = null)
+    {
+        var entries = new List<TeklaDrawingMarkLayoutEntry>();
+        var contextsById = marksViewContext.Marks.ToDictionary(item => item.MarkId);
+        var markEnum = view.GetAllObjects(typeof(Mark));
+        while (markEnum.MoveNext())
+        {
+            if (markEnum.Current is not Mark mark)
+                continue;
+
+            var markId = mark.GetIdentifier().ID;
+            if (!contextsById.TryGetValue(markId, out var markContext))
+                continue;
+
+            if (!TryCreateLayoutItem(markContext, marksViewContext, viewContext, out var item))
+                continue;
+
+            entries.Add(new TeklaDrawingMarkLayoutEntry
+            {
+                Mark = mark,
+                ViewId = marksViewContext.ViewId ?? view.GetIdentifier().ID,
+                CenterX = item.CurrentX,
+                CenterY = item.CurrentY,
+                Item = item
+            });
+        }
+
+        return entries;
+    }
+
+    internal static bool TryCreateLayoutItem(
+        MarkContext markContext,
+        MarksViewContext marksViewContext,
+        DrawingViewContext? viewContext,
+        out MarkLayoutItem item)
+    {
+        item = null!;
+
+        var center = markContext.CurrentCenter ?? markContext.Geometry.Center;
+        var bounds = markContext.Geometry.Bounds;
+        if (center == null || bounds == null)
+            return false;
+
+        if (markContext.Geometry.Width < 0.1 && markContext.Geometry.Height < 0.1)
+            return false;
+
+        var localCorners = markContext.Geometry.Corners
+            .Select(corner => new[] { corner.X - center.X, corner.Y - center.Y })
+            .ToList();
+
+        var source = CreateSourceReference(markContext);
+        var hasSourceCenter = MarkSourceResolver.TryResolveCenter(source, viewContext, out var sourceCenterX, out var sourceCenterY);
+        var viewBounds = marksViewContext.ViewBounds;
+        item = new MarkLayoutItem
+        {
+            Id = markContext.MarkId,
+            AnchorX = markContext.Anchor?.X ?? center.X,
+            AnchorY = markContext.Anchor?.Y ?? center.Y,
+            CurrentX = center.X,
+            CurrentY = center.Y,
+            Width = markContext.Geometry.Width,
+            Height = markContext.Geometry.Height,
+            HasLeaderLine = markContext.HasLeaderLine,
+            HasAxis = TryGetAxisDirection(markContext, out var axisDx, out var axisDy),
+            AxisDx = axisDx,
+            AxisDy = axisDy,
+            CanMove = markContext.CanMove,
+            LocalCorners = localCorners,
+            BoundsMinX = (viewBounds?.MinX ?? 0.0) - LayoutBoundsMargin,
+            BoundsMaxX = (viewBounds?.MaxX ?? 0.0) + LayoutBoundsMargin,
+            BoundsMinY = (viewBounds?.MinY ?? 0.0) - LayoutBoundsMargin,
+            BoundsMaxY = (viewBounds?.MaxY ?? 0.0) + LayoutBoundsMargin,
+            SourceKind = source.Kind,
+            SourceModelId = source.ModelId,
+            SourceCenterX = hasSourceCenter ? sourceCenterX : null,
+            SourceCenterY = hasSourceCenter ? sourceCenterY : null,
+        };
+        return true;
+    }
+
     public static List<int> ApplyPlacements(
         IReadOnlyList<TeklaDrawingMarkLayoutEntry> entries,
         IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById,
@@ -234,5 +318,27 @@ internal static class TeklaDrawingMarkLayoutAdapter
         {
             return false;
         }
+    }
+
+    private static MarkSourceReference CreateSourceReference(MarkContext markContext)
+    {
+        var hasSourceKind = Enum.TryParse<MarkLayoutSourceKind>(markContext.SourceKind, ignoreCase: true, out var sourceKind);
+        return new MarkSourceReference(hasSourceKind ? sourceKind : MarkLayoutSourceKind.Unknown, markContext.ModelId);
+    }
+
+    private static bool TryGetAxisDirection(MarkContext markContext, out double axisDx, out double axisDy)
+    {
+        axisDx = 0.0;
+        axisDy = 0.0;
+
+        if (!string.Equals(markContext.PlacingType, nameof(BaseLinePlacing), StringComparison.Ordinal) ||
+            markContext.Axis?.Direction == null)
+        {
+            return false;
+        }
+
+        axisDx = markContext.Axis.Direction.X;
+        axisDy = markContext.Axis.Direction.Y;
+        return Math.Abs(axisDx) >= 0.001 || Math.Abs(axisDy) >= 0.001;
     }
 }
