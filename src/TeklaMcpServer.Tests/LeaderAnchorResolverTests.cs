@@ -22,6 +22,7 @@ public sealed class LeaderAnchorResolverTests
             bodyCenterX: 140.0,
             bodyCenterY: 25.0,
             depthMm: 10.0,
+            minFarEdgeClearanceMm: 2.0,
             out var anchorX,
             out var anchorY);
 
@@ -47,6 +48,7 @@ public sealed class LeaderAnchorResolverTests
             bodyCenterX: 40.0,
             bodyCenterY: 20.0,
             depthMm: 10.0,
+            minFarEdgeClearanceMm: 2.0,
             out var anchorX,
             out var anchorY);
 
@@ -71,9 +73,36 @@ public sealed class LeaderAnchorResolverTests
             bodyCenterX: 100.0,
             bodyCenterY: 20.0,
             depthMm: 10.0,
+            minFarEdgeClearanceMm: 2.0,
             out _,
             out _);
 
         Assert.False(resolved);
+    }
+
+    [Fact]
+    public void TryResolveAnchorTarget_LeavesClearanceFromFarEdge()
+    {
+        var polygon = new[]
+        {
+            new[] { 0.0, 0.0 },
+            new[] { 12.0, 0.0 },
+            new[] { 12.0, 40.0 },
+            new[] { 0.0, 40.0 }
+        };
+
+        var resolved = LeaderAnchorResolver.TryResolveAnchorTarget(
+            polygon,
+            bodyCenterX: 30.0,
+            bodyCenterY: 20.0,
+            depthMm: 10.0,
+            minFarEdgeClearanceMm: 5.0,
+            out var anchorX,
+            out var anchorY);
+
+        Assert.True(resolved);
+        Assert.True(PolygonGeometry.ContainsPoint(polygon, anchorX, anchorY));
+        Assert.Equal(5.0, anchorX, 6);
+        Assert.Equal(20.0, anchorY, 6);
     }
 }

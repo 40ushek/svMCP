@@ -12,6 +12,8 @@ internal sealed class TeklaDrawingMarkLayoutEntry
 
     public int ViewId { get; set; }
 
+    public double ViewScale { get; set; }
+
     public MarkLayoutItem Item { get; set; } = null!;
 
     public double CenterX { get; set; }
@@ -23,7 +25,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
 {
     private const double MovementVerificationEpsilon = 0.05;
     private const double LayoutBoundsMargin = 10.0;
-    private const double LeaderAnchorDepthMm = 10.0;
+    private const double LeaderAnchorDepthPaperMm = 10.0;
+    private const double LeaderAnchorFarEdgeClearancePaperMm = 5.0;
     private const double LeaderAnchorNoOpEpsilon = 0.5;
 
     public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(
@@ -50,6 +53,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
             {
                 Mark = mark,
                 ViewId = marksViewContext.ViewId ?? view.GetIdentifier().ID,
+                ViewScale = marksViewContext.ViewScale,
                 CenterX = item.CurrentX,
                 CenterY = item.CurrentY,
                 Item = item
@@ -181,11 +185,13 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
             }
 
+            var viewScale = entry.ViewScale > 0 ? entry.ViewScale : 1.0;
             if (!LeaderAnchorResolver.TryResolveAnchorTarget(
                     polygon,
                     entry.CenterX,
                     entry.CenterY,
-                    LeaderAnchorDepthMm,
+                    LeaderAnchorDepthPaperMm * viewScale,
+                    LeaderAnchorFarEdgeClearancePaperMm * viewScale,
                     out var targetX,
                     out var targetY))
                 continue;
@@ -207,6 +213,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
         return updatedIds;
     }
+
 
     private static bool TryReloadMarkState(
         Mark mark,

@@ -9,12 +9,14 @@ internal static class LeaderAnchorResolver
 {
     private const double MinDepthMm = 0.5;
     private const double CornerClearanceMm = 2.0;
+    private const double IntersectionEpsilon = 0.001;
 
     internal static bool TryResolveAnchorTarget(
         IReadOnlyList<double[]> polygon,
         double bodyCenterX,
         double bodyCenterY,
         double depthMm,
+        double minFarEdgeClearanceMm,
         out double anchorX,
         out double anchorY)
     {
@@ -42,7 +44,14 @@ internal static class LeaderAnchorResolver
         if (!TryResolveInwardNormal(polygon, baseX, baseY, unitEdgeX, unitEdgeY, depthMm, out var inwardNx, out var inwardNy))
             return false;
 
-        var offset = depthMm;
+        if (!TryResolveAvailableDepth(polygon, baseX, baseY, inwardNx, inwardNy, out var availableDepth))
+            return false;
+
+        var maxOffset = availableDepth - Math.Max(minFarEdgeClearanceMm, 0.0);
+        var offset = maxOffset >= MinDepthMm
+            ? Math.Min(depthMm, maxOffset)
+            : Math.Min(depthMm, availableDepth * 0.5);
+
         while (offset >= MinDepthMm)
         {
             var candidateX = baseX + (inwardNx * offset);
@@ -58,6 +67,41 @@ internal static class LeaderAnchorResolver
         }
 
         return false;
+    }
+
+    private static bool TryResolveAvailableDepth(
+        IReadOnlyList<double[]> polygon,
+        double originX,
+        double originY,
+        double directionX,
+        double directionY,
+        out double availableDepth)
+    {
+        availableDepth = double.MaxValue;
+
+        for (var i = 0; i < polygon.Count; i++)
+        {
+            var start = polygon[i];
+            var end = polygon[(i + 1) % polygon.Count];
+            if (!TryIntersectRayWithSegment(
+                    originX,
+                    originY,
+                    directionX,
+                    directionY,
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    out var distance))
+            {
+                continue;
+            }
+
+            if (distance < availableDepth)
+                availableDepth = distance;
+        }
+
+        return availableDepth < double.MaxValue;
     }
 
     private static bool TryFindNearestEdgeHit(
@@ -195,6 +239,38 @@ internal static class LeaderAnchorResolver
         t = Math.Max(0.0, Math.Min(1.0, t));
         return (ax + (abx * t), ay + (aby * t));
     }
+
+    private static bool TryIntersectRayWithSegment(
+        double rayOriginX,
+        double rayOriginY,
+        double rayDirectionX,
+        double rayDirectionY,
+        double segmentStartX,
+        double segmentStartY,
+        double segmentEndX,
+        double segmentEndY,
+        out double distance)
+    {
+        distance = 0.0;
+
+        var segmentDx = segmentEndX - segmentStartX;
+        var segmentDy = segmentEndY - segmentStartY;
+        var denominator = Cross(rayDirectionX, rayDirectionY, segmentDx, segmentDy);
+        if (Math.Abs(denominator) < 0.000001)
+            return false;
+
+        var diffX = segmentStartX - rayOriginX;
+        var diffY = segmentStartY - rayOriginY;
+        var rayT = Cross(diffX, diffY, segmentDx, segmentDy) / denominator;
+        var segmentT = Cross(diffX, diffY, rayDirectionX, rayDirectionY) / denominator;
+        if (rayT <= IntersectionEpsilon || segmentT < -IntersectionEpsilon || segmentT > 1.0 + IntersectionEpsilon)
+            return false;
+
+        distance = rayT;
+        return true;
+    }
+
+    private static double Cross(double ax, double ay, double bx, double by) => (ax * by) - (ay * bx);
 
     private readonly struct EdgeHit
     {
