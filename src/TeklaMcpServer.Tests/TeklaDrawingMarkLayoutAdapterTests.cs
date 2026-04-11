@@ -115,6 +115,62 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
         Assert.False(created);
     }
 
+    [Fact]
+    public void TryCreateLayoutItem_BaselinePlacementPreservesAxisBoundOverlapResolution()
+    {
+        var resolver = new MarkOverlapResolver();
+        var marksViewContext = CreateMarksViewContext();
+        var firstContext = CreateMarkContext();
+        var secondContext = CreateMarkContext();
+        secondContext.MarkId = 8;
+        secondContext.Anchor = new DrawingPointInfo { X = 110, Y = 200 };
+        secondContext.CurrentCenter = new DrawingPointInfo { X = 120, Y = 200 };
+        secondContext.Geometry.Center = new DrawingPointInfo { X = 120, Y = 200 };
+        secondContext.Geometry.Bounds = new DrawingBoundsInfo
+        {
+            MinX = 100,
+            MinY = 190,
+            MaxX = 140,
+            MaxY = 210
+        };
+        secondContext.Geometry.Corners.Clear();
+        secondContext.Geometry.Corners.AddRange(
+        [
+            new DrawingPointInfo { X = 100, Y = 190, Order = 0 },
+            new DrawingPointInfo { X = 140, Y = 190, Order = 1 },
+            new DrawingPointInfo { X = 140, Y = 210, Order = 2 },
+            new DrawingPointInfo { X = 100, Y = 210, Order = 3 }
+        ]);
+
+        Assert.True(TeklaDrawingMarkLayoutAdapter.TryCreateLayoutItem(firstContext, marksViewContext, viewContext: null, out var firstItem));
+        Assert.True(TeklaDrawingMarkLayoutAdapter.TryCreateLayoutItem(secondContext, marksViewContext, viewContext: null, out var secondItem));
+
+        var placements = new[]
+        {
+            CreatePlacement(firstItem),
+            CreatePlacement(secondItem)
+        };
+
+        var resolved = resolver.ResolvePlacedMarks(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxResolverIterations = 24,
+                MaxDistanceFromAnchor = 40.0
+            },
+            out _);
+
+        var first = resolved.Single(item => item.Id == firstItem.Id);
+        var second = resolved.Single(item => item.Id == secondItem.Id);
+
+        Assert.Equal(0, resolver.CountOverlaps(resolved));
+        Assert.Equal(firstItem.CurrentY, first.Y, 6);
+        Assert.Equal(secondItem.CurrentY, second.Y, 6);
+        Assert.True(first.X < firstItem.CurrentX);
+        Assert.True(second.X > secondItem.CurrentX);
+    }
+
     private static MarksViewContext CreateMarksViewContext() => new()
     {
         ViewId = 11,
@@ -125,6 +181,23 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
             MaxX = 60,
             MaxY = 40
         }
+    };
+
+    private static MarkLayoutPlacement CreatePlacement(MarkLayoutItem item) => new()
+    {
+        Id = item.Id,
+        X = item.CurrentX,
+        Y = item.CurrentY,
+        Width = item.Width,
+        Height = item.Height,
+        AnchorX = item.AnchorX,
+        AnchorY = item.AnchorY,
+        HasLeaderLine = item.HasLeaderLine,
+        HasAxis = item.HasAxis,
+        AxisDx = item.AxisDx,
+        AxisDy = item.AxisDy,
+        CanMove = true,
+        LocalCorners = item.LocalCorners.Select(corner => new[] { corner[0], corner[1] }).ToList()
     };
 
     private static MarkContext CreateMarkContext() => new MarkContext
