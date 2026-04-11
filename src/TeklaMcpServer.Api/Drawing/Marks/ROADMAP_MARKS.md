@@ -161,9 +161,13 @@ Marks не должны вводить отдельный базовый view-co
 
 То есть execution path уже есть.
 
-Следующий естественный шаг:
+Что уже фактически завершено:
 
-- выделить стабильный `MarksViewContext`
+- `MarksViewContext` и `MarkContext` зафиксированы как внутренний factual layer;
+- `MarksViewContextBuilder` стал каноническим builder-ом mark context;
+- `get_drawing_marks` использует context-based projection;
+- `arrange_marks` использует `MarkContext -> MarkLayoutItem`;
+- `resolve_mark_overlaps` использует тот же context-based layout path.
 
 ## Runtime placing hierarchy
 
@@ -252,9 +256,9 @@ layout/collision geometry.
 
 ## Этапы
 
-### Phase 1. Naming and context boundary
+### Phase 1. Naming and context boundary — completed
 
-Нужно сделать:
+Сделано:
 
 - ввести `MarksViewContext`;
 - ввести `MarkContext`;
@@ -264,9 +268,9 @@ layout/collision geometry.
   - context layer
   - layout algorithm layer
 
-### Phase 2. Context builder
+### Phase 2. Context builder — completed
 
-Нужно сделать builder, который собирает `MarksViewContext` из текущего runtime path:
+Сделан builder, который собирает `MarksViewContext` из текущего runtime path:
 
 - active drawing view
 - runtime marks
@@ -278,9 +282,9 @@ layout/collision geometry.
 - не использовать `MarkLayoutItem` как public/context model напрямую;
 - не делать `DrawingMarkInfo` каноническим internal context.
 
-### Phase 3. Read projection
+### Phase 3. Read projection — completed
 
-После появления context layer:
+После появления context layer выполнено:
 
 - сделать clean read projection for debug/query;
 - обновить `get_drawing_marks`, если context-builder даёт тот же набор данных чище, с меньшим дублированием и без потери runtime detail.
@@ -328,12 +332,7 @@ layout/collision geometry.
 
 ## Следующий практический шаг
 
-Первый практический шаг:
+Следующий практический шаг:
 
-- зафиксировать contracts `MarksViewContext` и `MarkContext`
-
-Только после этого:
-
-- builder
 - evaluator
 - snapshots
