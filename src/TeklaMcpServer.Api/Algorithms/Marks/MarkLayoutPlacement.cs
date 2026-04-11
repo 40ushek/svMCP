@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
@@ -29,4 +30,24 @@ public sealed class MarkLayoutPlacement
     public bool CanMove { get; set; }
 
     public List<double[]> LocalCorners { get; set; } = new();
+
+    public MarkLayoutPlacement Clone()
+    {
+        return new MarkLayoutPlacement
+        {
+            Id = Id,
+            X = X,
+            Y = Y,
+            Width = Width,
+            Height = Height,
+            AnchorX = AnchorX,
+            AnchorY = AnchorY,
+            HasLeaderLine = HasLeaderLine,
+            HasAxis = HasAxis,
+            AxisDx = AxisDx,
+            AxisDy = AxisDy,
+            CanMove = CanMove,
+            LocalCorners = LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
+        };
+    }
 }

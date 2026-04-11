@@ -15,24 +15,7 @@ public sealed class MarkOverlapResolver
         MarkLayoutOptions options,
         out int iterationsUsed)
     {
-        var result = placements
-            .Select(p => new MarkLayoutPlacement
-            {
-                Id = p.Id,
-                X = p.X,
-                Y = p.Y,
-                Width = p.Width,
-                Height = p.Height,
-                AnchorX = p.AnchorX,
-                AnchorY = p.AnchorY,
-                HasLeaderLine = p.HasLeaderLine,
-                HasAxis = p.HasAxis,
-                AxisDx = p.AxisDx,
-                AxisDy = p.AxisDy,
-                CanMove = p.CanMove,
-                LocalCorners = p.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
-            })
-            .ToList();
+        var result = placements.Select(p => p.Clone()).ToList();
 
         iterationsUsed = 0;
 
@@ -50,8 +33,11 @@ public sealed class MarkOverlapResolver
                 if (!TryGetSeparation(a, b, out var separationAxisX, out var separationAxisY, out var separationDepth, out var overlapX, out var overlapY))
                     continue;
 
-                if (TryResolveAlongAxis(a, b, separationAxisX, separationAxisY, separationDepth, overlapX, overlapY, options, out movedAny))
+                if (TryResolveAlongAxis(a, b, separationAxisX, separationAxisY, separationDepth, overlapX, overlapY, options, out var movedAlongAxis))
+                {
+                    movedAny |= movedAlongAxis;
                     continue;
+                }
 
                 var split = GetSplit(a, b);
                 if (split.Total == 0)
@@ -65,7 +51,7 @@ public sealed class MarkOverlapResolver
                 // are only pushed along their part axis, never perpendicular to it.
                 var movedA2 = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
                 var movedB2 = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
-                movedAny = movedA2 || movedB2;
+                movedAny |= movedA2 || movedB2;
             }
 
             if (!movedAny)
@@ -85,24 +71,7 @@ public sealed class MarkOverlapResolver
         MarkLayoutOptions options,
         out int iterationsUsed)
     {
-        var result = placements
-            .Select(p => new MarkLayoutPlacement
-            {
-                Id = p.Id,
-                X = p.X,
-                Y = p.Y,
-                Width = p.Width,
-                Height = p.Height,
-                AnchorX = p.AnchorX,
-                AnchorY = p.AnchorY,
-                HasLeaderLine = p.HasLeaderLine,
-                HasAxis = p.HasAxis,
-                AxisDx = p.AxisDx,
-                AxisDy = p.AxisDy,
-                CanMove = p.CanMove,
-                LocalCorners = p.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
-            })
-            .ToList();
+        var result = placements.Select(p => p.Clone()).ToList();
 
         iterationsUsed = 0;
 
@@ -422,14 +391,12 @@ public sealed class MarkOverlapResolver
 
         if (options.MaxDistanceFromAnchor > 0)
         {
-            var effectiveMaxDistance = GetEffectiveMaxDistance(placement, options);
-
             var fromAnchorX = nextX - placement.AnchorX;
             var fromAnchorY = nextY - placement.AnchorY;
             var dist = Math.Sqrt((fromAnchorX * fromAnchorX) + (fromAnchorY * fromAnchorY));
-            if (dist > effectiveMaxDistance && dist > MovementEpsilon)
+            if (dist > options.MaxDistanceFromAnchor && dist > MovementEpsilon)
             {
-                var scale = effectiveMaxDistance / dist;
+                var scale = options.MaxDistanceFromAnchor / dist;
                 nextX = placement.AnchorX + (fromAnchorX * scale);
                 nextY = placement.AnchorY + (fromAnchorY * scale);
             }
@@ -439,11 +406,6 @@ public sealed class MarkOverlapResolver
         placement.X = nextX;
         placement.Y = nextY;
         return moved;
-    }
-
-    private static double GetEffectiveMaxDistance(MarkLayoutPlacement placement, MarkLayoutOptions options)
-    {
-        return options.MaxDistanceFromAnchor;
     }
 
     private static bool TryNudgeOneOverlappingMark(List<MarkLayoutPlacement> placements, MarkLayoutOptions options)
@@ -457,8 +419,6 @@ public sealed class MarkOverlapResolver
             if (TryNudgeMark(placements, placements[j], options) ||
                 TryNudgeMark(placements, placements[i], options))
                 return true;
-
-            return false;
         }
 
         return false;
@@ -512,7 +472,7 @@ public sealed class MarkOverlapResolver
             if (!MoveWithAnchorClamp(mark, candidate.Dx, candidate.Dy, options))
                 continue;
 
-            if (HasAnyOverlap(placements, mark.Id))
+            if (HasAnyOverlap(placements, mark))
                 continue;
 
             return true;
@@ -523,15 +483,11 @@ public sealed class MarkOverlapResolver
         return false;
     }
 
-    private static bool HasAnyOverlap(IReadOnlyList<MarkLayoutPlacement> placements, int markId)
+    private static bool HasAnyOverlap(IReadOnlyList<MarkLayoutPlacement> placements, MarkLayoutPlacement mark)
     {
-        var mark = placements.FirstOrDefault(x => x.Id == markId);
-        if (mark == null)
-            return false;
-
         foreach (var other in placements)
         {
-            if (other.Id == markId)
+            if (ReferenceEquals(other, mark))
                 continue;
 
             if (Overlaps(mark, other))
