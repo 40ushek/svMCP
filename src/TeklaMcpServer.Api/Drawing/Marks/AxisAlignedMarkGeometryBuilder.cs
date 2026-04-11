@@ -3,9 +3,9 @@ using Tekla.Structures.Model;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal static class AlongLineMarkGeometryBuilder
+internal static class AxisAlignedMarkGeometryBuilder
 {
-    public static MarkGeometryInfo Build(Mark mark, Model model, int? viewId)
+    public static MarkGeometryInfo Build(Mark mark, Model model, int? viewId, string placingSourceName)
     {
         if (!MarkGeometryFactory.TryGetObjectAlignedBoundingBox(mark, out var box))
             return FallbackMarkGeometryBuilder.Build(mark);
@@ -26,7 +26,7 @@ internal static class AlongLineMarkGeometryBuilder
                 box,
                 placingAxisDx,
                 placingAxisDy,
-                "AlongLinePlacingAxisFallback",
+                placingSourceName,
                 isReliable: true);
         }
 

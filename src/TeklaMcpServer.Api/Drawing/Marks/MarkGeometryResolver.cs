@@ -11,10 +11,10 @@ internal static class MarkGeometryResolver
             return LeaderLineMarkGeometryBuilder.Build(mark);
 
         if (mark.Placing is BaseLinePlacing)
-            return BaseLineMarkGeometryBuilder.Build(mark, model, viewId);
+            return AxisAlignedMarkGeometryBuilder.Build(mark, model, viewId, "BaseLinePlacingAxisFallback");
 
         if (string.Equals(mark.Placing?.GetType().Name, "AlongLinePlacing", StringComparison.Ordinal))
-            return AlongLineMarkGeometryBuilder.Build(mark, model, viewId);
+            return AxisAlignedMarkGeometryBuilder.Build(mark, model, viewId, "AlongLinePlacingAxisFallback");
 
         return FallbackMarkGeometryBuilder.Build(mark);
     }
