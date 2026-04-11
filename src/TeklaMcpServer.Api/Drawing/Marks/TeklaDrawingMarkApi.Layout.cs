@@ -118,7 +118,8 @@ public sealed partial class TeklaDrawingMarkApi
             {
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
-                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model);
+                var viewContext = BuildDrawingViewContext(view);
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, _model, viewContext);
                 collect.Stop();
                 if (markEntries.Count == 0)
                 {
@@ -126,7 +127,6 @@ public sealed partial class TeklaDrawingMarkApi
                     continue;
                 }
 
-                var viewContext = BuildDrawingViewContext(view);
                 var arrange = Stopwatch.StartNew();
                 var layoutResult = engine.Arrange(
                     markEntries.Select(x => x.Item),

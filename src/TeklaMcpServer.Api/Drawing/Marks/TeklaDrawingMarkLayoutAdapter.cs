@@ -23,7 +23,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
 {
     private const double MovementVerificationEpsilon = 0.05;
 
-    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view, Model model)
+    public static List<TeklaDrawingMarkLayoutEntry> CollectEntries(View view, Model model, DrawingViewContext? viewContext = null)
     {
         var entries = new List<TeklaDrawingMarkLayoutEntry>();
         var viewId = view.GetIdentifier().ID;
@@ -75,6 +75,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 var anchorLocalX = centerLocalX;
                 var anchorLocalY = centerLocalY;
                 var hasLeaderLine = false;
+                var source = MarkSourceResolver.Resolve(mark);
+                var hasSourceCenter = MarkSourceResolver.TryResolveCenter(source, viewContext, out var sourceCenterX, out var sourceCenterY);
 
                 // Canonical baseline movement axis comes from MarkGeometryResolver so
                 // collision geometry and movement stay aligned. Only fall back to
@@ -139,6 +141,10 @@ internal static class TeklaDrawingMarkLayoutAdapter
                         BoundsMaxX    = boundsMaxX,
                         BoundsMinY    = boundsMinY,
                         BoundsMaxY    = boundsMaxY,
+                        SourceKind    = source.Kind,
+                        SourceModelId = source.ModelId,
+                        SourceCenterX = hasSourceCenter ? sourceCenterX : null,
+                        SourceCenterY = hasSourceCenter ? sourceCenterY : null,
                     }
                 });
         }
