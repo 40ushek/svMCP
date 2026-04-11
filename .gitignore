@@ -40,3 +40,6 @@ dim/
 
 # Claude Code settings
 .claude/
+
+# Local reference project
+markAligner/
