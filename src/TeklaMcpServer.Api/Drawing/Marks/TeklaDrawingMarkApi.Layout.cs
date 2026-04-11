@@ -122,6 +122,7 @@ public sealed partial class TeklaDrawingMarkApi
                 var viewContext = BuildDrawingViewContext(view);
                 var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
+                var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
                 collect.Stop();
                 if (markEntries.Count == 0)
                 {
@@ -145,7 +146,7 @@ public sealed partial class TeklaDrawingMarkApi
                         LeaderLengthWeight = 15.0,
                         LeaderCrossingPenalty = 500.0,
                         ViewContext = viewContext,
-                        PartPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts)
+                        PartPolygonsByModelId = partPolygonsByModelId
                     });
                 arrange.Stop();
 
@@ -153,10 +154,15 @@ public sealed partial class TeklaDrawingMarkApi
                 var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model));
                 apply.Stop();
+                var leaderAnchor = Stopwatch.StartNew();
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
+                leaderAnchor.Stop();
                 totalIterations += layoutResult.Iterations;
                 totalRemainingOverlaps += layoutResult.RemainingOverlaps;
-                PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
+                PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
             }
+
+            movedIds = movedIds.Distinct().ToList();
 
             if (movedIds.Count > 0)
                 activeDrawing.CommitChanges();
