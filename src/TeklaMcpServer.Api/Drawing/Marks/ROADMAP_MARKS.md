@@ -182,8 +182,13 @@ Marks не должны вводить отдельный базовый view-co
 - `HasLeaderLine` — флаг
 - `Anchor` — `DrawingPointInfo?` — это `LeaderLinePlacing.StartPoint`
 - `PlacingType` — строка `"LeaderLinePlacing"`
-
-Никакого leader geometry snapshot нет: нет `LeaderEndPoint`, нет `LeaderLines`, нет `LeaderLength`, нет elbow points.
+- `LeaderSnapshot` — factual runtime block с:
+  - `AnchorPoint`
+  - `LeaderEndPoint`
+  - `InsertionPoint`
+  - `LeaderLines`
+  - `LeaderLength`
+  - `Delta`
 
 ### Инверсия: public DTO богаче internal context
 
@@ -192,8 +197,10 @@ Marks не должны вводить отдельный базовый view-co
 - `LeaderLines: List<MarkLeaderLineInfo>` — с `StartX/Y`, `EndX/Y`, `ElbowPoints`
 - `ArrowHead`
 
-Internal `MarkContext` по лидерам беднее, чем public DTO.
-Это нужно исправить в Phase 5.1 — вынести leader snapshot во внутренний слой.
+Базовая инверсия уже снята:
+
+- internal `MarkContext` теперь тоже хранит отдельный leader runtime snapshot;
+- public DTO по-прежнему остаётся read/debug projection, а не канонической внутренней моделью.
 
 ### Что есть в алгоритмах
 
@@ -430,7 +437,7 @@ Phase 5 частично реализована.
 - shape mode пока держать internal/runtime preference;
 - public command parameter выносить только после стабилизации default behavior.
 
-#### Step 5.5. Reference-guided refinement
+#### Step 5.5. Reference-guided refinement — partially completed
 
 - использовать local reference project `markAligner/` как source of practical ideas;
 - особенно полезны:
@@ -443,18 +450,39 @@ Phase 5 частично реализована.
   - elbow manipulation
   - leader length / delta semantics.
 
-### Phase 6. Evaluator
+Уже фактически использовано:
 
-После стабилизации context:
+- decomposition `anchor / leader end / insertion / delta`;
+- internal `LeaderSnapshot` shape;
+- pragmatic split между `anchor placement` и будущим `leader shape`.
 
-- добавить deterministic mark evaluator/scorer;
-- считать:
+Что ещё не сделано:
+
+- explicit elbow/shape behavior;
+- прямое runtime reuse идей `AlignMarks` для `angled / horz elbow / vert elbow`.
+
+### Phase 6. Evaluator — partially completed
+
+Уже есть базовый deterministic evaluator/scorer в текущем layout pipeline:
+
+- `SimpleMarkCostEvaluator`
+- penalties на:
+  - overlaps
+  - crowding
+  - leader length
+  - preferred side
+  - leader crossings
+  - source/foreign part signals
+
+Что ещё остаётся для полного Phase 6:
+
+- сделать evaluator более явно context-native и explainable;
+- выделить/добрать сигналы:
   - overlaps
   - outside/inside quality
   - leader-line quality
-- distance / readability signals
-
-Но это не первый шаг.
+  - distance / readability
+- привести evaluator к более явному слою reasoning, а не только к engine-local cost function.
 
 ### Phase 7. Snapshot pipeline
 
@@ -634,3 +662,49 @@ Phase 5 частично реализована.
 - richer pair-selection;
 - more advanced leader styles;
 - AI-agent как orchestrator поверх candidate/scoring pipeline.
+
+### Phase 8.1. Force-directed local improvement pass
+
+После greedy placement можно запустить force-directed (magnetic) pass как local improvement.
+
+**Идея:** каждая метка притягивается к своей детали и отталкивается от соседних меток.
+Система итеративно оседает — метки у своих деталей, без перекрытий.
+
+**Исходные данные (всё уже есть):**
+- `MarksViewContext.Marks` → позиция, размер (Width/Height), ModelId каждой метки
+- `DrawingViewContext.Parts` → `SolidVertices` для контура и центроида каждой детали
+- `DrawingViewContext.ViewScale` → масштаб для paper mm → model mm
+
+**Сила притяжения к своей детали:**
+- `LeaderAnchorResolver.TryFindNearestEdgeHit(part.SolidVertices, mark.cx, mark.cy)` → ближайшая точка на контуре
+- Направление силы: от центра метки к этой точке
+- Мертвая зона ~10 мм модели: не тянуть если метка уже близко к контуру
+
+**Сила отталкивания от других меток:**
+- Вычислить overlap по X и Y с каждой другой меткой
+- Если `overlapX > 0 && overlapY > 0` — толкать в сторону наименьшего перекрытия
+- Сила пропорциональна глубине перекрытия
+
+**Ограничение для axis-constrained меток (BaseLinePlacing, AlongLinePlacing):**
+- Движение только вдоль оси: проецировать результирующую силу `(fx, fy)` на вектор `(axisDx, axisDy)` из `MarkContext.Axis`
+- `BaseLinePlacing` — якорь на базовой линии элемента
+- `AlongLinePlacing` — метки распределяются вдоль отрезка `PartMiddleStart → PartMiddleEnd`; при отталкивании расходятся вдоль того же отрезка
+- TODO (low priority): для AlongLinePlacing допустим небольшой поперечный сдвиг в разумных пределах — пока не реализуется
+
+**Итерационный цикл:**
+```
+for iter in 0..100:
+    for each mark:
+        compute attraction force to own part contour
+        compute repulsion from all other marks
+        apply constraints (BaseLinePlacing → project onto axis)
+        move by (fx, fy) * dt
+    dt *= 0.99   // затухание
+    stop early if total displacement < epsilon
+```
+
+**Новый класс:** `ForceDirectedMarkPlacer` в `TeklaMcpServer.Api/Algorithms/Marks/`
+
+**Интеграция:** вызывать из `arrange_marks` как дополнительный pass после текущего greedy/overlap pipeline.
+
+**Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
