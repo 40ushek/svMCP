@@ -1,14 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
 {
-    // Scale factor applied to baseOffset when generating axis/local candidates
-    // (keeps candidates closer to anchor than leader-line rings)
+    // Scale factor applied to baseOffset when generating axis/local candidates.
     private const double LocalCandidateScale = 0.6;
 
     // 8 compass directions: E, NE, N, NW, W, SW, S, SE
@@ -36,12 +36,12 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
                     return RemoveNearDuplicates(filteredSourceAware);
             }
 
-            var ringCandidates = BuildLeaderCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
+            var localCandidates = BuildLocalCandidates(item, baseOffsetX, baseOffsetY, options.CandidateDistanceMultipliers)
                 .Where(c => IsWithinAnchorDistance(c, item, options))
                 .Where(c => !item.HasBounds || IsWithinBounds(c, item))
                 .ToList();
 
-            return RemoveNearDuplicates(ringCandidates);
+            return RemoveNearDuplicates(localCandidates);
         }
 
         var candidates = item.HasAxis
@@ -188,73 +188,17 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         out double maxX,
         out double maxY)
     {
-        minX = double.MaxValue;
-        minY = double.MaxValue;
-        maxX = double.MinValue;
-        maxY = double.MinValue;
-
-        var hasPoint = false;
-        foreach (var point in polygon)
+        if (polygon.Count < 3 || polygon.Any(point => point.Length < 2))
         {
-            if (point.Length < 2)
-                continue;
-
-            hasPoint = true;
-            minX = Math.Min(minX, point[0]);
-            minY = Math.Min(minY, point[1]);
-            maxX = Math.Max(maxX, point[0]);
-            maxY = Math.Max(maxY, point[1]);
+            minX = 0.0;
+            minY = 0.0;
+            maxX = 0.0;
+            maxY = 0.0;
+            return false;
         }
 
-        return hasPoint;
-    }
-
-    /// <summary>
-    /// For leader-line marks: rings of candidates around the anchor point at each distance
-    /// multiplier, with priority ordered so closer positions and same-quadrant positions
-    /// score better before the cost evaluator applies its own weights.
-    /// </summary>
-    private static List<MarkCandidate> BuildLeaderCandidates(
-        MarkLayoutItem item,
-        double baseOffsetX,
-        double baseOffsetY,
-        double[] multipliers)
-    {
-        var result = new List<MarkCandidate>
-        {
-            // Priority 0: keep current position — always the cheapest first try
-            new() { X = item.CurrentX, Y = item.CurrentY, Priority = 0 }
-        };
-
-        // Determine the quadrant of the current mark relative to its anchor so we
-        // can favour same-quadrant candidates (lower priority number = preferred).
-        var currentSignX = Math.Sign(item.CurrentX - item.AnchorX);
-        var currentSignY = Math.Sign(item.CurrentY - item.AnchorY);
-
-        var priority = 1;
-        foreach (var multiplier in multipliers.OrderBy(m => m))
-        {
-            var ox = baseOffsetX * multiplier;
-            var oy = baseOffsetY * multiplier;
-
-            // Sort directions: same quadrant first, then adjacent, then opposite.
-            var ordered = Directions
-                .Select(d => (d.Dx, d.Dy, Affinity: QuadrantAffinity(d.Dx, d.Dy, currentSignX, currentSignY)))
-                .OrderBy(d => d.Affinity)
-                .Select(d => (d.Dx, d.Dy));
-
-            foreach (var (dx, dy) in ordered)
-            {
-                result.Add(new MarkCandidate
-                {
-                    X        = item.AnchorX + dx * ox,
-                    Y        = item.AnchorY + dy * oy,
-                    Priority = priority++
-                });
-            }
-        }
-
-        return result;
+        PolygonGeometry.GetBounds(polygon, out minX, out minY, out maxX, out maxY);
+        return true;
     }
 
     private static List<MarkCandidate> BuildAxisCandidates(
@@ -293,9 +237,8 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
     }
 
     /// <summary>
-    /// For non-leader marks: rings around the source center (when known) or current position.
-    /// Using the source center as the ring origin keeps marks near their associated objects
-    /// rather than drifting with the current mark position across successive arrange passes.
+    /// Generates local candidates around the source center (when known) or current position.
+    /// This keeps candidates near the associated object instead of orbiting the leader anchor.
     /// </summary>
     private static List<MarkCandidate> BuildLocalCandidates(
         MarkLayoutItem item,
@@ -330,22 +273,6 @@ public sealed class SimpleMarkCandidateGenerator : IMarkCandidateGenerator
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Returns 0 for same quadrant as current, 1 for adjacent, 2 for opposite.
-    /// Used to order candidates so the cost evaluator sees preferred positions first
-    /// (lower Priority → lower CandidatePriorityWeight cost).
-    /// </summary>
-    private static int QuadrantAffinity(double dx, double dy, int signX, int signY)
-    {
-        var sx = Math.Sign(dx);
-        var sy = Math.Sign(dy);
-        var matchX = signX == 0 || sx == 0 || sx == signX;
-        var matchY = signY == 0 || sy == 0 || sy == signY;
-        if (matchX && matchY) return 0;
-        if (matchX || matchY) return 1;
-        return 2;
     }
 
     private static bool IsWithinBounds(MarkCandidate c, MarkLayoutItem item)

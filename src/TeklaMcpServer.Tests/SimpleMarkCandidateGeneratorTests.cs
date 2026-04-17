@@ -87,9 +87,9 @@ public sealed class SimpleMarkCandidateGeneratorTests
             CanMove = true
         };
 
-        // MaxDistanceFromAnchor=5 from source center (100,200):
+        // MaxDistanceFromAnchor=20 from source center (100,200):
         // current position (50,50) is ~158mm away → filtered out
-        // ring candidates near (100,200) within 5mm offset → pass
+        // local candidates near (100,200) within the 20mm clamp → pass
         var candidates = generator.GenerateCandidates(item, new MarkLayoutOptions
         {
             MaxDistanceFromAnchor = 20,
@@ -239,7 +239,7 @@ public sealed class SimpleMarkCandidateGeneratorTests
     }
 
     [Fact]
-    public void GenerateCandidates_LeaderMarkWithoutSourcePolygon_FallsBackToRingCandidates()
+    public void GenerateCandidates_LeaderMarkWithoutSourcePolygon_FallsBackToLocalCandidates()
     {
         var generator = new SimpleMarkCandidateGenerator();
         var item = new MarkLayoutItem
@@ -265,7 +265,8 @@ public sealed class SimpleMarkCandidateGeneratorTests
         });
 
         Assert.Contains(candidates, c => c.X == 100 && c.Y == 100);
-        Assert.Contains(candidates, c => c.X == 60 && c.Y == 55);
-        Assert.Contains(candidates, c => c.X == 40 && c.Y == 45);
+        Assert.Contains(candidates, c => c.X == 108 && c.Y == 55);
+        Assert.Contains(candidates, c => c.X == 92 && c.Y == 45);
+        Assert.DoesNotContain(candidates, c => c.X == 60 && c.Y == 55);
     }
 }
