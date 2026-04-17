@@ -28,6 +28,7 @@ internal sealed class ForceDirectedMarkPlacer
     private const double KAttract = 0.02;
     private const double KRepelPart = 1.5;
     private const double KRepelMark = 1.0;
+    private const double MarkGapMm = 2.0;
     private const double MaxAttract = 12.0;
     private const double DeadzoneMm = 1.0;
     private const double PartRepelRadius = 60.0;
@@ -55,6 +56,7 @@ internal sealed class ForceDirectedMarkPlacer
         {
             iterationsUsed = iter + 1;
             var totalDisplacement = 0.0;
+            var updates = new List<ForceIterationUpdate>(items.Count);
 
             foreach (var mark in items)
             {
@@ -65,24 +67,29 @@ internal sealed class ForceDirectedMarkPlacer
 
                 var dx = debug.Fx * dt;
                 var dy = debug.Fy * dt;
-                mark.Cx += dx;
-                mark.Cy += dy;
-                totalDisplacement += Math.Sqrt((dx * dx) + (dy * dy));
+                updates.Add(new ForceIterationUpdate(mark, debug, dx, dy));
+            }
+
+            foreach (var update in updates)
+            {
+                update.Mark.Cx += update.Dx;
+                update.Mark.Cy += update.Dy;
+                totalDisplacement += Math.Sqrt((update.Dx * update.Dx) + (update.Dy * update.Dy));
                 debugSink?.Invoke(new ForceIterationDebugInfo(
                     iter + 1,
-                    mark.Id,
-                    debug.AttractFx,
-                    debug.AttractFy,
-                    debug.PartRepelFx,
-                    debug.PartRepelFy,
-                    debug.MarkRepelFx,
-                    debug.MarkRepelFy,
-                    debug.Fx,
-                    debug.Fy,
-                    dx,
-                    dy,
-                    mark.Cx,
-                    mark.Cy));
+                    update.Mark.Id,
+                    update.Debug.AttractFx,
+                    update.Debug.AttractFy,
+                    update.Debug.PartRepelFx,
+                    update.Debug.PartRepelFy,
+                    update.Debug.MarkRepelFx,
+                    update.Debug.MarkRepelFy,
+                    update.Debug.Fx,
+                    update.Debug.Fy,
+                    update.Dx,
+                    update.Dy,
+                    update.Mark.Cx,
+                    update.Mark.Cy));
             }
 
             dt *= DtDecay;
@@ -219,8 +226,9 @@ internal sealed class ForceDirectedMarkPlacer
             if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out var axisX, out var axisY, out var depth))
                 return false;
 
-            repelFx = -axisX * depth * KRepelMark;
-            repelFy = -axisY * depth * KRepelMark;
+            var targetSeparation = depth + MarkGapMm;
+            repelFx = -axisX * targetSeparation * KRepelMark;
+            repelFy = -axisY * targetSeparation * KRepelMark;
             return true;
         }
 
@@ -230,9 +238,9 @@ internal sealed class ForceDirectedMarkPlacer
             return false;
 
         if (ox < oy)
-            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * ox;
+            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * (ox + MarkGapMm);
         else
-            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * oy;
+            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * (oy + MarkGapMm);
 
         return true;
     }
@@ -292,6 +300,22 @@ internal readonly struct ForceIterationDebugInfo
     public double Dy { get; }
     public double X { get; }
     public double Y { get; }
+}
+
+internal readonly struct ForceIterationUpdate
+{
+    public ForceIterationUpdate(ForceDirectedMarkItem mark, ForceComponents debug, double dx, double dy)
+    {
+        Mark = mark;
+        Debug = debug;
+        Dx = dx;
+        Dy = dy;
+    }
+
+    public ForceDirectedMarkItem Mark { get; }
+    public ForceComponents Debug { get; }
+    public double Dx { get; }
+    public double Dy { get; }
 }
 
 internal readonly struct ForceComponents
