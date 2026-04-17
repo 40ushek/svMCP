@@ -19,6 +19,9 @@ internal sealed partial class DrawingCommandHandler
             case "arrange_marks":
                 return HandleArrangeMarks(GetMarkApi(), args);
 
+            case "arrange_marks_force":
+                return HandleArrangeMarksForce(GetMarkApi(), args);
+
             case "move_mark":
                 return HandleMoveMark(GetMarkApi(), args);
 
@@ -185,6 +188,27 @@ internal sealed partial class DrawingCommandHandler
         var total = Stopwatch.StartNew();
         var result = api.ArrangeMarks(parseResult.Value);
         TeklaBridge.PerfTrace.Write("bridge-mark", "arrange_marks", total.ElapsedMilliseconds, $"gap={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
+        WriteMarkArrangementResult(result);
+        return true;
+    }
+
+    private bool HandleArrangeMarksForce(TeklaDrawingMarkApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseArrangeMarksGap(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        if (!EnsureActiveDrawing())
+        {
+            return true;
+        }
+
+        var total = Stopwatch.StartNew();
+        var result = api.ArrangeMarksForce(parseResult.Value);
+        TeklaBridge.PerfTrace.Write("bridge-mark", "arrange_marks_force", total.ElapsedMilliseconds, $"gap={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
         WriteMarkArrangementResult(result);
         return true;
     }

@@ -241,6 +241,25 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Experimental force-directed mark improvement pass. Keeps current mark positions as the start state, then relaxes marks with attraction/repulsion forces and finishes with overlap resolution.")]
+    public static string ArrangeMarksForce(
+        [Description("Minimum gap between mark bounding boxes after the final overlap-resolution pass (mm). Default: 2.")] double gap = 2.0)
+    {
+        var json = RunBridge("arrange_marks_force", gap.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Move one drawing mark by drawing object ID to a new insertion point.")]
     public static string MoveMark(
         [Description("Drawing mark ID from get_drawing_marks")] int markId,

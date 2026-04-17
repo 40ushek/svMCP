@@ -85,6 +85,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
                 return TryHandleGeometryCommands(command, args);
 
             case "arrange_marks":
+            case "arrange_marks_force":
             case "arrange_marks_no_collisions":
             case "move_mark":
             case "create_part_marks":
