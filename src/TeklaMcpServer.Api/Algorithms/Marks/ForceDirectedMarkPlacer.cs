@@ -46,7 +46,8 @@ internal sealed class ForceDirectedMarkPlacer
         IReadOnlyList<ForceDirectedMarkItem> items,
         IReadOnlyList<PartBbox> allParts,
         bool includeMarkRepulsion = false,
-        ISet<int>? movableIds = null)
+        ISet<int>? movableIds = null,
+        Action<ForceIterationDebugInfo>? debugSink = null)
     {
         var dt = InitialDt;
         var iterationsUsed = 0;
@@ -60,13 +61,28 @@ internal sealed class ForceDirectedMarkPlacer
                 if (!mark.CanMove) continue;
                 if (movableIds != null && !movableIds.Contains(mark.Id)) continue;
 
-                var (fx, fy) = ComputeForce(mark, items, allParts, includeMarkRepulsion);
+                var debug = ComputeForce(mark, items, allParts, includeMarkRepulsion);
 
-                var dx = fx * dt;
-                var dy = fy * dt;
+                var dx = debug.Fx * dt;
+                var dy = debug.Fy * dt;
                 mark.Cx += dx;
                 mark.Cy += dy;
                 totalDisplacement += Math.Sqrt((dx * dx) + (dy * dy));
+                debugSink?.Invoke(new ForceIterationDebugInfo(
+                    iter + 1,
+                    mark.Id,
+                    debug.AttractFx,
+                    debug.AttractFy,
+                    debug.PartRepelFx,
+                    debug.PartRepelFy,
+                    debug.MarkRepelFx,
+                    debug.MarkRepelFy,
+                    debug.Fx,
+                    debug.Fy,
+                    dx,
+                    dy,
+                    mark.Cx,
+                    mark.Cy));
             }
 
             dt *= DtDecay;
@@ -77,14 +93,18 @@ internal sealed class ForceDirectedMarkPlacer
         return iterationsUsed;
     }
 
-    private static (double fx, double fy) ComputeForce(
+    private static ForceComponents ComputeForce(
         ForceDirectedMarkItem mark,
         IReadOnlyList<ForceDirectedMarkItem> allMarks,
         IReadOnlyList<PartBbox> allParts,
         bool includeMarkRepulsion)
     {
-        var fx = 0.0;
-        var fy = 0.0;
+        var attractFx = 0.0;
+        var attractFy = 0.0;
+        var partRepelFx = 0.0;
+        var partRepelFy = 0.0;
+        var markRepelFx = 0.0;
+        var markRepelFy = 0.0;
 
         // Attraction to own part contour
         if (mark.OwnPolygon != null && mark.OwnPolygon.Count >= 2)
@@ -96,13 +116,13 @@ internal sealed class ForceDirectedMarkPlacer
                 var dist = Math.Sqrt((dx * dx) + (dy * dy));
                 if (dist > DeadzoneMm)
                 {
-                    fx += Clamp(KAttract * dx, -MaxAttract, MaxAttract);
-                    fy += Clamp(KAttract * dy, -MaxAttract, MaxAttract);
+                    attractFx += Clamp(KAttract * dx, -MaxAttract, MaxAttract);
+                    attractFy += Clamp(KAttract * dy, -MaxAttract, MaxAttract);
                 }
             }
         }
 
-        // Repulsion from all part bboxes (own included — keeps mark outside)
+        // Repulsion from foreign part bboxes.
         foreach (var part in allParts)
         {
             if (mark.OwnModelId.HasValue && part.ModelId == mark.OwnModelId.Value)
@@ -123,8 +143,8 @@ internal sealed class ForceDirectedMarkPlacer
                     var ownDist = Math.Sqrt((ownDx * ownDx) + (ownDy * ownDy));
                     if (ownDist > 0.001)
                     {
-                        fx += KRepelPart * ownDx / ownDist;
-                        fy += KRepelPart * ownDy / ownDist;
+                        partRepelFx += KRepelPart * ownDx / ownDist;
+                        partRepelFy += KRepelPart * ownDy / ownDist;
                     }
                 }
                 continue;
@@ -133,8 +153,8 @@ internal sealed class ForceDirectedMarkPlacer
             if (dist > PartRepelRadius) continue;
 
             var force = KRepelPart / (dist * dist * dist);
-            fx += force * dx;
-            fy += force * dy;
+            partRepelFx += force * dx;
+            partRepelFy += force * dy;
         }
 
         if (includeMarkRepulsion)
@@ -143,18 +163,21 @@ internal sealed class ForceDirectedMarkPlacer
             {
                 if (other.Id == mark.Id) continue;
 
-                var ox = OverlapX(mark, other);
-                var oy = OverlapY(mark, other);
-                if (ox <= 0.0 || oy <= 0.0) continue;
-
-                if (ox < oy)
-                    fx += (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * ox;
-                else
-                    fy += (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * oy;
+                if (TryGetMarkRepulsion(mark, other, out var repelFx, out var repelFy))
+                {
+                    markRepelFx += repelFx;
+                    markRepelFy += repelFy;
+                }
             }
         }
 
-        return (fx, fy);
+        return new ForceComponents(
+            attractFx,
+            attractFy,
+            partRepelFx,
+            partRepelFy,
+            markRepelFx,
+            markRepelFy);
     }
 
     private static bool TryGetPolygonCentroid(ForceDirectedMarkItem mark, out double centroidX, out double centroidY)
@@ -180,9 +203,121 @@ internal sealed class ForceDirectedMarkPlacer
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
 
+    private static bool TryGetMarkRepulsion(
+        ForceDirectedMarkItem mark,
+        ForceDirectedMarkItem other,
+        out double repelFx,
+        out double repelFy)
+    {
+        repelFx = 0.0;
+        repelFy = 0.0;
+
+        if (mark.LocalCorners.Count >= 3 && other.LocalCorners.Count >= 3)
+        {
+            var markPolygon = PolygonGeometry.Translate(mark.LocalCorners, mark.Cx, mark.Cy);
+            var otherPolygon = PolygonGeometry.Translate(other.LocalCorners, other.Cx, other.Cy);
+            if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out var axisX, out var axisY, out var depth))
+                return false;
+
+            repelFx = -axisX * depth * KRepelMark;
+            repelFy = -axisY * depth * KRepelMark;
+            return true;
+        }
+
+        var ox = OverlapX(mark, other);
+        var oy = OverlapY(mark, other);
+        if (ox <= 0.0 || oy <= 0.0)
+            return false;
+
+        if (ox < oy)
+            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * ox;
+        else
+            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * oy;
+
+        return true;
+    }
+
     private static double OverlapX(ForceDirectedMarkItem a, ForceDirectedMarkItem b) =>
         Math.Max(0.0, (a.Width + b.Width) * 0.5 - Math.Abs(a.Cx - b.Cx));
 
     private static double OverlapY(ForceDirectedMarkItem a, ForceDirectedMarkItem b) =>
         Math.Max(0.0, (a.Height + b.Height) * 0.5 - Math.Abs(a.Cy - b.Cy));
+}
+
+internal readonly struct ForceIterationDebugInfo
+{
+    public ForceIterationDebugInfo(
+        int iteration,
+        int markId,
+        double attractFx,
+        double attractFy,
+        double partRepelFx,
+        double partRepelFy,
+        double markRepelFx,
+        double markRepelFy,
+        double fx,
+        double fy,
+        double dx,
+        double dy,
+        double x,
+        double y)
+    {
+        Iteration = iteration;
+        MarkId = markId;
+        AttractFx = attractFx;
+        AttractFy = attractFy;
+        PartRepelFx = partRepelFx;
+        PartRepelFy = partRepelFy;
+        MarkRepelFx = markRepelFx;
+        MarkRepelFy = markRepelFy;
+        Fx = fx;
+        Fy = fy;
+        Dx = dx;
+        Dy = dy;
+        X = x;
+        Y = y;
+    }
+
+    public int Iteration { get; }
+    public int MarkId { get; }
+    public double AttractFx { get; }
+    public double AttractFy { get; }
+    public double PartRepelFx { get; }
+    public double PartRepelFy { get; }
+    public double MarkRepelFx { get; }
+    public double MarkRepelFy { get; }
+    public double Fx { get; }
+    public double Fy { get; }
+    public double Dx { get; }
+    public double Dy { get; }
+    public double X { get; }
+    public double Y { get; }
+}
+
+internal readonly struct ForceComponents
+{
+    public ForceComponents(
+        double attractFx,
+        double attractFy,
+        double partRepelFx,
+        double partRepelFy,
+        double markRepelFx,
+        double markRepelFy)
+    {
+        AttractFx = attractFx;
+        AttractFy = attractFy;
+        PartRepelFx = partRepelFx;
+        PartRepelFy = partRepelFy;
+        MarkRepelFx = markRepelFx;
+        MarkRepelFy = markRepelFy;
+    }
+
+    public double AttractFx { get; }
+    public double AttractFy { get; }
+    public double PartRepelFx { get; }
+    public double PartRepelFy { get; }
+    public double MarkRepelFx { get; }
+    public double MarkRepelFy { get; }
+    public double Fx => AttractFx + PartRepelFx + MarkRepelFx;
+    public double Fy => AttractFy + PartRepelFy + MarkRepelFy;
 }

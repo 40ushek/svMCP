@@ -228,6 +228,7 @@ public sealed partial class TeklaDrawingMarkApi
                         Width = entry.Item.Width,
                         Height = entry.Item.Height,
                         CanMove = entry.Item.CanMove,
+                        LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList(),
                         OwnPolygon = entry.Item.SourceModelId.HasValue &&
                                      partPolygonsByModelId.TryGetValue(entry.Item.SourceModelId.Value, out var polygon)
                             ? polygon
@@ -244,7 +245,30 @@ public sealed partial class TeklaDrawingMarkApi
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
                 var pass2Iterations = 0;
                 if (collidingIds.Count > 0)
-                    pass2Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, includeMarkRepulsion: true, movableIds: collidingIds);
+                {
+                    pass2Iterations = force.Relax(
+                        forceItems.Values.ToList(),
+                        partBboxes,
+                        includeMarkRepulsion: true,
+                        movableIds: collidingIds,
+                        debugSink: debug =>
+                        {
+                            if (!PerfTrace.IsActive)
+                                return;
+
+                            PerfTrace.Write(
+                                "api-mark",
+                                "arrange_marks_force_pass2_mark",
+                                0,
+                                $"viewId={view.GetIdentifier().ID} iter={debug.Iteration} markId={debug.MarkId} " +
+                                $"attract=({debug.AttractFx:F3},{debug.AttractFy:F3}) " +
+                                $"partRepel=({debug.PartRepelFx:F3},{debug.PartRepelFy:F3}) " +
+                                $"markRepel=({debug.MarkRepelFx:F3},{debug.MarkRepelFy:F3}) " +
+                                $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
+                                $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
+                                $"pos=({debug.X:F3},{debug.Y:F3})");
+                        });
+                }
                 arrange.Stop();
 
                 var placements = BuildForcePlacements(markEntries, forceItems);
