@@ -7,14 +7,16 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 internal readonly struct PartBbox
 {
-    public PartBbox(double minX, double minY, double maxX, double maxY)
+    public PartBbox(int modelId, double minX, double minY, double maxX, double maxY)
     {
+        ModelId = modelId;
         MinX = minX;
         MinY = minY;
         MaxX = maxX;
         MaxY = maxY;
     }
 
+    public int ModelId { get; }
     public double MinX { get; }
     public double MinY { get; }
     public double MaxX { get; }
@@ -23,15 +25,16 @@ internal readonly struct PartBbox
 
 internal sealed class ForceDirectedMarkPlacer
 {
-    private const double KAttract = 0.3;
+    private const double KAttract = 0.02;
     private const double KRepelPart = 1.5;
     private const double KRepelMark = 1.0;
-    private const double DeadzoneMm = 8.0;
+    private const double MaxAttract = 12.0;
+    private const double DeadzoneMm = 1.0;
     private const double PartRepelRadius = 60.0;
-    private const double InitialDt = 1.0;
-    private const double DtDecay = 0.98;
+    private const double InitialDt = 2.0;
+    private const double DtDecay = 0.995;
     private const double StopEpsilon = 0.05;
-    private const int MaxIterations = 80;
+    private const int MaxIterations = 50;
 
     // Incremental mode: keep the current placement as the force solver start state.
     public void PlaceInitial(IReadOnlyList<ForceDirectedMarkItem> items)
@@ -39,8 +42,11 @@ internal sealed class ForceDirectedMarkPlacer
         _ = items;
     }
 
-    // Pass 2: force-directed relaxation with repulsion from parts and other marks
-    public int Relax(IReadOnlyList<ForceDirectedMarkItem> items, IReadOnlyList<PartBbox> allParts)
+    public int Relax(
+        IReadOnlyList<ForceDirectedMarkItem> items,
+        IReadOnlyList<PartBbox> allParts,
+        bool includeMarkRepulsion = false,
+        ISet<int>? movableIds = null)
     {
         var dt = InitialDt;
         var iterationsUsed = 0;
@@ -52,8 +58,9 @@ internal sealed class ForceDirectedMarkPlacer
             foreach (var mark in items)
             {
                 if (!mark.CanMove) continue;
+                if (movableIds != null && !movableIds.Contains(mark.Id)) continue;
 
-                var (fx, fy) = ComputeForce(mark, items, allParts);
+                var (fx, fy) = ComputeForce(mark, items, allParts, includeMarkRepulsion);
 
                 var dx = fx * dt;
                 var dy = fy * dt;
@@ -73,7 +80,8 @@ internal sealed class ForceDirectedMarkPlacer
     private static (double fx, double fy) ComputeForce(
         ForceDirectedMarkItem mark,
         IReadOnlyList<ForceDirectedMarkItem> allMarks,
-        IReadOnlyList<PartBbox> allParts)
+        IReadOnlyList<PartBbox> allParts,
+        bool includeMarkRepulsion)
     {
         var fx = 0.0;
         var fy = 0.0;
@@ -88,8 +96,8 @@ internal sealed class ForceDirectedMarkPlacer
                 var dist = Math.Sqrt((dx * dx) + (dy * dy));
                 if (dist > DeadzoneMm)
                 {
-                    fx += KAttract * dx / dist;
-                    fy += KAttract * dy / dist;
+                    fx += Clamp(KAttract * dx, -MaxAttract, MaxAttract);
+                    fy += Clamp(KAttract * dy, -MaxAttract, MaxAttract);
                 }
             }
         }
@@ -97,6 +105,9 @@ internal sealed class ForceDirectedMarkPlacer
         // Repulsion from all part bboxes (own included — keeps mark outside)
         foreach (var part in allParts)
         {
+            if (mark.OwnModelId.HasValue && part.ModelId == mark.OwnModelId.Value)
+                continue;
+
             var (nx, ny) = NearestOnBbox(mark.Cx, mark.Cy, part);
             var dx = mark.Cx - nx;
             var dy = mark.Cy - ny;
@@ -126,21 +137,20 @@ internal sealed class ForceDirectedMarkPlacer
             fy += force * dy;
         }
 
-        // Repulsion from other marks (collision only)
-        foreach (var other in allMarks)
+        if (includeMarkRepulsion)
         {
-            if (other.Id == mark.Id) continue;
-            var ox = OverlapX(mark, other);
-            var oy = OverlapY(mark, other);
-            if (ox <= 0.0 || oy <= 0.0) continue;
+            foreach (var other in allMarks)
+            {
+                if (other.Id == mark.Id) continue;
 
-            if (ox < oy)
-            {
-                fx += (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * ox;
-            }
-            else
-            {
-                fy += (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * oy;
+                var ox = OverlapX(mark, other);
+                var oy = OverlapY(mark, other);
+                if (ox <= 0.0 || oy <= 0.0) continue;
+
+                if (ox < oy)
+                    fx += (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * ox;
+                else
+                    fy += (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * oy;
             }
         }
 
@@ -166,6 +176,9 @@ internal sealed class ForceDirectedMarkPlacer
         var ny = Math.Max(bbox.MinY, Math.Min(py, bbox.MaxY));
         return (nx, ny);
     }
+
+    private static double Clamp(double value, double min, double max) =>
+        Math.Max(min, Math.Min(max, value));
 
     private static double OverlapX(ForceDirectedMarkItem a, ForceDirectedMarkItem b) =>
         Math.Max(0.0, (a.Width + b.Width) * 0.5 - Math.Abs(a.Cx - b.Cx));

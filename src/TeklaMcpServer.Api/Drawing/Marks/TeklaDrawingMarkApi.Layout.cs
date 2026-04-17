@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Algorithms.Marks;
 using TeklaMcpServer.Api.Diagnostics;
 
@@ -207,7 +208,7 @@ public sealed partial class TeklaDrawingMarkApi
                 var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
                 var partBboxes = viewContext.Parts
                     .Where(static part => part.Success && part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
-                    .Select(static part => new PartBbox(part.BboxMin[0], part.BboxMin[1], part.BboxMax[0], part.BboxMax[1]))
+                    .Select(static part => new PartBbox(part.ModelId, part.BboxMin[0], part.BboxMin[1], part.BboxMax[0], part.BboxMax[1]))
                     .ToList();
                 collect.Stop();
 
@@ -221,6 +222,7 @@ public sealed partial class TeklaDrawingMarkApi
                     .Select(entry => new ForceDirectedMarkItem
                     {
                         Id = entry.Mark.GetIdentifier().ID,
+                        OwnModelId = entry.Item.SourceModelId,
                         Cx = entry.CenterX,
                         Cy = entry.CenterY,
                         Width = entry.Item.Width,
@@ -237,46 +239,18 @@ public sealed partial class TeklaDrawingMarkApi
                 force.PlaceInitial(forceItems.Values.ToList());
 
                 var arrange = Stopwatch.StartNew();
-                var relaxIterations = force.Relax(forceItems.Values.ToList(), partBboxes);
+                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes);
+                var pass1Placements = BuildForcePlacements(markEntries, forceItems);
+                var collidingIds = GetOverlappingMarkIds(pass1Placements);
+                var pass2Iterations = 0;
+                if (collidingIds.Count > 0)
+                    pass2Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, includeMarkRepulsion: true, movableIds: collidingIds);
                 arrange.Stop();
 
-                var placements = markEntries
-                    .Select(entry =>
-                    {
-                        var forceItem = forceItems[entry.Mark.GetIdentifier().ID];
-                        return new MarkLayoutPlacement
-                        {
-                            Id = forceItem.Id,
-                            X = forceItem.Cx,
-                            Y = forceItem.Cy,
-                            Width = entry.Item.Width,
-                            Height = entry.Item.Height,
-                            AnchorX = entry.Item.AnchorX,
-                            AnchorY = entry.Item.AnchorY,
-                            HasLeaderLine = entry.Item.HasLeaderLine,
-                            HasAxis = entry.Item.HasAxis,
-                            AxisDx = entry.Item.AxisDx,
-                            AxisDy = entry.Item.AxisDy,
-                            CanMove = entry.Item.CanMove,
-                            LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
-                        };
-                    })
-                    .ToList();
+                var placements = BuildForcePlacements(markEntries, forceItems);
 
                 var resolver = new MarkOverlapResolver();
-                var resolve = Stopwatch.StartNew();
-                var resolvedPlacements = resolver.ResolvePlacedMarks(
-                    placements,
-                    new MarkLayoutOptions
-                    {
-                        Gap = gap,
-                        MaxResolverIterations = 24,
-                        MaxDistanceFromAnchor = 600.0
-                    },
-                    out var resolveIterations);
-                resolve.Stop();
-
-                var placementById = resolvedPlacements.ToDictionary(x => x.Id);
+                var placementById = placements.ToDictionary(x => x.Id);
                 var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model));
                 apply.Stop();
@@ -285,9 +259,9 @@ public sealed partial class TeklaDrawingMarkApi
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
                 leaderAnchor.Stop();
 
-                totalIterations += relaxIterations + resolveIterations;
-                totalRemainingOverlaps += resolver.CountOverlaps(resolvedPlacements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} relaxIterations={relaxIterations} resolveIterations={resolveIterations}");
+                totalIterations += pass1Iterations + pass2Iterations;
+                totalRemainingOverlaps += resolver.CountOverlaps(placements);
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Iterations} pass2Iterations={pass2Iterations} collidingMarks={collidingIds.Count}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -319,5 +293,65 @@ public sealed partial class TeklaDrawingMarkApi
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
         return builder.Build(viewId, viewScale);
+    }
+
+    private static List<MarkLayoutPlacement> BuildForcePlacements(
+        IReadOnlyList<TeklaDrawingMarkLayoutEntry> markEntries,
+        IReadOnlyDictionary<int, ForceDirectedMarkItem> forceItems)
+    {
+        return markEntries
+            .Select(entry =>
+            {
+                var forceItem = forceItems[entry.Mark.GetIdentifier().ID];
+                return new MarkLayoutPlacement
+                {
+                    Id = forceItem.Id,
+                    X = forceItem.Cx,
+                    Y = forceItem.Cy,
+                    Width = entry.Item.Width,
+                    Height = entry.Item.Height,
+                    AnchorX = entry.Item.AnchorX,
+                    AnchorY = entry.Item.AnchorY,
+                    HasLeaderLine = entry.Item.HasLeaderLine,
+                    HasAxis = entry.Item.HasAxis,
+                    AxisDx = entry.Item.AxisDx,
+                    AxisDy = entry.Item.AxisDy,
+                    CanMove = entry.Item.CanMove,
+                    LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
+                };
+            })
+            .ToList();
+    }
+
+    private static HashSet<int> GetOverlappingMarkIds(IReadOnlyList<MarkLayoutPlacement> placements)
+    {
+        var result = new HashSet<int>();
+        for (var i = 0; i < placements.Count; i++)
+        for (var j = i + 1; j < placements.Count; j++)
+        {
+            if (!PlacementsOverlap(placements[i], placements[j]))
+                continue;
+
+            result.Add(placements[i].Id);
+            result.Add(placements[j].Id);
+        }
+
+        return result;
+    }
+
+    private static bool PlacementsOverlap(MarkLayoutPlacement a, MarkLayoutPlacement b)
+    {
+        if (a.LocalCorners.Count >= 3 && b.LocalCorners.Count >= 3)
+        {
+            var aPolygon = PolygonGeometry.Translate(a.LocalCorners, a.X, a.Y);
+            var bPolygon = PolygonGeometry.Translate(b.LocalCorners, b.X, b.Y);
+            return PolygonGeometry.Intersects(aPolygon, bPolygon);
+        }
+
+        var overlapX = Math.Min(a.X + (a.Width / 2.0), b.X + (b.Width / 2.0))
+            - Math.Max(a.X - (a.Width / 2.0), b.X - (b.Width / 2.0));
+        var overlapY = Math.Min(a.Y + (a.Height / 2.0), b.Y + (b.Height / 2.0))
+            - Math.Max(a.Y - (a.Height / 2.0), b.Y - (b.Height / 2.0));
+        return overlapX > 0 && overlapY > 0;
     }
 }

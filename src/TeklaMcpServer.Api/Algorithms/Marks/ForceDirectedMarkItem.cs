@@ -5,6 +5,7 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 internal sealed class ForceDirectedMarkItem
 {
     public int Id { get; set; }
+    public int? OwnModelId { get; set; }
     public double Cx { get; set; }
     public double Cy { get; set; }
     public double Width { get; set; }
