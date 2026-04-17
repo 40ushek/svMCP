@@ -57,7 +57,8 @@
       "Bash(taskkill /PID 5756 /F)",
       "Bash(taskkill /IM TeklaMcpServer.exe /F)",
       "Bash(taskkill /IM dotnet.exe /F)",
-      "Bash(powershell -Command \"Get-Process | Where-Object { $_.Name -like ''*TeklaMcp*'' -or $_.Name -like ''*dotnet*'' } | Select-Object Id, Name, Path\")"
+      "Bash(powershell -Command \"Get-Process | Where-Object { $_.Name -like ''*TeklaMcp*'' -or $_.Name -like ''*dotnet*'' } | Select-Object Id, Name, Path\")",
+      "mcp__tekla__move_mark"
     ]
   }
 }
