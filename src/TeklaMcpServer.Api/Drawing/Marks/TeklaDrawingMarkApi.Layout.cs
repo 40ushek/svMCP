@@ -244,7 +244,7 @@ public sealed partial class TeklaDrawingMarkApi
                 force.PlaceInitial(forceItems.Values.ToList());
 
                 var arrange = Stopwatch.StartNew();
-                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes);
+                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default);
                 var pass1Placements = BuildForcePlacements(markEntries, forceItems);
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
                 var pass2Iterations = 0;
@@ -253,6 +253,7 @@ public sealed partial class TeklaDrawingMarkApi
                     pass2Iterations = force.Relax(
                         forceItems.Values.ToList(),
                         partBboxes,
+                        ForcePassOptions.Pass2Default,
                         includeMarkRepulsion: true,
                         movableIds: collidingIds,
                         debugSink: debug =>

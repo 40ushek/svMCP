@@ -23,21 +23,57 @@ internal readonly struct PartBbox
     public double MaxY { get; }
 }
 
+internal readonly struct ForcePassOptions
+{
+    public ForcePassOptions(
+        double kAttract, double maxAttract,
+        double kRepelPart, double partRepelRadius,
+        double kRepelMark, double markGapMm,
+        double deadzoneMm,
+        double initialDt, double dtDecay, double stopEpsilon, int maxIterations)
+    {
+        KAttract = kAttract;
+        MaxAttract = maxAttract;
+        KRepelPart = kRepelPart;
+        PartRepelRadius = partRepelRadius;
+        KRepelMark = kRepelMark;
+        MarkGapMm = markGapMm;
+        DeadzoneMm = deadzoneMm;
+        InitialDt = initialDt;
+        DtDecay = dtDecay;
+        StopEpsilon = stopEpsilon;
+        MaxIterations = maxIterations;
+    }
+
+    public double KAttract { get; }
+    public double MaxAttract { get; }
+    public double KRepelPart { get; }
+    public double PartRepelRadius { get; }
+    public double KRepelMark { get; }
+    public double MarkGapMm { get; }
+    public double DeadzoneMm { get; }
+    public double InitialDt { get; }
+    public double DtDecay { get; }
+    public double StopEpsilon { get; }
+    public int MaxIterations { get; }
+
+    public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
+        kAttract: 0.02, maxAttract: 12.0,
+        kRepelPart: 1.5, partRepelRadius: 60.0,
+        kRepelMark: 0.0, markGapMm: 2.0,
+        deadzoneMm: 1.0,
+        initialDt: 2.0, dtDecay: 0.995, stopEpsilon: 0.05, maxIterations: 50);
+
+    public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
+        kAttract: 0.02, maxAttract: 12.0,
+        kRepelPart: 1.5, partRepelRadius: 60.0,
+        kRepelMark: 1.0, markGapMm: 2.0,
+        deadzoneMm: 1.0,
+        initialDt: 2.0, dtDecay: 0.995, stopEpsilon: 0.05, maxIterations: 50);
+}
+
 internal sealed class ForceDirectedMarkPlacer
 {
-    private const double KAttract = 0.02;
-    private const double KRepelPart = 1.5;
-    private const double KRepelMark = 1.0;
-    private const double MarkGapMm = 2.0;
-    private const double MaxAttract = 12.0;
-    private const double DeadzoneMm = 1.0;
-    private const double PartRepelRadius = 60.0;
-    private const double InitialDt = 2.0;
-    private const double DtDecay = 0.995;
-    private const double StopEpsilon = 0.05;
-    private const int MaxIterations = 50;
-
-    // Incremental mode: keep the current placement as the force solver start state.
     public void PlaceInitial(IReadOnlyList<ForceDirectedMarkItem> items)
     {
         _ = items;
@@ -46,13 +82,14 @@ internal sealed class ForceDirectedMarkPlacer
     public int Relax(
         IReadOnlyList<ForceDirectedMarkItem> items,
         IReadOnlyList<PartBbox> allParts,
+        ForcePassOptions options,
         bool includeMarkRepulsion = false,
         ISet<int>? movableIds = null,
         Action<ForceIterationDebugInfo>? debugSink = null)
     {
-        var dt = InitialDt;
+        var dt = options.InitialDt;
         var iterationsUsed = 0;
-        for (var iter = 0; iter < MaxIterations; iter++)
+        for (var iter = 0; iter < options.MaxIterations; iter++)
         {
             iterationsUsed = iter + 1;
             var totalDisplacement = 0.0;
@@ -63,7 +100,7 @@ internal sealed class ForceDirectedMarkPlacer
                 if (!mark.CanMove) continue;
                 if (movableIds != null && !movableIds.Contains(mark.Id)) continue;
 
-                var debug = ComputeForce(mark, items, allParts, includeMarkRepulsion);
+                var debug = ComputeForce(mark, items, allParts, options, includeMarkRepulsion);
 
                 var dx = debug.Fx * dt;
                 var dy = debug.Fy * dt;
@@ -92,8 +129,8 @@ internal sealed class ForceDirectedMarkPlacer
                     update.Mark.Cy));
             }
 
-            dt *= DtDecay;
-            if (totalDisplacement < StopEpsilon)
+            dt *= options.DtDecay;
+            if (totalDisplacement < options.StopEpsilon)
                 break;
         }
 
@@ -104,6 +141,7 @@ internal sealed class ForceDirectedMarkPlacer
         ForceDirectedMarkItem mark,
         IReadOnlyList<ForceDirectedMarkItem> allMarks,
         IReadOnlyList<PartBbox> allParts,
+        ForcePassOptions options,
         bool includeMarkRepulsion)
     {
         var attractFx = 0.0;
@@ -121,10 +159,10 @@ internal sealed class ForceDirectedMarkPlacer
                 var dx = hit.PointX - mark.Cx;
                 var dy = hit.PointY - mark.Cy;
                 var dist = Math.Sqrt((dx * dx) + (dy * dy));
-                if (dist > DeadzoneMm)
+                if (dist > options.DeadzoneMm)
                 {
-                    attractFx += Clamp(KAttract * dx, -MaxAttract, MaxAttract);
-                    attractFy += Clamp(KAttract * dy, -MaxAttract, MaxAttract);
+                    attractFx += Clamp(options.KAttract * dx, -options.MaxAttract, options.MaxAttract);
+                    attractFy += Clamp(options.KAttract * dy, -options.MaxAttract, options.MaxAttract);
                 }
             }
         }
@@ -142,7 +180,6 @@ internal sealed class ForceDirectedMarkPlacer
 
             if (dist < 0.001)
             {
-                // Inside/against part bbox — push away from own part centroid when available.
                 if (TryGetPolygonCentroid(mark, out var centroidX, out var centroidY))
                 {
                     var ownDx = mark.Cx - centroidX;
@@ -150,16 +187,16 @@ internal sealed class ForceDirectedMarkPlacer
                     var ownDist = Math.Sqrt((ownDx * ownDx) + (ownDy * ownDy));
                     if (ownDist > 0.001)
                     {
-                        partRepelFx += KRepelPart * ownDx / ownDist;
-                        partRepelFy += KRepelPart * ownDy / ownDist;
+                        partRepelFx += options.KRepelPart * ownDx / ownDist;
+                        partRepelFy += options.KRepelPart * ownDy / ownDist;
                     }
                 }
                 continue;
             }
 
-            if (dist > PartRepelRadius) continue;
+            if (dist > options.PartRepelRadius) continue;
 
-            var force = KRepelPart / (dist * dist * dist);
+            var force = options.KRepelPart / (dist * dist * dist);
             partRepelFx += force * dx;
             partRepelFy += force * dy;
         }
@@ -170,7 +207,7 @@ internal sealed class ForceDirectedMarkPlacer
             {
                 if (other.Id == mark.Id) continue;
 
-                if (TryGetMarkRepulsion(mark, other, out var repelFx, out var repelFy))
+                if (TryGetMarkRepulsion(mark, other, options, out var repelFx, out var repelFy))
                 {
                     markRepelFx += repelFx;
                     markRepelFy += repelFy;
@@ -213,6 +250,7 @@ internal sealed class ForceDirectedMarkPlacer
     private static bool TryGetMarkRepulsion(
         ForceDirectedMarkItem mark,
         ForceDirectedMarkItem other,
+        ForcePassOptions options,
         out double repelFx,
         out double repelFy)
     {
@@ -226,9 +264,9 @@ internal sealed class ForceDirectedMarkPlacer
             if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out var axisX, out var axisY, out var depth))
                 return false;
 
-            var targetSeparation = depth + MarkGapMm;
-            repelFx = -axisX * targetSeparation * KRepelMark;
-            repelFy = -axisY * targetSeparation * KRepelMark;
+            var targetSeparation = depth + options.MarkGapMm;
+            repelFx = -axisX * targetSeparation * options.KRepelMark;
+            repelFy = -axisY * targetSeparation * options.KRepelMark;
             return true;
         }
 
@@ -238,9 +276,9 @@ internal sealed class ForceDirectedMarkPlacer
             return false;
 
         if (ox < oy)
-            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * KRepelMark * (ox + MarkGapMm);
+            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * options.KRepelMark * (ox + options.MarkGapMm);
         else
-            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * KRepelMark * (oy + MarkGapMm);
+            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * options.KRepelMark * (oy + options.MarkGapMm);
 
         return true;
     }
