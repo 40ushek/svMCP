@@ -7,13 +7,14 @@ namespace TeklaMcpServer.Api.Algorithms.Marks;
 
 internal readonly struct PartBbox
 {
-    public PartBbox(int modelId, double minX, double minY, double maxX, double maxY)
+    public PartBbox(int modelId, double minX, double minY, double maxX, double maxY, IReadOnlyList<double[]>? polygon = null)
     {
         ModelId = modelId;
         MinX = minX;
         MinY = minY;
         MaxX = maxX;
         MaxY = maxY;
+        Polygon = polygon;
     }
 
     public int ModelId { get; }
@@ -21,6 +22,7 @@ internal readonly struct PartBbox
     public double MinY { get; }
     public double MaxX { get; }
     public double MaxY { get; }
+    public IReadOnlyList<double[]>? Polygon { get; }
 }
 
 internal readonly struct ForcePassOptions
@@ -151,19 +153,47 @@ internal sealed class ForceDirectedMarkPlacer
         var markRepelFx = 0.0;
         var markRepelFy = 0.0;
 
-        // Logarithmic spring attraction to own part surface.
-        // Force = KAttract * log(dist / IdealDist) * unit_toward_surface
-        // Equilibrium at dist == IdealDist; pulls when farther, pushes when closer.
         if (mark.OwnPolygon != null && mark.OwnPolygon.Count >= 2)
         {
-            if (LeaderAnchorResolver.TryFindNearestEdgeHit(mark.OwnPolygon, mark.Cx, mark.Cy, out var hit))
+            if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
             {
-                var dx = hit.PointX - mark.Cx;
-                var dy = hit.PointY - mark.Cy;
-                var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
-                var springF = options.KAttract * Math.Log(dist / options.IdealDist);
-                attractFx += springF * (dx / dist);
-                attractFy += springF * (dy / dist);
+                // Axis-constrained marks: leash along axis.
+                // No force while mark projection is within [polyMin, polyMax].
+                // Outside: Hooke spring pulls mark back to the nearest bound.
+                var markAxPos = mark.Cx * mark.AxisDx + mark.Cy * mark.AxisDy;
+                var polyMin = double.MaxValue;
+                var polyMax = double.MinValue;
+                foreach (var pt in mark.OwnPolygon)
+                {
+                    var proj = pt[0] * mark.AxisDx + pt[1] * mark.AxisDy;
+                    if (proj < polyMin) polyMin = proj;
+                    if (proj > polyMax) polyMax = proj;
+                }
+
+                double axisForce;
+                if (markAxPos < polyMin)
+                    axisForce = options.KAttract * (polyMin - markAxPos);
+                else if (markAxPos > polyMax)
+                    axisForce = options.KAttract * (polyMax - markAxPos);
+                else
+                    axisForce = 0.0;
+
+                attractFx += axisForce * mark.AxisDx;
+                attractFy += axisForce * mark.AxisDy;
+            }
+            else
+            {
+                // Leader-line and free marks: logarithmic spring to nearest part surface.
+                // Equilibrium at IdealDist; positive when farther, negative when closer.
+                if (LeaderAnchorResolver.TryFindNearestEdgeHit(mark.OwnPolygon, mark.Cx, mark.Cy, out var hit))
+                {
+                    var dx = hit.PointX - mark.Cx;
+                    var dy = hit.PointY - mark.Cy;
+                    var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
+                    var springF = options.KAttract * Math.Log(dist / options.IdealDist);
+                    attractFx += springF * (dx / dist);
+                    attractFy += springF * (dy / dist);
+                }
             }
         }
 
@@ -173,7 +203,7 @@ internal sealed class ForceDirectedMarkPlacer
             if (mark.OwnModelId.HasValue && part.ModelId == mark.OwnModelId.Value)
                 continue;
 
-            var (nx, ny) = NearestOnBbox(mark.Cx, mark.Cy, part);
+            var (nx, ny) = NearestOnShape(mark.Cx, mark.Cy, part);
             var dx = mark.Cx - nx;
             var dy = mark.Cy - ny;
             var dist = Math.Sqrt((dx * dx) + (dy * dy));
@@ -185,14 +215,14 @@ internal sealed class ForceDirectedMarkPlacer
             var force = options.KRepelPart / softDist2;
             if (dist < 0.001)
             {
-                // Inside bbox — push away from own part centroid if available
-                if (TryGetPolygonCentroid(mark, out var centroidX, out var centroidY))
+                // Inside foreign shape — push away from the foreign shape centroid.
+                if (TryGetPartCentroid(part, out var centroidX, out var centroidY))
                 {
-                    var ownDx = mark.Cx - centroidX;
-                    var ownDy = mark.Cy - centroidY;
-                    var ownDist = Math.Max(Math.Sqrt((ownDx * ownDx) + (ownDy * ownDy)), 0.001);
-                    partRepelFx += force * ownDx / ownDist;
-                    partRepelFy += force * ownDy / ownDist;
+                    var partDx = mark.Cx - centroidX;
+                    var partDy = mark.Cy - centroidY;
+                    var partDist = Math.Max(Math.Sqrt((partDx * partDx) + (partDy * partDy)), 0.001);
+                    partRepelFx += force * partDx / partDist;
+                    partRepelFy += force * partDy / partDist;
                 }
                 continue;
             }
@@ -250,11 +280,75 @@ internal sealed class ForceDirectedMarkPlacer
         return true;
     }
 
-    private static (double x, double y) NearestOnBbox(double px, double py, PartBbox bbox)
+    private static bool TryGetPartCentroid(PartBbox part, out double centroidX, out double centroidY)
     {
-        var nx = Math.Max(bbox.MinX, Math.Min(px, bbox.MaxX));
-        var ny = Math.Max(bbox.MinY, Math.Min(py, bbox.MaxY));
+        centroidX = 0.0;
+        centroidY = 0.0;
+
+        if (part.Polygon != null && part.Polygon.Count >= 3)
+        {
+            centroidX = part.Polygon.Average(static point => point[0]);
+            centroidY = part.Polygon.Average(static point => point[1]);
+            return true;
+        }
+
+        centroidX = (part.MinX + part.MaxX) * 0.5;
+        centroidY = (part.MinY + part.MaxY) * 0.5;
+        return true;
+    }
+
+    private static (double x, double y) NearestOnShape(double px, double py, PartBbox part)
+    {
+        if (part.Polygon != null && part.Polygon.Count >= 3)
+            return NearestOnPolygon(px, py, part.Polygon);
+
+        var nx = Math.Max(part.MinX, Math.Min(px, part.MaxX));
+        var ny = Math.Max(part.MinY, Math.Min(py, part.MaxY));
         return (nx, ny);
+    }
+
+    private static (double x, double y) NearestOnPolygon(double px, double py, IReadOnlyList<double[]> polygon)
+    {
+        var bestX = polygon[0][0];
+        var bestY = polygon[0][1];
+        var bestDist2 = double.MaxValue;
+        var n = polygon.Count;
+        for (var i = 0; i < n; i++)
+        {
+            var a = polygon[i];
+            var b = polygon[(i + 1) % n];
+            var (nx, ny) = NearestOnSegment(px, py, a[0], a[1], b[0], b[1]);
+            var d2 = (nx - px) * (nx - px) + (ny - py) * (ny - py);
+            if (d2 < bestDist2) { bestDist2 = d2; bestX = nx; bestY = ny; }
+        }
+
+        if (IsInsidePolygon(px, py, polygon))
+            return (px, py);
+
+        return (bestX, bestY);
+    }
+
+    private static (double x, double y) NearestOnSegment(double px, double py, double ax, double ay, double bx, double by)
+    {
+        var abx = bx - ax; var aby = by - ay;
+        var len2 = abx * abx + aby * aby;
+        if (len2 < 1e-10) return (ax, ay);
+        var t = Math.Max(0.0, Math.Min(1.0, ((px - ax) * abx + (py - ay) * aby) / len2));
+        return (ax + t * abx, ay + t * aby);
+    }
+
+    private static bool IsInsidePolygon(double px, double py, IReadOnlyList<double[]> polygon)
+    {
+        var inside = false;
+        var n = polygon.Count;
+        for (int i = 0, j = n - 1; i < n; j = i++)
+        {
+            var xi = polygon[i][0]; var yi = polygon[i][1];
+            var xj = polygon[j][0]; var yj = polygon[j][1];
+            if (((yi > py) != (yj > py)) && px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+                inside = !inside;
+        }
+        return inside;
     }
 
     private static double Clamp(double value, double min, double max) =>

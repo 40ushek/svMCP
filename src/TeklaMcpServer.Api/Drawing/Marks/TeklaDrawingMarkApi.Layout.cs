@@ -208,7 +208,11 @@ public sealed partial class TeklaDrawingMarkApi
                 var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
                 var partBboxes = viewContext.Parts
                     .Where(static part => part.Success && part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
-                    .Select(static part => new PartBbox(part.ModelId, part.BboxMin[0], part.BboxMin[1], part.BboxMax[0], part.BboxMax[1]))
+                    .Select(part =>
+                    {
+                        partPolygonsByModelId.TryGetValue(part.ModelId, out var poly);
+                        return new PartBbox(part.ModelId, part.BboxMin[0], part.BboxMin[1], part.BboxMax[0], part.BboxMax[1], poly);
+                    })
                     .ToList();
                 collect.Stop();
 
@@ -247,7 +251,18 @@ public sealed partial class TeklaDrawingMarkApi
                 force.PlaceInitial(forceItems.Values.ToList());
 
                 var arrange = Stopwatch.StartNew();
-                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default);
+                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
+                    debugSink: debug =>
+                    {
+                        if (!PerfTrace.IsActive) return;
+                        PerfTrace.Write("api-mark", "arrange_marks_force_pass1_mark", 0,
+                            $"viewId={view.GetIdentifier().ID} iter={debug.Iteration} markId={debug.MarkId} " +
+                            $"attract=({debug.AttractFx:F3},{debug.AttractFy:F3}) " +
+                            $"partRepel=({debug.PartRepelFx:F3},{debug.PartRepelFy:F3}) " +
+                            $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
+                            $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
+                            $"pos=({debug.X:F3},{debug.Y:F3})");
+                    });
                 var pass1Placements = BuildForcePlacements(markEntries, forceItems);
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
 
