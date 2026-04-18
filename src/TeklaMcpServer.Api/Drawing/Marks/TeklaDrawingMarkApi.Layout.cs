@@ -218,6 +218,10 @@ public sealed partial class TeklaDrawingMarkApi
                     continue;
                 }
 
+                var initialPositions = markEntries.ToDictionary(
+                    e => e.Mark.GetIdentifier().ID,
+                    e => (e.CenterX, e.CenterY));
+
                 var forceItems = markEntries
                     .Select(entry => new ForceDirectedMarkItem
                     {
@@ -272,6 +276,22 @@ public sealed partial class TeklaDrawingMarkApi
                 arrange.Stop();
 
                 var placements = BuildForcePlacements(markEntries, forceItems);
+
+                if (PerfTrace.IsActive)
+                {
+                    foreach (var item in forceItems.Values)
+                    {
+                        if (!initialPositions.TryGetValue(item.Id, out var init)) continue;
+                        var netDx = item.Cx - init.CenterX;
+                        var netDy = item.Cy - init.CenterY;
+                        var inColliding = collidingIds.Contains(item.Id);
+                        PerfTrace.Write("api-mark", "arrange_marks_force_net",  0,
+                            $"viewId={view.GetIdentifier().ID} markId={item.Id} " +
+                            $"initPos=({init.CenterX:F1},{init.CenterY:F1}) " +
+                            $"finalPos=({item.Cx:F1},{item.Cy:F1}) " +
+                            $"net=({netDx:F1},{netDy:F1}) colliding={inColliding}");
+                    }
+                }
 
                 var resolver = new MarkOverlapResolver();
                 var placementById = placements.ToDictionary(x => x.Id);

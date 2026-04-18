@@ -120,7 +120,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
     public static List<int> ApplyPlacements(
         IReadOnlyList<TeklaDrawingMarkLayoutEntry> entries,
         IReadOnlyDictionary<int, MarkLayoutPlacement> placementsById,
-        Model model)
+        Model model,
+        bool respectAxisConstraint = true)
     {
         var movedIds = new List<int>();
 
@@ -132,7 +133,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var dx = placement.X - entry.CenterX;
             var dy = placement.Y - entry.CenterY;
-            if (entry.Item.HasAxis && !entry.Item.HasLeaderLine)
+            if (respectAxisConstraint && entry.Item.HasAxis && !entry.Item.HasLeaderLine)
             {
                 var distanceAlongAxis = (dx * entry.Item.AxisDx) + (dy * entry.Item.AxisDy);
                 dx = entry.Item.AxisDx * distanceAlongAxis;
