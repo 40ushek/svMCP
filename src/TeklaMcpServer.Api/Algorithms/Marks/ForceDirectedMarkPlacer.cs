@@ -215,6 +215,19 @@ internal sealed class ForceDirectedMarkPlacer
             }
         }
 
+        if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
+        {
+            var aProj = attractFx * mark.AxisDx + attractFy * mark.AxisDy;
+            attractFx = mark.AxisDx * aProj;
+            attractFy = mark.AxisDy * aProj;
+            var pProj = partRepelFx * mark.AxisDx + partRepelFy * mark.AxisDy;
+            partRepelFx = mark.AxisDx * pProj;
+            partRepelFy = mark.AxisDy * pProj;
+            var mProj = markRepelFx * mark.AxisDx + markRepelFy * mark.AxisDy;
+            markRepelFx = mark.AxisDx * mProj;
+            markRepelFy = mark.AxisDy * mProj;
+        }
+
         return new ForceComponents(
             attractFx,
             attractFy,

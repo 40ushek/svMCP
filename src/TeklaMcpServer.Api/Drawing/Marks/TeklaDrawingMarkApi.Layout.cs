@@ -232,6 +232,9 @@ public sealed partial class TeklaDrawingMarkApi
                         Width = entry.Item.Width,
                         Height = entry.Item.Height,
                         CanMove = entry.Item.CanMove,
+                        ConstrainToAxis = entry.Item.HasAxis && !entry.Item.HasLeaderLine,
+                        AxisDx = entry.Item.AxisDx,
+                        AxisDy = entry.Item.AxisDy,
                         LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList(),
                         OwnPolygon = entry.Item.SourceModelId.HasValue &&
                                      partPolygonsByModelId.TryGetValue(entry.Item.SourceModelId.Value, out var polygon)
@@ -247,6 +250,12 @@ public sealed partial class TeklaDrawingMarkApi
                 var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default);
                 var pass1Placements = BuildForcePlacements(markEntries, forceItems);
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
+
+                // Baseline marks that collide are freed for Pass 2 — solver can push them perpendicular to axis
+                foreach (var id in collidingIds)
+                    if (forceItems.TryGetValue(id, out var item) && item.ConstrainToAxis)
+                        item.ConstrainToAxis = false;
+
                 var pass2Iterations = 0;
                 if (collidingIds.Count > 0)
                 {
@@ -297,7 +306,7 @@ public sealed partial class TeklaDrawingMarkApi
                 var resolver = new MarkOverlapResolver();
                 var placementById = placements.ToDictionary(x => x.Id);
                 var apply = Stopwatch.StartNew();
-                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model));
+                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model, respectAxisConstraint: false));
                 apply.Stop();
 
                 var leaderAnchor = Stopwatch.StartNew();
