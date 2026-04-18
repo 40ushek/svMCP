@@ -26,19 +26,18 @@ internal readonly struct PartBbox
 internal readonly struct ForcePassOptions
 {
     public ForcePassOptions(
-        double kAttract, double maxAttract,
-        double kRepelPart, double partRepelRadius,
+        double kAttract, double idealDist,
+        double kRepelPart, double partRepelRadius, double partRepelSoftening,
         double kRepelMark, double markGapMm,
-        double deadzoneMm,
         double initialDt, double dtDecay, double stopEpsilon, int maxIterations)
     {
         KAttract = kAttract;
-        MaxAttract = maxAttract;
+        IdealDist = idealDist;
         KRepelPart = kRepelPart;
         PartRepelRadius = partRepelRadius;
+        PartRepelSoftening = partRepelSoftening;
         KRepelMark = kRepelMark;
         MarkGapMm = markGapMm;
-        DeadzoneMm = deadzoneMm;
         InitialDt = initialDt;
         DtDecay = dtDecay;
         StopEpsilon = stopEpsilon;
@@ -46,30 +45,31 @@ internal readonly struct ForcePassOptions
     }
 
     public double KAttract { get; }
-    public double MaxAttract { get; }
+    /// <summary>Desired distance from mark center to own part surface. Attraction pulls to this distance, not to zero.</summary>
+    public double IdealDist { get; }
     public double KRepelPart { get; }
     public double PartRepelRadius { get; }
+    /// <summary>Softening epsilon for repulsion: force = KRepelPart / (dist² + ε²). Prevents singularity at dist→0.</summary>
+    public double PartRepelSoftening { get; }
     public double KRepelMark { get; }
     public double MarkGapMm { get; }
-    public double DeadzoneMm { get; }
     public double InitialDt { get; }
     public double DtDecay { get; }
     public double StopEpsilon { get; }
     public int MaxIterations { get; }
 
+    // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
-        kAttract: 0.02, maxAttract: 12.0,
-        kRepelPart: 1.5, partRepelRadius: 60.0,
+        kAttract: 0.48, idealDist: 25.0,
+        kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
-        deadzoneMm: 1.0,
-        initialDt: 2.0, dtDecay: 0.995, stopEpsilon: 0.05, maxIterations: 50);
+        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
 
     public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
-        kAttract: 0.02, maxAttract: 12.0,
-        kRepelPart: 1.5, partRepelRadius: 60.0,
+        kAttract: 0.48, idealDist: 25.0,
+        kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
-        deadzoneMm: 1.0,
-        initialDt: 2.0, dtDecay: 0.995, stopEpsilon: 0.05, maxIterations: 50);
+        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
 }
 
 internal sealed class ForceDirectedMarkPlacer
@@ -151,19 +151,19 @@ internal sealed class ForceDirectedMarkPlacer
         var markRepelFx = 0.0;
         var markRepelFy = 0.0;
 
-        // Attraction to own part contour
+        // Logarithmic spring attraction to own part surface.
+        // Force = KAttract * log(dist / IdealDist) * unit_toward_surface
+        // Equilibrium at dist == IdealDist; pulls when farther, pushes when closer.
         if (mark.OwnPolygon != null && mark.OwnPolygon.Count >= 2)
         {
             if (LeaderAnchorResolver.TryFindNearestEdgeHit(mark.OwnPolygon, mark.Cx, mark.Cy, out var hit))
             {
                 var dx = hit.PointX - mark.Cx;
                 var dy = hit.PointY - mark.Cy;
-                var dist = Math.Sqrt((dx * dx) + (dy * dy));
-                if (dist > options.DeadzoneMm)
-                {
-                    attractFx += Clamp(options.KAttract * dx, -options.MaxAttract, options.MaxAttract);
-                    attractFy += Clamp(options.KAttract * dy, -options.MaxAttract, options.MaxAttract);
-                }
+                var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
+                var springF = options.KAttract * Math.Log(dist / options.IdealDist);
+                attractFx += springF * (dx / dist);
+                attractFy += springF * (dy / dist);
             }
         }
 
@@ -178,27 +178,27 @@ internal sealed class ForceDirectedMarkPlacer
             var dy = mark.Cy - ny;
             var dist = Math.Sqrt((dx * dx) + (dy * dy));
 
+            if (dist > options.PartRepelRadius) continue;
+
+            // Inverse-square repulsion with softening: force = KRepelPart / (dist² + ε²)
+            var softDist2 = dist * dist + options.PartRepelSoftening * options.PartRepelSoftening;
+            var force = options.KRepelPart / softDist2;
             if (dist < 0.001)
             {
+                // Inside bbox — push away from own part centroid if available
                 if (TryGetPolygonCentroid(mark, out var centroidX, out var centroidY))
                 {
                     var ownDx = mark.Cx - centroidX;
                     var ownDy = mark.Cy - centroidY;
-                    var ownDist = Math.Sqrt((ownDx * ownDx) + (ownDy * ownDy));
-                    if (ownDist > 0.001)
-                    {
-                        partRepelFx += options.KRepelPart * ownDx / ownDist;
-                        partRepelFy += options.KRepelPart * ownDy / ownDist;
-                    }
+                    var ownDist = Math.Max(Math.Sqrt((ownDx * ownDx) + (ownDy * ownDy)), 0.001);
+                    partRepelFx += force * ownDx / ownDist;
+                    partRepelFy += force * ownDy / ownDist;
                 }
                 continue;
             }
 
-            if (dist > options.PartRepelRadius) continue;
-
-            var force = options.KRepelPart / (dist * dist * dist);
-            partRepelFx += force * dx;
-            partRepelFy += force * dy;
+            partRepelFx += force * dx / dist;
+            partRepelFy += force * dy / dist;
         }
 
         if (includeMarkRepulsion)
