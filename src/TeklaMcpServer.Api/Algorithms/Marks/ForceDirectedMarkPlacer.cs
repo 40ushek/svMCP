@@ -323,7 +323,7 @@ internal sealed class ForceDirectedMarkPlacer
         }
 
         if (IsInsidePolygon(px, py, polygon))
-            return (px, py);
+            return (2 * px - bestX, 2 * py - bestY);
 
         return (bestX, bestY);
     }
