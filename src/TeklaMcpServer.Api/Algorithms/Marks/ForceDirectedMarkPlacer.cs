@@ -100,7 +100,7 @@ internal sealed class ForceDirectedMarkPlacer
         for (var iter = 0; iter < options.MaxIterations; iter++)
         {
             iterationsUsed = iter + 1;
-            var totalDisplacement = 0.0;
+            var maxDisplacement = 0.0;
             var updates = new List<ForceIterationUpdate>(items.Count);
 
             foreach (var mark in items)
@@ -119,7 +119,8 @@ internal sealed class ForceDirectedMarkPlacer
             {
                 update.Mark.Cx += update.Dx;
                 update.Mark.Cy += update.Dy;
-                totalDisplacement += Math.Sqrt((update.Dx * update.Dx) + (update.Dy * update.Dy));
+                var displacement = Math.Sqrt((update.Dx * update.Dx) + (update.Dy * update.Dy));
+                maxDisplacement = Math.Max(maxDisplacement, displacement);
                 debugSink?.Invoke(new ForceIterationDebugInfo(
                     iter + 1,
                     update.Mark.Id,
@@ -138,7 +139,7 @@ internal sealed class ForceDirectedMarkPlacer
             }
 
             dt *= options.DtDecay;
-            if (totalDisplacement < options.StopEpsilon)
+            if (maxDisplacement < options.StopEpsilon)
                 break;
         }
 
@@ -158,20 +159,21 @@ internal sealed class ForceDirectedMarkPlacer
         var partRepelFy = 0.0;
         var markRepelFx = 0.0;
         var markRepelFy = 0.0;
+        var hasAxis = TryGetNormalizedAxis(mark, out var axisDx, out var axisDy);
 
         if (mark.OwnPolygon != null && mark.OwnPolygon.Count >= 2)
         {
-            if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
+            if (mark.ConstrainToAxis && hasAxis)
             {
                 // Axis-constrained marks: leash along axis.
                 // No force while mark projection is within [polyMin, polyMax].
                 // Outside: Hooke spring pulls mark back to the nearest bound.
-                var markAxPos = mark.Cx * mark.AxisDx + mark.Cy * mark.AxisDy;
+                var markAxPos = mark.Cx * axisDx + mark.Cy * axisDy;
                 var polyMin = double.MaxValue;
                 var polyMax = double.MinValue;
                 foreach (var pt in mark.OwnPolygon)
                 {
-                    var proj = pt[0] * mark.AxisDx + pt[1] * mark.AxisDy;
+                    var proj = pt[0] * axisDx + pt[1] * axisDy;
                     if (proj < polyMin) polyMin = proj;
                     if (proj > polyMax) polyMax = proj;
                 }
@@ -184,8 +186,8 @@ internal sealed class ForceDirectedMarkPlacer
                 else
                     axisForce = 0.0;
 
-                attractFx += axisForce * mark.AxisDx;
-                attractFy += axisForce * mark.AxisDy;
+                attractFx += axisForce * axisDx;
+                attractFy += axisForce * axisDy;
             }
             else
             {
@@ -273,22 +275,22 @@ internal sealed class ForceDirectedMarkPlacer
             }
         }
 
-        if (mark.ReturnToAxisLine && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
+        if (mark.ReturnToAxisLine && hasAxis)
         {
             ApplyAxisLineSpring(mark, options.KReturnToAxisLine, ref attractFx, ref attractFy);
         }
 
-        if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
+        if (mark.ConstrainToAxis && hasAxis)
         {
-            var aProj = attractFx * mark.AxisDx + attractFy * mark.AxisDy;
-            attractFx = mark.AxisDx * aProj;
-            attractFy = mark.AxisDy * aProj;
-            var pProj = partRepelFx * mark.AxisDx + partRepelFy * mark.AxisDy;
-            partRepelFx = mark.AxisDx * pProj;
-            partRepelFy = mark.AxisDy * pProj;
-            var mProj = markRepelFx * mark.AxisDx + markRepelFy * mark.AxisDy;
-            markRepelFx = mark.AxisDx * mProj;
-            markRepelFy = mark.AxisDy * mProj;
+            var aProj = attractFx * axisDx + attractFy * axisDy;
+            attractFx = axisDx * aProj;
+            attractFy = axisDy * aProj;
+            var pProj = partRepelFx * axisDx + partRepelFy * axisDy;
+            partRepelFx = axisDx * pProj;
+            partRepelFy = axisDy * pProj;
+            var mProj = markRepelFx * axisDx + markRepelFy * axisDy;
+            markRepelFx = axisDx * mProj;
+            markRepelFy = axisDy * mProj;
 
             // Perpendicular spring to axis line for axis-constrained marks in pass 1.
             if (options.KPerpRestoreAxis > 0.0)
@@ -390,17 +392,30 @@ internal sealed class ForceDirectedMarkPlacer
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
 
+    private static bool TryGetNormalizedAxis(ForceDirectedMarkItem mark, out double axisDx, out double axisDy)
+    {
+        axisDx = mark.AxisDx;
+        axisDy = mark.AxisDy;
+        var length = Math.Sqrt((axisDx * axisDx) + (axisDy * axisDy));
+        if (length <= 0.001)
+            return false;
+
+        axisDx /= length;
+        axisDy /= length;
+        return true;
+    }
+
     private static void ApplyAxisLineSpring(
         ForceDirectedMarkItem mark,
         double stiffness,
         ref double forceX,
         ref double forceY)
     {
-        if (stiffness <= 0.0 || (Math.Abs(mark.AxisDx) <= 0.001 && Math.Abs(mark.AxisDy) <= 0.001))
+        if (stiffness <= 0.0 || !TryGetNormalizedAxis(mark, out var axisDx, out var axisDy))
             return;
 
-        var normalX = -mark.AxisDy;
-        var normalY = mark.AxisDx;
+        var normalX = -axisDy;
+        var normalY = axisDx;
         var offsetX = mark.Cx - mark.AxisOriginX;
         var offsetY = mark.Cy - mark.AxisOriginY;
         var signedDistance = (offsetX * normalX) + (offsetY * normalY);
