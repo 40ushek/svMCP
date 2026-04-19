@@ -191,6 +191,8 @@ internal sealed class ForceDirectedMarkPlacer
                     var dy = hit.PointY - mark.Cy;
                     var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
                     var springF = options.KAttract * Math.Log(dist / options.IdealDist);
+                    if (IsInsidePolygon(mark.Cx, mark.Cy, mark.OwnPolygon))
+                        springF = -springF;
                     attractFx += springF * (dx / dist);
                     attractFy += springF * (dy / dist);
                 }
@@ -203,10 +205,22 @@ internal sealed class ForceDirectedMarkPlacer
             if (mark.OwnModelId.HasValue && part.ModelId == mark.OwnModelId.Value)
                 continue;
 
+            var isInsidePart = part.Polygon != null &&
+                               part.Polygon.Count >= 3 &&
+                               IsInsidePolygon(mark.Cx, mark.Cy, part.Polygon);
             var (nx, ny) = NearestOnShape(mark.Cx, mark.Cy, part);
             var dx = mark.Cx - nx;
             var dy = mark.Cy - ny;
             var dist = Math.Sqrt((dx * dx) + (dy * dy));
+
+            if (isInsidePart)
+            {
+                var penetration = Math.Max(dist, 0.001);
+                var insideForce = options.KRepelPart * (penetration / Math.Max(options.PartRepelSoftening, 0.001));
+                partRepelFx += insideForce * (nx - mark.Cx) / penetration;
+                partRepelFy += insideForce * (ny - mark.Cy) / penetration;
+                continue;
+            }
 
             if (dist > options.PartRepelRadius) continue;
 
@@ -321,9 +335,6 @@ internal sealed class ForceDirectedMarkPlacer
             var d2 = (nx - px) * (nx - px) + (ny - py) * (ny - py);
             if (d2 < bestDist2) { bestDist2 = d2; bestX = nx; bestY = ny; }
         }
-
-        if (IsInsidePolygon(px, py, polygon))
-            return (2 * px - bestX, 2 * py - bestY);
 
         return (bestX, bestY);
     }
