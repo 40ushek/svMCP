@@ -663,9 +663,20 @@ Phase 5 частично реализована.
 - more advanced leader styles;
 - AI-agent как orchestrator поверх candidate/scoring pipeline.
 
-### Phase 8.1. Force-directed local improvement pass
+### Phase 8.1. Force-directed local improvement pass — partially completed
 
 После greedy placement можно запустить force-directed (magnetic) pass как local improvement.
+
+Текущий код уже содержит отдельный experimental runtime-path:
+
+- `ArrangeMarksForce` / `arrange_marks_force`
+- `ForceDirectedMarkPlacer`
+- `ForceDirectedMarkItem`
+
+Важно:
+
+- этот path пока не заменяет основной `arrange_marks`
+- force-directed solver сейчас существует как отдельный экспериментальный layout path и tuning playground
 
 **Идея:** каждая метка притягивается к своей детали и отталкивается от соседних меток.
 Система итеративно оседает — метки у своих деталей, без перекрытий.
@@ -676,35 +687,68 @@ Phase 5 частично реализована.
 - `DrawingViewContext.ViewScale` → масштаб для paper mm → model mm
 
 **Сила притяжения к своей детали:**
-- `LeaderAnchorResolver.TryFindNearestEdgeHit(part.SolidVertices, mark.cx, mark.cy)` → ближайшая точка на контуре
-- Направление силы: от центра метки к этой точке
-- Мертвая зона ~10 мм модели: не тянуть если метка уже близко к контуру
+- уже реализован polygon-aware path через nearest edge / nearest boundary
+- для собственной детали solver сейчас использует own-part contour как основной attract source
+- отдельно учитывается случай, когда центр метки оказался внутри собственного полигона
 
 **Сила отталкивания от других меток:**
-- Вычислить overlap по X и Y с каждой другой меткой
-- Если `overlapX > 0 && overlapY > 0` — толкать в сторону наименьшего перекрытия
-- Сила пропорциональна глубине перекрытия
+- current path уже использует OBB/polygon-aware repulsion через `LocalCorners`
+- fallback AABB остаётся только запасным путём
+- во втором проходе используется не только exact overlap, но и небольшой gap-aware separation signal
 
-**Ограничение для axis-constrained меток (BaseLinePlacing, AlongLinePlacing):**
-- Движение только вдоль оси: проецировать результирующую силу `(fx, fy)` на вектор `(axisDx, axisDy)` из `MarkContext.Axis`
-- `BaseLinePlacing` — якорь на базовой линии элемента
-- `AlongLinePlacing` — метки распределяются вдоль отрезка `PartMiddleStart → PartMiddleEnd`; при отталкивании расходятся вдоль того же отрезка
-- TODO (low priority): для AlongLinePlacing допустим небольшой поперечный сдвиг в разумных пределах — пока не реализуется
+**Текущая реализация axis-constrained меток (BaseLinePlacing, AlongLinePlacing):**
+- `Pass1`: axis-constrained marks двигаются только вдоль оси
+- `Pass2`: для коллидирующих axis-constrained marks жёсткое axis-ограничение временно снимается
+- вместо этого включается слабая поперечная пружина обратно к линии оси детали
+- это позволяет:
+  - разойтись с соседними marks
+  - но не улететь далеко от baseline axis
 
-**Итерационный цикл:**
+**Текущий итерационный цикл experimental path:**
+1. `Pass1`
+   - двигаются все marks
+   - учитываются только детали
+   - mark-mark repulsion выключен
+2. `Pass2`
+   - двигаются только marks, которые после `Pass1` ещё конфликтуют
+   - в расчёте участвуют все детали и все marks
+   - включён mark-mark repulsion
+   - для baseline/along-line marks работает weak return-to-axis-line
+
+Внутри одной итерации solver уже считает смещения по snapshot-состоянию:
+
+- сначала считает `dx/dy` для всех movable marks
+- потом применяет их разом
+
+Общий цикл:
 ```
 for iter in 0..100:
     for each mark:
         compute attraction force to own part contour
         compute repulsion from all other marks
-        apply constraints (BaseLinePlacing → project onto axis)
+        apply constraints / axis-line return
         move by (fx, fy) * dt
     dt *= 0.99   // затухание
     stop early if total displacement < epsilon
 ```
 
-**Новый класс:** `ForceDirectedMarkPlacer` в `TeklaMcpServer.Api/Algorithms/Marks/`
+Что уже реализовано в `ForceDirectedMarkPlacer`:
 
-**Интеграция:** вызывать из `arrange_marks` как дополнительный pass после текущего greedy/overlap pipeline.
+- own-part attraction
+- foreign-part repulsion
+- inside-own-polygon correction
+- inside-foreign-polygon push-out
+- OBB-based mark-mark repulsion
+- mark gap in `Pass2`
+- simultaneous update per iteration
+- separate `Pass1Default` / `Pass2Default`
+
+**Текущая интеграция:**
+- не внутри `arrange_marks`
+- а отдельной командой `arrange_marks_force`
+
+То есть:
+- `arrange_marks` остаётся основным context-aware candidate/scoring path
+- `arrange_marks_force` — отдельный experimental solver
 
 **Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
