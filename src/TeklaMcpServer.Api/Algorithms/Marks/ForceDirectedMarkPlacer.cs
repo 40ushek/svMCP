@@ -395,33 +395,28 @@ internal sealed class ForceDirectedMarkPlacer
         {
             var markPolygon = PolygonGeometry.Translate(mark.LocalCorners, mark.Cx, mark.Cy);
             var otherPolygon = PolygonGeometry.Translate(other.LocalCorners, other.Cx, other.Cy);
-            if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out var axisX, out var axisY, out var depth))
-                return false;
-
-            var targetSeparation = depth + options.MarkGapMm;
-            repelFx = -axisX * targetSeparation * options.KRepelMark;
-            repelFy = -axisY * targetSeparation * options.KRepelMark;
-            return true;
+            if (PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out var axisX, out var axisY, out var depth))
+            {
+                repelFx = -axisX * (depth + options.MarkGapMm) * options.KRepelMark;
+                repelFy = -axisY * (depth + options.MarkGapMm) * options.KRepelMark;
+                return true;
+            }
+            // No polygon overlap — fall through to bbox proximity check with margin
         }
 
-        var ox = OverlapX(mark, other);
-        var oy = OverlapY(mark, other);
+        // Fire when gap < MarkGapMm (not only when actually overlapping)
+        var ox = (mark.Width + other.Width) * 0.5 + options.MarkGapMm - Math.Abs(mark.Cx - other.Cx);
+        var oy = (mark.Height + other.Height) * 0.5 + options.MarkGapMm - Math.Abs(mark.Cy - other.Cy);
         if (ox <= 0.0 || oy <= 0.0)
             return false;
 
         if (ox < oy)
-            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * options.KRepelMark * (ox + options.MarkGapMm);
+            repelFx = (mark.Cx >= other.Cx ? 1.0 : -1.0) * options.KRepelMark * ox;
         else
-            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * options.KRepelMark * (oy + options.MarkGapMm);
+            repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * options.KRepelMark * oy;
 
         return true;
     }
-
-    private static double OverlapX(ForceDirectedMarkItem a, ForceDirectedMarkItem b) =>
-        Math.Max(0.0, (a.Width + b.Width) * 0.5 - Math.Abs(a.Cx - b.Cx));
-
-    private static double OverlapY(ForceDirectedMarkItem a, ForceDirectedMarkItem b) =>
-        Math.Max(0.0, (a.Height + b.Height) * 0.5 - Math.Abs(a.Cy - b.Cy));
 }
 
 internal readonly struct ForceIterationDebugInfo
