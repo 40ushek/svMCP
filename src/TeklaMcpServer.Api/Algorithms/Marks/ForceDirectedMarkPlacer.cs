@@ -218,10 +218,12 @@ internal sealed class ForceDirectedMarkPlacer
 
             if (isInsidePart)
             {
-                var penetration = Math.Max(dist, 0.001);
-                var insideForce = options.KRepelPart * (penetration / Math.Max(options.PartRepelSoftening, 0.001));
-                partRepelFx += insideForce * (nx - mark.Cx) / penetration;
-                partRepelFy += insideForce * (ny - mark.Cy) / penetration;
+                var insideForce = options.KRepelPart / (options.PartRepelSoftening * options.PartRepelSoftening);
+                var exitDx = nx - mark.Cx;
+                var exitDy = ny - mark.Cy;
+                var exitDist = Math.Max(Math.Sqrt(exitDx * exitDx + exitDy * exitDy), 0.001);
+                partRepelFx += insideForce * exitDx / exitDist;
+                partRepelFy += insideForce * exitDy / exitDist;
                 continue;
             }
 
