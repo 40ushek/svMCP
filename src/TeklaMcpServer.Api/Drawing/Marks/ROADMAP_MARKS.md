@@ -742,6 +742,13 @@ for iter in 0..100:
 - mark gap in `Pass2`
 - simultaneous update per iteration
 - separate `Pass1Default` / `Pass2Default`
+- normalized axis handling inside solver
+- `KPerpRestoreAxis` for axis-constrained marks in `Pass1`
+- weak `ReturnToAxisLine` for freed baseline/along-line marks in `Pass2`
+- piecewise attraction spring:
+  - logarithmic near field
+  - linear far tail with clamp
+- `PlaceInitial()` outlier recovery step for very distant free/leader marks
 
 **Текущая интеграция:**
 - не внутри `arrange_marks`
@@ -752,3 +759,47 @@ for iter in 0..100:
 - `arrange_marks_force` — отдельный experimental solver
 
 **Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
+
+**Следующий рефакторинг force-path для `mark-mark` geometry:**
+
+Текущий известный дефект:
+
+- после OBB/polygon path в `TryGetMarkRepulsion()` всё ещё остаётся axis-aligned fallback через `Width/Height`
+- для повернутых `BaseLinePlacing` / `AlongLinePlacing` marks это может давать ложное "слишком близко"
+- из-за этого `Pass2` иногда раздвигает rotated marks лишний раз, хотя по реальной OBB-геометрии конфликта уже нет
+
+План рефакторинга:
+
+1. Если у обеих marks есть `LocalCorners`, не использовать AABB fallback для proximity/gap reasoning.
+2. После `polygon overlap` path добавить `polygon gap` path:
+   - если overlap нет, но расстояние между polygon-ами меньше `MarkGapMm`,
+   - считать separation vector по реальной OBB/polygon geometry.
+3. Уточнить canonical split:
+   - `TryGetPolygonGapVector(...)` должен жить в `PolygonGeometry`
+   - `TryGetMarkRepulsion(...)` остаётся в `ForceDirectedMarkPlacer` как orchestration-layer
+   - geometry helper должен возвращать:
+     - `overlap mtv`
+     - `gap vector`
+     - `no interaction`
+4. Оставить `Width/Height` fallback только для degraded cases, где OBB/polygon geometry недоступна.
+
+Touching edge case:
+
+- если polygon-ы только касаются (`gap = 0`) и overlap ещё нет, это должно считаться допустимым состоянием
+- в таком случае `mark-mark repulsion` не нужен
+- это поведение должно быть явно сохранено при переходе с AABB fallback на polygon-gap path
+
+Ожидаемый эффект:
+
+- убрать ложное раздвижение rotated baseline marks
+- сохранить корректный `gap-aware` repulsion
+- сделать `Pass2` полностью polygon-aware для меток, у которых уже есть `LocalCorners`
+
+Дополнительно зафиксированные pending tasks для force-path:
+
+- вдоль-осевая пружина для `ConstrainToAxis` marks:
+  - сейчас solver умеет удерживать такие marks поперёк оси
+  - но отдельный controlled return вдоль оси как pending idea ещё не реализован
+- продолжать держать нормализацию `AxisDx/AxisDy` внутри solver как обязательное invariant-требование:
+  - latent bug уже был выявлен
+  - внешняя нормализация не должна считаться достаточной гарантией
