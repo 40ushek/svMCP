@@ -227,14 +227,11 @@ internal sealed class ForceDirectedMarkPlacer
                 continue;
             }
 
-            if (dist > options.PartRepelRadius) continue;
-
-            // Inverse-square repulsion with softening: force = KRepelPart / (dist² + ε²)
-            var softDist2 = dist * dist + options.PartRepelSoftening * options.PartRepelSoftening;
-            var force = options.KRepelPart / softDist2;
             if (dist < 0.001)
             {
-                // Inside foreign shape — push away from the foreign shape centroid.
+                // Degenerate fallback — keep previous centroid-based push if the nearest point collapses to mark center.
+                var softDist2 = options.PartRepelSoftening * options.PartRepelSoftening;
+                var force = options.KRepelPart / softDist2;
                 if (TryGetPartCentroid(part, out var centroidX, out var centroidY))
                 {
                     var partDx = mark.Cx - centroidX;
@@ -246,8 +243,17 @@ internal sealed class ForceDirectedMarkPlacer
                 continue;
             }
 
-            partRepelFx += force * dx / dist;
-            partRepelFy += force * dy / dist;
+            var ux = dx / dist;
+            var uy = dy / dist;
+            var markRadius = ComputeMarkRadius(mark, ux, uy);
+            var effectiveDist = Math.Max(dist - markRadius, 0.0);
+            if (effectiveDist > options.PartRepelRadius) continue;
+
+            // Inverse-square repulsion with softening: force = KRepelPart / (effectiveDist² + ε²)
+            var edgeSoftDist2 = effectiveDist * effectiveDist + options.PartRepelSoftening * options.PartRepelSoftening;
+            var edgeForce = options.KRepelPart / edgeSoftDist2;
+            partRepelFx += edgeForce * ux;
+            partRepelFy += edgeForce * uy;
         }
 
         if (includeMarkRepulsion)
@@ -380,6 +386,24 @@ internal sealed class ForceDirectedMarkPlacer
 
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
+
+    private static double ComputeMarkRadius(ForceDirectedMarkItem mark, double ux, double uy)
+    {
+        if (mark.LocalCorners.Count >= 3)
+        {
+            var maxProjection = double.MinValue;
+            foreach (var corner in mark.LocalCorners)
+            {
+                var projection = (corner[0] * ux) + (corner[1] * uy);
+                if (projection > maxProjection)
+                    maxProjection = projection;
+            }
+
+            return Math.Max(maxProjection, 0.0);
+        }
+
+        return ((mark.Width * 0.5) * Math.Abs(ux)) + ((mark.Height * 0.5) * Math.Abs(uy));
+    }
 
     private static bool TryGetMarkRepulsion(
         ForceDirectedMarkItem mark,
