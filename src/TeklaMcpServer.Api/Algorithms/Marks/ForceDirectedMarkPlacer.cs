@@ -75,14 +75,14 @@ internal readonly struct ForcePassOptions
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.1, maxAttract: 50.0,
+        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.0, kPerpRestoreAxis: 0.12,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 
     public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.1, maxAttract: 50.0,
+        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.12, kPerpRestoreAxis: 0.0,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
