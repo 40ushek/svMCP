@@ -275,13 +275,7 @@ internal sealed class ForceDirectedMarkPlacer
 
         if (mark.ReturnToAxisLine && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
         {
-            var normalX = -mark.AxisDy;
-            var normalY = mark.AxisDx;
-            var offsetX = mark.Cx - mark.AxisOriginX;
-            var offsetY = mark.Cy - mark.AxisOriginY;
-            var signedDistance = (offsetX * normalX) + (offsetY * normalY);
-            attractFx += -options.KReturnToAxisLine * signedDistance * normalX;
-            attractFy += -options.KReturnToAxisLine * signedDistance * normalY;
+            ApplyAxisLineSpring(mark, options.KReturnToAxisLine, ref attractFx, ref attractFy);
         }
 
         if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
@@ -299,13 +293,7 @@ internal sealed class ForceDirectedMarkPlacer
             // Perpendicular spring to axis line for axis-constrained marks in pass 1.
             if (options.KPerpRestoreAxis > 0.0)
             {
-                var normalX = -mark.AxisDy;
-                var normalY = mark.AxisDx;
-                var offsetX = mark.Cx - mark.AxisOriginX;
-                var offsetY = mark.Cy - mark.AxisOriginY;
-                var signedDistance = (offsetX * normalX) + (offsetY * normalY);
-                attractFx += -options.KPerpRestoreAxis * signedDistance * normalX;
-                attractFy += -options.KPerpRestoreAxis * signedDistance * normalY;
+                ApplyAxisLineSpring(mark, options.KPerpRestoreAxis, ref attractFx, ref attractFy);
             }
         }
 
@@ -401,6 +389,24 @@ internal sealed class ForceDirectedMarkPlacer
 
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
+
+    private static void ApplyAxisLineSpring(
+        ForceDirectedMarkItem mark,
+        double stiffness,
+        ref double forceX,
+        ref double forceY)
+    {
+        if (stiffness <= 0.0 || (Math.Abs(mark.AxisDx) <= 0.001 && Math.Abs(mark.AxisDy) <= 0.001))
+            return;
+
+        var normalX = -mark.AxisDy;
+        var normalY = mark.AxisDx;
+        var offsetX = mark.Cx - mark.AxisOriginX;
+        var offsetY = mark.Cy - mark.AxisOriginY;
+        var signedDistance = (offsetX * normalX) + (offsetY * normalY);
+        forceX += -stiffness * signedDistance * normalX;
+        forceY += -stiffness * signedDistance * normalY;
+    }
 
     private static double ComputeMarkRadius(ForceDirectedMarkItem mark, double ux, double uy)
     {
