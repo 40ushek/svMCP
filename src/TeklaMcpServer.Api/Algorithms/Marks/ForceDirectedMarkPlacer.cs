@@ -29,6 +29,7 @@ internal readonly struct ForcePassOptions
 {
     public ForcePassOptions(
         double kAttract, double idealDist,
+        double farDistThreshold, double kFarAttract, double maxAttract,
         double kReturnToAxisLine,
         double kPerpRestoreAxis,
         double kRepelPart, double partRepelRadius, double partRepelSoftening,
@@ -37,6 +38,9 @@ internal readonly struct ForcePassOptions
     {
         KAttract = kAttract;
         IdealDist = idealDist;
+        FarDistThreshold = farDistThreshold;
+        KFarAttract = kFarAttract;
+        MaxAttract = maxAttract;
         KReturnToAxisLine = kReturnToAxisLine;
         KPerpRestoreAxis = kPerpRestoreAxis;
         KRepelPart = kRepelPart;
@@ -53,6 +57,9 @@ internal readonly struct ForcePassOptions
     public double KAttract { get; }
     /// <summary>Desired distance from mark center to own part surface. Attraction pulls to this distance, not to zero.</summary>
     public double IdealDist { get; }
+    public double FarDistThreshold { get; }
+    public double KFarAttract { get; }
+    public double MaxAttract { get; }
     public double KReturnToAxisLine { get; }
     public double KPerpRestoreAxis { get; }
     public double KRepelPart { get; }
@@ -68,23 +75,60 @@ internal readonly struct ForcePassOptions
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, kReturnToAxisLine: 0.0, kPerpRestoreAxis: 0.12,
+        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.1, maxAttract: 50.0,
+        kReturnToAxisLine: 0.0, kPerpRestoreAxis: 0.12,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
-        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
+        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 
     public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, kReturnToAxisLine: 0.12, kPerpRestoreAxis: 0.0,
+        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.1, maxAttract: 50.0,
+        kReturnToAxisLine: 0.12, kPerpRestoreAxis: 0.0,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
-        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
+        initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 }
 
 internal sealed class ForceDirectedMarkPlacer
 {
-    public void PlaceInitial(IReadOnlyList<ForceDirectedMarkItem> items)
+    private const double OutlierDistanceFactor = 10.0;
+    private const double OutlierTargetFactor = 4.0;
+
+    public void PlaceInitial(IReadOnlyList<ForceDirectedMarkItem> items, IReadOnlyList<PartBbox> allParts)
     {
-        _ = items;
+        foreach (var mark in items)
+        {
+            if (!mark.CanMove || mark.ConstrainToAxis || mark.OwnPolygon == null || mark.OwnPolygon.Count < 2)
+                continue;
+
+            if (!LeaderAnchorResolver.TryFindNearestEdgeHit(mark.OwnPolygon, mark.Cx, mark.Cy, out var hit))
+                continue;
+
+            var dx = mark.Cx - hit.PointX;
+            var dy = mark.Cy - hit.PointY;
+            var dist = Math.Sqrt((dx * dx) + (dy * dy));
+            if (dist <= 0.001)
+                continue;
+
+            var markSize = Math.Max(Math.Sqrt((mark.Width * mark.Width) + (mark.Height * mark.Height)), 1.0);
+            var outlierThreshold = markSize * OutlierDistanceFactor;
+            if (dist <= outlierThreshold)
+                continue;
+
+            var targetDist = markSize * OutlierTargetFactor;
+            var ux = dx / dist;
+            var uy = dy / dist;
+            var targetX = hit.PointX + (ux * targetDist);
+            var targetY = hit.PointY + (uy * targetDist);
+            if (WouldOverlapForeignPart(mark, targetX, targetY, allParts))
+                continue;
+
+            if (WouldOverlapOtherMark(mark, items, targetX, targetY))
+                continue;
+
+            mark.Cx = targetX;
+            mark.Cy = targetY;
+        }
     }
 
     public int Relax(
@@ -191,14 +235,14 @@ internal sealed class ForceDirectedMarkPlacer
             }
             else
             {
-                // Leader-line and free marks: logarithmic spring to nearest part surface.
-                // Equilibrium at IdealDist; positive when farther, negative when closer.
+                // Leader-line and free marks: piecewise spring to nearest part surface.
+                // Near field uses logarithmic spring; far field adds a linear tail so very distant marks return faster.
                 if (LeaderAnchorResolver.TryFindNearestEdgeHit(mark.OwnPolygon, mark.Cx, mark.Cy, out var hit))
                 {
                     var dx = hit.PointX - mark.Cx;
                     var dy = hit.PointY - mark.Cy;
                     var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
-                    var springF = options.KAttract * Math.Log(dist / options.IdealDist);
+                    var springF = ComputeAttractForce(dist, options);
                     if (IsInsidePolygon(mark.Cx, mark.Cy, mark.OwnPolygon))
                         springF = -springF;
                     attractFx += springF * (dx / dist);
@@ -392,6 +436,23 @@ internal sealed class ForceDirectedMarkPlacer
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
 
+    private static double ComputeAttractForce(double dist, ForcePassOptions options)
+    {
+        var threshold = Math.Max(options.FarDistThreshold, options.IdealDist + 0.001);
+        double force;
+        if (dist <= threshold)
+        {
+            force = options.KAttract * Math.Log(dist / options.IdealDist);
+        }
+        else
+        {
+            var thresholdForce = options.KAttract * Math.Log(threshold / options.IdealDist);
+            force = thresholdForce + (options.KFarAttract * (dist - threshold));
+        }
+
+        return Clamp(force, -options.MaxAttract, options.MaxAttract);
+    }
+
     private static bool TryGetNormalizedAxis(ForceDirectedMarkItem mark, out double axisDx, out double axisDy)
     {
         axisDx = mark.AxisDx;
@@ -476,6 +537,89 @@ internal sealed class ForceDirectedMarkPlacer
             repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * options.KRepelMark * oy;
 
         return true;
+    }
+
+    private static bool WouldOverlapForeignPart(
+        ForceDirectedMarkItem mark,
+        double targetX,
+        double targetY,
+        IReadOnlyList<PartBbox> allParts)
+    {
+        var markPolygon = BuildMarkPolygon(mark, targetX, targetY);
+        foreach (var part in allParts)
+        {
+            if (mark.OwnModelId.HasValue && part.ModelId == mark.OwnModelId.Value)
+                continue;
+
+            if (part.Polygon != null && part.Polygon.Count >= 3)
+            {
+                if (PolygonGeometry.Intersects(markPolygon, part.Polygon))
+                    return true;
+
+                continue;
+            }
+
+            if (PolygonIntersectsBbox(markPolygon, part))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool WouldOverlapOtherMark(
+        ForceDirectedMarkItem mark,
+        IReadOnlyList<ForceDirectedMarkItem> allMarks,
+        double targetX,
+        double targetY)
+    {
+        var markPolygon = BuildMarkPolygon(mark, targetX, targetY);
+        foreach (var other in allMarks)
+        {
+            if (other.Id == mark.Id)
+                continue;
+
+            var otherPolygon = BuildMarkPolygon(other, other.Cx, other.Cy);
+            if (PolygonGeometry.Intersects(markPolygon, otherPolygon))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyList<double[]> BuildMarkPolygon(ForceDirectedMarkItem mark, double cx, double cy)
+    {
+        if (mark.LocalCorners.Count >= 3)
+            return PolygonGeometry.Translate(mark.LocalCorners, cx, cy);
+
+        var halfWidth = mark.Width * 0.5;
+        var halfHeight = mark.Height * 0.5;
+        return
+        [
+            [cx - halfWidth, cy - halfHeight],
+            [cx + halfWidth, cy - halfHeight],
+            [cx + halfWidth, cy + halfHeight],
+            [cx - halfWidth, cy + halfHeight]
+        ];
+    }
+
+    private static bool PolygonIntersectsBbox(IReadOnlyList<double[]> polygon, PartBbox bbox)
+    {
+        foreach (var point in polygon)
+        {
+            if (point[0] >= bbox.MinX && point[0] <= bbox.MaxX &&
+                point[1] >= bbox.MinY && point[1] <= bbox.MaxY)
+                return true;
+        }
+
+        var bboxPolygon = new[]
+        {
+            new[] { bbox.MinX, bbox.MinY },
+            new[] { bbox.MaxX, bbox.MinY },
+            new[] { bbox.MaxX, bbox.MaxY },
+            new[] { bbox.MinX, bbox.MaxY }
+        };
+
+        return PolygonGeometry.Intersects(polygon, bboxPolygon);
     }
 }
 

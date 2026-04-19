@@ -251,7 +251,7 @@ public sealed partial class TeklaDrawingMarkApi
                     .ToDictionary(item => item.Id);
 
                 var force = new ForceDirectedMarkPlacer();
-                force.PlaceInitial(forceItems.Values.ToList());
+                force.PlaceInitial(forceItems.Values.ToList(), partBboxes);
 
                 var arrange = Stopwatch.StartNew();
                 var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
