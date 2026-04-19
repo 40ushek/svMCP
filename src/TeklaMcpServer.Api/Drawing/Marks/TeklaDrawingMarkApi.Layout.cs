@@ -237,8 +237,11 @@ public sealed partial class TeklaDrawingMarkApi
                         Height = entry.Item.Height,
                         CanMove = entry.Item.CanMove,
                         ConstrainToAxis = entry.Item.HasAxis && !entry.Item.HasLeaderLine,
+                        ReturnToAxisLine = false,
                         AxisDx = entry.Item.AxisDx,
                         AxisDy = entry.Item.AxisDy,
+                        AxisOriginX = entry.Item.SourceCenterX ?? entry.CenterX,
+                        AxisOriginY = entry.Item.SourceCenterY ?? entry.CenterY,
                         LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList(),
                         OwnPolygon = entry.Item.SourceModelId.HasValue &&
                                      partPolygonsByModelId.TryGetValue(entry.Item.SourceModelId.Value, out var polygon)
@@ -269,7 +272,10 @@ public sealed partial class TeklaDrawingMarkApi
                 // Baseline marks that collide are freed for Pass 2 — solver can push them perpendicular to axis
                 foreach (var id in collidingIds)
                     if (forceItems.TryGetValue(id, out var item) && item.ConstrainToAxis)
+                    {
                         item.ConstrainToAxis = false;
+                        item.ReturnToAxisLine = true;
+                    }
 
                 var pass2Iterations = 0;
                 if (collidingIds.Count > 0)

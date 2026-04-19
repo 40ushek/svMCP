@@ -12,8 +12,11 @@ internal sealed class ForceDirectedMarkItem
     public double Height { get; set; }
     public bool CanMove { get; set; }
     public bool ConstrainToAxis { get; set; }
+    public bool ReturnToAxisLine { get; set; }
     public double AxisDx { get; set; }
     public double AxisDy { get; set; }
+    public double AxisOriginX { get; set; }
+    public double AxisOriginY { get; set; }
     public IReadOnlyList<double[]> LocalCorners { get; set; } = [];
     public IReadOnlyList<double[]>? OwnPolygon { get; set; }
 }

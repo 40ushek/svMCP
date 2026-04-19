@@ -29,12 +29,14 @@ internal readonly struct ForcePassOptions
 {
     public ForcePassOptions(
         double kAttract, double idealDist,
+        double kReturnToAxisLine,
         double kRepelPart, double partRepelRadius, double partRepelSoftening,
         double kRepelMark, double markGapMm,
         double initialDt, double dtDecay, double stopEpsilon, int maxIterations)
     {
         KAttract = kAttract;
         IdealDist = idealDist;
+        KReturnToAxisLine = kReturnToAxisLine;
         KRepelPart = kRepelPart;
         PartRepelRadius = partRepelRadius;
         PartRepelSoftening = partRepelSoftening;
@@ -49,6 +51,7 @@ internal readonly struct ForcePassOptions
     public double KAttract { get; }
     /// <summary>Desired distance from mark center to own part surface. Attraction pulls to this distance, not to zero.</summary>
     public double IdealDist { get; }
+    public double KReturnToAxisLine { get; }
     public double KRepelPart { get; }
     public double PartRepelRadius { get; }
     /// <summary>Softening epsilon for repulsion: force = KRepelPart / (dist² + ε²). Prevents singularity at dist→0.</summary>
@@ -62,13 +65,13 @@ internal readonly struct ForcePassOptions
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0,
+        kAttract: 0.48, idealDist: 25.0, kReturnToAxisLine: 0.0,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
 
     public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0,
+        kAttract: 0.48, idealDist: 25.0, kReturnToAxisLine: 0.12,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 80);
@@ -257,6 +260,17 @@ internal sealed class ForceDirectedMarkPlacer
                     markRepelFy += repelFy;
                 }
             }
+        }
+
+        if (mark.ReturnToAxisLine && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
+        {
+            var normalX = -mark.AxisDy;
+            var normalY = mark.AxisDx;
+            var offsetX = mark.Cx - mark.AxisOriginX;
+            var offsetY = mark.Cy - mark.AxisOriginY;
+            var signedDistance = (offsetX * normalX) + (offsetY * normalY);
+            attractFx += -options.KReturnToAxisLine * signedDistance * normalX;
+            attractFy += -options.KReturnToAxisLine * signedDistance * normalY;
         }
 
         if (mark.ConstrainToAxis && (Math.Abs(mark.AxisDx) > 0.001 || Math.Abs(mark.AxisDy) > 0.001))
