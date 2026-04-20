@@ -522,10 +522,23 @@ internal sealed class ForceDirectedMarkPlacer
                 repelFy = -axisY * (depth + options.MarkGapMm) * options.KRepelMark;
                 return true;
             }
-            // No polygon overlap — fall through to bbox proximity check with margin
+
+            if (PolygonGeometry.TryGetPolygonGapVector(markPolygon, otherPolygon, out var gapAxisX, out var gapAxisY, out var gap))
+            {
+                var gapViolation = options.MarkGapMm - gap;
+                if (gapViolation <= 0.0)
+                    return false;
+
+                repelFx = -gapAxisX * gapViolation * options.KRepelMark;
+                repelFy = -gapAxisY * gapViolation * options.KRepelMark;
+                return true;
+            }
+
+            // Touching or fully separated OBB polygons are acceptable here.
+            return false;
         }
 
-        // Fire when gap < MarkGapMm (not only when actually overlapping)
+        // Degraded fallback for marks without OBB geometry.
         var ox = (mark.Width + other.Width) * 0.5 + options.MarkGapMm - Math.Abs(mark.Cx - other.Cx);
         var oy = (mark.Height + other.Height) * 0.5 + options.MarkGapMm - Math.Abs(mark.Cy - other.Cy);
         if (ox <= 0.0 || oy <= 0.0)
