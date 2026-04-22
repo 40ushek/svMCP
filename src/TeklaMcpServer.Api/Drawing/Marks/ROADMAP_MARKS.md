@@ -728,7 +728,7 @@ for iter in 0..100:
         compute repulsion from all other marks
         apply constraints / axis-line return
         move by (fx, fy) * dt
-    dt *= 0.99   // затухание
+    dt *= 0.98   // затухание
     stop early if total displacement < epsilon
 ```
 
@@ -760,40 +760,18 @@ for iter in 0..100:
 
 **Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
 
-**Следующий рефакторинг force-path для `mark-mark` geometry:**
+**Рефакторинг force-path для `mark-mark` geometry — completed:**
 
-Текущий известный дефект:
+Реализовано в `TryGetMarkRepulsion()`:
 
-- после OBB/polygon path в `TryGetMarkRepulsion()` всё ещё остаётся axis-aligned fallback через `Width/Height`
-- для повернутых `BaseLinePlacing` / `AlongLinePlacing` marks это может давать ложное "слишком близко"
-- из-за этого `Pass2` иногда раздвигает rotated marks лишний раз, хотя по реальной OBB-геометрии конфликта уже нет
+1. Если у обеих marks есть `LocalCorners` — полный polygon path:
+   - `TryGetMinimumTranslationVector` для overlap cases
+   - `TryGetPolygonGapVector` для gap-aware repulsion
+   - touching / fully separated → `return false` (no repulsion)
+2. `Width/Height` AABB fallback оставлен только для marks без OBB geometry (`// Degraded fallback for marks without OBB geometry`)
+3. `TryGetPolygonGapVector` живёт в `PolygonGeometry` как geometry helper
 
-План рефакторинга:
-
-1. Если у обеих marks есть `LocalCorners`, не использовать AABB fallback для proximity/gap reasoning.
-2. После `polygon overlap` path добавить `polygon gap` path:
-   - если overlap нет, но расстояние между polygon-ами меньше `MarkGapMm`,
-   - считать separation vector по реальной OBB/polygon geometry.
-3. Уточнить canonical split:
-   - `TryGetPolygonGapVector(...)` должен жить в `PolygonGeometry`
-   - `TryGetMarkRepulsion(...)` остаётся в `ForceDirectedMarkPlacer` как orchestration-layer
-   - geometry helper должен возвращать:
-     - `overlap mtv`
-     - `gap vector`
-     - `no interaction`
-4. Оставить `Width/Height` fallback только для degraded cases, где OBB/polygon geometry недоступна.
-
-Touching edge case:
-
-- если polygon-ы только касаются (`gap = 0`) и overlap ещё нет, это должно считаться допустимым состоянием
-- в таком случае `mark-mark repulsion` не нужен
-- это поведение должно быть явно сохранено при переходе с AABB fallback на polygon-gap path
-
-Ожидаемый эффект:
-
-- убрать ложное раздвижение rotated baseline marks
-- сохранить корректный `gap-aware` repulsion
-- сделать `Pass2` полностью polygon-aware для меток, у которых уже есть `LocalCorners`
+Touching edge case сохранён: если polygon-ы только касаются (`gap = 0`) и overlap нет → repulsion не применяется.
 
 Дополнительно зафиксированные pending tasks для force-path:
 

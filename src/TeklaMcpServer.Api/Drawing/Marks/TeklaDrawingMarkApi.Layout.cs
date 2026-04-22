@@ -35,7 +35,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 if (markEntries.Count == 0)
                 {
-                    PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks=0 collectMs={collect.ElapsedMilliseconds}");
+                    PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={marksViewContext.ViewScale} marks=0 collectMs={collect.ElapsedMilliseconds}");
                     continue;
                 }
 
@@ -77,7 +77,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 var finalViewOverlaps = GetMarks(view.GetIdentifier().ID).Overlaps.Count;
                 totalRemainingOverlaps += finalViewOverlaps;
-                PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={iterations} finalOverlaps={finalViewOverlaps}");
+                PerfTrace.Write("api-mark", "resolve_mark_overlaps_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={marksViewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} resolveMs={resolve.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} iterations={iterations} finalOverlaps={finalViewOverlaps}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -127,7 +127,7 @@ public sealed partial class TeklaDrawingMarkApi
                 collect.Stop();
                 if (markEntries.Count == 0)
                 {
-                    PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks=0 collectMs={collect.ElapsedMilliseconds}");
+                    PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks=0 collectMs={collect.ElapsedMilliseconds}");
                     continue;
                 }
 
@@ -160,7 +160,7 @@ public sealed partial class TeklaDrawingMarkApi
                 leaderAnchor.Stop();
                 totalIterations += layoutResult.Iterations;
                 totalRemainingOverlaps += layoutResult.RemainingOverlaps;
-                PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
+                PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -218,7 +218,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 if (markEntries.Count == 0)
                 {
-                    PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks=0 collectMs={collect.ElapsedMilliseconds}");
+                    PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks=0 collectMs={collect.ElapsedMilliseconds}");
                     continue;
                 }
 
@@ -336,7 +336,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 totalIterations += pass1Iterations + pass2Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Iterations} pass2Iterations={pass2Iterations} collidingMarks={collidingIds.Count}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Iterations} pass2Iterations={pass2Iterations} collidingMarks={collidingIds.Count}");
             }
 
             movedIds = movedIds.Distinct().ToList();
