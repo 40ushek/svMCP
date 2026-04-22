@@ -91,8 +91,9 @@ internal readonly struct ForcePassOptions
 
 internal sealed class ForceDirectedMarkPlacer
 {
-    private const double OutlierDistanceFactor = 10.0;
-    private const double OutlierTargetFactor = 4.0;
+    private const double FarDistanceFactor = 8.0;
+    private const double OutlierDistanceFactor = 15.0;
+    private const double OutlierTargetFactor = 6.0;
 
     public void PlaceInitial(IReadOnlyList<ForceDirectedMarkItem> items, IReadOnlyList<PartBbox> allParts)
     {
@@ -110,7 +111,7 @@ internal sealed class ForceDirectedMarkPlacer
             if (dist <= 0.001)
                 continue;
 
-            var markSize = Math.Max(Math.Sqrt((mark.Width * mark.Width) + (mark.Height * mark.Height)), 1.0);
+            var markSize = Math.Max(Math.Min(mark.Width, mark.Height), 1.0);
             var outlierThreshold = markSize * OutlierDistanceFactor;
             if (dist <= outlierThreshold)
                 continue;
@@ -141,6 +142,7 @@ internal sealed class ForceDirectedMarkPlacer
     {
         var dt = options.InitialDt;
         var iterationsUsed = 0;
+        var prevStepById = new Dictionary<int, (double dx, double dy)>();
         for (var iter = 0; iter < options.MaxIterations; iter++)
         {
             iterationsUsed = iter + 1;
@@ -156,6 +158,16 @@ internal sealed class ForceDirectedMarkPlacer
 
                 var dx = debug.Fx * dt;
                 var dy = debug.Fy * dt;
+                if (prevStepById.TryGetValue(mark.Id, out var prevStep))
+                {
+                    var dot = (dx * prevStep.dx) + (dy * prevStep.dy);
+                    if (dot < 0.0)
+                    {
+                        dx *= 0.5;
+                        dy *= 0.5;
+                    }
+                }
+
                 updates.Add(new ForceIterationUpdate(mark, debug, dx, dy));
             }
 
@@ -163,6 +175,7 @@ internal sealed class ForceDirectedMarkPlacer
             {
                 update.Mark.Cx += update.Dx;
                 update.Mark.Cy += update.Dy;
+                prevStepById[update.Mark.Id] = (update.Dx, update.Dy);
                 var displacement = Math.Sqrt((update.Dx * update.Dx) + (update.Dy * update.Dy));
                 maxDisplacement = Math.Max(maxDisplacement, displacement);
                 debugSink?.Invoke(new ForceIterationDebugInfo(
