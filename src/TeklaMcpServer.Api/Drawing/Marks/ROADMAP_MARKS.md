@@ -594,7 +594,7 @@ Leader geometry отдельной линией:
 Отношение к `arrange_marks`:
 
 - `arrange_marks` остаётся context-aware candidate/scoring path для одиночной расстановки
-- `arrange_marks_force` — production-worthy solver для multi-mark layout, вызывается пользователем отдельной командой
+- `arrange_marks_force` — основной multi-mark путь, вызывается пользователем отдельной командой; ряд high-impact задач остаётся открытым (см. pending tasks ниже)
 - пользовательская связка `arrange_marks_force` + `arrange_marks_no_collisions` даёт приемлемое качество (8 → 1 overlap)
 
 **Идея:** каждая метка притягивается к своей детали и отталкивается от соседних меток.
@@ -648,7 +648,7 @@ for iter in 0..100:
         apply constraints / axis-line return
         move by (fx, fy) * dt
     dt *= 0.98   // затухание
-    stop early if total displacement < epsilon
+    stop early if max displacement < epsilon
 ```
 
 Что уже реализовано в `ForceDirectedMarkPlacer`:
@@ -688,7 +688,9 @@ Touching edge case сохранён: если polygon-ы только касаю
 
 **1. View-scale awareness (paper-mm internal semantics)**
 
-Сейчас все distance-параметры (`IdealDist=25`, `MarkGapMm=2.0`, `PartRepelRadius=120`, `PartRepelSoftening=5.0`, `farThreshold = markSize * FarDistanceFactor`, `StopEpsilon=0.05`) заданы в drawing units. Имена с `Mm` и семантика не совпадают с реальностью — на scale 1:25 `MarkGapMm=2.0` = 0.08 мм на бумаге.
+Все фиксированные distance-параметры (`IdealDist=25`, `MarkGapMm=2.0`, `PartRepelRadius=120`, `PartRepelSoftening=5.0`, `StopEpsilon=0.05`) заданы в drawing units. Имена с `Mm` и семантика не совпадают с реальностью — на scale 1:25 `MarkGapMm=2.0` = 0.08 мм на бумаге.
+
+`farThreshold = markSize * FarDistanceFactor` (и outlier thresholds в `PlaceInitial`, завязанные на `min(Width, Height)`) уже пропорциональны размеру марки в drawing units, поэтому автоматически адаптируются под масштаб вида. Они не входят в список параметров, требующих paper-mm конверсии.
 
 Предлагаемое решение (Вариант B):
 

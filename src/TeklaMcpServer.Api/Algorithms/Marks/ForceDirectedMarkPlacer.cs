@@ -29,7 +29,7 @@ internal readonly struct ForcePassOptions
 {
     public ForcePassOptions(
         double kAttract, double idealDist,
-        double farDistThreshold, double kFarAttract, double maxAttract,
+        double kFarAttract, double maxAttract,
         double kReturnToAxisLine,
         double kPerpRestoreAxis,
         double kRepelPart, double partRepelRadius, double partRepelSoftening,
@@ -38,7 +38,6 @@ internal readonly struct ForcePassOptions
     {
         KAttract = kAttract;
         IdealDist = idealDist;
-        FarDistThreshold = farDistThreshold;
         KFarAttract = kFarAttract;
         MaxAttract = maxAttract;
         KReturnToAxisLine = kReturnToAxisLine;
@@ -57,7 +56,6 @@ internal readonly struct ForcePassOptions
     public double KAttract { get; }
     /// <summary>Desired distance from mark center to own part surface. Attraction pulls to this distance, not to zero.</summary>
     public double IdealDist { get; }
-    public double FarDistThreshold { get; }
     public double KFarAttract { get; }
     public double MaxAttract { get; }
     public double KReturnToAxisLine { get; }
@@ -75,14 +73,14 @@ internal readonly struct ForcePassOptions
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.05, maxAttract: 50.0,
+        kAttract: 0.48, idealDist: 25.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.0, kPerpRestoreAxis: 0.12,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 
     public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
-        kAttract: 0.48, idealDist: 25.0, farDistThreshold: 120.0, kFarAttract: 0.05, maxAttract: 50.0,
+        kAttract: 0.48, idealDist: 25.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.12, kPerpRestoreAxis: 0.0,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
@@ -255,7 +253,9 @@ internal sealed class ForceDirectedMarkPlacer
                     var dx = hit.PointX - mark.Cx;
                     var dy = hit.PointY - mark.Cy;
                     var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
-                    var springF = ComputeAttractForce(dist, options);
+                    var markSize = Math.Max(Math.Min(mark.Width, mark.Height), 1.0);
+                    var farThreshold = markSize * FarDistanceFactor;
+                    var springF = ComputeAttractForce(dist, farThreshold, options);
                     if (IsInsidePolygon(mark.Cx, mark.Cy, mark.OwnPolygon))
                         springF = -springF;
                     attractFx += springF * (dx / dist);
@@ -449,9 +449,9 @@ internal sealed class ForceDirectedMarkPlacer
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
 
-    private static double ComputeAttractForce(double dist, ForcePassOptions options)
+    private static double ComputeAttractForce(double dist, double farThreshold, ForcePassOptions options)
     {
-        var threshold = Math.Max(options.FarDistThreshold, options.IdealDist + 0.001);
+        var threshold = Math.Max(farThreshold, options.IdealDist + 0.001);
         double force;
         if (dist <= threshold)
         {
