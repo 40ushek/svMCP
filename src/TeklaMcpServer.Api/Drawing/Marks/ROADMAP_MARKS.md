@@ -560,123 +560,42 @@ Phase 5 частично реализована.
 
 ## Следующий практический шаг
 
-Следующий практический шаг:
+Multi-mark layout идёт через force-directed path (Phase 8.1). Приоритетные pending items там — `View-scale awareness`, `Differentiated IdealDist by placing type`, `Pass2 overlap-based early exit`, `Pass2 dynamic movable set expansion`, `Hard constraint в Relax`. Подробности в разделе Phase 8.1.
 
-- full pair-selection для `anchor point` + `leader end point / mark body point`
-- затем explicit leader-shape modes
+Leader geometry отдельной линией:
 
-В рабочем порядке это значит:
+- full pair-selection для `anchor point` + `leader end point / mark body point` (Phase 5.3)
+- затем explicit leader-shape modes (Phase 5.4)
 
-1. `LeaderSnapshot` layer уже есть.
-2. `3-point candidate selection` на ближайшей грани уже есть.
-3. Следующий шаг — перейти к выбору лучшей пары `anchor <-> leader end/body point`.
-4. И только потом добавлять `angled` / `horz elbow` / `vert elbow` modes.
+## Phase 8. Multi-mark layout по аналогии с cartographic labeling — deferred
 
-## Phase 8. Multi-mark layout по аналогии с cartographic labeling
+Подход через cartographic-style `candidate positions + greedy placement + local improvement` отложен.
 
-После стабилизации leader pair-selection следующий уровень качества должен идти уже не только через leader geometry, а через placement самих mark bodies.
+Причины:
 
-Проблема:
+- кандидаты требуют ordering/sorting логики, sensitive к эвристикам;
+- greedy placement зависит от удачного ordering — ранние marks могут занять место, нужное поздним;
+- force-directed path (Phase 8.1) уже работает как full local improvement от текущих позиций без кандидатов и даёт приемлемый результат (8 → 1 overlap после `arrange_marks_force` + `arrange_marks_no_collisions`).
 
-- одна mark зависит от другой;
-- хорошего local anchor tweak недостаточно, если тело mark уже стоит слишком далеко или в плохой зоне;
-- для нескольких деталей и нескольких marks нужна раскладка множества marks, а не только локальная оптимизация одной линии.
+Основной production path для multi-mark layout — **Phase 8.1 (force-directed)**.
 
-Практический deterministic path здесь должен быть вдохновлён cartographic labeling, но адаптирован под drawing marks:
+Возврат к cartographic-candidate подходу имеет смысл только если upper bound качества force-directed окажется недостаточным для практических задач.
 
-- candidate positions для body каждой mark;
-- deterministic score;
-- greedy placement с учётом уже размещённых marks;
-- короткий local-improvement pass после первичной раскладки.
+### Phase 8.1. Force-directed multi-mark layout — primary path
 
-Это должно быть эволюцией текущего `MarkLayoutEngine`, а не его заменой:
+Поскольку Phase 8 (cartographic candidates) отложена, force-directed solver объявлен основным подходом к multi-mark layout.
 
-- существующий candidate/scoring pipeline уже есть;
-- `SimpleMarkCandidateGenerator` и `SimpleMarkCostEvaluator` уже решают первую базовую версию;
-- следующий шаг — расширить этот pipeline новыми candidate signals, ordering и local improvement.
-
-### Candidate positions for mark body
-
-Для каждой leader mark нужно строить небольшой конечный набор body-candidates, а не искать position в непрерывном пространстве.
-
-Минимальный practical набор:
-
-- текущая позиция;
-- позиция ближе к детали по текущему направлению;
-- позиция около середины длинной стороны детали;
-- соседние позиции с небольшим сдвигом вдоль этой стороны;
-- при необходимости 1-2 запасных candidates около альтернативной стороны детали.
-
-Для вытянутых деталей типа балки candidate generation должен учитывать aspect ratio:
-
-- для горизонтально вытянутой детали основные body-candidates — над/под длинной стороной около её середины;
-- для вертикально вытянутой детали — слева/справа около середины высоты;
-- simple "center of detail" недостаточен без учёта главной оси детали.
-
-### Candidate scoring
-
-Для первой deterministic версии score должен быть explainable и быстрым.
-
-Минимальные penalties/signals:
-
-- overlap с уже размещёнными marks;
-- overlap с geometry детали;
-- длина leader line;
-- crossing лидеров;
-- выход за bounds вида;
-- слишком близкое или слишком далёкое положение от детали.
-
-### Placement strategy
-
-Первый practical algorithm не должен быть global stochastic optimizer.
-
-Нужен такой порядок:
-
-1. для каждой mark построить небольшой candidate set;
-2. отсортировать marks по сложности/риску конфликта;
-3. размещать marks greedily по одной;
-4. на каждом шаге выбирать лучший candidate с учётом уже поставленных marks;
-5. после первичной раскладки делать короткий local-improvement pass.
-
-Это даст:
-
-- deterministic поведение;
-- explainable score;
-- быстрый runtime path;
-- хороший базовый слой для будущего AI-agent orchestration.
-
-### Что не делать на первом шаге
-
-Пока не идти в:
-
-- simulated annealing;
-- integer programming;
-- непрерывный глобальный поиск position.
-
-Первый production-worthy шаг:
-
-- `candidate positions + greedy placement + local improvement`
-
-Уже после стабилизации этого deterministic слоя можно думать про:
-
-- richer pair-selection;
-- more advanced leader styles;
-- AI-agent как orchestrator поверх candidate/scoring pipeline.
-
-### Phase 8.1. Force-directed local improvement pass — partially completed
-
-После greedy placement можно запустить force-directed (magnetic) pass как local improvement.
-
-Текущий код уже содержит отдельный experimental runtime-path:
+Путь реализован как:
 
 - `ArrangeMarksForce` / `arrange_marks_force`
 - `ForceDirectedMarkPlacer`
 - `ForceDirectedMarkItem`
 
-Важно:
+Отношение к `arrange_marks`:
 
-- этот path пока не заменяет основной `arrange_marks`
-- force-directed solver сейчас существует как отдельный экспериментальный layout path и tuning playground
+- `arrange_marks` остаётся context-aware candidate/scoring path для одиночной расстановки
+- `arrange_marks_force` — production-worthy solver для multi-mark layout, вызывается пользователем отдельной командой
+- пользовательская связка `arrange_marks_force` + `arrange_marks_no_collisions` даёт приемлемое качество (8 → 1 overlap)
 
 **Идея:** каждая метка притягивается к своей детали и отталкивается от соседних меток.
 Система итеративно оседает — метки у своих деталей, без перекрытий.
@@ -750,14 +669,6 @@ for iter in 0..100:
   - linear far tail with clamp
 - `PlaceInitial()` outlier recovery step for very distant free/leader marks
 
-**Текущая интеграция:**
-- не внутри `arrange_marks`
-- а отдельной командой `arrange_marks_force`
-
-То есть:
-- `arrange_marks` остаётся основным context-aware candidate/scoring path
-- `arrange_marks_force` — отдельный experimental solver
-
 **Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
 
 **Рефакторинг force-path для `mark-mark` geometry — completed:**
@@ -773,11 +684,87 @@ for iter in 0..100:
 
 Touching edge case сохранён: если polygon-ы только касаются (`gap = 0`) и overlap нет → repulsion не применяется.
 
-Дополнительно зафиксированные pending tasks для force-path:
+#### High-impact pending tasks
 
-- вдоль-осевая пружина для `ConstrainToAxis` marks:
-  - сейчас solver умеет удерживать такие marks поперёк оси
-  - но отдельный controlled return вдоль оси как pending idea ещё не реализован
-- продолжать держать нормализацию `AxisDx/AxisDy` внутри solver как обязательное invariant-требование:
-  - latent bug уже был выявлен
-  - внешняя нормализация не должна считаться достаточной гарантией
+**1. View-scale awareness (paper-mm internal semantics)**
+
+Сейчас все distance-параметры (`IdealDist=25`, `MarkGapMm=2.0`, `PartRepelRadius=120`, `PartRepelSoftening=5.0`, `farThreshold = markSize * FarDistanceFactor`, `StopEpsilon=0.05`) заданы в drawing units. Имена с `Mm` и семантика не совпадают с реальностью — на scale 1:25 `MarkGapMm=2.0` = 0.08 мм на бумаге.
+
+Предлагаемое решение (Вариант B):
+
+- на входе в `Relax()` делить все координаты (позиции меток, полигоны деталей, LocalCorners) на `viewScale`
+- вся физика идёт в paper-mm — все константы приобретают реальный физический смысл
+- на выходе умножать позиции обратно в drawing units
+- одна точка конверсии на границе, одна unit system внутри solver
+- `PlaceInitial`, `WouldOverlapForeignPart`, `WouldOverlapOtherMark` тоже работают в paper-mm
+- `viewScale` прокидывается в `ForcePassOptions` или параметром в `Relax()`
+
+**2. Differentiated attraction by placing type**
+
+Сейчас один `IdealDist` для всех марок — solver тянет любую марку к ближайшей грани детали.
+
+Для leader-марок это не нужно: `LeaderAnchorResolver` всё равно перепривязывает anchor к ближайшей грани детали после solver. Значит leader-марка может стоять в "разумной близости" (10-15 мм на бумаге), приоритет — collision-free.
+
+Для baseline/along-line марок (без лидера) наоборот — они должны прилегать к детали (3-5 мм на бумаге).
+
+Решение:
+
+- разные `IdealDist` / `KAttract` для leader vs non-leader
+- либо отдельные `ForcePassOptions` per placing type
+- либо per-mark override на `ForceDirectedMarkItem`
+
+**3. Pass2 overlap-based early exit**
+
+Сейчас Pass2 всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель Pass2 — устранить overlaps среди `movableIds`.
+
+Решение: каждые N итераций (например, 5) считать `GetOverlappingMarkIds(currentPlacements).Intersect(movableIds).Count`. Если 0 — выход.
+
+Простое изменение, ускоряет работу (Pass2 сейчас ~200-600мс на чертёж).
+
+**4. Pass2 dynamic movable set expansion**
+
+Сейчас `movableIds` — только изначально коллидирующие после Pass1 марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
+
+Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
+
+**5. Hard constraint в Relax (no new overlaps)**
+
+Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию" и медленной сходимости.
+
+Решение:
+
+- перед применением шага проверять: создаст ли он новый overlap (через `WouldOverlap*`)
+- если до движения конфликтов не было → запрещать шаги, создающие новые (аналогично `PlaceInitial`)
+- если были → разрешать шаг только если количество overlaps не увеличилось
+
+Семантика такая же, как в `PlaceInitial` — там эта проверка уже есть для outlier recovery.
+
+#### Medium-impact pending tasks
+
+**6. Leader crossing swap post-process**
+
+В `arrange_marks` есть `CalculateLeaderCrossingPenalty` (штраф за `SegmentsProperlyIntersect`). В force solver — ничего.
+
+Решение: после force solver проверить все пары leader-марок. Если их лидеры пересекаются — попробовать swap позиций (М ↔ N). Применить если:
+
+- после swap пересечений меньше
+- новых overlaps не появилось
+
+Локально, детерминированно, простая реализация.
+
+Альтернативы (дороже):
+
+- force-based: третий компонент силы для leader-leader отталкивания на каждой итерации — O(N²) per iter
+- quadrant affinity в attraction — требует переделки attraction-логики
+
+#### Phase 9-level diagnostics / tuning
+
+- **Convergence diagnostics:** в `arrange_marks_force_view` перф-трейс добавлять `converged=true/false` (reached StopEpsilon или capped на MaxIterations)
+- **Adaptive dt per mark:** марки с большой итоговой силой — меньший dt, чтобы не проскочить равновесие
+- **Multi-pass с нарастающим `MarkGapMm`:** начать с 1 мм, поднимать до 3 мм если ранние стадии сошлись — даёт "комфортный" gap без жёстких начальных требований
+- **Stuck mark detection:** марка не двигалась 20 итераций → заморозить на оставшиеся итерации, не тратить compute
+
+#### Прочие pending items
+
+- **KAlongAxisRestore (experiment, not committed):** вдоль-осевая пружина для baseline/along-line марок, когда они освобождаются в Pass2. Параметр `KAlongAxisRestore` и метод `ApplyAxisAnchorSpring` существуют в рабочей копии как незакоммиченный эксперимент. Коммит отложен до появления практического случая, когда freed baseline-марки уезжают вдоль оси детали.
+- **Axis normalization invariant:** держать нормализацию `AxisDx/AxisDy` внутри solver как обязательный invariant. Latent bug уже был выявлен — внешняя нормализация не должна считаться достаточной гарантией.
