@@ -253,6 +253,9 @@ public sealed partial class TeklaDrawingMarkApi
                 var force = new ForceDirectedMarkPlacer();
                 var pass1Options = ForcePassOptions.CreatePass1ForViewScale(viewContext.ViewScale);
                 var pass2Options = ForcePassOptions.CreatePass2ForViewScale(viewContext.ViewScale);
+                var foreignPartThreshold = 0.5 * (viewContext.ViewScale > 0.0 ? viewContext.ViewScale : 1.0);
+                var foreignInitial = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
+                WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "initial", foreignInitial);
                 force.PlaceInitial(forceItems.Values.ToList(), partBboxes);
 
                 var arrange = Stopwatch.StartNew();
@@ -270,6 +273,8 @@ public sealed partial class TeklaDrawingMarkApi
                     });
                 var pass1Placements = BuildForcePlacements(markEntries, forceItems);
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
+                var foreignPass1 = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
+                WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterPass1", foreignPass1);
 
                 // Baseline marks that collide are freed for Pass 2 — solver can push them perpendicular to axis
                 foreach (var id in collidingIds)
@@ -314,6 +319,8 @@ public sealed partial class TeklaDrawingMarkApi
                 arrange.Stop();
 
                 var placements = BuildForcePlacements(markEntries, forceItems);
+                var foreignFinal = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
+                WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "final", foreignFinal);
 
                 if (PerfTrace.IsActive)
                 {
@@ -343,7 +350,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 totalIterations += pass1Result.Iterations + pass2Result.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared} foreignThreshold={foreignPartThreshold:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignPass1Conflicts={foreignPass1.Conflicts} foreignPass1Severity={foreignPass1.Severity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -363,6 +370,24 @@ public sealed partial class TeklaDrawingMarkApi
         {
             PerfTrace.Write("api-mark", "arrange_marks_force_total", total.ElapsedMilliseconds, $"gap={gap.ToString(CultureInfo.InvariantCulture)}");
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    private static void WriteForeignPartOverlapTrace(
+        int viewId,
+        string stage,
+        ForeignPartOverlapSummary summary)
+    {
+        if (!PerfTrace.IsActive)
+            return;
+
+        foreach (var overlap in summary.Overlaps)
+        {
+            PerfTrace.Write(
+                "api-mark",
+                "arrange_marks_force_foreign_part",
+                0,
+                $"viewId={viewId} stage={stage} markId={overlap.MarkId} partModelId={overlap.PartModelId} depth={overlap.Depth:F3}");
         }
     }
 
