@@ -139,6 +139,32 @@ internal readonly struct ForceRelaxResult
     public ForceRelaxStopReason StopReason { get; }
 }
 
+internal readonly struct ForeignPartCleanupResult
+{
+    public ForeignPartCleanupResult(
+        int iterations,
+        int movedMarks,
+        int beforePartialConflicts,
+        double beforePartialSeverity,
+        int afterPartialConflicts,
+        double afterPartialSeverity)
+    {
+        Iterations = iterations;
+        MovedMarks = movedMarks;
+        BeforePartialConflicts = beforePartialConflicts;
+        BeforePartialSeverity = beforePartialSeverity;
+        AfterPartialConflicts = afterPartialConflicts;
+        AfterPartialSeverity = afterPartialSeverity;
+    }
+
+    public int Iterations { get; }
+    public int MovedMarks { get; }
+    public int BeforePartialConflicts { get; }
+    public double BeforePartialSeverity { get; }
+    public int AfterPartialConflicts { get; }
+    public double AfterPartialSeverity { get; }
+}
+
 internal sealed class ForceDirectedMarkPlacer
 {
     private const double FarDistanceFactor = 8.0;
@@ -261,6 +287,125 @@ internal sealed class ForceDirectedMarkPlacer
         }
 
         return new ForceRelaxResult(iterationsUsed, ForceRelaxStopReason.MaxIterations);
+    }
+
+    public ForeignPartCleanupResult CleanupForeignPartOverlaps(
+        IReadOnlyList<ForceDirectedMarkItem> items,
+        IReadOnlyList<PartBbox> allParts,
+        double threshold,
+        double maxStep,
+        int maxIterations = 8)
+    {
+        var before = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+        var beforePartialConflicts = before.PartialConflicts;
+        var beforePartialSeverity = before.PartialSeverity;
+        var movedIds = new HashSet<int>();
+        var iterationsUsed = 0;
+        var safeMaxStep = Math.Max(maxStep, 0.0);
+
+        for (var iter = 0; iter < maxIterations; iter++)
+        {
+            var current = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+            if (current.PartialConflicts == 0 || current.PartialSeverity <= 0.0)
+                break;
+
+            var partialByMark = current.Overlaps
+                .Where(static overlap => overlap.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
+                .GroupBy(static overlap => overlap.MarkId)
+                .ToList();
+
+            var movedThisIteration = false;
+            foreach (var group in partialByMark)
+            {
+                var mark = items.FirstOrDefault(item => item.Id == group.Key);
+                if (mark == null || !mark.CanMove)
+                    continue;
+
+                var moveX = 0.0;
+                var moveY = 0.0;
+                foreach (var overlap in group)
+                {
+                    moveX += -overlap.AxisX * overlap.Depth;
+                    moveY += -overlap.AxisY * overlap.Depth;
+                }
+
+                if (mark.ConstrainToAxis && TryGetNormalizedAxis(mark, out var axisDx, out var axisDy))
+                {
+                    var projection = (moveX * axisDx) + (moveY * axisDy);
+                    moveX = axisDx * projection;
+                    moveY = axisDy * projection;
+                }
+
+                var length = Math.Sqrt((moveX * moveX) + (moveY * moveY));
+                if (length <= 0.001)
+                    continue;
+
+                var step = safeMaxStep > 0.0 && length > safeMaxStep
+                    ? safeMaxStep / length
+                    : 1.0;
+
+                var dx = moveX * step;
+                var dy = moveY * step;
+                if (TryApplyForeignPartCleanupStep(mark, items, allParts, threshold, dx, dy))
+                {
+                    movedThisIteration = true;
+                    movedIds.Add(mark.Id);
+                }
+            }
+
+            if (!movedThisIteration)
+                break;
+
+            iterationsUsed = iter + 1;
+        }
+
+        var after = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+        return new ForeignPartCleanupResult(
+            iterationsUsed,
+            movedIds.Count,
+            beforePartialConflicts,
+            beforePartialSeverity,
+            after.PartialConflicts,
+            after.PartialSeverity);
+    }
+
+    private static bool TryApplyForeignPartCleanupStep(
+        ForceDirectedMarkItem mark,
+        IReadOnlyList<ForceDirectedMarkItem> items,
+        IReadOnlyList<PartBbox> allParts,
+        double threshold,
+        double dx,
+        double dy)
+    {
+        var originalX = mark.Cx;
+        var originalY = mark.Cy;
+        var currentPartialSeverity = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold).PartialSeverity;
+        var currentMarkOverlapPairs = CountMarkOverlapPairs(items);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            mark.Cx = originalX + dx;
+            mark.Cy = originalY + dy;
+
+            var proposed = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+            var proposedMarkOverlapPairs = CountMarkOverlapPairs(items);
+            if (proposed.PartialSeverity < currentPartialSeverity - 0.001 &&
+                proposedMarkOverlapPairs <= currentMarkOverlapPairs)
+            {
+                return true;
+            }
+
+            mark.Cx = originalX;
+            mark.Cy = originalY;
+            dx *= 0.5;
+            dy *= 0.5;
+            if (Math.Sqrt((dx * dx) + (dy * dy)) <= 0.001)
+                break;
+        }
+
+        mark.Cx = originalX;
+        mark.Cy = originalY;
+        return false;
     }
 
     private static ForceComponents ComputeForce(
@@ -625,6 +770,21 @@ internal sealed class ForceDirectedMarkPlacer
             repelFy = (mark.Cy >= other.Cy ? 1.0 : -1.0) * options.KRepelMark * oy;
 
         return true;
+    }
+
+    private static int CountMarkOverlapPairs(IReadOnlyList<ForceDirectedMarkItem> allMarks)
+    {
+        var count = 0;
+        for (var i = 0; i < allMarks.Count; i++)
+        for (var j = i + 1; j < allMarks.Count; j++)
+        {
+            var firstPolygon = BuildMarkPolygon(allMarks[i], allMarks[i].Cx, allMarks[i].Cy);
+            var secondPolygon = BuildMarkPolygon(allMarks[j], allMarks[j].Cx, allMarks[j].Cy);
+            if (PolygonGeometry.Intersects(firstPolygon, secondPolygon))
+                count++;
+        }
+
+        return count;
     }
 
     private static bool WouldOverlapForeignPart(

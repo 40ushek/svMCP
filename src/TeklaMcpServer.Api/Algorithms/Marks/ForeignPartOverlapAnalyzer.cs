@@ -14,18 +14,30 @@ internal enum ForeignPartOverlapKind
 
 internal readonly struct ForeignPartOverlap
 {
-    public ForeignPartOverlap(int markId, int partModelId, double depth, ForeignPartOverlapKind kind)
+    public ForeignPartOverlap(
+        int markId,
+        int partModelId,
+        double depth,
+        ForeignPartOverlapKind kind,
+        double axisX,
+        double axisY)
     {
         MarkId = markId;
         PartModelId = partModelId;
         Depth = depth;
         Kind = kind;
+        AxisX = axisX;
+        AxisY = axisY;
     }
 
     public int MarkId { get; }
     public int PartModelId { get; }
     public double Depth { get; }
     public ForeignPartOverlapKind Kind { get; }
+    /// <summary>Minimum-translation axis from mark polygon toward foreign part polygon.</summary>
+    public double AxisX { get; }
+    /// <summary>Minimum-translation axis from mark polygon toward foreign part polygon.</summary>
+    public double AxisY { get; }
 }
 
 internal readonly struct ForeignPartOverlapSummary
@@ -83,7 +95,7 @@ internal static class ForeignPartOverlapAnalyzer
                 if (partPolygon.Count < 3)
                     continue;
 
-                if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, partPolygon, out _, out _, out var depth))
+                if (!PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, partPolygon, out var axisX, out var axisY, out var depth))
                     continue;
 
                 if (depth <= threshold)
@@ -93,7 +105,9 @@ internal static class ForeignPartOverlapAnalyzer
                     mark.Id,
                     part.ModelId,
                     depth,
-                    Classify(markPolygon, partPolygon)));
+                    Classify(markPolygon, partPolygon),
+                    axisX,
+                    axisY));
             }
         }
 
