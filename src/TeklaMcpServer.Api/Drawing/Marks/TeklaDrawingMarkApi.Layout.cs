@@ -222,11 +222,12 @@ public sealed partial class TeklaDrawingMarkApi
                     continue;
                 }
 
+                var solverScale = ForceLayoutUnitConverter.NormalizeViewScale(viewContext.ViewScale);
                 var initialPositions = markEntries.ToDictionary(
                     e => e.Mark.GetIdentifier().ID,
                     e => (e.CenterX, e.CenterY));
 
-                var forceItems = markEntries
+                var forceItems = ForceLayoutUnitConverter.ToPaperSpace(markEntries
                     .Select(entry => new ForceDirectedMarkItem
                     {
                         Id = entry.Mark.GetIdentifier().ID,
@@ -247,14 +248,16 @@ public sealed partial class TeklaDrawingMarkApi
                                      partPolygonsByModelId.TryGetValue(entry.Item.SourceModelId.Value, out var polygon)
                             ? polygon
                             : null
-                    })
+                    }),
+                    solverScale)
                     .ToDictionary(item => item.Id);
+                var solverPartBboxes = ForceLayoutUnitConverter.ToPaperSpace(partBboxes, solverScale);
 
                 var force = new ForceDirectedMarkPlacer();
-                force.PlaceInitial(forceItems.Values.ToList(), partBboxes);
+                force.PlaceInitial(forceItems.Values.ToList(), solverPartBboxes);
 
                 var arrange = Stopwatch.StartNew();
-                var pass1Result = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
+                var pass1Result = force.Relax(forceItems.Values.ToList(), solverPartBboxes, ForcePassOptions.Pass1Default,
                     debugSink: debug =>
                     {
                         if (!PerfTrace.IsActive) return;
@@ -263,10 +266,10 @@ public sealed partial class TeklaDrawingMarkApi
                             $"attract=({debug.AttractFx:F3},{debug.AttractFy:F3}) " +
                             $"partRepel=({debug.PartRepelFx:F3},{debug.PartRepelFy:F3}) " +
                             $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
-                            $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
-                            $"pos=({debug.X:F3},{debug.Y:F3})");
+                            $"delta=({debug.Dx * solverScale:F3},{debug.Dy * solverScale:F3}) " +
+                            $"pos=({debug.X * solverScale:F3},{debug.Y * solverScale:F3})");
                     });
-                var pass1Placements = BuildForcePlacements(markEntries, forceItems);
+                var pass1Placements = BuildForcePlacements(markEntries, forceItems, solverScale);
                 var collidingIds = GetOverlappingMarkIds(pass1Placements);
 
                 // Baseline marks that collide are freed for Pass 2 — solver can push them perpendicular to axis
@@ -282,7 +285,7 @@ public sealed partial class TeklaDrawingMarkApi
                 {
                     pass2Result = force.Relax(
                         forceItems.Values.ToList(),
-                        partBboxes,
+                        solverPartBboxes,
                         ForcePassOptions.Pass2Default,
                         includeMarkRepulsion: true,
                         movableIds: collidingIds,
@@ -300,31 +303,33 @@ public sealed partial class TeklaDrawingMarkApi
                                 $"partRepel=({debug.PartRepelFx:F3},{debug.PartRepelFy:F3}) " +
                                 $"markRepel=({debug.MarkRepelFx:F3},{debug.MarkRepelFy:F3}) " +
                                 $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
-                                $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
-                                $"pos=({debug.X:F3},{debug.Y:F3})");
+                                $"delta=({debug.Dx * solverScale:F3},{debug.Dy * solverScale:F3}) " +
+                                $"pos=({debug.X * solverScale:F3},{debug.Y * solverScale:F3})");
                         },
                         getRemainingOverlapCount: () =>
                         {
-                            var currentPlacements = BuildForcePlacements(markEntries, forceItems);
+                            var currentPlacements = BuildForcePlacements(markEntries, forceItems, solverScale);
                             return GetOverlappingMarkIds(currentPlacements).Count(id => collidingIds.Contains(id));
                         });
                 }
                 arrange.Stop();
 
-                var placements = BuildForcePlacements(markEntries, forceItems);
+                var placements = BuildForcePlacements(markEntries, forceItems, solverScale);
 
                 if (PerfTrace.IsActive)
                 {
                     foreach (var item in forceItems.Values)
                     {
                         if (!initialPositions.TryGetValue(item.Id, out var init)) continue;
-                        var netDx = item.Cx - init.CenterX;
-                        var netDy = item.Cy - init.CenterY;
+                        var finalX = item.Cx * solverScale;
+                        var finalY = item.Cy * solverScale;
+                        var netDx = finalX - init.CenterX;
+                        var netDy = finalY - init.CenterY;
                         var inColliding = collidingIds.Contains(item.Id);
                         PerfTrace.Write("api-mark", "arrange_marks_force_net",  0,
                             $"viewId={view.GetIdentifier().ID} markId={item.Id} " +
                             $"initPos=({init.CenterX:F1},{init.CenterY:F1}) " +
-                            $"finalPos=({item.Cx:F1},{item.Cy:F1}) " +
+                            $"finalPos=({finalX:F1},{finalY:F1}) " +
                             $"net=({netDx:F1},{netDy:F1}) colliding={inColliding}");
                     }
                 }
@@ -341,7 +346,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 totalIterations += pass1Result.Iterations + pass2Result.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} solverScale={solverScale} forceUnits=paperMm marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
             }
 
             movedIds = movedIds.Distinct().ToList();
@@ -377,7 +382,8 @@ public sealed partial class TeklaDrawingMarkApi
 
     private static List<MarkLayoutPlacement> BuildForcePlacements(
         IReadOnlyList<TeklaDrawingMarkLayoutEntry> markEntries,
-        IReadOnlyDictionary<int, ForceDirectedMarkItem> forceItems)
+        IReadOnlyDictionary<int, ForceDirectedMarkItem> forceItems,
+        double coordinateScale = 1.0)
     {
         return markEntries
             .Select(entry =>
@@ -386,8 +392,8 @@ public sealed partial class TeklaDrawingMarkApi
                 return new MarkLayoutPlacement
                 {
                     Id = forceItem.Id,
-                    X = forceItem.Cx,
-                    Y = forceItem.Cy,
+                    X = forceItem.Cx * coordinateScale,
+                    Y = forceItem.Cy * coordinateScale,
                     Width = entry.Item.Width,
                     Height = entry.Item.Height,
                     AnchorX = entry.Item.AnchorX,
