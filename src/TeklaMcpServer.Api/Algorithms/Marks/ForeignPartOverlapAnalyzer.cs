@@ -5,18 +5,27 @@ using TeklaMcpServer.Api.Algorithms.Geometry;
 
 namespace TeklaMcpServer.Api.Algorithms.Marks;
 
+internal enum ForeignPartOverlapKind
+{
+    PartialForeignPartOverlap,
+    MarkInsideForeignPart,
+    ForeignPartInsideMark
+}
+
 internal readonly struct ForeignPartOverlap
 {
-    public ForeignPartOverlap(int markId, int partModelId, double depth)
+    public ForeignPartOverlap(int markId, int partModelId, double depth, ForeignPartOverlapKind kind)
     {
         MarkId = markId;
         PartModelId = partModelId;
         Depth = depth;
+        Kind = kind;
     }
 
     public int MarkId { get; }
     public int PartModelId { get; }
     public double Depth { get; }
+    public ForeignPartOverlapKind Kind { get; }
 }
 
 internal readonly struct ForeignPartOverlapSummary
@@ -26,11 +35,29 @@ internal readonly struct ForeignPartOverlapSummary
         Overlaps = overlaps;
         Conflicts = overlaps.Count;
         Severity = overlaps.Sum(static x => x.Depth);
+        MarkInsideConflicts = overlaps.Count(static x => x.Kind == ForeignPartOverlapKind.MarkInsideForeignPart);
+        MarkInsideSeverity = overlaps
+            .Where(static x => x.Kind == ForeignPartOverlapKind.MarkInsideForeignPart)
+            .Sum(static x => x.Depth);
+        PartInsideConflicts = overlaps.Count(static x => x.Kind == ForeignPartOverlapKind.ForeignPartInsideMark);
+        PartInsideSeverity = overlaps
+            .Where(static x => x.Kind == ForeignPartOverlapKind.ForeignPartInsideMark)
+            .Sum(static x => x.Depth);
+        PartialConflicts = overlaps.Count(static x => x.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap);
+        PartialSeverity = overlaps
+            .Where(static x => x.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
+            .Sum(static x => x.Depth);
     }
 
     public IReadOnlyList<ForeignPartOverlap> Overlaps { get; }
     public int Conflicts { get; }
     public double Severity { get; }
+    public int MarkInsideConflicts { get; }
+    public double MarkInsideSeverity { get; }
+    public int PartInsideConflicts { get; }
+    public double PartInsideSeverity { get; }
+    public int PartialConflicts { get; }
+    public double PartialSeverity { get; }
 }
 
 internal static class ForeignPartOverlapAnalyzer
@@ -62,11 +89,81 @@ internal static class ForeignPartOverlapAnalyzer
                 if (depth <= threshold)
                     continue;
 
-                overlaps.Add(new ForeignPartOverlap(mark.Id, part.ModelId, depth));
+                overlaps.Add(new ForeignPartOverlap(
+                    mark.Id,
+                    part.ModelId,
+                    depth,
+                    Classify(markPolygon, partPolygon)));
             }
         }
 
         return new ForeignPartOverlapSummary(overlaps);
+    }
+
+    private static ForeignPartOverlapKind Classify(
+        IReadOnlyList<double[]> markPolygon,
+        IReadOnlyList<double[]> partPolygon)
+    {
+        if (AllPointsInsideOrOnBoundary(markPolygon, partPolygon))
+            return ForeignPartOverlapKind.MarkInsideForeignPart;
+
+        if (AllPointsInsideOrOnBoundary(partPolygon, markPolygon))
+            return ForeignPartOverlapKind.ForeignPartInsideMark;
+
+        return ForeignPartOverlapKind.PartialForeignPartOverlap;
+    }
+
+    private static bool AllPointsInsideOrOnBoundary(
+        IReadOnlyList<double[]> points,
+        IReadOnlyList<double[]> polygon)
+    {
+        foreach (var point in points)
+        {
+            if (!ContainsPointOrOnBoundary(polygon, point[0], point[1]))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool ContainsPointOrOnBoundary(
+        IReadOnlyList<double[]> polygon,
+        double x,
+        double y)
+    {
+        if (PolygonGeometry.ContainsPoint(polygon, x, y))
+            return true;
+
+        for (var i = 0; i < polygon.Count; i++)
+        {
+            var current = polygon[i];
+            var next = polygon[(i + 1) % polygon.Count];
+            if (IsPointOnSegment(x, y, current[0], current[1], next[0], next[1]))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsPointOnSegment(
+        double x,
+        double y,
+        double ax,
+        double ay,
+        double bx,
+        double by)
+    {
+        const double epsilon = 1e-7;
+        var cross = ((x - ax) * (by - ay)) - ((y - ay) * (bx - ax));
+        if (Math.Abs(cross) > epsilon)
+            return false;
+
+        var dot = ((x - ax) * (bx - ax)) + ((y - ay) * (by - ay));
+        if (dot < -epsilon)
+            return false;
+
+        var length2 = ((bx - ax) * (bx - ax)) + ((by - ay) * (by - ay));
+        return dot <= length2 + epsilon;
     }
 
     private static List<double[]> BuildMarkPolygon(ForceDirectedMarkItem mark)

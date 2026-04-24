@@ -23,6 +23,52 @@ public sealed class ForeignPartOverlapAnalyzerTests
         Assert.True(result.Severity > 0.0);
         Assert.Equal(1, result.Overlaps[0].MarkId);
         Assert.Equal(20, result.Overlaps[0].PartModelId);
+        Assert.Equal(ForeignPartOverlapKind.PartialForeignPartOverlap, result.Overlaps[0].Kind);
+        Assert.Equal(1, result.PartialConflicts);
+        Assert.Equal(0, result.MarkInsideConflicts);
+        Assert.Equal(0, result.PartInsideConflicts);
+    }
+
+    [Fact]
+    public void ForeignPartOverlap_WhenMarkIsInsideForeignPart_ReturnsInsideKind()
+    {
+        var mark = CreateMark(
+            id: 1,
+            ownModelId: 10,
+            x: 0.0,
+            y: 0.0,
+            localCorners: CreateRectangle(-5.0, -5.0, 5.0, 5.0));
+        var foreignPart = new PartBbox(20, -20.0, -20.0, 20.0, 20.0, CreateRectangle(-20.0, -20.0, 20.0, 20.0));
+
+        var result = ForeignPartOverlapAnalyzer.Analyze([mark], [foreignPart], threshold: 0.0);
+
+        Assert.Equal(1, result.Conflicts);
+        Assert.Equal(ForeignPartOverlapKind.MarkInsideForeignPart, result.Overlaps[0].Kind);
+        Assert.Equal(1, result.MarkInsideConflicts);
+        Assert.Equal(result.Severity, result.MarkInsideSeverity, 6);
+        Assert.Equal(0, result.PartialConflicts);
+        Assert.Equal(0, result.PartInsideConflicts);
+    }
+
+    [Fact]
+    public void ForeignPartOverlap_WhenForeignPartIsInsideMark_ReturnsPartInsideKind()
+    {
+        var mark = CreateMark(
+            id: 1,
+            ownModelId: 10,
+            x: 0.0,
+            y: 0.0,
+            localCorners: CreateRectangle(-20.0, -20.0, 20.0, 20.0));
+        var foreignPart = new PartBbox(20, -5.0, -5.0, 5.0, 5.0, CreateRectangle(-5.0, -5.0, 5.0, 5.0));
+
+        var result = ForeignPartOverlapAnalyzer.Analyze([mark], [foreignPart], threshold: 0.0);
+
+        Assert.Equal(1, result.Conflicts);
+        Assert.Equal(ForeignPartOverlapKind.ForeignPartInsideMark, result.Overlaps[0].Kind);
+        Assert.Equal(1, result.PartInsideConflicts);
+        Assert.Equal(result.Severity, result.PartInsideSeverity, 6);
+        Assert.Equal(0, result.MarkInsideConflicts);
+        Assert.Equal(0, result.PartialConflicts);
     }
 
     [Fact]
