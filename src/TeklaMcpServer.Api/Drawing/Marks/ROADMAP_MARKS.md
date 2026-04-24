@@ -692,14 +692,39 @@ Touching edge case сохранён: если polygon-ы только касаю
 
 `farThreshold = markSize * FarDistanceFactor` (и outlier thresholds в `PlaceInitial`, завязанные на `min(Width, Height)`) уже пропорциональны размеру марки в drawing units, поэтому автоматически адаптируются под масштаб вида. Они не входят в список параметров, требующих paper-mm конверсии.
 
-Предлагаемое решение (Вариант B):
+**Первая попытка отменена (commit `e69faec` → revert `fe32694`):**
 
-- на входе в `Relax()` делить все координаты (позиции меток, полигоны деталей, LocalCorners) на `viewScale`
-- вся физика идёт в paper-mm — все константы приобретают реальный физический смысл
-- на выходе умножать позиции обратно в drawing units
-- одна точка конверсии на границе, одна unit system внутри solver
-- `PlaceInitial`, `WouldOverlapForeignPart`, `WouldOverlapOtherMark` тоже работают в paper-mm
-- `viewScale` прокидывается в `ForcePassOptions` или параметром в `Relax()`
+Подход "перевести координаты в paper-mm и оставить старые `Pass1Default`/`Pass2Default` как есть" не сработал — марки улетали за границы чертежа. Причина: текущие константы (`KRepelPart=300`, `PartRepelRadius=120`, `IdealDist=25`, `PartRepelSoftening=5`, `StopEpsilon=0.05`) содержат implicit drawing-unit/view-scale семантику. После скалирования координат:
+
+- `PartRepelRadius=120` превратился из ~5 мм paper в 120 мм paper — repulsion начал действовать через пол-листа
+- `IdealDist=25` из ~1 мм paper стал 25 мм paper — равновесие сместилось далеко от детали
+- `F = KRepelPart / (effectiveDist² + ε²)` при dist в 20-25 раз меньше выросла на сотни раз — силы взорвались
+
+Вывод — **coordinate conversion без отдельного набора paper-mm options делать нельзя**.
+
+**Правильный план (обязательно все пункты вместе):**
+
+1. Ввести отдельные `ForcePassOptions.Pass1DefaultPaperMm` / `Pass2DefaultPaperMm` (factory), не трогая существующие `Pass1Default` / `Pass2Default`.
+
+2. Стартовые paper-mm defaults (точные значения подбирать экспериментально):
+
+   - `IdealDist = 4`
+   - `MarkGapMm = 2`
+   - `PartRepelRadius = 8`
+   - `PartRepelSoftening = 0.75`
+   - `StopEpsilon = 0.2`
+   - `InitialDt = 0.35`
+   - `KRepelPart ≈ 0.75`
+   - `KRepelMark ≈ 0.5` (для Pass2)
+   - `KAttract`, `KFarAttract`, `MaxAttract`, `DtDecay`, `MaxIterations` — подбирать отдельно по поведению на чертежах с разными масштабами
+
+3. Coordinate conversion как в Варианте B (на входе делить на `viewScale`, на выходе умножать). `PlaceInitial`, `WouldOverlapForeignPart`, `WouldOverlapOtherMark` тоже работают в paper-mm.
+
+4. Обязательно добавить **view-bounds guard**: hard clamp позиции марки в `viewBounds` после каждого шага солвера (или penalty-пружина от границ при приближении). Без этого даже с правильными константами неудачная сумма сил может вытолкнуть марку за лист.
+
+5. Старые `Pass1Default`/`Pass2Default` **не удалять** до smoke-валидации на 3+ чертежах разных масштабов (1:15, 1:20, 1:25, 1:50). Решение о переключении default-а на paper-mm версию — только после того, как paper-mm путь подтверждён.
+
+6. Paper-mm вариант запускать за отдельным флагом/опцией до полного прохождения smoke. Только после валидации — сделать его default-ом и удалить drawing-unit defaults.
 
 **2. Differentiated attraction by placing type**
 
