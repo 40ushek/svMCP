@@ -27,6 +27,12 @@ internal readonly struct PartBbox
 
 internal readonly struct ForcePassOptions
 {
+    private const double PaperIdealDistMm = 4.0;
+    private const double PaperMarkGapMm = 2.0;
+    private const double PaperPartRepelRadiusMm = 8.0;
+    private const double PaperPartRepelSofteningMm = 0.75;
+    private const double PaperStopEpsilonMm = 0.25;
+
     public ForcePassOptions(
         double kAttract, double idealDist,
         double kFarAttract, double maxAttract,
@@ -85,6 +91,32 @@ internal readonly struct ForcePassOptions
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
+
+    public static ForcePassOptions CreatePass1ForViewScale(double viewScale) =>
+        CreateScaledDistancePolicy(Pass1Default, NormalizeViewScale(viewScale));
+
+    public static ForcePassOptions CreatePass2ForViewScale(double viewScale) =>
+        CreateScaledDistancePolicy(Pass2Default, NormalizeViewScale(viewScale));
+
+    private static ForcePassOptions CreateScaledDistancePolicy(ForcePassOptions defaults, double scale) =>
+        new ForcePassOptions(
+            kAttract: defaults.KAttract,
+            idealDist: PaperIdealDistMm * scale,
+            kFarAttract: defaults.KFarAttract,
+            maxAttract: defaults.MaxAttract,
+            kReturnToAxisLine: defaults.KReturnToAxisLine,
+            kPerpRestoreAxis: defaults.KPerpRestoreAxis,
+            kRepelPart: defaults.KRepelPart,
+            partRepelRadius: PaperPartRepelRadiusMm * scale,
+            partRepelSoftening: PaperPartRepelSofteningMm * scale,
+            kRepelMark: defaults.KRepelMark,
+            markGapMm: PaperMarkGapMm * scale,
+            initialDt: defaults.InitialDt,
+            dtDecay: defaults.DtDecay,
+            stopEpsilon: PaperStopEpsilonMm * scale,
+            maxIterations: defaults.MaxIterations);
+
+    private static double NormalizeViewScale(double viewScale) => viewScale > 0.0 ? viewScale : 1.0;
 }
 
 internal enum ForceRelaxStopReason

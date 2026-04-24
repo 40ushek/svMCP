@@ -251,10 +251,12 @@ public sealed partial class TeklaDrawingMarkApi
                     .ToDictionary(item => item.Id);
 
                 var force = new ForceDirectedMarkPlacer();
+                var pass1Options = ForcePassOptions.CreatePass1ForViewScale(viewContext.ViewScale);
+                var pass2Options = ForcePassOptions.CreatePass2ForViewScale(viewContext.ViewScale);
                 force.PlaceInitial(forceItems.Values.ToList(), partBboxes);
 
                 var arrange = Stopwatch.StartNew();
-                var pass1Result = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
+                var pass1Result = force.Relax(forceItems.Values.ToList(), partBboxes, pass1Options,
                     debugSink: debug =>
                     {
                         if (!PerfTrace.IsActive) return;
@@ -283,7 +285,7 @@ public sealed partial class TeklaDrawingMarkApi
                     pass2Result = force.Relax(
                         forceItems.Values.ToList(),
                         partBboxes,
-                        ForcePassOptions.Pass2Default,
+                        pass2Options,
                         includeMarkRepulsion: true,
                         movableIds: collidingIds,
                         debugSink: debug =>
@@ -341,7 +343,7 @@ public sealed partial class TeklaDrawingMarkApi
 
                 totalIterations += pass1Result.Iterations + pass2Result.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
             }
 
             movedIds = movedIds.Distinct().ToList();

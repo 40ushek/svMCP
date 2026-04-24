@@ -8,6 +8,55 @@ namespace TeklaMcpServer.Tests;
 public sealed class ForceDirectedMarkPlacerTests
 {
     [Fact]
+    public void CreatePass1ForViewScale_ScalesDistancePolicyOnly()
+    {
+        var options = ForcePassOptions.CreatePass1ForViewScale(25.0);
+
+        Assert.Equal(100.0, options.IdealDist, 6);
+        Assert.Equal(50.0, options.MarkGapMm, 6);
+        Assert.Equal(200.0, options.PartRepelRadius, 6);
+        Assert.Equal(18.75, options.PartRepelSoftening, 6);
+        Assert.Equal(6.25, options.StopEpsilon, 6);
+        AssertForceCoefficientsEqual(ForcePassOptions.Pass1Default, options);
+    }
+
+    [Fact]
+    public void CreatePass2ForViewScale_ScalesDistancePolicyOnly()
+    {
+        var options = ForcePassOptions.CreatePass2ForViewScale(25.0);
+
+        Assert.Equal(100.0, options.IdealDist, 6);
+        Assert.Equal(50.0, options.MarkGapMm, 6);
+        Assert.Equal(200.0, options.PartRepelRadius, 6);
+        Assert.Equal(18.75, options.PartRepelSoftening, 6);
+        Assert.Equal(6.25, options.StopEpsilon, 6);
+        AssertForceCoefficientsEqual(ForcePassOptions.Pass2Default, options);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-25.0)]
+    public void CreatePassOptionsForNonPositiveScale_UsesIdentityScale(double viewScale)
+    {
+        var pass1 = ForcePassOptions.CreatePass1ForViewScale(viewScale);
+        var pass2 = ForcePassOptions.CreatePass2ForViewScale(viewScale);
+
+        Assert.Equal(4.0, pass1.IdealDist, 6);
+        Assert.Equal(2.0, pass1.MarkGapMm, 6);
+        Assert.Equal(8.0, pass1.PartRepelRadius, 6);
+        Assert.Equal(0.75, pass1.PartRepelSoftening, 6);
+        Assert.Equal(0.25, pass1.StopEpsilon, 6);
+        AssertForceCoefficientsEqual(ForcePassOptions.Pass1Default, pass1);
+
+        Assert.Equal(4.0, pass2.IdealDist, 6);
+        Assert.Equal(2.0, pass2.MarkGapMm, 6);
+        Assert.Equal(8.0, pass2.PartRepelRadius, 6);
+        Assert.Equal(0.75, pass2.PartRepelSoftening, 6);
+        Assert.Equal(0.25, pass2.StopEpsilon, 6);
+        AssertForceCoefficientsEqual(ForcePassOptions.Pass2Default, pass2);
+    }
+
+    [Fact]
     public void Relax_WhenTrackedOverlapsClear_ReturnsOverlapsCleared()
     {
         var items = new List<ForceDirectedMarkItem>
@@ -62,6 +111,20 @@ public sealed class ForceDirectedMarkPlacerTests
         Height = 10.0,
         CanMove = true
     };
+
+    private static void AssertForceCoefficientsEqual(ForcePassOptions expected, ForcePassOptions actual)
+    {
+        Assert.Equal(expected.KAttract, actual.KAttract, 6);
+        Assert.Equal(expected.KFarAttract, actual.KFarAttract, 6);
+        Assert.Equal(expected.MaxAttract, actual.MaxAttract, 6);
+        Assert.Equal(expected.KReturnToAxisLine, actual.KReturnToAxisLine, 6);
+        Assert.Equal(expected.KPerpRestoreAxis, actual.KPerpRestoreAxis, 6);
+        Assert.Equal(expected.KRepelPart, actual.KRepelPart, 6);
+        Assert.Equal(expected.KRepelMark, actual.KRepelMark, 6);
+        Assert.Equal(expected.InitialDt, actual.InitialDt, 6);
+        Assert.Equal(expected.DtDecay, actual.DtDecay, 6);
+        Assert.Equal(expected.MaxIterations, actual.MaxIterations);
+    }
 
     private static int CountOverlappingTrackedIds(
         IReadOnlyList<ForceDirectedMarkItem> items,

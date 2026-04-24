@@ -684,9 +684,9 @@ for iter in 0..100:
 
 Touching edge case сохранён: если polygon-ы только касаются (`gap = 0`) и overlap нет → repulsion не применяется.
 
-#### High-impact pending tasks
+#### Completed high-impact tasks
 
-**1. View-scale awareness (paper-mm policy semantics)**
+**1. View-scale awareness (paper-mm policy semantics) — completed**
 
 Все фиксированные distance-параметры (`IdealDist=25`, `MarkGapMm=2.0`, `PartRepelRadius=120`, `PartRepelSoftening=5.0`, `StopEpsilon=0.05`) заданы в drawing units. Имена с `Mm` и семантика не совпадают с реальностью — на scale 1:25 `MarkGapMm=2.0` = 0.08 мм на бумаге.
 
@@ -758,7 +758,46 @@ paperMm policy value * viewScale = drawing-unit solver value
 
 **View-bounds guard** остаётся отдельной задачей. Его нельзя смешивать с view-scale normalization, потому что это отдельное поведенческое ограничение, а не unit semantics.
 
-**2. Differentiated attraction by placing type**
+#### High-impact pending tasks
+
+**1. Foreign-part conflict diagnostics**
+
+Smoke на `[EW14S.3 - 1]` показал отдельный тип конфликта: метка может не пересекаться с другими метками, но full OBB/polygon метки лежит поверх чужой детали в 2D-проекции. Пример: mark `4737` на своей детали `36542702` пересекал foreign part `33537022 / T-8` с estimated separation depth ~60 drawing units (~3 мм paper при scale 1:20).
+
+Это не всегда hard error: в 2D-чертежах детали могут проецироваться одна поверх другой из-за 3D-глубины. Но если рядом есть свободное место, layout должен предпочитать позицию без такого наложения.
+
+Решение:
+
+- считать `foreignPartConflicts` / `foreignPartOverlapSeverity` отдельно от mark-mark overlaps
+- использовать full mark OBB/polygon vs foreign part polygon/hull, исключая own model id
+- логировать severity в `arrange_marks_force_view`
+- не смешивать этот счётчик с текущим `RemainingOverlaps`, который означает mark-mark overlaps
+
+**2. Pass2 foreign-part cleanup**
+
+Текущий Pass1 имеет только мягкую `partRepel` силу от чужих деталей. Она считается через nearest point / effective distance и может быть слабой или локально нестабильной, если full bbox/OBB метки уже лежит поверх foreign part. Поэтому метка с foreign-part conflict может не попадать в активный cleanup, если mark-mark overlap отсутствует.
+
+Решение:
+
+- после Pass1 найти marks с заметным `foreignPartOverlapSeverity`
+- запустить отдельный Pass2 только для этих marks
+- цель Pass2: уменьшить foreign-part severity, если рядом есть разумное свободное место
+- не считать small projected overlap абсолютным failure; применять threshold, например `0.5 мм` paper
+- не создавать новые mark-mark overlaps; если вариантов нет, допустимо оставить foreign-part overlap
+- для baseline/along-line marks разрешать ограниченный поперечный сдвиг с return-to-axis spring
+
+**3. Pass3 mark-mark cleanup**
+
+Текущий Pass2 mark-mark cleanup должен стать Pass3:
+
+- двигаются marks, которые после Pass1/Pass2 конфликтуют с другими marks
+- включён mark-mark repulsion
+- early exit по устранению mark-mark overlaps остаётся
+- `collidingIds` / `pass3EarlyExit` должны относиться именно к mark-mark overlaps
+
+Это сохраняет текущую удачную логику раздвижки меток, но запускает её после попытки убрать avoidable foreign-part conflicts.
+
+**4. Differentiated attraction by placing type**
 
 Сейчас один `IdealDist` для всех марок — solver тянет любую марку к ближайшей грани детали.
 
@@ -772,29 +811,30 @@ paperMm policy value * viewScale = drawing-unit solver value
 - либо отдельные `ForcePassOptions` per placing type
 - либо per-mark override на `ForceDirectedMarkItem`
 
-**3. Pass2 overlap-based early exit**
+**5. Pass3 overlap-based early exit**
 
-Сейчас Pass2 всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель Pass2 — устранить overlaps среди `movableIds`.
+Сейчас mark-mark cleanup всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
 
 Решение: каждые N итераций (например, 5) считать `GetOverlappingMarkIds(currentPlacements).Intersect(movableIds).Count`. Если 0 — выход.
 
-Простое изменение, ускоряет работу (Pass2 сейчас ~200-600мс на чертёж).
+Этот пункт уже реализован для текущего Pass2 и должен сохраниться после переименования в Pass3.
 
-**4. Pass2 dynamic movable set expansion**
+**6. Pass3 dynamic movable set expansion**
 
 Сейчас `movableIds` — только изначально коллидирующие после Pass1 марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
 
 Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
 
-**5. Hard constraint в Relax (no new overlaps)**
+**7. Step acceptance policy in Relax**
 
-Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию" и медленной сходимости.
+Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap или ухудшается foreign-part severity. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию", медленной сходимости и случаям, когда mark-mark repulsion может вытолкнуть метку на чужую деталь.
 
 Решение:
 
-- перед применением шага проверять: создаст ли он новый overlap (через `WouldOverlap*`)
-- если до движения конфликтов не было → запрещать шаги, создающие новые (аналогично `PlaceInitial`)
-- если были → разрешать шаг только если количество overlaps не увеличилось
+- перед применением шага проверять mark-mark overlaps и foreign-part severity
+- если шаг ухудшает foreign-part severity без mark-mark выгоды — пробовать half-step или отклонять
+- если шаг уменьшает mark-mark overlap ценой небольшого projected foreign-part overlap — может быть допустим
+- policy должна быть soft-hard, не absolute ban: 2D projected foreign-part overlap иногда приемлем в плотных 3D assemblies
 
 Семантика такая же, как в `PlaceInitial` — там эта проверка уже есть для outlier recovery.
 
