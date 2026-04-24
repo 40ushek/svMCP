@@ -294,7 +294,8 @@ internal sealed class ForceDirectedMarkPlacer
         IReadOnlyList<PartBbox> allParts,
         double threshold,
         double maxStep,
-        int maxIterations = 8)
+        int maxStepsPerMark = 25,
+        Action<string>? trace = null)
     {
         var before = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
         var beforePartialConflicts = before.PartialConflicts;
@@ -302,64 +303,192 @@ internal sealed class ForceDirectedMarkPlacer
         var movedIds = new HashSet<int>();
         var iterationsUsed = 0;
         var safeMaxStep = Math.Max(maxStep, 0.0);
+        var originalPositions = items.ToDictionary(
+            static item => item.Id,
+            static item => (item.Cx, item.Cy));
 
-        for (var iter = 0; iter < maxIterations; iter++)
+        var maxAcceptedStepsPerMark = Math.Max(maxStepsPerMark, 0);
+        const int maxConsecutiveNeutralSteps = 10;
+        if (maxAcceptedStepsPerMark > 0)
         {
-            var current = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
-            if (current.PartialConflicts == 0 || current.PartialSeverity <= 0.0)
-                break;
-
-            var partialByMark = current.Overlaps
+            var initialCandidates = before.Overlaps
                 .Where(static overlap => overlap.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
                 .GroupBy(static overlap => overlap.MarkId)
+                .OrderByDescending(static group => group.Sum(overlap => overlap.Depth))
+                .Select(static group => group.Key)
                 .ToList();
 
-            var movedThisIteration = false;
-            foreach (var group in partialByMark)
+            foreach (var markId in initialCandidates)
             {
-                var mark = items.FirstOrDefault(item => item.Id == group.Key);
+                var mark = items.FirstOrDefault(item => item.Id == markId);
                 if (mark == null || !mark.CanMove)
-                    continue;
-
-                var moveX = 0.0;
-                var moveY = 0.0;
-                foreach (var overlap in group)
                 {
-                    moveX += -overlap.AxisX * overlap.Depth;
-                    moveY += -overlap.AxisY * overlap.Depth;
+                    trace?.Invoke($"markId={markId} event=skip reason=not_movable_or_missing");
+                    continue;
                 }
 
-                if (mark.ConstrainToAxis && TryGetNormalizedAxis(mark, out var axisDx, out var axisDy))
+                var originalMarkX = mark.Cx;
+                var originalMarkY = mark.Cy;
+                var originalMarkSummary = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+                var originalMarkSeverity = GetPartialSeverityForMark(originalMarkSummary, mark.Id);
+                trace?.Invoke(
+                    $"markId={mark.Id} event=mark_start severity={originalMarkSeverity:F3} pos=({mark.Cx:F3},{mark.Cy:F3}) overlaps={FormatPartialOverlapsForMark(originalMarkSummary, mark.Id)}");
+                var acceptedStepsForMark = 0;
+                var consecutiveNeutralSteps = 0;
+
+                while (acceptedStepsForMark < maxAcceptedStepsPerMark)
                 {
-                    var projection = (moveX * axisDx) + (moveY * axisDy);
-                    moveX = axisDx * projection;
-                    moveY = axisDy * projection;
-                }
+                    var current = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+                    var currentSeverity = GetPartialSeverityForMark(current, mark.Id);
+                    if (currentSeverity <= 0.0)
+                    {
+                        trace?.Invoke($"markId={mark.Id} event=mark_done reason=no_partial_conflict step={acceptedStepsForMark} severity={currentSeverity:F3}");
+                        break;
+                    }
 
-                var length = Math.Sqrt((moveX * moveX) + (moveY * moveY));
-                if (length <= 0.001)
-                    continue;
+                    var overlaps = current.Overlaps
+                        .Where(overlap =>
+                            overlap.MarkId == mark.Id &&
+                            overlap.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
+                        .ToList();
+                    if (overlaps.Count == 0)
+                    {
+                        trace?.Invoke($"markId={mark.Id} event=mark_done reason=no_partial_overlaps step={acceptedStepsForMark} severity={currentSeverity:F3}");
+                        break;
+                    }
 
-                var step = safeMaxStep > 0.0 && length > safeMaxStep
-                    ? safeMaxStep / length
-                    : 1.0;
+                    var moveX = 0.0;
+                    var moveY = 0.0;
+                    foreach (var overlap in overlaps)
+                    {
+                        moveX += -overlap.AxisX * overlap.Depth;
+                        moveY += -overlap.AxisY * overlap.Depth;
+                    }
 
-                var dx = moveX * step;
-                var dy = moveY * step;
-                if (TryApplyForeignPartCleanupStep(mark, items, allParts, threshold, dx, dy))
-                {
-                    movedThisIteration = true;
+                    var fullDx = 0.0;
+                    var fullDy = 0.0;
+                    if (!TryBuildForeignPartCleanupDelta(moveX, moveY, safeMaxStep, out fullDx, out fullDy))
+                    {
+                        trace?.Invoke(
+                            $"markId={mark.Id} event=mark_done reason=zero_mtv step={acceptedStepsForMark} severity={currentSeverity:F3} move=({moveX:F3},{moveY:F3}) overlaps={FormatPartialOverlapsForMark(current, mark.Id)}");
+                        break;
+                    }
+
+                    trace?.Invoke(
+                        $"markId={mark.Id} event=step_start step={acceptedStepsForMark + 1} severity={currentSeverity:F3} neutralStreak={consecutiveNeutralSteps} move=({moveX:F3},{moveY:F3}) fullStep=({fullDx:F3},{fullDy:F3}) overlaps={FormatPartialOverlapsForMark(current, mark.Id)}");
+                    var moved = false;
+                    if (mark.ConstrainToAxis && TryGetNormalizedAxis(mark, out var axisDx, out var axisDy))
+                    {
+                        var projection = (moveX * axisDx) + (moveY * axisDy);
+                        var axisMoveX = axisDx * projection;
+                        var axisMoveY = axisDy * projection;
+                        if (TryBuildForeignPartCleanupDelta(axisMoveX, axisMoveY, safeMaxStep, out var axisStepX, out var axisStepY))
+                        {
+                            moved = TryApplyForeignPartCleanupStep(
+                                mark,
+                                items,
+                                allParts,
+                                threshold,
+                                axisStepX,
+                                axisStepY,
+                                mode: "axis",
+                                trace: trace);
+                        }
+                        else
+                        {
+                            trace?.Invoke(
+                                $"markId={mark.Id} event=step_reject mode=axis reason=zero_projected_step step={acceptedStepsForMark + 1} axis=({axisDx:F3},{axisDy:F3}) projection={projection:F3}");
+                        }
+                    }
+
+                    if (!moved)
+                    {
+                        // Foreign-part cleanup may need a small off-axis nudge when the baseline axis is parallel
+                        // to the conflict and the projected step cannot reduce the overlap.
+                        moved = TryApplyForeignPartCleanupStep(
+                            mark,
+                            items,
+                            allParts,
+                            threshold,
+                            fullDx,
+                            fullDy,
+                            allowEqualSeverity: true,
+                            mode: "full",
+                            trace: trace);
+                    }
+
+                    if (!moved)
+                    {
+                        trace?.Invoke($"markId={mark.Id} event=mark_done reason=no_accepted_step step={acceptedStepsForMark + 1} severity={currentSeverity:F3}");
+                        break;
+                    }
+
+                    var afterStepSeverity = GetPartialSeverityForMark(
+                        ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold),
+                        mark.Id);
+                    if (afterStepSeverity < currentSeverity - 0.001)
+                    {
+                        consecutiveNeutralSteps = 0;
+                    }
+                    else
+                    {
+                        consecutiveNeutralSteps++;
+                    }
+
                     movedIds.Add(mark.Id);
+                    iterationsUsed++;
+                    acceptedStepsForMark++;
+
+                    if (consecutiveNeutralSteps > maxConsecutiveNeutralSteps)
+                    {
+                        trace?.Invoke(
+                            $"markId={mark.Id} event=mark_done reason=neutral_limit step={acceptedStepsForMark} severity={afterStepSeverity:F3} neutralStreak={consecutiveNeutralSteps}");
+                        break;
+                    }
+                }
+
+                if (acceptedStepsForMark > 0)
+                {
+                    var finalMarkSeverity = GetPartialSeverityForMark(
+                        ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold),
+                        mark.Id);
+                    if (finalMarkSeverity >= originalMarkSeverity - 0.001)
+                    {
+                        trace?.Invoke(
+                            $"markId={mark.Id} event=mark_rollback reason=no_final_improvement steps={acceptedStepsForMark} beforeSeverity={originalMarkSeverity:F3} afterSeverity={finalMarkSeverity:F3}");
+                        mark.Cx = originalMarkX;
+                        mark.Cy = originalMarkY;
+                        movedIds.Remove(mark.Id);
+                        iterationsUsed -= acceptedStepsForMark;
+                    }
+                    else
+                    {
+                        trace?.Invoke(
+                            $"markId={mark.Id} event=mark_accept steps={acceptedStepsForMark} beforeSeverity={originalMarkSeverity:F3} afterSeverity={finalMarkSeverity:F3} pos=({mark.Cx:F3},{mark.Cy:F3})");
+                    }
                 }
             }
-
-            if (!movedThisIteration)
-                break;
-
-            iterationsUsed = iter + 1;
         }
 
         var after = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+        if (movedIds.Count > 0 && after.PartialSeverity >= beforePartialSeverity - 0.001)
+        {
+            trace?.Invoke(
+                $"event=cleanup_rollback reason=no_total_improvement beforeSeverity={beforePartialSeverity:F3} afterSeverity={after.PartialSeverity:F3} moved={movedIds.Count}");
+            foreach (var item in items)
+            {
+                if (!originalPositions.TryGetValue(item.Id, out var original))
+                    continue;
+
+                item.Cx = original.Cx;
+                item.Cy = original.Cy;
+            }
+
+            after = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+            movedIds.Clear();
+            iterationsUsed = 0;
+        }
+
         return new ForeignPartCleanupResult(
             iterationsUsed,
             movedIds.Count,
@@ -369,17 +498,44 @@ internal sealed class ForceDirectedMarkPlacer
             after.PartialSeverity);
     }
 
+    private static bool TryBuildForeignPartCleanupDelta(
+        double moveX,
+        double moveY,
+        double maxStep,
+        out double dx,
+        out double dy)
+    {
+        dx = 0.0;
+        dy = 0.0;
+
+        var length = Math.Sqrt((moveX * moveX) + (moveY * moveY));
+        if (length <= 0.001)
+            return false;
+
+        var step = maxStep > 0.0 && length > maxStep
+            ? maxStep / length
+            : 1.0;
+
+        dx = moveX * step;
+        dy = moveY * step;
+        return true;
+    }
+
     private static bool TryApplyForeignPartCleanupStep(
         ForceDirectedMarkItem mark,
         IReadOnlyList<ForceDirectedMarkItem> items,
         IReadOnlyList<PartBbox> allParts,
         double threshold,
         double dx,
-        double dy)
+        double dy,
+        bool allowEqualSeverity = false,
+        string mode = "step",
+        Action<string>? trace = null)
     {
         var originalX = mark.Cx;
         var originalY = mark.Cy;
-        var currentPartialSeverity = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold).PartialSeverity;
+        var current = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
+        var currentPartialSeverity = GetPartialSeverityForMark(current, mark.Id);
         var currentMarkOverlapPairs = CountMarkOverlapPairs(items);
 
         for (var attempt = 0; attempt < 5; attempt++)
@@ -389,24 +545,59 @@ internal sealed class ForceDirectedMarkPlacer
 
             var proposed = ForeignPartOverlapAnalyzer.Analyze(items, allParts, threshold);
             var proposedMarkOverlapPairs = CountMarkOverlapPairs(items);
-            if (proposed.PartialSeverity < currentPartialSeverity - 0.001 &&
+            var proposedPartialSeverity = GetPartialSeverityForMark(proposed, mark.Id);
+            var improvesSeverity = proposedPartialSeverity < currentPartialSeverity - 0.001;
+            var keepsSeverity = allowEqualSeverity && proposedPartialSeverity <= currentPartialSeverity + 0.001;
+            if ((improvesSeverity || keepsSeverity) &&
                 proposedMarkOverlapPairs <= currentMarkOverlapPairs)
             {
+                trace?.Invoke(
+                    $"markId={mark.Id} event=step_accept mode={mode} attempt={attempt + 1} dx={dx:F3} dy={dy:F3} beforeSeverity={currentPartialSeverity:F3} afterSeverity={proposedPartialSeverity:F3} beforePairs={currentMarkOverlapPairs} afterPairs={proposedMarkOverlapPairs} allowEqual={allowEqualSeverity}");
                 return true;
             }
 
+            var reason = proposedMarkOverlapPairs > currentMarkOverlapPairs
+                ? "mark_overlap_increased"
+                : allowEqualSeverity
+                    ? "severity_increased"
+                    : "severity_not_improved";
+            trace?.Invoke(
+                $"markId={mark.Id} event=step_reject mode={mode} reason={reason} attempt={attempt + 1} dx={dx:F3} dy={dy:F3} beforeSeverity={currentPartialSeverity:F3} afterSeverity={proposedPartialSeverity:F3} beforePairs={currentMarkOverlapPairs} afterPairs={proposedMarkOverlapPairs} allowEqual={allowEqualSeverity}");
             mark.Cx = originalX;
             mark.Cy = originalY;
             dx *= 0.5;
             dy *= 0.5;
             if (Math.Sqrt((dx * dx) + (dy * dy)) <= 0.001)
+            {
+                trace?.Invoke($"markId={mark.Id} event=step_done mode={mode} reason=step_too_small attempt={attempt + 1}");
                 break;
+            }
         }
 
         mark.Cx = originalX;
         mark.Cy = originalY;
         return false;
     }
+
+    private static string FormatPartialOverlapsForMark(ForeignPartOverlapSummary summary, int markId)
+    {
+        var overlaps = summary.Overlaps
+            .Where(overlap =>
+                overlap.MarkId == markId &&
+                overlap.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
+            .OrderByDescending(static overlap => overlap.Depth)
+            .Take(6)
+            .Select(static overlap => $"{overlap.PartModelId}:{overlap.Depth:F3}");
+
+        return string.Join(",", overlaps);
+    }
+
+    private static double GetPartialSeverityForMark(ForeignPartOverlapSummary summary, int markId)
+        => summary.Overlaps
+            .Where(overlap =>
+                overlap.MarkId == markId &&
+                overlap.Kind == ForeignPartOverlapKind.PartialForeignPartOverlap)
+            .Sum(static overlap => overlap.Depth);
 
     private static ForceComponents ComputeForce(
         ForceDirectedMarkItem mark,

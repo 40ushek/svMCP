@@ -278,7 +278,18 @@ public sealed partial class TeklaDrawingMarkApi
                     forceItems.Values.ToList(),
                     partBboxes,
                     foreignPartThreshold,
-                    maxStep: 0.5 * normalizedScale);
+                    maxStep: 0.5 * normalizedScale,
+                    trace: details =>
+                    {
+                        if (!PerfTrace.IsActive)
+                            return;
+
+                        PerfTrace.Write(
+                            "api-mark",
+                            "arrange_marks_force_foreign_cleanup",
+                            0,
+                            $"viewId={view.GetIdentifier().ID} {details}");
+                    });
                 var foreignAfterCleanup = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
                 WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterForeignCleanup", foreignAfterCleanup);
                 var pass1Placements = BuildForcePlacements(markEntries, forceItems);

@@ -1,7 +1,10 @@
 {
   "mcpServers": {
     "tekla": {
-      "command": "D:\\repos\\svMCP\\src\\TeklaMcpServer\\bin\\Release\\net8.0-windows\\TeklaMcpServer.exe"
+      "command": "D:\\repos\\svMCP\\src\\TeklaMcpServer\\bin\\Release\\net8.0-windows\\TeklaMcpServer.exe",
+      "env": {
+        "SVMCP_PERF": "1"
+      }
     }
   }
 }

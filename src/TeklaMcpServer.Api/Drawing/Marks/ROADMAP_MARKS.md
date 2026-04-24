@@ -758,46 +758,49 @@ paperMm policy value * viewScale = drawing-unit solver value
 
 **View-bounds guard** остаётся отдельной задачей. Его нельзя смешивать с view-scale normalization, потому что это отдельное поведенческое ограничение, а не unit semantics.
 
+**2. Foreign-part conflict diagnostics — completed**
+
+Smoke на `[EW14S.3 - 1]` показал отдельный тип конфликта: метка может не пересекаться с другими метками, но full OBB/polygon метки лежит поверх чужой детали в 2D-проекции.
+
+Реализовано:
+
+- `ForeignPartOverlapKind` enum: `PartialForeignPartOverlap`, `MarkInsideForeignPart`, `ForeignPartInsideMark`
+- `ForeignPartOverlapSummary` содержит per-kind счётчики (`PartialConflicts`, `MarkInsideConflicts`, `PartInsideConflicts`) и severity
+- `ForeignPartOverlapAnalyzer.Analyze()` классифицирует каждый конфликт через `AllPointsInsideOrOnBoundary`
+- logging в `arrange_marks_force_view` и `arrange_marks_force_foreign_cleanup` включает `kind=` в per-overlap строки
+
+**3. Pass2 foreign-part cleanup — completed**
+
+Реализован через `CleanupForeignPartOverlaps` в `ForceDirectedMarkPlacer`. Запускается после Pass1, до mark-mark Relax pass.
+
+Реализованный подход — per-mark sequential cleanup:
+
+- кандидаты на очистку: только `PartialForeignPartOverlap` конфликты (не `MarkInside`, не `PartInside`)
+- марки обрабатываются в порядке убывания суммарной глубины перекрытия (worst first)
+- для каждой марки: inner while loop до `maxStepsPerMark=25` принятых шагов
+- на каждом шаге:
+  1. пробуется axis-constrained шаг (для `ConstrainToAxis` марок)
+  2. если axis шаг не помог — full unconstrained шаг с `allowEqualSeverity=true`
+- нейтральные шаги отслеживаются: если `consecutiveNeutralSteps > 10` — марка отпускается
+- per-mark rollback: если итоговая severity марки не лучше исходной — позиция восстанавливается
+- global rollback: если суммарная `PartialSeverity` не улучшилась — все позиции восстанавливаются
+- новые mark-mark overlaps не допускаются (проверка `CountMarkOverlapPairs`)
+- `MarkInside` и `PartInside` конфликты не обрабатываются — layout не может их устранить перемещением
+
 #### High-impact pending tasks
 
-**1. Foreign-part conflict diagnostics**
+**1. Pass3 mark-mark cleanup**
 
-Smoke на `[EW14S.3 - 1]` показал отдельный тип конфликта: метка может не пересекаться с другими метками, но full OBB/polygon метки лежит поверх чужой детали в 2D-проекции. Пример: mark `4737` на своей детали `36542702` пересекал foreign part `33537022 / T-8` с estimated separation depth ~60 drawing units (~3 мм paper при scale 1:20).
+Текущий mark-mark Relax pass должен стать Pass3 (сейчас он именуется как Pass2 в коде):
 
-Это не всегда hard error: в 2D-чертежах детали могут проецироваться одна поверх другой из-за 3D-глубины. Но если рядом есть свободное место, layout должен предпочитать позицию без такого наложения.
-
-Решение:
-
-- считать `foreignPartConflicts` / `foreignPartOverlapSeverity` отдельно от mark-mark overlaps
-- использовать full mark OBB/polygon vs foreign part polygon/hull, исключая own model id
-- логировать severity в `arrange_marks_force_view`
-- не смешивать этот счётчик с текущим `RemainingOverlaps`, который означает mark-mark overlaps
-
-**2. Pass2 foreign-part cleanup**
-
-Текущий Pass1 имеет только мягкую `partRepel` силу от чужих деталей. Она считается через nearest point / effective distance и может быть слабой или локально нестабильной, если full bbox/OBB метки уже лежит поверх foreign part. Поэтому метка с foreign-part conflict может не попадать в активный cleanup, если mark-mark overlap отсутствует.
-
-Решение:
-
-- после Pass1 найти marks с заметным `foreignPartOverlapSeverity`
-- запустить отдельный Pass2 только для этих marks
-- цель Pass2: уменьшить foreign-part severity, если рядом есть разумное свободное место
-- не считать small projected overlap абсолютным failure; применять threshold, например `0.5 мм` paper
-- не создавать новые mark-mark overlaps; если вариантов нет, допустимо оставить foreign-part overlap
-- для baseline/along-line marks разрешать ограниченный поперечный сдвиг с return-to-axis spring
-
-**3. Pass3 mark-mark cleanup**
-
-Текущий Pass2 mark-mark cleanup должен стать Pass3:
-
-- двигаются marks, которые после Pass1/Pass2 конфликтуют с другими marks
+- двигаются marks, которые после Pass1 + foreign-part cleanup конфликтуют с другими marks
 - включён mark-mark repulsion
 - early exit по устранению mark-mark overlaps остаётся
 - `collidingIds` / `pass3EarlyExit` должны относиться именно к mark-mark overlaps
 
 Это сохраняет текущую удачную логику раздвижки меток, но запускает её после попытки убрать avoidable foreign-part conflicts.
 
-**4. Differentiated attraction by placing type**
+**2. Differentiated attraction by placing type**
 
 Сейчас один `IdealDist` для всех марок — solver тянет любую марку к ближайшей грани детали.
 
@@ -811,7 +814,7 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - либо отдельные `ForcePassOptions` per placing type
 - либо per-mark override на `ForceDirectedMarkItem`
 
-**5. Pass3 overlap-based early exit**
+**3. Pass3 overlap-based early exit**
 
 Сейчас mark-mark cleanup всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
 
@@ -819,13 +822,13 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Этот пункт уже реализован для текущего Pass2 и должен сохраниться после переименования в Pass3.
 
-**6. Pass3 dynamic movable set expansion**
+**4. Pass3 dynamic movable set expansion**
 
 Сейчас `movableIds` — только изначально коллидирующие после Pass1 марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
 
 Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
 
-**7. Step acceptance policy in Relax**
+**5. Step acceptance policy in Relax**
 
 Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap или ухудшается foreign-part severity. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию", медленной сходимости и случаям, когда mark-mark repulsion может вытолкнуть метку на чужую деталь.
 

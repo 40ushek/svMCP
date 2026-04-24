@@ -116,12 +116,79 @@ public sealed class ForceDirectedMarkPlacerTests
         var before = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
         var placer = new ForceDirectedMarkPlacer();
 
-        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxIterations: 1);
+        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxStepsPerMark: 1);
         var after = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
 
         Assert.Equal(1, before.PartialConflicts);
         Assert.True(result.MovedMarks > 0);
         Assert.True(items[0].Cx < 0.0);
+        Assert.True(after.PartialSeverity < before.PartialSeverity);
+    }
+
+    [Fact]
+    public void CleanupForeignPartOverlaps_AllowsGradualStepsBeforeFinalImprovement()
+    {
+        var items = new List<ForceDirectedMarkItem>
+        {
+            CreateMark(id: 1, ownModelId: 10, x: 0.0, y: 0.0, localCorners: CreateRectangle(-5.0, -5.0, 5.0, 5.0))
+        };
+        var parts = new List<PartBbox>
+        {
+            new(20, 0.0, -5.0, 12.0, 5.0, CreateRectangle(0.0, -5.0, 12.0, 5.0))
+        };
+        var before = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
+        var placer = new ForceDirectedMarkPlacer();
+
+        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 1.0, maxStepsPerMark: 6);
+        var after = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
+
+        Assert.True(result.Iterations > 1);
+        Assert.True(result.MovedMarks > 0);
+        Assert.True(after.PartialSeverity < before.PartialSeverity);
+    }
+
+    [Fact]
+    public void CleanupForeignPartOverlaps_ContinuesSameMarkWhileSeverityImproves()
+    {
+        var items = new List<ForceDirectedMarkItem>
+        {
+            CreateMark(id: 1, ownModelId: 10, x: 0.0, y: 0.0, localCorners: CreateRectangle(-5.0, -5.0, 5.0, 5.0)),
+            CreateMark(id: 2, ownModelId: 30, x: 40.0, y: 0.0, localCorners: CreateRectangle(-5.0, -5.0, 5.0, 5.0))
+        };
+        var parts = new List<PartBbox>
+        {
+            new(20, 0.0, -5.0, 12.0, 5.0, CreateRectangle(0.0, -5.0, 12.0, 5.0)),
+            new(40, 42.0, -5.0, 50.0, 5.0, CreateRectangle(42.0, -5.0, 50.0, 5.0))
+        };
+        var placer = new ForceDirectedMarkPlacer();
+
+        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 1.0, maxStepsPerMark: 4);
+
+        Assert.True(result.Iterations > result.MovedMarks);
+        Assert.Equal(-4.0, items[0].Cx, 6);
+        Assert.Equal(37.0, items[1].Cx, 6);
+    }
+
+    [Fact]
+    public void CleanupForeignPartOverlaps_CanUseOffAxisStepWhenAxisStepDoesNotImprove()
+    {
+        var mark = CreateMark(id: 1, ownModelId: 10, x: 0.0, y: 0.0, localCorners: CreateRectangle(-5.0, -5.0, 5.0, 5.0));
+        mark.ConstrainToAxis = true;
+        mark.AxisDx = 0.0;
+        mark.AxisDy = 1.0;
+        var items = new List<ForceDirectedMarkItem> { mark };
+        var parts = new List<PartBbox>
+        {
+            new(20, 0.0, -5.0, 12.0, 5.0, CreateRectangle(0.0, -5.0, 12.0, 5.0))
+        };
+        var before = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
+        var placer = new ForceDirectedMarkPlacer();
+
+        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 1.0, maxStepsPerMark: 3);
+        var after = ForeignPartOverlapAnalyzer.Analyze(items, parts, threshold: 0.0);
+
+        Assert.True(result.MovedMarks > 0);
+        Assert.True(mark.Cx < 0.0);
         Assert.True(after.PartialSeverity < before.PartialSeverity);
     }
 
@@ -138,7 +205,7 @@ public sealed class ForceDirectedMarkPlacerTests
         };
         var placer = new ForceDirectedMarkPlacer();
 
-        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxIterations: 3);
+        var result = placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxStepsPerMark: 3);
 
         Assert.Equal(0, result.MovedMarks);
         Assert.Equal(0.0, items[0].Cx, 6);
@@ -159,7 +226,7 @@ public sealed class ForceDirectedMarkPlacerTests
         };
         var placer = new ForceDirectedMarkPlacer();
 
-        placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxIterations: 1);
+        placer.CleanupForeignPartOverlaps(items, parts, threshold: 0.0, maxStep: 5.0, maxStepsPerMark: 1);
 
         Assert.False(RectanglesOverlap(items[0], items[1]));
     }
