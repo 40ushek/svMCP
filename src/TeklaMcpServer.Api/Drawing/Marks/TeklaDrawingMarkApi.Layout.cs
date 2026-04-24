@@ -254,7 +254,7 @@ public sealed partial class TeklaDrawingMarkApi
                 force.PlaceInitial(forceItems.Values.ToList(), partBboxes);
 
                 var arrange = Stopwatch.StartNew();
-                var pass1Iterations = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
+                var pass1Result = force.Relax(forceItems.Values.ToList(), partBboxes, ForcePassOptions.Pass1Default,
                     debugSink: debug =>
                     {
                         if (!PerfTrace.IsActive) return;
@@ -277,10 +277,10 @@ public sealed partial class TeklaDrawingMarkApi
                         item.ReturnToAxisLine = true;
                     }
 
-                var pass2Iterations = 0;
+                var pass2Result = new ForceRelaxResult(0, ForceRelaxStopReason.NotRun);
                 if (collidingIds.Count > 0)
                 {
-                    pass2Iterations = force.Relax(
+                    pass2Result = force.Relax(
                         forceItems.Values.ToList(),
                         partBboxes,
                         ForcePassOptions.Pass2Default,
@@ -302,6 +302,11 @@ public sealed partial class TeklaDrawingMarkApi
                                 $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
                                 $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
                                 $"pos=({debug.X:F3},{debug.Y:F3})");
+                        },
+                        getRemainingOverlapCount: () =>
+                        {
+                            var currentPlacements = BuildForcePlacements(markEntries, forceItems);
+                            return GetOverlappingMarkIds(currentPlacements).Count(id => collidingIds.Contains(id));
                         });
                 }
                 arrange.Stop();
@@ -334,9 +339,9 @@ public sealed partial class TeklaDrawingMarkApi
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
                 leaderAnchor.Stop();
 
-                totalIterations += pass1Iterations + pass2Iterations;
+                totalIterations += pass1Result.Iterations + pass2Result.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Iterations} pass2Iterations={pass2Iterations} collidingMarks={collidingIds.Count}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared}");
             }
 
             movedIds = movedIds.Distinct().ToList();

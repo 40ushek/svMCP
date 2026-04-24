@@ -87,6 +87,26 @@ internal readonly struct ForcePassOptions
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 }
 
+internal enum ForceRelaxStopReason
+{
+    NotRun,
+    MaxIterations,
+    StopEpsilon,
+    OverlapsCleared
+}
+
+internal readonly struct ForceRelaxResult
+{
+    public ForceRelaxResult(int iterations, ForceRelaxStopReason stopReason)
+    {
+        Iterations = iterations;
+        StopReason = stopReason;
+    }
+
+    public int Iterations { get; }
+    public ForceRelaxStopReason StopReason { get; }
+}
+
 internal sealed class ForceDirectedMarkPlacer
 {
     private const double FarDistanceFactor = 8.0;
@@ -130,13 +150,15 @@ internal sealed class ForceDirectedMarkPlacer
         }
     }
 
-    public int Relax(
+    public ForceRelaxResult Relax(
         IReadOnlyList<ForceDirectedMarkItem> items,
         IReadOnlyList<PartBbox> allParts,
         ForcePassOptions options,
         bool includeMarkRepulsion = false,
         ISet<int>? movableIds = null,
-        Action<ForceIterationDebugInfo>? debugSink = null)
+        Action<ForceIterationDebugInfo>? debugSink = null,
+        Func<int>? getRemainingOverlapCount = null,
+        int overlapCheckInterval = 5)
     {
         var dt = options.InitialDt;
         var iterationsUsed = 0;
@@ -193,12 +215,20 @@ internal sealed class ForceDirectedMarkPlacer
                     update.Mark.Cy));
             }
 
+            if (getRemainingOverlapCount != null &&
+                overlapCheckInterval > 0 &&
+                (iter + 1) % overlapCheckInterval == 0 &&
+                getRemainingOverlapCount() == 0)
+            {
+                return new ForceRelaxResult(iterationsUsed, ForceRelaxStopReason.OverlapsCleared);
+            }
+
             dt *= options.DtDecay;
             if (maxDisplacement < options.StopEpsilon)
-                break;
+                return new ForceRelaxResult(iterationsUsed, ForceRelaxStopReason.StopEpsilon);
         }
 
-        return iterationsUsed;
+        return new ForceRelaxResult(iterationsUsed, ForceRelaxStopReason.MaxIterations);
     }
 
     private static ForceComponents ComputeForce(
