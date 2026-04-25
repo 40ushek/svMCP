@@ -33,7 +33,7 @@ public sealed class MarkOverlapResolver
                 if (!TryGetSeparation(a, b, out var separationAxisX, out var separationAxisY, out var separationDepth, out var overlapX, out var overlapY))
                     continue;
 
-                if (TryResolveAlongAxis(a, b, separationAxisX, separationAxisY, separationDepth, overlapX, overlapY, options, out var movedAlongAxis))
+                if (TryResolveAlongAxis(a, b, options, out var movedAlongAxis))
                 {
                     movedAny |= movedAlongAxis;
                     continue;
@@ -94,7 +94,7 @@ public sealed class MarkOverlapResolver
                 if (!TryGetSeparation(a, b, out var axisX, out var axisY, out var depth, out var overlapX, out var overlapY))
                     continue;
 
-                if (TryResolveAlongAxis(a, b, axisX, axisY, depth, overlapX, overlapY, options, out var movedAlongAxis))
+                if (TryResolveAlongAxis(a, b, options, out var movedAlongAxis))
                 {
                     movedAny |= movedAlongAxis;
                     continue;
@@ -145,158 +145,34 @@ public sealed class MarkOverlapResolver
     private static bool TryResolveAlongAxis(
         MarkLayoutPlacement a,
         MarkLayoutPlacement b,
-        double separationAxisX,
-        double separationAxisY,
-        double separationDepth,
-        double overlapX,
-        double overlapY,
         MarkLayoutOptions options,
         out bool movedAny)
     {
         movedAny = false;
 
-        if (a.HasLeaderLine || b.HasLeaderLine || !a.HasAxis || !b.HasAxis)
+        if (!AxisMarkPairSeparation.TryCompute(
+                AxisMarkPairSeparationMark.FromPlacement(a),
+                AxisMarkPairSeparationMark.FromPlacement(b),
+                options.Gap,
+                out var separation))
             return false;
 
-        var aAxisDx = a.AxisDx;
-        var aAxisDy = a.AxisDy;
-        if (!TryNormalize(ref aAxisDx, ref aAxisDy))
-            return false;
-
-        var bAxisDx = b.AxisDx;
-        var bAxisDy = b.AxisDy;
-        if (!TryNormalize(ref bAxisDx, ref bAxisDy))
-            return false;
-
-        var dot = (aAxisDx * bAxisDx) + (aAxisDy * bAxisDy);
-        var split = GetSplit(a, b);
-        if (split.Total == 0)
+        if (!separation.HasMovement)
             return true;
 
-        if (Math.Abs(dot) < 0.95)
-            return TryResolveAlongIndependentAxes(a, b, aAxisDx, aAxisDy, bAxisDx, bAxisDy, separationAxisX, separationAxisY, separationDepth, overlapX, overlapY, options, split, out movedAny);
-
-        bAxisDx = dot < 0 ? -bAxisDx : bAxisDx;
-        bAxisDy = dot < 0 ? -bAxisDy : bAxisDy;
-        var axisDx = aAxisDx + bAxisDx;
-        var axisDy = aAxisDy + bAxisDy;
-        if (!TryNormalize(ref axisDx, ref axisDy))
-            return false;
-
-        var projectedHalfA = ProjectHalfExtent(a, axisDx, axisDy);
-        var projectedHalfB = ProjectHalfExtent(b, axisDx, axisDy);
-        var centerA = Dot(a.X, a.Y, axisDx, axisDy);
-        var centerB = Dot(b.X, b.Y, axisDx, axisDy);
-        var axisOverlap = (projectedHalfA + projectedHalfB) - Math.Abs(centerA - centerB);
-
-        if (axisOverlap <= 0)
-            return true;
-
-        var push = axisOverlap + options.Gap;
-        var direction = centerB >= centerA ? 1.0 : -1.0;
-
-        var movedA = MoveWithAnchorClamp(
-            a,
-            -axisDx * direction * push * split.MoveA,
-            -axisDy * direction * push * split.MoveA,
-            options);
-        var movedB = MoveWithAnchorClamp(
-            b,
-            +axisDx * direction * push * split.MoveB,
-            +axisDy * direction * push * split.MoveB,
-            options);
-        movedAny = movedA || movedB;
-        return true;
-    }
-
-    private static bool TryResolveAlongIndependentAxes(
-        MarkLayoutPlacement a,
-        MarkLayoutPlacement b,
-        double aAxisDx,
-        double aAxisDy,
-        double bAxisDx,
-        double bAxisDy,
-        double separationAxisX,
-        double separationAxisY,
-        double separationDepth,
-        double overlapX,
-        double overlapY,
-        MarkLayoutOptions options,
-        (double MoveA, double MoveB, double Total) split,
-        out bool movedAny)
-    {
-        movedAny = false;
-
-        if (!a.CanMove && !b.CanMove)
-            return true;
-
-        if (a.CanMove && b.CanMove)
+        if (separation.Mode == AxisMarkPairSeparationMode.ParallelAxes)
         {
-            var desiredDx = separationAxisX * (separationDepth + options.Gap);
-            var desiredDy = separationAxisY * (separationDepth + options.Gap);
-
-            var scaledADx = aAxisDx * split.MoveA;
-            var scaledADy = aAxisDy * split.MoveA;
-            var scaledBDx = bAxisDx * split.MoveB;
-            var scaledBDy = bAxisDy * split.MoveB;
-
-            var determinant = (scaledADx * scaledBDy) - (scaledADy * scaledBDx);
-            if (Math.Abs(determinant) < 0.001)
-                return false;
-
-            var moveA = ((desiredDx * scaledBDy) - (desiredDy * scaledBDx)) / determinant;
-            var moveB = ((scaledADx * desiredDy) - (scaledADy * desiredDx)) / determinant;
-
-            a.X -= aAxisDx * moveA * split.MoveA;
-            a.Y -= aAxisDy * moveA * split.MoveA;
-            b.X += bAxisDx * moveB * split.MoveB;
-            b.Y += bAxisDy * moveB * split.MoveB;
-            movedAny = true;
+            var movedA = MoveWithAnchorClamp(a, separation.DeltaAx, separation.DeltaAy, options);
+            var movedB = MoveWithAnchorClamp(b, separation.DeltaBx, separation.DeltaBy, options);
+            movedAny = movedA || movedB;
             return true;
         }
 
-        if (a.CanMove)
-        {
-            var move = ResolveSingleAxisMove(aAxisDx, aAxisDy, separationAxisX, separationAxisY, separationDepth, options);
-            a.X -= aAxisDx * move;
-            a.Y -= aAxisDy * move;
-            movedAny = true;
-            return true;
-        }
-
-        if (b.CanMove)
-        {
-            var move = ResolveSingleAxisMove(bAxisDx, bAxisDy, separationAxisX, separationAxisY, separationDepth, options);
-            b.X += bAxisDx * move;
-            b.Y += bAxisDy * move;
-            movedAny = true;
-            return true;
-        }
+        var movedIndependentA = MoveWithAnchorClamp(a, separation.DeltaAx, separation.DeltaAy, options);
+        var movedIndependentB = MoveWithAnchorClamp(b, separation.DeltaBx, separation.DeltaBy, options);
+        movedAny = movedIndependentA || movedIndependentB;
 
         return true;
-    }
-
-    private static double ResolveSingleAxisMove(
-        double axisDx,
-        double axisDy,
-        double separationAxisX,
-        double separationAxisY,
-        double separationDepth,
-        MarkLayoutOptions options)
-    {
-        var targetDx = separationAxisX * (separationDepth + options.Gap);
-        var targetDy = separationAxisY * (separationDepth + options.Gap);
-
-        var alongX = Math.Abs(axisDx) >= 0.001 ? targetDx / axisDx : 0.0;
-        var alongY = Math.Abs(axisDy) >= 0.001 ? targetDy / axisDy : 0.0;
-
-        if (Math.Abs(axisDx) < 0.001)
-            return alongY;
-
-        if (Math.Abs(axisDy) < 0.001)
-            return alongX;
-
-        return Math.Abs(alongX) >= Math.Abs(alongY) ? alongX : alongY;
     }
 
     private static (double MoveA, double MoveB, double Total) GetSplit(
@@ -517,22 +393,6 @@ public sealed class MarkOverlapResolver
     private static double Dot(double x, double y, double axisDx, double axisDy)
     {
         return (x * axisDx) + (y * axisDy);
-    }
-
-    private static double ProjectHalfExtent(double width, double height, double axisDx, double axisDy)
-    {
-        return (Math.Abs(axisDx) * (width / 2.0)) + (Math.Abs(axisDy) * (height / 2.0));
-    }
-
-    private static double ProjectHalfExtent(MarkLayoutPlacement placement, double axisDx, double axisDy)
-    {
-        if (placement.LocalCorners.Count < 3)
-            return ProjectHalfExtent(placement.Width, placement.Height, axisDx, axisDy);
-
-        return placement.LocalCorners
-            .Select(c => Math.Abs(Dot(c[0], c[1], axisDx, axisDy)))
-            .DefaultIfEmpty(0.0)
-            .Max();
     }
 
     private static bool TryNormalize(ref double dx, ref double dy)

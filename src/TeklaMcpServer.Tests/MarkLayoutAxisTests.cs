@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Collections.Generic;
 using TeklaMcpServer.Api.Algorithms.Marks;
 using Xunit;
 
@@ -209,6 +210,62 @@ public sealed class MarkLayoutAxisTests
         Assert.Equal(120, b.X, 6);
         Assert.NotEqual(100, a.X);
         Assert.Equal(0, resolver.CountOverlaps(resolved));
+    }
+
+    [Fact]
+    public void Resolve_ForOrthogonalAxisMarks_RespectsAnchorDistanceLimit()
+    {
+        var resolver = new MarkOverlapResolver();
+        var placements = new[]
+        {
+            new MarkLayoutPlacement
+            {
+                Id = 1,
+                X = 100,
+                Y = 100,
+                Width = 120,
+                Height = 40,
+                AnchorX = 100,
+                AnchorY = 100,
+                HasAxis = true,
+                AxisDx = 1,
+                AxisDy = 0,
+                CanMove = true
+            },
+            new MarkLayoutPlacement
+            {
+                Id = 2,
+                X = 120,
+                Y = 120,
+                Width = 40,
+                Height = 120,
+                AnchorX = 120,
+                AnchorY = 120,
+                HasAxis = true,
+                AxisDx = 0,
+                AxisDy = 1,
+                CanMove = true
+            }
+        };
+
+        var resolved = resolver.Resolve(
+            placements,
+            new MarkLayoutOptions
+            {
+                Gap = 2.0,
+                MaxDistanceFromAnchor = 10.0,
+                MaxResolverIterations = 1
+            },
+            out _);
+
+        foreach (var mark in resolved)
+        {
+            var source = placements.Single(x => x.Id == mark.Id);
+            var dx = mark.X - source.AnchorX;
+            var dy = mark.Y - source.AnchorY;
+            var distance = System.Math.Sqrt((dx * dx) + (dy * dy));
+            Assert.True(distance <= 10.001);
+        }
     }
 
     [Fact]
@@ -577,4 +634,120 @@ public sealed class MarkLayoutAxisTests
         Assert.True(leaderDistance >= baselineDistance);
         Assert.Equal(10, baseline.X, 6);
     }
+
+    [Fact]
+    public void AxisMarkPairSeparation_UsesLocalCornerPolygons()
+    {
+        var first = new AxisMarkPairSeparationMark(
+            id: 1,
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+            hasLeaderLine: false,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: 1,
+            canMove: true,
+            localCorners: CreateRectangle(-5, -20, 5, 20));
+        var second = new AxisMarkPairSeparationMark(
+            id: 2,
+            x: 0,
+            y: 30,
+            width: 10,
+            height: 10,
+            hasLeaderLine: false,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: -1,
+            canMove: true,
+            localCorners: CreateRectangle(-5, -20, 5, 20));
+
+        var handled = AxisMarkPairSeparation.TryCompute(first, second, gap: 2.0, out var result);
+
+        Assert.True(handled);
+        Assert.Equal(AxisMarkPairSeparationMode.ParallelAxes, result.Mode);
+        Assert.True(result.HasMovement);
+        Assert.Equal(0, result.DeltaAx, 6);
+        Assert.Equal(0, result.DeltaBx, 6);
+        Assert.True(result.DeltaAy < 0);
+        Assert.True(result.DeltaBy > 0);
+    }
+
+    [Fact]
+    public void AxisMarkPairSeparation_FallsBackToAabbWhenLocalCornersAreMissing()
+    {
+        var first = new AxisMarkPairSeparationMark(
+            id: 1,
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 40,
+            hasLeaderLine: false,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: 1,
+            canMove: true,
+            localCorners: []);
+        var second = new AxisMarkPairSeparationMark(
+            id: 2,
+            x: 0,
+            y: 30,
+            width: 20,
+            height: 40,
+            hasLeaderLine: false,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: -1,
+            canMove: true,
+            localCorners: []);
+
+        var handled = AxisMarkPairSeparation.TryCompute(first, second, gap: 2.0, out var result);
+
+        Assert.True(handled);
+        Assert.Equal(AxisMarkPairSeparationMode.ParallelAxes, result.Mode);
+        Assert.True(result.HasMovement);
+    }
+
+    [Fact]
+    public void AxisMarkPairSeparation_DoesNotHandleLeaderPairs()
+    {
+        var first = new AxisMarkPairSeparationMark(
+            id: 1,
+            x: 0,
+            y: 0,
+            width: 20,
+            height: 40,
+            hasLeaderLine: true,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: 1,
+            canMove: true,
+            localCorners: []);
+        var second = new AxisMarkPairSeparationMark(
+            id: 2,
+            x: 0,
+            y: 30,
+            width: 20,
+            height: 40,
+            hasLeaderLine: false,
+            hasAxis: true,
+            axisDx: 0,
+            axisDy: -1,
+            canMove: true,
+            localCorners: []);
+
+        var handled = AxisMarkPairSeparation.TryCompute(first, second, gap: 2.0, out _);
+
+        Assert.False(handled);
+    }
+
+    private static List<double[]> CreateRectangle(double minX, double minY, double maxX, double maxY) =>
+        new()
+        {
+            new[] { minX, minY },
+            new[] { maxX, minY },
+            new[] { maxX, maxY },
+            new[] { minX, maxY }
+        };
 }
