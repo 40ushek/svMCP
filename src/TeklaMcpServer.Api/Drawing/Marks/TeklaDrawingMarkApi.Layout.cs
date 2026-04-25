@@ -152,12 +152,23 @@ public sealed partial class TeklaDrawingMarkApi
                 arrange.Stop();
 
                 var placementById = layoutResult.Placements.ToDictionary(x => x.Id);
+                var leaderAnchor = Stopwatch.StartNew();
+                var leaderAnchorMovedIds = TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(
+                    markEntries,
+                    partPolygonsByModelId,
+                    _model,
+                    placementById,
+                    updateEntryCentersAfterModify: false);
+                movedIds.AddRange(leaderAnchorMovedIds);
+                leaderAnchor.Stop();
                 var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model));
                 apply.Stop();
-                var leaderAnchor = Stopwatch.StartNew();
-                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
-                leaderAnchor.Stop();
+                if (leaderAnchorMovedIds.Count > 0)
+                {
+                    activeDrawing.CommitChanges("(MCP) ArrangeMarks leader anchors");
+                    movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ReapplyLeaderInsertionPoints(activeDrawing, placementById));
+                }
                 totalIterations += layoutResult.Iterations;
                 totalRemainingOverlaps += layoutResult.RemainingOverlaps;
                 PerfTrace.Write("api-mark", "arrange_marks_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} arrangeMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} iterations={layoutResult.Iterations}");
@@ -236,6 +247,7 @@ public sealed partial class TeklaDrawingMarkApi
                         Width = entry.Item.Width,
                         Height = entry.Item.Height,
                         CanMove = entry.Item.CanMove,
+                        HasLeaderLine = entry.Item.HasLeaderLine,
                         ConstrainToAxis = entry.Item.HasAxis && !entry.Item.HasLeaderLine,
                         ReturnToAxisLine = false,
                         AxisDx = entry.Item.AxisDx,
@@ -269,7 +281,12 @@ public sealed partial class TeklaDrawingMarkApi
                             $"partRepel=({debug.PartRepelFx:F3},{debug.PartRepelFy:F3}) " +
                             $"force=({debug.Fx:F3},{debug.Fy:F3}) " +
                             $"delta=({debug.Dx:F3},{debug.Dy:F3}) " +
-                            $"pos=({debug.X:F3},{debug.Y:F3})");
+                            $"pos=({debug.X:F3},{debug.Y:F3}) " +
+                            $"hasLeaderLine={debug.HasLeaderLine} " +
+                            $"leaderInsideOwnPart={debug.LeaderInsideOwnPart} " +
+                            $"leaderDistPaper={debug.LeaderDistPaper:F3} " +
+                            $"leaderExcessPaper={debug.LeaderExcessPaper:F3} " +
+                            $"leaderExtraAttract={debug.LeaderExtraAttract:F3}");
                     });
                 var foreignAfterEquilibrium = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
                 WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterEquilibrium", foreignAfterEquilibrium);
@@ -396,13 +413,23 @@ public sealed partial class TeklaDrawingMarkApi
 
                 var resolver = new MarkOverlapResolver();
                 var placementById = placements.ToDictionary(x => x.Id);
+                var leaderAnchor = Stopwatch.StartNew();
+                var leaderAnchorMovedIds = TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(
+                    markEntries,
+                    partPolygonsByModelId,
+                    _model,
+                    placementById,
+                    updateEntryCentersAfterModify: false);
+                movedIds.AddRange(leaderAnchorMovedIds);
+                leaderAnchor.Stop();
                 var apply = Stopwatch.StartNew();
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ApplyPlacements(markEntries, placementById, _model, respectAxisConstraint: false));
                 apply.Stop();
-
-                var leaderAnchor = Stopwatch.StartNew();
-                movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
-                leaderAnchor.Stop();
+                if (leaderAnchorMovedIds.Count > 0)
+                {
+                    activeDrawing.CommitChanges("(MCP) ArrangeMarksForce leader anchors");
+                    movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.ReapplyLeaderInsertionPoints(activeDrawing, placementById));
+                }
 
                 totalIterations += equilibriumResult.Iterations + foreignCleanupResult.Iterations + axisSeparationResult.Iterations + markSeparationResult.Iterations + finalForeignCleanupResult.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);

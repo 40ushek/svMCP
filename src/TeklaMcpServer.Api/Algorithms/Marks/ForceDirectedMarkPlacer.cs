@@ -32,6 +32,10 @@ internal readonly struct ForcePassOptions
     private const double PaperPartRepelRadiusMm = 8.0;
     private const double PaperPartRepelSofteningMm = 0.75;
     private const double PaperStopEpsilonMm = 0.25;
+    private const double PaperLeaderIdealDistMm = 6.0;
+    private const double PaperLeaderComfortDistMm = 8.0;
+    private const double LeaderExtraAttract = 0.8;
+    private const double DefaultLeaderMaxExtraAttract = 40.0;
 
     public ForcePassOptions(
         double kAttract, double idealDist,
@@ -40,7 +44,12 @@ internal readonly struct ForcePassOptions
         double kPerpRestoreAxis,
         double kRepelPart, double partRepelRadius, double partRepelSoftening,
         double kRepelMark, double markGapMm,
-        double initialDt, double dtDecay, double stopEpsilon, int maxIterations)
+        double initialDt, double dtDecay, double stopEpsilon, int maxIterations,
+        double viewScale = 1.0,
+        double leaderIdealDist = 0.0,
+        double leaderComfortDist = 0.0,
+        double leaderKExtraAttract = 0.0,
+        double leaderMaxExtraAttract = 0.0)
     {
         KAttract = kAttract;
         IdealDist = idealDist;
@@ -57,6 +66,11 @@ internal readonly struct ForcePassOptions
         DtDecay = dtDecay;
         StopEpsilon = stopEpsilon;
         MaxIterations = maxIterations;
+        ViewScale = NormalizeViewScale(viewScale);
+        LeaderIdealDist = leaderIdealDist > 0.0 ? leaderIdealDist : idealDist;
+        LeaderComfortDist = leaderComfortDist > 0.0 ? leaderComfortDist : double.PositiveInfinity;
+        LeaderKExtraAttract = leaderKExtraAttract;
+        LeaderMaxExtraAttract = leaderMaxExtraAttract;
     }
 
     public double KAttract { get; }
@@ -76,6 +90,11 @@ internal readonly struct ForcePassOptions
     public double DtDecay { get; }
     public double StopEpsilon { get; }
     public int MaxIterations { get; }
+    public double ViewScale { get; }
+    public double LeaderIdealDist { get; }
+    public double LeaderComfortDist { get; }
+    public double LeaderKExtraAttract { get; }
+    public double LeaderMaxExtraAttract { get; }
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
     public static ForcePassOptions EquilibriumDefault { get; } = new ForcePassOptions(
@@ -114,7 +133,12 @@ internal readonly struct ForcePassOptions
             initialDt: defaults.InitialDt,
             dtDecay: defaults.DtDecay,
             stopEpsilon: PaperStopEpsilonMm * scale,
-            maxIterations: defaults.MaxIterations);
+            maxIterations: defaults.MaxIterations,
+            viewScale: scale,
+            leaderIdealDist: PaperLeaderIdealDistMm * scale,
+            leaderComfortDist: PaperLeaderComfortDistMm * scale,
+            leaderKExtraAttract: LeaderExtraAttract,
+            leaderMaxExtraAttract: DefaultLeaderMaxExtraAttract);
 
     private static double NormalizeViewScale(double viewScale) => viewScale > 0.0 ? viewScale : 1.0;
 }
@@ -292,7 +316,12 @@ internal sealed class ForceDirectedMarkPlacer
                     update.Mark.Cx,
                     update.Mark.Cy,
                     update.AxisStepMode,
-                    update.AxisStepReason));
+                    update.AxisStepReason,
+                    update.Debug.HasLeaderLine,
+                    update.Debug.LeaderInsideOwnPart,
+                    update.Debug.LeaderDistPaper,
+                    update.Debug.LeaderExcessPaper,
+                    update.Debug.LeaderExtraAttract));
             }
 
             if (getRemainingOverlapCount != null &&
@@ -708,6 +737,9 @@ internal sealed class ForceDirectedMarkPlacer
         var markRepelFx = 0.0;
         var markRepelFy = 0.0;
         var hasAxis = TryGetNormalizedAxis(mark, out var axisDx, out var axisDy);
+        var leaderAttractionDebug = mark.HasLeaderLine
+            ? new LeaderAttractionDebug(true, false, 0.0, 0.0, 0.0)
+            : default;
 
         if (mark.OwnPolygon != null && mark.OwnPolygon.Count >= 2)
         {
@@ -748,9 +780,37 @@ internal sealed class ForceDirectedMarkPlacer
                     var dist = Math.Max(Math.Sqrt((dx * dx) + (dy * dy)), 0.001);
                     var markSize = Math.Max(Math.Min(mark.Width, mark.Height), 1.0);
                     var farThreshold = markSize * FarDistanceFactor;
-                    var springF = ComputeAttractForce(dist, farThreshold, options);
-                    if (IsInsidePolygon(mark.Cx, mark.Cy, mark.OwnPolygon))
+                    var insideOwnPart = IsInsidePolygon(mark.Cx, mark.Cy, mark.OwnPolygon);
+                    var idealDist = mark.HasLeaderLine ? options.LeaderIdealDist : options.IdealDist;
+                    var springF = ComputeAttractForce(dist, farThreshold, options, idealDist);
+                    if (insideOwnPart)
+                    {
                         springF = -springF;
+                    }
+                    else if (mark.HasLeaderLine)
+                    {
+                        var leaderDistPaper = dist / options.ViewScale;
+                        var leaderExcessPaper = Math.Max(0.0, (dist - options.LeaderComfortDist) / options.ViewScale);
+                        var leaderExtraAttract = ComputeLeaderExtraAttract(leaderExcessPaper, options);
+                        springF += leaderExtraAttract;
+                        leaderAttractionDebug = new LeaderAttractionDebug(
+                            hasLeaderLine: true,
+                            insideOwnPart: false,
+                            distPaper: leaderDistPaper,
+                            excessPaper: leaderExcessPaper,
+                            extraAttract: leaderExtraAttract);
+                    }
+
+                    if (mark.HasLeaderLine && insideOwnPart)
+                    {
+                        leaderAttractionDebug = new LeaderAttractionDebug(
+                            hasLeaderLine: true,
+                            insideOwnPart: true,
+                            distPaper: dist / options.ViewScale,
+                            excessPaper: 0.0,
+                            extraAttract: 0.0);
+                    }
+
                     attractFx += springF * (dx / dist);
                     attractFy += springF * (dy / dist);
                 }
@@ -855,7 +915,12 @@ internal sealed class ForceDirectedMarkPlacer
             partRepelFx,
             partRepelFy,
             markRepelFx,
-            markRepelFy);
+            markRepelFy,
+            leaderAttractionDebug.HasLeaderLine,
+            leaderAttractionDebug.InsideOwnPart,
+            leaderAttractionDebug.DistPaper,
+            leaderAttractionDebug.ExcessPaper,
+            leaderAttractionDebug.ExtraAttract);
     }
 
     private static bool TryGetPolygonCentroid(ForceDirectedMarkItem mark, out double centroidX, out double centroidY)
@@ -942,21 +1007,37 @@ internal sealed class ForceDirectedMarkPlacer
     private static double Clamp(double value, double min, double max) =>
         Math.Max(min, Math.Min(max, value));
 
-    private static double ComputeAttractForce(double dist, double farThreshold, ForcePassOptions options)
+    private static double ComputeAttractForce(
+        double dist,
+        double farThreshold,
+        ForcePassOptions options,
+        double idealDist)
     {
-        var threshold = Math.Max(farThreshold, options.IdealDist + 0.001);
+        idealDist = Math.Max(idealDist, 0.001);
+        var threshold = Math.Max(farThreshold, idealDist + 0.001);
         double force;
         if (dist <= threshold)
         {
-            force = options.KAttract * Math.Log(dist / options.IdealDist);
+            force = options.KAttract * Math.Log(dist / idealDist);
         }
         else
         {
-            var thresholdForce = options.KAttract * Math.Log(threshold / options.IdealDist);
+            var thresholdForce = options.KAttract * Math.Log(threshold / idealDist);
             force = thresholdForce + (options.KFarAttract * (dist - threshold));
         }
 
         return Clamp(force, -options.MaxAttract, options.MaxAttract);
+    }
+
+    private static double ComputeLeaderExtraAttract(double excessPaper, ForcePassOptions options)
+    {
+        if (excessPaper <= 0.0 || options.LeaderKExtraAttract <= 0.0 || options.LeaderMaxExtraAttract <= 0.0)
+            return 0.0;
+
+        return Clamp(
+            options.LeaderKExtraAttract * excessPaper * options.ViewScale,
+            0.0,
+            options.LeaderMaxExtraAttract);
     }
 
     private static bool TryGetNormalizedAxis(ForceDirectedMarkItem mark, out double axisDx, out double axisDy)
@@ -1196,7 +1277,12 @@ internal readonly struct ForceIterationDebugInfo
         double x,
         double y,
         bool axisStepMode = false,
-        string axisStepReason = "")
+        string axisStepReason = "",
+        bool hasLeaderLine = false,
+        bool leaderInsideOwnPart = false,
+        double leaderDistPaper = 0.0,
+        double leaderExcessPaper = 0.0,
+        double leaderExtraAttract = 0.0)
     {
         Iteration = iteration;
         MarkId = markId;
@@ -1214,6 +1300,11 @@ internal readonly struct ForceIterationDebugInfo
         Y = y;
         AxisStepMode = axisStepMode;
         AxisStepReason = axisStepReason;
+        HasLeaderLine = hasLeaderLine;
+        LeaderInsideOwnPart = leaderInsideOwnPart;
+        LeaderDistPaper = leaderDistPaper;
+        LeaderExcessPaper = leaderExcessPaper;
+        LeaderExtraAttract = leaderExtraAttract;
     }
 
     public int Iteration { get; }
@@ -1232,6 +1323,11 @@ internal readonly struct ForceIterationDebugInfo
     public double Y { get; }
     public bool AxisStepMode { get; }
     public string AxisStepReason { get; }
+    public bool HasLeaderLine { get; }
+    public bool LeaderInsideOwnPart { get; }
+    public double LeaderDistPaper { get; }
+    public double LeaderExcessPaper { get; }
+    public double LeaderExtraAttract { get; }
 }
 
 internal readonly struct ForceIterationUpdate
@@ -1262,7 +1358,12 @@ internal readonly struct ForceComponents
         double partRepelFx,
         double partRepelFy,
         double markRepelFx,
-        double markRepelFy)
+        double markRepelFy,
+        bool hasLeaderLine = false,
+        bool leaderInsideOwnPart = false,
+        double leaderDistPaper = 0.0,
+        double leaderExcessPaper = 0.0,
+        double leaderExtraAttract = 0.0)
     {
         AttractFx = attractFx;
         AttractFy = attractFy;
@@ -1270,6 +1371,11 @@ internal readonly struct ForceComponents
         PartRepelFy = partRepelFy;
         MarkRepelFx = markRepelFx;
         MarkRepelFy = markRepelFy;
+        HasLeaderLine = hasLeaderLine;
+        LeaderInsideOwnPart = leaderInsideOwnPart;
+        LeaderDistPaper = leaderDistPaper;
+        LeaderExcessPaper = leaderExcessPaper;
+        LeaderExtraAttract = leaderExtraAttract;
     }
 
     public double AttractFx { get; }
@@ -1278,6 +1384,34 @@ internal readonly struct ForceComponents
     public double PartRepelFy { get; }
     public double MarkRepelFx { get; }
     public double MarkRepelFy { get; }
+    public bool HasLeaderLine { get; }
+    public bool LeaderInsideOwnPart { get; }
+    public double LeaderDistPaper { get; }
+    public double LeaderExcessPaper { get; }
+    public double LeaderExtraAttract { get; }
     public double Fx => AttractFx + PartRepelFx + MarkRepelFx;
     public double Fy => AttractFy + PartRepelFy + MarkRepelFy;
+}
+
+internal readonly struct LeaderAttractionDebug
+{
+    public LeaderAttractionDebug(
+        bool hasLeaderLine,
+        bool insideOwnPart,
+        double distPaper,
+        double excessPaper,
+        double extraAttract)
+    {
+        HasLeaderLine = hasLeaderLine;
+        InsideOwnPart = insideOwnPart;
+        DistPaper = distPaper;
+        ExcessPaper = excessPaper;
+        ExtraAttract = extraAttract;
+    }
+
+    public bool HasLeaderLine { get; }
+    public bool InsideOwnPart { get; }
+    public double DistPaper { get; }
+    public double ExcessPaper { get; }
+    public double ExtraAttract { get; }
 }

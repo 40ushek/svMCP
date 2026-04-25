@@ -11,6 +11,7 @@ internal sealed class ForceDirectedMarkItem
     public double Width { get; set; }
     public double Height { get; set; }
     public bool CanMove { get; set; }
+    public bool HasLeaderLine { get; set; }
     public bool ConstrainToAxis { get; set; }
     public bool ReturnToAxisLine { get; set; }
     public double AxisDx { get; set; }

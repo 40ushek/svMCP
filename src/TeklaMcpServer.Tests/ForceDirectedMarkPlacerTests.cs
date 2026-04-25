@@ -17,6 +17,11 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.Equal(200.0, options.PartRepelRadius, 6);
         Assert.Equal(18.75, options.PartRepelSoftening, 6);
         Assert.Equal(6.25, options.StopEpsilon, 6);
+        Assert.Equal(150.0, options.LeaderIdealDist, 6);
+        Assert.Equal(200.0, options.LeaderComfortDist, 6);
+        Assert.Equal(25.0, options.ViewScale, 6);
+        Assert.Equal(0.8, options.LeaderKExtraAttract, 6);
+        Assert.Equal(40.0, options.LeaderMaxExtraAttract, 6);
         AssertForceCoefficientsEqual(ForcePassOptions.EquilibriumDefault, options);
     }
 
@@ -30,6 +35,11 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.Equal(200.0, options.PartRepelRadius, 6);
         Assert.Equal(18.75, options.PartRepelSoftening, 6);
         Assert.Equal(6.25, options.StopEpsilon, 6);
+        Assert.Equal(150.0, options.LeaderIdealDist, 6);
+        Assert.Equal(200.0, options.LeaderComfortDist, 6);
+        Assert.Equal(25.0, options.ViewScale, 6);
+        Assert.Equal(0.8, options.LeaderKExtraAttract, 6);
+        Assert.Equal(40.0, options.LeaderMaxExtraAttract, 6);
         AssertForceCoefficientsEqual(ForcePassOptions.MarkSeparationDefault, options);
     }
 
@@ -46,6 +56,9 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.Equal(8.0, equilibrium.PartRepelRadius, 6);
         Assert.Equal(0.75, equilibrium.PartRepelSoftening, 6);
         Assert.Equal(0.25, equilibrium.StopEpsilon, 6);
+        Assert.Equal(6.0, equilibrium.LeaderIdealDist, 6);
+        Assert.Equal(8.0, equilibrium.LeaderComfortDist, 6);
+        Assert.Equal(1.0, equilibrium.ViewScale, 6);
         AssertForceCoefficientsEqual(ForcePassOptions.EquilibriumDefault, equilibrium);
 
         Assert.Equal(4.0, markSeparation.IdealDist, 6);
@@ -53,7 +66,67 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.Equal(8.0, markSeparation.PartRepelRadius, 6);
         Assert.Equal(0.75, markSeparation.PartRepelSoftening, 6);
         Assert.Equal(0.25, markSeparation.StopEpsilon, 6);
+        Assert.Equal(6.0, markSeparation.LeaderIdealDist, 6);
+        Assert.Equal(8.0, markSeparation.LeaderComfortDist, 6);
+        Assert.Equal(1.0, markSeparation.ViewScale, 6);
         AssertForceCoefficientsEqual(ForcePassOptions.MarkSeparationDefault, markSeparation);
+    }
+
+    [Fact]
+    public void Relax_LeaderMarkBeyondComfortDistance_GetsExtraAttractionAndMovesCloser()
+    {
+        var leader = CreateMark(id: 1, x: 260.0, y: 0.0);
+        leader.HasLeaderLine = true;
+        leader.OwnPolygon = CreateRectangle(-100.0, -10.0, 0.0, 10.0);
+        var nonLeader = CreateMark(id: 2, x: 260.0, y: 0.0);
+        nonLeader.OwnPolygon = CreateRectangle(-100.0, -10.0, 0.0, 10.0);
+        var options = CreateOneIterationLeaderOptions();
+        ForceIterationDebugInfo? leaderDebug = null;
+        ForceIterationDebugInfo? nonLeaderDebug = null;
+        var placer = new ForceDirectedMarkPlacer();
+
+        placer.Relax([leader], [], options, debugSink: debug => leaderDebug = debug);
+        placer.Relax([nonLeader], [], options, debugSink: debug => nonLeaderDebug = debug);
+
+        Assert.True(leader.Cx < nonLeader.Cx);
+        Assert.True(leaderDebug!.Value.HasLeaderLine);
+        Assert.False(nonLeaderDebug!.Value.HasLeaderLine);
+        Assert.Equal(13.0, leaderDebug.Value.LeaderDistPaper, 6);
+        Assert.Equal(1.0, leaderDebug.Value.LeaderExcessPaper, 6);
+        Assert.Equal(16.0, leaderDebug.Value.LeaderExtraAttract, 6);
+    }
+
+    [Fact]
+    public void Relax_LeaderMarkInsideComfortDistance_UsesBaseSpringWithoutExtraAttraction()
+    {
+        var leader = CreateMark(id: 1, x: 200.0, y: 0.0);
+        leader.HasLeaderLine = true;
+        leader.OwnPolygon = CreateRectangle(-100.0, -10.0, 0.0, 10.0);
+        ForceIterationDebugInfo? captured = null;
+        var placer = new ForceDirectedMarkPlacer();
+
+        placer.Relax([leader], [], CreateOneIterationLeaderOptions(), debugSink: debug => captured = debug);
+
+        Assert.True(leader.Cx < 200.0);
+        Assert.Equal(10.0, captured!.Value.LeaderDistPaper, 6);
+        Assert.Equal(0.0, captured.Value.LeaderExcessPaper, 6);
+        Assert.Equal(0.0, captured.Value.LeaderExtraAttract, 6);
+    }
+
+    [Fact]
+    public void Relax_LeaderMarkInsideOwnPolygon_StillPushesOutward()
+    {
+        var leader = CreateMark(id: 1, x: 0.0, y: 0.0);
+        leader.HasLeaderLine = true;
+        leader.OwnPolygon = CreateRectangle(-100.0, -10.0, 100.0, 10.0);
+        ForceIterationDebugInfo? captured = null;
+        var placer = new ForceDirectedMarkPlacer();
+
+        placer.Relax([leader], [], CreateOneIterationLeaderOptions(), debugSink: debug => captured = debug);
+
+        Assert.True(leader.Cy < 0.0);
+        Assert.True(captured!.Value.LeaderInsideOwnPart);
+        Assert.Equal(0.0, captured.Value.LeaderExtraAttract, 6);
     }
 
     [Fact]
@@ -385,6 +458,28 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.Equal(expected.DtDecay, actual.DtDecay, 6);
         Assert.Equal(expected.MaxIterations, actual.MaxIterations);
     }
+
+    private static ForcePassOptions CreateOneIterationLeaderOptions() => new(
+        kAttract: 0.48,
+        idealDist: 80.0,
+        kFarAttract: 0.05,
+        maxAttract: 50.0,
+        kReturnToAxisLine: 0.0,
+        kPerpRestoreAxis: 0.0,
+        kRepelPart: 0.0,
+        partRepelRadius: 0.0,
+        partRepelSoftening: 1.0,
+        kRepelMark: 0.0,
+        markGapMm: 40.0,
+        initialDt: 1.0,
+        dtDecay: 1.0,
+        stopEpsilon: 0.0,
+        maxIterations: 1,
+        viewScale: 20.0,
+        leaderIdealDist: 120.0,
+        leaderComfortDist: 240.0,
+        leaderKExtraAttract: 0.8,
+        leaderMaxExtraAttract: 40.0);
 
     private static List<double[]> CreateRectangle(double minX, double minY, double maxX, double maxY) =>
         new()
