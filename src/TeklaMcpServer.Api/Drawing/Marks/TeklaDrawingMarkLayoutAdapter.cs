@@ -49,6 +49,8 @@ internal sealed class PendingLeaderAnchorOptimization
 
     public double BeforeCenterY { get; set; }
 
+    public Point BeforeInsertion { get; set; } = null!;
+
     public double ActualCenterX { get; set; }
 
     public double ActualCenterY { get; set; }
@@ -64,6 +66,8 @@ internal sealed class PendingLeaderAnchorOptimization
     public bool Reverted { get; set; }
 
     public bool RestoredBody { get; set; }
+
+    public bool CompensatedBody { get; set; }
 }
 
 internal static class TeklaDrawingMarkLayoutAdapter
@@ -263,7 +267,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var beforeCenterX = entry.CenterX;
             var beforeCenterY = entry.CenterY;
+            var beforeInsertion = entry.Mark.InsertionPoint;
             entry.Mark.Placing = new LeaderLinePlacing(new Point(targetX, targetY, 0));
+            entry.Mark.InsertionPoint = new Point(beforeInsertion.X, beforeInsertion.Y, beforeInsertion.Z);
             if (!entry.Mark.Modify())
                 continue;
 
@@ -277,6 +283,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 TargetY = targetY,
                 BeforeCenterX = beforeCenterX,
                 BeforeCenterY = beforeCenterY,
+                BeforeInsertion = beforeInsertion,
             });
         }
 
@@ -286,6 +293,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
         drawing.CommitChanges("(MCP) Optimize leader anchors");
 
         var rejected = new List<PendingLeaderAnchorOptimization>();
+        var shifted = new List<PendingLeaderAnchorOptimization>();
         foreach (var item in pending)
         {
             if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model, out var actualMark, out _, out var actualCenterX, out var actualCenterY))
@@ -323,9 +331,64 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
             }
 
-            actualMark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
-            item.Reverted = actualMark.Modify();
-            rejected.Add(item);
+            var insertionPoint = actualMark.InsertionPoint;
+            insertionPoint.X += item.BeforeCenterX - actualCenterX;
+            insertionPoint.Y += item.BeforeCenterY - actualCenterY;
+            actualMark.InsertionPoint = insertionPoint;
+            item.CompensatedBody = actualMark.Modify();
+            if (item.CompensatedBody)
+                shifted.Add(item);
+            else
+                rejected.Add(item);
+        }
+
+        if (shifted.Count > 0)
+            drawing.CommitChanges("(MCP) Compensate leader bodies");
+
+        foreach (var item in shifted)
+        {
+            if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model, out var compensatedMark, out _, out var compensatedCenterX, out var compensatedCenterY))
+            {
+                rejected.Add(item);
+                continue;
+            }
+
+            item.Entry.Mark = compensatedMark;
+            item.FinalCenterX = compensatedCenterX;
+            item.FinalCenterY = compensatedCenterY;
+            var finalShiftX = compensatedCenterX - item.BeforeCenterX;
+            var finalShiftY = compensatedCenterY - item.BeforeCenterY;
+            var bodyStillShifted =
+                Math.Abs(finalShiftX) > MovementVerificationEpsilon ||
+                Math.Abs(finalShiftY) > MovementVerificationEpsilon;
+
+            if (bodyStillShifted)
+            {
+                rejected.Add(item);
+                continue;
+            }
+
+            item.Entry.CenterX = compensatedCenterX;
+            item.Entry.CenterY = compensatedCenterY;
+            item.Entry.Item.AnchorX = item.TargetX;
+            item.Entry.Item.AnchorY = item.TargetY;
+            result.AcceptedIds.Add(item.MarkId);
+            PerfTrace.Write(
+                "api-mark",
+                "mark_optimize_leader_anchor",
+                0,
+                $"markId={item.MarkId} beforeCenter=({item.BeforeCenterX:F1},{item.BeforeCenterY:F1}) shiftedCenter=({item.ActualCenterX:F1},{item.ActualCenterY:F1}) actualCenter=({compensatedCenterX:F1},{compensatedCenterY:F1}) actualDelta=({finalShiftX:F1},{finalShiftY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) compensatedBody=True");
+        }
+
+        foreach (var item in rejected)
+        {
+            if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model, out var rejectedMark, out _, out _, out _))
+                continue;
+
+            item.Entry.Mark = rejectedMark;
+            rejectedMark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
+            rejectedMark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
+            item.Reverted = rejectedMark.Modify();
         }
 
         if (rejected.Count > 0)
