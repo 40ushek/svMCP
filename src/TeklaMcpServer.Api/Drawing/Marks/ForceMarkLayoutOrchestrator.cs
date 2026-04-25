@@ -255,10 +255,28 @@ internal sealed class ForceMarkLayoutOrchestrator
                 finalMarkEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, finalMarksViewContext, viewContext);
             }
 
+            var finalLeaderTextMarks = PerfTrace.IsActive
+                ? BuildLeaderTextOverlapMarks(finalMarkEntries)
+                : new List<LeaderTextOverlapMark>();
             var leaderTextFinal = PerfTrace.IsActive
-                ? LeaderTextOverlapAnalyzer.Analyze(BuildLeaderTextOverlapMarks(finalMarkEntries), leaderTextThreshold)
+                ? LeaderTextOverlapAnalyzer.Analyze(finalLeaderTextMarks, leaderTextThreshold)
                 : new LeaderTextOverlapSummary();
             WriteLeaderTextOverlapTrace(view.GetIdentifier().ID, "final", leaderTextFinal);
+
+            if (PerfTrace.IsActive)
+            {
+                var dryRun = LeaderTextCleanupDryRunner.Analyze(
+                    finalLeaderTextMarks,
+                    finalMarkEntries,
+                    partPolygonsByModelId,
+                    viewContext.ViewScale,
+                    leaderTextThreshold);
+                PerfTrace.Write("api-mark", "leader_text_cleanup_dry_run_summary", 0,
+                    $"viewId={view.GetIdentifier().ID} conflictingMarks={dryRun.ConflictingMarks} improvableMarks={dryRun.ImprovableMarks} totalCurrentSeverity={dryRun.TotalCurrentSeverity:F3} totalBestCaseSeverity={dryRun.TotalBestCaseSeverity:F3}");
+                foreach (var m in dryRun.Marks)
+                    PerfTrace.Write("api-mark", "leader_text_cleanup_dry_run_mark", 0,
+                        $"viewId={view.GetIdentifier().ID} markId={m.MarkId} currentSeverity={m.CurrentSeverity:F3} hasImprovement={m.HasImprovement} bestKind={m.BestKind} bestDelta={m.BestDeltaSeverity:F3} bestProjected={m.BestProjectedSeverity:F3} bestAnchor=({m.BestAnchorX:F1},{m.BestAnchorY:F1})");
+            }
 
             totalIterations += equilibriumResult.Iterations + foreignCleanupResult.Iterations + axisSeparationResult.Iterations + markSeparationResult.Iterations + finalForeignCleanupResult.Iterations;
             totalRemainingOverlaps += resolver.CountOverlaps(placements);
