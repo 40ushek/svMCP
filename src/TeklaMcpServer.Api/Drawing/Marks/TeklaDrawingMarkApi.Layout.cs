@@ -288,7 +288,7 @@ public sealed partial class TeklaDrawingMarkApi
                             "api-mark",
                             "arrange_marks_force_foreign_cleanup",
                             0,
-                            $"viewId={view.GetIdentifier().ID} {details}");
+                            $"viewId={view.GetIdentifier().ID} stage=prePass2 {details}");
                     });
                 var foreignAfterCleanup = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
                 WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterForeignCleanup", foreignAfterCleanup);
@@ -335,6 +335,35 @@ public sealed partial class TeklaDrawingMarkApi
                             return GetOverlappingMarkIds(currentPlacements).Count(id => collidingIds.Contains(id));
                         });
                 }
+
+                var foreignAfterPass2 = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
+                WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterPass2", foreignAfterPass2);
+                var postPass2ForeignCleanupResult = new ForeignPartCleanupResult(
+                    0,
+                    0,
+                    foreignAfterPass2.PartialConflicts,
+                    foreignAfterPass2.PartialSeverity,
+                    foreignAfterPass2.PartialConflicts,
+                    foreignAfterPass2.PartialSeverity);
+                if (pass2Result.StopReason != ForceRelaxStopReason.NotRun)
+                {
+                    postPass2ForeignCleanupResult = force.CleanupForeignPartOverlaps(
+                        forceItems.Values.ToList(),
+                        partBboxes,
+                        foreignPartThreshold,
+                        maxStep: 0.5 * normalizedScale,
+                        trace: details =>
+                        {
+                            if (!PerfTrace.IsActive)
+                                return;
+
+                            PerfTrace.Write(
+                                "api-mark",
+                                "arrange_marks_force_foreign_cleanup",
+                                0,
+                                $"viewId={view.GetIdentifier().ID} stage=postPass2 {details}");
+                        });
+                }
                 arrange.Stop();
 
                 var placements = BuildForcePlacements(markEntries, forceItems);
@@ -367,9 +396,9 @@ public sealed partial class TeklaDrawingMarkApi
                 movedIds.AddRange(TeklaDrawingMarkLayoutAdapter.OptimizeLeaderAnchors(markEntries, partPolygonsByModelId));
                 leaderAnchor.Stop();
 
-                totalIterations += pass1Result.Iterations + foreignCleanupResult.Iterations + pass2Result.Iterations;
+                totalIterations += pass1Result.Iterations + foreignCleanupResult.Iterations + pass2Result.Iterations + postPass2ForeignCleanupResult.Iterations;
                 totalRemainingOverlaps += resolver.CountOverlaps(placements);
-                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} foreignCleanupIterations={foreignCleanupResult.Iterations} foreignCleanupMoved={foreignCleanupResult.MovedMarks} foreignCleanupBeforePartial={foreignCleanupResult.BeforePartialConflicts} foreignCleanupBeforeSeverity={foreignCleanupResult.BeforePartialSeverity:F3} foreignCleanupAfterPartial={foreignCleanupResult.AfterPartialConflicts} foreignCleanupAfterSeverity={foreignCleanupResult.AfterPartialSeverity:F3} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared} foreignThreshold={foreignPartThreshold:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignInitialInsideConflicts={foreignInitial.MarkInsideConflicts} foreignInitialInsideSeverity={foreignInitial.MarkInsideSeverity:F3} foreignInitialPartialConflicts={foreignInitial.PartialConflicts} foreignInitialPartialSeverity={foreignInitial.PartialSeverity:F3} foreignInitialPartInsideConflicts={foreignInitial.PartInsideConflicts} foreignInitialPartInsideSeverity={foreignInitial.PartInsideSeverity:F3} foreignPass1Conflicts={foreignPass1.Conflicts} foreignPass1Severity={foreignPass1.Severity:F3} foreignPass1InsideConflicts={foreignPass1.MarkInsideConflicts} foreignPass1InsideSeverity={foreignPass1.MarkInsideSeverity:F3} foreignPass1PartialConflicts={foreignPass1.PartialConflicts} foreignPass1PartialSeverity={foreignPass1.PartialSeverity:F3} foreignPass1PartInsideConflicts={foreignPass1.PartInsideConflicts} foreignPass1PartInsideSeverity={foreignPass1.PartInsideSeverity:F3} foreignAfterCleanupConflicts={foreignAfterCleanup.Conflicts} foreignAfterCleanupSeverity={foreignAfterCleanup.Severity:F3} foreignAfterCleanupInsideConflicts={foreignAfterCleanup.MarkInsideConflicts} foreignAfterCleanupInsideSeverity={foreignAfterCleanup.MarkInsideSeverity:F3} foreignAfterCleanupPartialConflicts={foreignAfterCleanup.PartialConflicts} foreignAfterCleanupPartialSeverity={foreignAfterCleanup.PartialSeverity:F3} foreignAfterCleanupPartInsideConflicts={foreignAfterCleanup.PartInsideConflicts} foreignAfterCleanupPartInsideSeverity={foreignAfterCleanup.PartInsideSeverity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3} foreignFinalInsideConflicts={foreignFinal.MarkInsideConflicts} foreignFinalInsideSeverity={foreignFinal.MarkInsideSeverity:F3} foreignFinalPartialConflicts={foreignFinal.PartialConflicts} foreignFinalPartialSeverity={foreignFinal.PartialSeverity:F3} foreignFinalPartInsideConflicts={foreignFinal.PartInsideConflicts} foreignFinalPartInsideSeverity={foreignFinal.PartInsideSeverity:F3}");
+                PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} pass1Iterations={pass1Result.Iterations} foreignCleanupIterations={foreignCleanupResult.Iterations} foreignCleanupMoved={foreignCleanupResult.MovedMarks} foreignCleanupBeforePartial={foreignCleanupResult.BeforePartialConflicts} foreignCleanupBeforeSeverity={foreignCleanupResult.BeforePartialSeverity:F3} foreignCleanupAfterPartial={foreignCleanupResult.AfterPartialConflicts} foreignCleanupAfterSeverity={foreignCleanupResult.AfterPartialSeverity:F3} pass2Iterations={pass2Result.Iterations} collidingMarks={collidingIds.Count} pass2StopReason={pass2Result.StopReason} pass2EarlyExit={pass2Result.StopReason == ForceRelaxStopReason.OverlapsCleared} postPass2ForeignCleanupIterations={postPass2ForeignCleanupResult.Iterations} postPass2ForeignCleanupMoved={postPass2ForeignCleanupResult.MovedMarks} postPass2ForeignCleanupBeforePartial={postPass2ForeignCleanupResult.BeforePartialConflicts} postPass2ForeignCleanupBeforeSeverity={postPass2ForeignCleanupResult.BeforePartialSeverity:F3} postPass2ForeignCleanupAfterPartial={postPass2ForeignCleanupResult.AfterPartialConflicts} postPass2ForeignCleanupAfterSeverity={postPass2ForeignCleanupResult.AfterPartialSeverity:F3} foreignThreshold={foreignPartThreshold:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignInitialInsideConflicts={foreignInitial.MarkInsideConflicts} foreignInitialInsideSeverity={foreignInitial.MarkInsideSeverity:F3} foreignInitialPartialConflicts={foreignInitial.PartialConflicts} foreignInitialPartialSeverity={foreignInitial.PartialSeverity:F3} foreignInitialPartInsideConflicts={foreignInitial.PartInsideConflicts} foreignInitialPartInsideSeverity={foreignInitial.PartInsideSeverity:F3} foreignPass1Conflicts={foreignPass1.Conflicts} foreignPass1Severity={foreignPass1.Severity:F3} foreignPass1InsideConflicts={foreignPass1.MarkInsideConflicts} foreignPass1InsideSeverity={foreignPass1.MarkInsideSeverity:F3} foreignPass1PartialConflicts={foreignPass1.PartialConflicts} foreignPass1PartialSeverity={foreignPass1.PartialSeverity:F3} foreignPass1PartInsideConflicts={foreignPass1.PartInsideConflicts} foreignPass1PartInsideSeverity={foreignPass1.PartInsideSeverity:F3} foreignAfterCleanupConflicts={foreignAfterCleanup.Conflicts} foreignAfterCleanupSeverity={foreignAfterCleanup.Severity:F3} foreignAfterCleanupInsideConflicts={foreignAfterCleanup.MarkInsideConflicts} foreignAfterCleanupInsideSeverity={foreignAfterCleanup.MarkInsideSeverity:F3} foreignAfterCleanupPartialConflicts={foreignAfterCleanup.PartialConflicts} foreignAfterCleanupPartialSeverity={foreignAfterCleanup.PartialSeverity:F3} foreignAfterCleanupPartInsideConflicts={foreignAfterCleanup.PartInsideConflicts} foreignAfterCleanupPartInsideSeverity={foreignAfterCleanup.PartInsideSeverity:F3} foreignAfterPass2Conflicts={foreignAfterPass2.Conflicts} foreignAfterPass2Severity={foreignAfterPass2.Severity:F3} foreignAfterPass2InsideConflicts={foreignAfterPass2.MarkInsideConflicts} foreignAfterPass2InsideSeverity={foreignAfterPass2.MarkInsideSeverity:F3} foreignAfterPass2PartialConflicts={foreignAfterPass2.PartialConflicts} foreignAfterPass2PartialSeverity={foreignAfterPass2.PartialSeverity:F3} foreignAfterPass2PartInsideConflicts={foreignAfterPass2.PartInsideConflicts} foreignAfterPass2PartInsideSeverity={foreignAfterPass2.PartInsideSeverity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3} foreignFinalInsideConflicts={foreignFinal.MarkInsideConflicts} foreignFinalInsideSeverity={foreignFinal.MarkInsideSeverity:F3} foreignFinalPartialConflicts={foreignFinal.PartialConflicts} foreignFinalPartialSeverity={foreignFinal.PartialSeverity:F3} foreignFinalPartInsideConflicts={foreignFinal.PartInsideConflicts} foreignFinalPartInsideSeverity={foreignFinal.PartInsideSeverity:F3}");
             }
 
             movedIds = movedIds.Distinct().ToList();
