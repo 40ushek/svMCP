@@ -454,6 +454,116 @@ internal static class TeklaDrawingMarkLayoutAdapter
         return result;
     }
 
+    internal static LeaderAnchorOptimizationResult ApplyLeaderTextCleanup(
+        IReadOnlyList<TeklaDrawingMarkLayoutEntry> entries,
+        LeaderTextCleanupDryRunResult dryRun,
+        Model model,
+        Tekla.Structures.Drawing.Drawing drawing)
+    {
+        var result = new LeaderAnchorOptimizationResult();
+        if (dryRun.ImprovableMarks == 0)
+            return result;
+
+        var entryById = entries.ToDictionary(e => e.Mark.GetIdentifier().ID);
+        var pending = new List<PendingLeaderAnchorOptimization>();
+
+        foreach (var markResult in dryRun.Marks)
+        {
+            if (!markResult.HasImprovement)
+                continue;
+            if (!entryById.TryGetValue(markResult.MarkId, out var entry))
+                continue;
+            if (entry.Mark.Placing is not LeaderLinePlacing leaderLinePlacing)
+                continue;
+
+            var oldAnchorX = leaderLinePlacing.StartPoint.X;
+            var oldAnchorY = leaderLinePlacing.StartPoint.Y;
+            if (Math.Abs(oldAnchorX - markResult.BestAnchorX) < LeaderAnchorNoOpEpsilon &&
+                Math.Abs(oldAnchorY - markResult.BestAnchorY) < LeaderAnchorNoOpEpsilon)
+                continue;
+
+            var beforeInsertion = entry.Mark.InsertionPoint;
+            entry.Mark.Placing = new LeaderLinePlacing(new Point(markResult.BestAnchorX, markResult.BestAnchorY, 0));
+            entry.Mark.InsertionPoint = new Point(beforeInsertion.X, beforeInsertion.Y, beforeInsertion.Z);
+            if (!entry.Mark.Modify())
+                continue;
+
+            pending.Add(new PendingLeaderAnchorOptimization
+            {
+                Entry = entry,
+                MarkId = markResult.MarkId,
+                OldAnchorX = oldAnchorX,
+                OldAnchorY = oldAnchorY,
+                TargetX = markResult.BestAnchorX,
+                TargetY = markResult.BestAnchorY,
+                BeforeCenterX = entry.CenterX,
+                BeforeCenterY = entry.CenterY,
+                BeforeInsertion = beforeInsertion,
+            });
+        }
+
+        if (pending.Count == 0)
+            return result;
+
+        drawing.CommitChanges("(MCP) LeaderTextCleanup");
+
+        var toRevert = new List<PendingLeaderAnchorOptimization>();
+        foreach (var item in pending)
+        {
+            if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
+                    out var actualMark, out _, out var actualCenterX, out var actualCenterY))
+            {
+                item.Entry.Item.AnchorX = item.TargetX;
+                item.Entry.Item.AnchorY = item.TargetY;
+                result.AcceptedIds.Add(item.MarkId);
+                PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                    $"markId={item.MarkId} oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) reload=False accepted=True");
+                continue;
+            }
+
+            item.Entry.Mark = actualMark;
+            item.ActualCenterX = actualCenterX;
+            item.ActualCenterY = actualCenterY;
+
+            var bodyShifted = Math.Abs(item.BodyShiftX) > MovementVerificationEpsilon ||
+                              Math.Abs(item.BodyShiftY) > MovementVerificationEpsilon;
+            if (!bodyShifted)
+            {
+                item.Entry.CenterX = actualCenterX;
+                item.Entry.CenterY = actualCenterY;
+                item.Entry.Item.AnchorX = item.TargetX;
+                item.Entry.Item.AnchorY = item.TargetY;
+                result.AcceptedIds.Add(item.MarkId);
+                PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                    $"markId={item.MarkId} beforeCenter=({item.BeforeCenterX:F1},{item.BeforeCenterY:F1}) actualCenter=({actualCenterX:F1},{actualCenterY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=True");
+            }
+            else
+            {
+                toRevert.Add(item);
+            }
+        }
+
+        foreach (var item in toRevert)
+        {
+            if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
+                    out var revertMark, out _, out _, out _))
+                continue;
+
+            item.Entry.Mark = revertMark;
+            revertMark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
+            revertMark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
+            item.Reverted = revertMark.Modify();
+            PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                $"markId={item.MarkId} bodyShift=({item.BodyShiftX:F1},{item.BodyShiftY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) rejectedAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=False reverted={item.Reverted}");
+            result.RejectedIds.Add(item.MarkId);
+        }
+
+        if (toRevert.Count > 0)
+            drawing.CommitChanges("(MCP) LeaderTextCleanup revert");
+
+        return result;
+    }
+
     internal static bool TryResolvePreferredLeaderAnchorTarget(
         MarkContext markContext,
         double centerX,
