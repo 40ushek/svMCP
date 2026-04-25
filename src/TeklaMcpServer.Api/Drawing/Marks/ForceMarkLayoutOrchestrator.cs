@@ -257,12 +257,16 @@ internal sealed class ForceMarkLayoutOrchestrator
                 finalLeaderTextMarks, finalMarkEntries, partPolygonsByModelId,
                 viewContext.ViewScale, leaderTextThreshold);
             var leaderTextCleanupResult = TeklaDrawingMarkLayoutAdapter.ApplyLeaderTextCleanup(
-                finalMarkEntries, leaderTextDryRun, _model, activeDrawing);
+                finalMarkEntries, leaderTextDryRun, finalLeaderTextMarks, leaderTextThreshold, _model, activeDrawing);
             movedIds.AddRange(leaderTextCleanupResult.AcceptedIds);
             leaderTextCleanup.Stop();
 
+            var postCleanupViewContext = new MarksViewContextBuilder().Build(view, _model);
+            var postCleanupEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, postCleanupViewContext, viewContext);
+            var postCleanupLeaderTextMarks = BuildLeaderTextOverlapMarks(postCleanupEntries);
+
             var leaderTextFinal = PerfTrace.IsActive
-                ? LeaderTextOverlapAnalyzer.Analyze(finalLeaderTextMarks, leaderTextThreshold)
+                ? LeaderTextOverlapAnalyzer.Analyze(postCleanupLeaderTextMarks, leaderTextThreshold)
                 : new LeaderTextOverlapSummary();
             WriteLeaderTextOverlapTrace(view.GetIdentifier().ID, "final", leaderTextFinal);
 
@@ -276,7 +280,7 @@ internal sealed class ForceMarkLayoutOrchestrator
             }
 
             totalIterations += equilibriumResult.Iterations + foreignCleanupResult.Iterations + axisSeparationResult.Iterations + markSeparationResult.Iterations + finalForeignCleanupResult.Iterations;
-            totalRemainingOverlaps += resolver.CountOverlaps(placements);
+            totalRemainingOverlaps += resolver.CountOverlaps(BuildPlacementsFromEntries(postCleanupEntries));
             PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} anchorAccepted={leaderAnchorResult.AcceptedIds.Count} anchorRejected={leaderAnchorResult.RejectedIds.Count} leaderCleanupMs={leaderTextCleanup.ElapsedMilliseconds} leaderCleanupAccepted={leaderTextCleanupResult.AcceptedIds.Count} leaderCleanupRejected={leaderTextCleanupResult.RejectedIds.Count} equilibriumIterations={equilibriumResult.Iterations} foreignCleanupIterations={foreignCleanupResult.Iterations} foreignCleanupMoved={foreignCleanupResult.MovedMarks} foreignCleanupBeforePartial={foreignCleanupResult.BeforePartialConflicts} foreignCleanupBeforeSeverity={foreignCleanupResult.BeforePartialSeverity:F3} foreignCleanupAfterPartial={foreignCleanupResult.AfterPartialConflicts} foreignCleanupAfterSeverity={foreignCleanupResult.AfterPartialSeverity:F3} axisSeparationIterations={axisSeparationResult.Iterations} axisSeparationMoved={axisSeparationResult.MovedMarks} axisSeparationBeforeOverlaps={axisSeparationResult.BeforeOverlaps} axisSeparationAfterOverlaps={axisSeparationResult.AfterOverlaps} markSeparationIterations={markSeparationResult.Iterations} collidingMarks={collidingIds.Count} markSeparationStopReason={markSeparationResult.StopReason} markSeparationEarlyExit={markSeparationResult.StopReason == ForceRelaxStopReason.OverlapsCleared} finalForeignCleanupIterations={finalForeignCleanupResult.Iterations} finalForeignCleanupMoved={finalForeignCleanupResult.MovedMarks} finalForeignCleanupBeforePartial={finalForeignCleanupResult.BeforePartialConflicts} finalForeignCleanupBeforeSeverity={finalForeignCleanupResult.BeforePartialSeverity:F3} finalForeignCleanupAfterPartial={finalForeignCleanupResult.AfterPartialConflicts} finalForeignCleanupAfterSeverity={finalForeignCleanupResult.AfterPartialSeverity:F3} foreignThreshold={foreignPartThreshold:F3} leaderTextThreshold={leaderTextThreshold:F3} leaderTextInitialCrossings={leaderTextInitial.TotalCrossings} leaderTextInitialOwn={leaderTextInitial.OwnCrossings} leaderTextInitialForeign={leaderTextInitial.ForeignCrossings} leaderTextInitialSeverity={leaderTextInitial.Severity:F3} leaderTextFinalCrossings={leaderTextFinal.TotalCrossings} leaderTextFinalOwn={leaderTextFinal.OwnCrossings} leaderTextFinalForeign={leaderTextFinal.ForeignCrossings} leaderTextFinalSeverity={leaderTextFinal.Severity:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignInitialInsideConflicts={foreignInitial.MarkInsideConflicts} foreignInitialInsideSeverity={foreignInitial.MarkInsideSeverity:F3} foreignInitialPartialConflicts={foreignInitial.PartialConflicts} foreignInitialPartialSeverity={foreignInitial.PartialSeverity:F3} foreignInitialPartInsideConflicts={foreignInitial.PartInsideConflicts} foreignInitialPartInsideSeverity={foreignInitial.PartInsideSeverity:F3} foreignAfterEquilibriumConflicts={foreignAfterEquilibrium.Conflicts} foreignAfterEquilibriumSeverity={foreignAfterEquilibrium.Severity:F3} foreignAfterEquilibriumInsideConflicts={foreignAfterEquilibrium.MarkInsideConflicts} foreignAfterEquilibriumInsideSeverity={foreignAfterEquilibrium.MarkInsideSeverity:F3} foreignAfterEquilibriumPartialConflicts={foreignAfterEquilibrium.PartialConflicts} foreignAfterEquilibriumPartialSeverity={foreignAfterEquilibrium.PartialSeverity:F3} foreignAfterEquilibriumPartInsideConflicts={foreignAfterEquilibrium.PartInsideConflicts} foreignAfterEquilibriumPartInsideSeverity={foreignAfterEquilibrium.PartInsideSeverity:F3} foreignAfterCleanupConflicts={foreignAfterCleanup.Conflicts} foreignAfterCleanupSeverity={foreignAfterCleanup.Severity:F3} foreignAfterCleanupInsideConflicts={foreignAfterCleanup.MarkInsideConflicts} foreignAfterCleanupInsideSeverity={foreignAfterCleanup.MarkInsideSeverity:F3} foreignAfterCleanupPartialConflicts={foreignAfterCleanup.PartialConflicts} foreignAfterCleanupPartialSeverity={foreignAfterCleanup.PartialSeverity:F3} foreignAfterCleanupPartInsideConflicts={foreignAfterCleanup.PartInsideConflicts} foreignAfterCleanupPartInsideSeverity={foreignAfterCleanup.PartInsideSeverity:F3} foreignAfterMarkSeparationConflicts={foreignAfterMarkSeparation.Conflicts} foreignAfterMarkSeparationSeverity={foreignAfterMarkSeparation.Severity:F3} foreignAfterMarkSeparationInsideConflicts={foreignAfterMarkSeparation.MarkInsideConflicts} foreignAfterMarkSeparationInsideSeverity={foreignAfterMarkSeparation.MarkInsideSeverity:F3} foreignAfterMarkSeparationPartialConflicts={foreignAfterMarkSeparation.PartialConflicts} foreignAfterMarkSeparationPartialSeverity={foreignAfterMarkSeparation.PartialSeverity:F3} foreignAfterMarkSeparationPartInsideConflicts={foreignAfterMarkSeparation.PartInsideConflicts} foreignAfterMarkSeparationPartInsideSeverity={foreignAfterMarkSeparation.PartInsideSeverity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3} foreignFinalInsideConflicts={foreignFinal.MarkInsideConflicts} foreignFinalInsideSeverity={foreignFinal.MarkInsideSeverity:F3} foreignFinalPartialConflicts={foreignFinal.PartialConflicts} foreignFinalPartialSeverity={foreignFinal.PartialSeverity:F3} foreignFinalPartInsideConflicts={foreignFinal.PartInsideConflicts} foreignFinalPartInsideSeverity={foreignFinal.PartInsideSeverity:F3}");
         }
 
@@ -406,6 +410,29 @@ internal sealed class ForceMarkLayoutOrchestrator
                     CanMove = entry.Item.CanMove,
                     LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
                 };
+            })
+            .ToList();
+    }
+
+    private static List<MarkLayoutPlacement> BuildPlacementsFromEntries(
+        IReadOnlyList<TeklaDrawingMarkLayoutEntry> markEntries)
+    {
+        return markEntries
+            .Select(entry => new MarkLayoutPlacement
+            {
+                Id = entry.Mark.GetIdentifier().ID,
+                X = entry.CenterX,
+                Y = entry.CenterY,
+                Width = entry.Item.Width,
+                Height = entry.Item.Height,
+                AnchorX = entry.Item.AnchorX,
+                AnchorY = entry.Item.AnchorY,
+                HasLeaderLine = entry.Item.HasLeaderLine,
+                HasAxis = entry.Item.HasAxis,
+                AxisDx = entry.Item.AxisDx,
+                AxisDy = entry.Item.AxisDy,
+                CanMove = entry.Item.CanMove,
+                LocalCorners = entry.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
             })
             .ToList();
     }

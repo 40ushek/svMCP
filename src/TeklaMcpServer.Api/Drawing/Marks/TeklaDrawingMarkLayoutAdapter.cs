@@ -457,6 +457,8 @@ internal static class TeklaDrawingMarkLayoutAdapter
     internal static LeaderAnchorOptimizationResult ApplyLeaderTextCleanup(
         IReadOnlyList<TeklaDrawingMarkLayoutEntry> entries,
         LeaderTextCleanupDryRunResult dryRun,
+        IReadOnlyList<LeaderTextOverlapMark> preCleanupOverlapMarks,
+        double ownEndIgnoreDistance,
         Model model,
         Tekla.Structures.Drawing.Drawing drawing)
     {
@@ -465,6 +467,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
             return result;
 
         var entryById = entries.ToDictionary(e => e.Mark.GetIdentifier().ID);
+        var originalSeverityById = dryRun.Marks.ToDictionary(
+            static m => m.MarkId, static m => m.CurrentSeverity);
+        var preCleanupOverlapMarkById = preCleanupOverlapMarks.ToDictionary(static m => m.MarkId);
         var pending = new List<PendingLeaderAnchorOptimization>();
 
         foreach (var markResult in dryRun.Marks)
@@ -513,11 +518,9 @@ internal static class TeklaDrawingMarkLayoutAdapter
             if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
                     out var actualMark, out _, out var actualCenterX, out var actualCenterY))
             {
-                item.Entry.Item.AnchorX = item.TargetX;
-                item.Entry.Item.AnchorY = item.TargetY;
-                result.AcceptedIds.Add(item.MarkId);
+                toRevert.Add(item);
                 PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
-                    $"markId={item.MarkId} oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) reload=False accepted=True");
+                    $"markId={item.MarkId} oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) reload=False accepted=False");
                 continue;
             }
 
@@ -527,41 +530,197 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
             var bodyShifted = Math.Abs(item.BodyShiftX) > MovementVerificationEpsilon ||
                               Math.Abs(item.BodyShiftY) > MovementVerificationEpsilon;
-            if (!bodyShifted)
+            if (bodyShifted)
             {
-                item.Entry.CenterX = actualCenterX;
-                item.Entry.CenterY = actualCenterY;
-                item.Entry.Item.AnchorX = item.TargetX;
-                item.Entry.Item.AnchorY = item.TargetY;
-                result.AcceptedIds.Add(item.MarkId);
+                toRevert.Add(item);
+                continue;
+            }
+
+            var severityImproved = false;
+            if (TryBuildLeaderTextOverlapMark(actualMark, item.Entry.ViewId, model, out var actualOverlapMark) &&
+                preCleanupOverlapMarkById.ContainsKey(item.MarkId) &&
+                originalSeverityById.TryGetValue(item.MarkId, out var origSeverity))
+            {
+                var actualSeverity = ScoreLeaderPolylineConflict(
+                    actualOverlapMark, item.MarkId,
+                    preCleanupOverlapMarks, ownEndIgnoreDistance);
+                severityImproved = actualSeverity < origSeverity - 0.001;
+                var actualAnchorX = actualMark.Placing is LeaderLinePlacing llp ? llp.StartPoint.X : item.TargetX;
+                var actualAnchorY = actualMark.Placing is LeaderLinePlacing llp2 ? llp2.StartPoint.Y : item.TargetY;
                 PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
-                    $"markId={item.MarkId} beforeCenter=({item.BeforeCenterX:F1},{item.BeforeCenterY:F1}) actualCenter=({actualCenterX:F1},{actualCenterY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=True");
+                    $"markId={item.MarkId} beforeCenter=({item.BeforeCenterX:F1},{item.BeforeCenterY:F1}) actualCenter=({actualCenterX:F1},{actualCenterY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) newAnchor=({actualAnchorX:F1},{actualAnchorY:F1}) origSeverity={origSeverity:F3} actualSeverity={actualSeverity:F3} severityImproved={severityImproved} accepted={severityImproved}");
             }
             else
             {
-                toRevert.Add(item);
+                PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                    $"markId={item.MarkId} beforeCenter=({item.BeforeCenterX:F1},{item.BeforeCenterY:F1}) actualCenter=({actualCenterX:F1},{actualCenterY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) rejectedAnchor=({item.TargetX:F1},{item.TargetY:F1}) severityCheck=failed accepted=False");
             }
+
+            if (!severityImproved)
+            {
+                toRevert.Add(item);
+                continue;
+            }
+
+            item.Entry.CenterX = actualCenterX;
+            item.Entry.CenterY = actualCenterY;
+            item.Entry.Item.AnchorX = item.TargetX;
+            item.Entry.Item.AnchorY = item.TargetY;
+            result.AcceptedIds.Add(item.MarkId);
         }
 
+        var reverted = new List<PendingLeaderAnchorOptimization>();
         foreach (var item in toRevert)
         {
             if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
                     out var revertMark, out _, out _, out _))
+            {
+                item.Reverted = TryRevertLeaderAnchor(item.Entry.Mark, item);
+                PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                    $"markId={item.MarkId} reloadForRevert=False oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) rejectedAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=False reverted={item.Reverted}");
+                result.RejectedIds.Add(item.MarkId);
                 continue;
+            }
 
             item.Entry.Mark = revertMark;
-            revertMark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
-            revertMark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
-            item.Reverted = revertMark.Modify();
-            PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
-                $"markId={item.MarkId} bodyShift=({item.BodyShiftX:F1},{item.BodyShiftY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) rejectedAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=False reverted={item.Reverted}");
+            item.Reverted = TryRevertLeaderAnchor(revertMark, item);
+            if (item.Reverted)
+                reverted.Add(item);
             result.RejectedIds.Add(item.MarkId);
         }
 
-        if (toRevert.Count > 0)
+        if (reverted.Count > 0)
             drawing.CommitChanges("(MCP) LeaderTextCleanup revert");
 
+        var needsBodyRestore = new List<PendingLeaderAnchorOptimization>();
+        foreach (var item in reverted)
+        {
+            item.FinalCenterX = item.ActualCenterX;
+            item.FinalCenterY = item.ActualCenterY;
+            if (!TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
+                    out var revertedMark, out _, out var revertedCenterX, out var revertedCenterY))
+                continue;
+
+            item.Entry.Mark = revertedMark;
+            item.Entry.CenterX = revertedCenterX;
+            item.Entry.CenterY = revertedCenterY;
+            item.FinalCenterX = revertedCenterX;
+            item.FinalCenterY = revertedCenterY;
+
+            var restoreDx = item.BeforeCenterX - revertedCenterX;
+            var restoreDy = item.BeforeCenterY - revertedCenterY;
+            if (Math.Abs(restoreDx) <= MovementVerificationEpsilon &&
+                Math.Abs(restoreDy) <= MovementVerificationEpsilon)
+                continue;
+
+            var insertionPoint = revertedMark.InsertionPoint;
+            insertionPoint.X += restoreDx;
+            insertionPoint.Y += restoreDy;
+            revertedMark.InsertionPoint = insertionPoint;
+            item.RestoredBody = revertedMark.Modify();
+            if (item.RestoredBody)
+                needsBodyRestore.Add(item);
+        }
+
+        if (needsBodyRestore.Count > 0)
+            drawing.CommitChanges("(MCP) LeaderTextCleanup body restore");
+
+        foreach (var item in reverted)
+        {
+            if (item.RestoredBody &&
+                TryReloadMarkState(drawing, item.MarkId, item.Entry.ViewId, model,
+                    out var restoredMark, out _, out var restoredCenterX, out var restoredCenterY))
+            {
+                item.Entry.Mark = restoredMark;
+                item.Entry.CenterX = restoredCenterX;
+                item.Entry.CenterY = restoredCenterY;
+                item.FinalCenterX = restoredCenterX;
+                item.FinalCenterY = restoredCenterY;
+            }
+
+            PerfTrace.Write("api-mark", "mark_leader_text_cleanup", 0,
+                $"markId={item.MarkId} bodyShift=({item.BodyShiftX:F1},{item.BodyShiftY:F1}) finalCenter=({item.FinalCenterX:F1},{item.FinalCenterY:F1}) oldAnchor=({item.OldAnchorX:F1},{item.OldAnchorY:F1}) rejectedAnchor=({item.TargetX:F1},{item.TargetY:F1}) accepted=False reverted={item.Reverted} restoredBody={item.RestoredBody}");
+        }
+
         return result;
+    }
+
+    private static bool TryBuildLeaderTextOverlapMark(
+        Mark mark,
+        int viewId,
+        Model model,
+        out LeaderTextOverlapMark overlapMark)
+    {
+        overlapMark = null!;
+        try
+        {
+            var markId = mark.GetIdentifier().ID;
+            var geometry = MarkGeometryResolver.Build(mark, model, viewId);
+            if (geometry.Corners.Count < 3)
+                return false;
+
+            var leaderPolyline = BuildPrimaryLeaderPolyline(MarkLeaderLineReader.ReadSnapshots(mark));
+            if (leaderPolyline.Count < 2)
+                return false;
+
+            overlapMark = new LeaderTextOverlapMark
+            {
+                MarkId = markId,
+                TextPolygon = geometry.Corners.Select(static corner => new[] { corner[0], corner[1] }).ToList(),
+                LeaderPolyline = leaderPolyline
+            };
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static List<double[]> BuildPrimaryLeaderPolyline(IReadOnlyList<LeaderLineSnapshot> leaderLines)
+    {
+        var result = new List<double[]>();
+        var leaderLine = leaderLines
+            .FirstOrDefault(static line => string.Equals(line.Type, "NormalLeaderLine", StringComparison.Ordinal))
+            ?? leaderLines.FirstOrDefault();
+
+        if (leaderLine?.StartPoint == null || leaderLine.EndPoint == null)
+            return result;
+
+        result.Add([leaderLine.StartPoint.X, leaderLine.StartPoint.Y]);
+        result.AddRange(leaderLine.ElbowPoints
+            .OrderBy(static point => point.Order)
+            .Select(static point => new[] { point.X, point.Y }));
+        result.Add([leaderLine.EndPoint.X, leaderLine.EndPoint.Y]);
+        return result;
+    }
+
+    private static double ScoreLeaderPolylineConflict(
+        LeaderTextOverlapMark actualMark,
+        int ownMarkId,
+        IReadOnlyList<LeaderTextOverlapMark> allMarks,
+        double ownEndIgnoreDistance)
+    {
+        var testList = allMarks
+            .Select(m => m.MarkId == ownMarkId ? actualMark : m)
+            .ToList();
+        return LeaderTextOverlapAnalyzer.Analyze(testList, ownEndIgnoreDistance).Conflicts
+            .Where(c => c.MarkId == ownMarkId)
+            .Sum(static c => c.Severity);
+    }
+
+    private static bool TryRevertLeaderAnchor(Mark mark, PendingLeaderAnchorOptimization item)
+    {
+        try
+        {
+            mark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
+            mark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
+            return mark.Modify();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     internal static bool TryResolvePreferredLeaderAnchorTarget(
