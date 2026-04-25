@@ -948,7 +948,7 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 **3. Leader text cleanup dry-run**
 
-Следующий кандидат на реализацию после диагностики.
+Следующий кандидат на реализацию после диагностики и проверки реального чертежа.
 
 Цель:
 
@@ -956,12 +956,20 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - не ухудшать body placement;
 - не двигать body марки на первом шаге.
 
-Рекомендуемый MVP:
+Текущий вывод по Tekla API / `markAligner` reference:
+
+- `LeaderLinePlacing.StartPoint` можно менять, но Tekla всё равно владеет частью связки `leader end / text body`;
+- даже при in-place изменении `StartPoint` Tekla может пересчитать body/leader end для некоторых anchor-позиций;
+- поэтому `anchor shift` не должен быть основным способом чинить self-crossing leader/text;
+- безопасный путь — apply/reload/post-verify остаётся обязательным;
+- для self-crossing cleanup первым кандидатом пробовать `LeaderLine.ElbowPoints`, потому что elbow меняет shape лидера без дальнего переноса anchor/body.
+
+Рекомендуемый MVP v2:
 
 - кандидаты:
-  - shift anchor вдоль текущей грани собственной детали;
   - horizontal elbow;
   - vertical elbow;
+  - small anchor shift вдоль текущей грани собственной детали только как fallback;
   - anchor shift + elbow только если простой elbow не помогает;
 - scoring:
   - own leader/text crossing;
@@ -969,7 +977,18 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
   - foreign-part severity;
   - leader length growth;
   - body movement forbidden или очень большой penalty;
-- apply только если dry-run candidate строго лучше текущего состояния.
+- apply только если dry-run candidate строго лучше текущего состояния;
+- после apply обязательно reload и проверка:
+  - body не сдвинулся больше `MovementVerificationEpsilon`;
+  - фактический leader/text severity уменьшился;
+  - если Tekla пересобрала body/leader не так, как ожидалось — rollback.
+
+Implementation notes:
+
+- elbow применять через runtime `LeaderLine.ElbowPoints.Clear/Add/Modify`, а не через пересоздание `LeaderLinePlacing`;
+- anchor-only изменения делать только через существующий `LeaderLinePlacing.StartPoint` и с последующей factual verification;
+- не коммитить каждую метку отдельно: `Modify()` per mark, затем batch `Drawing.CommitChanges()`;
+- сохранять подробный PerfTrace для accepted/rejected candidates: `kind`, projected severity, actual severity, body shift.
 
 **4. Explicit leader shape modes**
 
