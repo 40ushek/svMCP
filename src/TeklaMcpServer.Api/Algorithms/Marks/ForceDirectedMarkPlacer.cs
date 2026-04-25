@@ -78,25 +78,25 @@ internal readonly struct ForcePassOptions
     public int MaxIterations { get; }
 
     // IdealDist=25, KRepel=300, KAttract=0.48 → sqrt(300/0.48)=25 ✓
-    public static ForcePassOptions Pass1Default { get; } = new ForcePassOptions(
+    public static ForcePassOptions EquilibriumDefault { get; } = new ForcePassOptions(
         kAttract: 0.48, idealDist: 25.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.0, kPerpRestoreAxis: 0.12,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 0.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 
-    public static ForcePassOptions Pass2Default { get; } = new ForcePassOptions(
+    public static ForcePassOptions MarkSeparationDefault { get; } = new ForcePassOptions(
         kAttract: 0.48, idealDist: 25.0, kFarAttract: 0.05, maxAttract: 50.0,
         kReturnToAxisLine: 0.12, kPerpRestoreAxis: 0.0,
         kRepelPart: 300.0, partRepelRadius: 120.0, partRepelSoftening: 5.0,
         kRepelMark: 1.0, markGapMm: 2.0,
         initialDt: 1.0, dtDecay: 0.98, stopEpsilon: 0.05, maxIterations: 100);
 
-    public static ForcePassOptions CreatePass1ForViewScale(double viewScale) =>
-        CreateScaledDistancePolicy(Pass1Default, NormalizeViewScale(viewScale));
+    public static ForcePassOptions CreateEquilibriumForViewScale(double viewScale) =>
+        CreateScaledDistancePolicy(EquilibriumDefault, NormalizeViewScale(viewScale));
 
-    public static ForcePassOptions CreatePass2ForViewScale(double viewScale) =>
-        CreateScaledDistancePolicy(Pass2Default, NormalizeViewScale(viewScale));
+    public static ForcePassOptions CreateMarkSeparationForViewScale(double viewScale) =>
+        CreateScaledDistancePolicy(MarkSeparationDefault, NormalizeViewScale(viewScale));
 
     private static ForcePassOptions CreateScaledDistancePolicy(ForcePassOptions defaults, double scale) =>
         new ForcePassOptions(
@@ -216,7 +216,9 @@ internal sealed class ForceDirectedMarkPlacer
         ISet<int>? movableIds = null,
         Action<ForceIterationDebugInfo>? debugSink = null,
         Func<int>? getRemainingOverlapCount = null,
-        int overlapCheckInterval = 5)
+        int overlapCheckInterval = 5,
+        bool preferAxisStepForReturnToAxisMarks = false,
+        double foreignPartThreshold = 0.0)
     {
         var dt = options.InitialDt;
         var iterationsUsed = 0;
@@ -246,7 +248,25 @@ internal sealed class ForceDirectedMarkPlacer
                     }
                 }
 
-                updates.Add(new ForceIterationUpdate(mark, debug, dx, dy));
+                var axisStepMode = false;
+                var axisStepReason = "notRequested";
+                if (preferAxisStepForReturnToAxisMarks &&
+                    includeMarkRepulsion &&
+                    mark.ReturnToAxisLine)
+                {
+                    if (TryPreferAxisStep(mark, items, allParts, foreignPartThreshold, dx, dy, out var axisDx, out var axisDy, out axisStepReason))
+                    {
+                        dx = axisDx;
+                        dy = axisDy;
+                        axisStepMode = true;
+                    }
+                }
+                else if (preferAxisStepForReturnToAxisMarks && includeMarkRepulsion)
+                {
+                    axisStepReason = mark.ReturnToAxisLine ? "notReturnToAxisLine" : "notAxisReturnMark";
+                }
+
+                updates.Add(new ForceIterationUpdate(mark, debug, dx, dy, axisStepMode, axisStepReason));
             }
 
             foreach (var update in updates)
@@ -270,7 +290,9 @@ internal sealed class ForceDirectedMarkPlacer
                     update.Dx,
                     update.Dy,
                     update.Mark.Cx,
-                    update.Mark.Cy));
+                    update.Mark.Cy,
+                    update.AxisStepMode,
+                    update.AxisStepReason));
             }
 
             if (getRemainingOverlapCount != null &&
@@ -287,6 +309,79 @@ internal sealed class ForceDirectedMarkPlacer
         }
 
         return new ForceRelaxResult(iterationsUsed, ForceRelaxStopReason.MaxIterations);
+    }
+
+    private static bool TryPreferAxisStep(
+        ForceDirectedMarkItem mark,
+        IReadOnlyList<ForceDirectedMarkItem> items,
+        IReadOnlyList<PartBbox> allParts,
+        double foreignPartThreshold,
+        double fullDx,
+        double fullDy,
+        out double axisStepX,
+        out double axisStepY,
+        out string reason)
+    {
+        axisStepX = 0.0;
+        axisStepY = 0.0;
+        reason = "unknown";
+
+        if (!TryGetNormalizedAxis(mark, out var axisDx, out var axisDy))
+        {
+            reason = "noAxis";
+            return false;
+        }
+
+        var projection = (fullDx * axisDx) + (fullDy * axisDy);
+        axisStepX = axisDx * projection;
+        axisStepY = axisDy * projection;
+        if (Math.Sqrt((axisStepX * axisStepX) + (axisStepY * axisStepY)) <= 0.001)
+        {
+            reason = "zeroProjection";
+            return false;
+        }
+
+        var currentMarkSeverity = GetMarkOverlapSeverityForMark(items, mark.Id);
+        if (currentMarkSeverity <= 0.001)
+        {
+            reason = "noCurrentMarkOverlap";
+            return false;
+        }
+
+        var currentForeignSeverity = GetPartialSeverityForMark(
+            ForeignPartOverlapAnalyzer.Analyze(items, allParts, foreignPartThreshold),
+            mark.Id);
+
+        var originalX = mark.Cx;
+        var originalY = mark.Cy;
+        mark.Cx = originalX + axisStepX;
+        mark.Cy = originalY + axisStepY;
+        try
+        {
+            var proposedMarkSeverity = GetMarkOverlapSeverityForMark(items, mark.Id);
+            if (proposedMarkSeverity >= currentMarkSeverity - 0.001)
+            {
+                reason = "markSeverityNotImproved";
+                return false;
+            }
+
+            var proposedForeignSeverity = GetPartialSeverityForMark(
+                ForeignPartOverlapAnalyzer.Analyze(items, allParts, foreignPartThreshold),
+                mark.Id);
+            if (proposedForeignSeverity > currentForeignSeverity + 0.001)
+            {
+                reason = "foreignSeverityWorse";
+                return false;
+            }
+
+            reason = "accepted";
+            return true;
+        }
+        finally
+        {
+            mark.Cx = originalX;
+            mark.Cy = originalY;
+        }
     }
 
     public ForeignPartCleanupResult CleanupForeignPartOverlaps(
@@ -978,6 +1073,27 @@ internal sealed class ForceDirectedMarkPlacer
         return count;
     }
 
+    private static double GetMarkOverlapSeverityForMark(IReadOnlyList<ForceDirectedMarkItem> allMarks, int markId)
+    {
+        var mark = allMarks.FirstOrDefault(item => item.Id == markId);
+        if (mark == null)
+            return 0.0;
+
+        var markPolygon = BuildMarkPolygon(mark, mark.Cx, mark.Cy);
+        var severity = 0.0;
+        foreach (var other in allMarks)
+        {
+            if (other.Id == mark.Id)
+                continue;
+
+            var otherPolygon = BuildMarkPolygon(other, other.Cx, other.Cy);
+            if (PolygonGeometry.TryGetMinimumTranslationVector(markPolygon, otherPolygon, out _, out _, out var depth))
+                severity += depth;
+        }
+
+        return severity;
+    }
+
     private static bool WouldOverlapForeignPart(
         ForceDirectedMarkItem mark,
         double targetX,
@@ -1078,7 +1194,9 @@ internal readonly struct ForceIterationDebugInfo
         double dx,
         double dy,
         double x,
-        double y)
+        double y,
+        bool axisStepMode = false,
+        string axisStepReason = "")
     {
         Iteration = iteration;
         MarkId = markId;
@@ -1094,6 +1212,8 @@ internal readonly struct ForceIterationDebugInfo
         Dy = dy;
         X = x;
         Y = y;
+        AxisStepMode = axisStepMode;
+        AxisStepReason = axisStepReason;
     }
 
     public int Iteration { get; }
@@ -1110,22 +1230,28 @@ internal readonly struct ForceIterationDebugInfo
     public double Dy { get; }
     public double X { get; }
     public double Y { get; }
+    public bool AxisStepMode { get; }
+    public string AxisStepReason { get; }
 }
 
 internal readonly struct ForceIterationUpdate
 {
-    public ForceIterationUpdate(ForceDirectedMarkItem mark, ForceComponents debug, double dx, double dy)
+    public ForceIterationUpdate(ForceDirectedMarkItem mark, ForceComponents debug, double dx, double dy, bool axisStepMode = false, string axisStepReason = "")
     {
         Mark = mark;
         Debug = debug;
         Dx = dx;
         Dy = dy;
+        AxisStepMode = axisStepMode;
+        AxisStepReason = axisStepReason;
     }
 
     public ForceDirectedMarkItem Mark { get; }
     public ForceComponents Debug { get; }
     public double Dx { get; }
     public double Dy { get; }
+    public bool AxisStepMode { get; }
+    public string AxisStepReason { get; }
 }
 
 internal readonly struct ForceComponents

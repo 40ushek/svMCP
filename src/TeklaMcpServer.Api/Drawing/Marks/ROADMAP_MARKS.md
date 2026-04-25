@@ -560,7 +560,7 @@ Phase 5 частично реализована.
 
 ## Следующий практический шаг
 
-Multi-mark layout идёт через force-directed path (Phase 8.1). Приоритетные pending items там — `View-scale awareness`, `Differentiated IdealDist by placing type`, `Pass2 overlap-based early exit`, `Pass2 dynamic movable set expansion`, `Hard constraint в Relax`. Подробности в разделе Phase 8.1.
+Multi-mark layout идёт через force-directed path (Phase 8.1). Приоритетные pending items там — `View-scale awareness`, `Differentiated IdealDist by placing type`, `mark separation overlap-based early exit`, `mark separation dynamic movable set expansion`, `Hard constraint в Relax`. Подробности в разделе Phase 8.1.
 
 Leader geometry отдельной линией:
 
@@ -616,20 +616,20 @@ Leader geometry отдельной линией:
 - во втором проходе используется не только exact overlap, но и небольшой gap-aware separation signal
 
 **Текущая реализация axis-constrained меток (BaseLinePlacing, AlongLinePlacing):**
-- `Pass1`: axis-constrained marks двигаются только вдоль оси
-- `Pass2`: для коллидирующих axis-constrained marks жёсткое axis-ограничение временно снимается
+- `Equilibrium step`: axis-constrained marks двигаются только вдоль оси
+- `Mark separation step`: для коллидирующих axis-constrained marks жёсткое axis-ограничение временно снимается
 - вместо этого включается слабая поперечная пружина обратно к линии оси детали
 - это позволяет:
   - разойтись с соседними marks
   - но не улететь далеко от baseline axis
 
 **Текущий итерационный цикл experimental path:**
-1. `Pass1`
+1. `Equilibrium`
    - двигаются все marks
    - учитываются только детали
    - mark-mark repulsion выключен
-2. `Pass2`
-   - двигаются только marks, которые после `Pass1` ещё конфликтуют
+2. `Mark separation`
+   - двигаются только marks, которые после `Equilibrium` ещё конфликтуют
    - в расчёте участвуют все детали и все marks
    - включён mark-mark repulsion
    - для baseline/along-line marks работает weak return-to-axis-line
@@ -658,12 +658,12 @@ for iter in 0..100:
 - inside-own-polygon correction
 - inside-foreign-polygon push-out
 - OBB-based mark-mark repulsion
-- mark gap in `Pass2`
+- mark gap in `Mark separation`
 - simultaneous update per iteration
-- separate `Pass1Default` / `Pass2Default`
+- separate `EquilibriumDefault` / `MarkSeparationDefault`
 - normalized axis handling inside solver
-- `KPerpRestoreAxis` for axis-constrained marks in `Pass1`
-- weak `ReturnToAxisLine` for freed baseline/along-line marks in `Pass2`
+- `KPerpRestoreAxis` for axis-constrained marks in `Equilibrium`
+- weak `ReturnToAxisLine` for freed baseline/along-line marks in `Mark separation`
 - piecewise attraction spring:
   - logarithmic near field
   - linear far tail with clamp
@@ -694,7 +694,7 @@ Touching edge case сохранён: если polygon-ы только касаю
 
 **Отменённые попытки и вывод:**
 
-Подход "перевести координаты в paper-mm и оставить старые `Pass1Default`/`Pass2Default` как есть" не сработал — марки улетали за границы чертежа. Причина: текущие константы (`KRepelPart=300`, `PartRepelRadius=120`, `IdealDist=25`, `PartRepelSoftening=5`, `StopEpsilon=0.05`) содержат implicit drawing-unit/view-scale семантику. После скалирования координат:
+Подход "перевести координаты в paper-mm и оставить старые `EquilibriumDefault`/`MarkSeparationDefault` как есть" не сработал — марки улетали за границы чертежа. Причина: текущие константы (`KRepelPart=300`, `PartRepelRadius=120`, `IdealDist=25`, `PartRepelSoftening=5`, `StopEpsilon=0.05`) содержат implicit drawing-unit/view-scale семантику. После скалирования координат:
 
 - `PartRepelRadius=120` превратился из ~5 мм paper в 120 мм paper — repulsion начал действовать через пол-листа
 - `IdealDist=25` из ~1 мм paper стал 25 мм paper — равновесие сместилось далеко от детали
@@ -720,8 +720,8 @@ paperMm policy value * viewScale = drawing-unit solver value
    - не менять `InsertionPoint` / `AxisOrigin` unit semantics.
 
 2. Ввести scale-aware factory для `ForcePassOptions`, например:
-   - `ForcePassOptions.CreatePass1ForViewScale(viewScale)`
-   - `ForcePassOptions.CreatePass2ForViewScale(viewScale)`
+   - `ForcePassOptions.CreateEquilibriumForViewScale(viewScale)`
+   - `ForcePassOptions.CreateMarkSeparationForViewScale(viewScale)`
 
 3. В factory пересчитывать только distance/policy параметры:
 
@@ -754,7 +754,7 @@ paperMm policy value * viewScale = drawing-unit solver value
 
    - нет марок, улетевших за рабочую область вида/листа;
    - overlaps после `arrange_marks_force` не хуже legacy path;
-   - Pass2 early exit продолжает срабатывать, когда конфликты устранены.
+   - mark separation early exit продолжает срабатывать, когда конфликты устранены.
 
 **View-bounds guard** остаётся отдельной задачей. Его нельзя смешивать с view-scale normalization, потому что это отдельное поведенческое ограничение, а не unit semantics.
 
@@ -769,9 +769,9 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - `ForeignPartOverlapAnalyzer.Analyze()` классифицирует каждый конфликт через `AllPointsInsideOrOnBoundary`
 - logging в `arrange_marks_force_view` и `arrange_marks_force_foreign_cleanup` включает `kind=` в per-overlap строки
 
-**3. Pass2 foreign-part cleanup — completed**
+**3. Foreign-part cleanup before mark separation — completed**
 
-Реализован через `CleanupForeignPartOverlaps` в `ForceDirectedMarkPlacer`. Запускается после Pass1, до mark-mark Relax pass.
+Реализован через `CleanupForeignPartOverlaps` в `ForceDirectedMarkPlacer`. Запускается после equilibrium step, до mark separation step.
 
 Назначение шага:
 
@@ -796,36 +796,36 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 #### High-impact pending tasks
 
-**1. Pass3 mark-mark cleanup**
+**1. Mark separation cleanup**
 
-Текущий mark-mark Relax pass должен стать Pass3 (сейчас он именуется как Pass2 в коде):
+Текущий mark-mark Relax step:
 
-- двигаются marks, которые после Pass1 + foreign-part cleanup конфликтуют с другими marks
+- двигаются marks, которые после equilibrium + foreign-part cleanup конфликтуют с другими marks
 - включён mark-mark repulsion
 - early exit по устранению mark-mark overlaps остаётся
-- `collidingIds` / `pass3EarlyExit` должны относиться именно к mark-mark overlaps
+- `collidingIds` / `markSeparationEarlyExit` должны относиться именно к mark-mark overlaps
 
 Это сохраняет текущую удачную логику раздвижки меток, но запускает её после попытки убрать avoidable foreign-part conflicts.
 
-**2. Post-Pass3 foreign-part cleanup**
+**2. Final foreign-part cleanup**
 
-После mark-mark cleanup возможна ситуация, когда Pass3 успешно раздвинул метки между собой, но одну или несколько меток снова сдвинул на чужую деталь.
+После mark separation возможна ситуация, когда шаг успешно раздвинул метки между собой, но одну или несколько меток снова сдвинул на чужую деталь.
 
 Решение:
 
-- после Pass3 повторно запустить ту же `CleanupForeignPartOverlaps`;
+- после mark separation повторно запустить ту же `CleanupForeignPartOverlaps`;
 - цель — уменьшить `PartialForeignPartOverlap` для обрабатываемых меток с любыми чужими деталями вида;
 - не трогать `MarkInsideForeignPart` и `ForeignPartInsideMark`, потому что такие случаи часто являются особенностью 2D-проекции плотной 3D-сборки;
-- не откатывать весь Pass3;
+- не откатывать весь mark separation step;
 - если cleanup ухудшает конкретную метку — откатывать только эту метку, как в текущей per-mark rollback logic;
-- не допускать ухудшения mark-mark overlap результата после Pass3.
+- не допускать ухудшения mark-mark overlap результата после mark separation.
 
 Фактическая целевая схема force path:
 
-1. `Pass1` — поиск равновесия меток относительно своих деталей/осей.
+1. `Equilibrium` — поиск равновесия меток относительно своих деталей/осей.
 2. `Foreign cleanup` — уменьшить частичные пересечения обрабатываемых меток с любыми чужими деталями вида.
-3. `Pass3` — раздвинуть метки между собой.
-4. `Post-Pass3 foreign cleanup` — ещё раз уменьшить foreign-part conflicts, если Pass3 их создал или усилил.
+3. `Mark separation` — раздвинуть метки между собой.
+4. `Final foreign cleanup` — ещё раз уменьшить foreign-part conflicts, если mark separation их создал или усилил.
 
 **3. Differentiated attraction by placing type**
 
@@ -841,21 +841,21 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - либо отдельные `ForcePassOptions` per placing type
 - либо per-mark override на `ForceDirectedMarkItem`
 
-**4. Pass3 overlap-based early exit**
+**4. Mark separation overlap-based early exit**
 
 Сейчас mark-mark cleanup всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
 
 Решение: каждые N итераций (например, 5) считать `GetOverlappingMarkIds(currentPlacements).Intersect(movableIds).Count`. Если 0 — выход.
 
-Этот пункт уже реализован для текущего Pass2 и должен сохраниться после переименования в Pass3.
+Этот пункт уже реализован для текущего mark separation step.
 
-**5. Axis-prioritized Pass3 movement**
+**5. Axis-prioritized mark separation movement**
 
 Для `BaseLinePlacing` / `AlongLinePlacing` на длинных деталях часто лучший способ разойтись с соседней меткой — сдвинуться вдоль оси детали, а не уходить поперёк на соседние детали.
 
 Решение:
 
-- в Pass3 для axis-based меток сначала пробовать projected step вдоль `AxisDx/AxisDy`;
+- в mark separation для axis-based меток сначала пробовать projected step вдоль `AxisDx/AxisDy`;
 - если такой шаг уменьшает mark-mark overlap и не ухудшает foreign-part conflicts — принимать его;
 - если движение вдоль оси не помогает — использовать обычный 2D force-step как fallback;
 - поперечное движение по-прежнему удерживать слабой пружиной обратно к оси;
@@ -863,9 +863,9 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Цель — сохранить readable связь метки со своей длинной деталью и уменьшить случаи, когда mark-mark repulsion выталкивает baseline/along-line метку на чужую деталь.
 
-**6. Pass3 dynamic movable set expansion**
+**6. Mark separation dynamic movable set expansion**
 
-Сейчас `movableIds` — только изначально коллидирующие после Pass1 марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
+Сейчас `movableIds` — только изначально коллидирующие после equilibrium марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
 
 Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
 
@@ -909,5 +909,5 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 #### Прочие pending items
 
-- **KAlongAxisRestore (experiment, not committed):** вдоль-осевая пружина для baseline/along-line марок, когда они освобождаются в Pass2. Параметр `KAlongAxisRestore` и метод `ApplyAxisAnchorSpring` существуют в рабочей копии как незакоммиченный эксперимент. Коммит отложен до появления практического случая, когда freed baseline-марки уезжают вдоль оси детали.
+- **KAlongAxisRestore (experiment, not committed):** вдоль-осевая пружина для baseline/along-line марок, когда они освобождаются в mark separation. Параметр `KAlongAxisRestore` и метод `ApplyAxisAnchorSpring` существуют в рабочей копии как незакоммиченный эксперимент. Коммит отложен до появления практического случая, когда freed baseline-марки уезжают вдоль оси детали.
 - **Axis normalization invariant:** держать нормализацию `AxisDx/AxisDy` внутри solver как обязательный invariant. Latent bug уже был выявлен — внешняя нормализация не должна считаться достаточной гарантией.
