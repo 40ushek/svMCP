@@ -273,6 +273,59 @@ public sealed class ForceDirectedMarkPlacerTests
         Assert.False(RectanglesOverlap(items[0], items[1]));
     }
 
+    [Fact]
+    public void AxisMarkSeparationCleanup_SeparatesAxisForceMarks()
+    {
+        var first = CreateAxisMark(id: 1, x: 0.0, y: 0.0, axisDx: 0.0, axisDy: 1.0);
+        var second = CreateAxisMark(id: 2, x: 0.0, y: 30.0, axisDx: 0.0, axisDy: -1.0);
+        var items = new List<ForceDirectedMarkItem> { first, second };
+
+        var result = AxisMarkSeparationCleanup.Resolve(items, gap: 2.0);
+
+        Assert.Equal(1, result.BeforeOverlaps);
+        Assert.Equal(0, result.AfterOverlaps);
+        Assert.Equal(2, result.MovedMarks);
+        Assert.True(result.Iterations >= 1);
+        Assert.Equal(0.0, first.Cx, 6);
+        Assert.Equal(0.0, second.Cx, 6);
+        Assert.True(first.Cy < 0.0);
+        Assert.True(second.Cy > 30.0);
+    }
+
+    [Fact]
+    public void AxisMarkSeparationCleanup_RepeatsAcrossOverlapChain()
+    {
+        var items = new List<ForceDirectedMarkItem>
+        {
+            CreateAxisMark(id: 1, x: 0.0, y: 0.0, axisDx: 0.0, axisDy: 1.0),
+            CreateAxisMark(id: 2, x: 0.0, y: 30.0, axisDx: 0.0, axisDy: 1.0),
+            CreateAxisMark(id: 3, x: 0.0, y: 60.0, axisDx: 0.0, axisDy: 1.0)
+        };
+
+        var result = AxisMarkSeparationCleanup.Resolve(items, gap: 2.0, maxIterations: 10);
+
+        Assert.Equal(2, result.BeforeOverlaps);
+        Assert.Equal(0, result.AfterOverlaps);
+        Assert.Equal(3, result.MovedMarks);
+        Assert.True(result.Iterations > 1);
+    }
+
+    [Fact]
+    public void AxisMarkSeparationCleanup_IgnoresNonAxisForceMarks()
+    {
+        var first = CreateAxisMark(id: 1, x: 0.0, y: 0.0, axisDx: 0.0, axisDy: 1.0);
+        var second = CreateAxisMark(id: 2, x: 0.0, y: 30.0, axisDx: 0.0, axisDy: -1.0);
+        first.ConstrainToAxis = false;
+        second.ConstrainToAxis = false;
+        var items = new List<ForceDirectedMarkItem> { first, second };
+
+        var result = AxisMarkSeparationCleanup.Resolve(items, gap: 2.0);
+
+        Assert.Equal(1, result.BeforeOverlaps);
+        Assert.Equal(1, result.AfterOverlaps);
+        Assert.Equal(0, result.MovedMarks);
+    }
+
     private static ForceDirectedMarkItem CreateMark(int id, double x, double y) => new()
     {
         Id = id,
@@ -298,6 +351,25 @@ public sealed class ForceDirectedMarkPlacerTests
         Height = 10.0,
         CanMove = true,
         LocalCorners = localCorners
+    };
+
+    private static ForceDirectedMarkItem CreateAxisMark(
+        int id,
+        double x,
+        double y,
+        double axisDx,
+        double axisDy) => new()
+    {
+        Id = id,
+        Cx = x,
+        Cy = y,
+        Width = 10.0,
+        Height = 40.0,
+        CanMove = true,
+        ConstrainToAxis = true,
+        AxisDx = axisDx,
+        AxisDy = axisDy,
+        LocalCorners = CreateRectangle(-5.0, -20.0, 5.0, 20.0)
     };
 
     private static void AssertForceCoefficientsEqual(ForcePassOptions expected, ForcePassOptions actual)
