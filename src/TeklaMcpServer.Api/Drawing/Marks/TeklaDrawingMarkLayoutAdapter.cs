@@ -268,9 +268,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
             var beforeCenterX = entry.CenterX;
             var beforeCenterY = entry.CenterY;
             var beforeInsertion = entry.Mark.InsertionPoint;
-            entry.Mark.Placing = new LeaderLinePlacing(new Point(targetX, targetY, 0));
-            entry.Mark.InsertionPoint = new Point(beforeInsertion.X, beforeInsertion.Y, beforeInsertion.Z);
-            if (!entry.Mark.Modify())
+            if (!TryMoveLeaderAnchorPreservingLeaderDelta(entry.Mark, targetX, targetY, beforeInsertion))
                 continue;
 
             pending.Add(new PendingLeaderAnchorOptimization
@@ -386,9 +384,7 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
 
             item.Entry.Mark = rejectedMark;
-            rejectedMark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
-            rejectedMark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
-            item.Reverted = rejectedMark.Modify();
+            item.Reverted = TryRevertLeaderAnchor(rejectedMark, item);
         }
 
         if (rejected.Count > 0)
@@ -488,9 +484,11 @@ internal static class TeklaDrawingMarkLayoutAdapter
                 continue;
 
             var beforeInsertion = entry.Mark.InsertionPoint;
-            entry.Mark.Placing = new LeaderLinePlacing(new Point(markResult.BestAnchorX, markResult.BestAnchorY, 0));
-            entry.Mark.InsertionPoint = new Point(beforeInsertion.X, beforeInsertion.Y, beforeInsertion.Z);
-            if (!entry.Mark.Modify())
+            if (!TryMoveLeaderAnchorPreservingLeaderDelta(
+                    entry.Mark,
+                    markResult.BestAnchorX,
+                    markResult.BestAnchorY,
+                    beforeInsertion))
                 continue;
 
             pending.Add(new PendingLeaderAnchorOptimization
@@ -711,16 +709,73 @@ internal static class TeklaDrawingMarkLayoutAdapter
 
     private static bool TryRevertLeaderAnchor(Mark mark, PendingLeaderAnchorOptimization item)
     {
+        return TryMoveLeaderAnchorPreservingLeaderDelta(mark, item.OldAnchorX, item.OldAnchorY, item.BeforeInsertion);
+    }
+
+    private static bool TryMoveLeaderAnchorPreservingLeaderDelta(
+        Mark mark,
+        double anchorX,
+        double anchorY,
+        Point fallbackInsertionPoint)
+    {
         try
         {
-            mark.Placing = new LeaderLinePlacing(new Point(item.OldAnchorX, item.OldAnchorY, 0));
-            mark.InsertionPoint = new Point(item.BeforeInsertion.X, item.BeforeInsertion.Y, item.BeforeInsertion.Z);
+            if (mark.Placing is not LeaderLinePlacing leaderLinePlacing)
+                return false;
+
+            var insertionPoint = new Point(
+                fallbackInsertionPoint.X,
+                fallbackInsertionPoint.Y,
+                fallbackInsertionPoint.Z);
+
+            if (TryGetPrimaryLeaderEnd(mark, out var leaderEndX, out var leaderEndY))
+            {
+                // Match markAligner: keep the text insertion tied to the current leader end by its delta.
+                var deltaX = fallbackInsertionPoint.X - leaderEndX;
+                var deltaY = fallbackInsertionPoint.Y - leaderEndY;
+                insertionPoint.X = leaderEndX + deltaX;
+                insertionPoint.Y = leaderEndY + deltaY;
+            }
+
+            leaderLinePlacing.StartPoint.X = anchorX;
+            leaderLinePlacing.StartPoint.Y = anchorY;
+            mark.Placing = leaderLinePlacing;
+            mark.InsertionPoint = insertionPoint;
             return mark.Modify();
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool TryGetPrimaryLeaderEnd(Mark mark, out double endX, out double endY)
+    {
+        endX = 0.0;
+        endY = 0.0;
+
+        LeaderLine? firstLeaderLine = null;
+        var children = mark.GetObjects();
+        while (children.MoveNext())
+        {
+            if (children.Current is not LeaderLine leaderLine)
+                continue;
+
+            firstLeaderLine ??= leaderLine;
+            if (!string.Equals(leaderLine.LeaderLineType.ToString(), "NormalLeaderLine", StringComparison.Ordinal))
+                continue;
+
+            endX = leaderLine.EndPoint.X;
+            endY = leaderLine.EndPoint.Y;
+            return true;
+        }
+
+        if (firstLeaderLine == null)
+            return false;
+
+        endX = firstLeaderLine.EndPoint.X;
+        endY = firstLeaderLine.EndPoint.Y;
+        return true;
     }
 
     internal static bool TryResolvePreferredLeaderAnchorTarget(
