@@ -773,6 +773,13 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Реализован через `CleanupForeignPartOverlaps` в `ForceDirectedMarkPlacer`. Запускается после Pass1, до mark-mark Relax pass.
 
+Назначение шага:
+
+- для обрабатываемых меток уменьшить пересечения с любыми чужими деталями вида;
+- чужая деталь не обязана сама иметь обрабатываемую метку;
+- собственная деталь метки (`part.ModelId == mark.OwnModelId`) не считается foreign conflict;
+- исправляются только частичные пересечения, где перемещение метки реально может помочь.
+
 Реализованный подход — per-mark sequential cleanup:
 
 - кандидаты на очистку: только `PartialForeignPartOverlap` конфликты (не `MarkInside`, не `PartInside`)
@@ -800,7 +807,27 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Это сохраняет текущую удачную логику раздвижки меток, но запускает её после попытки убрать avoidable foreign-part conflicts.
 
-**2. Differentiated attraction by placing type**
+**2. Post-Pass3 foreign-part cleanup**
+
+После mark-mark cleanup возможна ситуация, когда Pass3 успешно раздвинул метки между собой, но одну или несколько меток снова сдвинул на чужую деталь.
+
+Решение:
+
+- после Pass3 повторно запустить ту же `CleanupForeignPartOverlaps`;
+- цель — уменьшить `PartialForeignPartOverlap` для обрабатываемых меток с любыми чужими деталями вида;
+- не трогать `MarkInsideForeignPart` и `ForeignPartInsideMark`, потому что такие случаи часто являются особенностью 2D-проекции плотной 3D-сборки;
+- не откатывать весь Pass3;
+- если cleanup ухудшает конкретную метку — откатывать только эту метку, как в текущей per-mark rollback logic;
+- не допускать ухудшения mark-mark overlap результата после Pass3.
+
+Фактическая целевая схема force path:
+
+1. `Pass1` — поиск равновесия меток относительно своих деталей/осей.
+2. `Foreign cleanup` — уменьшить частичные пересечения обрабатываемых меток с любыми чужими деталями вида.
+3. `Pass3` — раздвинуть метки между собой.
+4. `Post-Pass3 foreign cleanup` — ещё раз уменьшить foreign-part conflicts, если Pass3 их создал или усилил.
+
+**3. Differentiated attraction by placing type**
 
 Сейчас один `IdealDist` для всех марок — solver тянет любую марку к ближайшей грани детали.
 
@@ -814,7 +841,7 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - либо отдельные `ForcePassOptions` per placing type
 - либо per-mark override на `ForceDirectedMarkItem`
 
-**3. Pass3 overlap-based early exit**
+**4. Pass3 overlap-based early exit**
 
 Сейчас mark-mark cleanup всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
 
@@ -822,13 +849,13 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Этот пункт уже реализован для текущего Pass2 и должен сохраниться после переименования в Pass3.
 
-**4. Pass3 dynamic movable set expansion**
+**5. Pass3 dynamic movable set expansion**
 
 Сейчас `movableIds` — только изначально коллидирующие после Pass1 марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
 
 Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
 
-**5. Step acceptance policy in Relax**
+**6. Step acceptance policy in Relax**
 
 Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap или ухудшается foreign-part severity. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию", медленной сходимости и случаям, когда mark-mark repulsion может вытолкнуть метку на чужую деталь.
 
