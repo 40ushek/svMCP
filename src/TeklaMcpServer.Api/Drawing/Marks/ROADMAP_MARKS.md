@@ -560,7 +560,17 @@ Phase 5 частично реализована.
 
 ## Следующий практический шаг
 
-Multi-mark layout идёт через force-directed path (Phase 8.1). Приоритетные pending items там — `View-scale awareness`, `Differentiated IdealDist by placing type`, `mark separation overlap-based early exit`, `mark separation dynamic movable set expansion`, `Hard constraint в Relax`. Подробности в разделе Phase 8.1.
+Multi-mark layout сейчас идёт через force-directed path (Phase 8.1). Базовая схема уже стабилизирована и должна оставаться главным production path для `arrange_marks_force`.
+
+Ближайший практический шаг после текущей синхронизации roadmap-а:
+
+- не менять общую физику force solver-а;
+- сначала довести диагностику leader/text conflicts до decision layer;
+- затем сделать dry-run cleanup для лидеров:
+  - не двигать body марки на первом шаге;
+  - пробовать только безопасные варианты формы/якоря лидера;
+  - оценивать own leader/text crossing, foreign text crossing, leader length и regression по foreign-part conflicts;
+  - применять изменение только если dry-run явно лучше текущего состояния.
 
 Leader geometry отдельной линией:
 
@@ -594,8 +604,8 @@ Leader geometry отдельной линией:
 Отношение к `arrange_marks`:
 
 - `arrange_marks` остаётся context-aware candidate/scoring path для одиночной расстановки
-- `arrange_marks_force` — основной multi-mark путь, вызывается пользователем отдельной командой; ряд high-impact задач остаётся открытым (см. pending tasks ниже)
-- пользовательская связка `arrange_marks_force` + `arrange_marks_no_collisions` даёт приемлемое качество (8 → 1 overlap)
+- `arrange_marks_force` — основной multi-mark путь, вызывается пользователем отдельной командой
+- текущая цель `arrange_marks_force`: убрать mark-mark overlaps, уменьшить avoidable foreign-part overlaps и затем поправить leader anchors/диагностику лидеров
 
 **Идея:** каждая метка притягивается к своей детали и отталкивается от соседних меток.
 Система итеративно оседает — метки у своих деталей, без перекрытий.
@@ -623,16 +633,32 @@ Leader geometry отдельной линией:
   - разойтись с соседними marks
   - но не улететь далеко от baseline axis
 
-**Текущий итерационный цикл experimental path:**
+**Текущий цикл `arrange_marks_force`:**
 1. `Equilibrium`
    - двигаются все marks
    - учитываются только детали
    - mark-mark repulsion выключен
-2. `Mark separation`
+2. `Foreign cleanup`
+   - последовательно уменьшает частичные пересечения меток с чужими деталями
+   - не трогает `MarkInsideForeignPart` и `ForeignPartInsideMark`
+3. `Axis separation`
+   - для axis-based меток пробует прямое разъезжание конфликтующей пары вдоль осей
+   - применяется до общего mark separation
+4. `Mark separation`
    - двигаются только marks, которые после `Equilibrium` ещё конфликтуют
    - в расчёте участвуют все детали и все marks
    - включён mark-mark repulsion
    - для baseline/along-line marks работает weak return-to-axis-line
+   - есть early exit, когда mark-mark overlaps среди `movableIds` устранены
+5. `Final foreign cleanup`
+   - после mark separation ещё раз уменьшает частичные foreign-part overlaps
+   - не откатывает весь mark separation, но использует per-mark/global rollback внутри cleanup
+6. `Apply + Leader anchor optimization`
+   - сначала применяется body movement
+   - затем leader anchor post-step выбирает безопасную точку крепления на детали
+7. `Leader text diagnostics`
+   - только при активном `PerfTrace`
+   - считает пересечения leader polyline с own/foreign text polygons до/после layout
 
 Внутри одной итерации solver уже считает смещения по snapshot-состоянию:
 
@@ -667,6 +693,10 @@ for iter in 0..100:
 - piecewise attraction spring:
   - logarithmic near field
   - linear far tail with clamp
+- leader-specific attraction:
+  - `LeaderIdealDist = 6 мм бумаги * viewScale`
+  - `LeaderComfortDist = 8 мм бумаги * viewScale`
+  - extra linear attraction outside comfort zone
 - `PlaceInitial()` outlier recovery step for very distant free/leader marks
 
 **Unit test:** 2 метки на одной детали → расходятся; 2 метки на разных деталях → каждая притягивается к своей.
@@ -712,28 +742,30 @@ geometry stays in drawing units
 paperMm policy value * viewScale = drawing-unit solver value
 ```
 
-**Правильный план:**
+**Реализованное правило:**
 
-1. Не делать coordinate conversion solver-а:
+1. Coordinate conversion solver-а не делается:
    - не делить позиции marks на `viewScale`;
    - не делить polygons/bbox/local corners;
    - не менять `InsertionPoint` / `AxisOrigin` unit semantics.
 
-2. Ввести scale-aware factory для `ForcePassOptions`, например:
+2. Используются scale-aware factory для `ForcePassOptions`:
    - `ForcePassOptions.CreateEquilibriumForViewScale(viewScale)`
    - `ForcePassOptions.CreateMarkSeparationForViewScale(viewScale)`
 
-3. В factory пересчитывать только distance/policy параметры:
+3. В factory пересчитываются только distance/policy параметры:
 
    - `IdealDist = 4`
    - `MarkGapMm = 2`
    - `PartRepelRadius = 8`
    - `PartRepelSoftening = 0.75`
-   - `StopEpsilon = 0.2`
+   - `StopEpsilon = 0.25`
+   - `LeaderIdealDist = 6`
+   - `LeaderComfortDist = 8`
 
    Эти значения трактуются как paper-mm и умножаются на `viewScale`.
 
-4. На первом шаге **не менять**:
+4. Не пересчитываются физические коэффициенты:
 
    - `KAttract`
    - `KRepelPart`
@@ -745,12 +777,12 @@ paperMm policy value * viewScale = drawing-unit solver value
 
    Цель — не новая физика, а paper-mm semantics для порогов.
 
-5. `StopEpsilon` должен означать минимальный практически значимый сдвиг на бумаге:
+5. `StopEpsilon` означает минимальный практически значимый сдвиг на бумаге:
 
    - `StopEpsilonPaperMm = 0.2..0.25`
    - `StopEpsilonDrawing = StopEpsilonPaperMm * viewScale`
 
-6. Smoke-валидация на 3+ чертежах разных масштабов (например 1:15, 1:20, 1:25, 1:50). Успешный критерий:
+6. Нужна продолжающаяся smoke-валидация на чертежах разных масштабов (например 1:15, 1:20, 1:25, 1:50). Успешный критерий:
 
    - нет марок, улетевших за рабочую область вида/листа;
    - overlaps после `arrange_marks_force` не хуже legacy path;
@@ -794,9 +826,7 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - новые mark-mark overlaps не допускаются (проверка `CountMarkOverlapPairs`)
 - `MarkInside` и `PartInside` конфликты не обрабатываются — layout не может их устранить перемещением
 
-#### High-impact pending tasks
-
-**1. Mark separation cleanup**
+**4. Mark separation cleanup — completed**
 
 Текущий mark-mark Relax step:
 
@@ -807,7 +837,7 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 Это сохраняет текущую удачную логику раздвижки меток, но запускает её после попытки убрать avoidable foreign-part conflicts.
 
-**2. Final foreign-part cleanup**
+**5. Final foreign-part cleanup — completed**
 
 После mark separation возможна ситуация, когда шаг успешно раздвинул метки между собой, но одну или несколько меток снова сдвинул на чужую деталь.
 
@@ -824,52 +854,86 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 1. `Equilibrium` — поиск равновесия меток относительно своих деталей/осей.
 2. `Foreign cleanup` — уменьшить частичные пересечения обрабатываемых меток с любыми чужими деталями вида.
-3. `Mark separation` — раздвинуть метки между собой.
-4. `Final foreign cleanup` — ещё раз уменьшить foreign-part conflicts, если mark separation их создал или усилил.
+3. `Axis separation` — прямое вдоль-осевое разъезжание axis-based конфликтующих пар.
+4. `Mark separation` — раздвинуть метки между собой.
+5. `Final foreign cleanup` — ещё раз уменьшить foreign-part conflicts, если mark separation их создал или усилил.
 
-**3. Differentiated attraction by placing type**
+**6. Differentiated attraction by placing type — completed for leader/free marks**
 
-Сейчас один `IdealDist` для всех марок — solver тянет любую марку к ближайшей грани детали.
+Реализовано через `ForcePassOptions`:
 
-Для leader-марок это не нужно: `LeaderAnchorResolver` всё равно перепривязывает anchor к ближайшей грани детали после solver. Значит leader-марка может стоять в "разумной близости" (10-15 мм на бумаге), приоритет — collision-free.
+- обычный `IdealDist = 4 мм бумаги * viewScale`
+- `LeaderIdealDist = 6 мм бумаги * viewScale`
+- `LeaderComfortDist = 8 мм бумаги * viewScale`
+- `LeaderKExtraAttract = 0.8`
+- `LeaderMaxExtraAttract = 40`
 
-Для baseline/along-line марок (без лидера) наоборот — они должны прилегать к детали (3-5 мм на бумаге).
+Смысл:
 
-Решение:
+- leader-марка может быть чуть дальше от детали, потому что связь показывает leader;
+- если leader-марка слишком далеко, включается дополнительное притяжение;
+- baseline/along-line и прочие non-leader marks остаются ближе к детали через обычный `IdealDist`.
 
-- разные `IdealDist` / `KAttract` для leader vs non-leader
-- либо отдельные `ForcePassOptions` per placing type
-- либо per-mark override на `ForceDirectedMarkItem`
+**7. Mark separation overlap-based early exit — completed**
 
-**4. Mark separation overlap-based early exit**
-
-Сейчас mark-mark cleanup всегда идёт до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
+Раньше mark-mark cleanup шёл до `MaxIterations=100` или `maxDisplacement < StopEpsilon`. Но настоящая цель этого pass-а — устранить mark-mark overlaps среди `movableIds`.
 
 Решение: каждые N итераций (например, 5) считать `GetOverlappingMarkIds(currentPlacements).Intersect(movableIds).Count`. Если 0 — выход.
 
 Этот пункт уже реализован для текущего mark separation step.
 
-**5. Axis-prioritized mark separation movement**
+**8. Axis-prioritized mark separation movement — completed**
 
 Для `BaseLinePlacing` / `AlongLinePlacing` на длинных деталях часто лучший способ разойтись с соседней меткой — сдвинуться вдоль оси детали, а не уходить поперёк на соседние детали.
 
-Решение:
+Реализовано двумя слоями:
 
-- в mark separation для axis-based меток сначала пробовать projected step вдоль `AxisDx/AxisDy`;
-- если такой шаг уменьшает mark-mark overlap и не ухудшает foreign-part conflicts — принимать его;
-- если движение вдоль оси не помогает — использовать обычный 2D force-step как fallback;
-- поперечное движение по-прежнему удерживать слабой пружиной обратно к оси;
-- особенно проверять длинные балки/пластины, где вдоль оси есть свободное место.
+- `AxisMarkSeparationCleanup.Resolve(...)` до общего mark separation;
+- `preferAxisStepForReturnToAxisMarks: true` внутри mark separation.
+
+Поведение:
+
+- для axis-based конфликтующих меток сначала пробуется projected step вдоль `AxisDx/AxisDy`;
+- шаг принимается, если он уменьшает mark-mark overlap и не ухудшает foreign-part severity;
+- если движение вдоль оси не помогает — используется обычный 2D force-step как fallback;
+- поперечное движение по-прежнему удерживается слабой пружиной обратно к оси.
 
 Цель — сохранить readable связь метки со своей длинной деталью и уменьшить случаи, когда mark-mark repulsion выталкивает baseline/along-line метку на чужую деталь.
 
-**6. Mark separation dynamic movable set expansion**
+**9. Leader text overlap diagnostics — completed**
+
+Реализована диагностика, без изменения поведения:
+
+- `LeaderTextOverlapAnalyzer`
+- вход: text polygon марки + primary leader polyline
+- считается пересечение leader polyline с:
+  - собственным text polygon (`own`)
+  - чужими text polygons (`foreign`)
+- короткое касание собственного text polygon около leader end игнорируется через threshold `0.5 мм бумаги * viewScale`
+- `arrange_marks_force_view` пишет агрегаты:
+  - `leaderTextInitialCrossings`
+  - `leaderTextInitialOwn`
+  - `leaderTextInitialForeign`
+  - `leaderTextInitialSeverity`
+  - `leaderTextFinalCrossings`
+  - `leaderTextFinalOwn`
+  - `leaderTextFinalForeign`
+  - `leaderTextFinalSeverity`
+- отдельный detail trace:
+  - `arrange_marks_force_leader_text`
+  - `stage`, `markId`, `crossedMarkId`, `own`, `segmentIndex`, `severity`
+
+Это diagnostic-only layer. Он нужен как база для будущего leader-shape cleanup.
+
+#### High-impact pending tasks
+
+**1. Mark separation dynamic movable set expansion**
 
 Сейчас `movableIds` — только изначально коллидирующие после equilibrium марки. Остальные заморожены. Если коллидирующая марка М упирается в замороженную марку N, repulsion не может раздвинуть конфликт — N не двигается.
 
 Решение: каждые N итераций обновлять `movableIds`, добавляя марки, которые сейчас перекрываются с кем-то из set. "Заражение" — конфликт распространяется по цепочке.
 
-**7. Step acceptance policy in Relax**
+**2. Step acceptance policy in Relax**
 
 Сейчас `Relax()` применяет `F*dt` независимо от того, создаётся ли новый overlap или ухудшается foreign-part severity. Компенсация косвенная — в следующей итерации repulsion толкает обратно. Приводит к "качанию", медленной сходимости и случаям, когда mark-mark repulsion может вытолкнуть метку на чужую деталь.
 
@@ -881,6 +945,46 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 - policy должна быть soft-hard, не absolute ban: 2D projected foreign-part overlap иногда приемлем в плотных 3D assemblies
 
 Семантика такая же, как в `PlaceInitial` — там эта проверка уже есть для outlier recovery.
+
+**3. Leader text cleanup dry-run**
+
+Следующий кандидат на реализацию после диагностики.
+
+Цель:
+
+- уменьшить случаи, когда leader polyline проходит через собственный или чужой text box;
+- не ухудшать body placement;
+- не двигать body марки на первом шаге.
+
+Рекомендуемый MVP:
+
+- кандидаты:
+  - shift anchor вдоль текущей грани собственной детали;
+  - horizontal elbow;
+  - vertical elbow;
+  - anchor shift + elbow только если простой elbow не помогает;
+- scoring:
+  - own leader/text crossing;
+  - foreign leader/text crossing;
+  - foreign-part severity;
+  - leader length growth;
+  - body movement forbidden или очень большой penalty;
+- apply только если dry-run candidate строго лучше текущего состояния.
+
+**4. Explicit leader shape modes**
+
+После dry-run diagnostics/cleanup можно добавлять явные shape modes:
+
+- straight
+- angled
+- horizontal elbow
+- vertical elbow
+
+Public command parameter выносить только после стабилизации default behavior.
+
+**5. View-bounds guard**
+
+Остаётся отдельной задачей. Не смешивать с `viewScale`/paper-mm policy semantics.
 
 #### Medium-impact pending tasks
 
@@ -909,5 +1013,5 @@ Smoke на `[EW14S.3 - 1]` показал отдельный тип конфли
 
 #### Прочие pending items
 
-- **KAlongAxisRestore (experiment, not committed):** вдоль-осевая пружина для baseline/along-line марок, когда они освобождаются в mark separation. Параметр `KAlongAxisRestore` и метод `ApplyAxisAnchorSpring` существуют в рабочей копии как незакоммиченный эксперимент. Коммит отложен до появления практического случая, когда freed baseline-марки уезжают вдоль оси детали.
 - **Axis normalization invariant:** держать нормализацию `AxisDx/AxisDy` внутри solver как обязательный invariant. Latent bug уже был выявлен — внешняя нормализация не должна считаться достаточной гарантией.
+- **Rejected leader-anchor precompute experiment:** не считать надёжным способом убрать body jump. Tekla после `LeaderLinePlacing.StartPoint` может пересчитать body/leader end, поэтому текущий безопасный путь — apply/reload/post-verify/body compensation.
