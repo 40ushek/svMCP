@@ -148,11 +148,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
-            var unplannedCtx = new DrawingArrangeContext(
-                planningContext.Drawing, unplannedViews,
-                planningContext.SheetWidth, planningContext.SheetHeight,
-                planningContext.Margin, planningContext.Gap,
-                extendedReserved, planningContext.EffectiveFrameSizes);
+            var unplannedCtx = planningContext.With(
+                views: unplannedViews,
+                reservedAreas: extendedReserved);
             var unplannedFrames = unplannedViews
                 .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                 .ToList();
@@ -320,11 +318,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
                 extendedReserved.AddRange(anchorRects);
 
-                var unplannedCtx = new DrawingArrangeContext(
-                    context.Drawing, residualEligible,
-                    context.SheetWidth, context.SheetHeight,
-                    context.Margin, context.Gap,
-                    extendedReserved, context.EffectiveFrameSizes);
+                var unplannedCtx = context.With(
+                    views: residualEligible,
+                    reservedAreas: extendedReserved);
 
                 PerfTrace.Write("api-view", "front_arrange_plan", 0,
                     $"mode=anchor-then-maxrects anchors={planned.Count} remaining={residualEligible.Count} unresolvedSections={unplannedSectionIds.Count}");
@@ -399,11 +395,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
-            var unplannedCtx = new DrawingArrangeContext(
-                planningContext.Drawing, unplannedViews,
-                planningContext.SheetWidth, planningContext.SheetHeight,
-                planningContext.Margin, planningContext.Gap,
-                extendedReserved, planningContext.EffectiveFrameSizes);
+            var unplannedCtx = planningContext.With(
+                views: unplannedViews,
+                reservedAreas: extendedReserved);
             var unplannedFrames = unplannedViews
                 .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
                 .ToList();
@@ -454,15 +448,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             effectiveFrameSizes[view.GetIdentifier().ID] = (frame.w, frame.h);
         }
 
-        return new DrawingArrangeContext(
-            context.Drawing,
-            context.Views,
-            context.SheetWidth,
-            context.SheetHeight,
-            context.Margin,
-            context.Gap,
-            context.ReservedAreas,
-            effectiveFrameSizes);
+        return context.With(effectiveFrameSizes: effectiveFrameSizes);
     }
 
     internal static bool ShouldPreferRelaxedLayout(double scale)

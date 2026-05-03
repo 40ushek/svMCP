@@ -22,9 +22,11 @@ public sealed class DrawingArrangeContext
             workspace?.Margin ?? 0,
             gap,
             workspace?.ReservedAreas,
-            effectiveFrameSizes ?? workspace?.SelectedFrameSizesById)
+            effectiveFrameSizes ?? workspace?.SelectedFrameSizesById,
+            workspace)
     {
-        Workspace = workspace ?? throw new System.ArgumentNullException(nameof(workspace));
+        if (workspace == null)
+            throw new System.ArgumentNullException(nameof(workspace));
     }
 
     public DrawingArrangeContext(
@@ -36,6 +38,29 @@ public sealed class DrawingArrangeContext
         double gap,
         IReadOnlyList<ReservedRect>? reservedAreas = null,
         IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        : this(
+            drawing,
+            views,
+            sheetWidth,
+            sheetHeight,
+            margin,
+            gap,
+            reservedAreas,
+            effectiveFrameSizes,
+            workspace: null)
+    {
+    }
+
+    private DrawingArrangeContext(
+        Tekla.Structures.Drawing.Drawing drawing,
+        IReadOnlyList<View> views,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        double gap,
+        IReadOnlyList<ReservedRect>? reservedAreas,
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes,
+        DrawingLayoutWorkspace? workspace)
     {
         Drawing = drawing ?? throw new System.ArgumentNullException(nameof(drawing));
         Views = views ?? throw new System.ArgumentNullException(nameof(views));
@@ -45,9 +70,25 @@ public sealed class DrawingArrangeContext
         Gap = gap;
         ReservedAreas = reservedAreas ?? System.Array.Empty<ReservedRect>();
         EffectiveFrameSizes = effectiveFrameSizes ?? new Dictionary<int, (double Width, double Height)>();
+        Workspace = workspace;
     }
 
     internal DrawingLayoutWorkspace? Workspace { get; }
+
+    internal DrawingArrangeContext With(
+        IReadOnlyList<View>? views = null,
+        IReadOnlyList<ReservedRect>? reservedAreas = null,
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        => new(
+            Drawing,
+            views ?? Views,
+            SheetWidth,
+            SheetHeight,
+            Margin,
+            Gap,
+            reservedAreas ?? ReservedAreas,
+            effectiveFrameSizes ?? EffectiveFrameSizes,
+            Workspace);
 
     public Tekla.Structures.Drawing.Drawing Drawing { get; }
     public IReadOnlyList<View> Views { get; }

@@ -50,6 +50,48 @@ public sealed class DrawingArrangeContextTests
         Assert.Same(frameSizes, context.EffectiveFrameSizes);
     }
 
+    [Fact]
+    public void With_PreservesWorkspaceAndOverridesPlanningFacts()
+    {
+        var workspace = DrawingLayoutWorkspace.From(new DrawingContext
+        {
+            Sheet = new DrawingSheetContext
+            {
+                Width = 200,
+                Height = 100
+            },
+            ReservedLayout = new DrawingReservedLayoutContext
+            {
+                Margin = 5
+            }
+        });
+        var context = new DrawingArrangeContext(
+            CreateDrawing(),
+            workspace,
+            views: [],
+            gap: 4);
+        var reservedAreas = new List<ReservedRect>
+        {
+            new(150, 0, 200, 40)
+        };
+        var frameSizes = new Dictionary<int, (double Width, double Height)>
+        {
+            [1] = (30, 20)
+        };
+
+        var derived = context.With(
+            reservedAreas: reservedAreas,
+            effectiveFrameSizes: frameSizes);
+
+        Assert.Same(workspace, derived.Workspace);
+        Assert.Equal(context.SheetWidth, derived.SheetWidth);
+        Assert.Equal(context.SheetHeight, derived.SheetHeight);
+        Assert.Equal(context.Margin, derived.Margin);
+        Assert.Equal(context.Gap, derived.Gap);
+        Assert.Same(reservedAreas, derived.ReservedAreas);
+        Assert.Same(frameSizes, derived.EffectiveFrameSizes);
+    }
+
     private static Drawing CreateDrawing()
     {
 #pragma warning disable SYSLIB0050
