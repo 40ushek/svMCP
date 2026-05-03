@@ -142,7 +142,6 @@ public sealed partial class TeklaDrawingViewApi
     internal static HashSet<int> CollectOversizedStandardSectionScaleDriverIds(
         Tekla.Structures.Drawing.Drawing drawing,
         IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
         IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
         double gap)
     {
@@ -204,11 +203,10 @@ public sealed partial class TeklaDrawingViewApi
             gap);
 
     private static void TraceScaleSelectionInputs(
+        DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, ViewSemanticKind> semanticKindById,
         IReadOnlyList<View> scaleDriverViews,
         IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
-        IReadOnlyList<ReservedRect> reservedAreas,
         IReadOnlyList<double> candidates,
         double sheetW,
         double sheetH,
@@ -236,7 +234,7 @@ public sealed partial class TeklaDrawingViewApi
             gap,
             availW,
             availH,
-            reservedAreas.Count,
+            workspace.ReservedAreas.Count,
             currentScale,
             minDenom,
             string.Join(",", candidates.Select(c => c.ToString("0.###", CultureInfo.InvariantCulture))));
@@ -244,9 +242,7 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var view in views)
         {
             var viewId = view.GetIdentifier().ID;
-            var kind = semanticKindById.TryGetValue(viewId, out var semanticKind)
-                ? semanticKind
-                : ViewSemanticKind.Other;
+            var kind = workspace.GetSemanticKind(viewId);
             var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
             var frameWidth = frameSizes.TryGetValue(viewId, out var frame) ? frame.Width : view.Width;
             var frameHeight = frameSizes.TryGetValue(viewId, out var frame2) ? frame2.Height : view.Height;
@@ -488,7 +484,6 @@ public sealed partial class TeklaDrawingViewApi
         reservedMs = reservedRead.ElapsedMilliseconds;
         var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext, views);
         layoutWorkspace.SetActualViewRects(actualRects);
-        var semanticKindById = layoutWorkspace.SemanticKindsById;
         var effectiveMargin = layoutWorkspace.Margin;
         var sheetW = layoutWorkspace.SheetWidth;
         var sheetH = layoutWorkspace.SheetHeight;
@@ -508,21 +503,21 @@ public sealed partial class TeklaDrawingViewApi
         var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
         layoutWorkspace.SetSelectedFrameSizes(originalFrameSizes);
         var oversizedStandardSectionScaleDriverIds = uniformAllNonDetail
-            ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, semanticKindById, originalFrameSizes, gap)
+            ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, originalFrameSizes, gap)
             : new HashSet<int>();
         scaleDriverViews = uniformAllNonDetail
             ? views
                 .Where(v =>
-                    semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail
+                    layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail
                     && !oversizedStandardSectionScaleDriverIds.Contains(v.GetIdentifier().ID))
                 .ToList()
             : views
-                .Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.BaseProjected)
+                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.BaseProjected)
                 .ToList();
         if (scaleDriverViews.Count == 0)
         {
             scaleDriverViews = views
-                .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
                 .ToList();
         }
         if (scaleDriverViews.Count == 0)
@@ -545,11 +540,10 @@ public sealed partial class TeklaDrawingViewApi
         init.Stop();
         initMs = init.ElapsedMilliseconds;
         TraceScaleSelectionInputs(
+            layoutWorkspace,
             views,
-            semanticKindById,
             scaleDriverViews,
             originalFrameSizes,
-            layoutWorkspace.ReservedAreas,
             candidates,
             sheetW,
             sheetH,
@@ -674,7 +668,12 @@ public sealed partial class TeklaDrawingViewApi
                 var anyScaleChanged = false;
                 foreach (var v in currentViews)
                 {
-                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, layoutWorkspace.OriginalScalesById);
+                    var targetScale = ResolveTargetScale(
+                        v,
+                        layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID),
+                        s,
+                        uniformAllNonDetail,
+                        layoutWorkspace.OriginalScalesById);
                     if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
                         continue;
 
@@ -801,7 +800,7 @@ public sealed partial class TeklaDrawingViewApi
         // degrade to origin-centered boxes and may allow one view to move inside another.
 
         var arrangedViews = currentViews
-            .Where(v => semanticKindById[v.GetIdentifier().ID] != ViewSemanticKind.Detail)
+            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
             .ToList();
         var arrangedFrameSizes = arrangedViews.ToDictionary(
             v => v.GetIdentifier().ID,
@@ -826,7 +825,7 @@ public sealed partial class TeklaDrawingViewApi
 
         if (!preserveExistingScales)
         {
-            foreach (var detailView in currentViews.Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail))
+            foreach (var detailView in currentViews.Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Detail))
             {
                 if (!layoutWorkspace.OriginalScalesById.TryGetValue(detailView.GetIdentifier().ID, out var detailScale))
                     continue;
@@ -853,9 +852,7 @@ public sealed partial class TeklaDrawingViewApi
                 var correctionScale = v.Attributes.Scale > 0 ? v.Attributes.Scale : optimalScale.Value;
                 var corrX = off.X / correctionScale;
                 var corrY = off.Y / correctionScale;
-                var semanticKind = semanticKindById.TryGetValue(arranged[i].Id, out var kind)
-                    ? kind
-                    : ViewSemanticKind.Other;
+                var semanticKind = layoutWorkspace.GetSemanticKind(arranged[i].Id);
                 // Skip implausibly large corrections: they indicate a bad frame-offset
                 // estimate (e.g. from probe-scale extrapolation on distant-origin views)
                 // and would displace the view far from where the packer intended.
@@ -924,7 +921,7 @@ public sealed partial class TeklaDrawingViewApi
         var finalViews = EnumerateViews(activeDrawing).ToList();
         layoutWorkspace.SetRuntimeViews(finalViews);
         var finalArrangedViews = finalViews
-            .Where(v => semanticKindById.TryGetValue(v.GetIdentifier().ID, out var kind) && kind != ViewSemanticKind.Detail)
+            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             effectiveMargin, sheetW - effectiveMargin,
