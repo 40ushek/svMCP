@@ -8,6 +8,8 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingArrangeContext
 {
+    private ViewTopologyGraph? _topology;
+
     internal DrawingArrangeContext(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -74,6 +76,9 @@ public sealed class DrawingArrangeContext
     }
 
     internal DrawingLayoutWorkspace? Workspace { get; }
+
+    internal ViewTopologyGraph Topology
+        => _topology ??= Workspace?.GetTopology(Views) ?? ViewTopologyGraph.Build(Views);
 
     internal DrawingArrangeContext With(
         IReadOnlyList<View>? views = null,

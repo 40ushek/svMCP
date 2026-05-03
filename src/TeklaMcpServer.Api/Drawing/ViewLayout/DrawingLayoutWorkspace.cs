@@ -44,6 +44,8 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, (double X, double Y)> FrameOffsetsById { get; private set; } =
         new Dictionary<int, (double X, double Y)>();
 
+    private ViewTopologyGraph? _runtimeTopology;
+
     public double SheetWidth => Source.Sheet.Width;
 
     public double SheetHeight => Source.Sheet.Height;
@@ -82,6 +84,15 @@ internal sealed class DrawingLayoutWorkspace
         FrameOffsetsById = frameOffsets ?? throw new ArgumentNullException(nameof(frameOffsets));
     }
 
+    public ViewTopologyGraph GetTopology(IReadOnlyList<View>? views = null)
+    {
+        var effectiveViews = views ?? RuntimeViews;
+        if (HasSameViewIds(effectiveViews, RuntimeViews))
+            return _runtimeTopology ??= ViewTopologyGraph.Build(RuntimeViews);
+
+        return ViewTopologyGraph.Build(effectiveViews);
+    }
+
     public static DrawingLayoutWorkspace From(DrawingContext source)
         => From(source, Array.Empty<View>());
 
@@ -97,6 +108,20 @@ internal sealed class DrawingLayoutWorkspace
             .ToList();
 
         return new DrawingLayoutWorkspace(source, views, runtimeViews);
+    }
+
+    private static bool HasSameViewIds(IReadOnlyList<View> left, IReadOnlyList<View> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (left[i].GetIdentifier().ID != right[i].GetIdentifier().ID)
+                return false;
+        }
+
+        return true;
     }
 }
 

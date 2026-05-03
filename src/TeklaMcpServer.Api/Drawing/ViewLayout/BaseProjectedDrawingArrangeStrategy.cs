@@ -118,7 +118,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     public bool CanArrange(DrawingArrangeContext context)
     {
-        var baseView = BaseViewSelection.Select(context.Views).View;
+        var baseView = context.Topology.BaseView;
         return baseView != null;
     }
 
@@ -176,7 +176,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         DrawingArrangeContext context,
         HashSet<int> plannedIds)
     {
-        var semanticViews = SemanticViewSet.Build(context.Views);
+        var semanticViews = context.Topology.SemanticViews;
         return semanticViews.Sections
             .Select(view => view.GetIdentifier().ID)
             .Where(id => !plannedIds.Contains(id))
@@ -364,7 +364,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var conflicts = new List<DrawingFitConflict>();
         var planningContext = CreatePlanningContext(context, frames);
 
-        var baseViewSelection = BaseViewSelection.Select(planningContext.Views);
+        var baseViewSelection = planningContext.Topology.BaseSelection;
         var baseView = baseViewSelection.View;
         if (baseView == null)
             return conflicts;
@@ -412,7 +412,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 return conflicts;
         }
 
-        var topology = ViewTopologyGraph.Build(planningContext.Views);
+        var topology = planningContext.Topology;
         var neighbors = topology.Neighbors;
         if (neighbors == null)
             return conflicts;
@@ -1303,7 +1303,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
     {
         planned = new List<PlannedPlacement>();
 
-        var topology = ViewTopologyGraph.Build(context.Views);
+        var topology = context.Topology;
         var baseView = topology.BaseView;
         if (baseView == null)
             return false;
