@@ -71,38 +71,22 @@
 - `add_dimension_point` — Workaround: `delete` + `create` с новым набором точек
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
 
-### Виды — проекционная связь (часть `fit_views_to_sheet`) ✅
+### Компоновка чертежа / views
 
-**Реализовано** в `DrawingProjectionAlignmentService`, вызывается из `fit_views_to_sheet` после расстановки.
+Активный план: [`src/TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md`](src/TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md)
 
-#### AssemblyDrawing ✅
-- Якорь: `AssemblyDrawing.AssemblyIdentifier` → `model.SelectModelObject()` → `Assembly.GetMainPart()` → `Part.CoordinateSystem.Origin`
-- **FrontView ↔ TopView**: выравнивание по X
-- **FrontView ↔ SectionView**: выравнивание по Y
-- Если FrontView не найден — пропуск без ошибки
-
-#### GADrawing с FrontView ✅
-- Якорь: общая ось через `get_grid_axes`, GUID как первичный ключ, `Label+Direction` как fallback
-- **FrontView ↔ TopView**: выравнивание по X (Direction="X" ось)
-- **FrontView ↔ SectionView**: выравнивание по Y (Direction="Y" ось)
-
-#### GADrawing без FrontView — соседская выравнивание по осям ✅
-- Применяется когда все виды — SectionView (разрезы на отдельном листе GA — типичный случай)
-- **Горизонтальные соседи** (|ΔoriginY| < 60mm на листе): выравниваются по Y через общую Direction="Y" ось (отметки уровней)
-- **Вертикальные соседи** (|ΔoriginX| < 80mm на листе): выравниваются по X через общую Direction="X" ось
-- Опорный вид: левый в паре (для Y), нижний в паре (для X)
-- Ограничение: если требуемый сдвиг > 30mm на листе — пропуск (не ломать компоновку)
-- Безопасность: проверка выхода за usable area, пересечения с reserved областями, и **пересечения с другими видами** (`IntersectsAnyView`) — проекционный сдвиг отменяется если после него вид перекроет другой вид
-- **Pre-shift для TopView**: если над FrontView недостаточно места для TopView — FrontView и SectionView сдвигаются вниз перед выравниванием, чтобы TopView всегда оказывался выше FrontView
-
-#### Масштабы `fit_views_to_sheet` ✅
-Стандартный ряд: `1:1, 1:2, 1:5, 1:10, 1:15, 1:20, 1:25, 1:30, 1:40, 1:50, 1:60, 1:70, 1:75, 1:80, 1:100, 1:125, 1:150, 1:175, 1:200, 1:250, 1:300`
-
-#### Производительность `fit_views_to_sheet` ✅
-- `GetAllObjects(typeof(View))` вместо `GetAllObjects()` — фильтр типа на стороне Tekla, −500 мс
-- Пропуск probe `CommitChanges` когда масштаб видов не изменился — −3 с
-- Итого: ~7 с → ~3 с (~2× ускорение)
-- Ответ содержит `totalMs` и `phaseMs` (init/reserved/probe/candidateFit/arrange/postAdjust/projection/finalCommit)
+Краткое состояние:
+- `fit_views_to_sheet` — основной поддерживаемый путь компоновки видов
+- `ROADMAP_VIEWS.md` сохранён как исторический документ по уже реализованной
+  base/projected/section/detail логике
+- следующий этап — не переписывание layout policy, а миграция на единый лёгкий
+  контекст компоновки:
+  - `DrawingContext` как sheet-level source
+  - `DrawingLayoutViewContext` как лёгкая обёртка над видом
+  - `DrawingLayoutPlanningContext` для topology/frame/scale lookup
+  - ленивый `DrawingProjectionContext` для grid/anchor signals
+- полный `DrawingViewContext` остаётся для dimensions/marks и не должен
+  строиться для обычной компоновки листа
 
 ### Марки
 Подробный план: [`src/TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`](src/TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md)
@@ -115,48 +99,6 @@
   - `BaseLinePlacing` / `AlongLinePlacing` → ось связанной детали в текущем виде, затем width/height из mark geometry
 - raw Tekla bbox/obb нельзя считать каноническим collision source для всех типов marks; это known API limitation
 - следующий шаг: стабилизировать geometry/workaround layer вокруг известных API багов, потом evaluator/snapshot pipeline
-
-### Виды
-- Добрать regression tests на `fit_views_to_sheet` для реальных sheet scenarios: reserved areas, tight packing, projection alignment после arrange
-- При необходимости упростить orchestration в `TeklaDrawingViewApi.Layout.cs` и `DrawingProjectionAlignmentService`
-- ~~Если тема таблиц снова станет приоритетной~~ **Таблицы работают** — см. ниже
-
-#### Аналитический план-перед-коммитом (следующий шаг производительности)
-
-Идея: весь поиск оптимальной раскладки — аналитически в памяти, Tekla вызывается один раз с уже принятым решением.
-
-**Как работает сейчас:** probe-цикл пробует масштабы по одному через `CommitChanges`, останавливается на первом подходящем.
-
-**Предлагаемый подход:**
-1. Аналитически вычислить размеры видов при каждом масштабе: `newSize = oldSize × oldScale / newScale` (погрешность от фиксированного текста допустима для выбора стратегии)
-2. Для каждого кандидата масштаба просчитать несколько стратегий раскладки (разные порядки видов, разные стороны для SectionView)
-3. Оценить все комбинации по критериям: максимальный масштаб + минимум пустого пространства + центрированность
-4. Выбрать лучшую стратегию
-5. Один `CommitChanges` — применить принятое решение
-
-**Выигрыш:** устраняются все probe `CommitChanges` (сейчас ~800 мс–3 с в зависимости от числа кандидатов).
-**Бонус:** можно честно сравнивать несколько вариантов компоновки и выбирать оптимальный, а не первый подходящий.
-
-#### Уплотнение раскладки (bin packing с обратной связью)
-
-После выбора стратегии — попытаться втиснуть её в бумагу плотнее:
-
-1. При выбранном масштабе минимизировать пустые зоны между видами (сдвинуть группу, уменьшить gap)
-2. Проверить: не влезает ли следующий масштаб из ряда при более умной упаковке (сейчас берётся первый подходящий, а не максимально возможный)
-3. Если влезает — выбрать больший масштаб
-
-По сути: **грубый выбор масштаба аналитически → точная упаковка в реальные размеры листа**. Два прохода вместо итеративных probe CommitChanges.
-
-#### ML-раскладка (долгосрочно)
-
-Обучение на реальных чертежах одобренных инженером:
-
-1. Собрать корпус: входные данные (размеры видов, тип чертежа, лист, reserved areas) + финальная раскладка которую принял инженер
-2. Обучить модель предсказывать хорошую раскладку напрямую — без перебора
-3. AI предлагает позиции и масштаб → один `CommitChanges` → инженер принимает или корректирует
-4. Поправки инженера → новые обучающие данные → модель улучшается
-
-**Данные уже доступны:** каждый вызов `fit_views_to_sheet` с финальным результатом — готовый обучающий пример. Можно логировать автоматически.
 
 ### Геометрические утилиты (`TeklaMcpServer.Api/Algorithms/Geometry/`)
 - Применение: контрольные размеры по диагонали, улучшение `FrontViewDrawingArrangeStrategy`, obstacle detection для марок

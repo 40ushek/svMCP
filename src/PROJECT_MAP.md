@@ -106,7 +106,7 @@ Handlers:
   - создание GA / single-part / assembly drawings
 - `Drawing/Interaction`
   - выбор и интеракции в открытом drawing editor
-- `Drawing/Views`
+- `Drawing/ViewLayout`
   - чтение видов, layout, fit-to-sheet, projection alignment
   - ключевые сущности: `BaseViewSelection`, `NeighborSet`, `StandardNeighborResolver`
   - стратегии: `BaseProjectedDrawingArrangeStrategy`, `GaDrawingMaxRectsArrangeStrategy`, `ShelfPackingDrawingArrangeStrategy`
@@ -167,17 +167,18 @@ Handlers:
 
 Документы:
 
-- `TeklaMcpServer.Api/Drawing/Views/ROADMAP_VIEWS.md`
-  - главный roadmap по `fit_views_to_sheet`
-  - цель: base-view-centric, projection-aware layout
-- `TeklaMcpServer.Api/Drawing/Views/ROADMAP_RUNTIME.md`
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
+  - активный roadmap по компоновке чертежа и lightweight layout context
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_VIEWS.md`
+  - исторический roadmap по реализованному `fit_views_to_sheet`
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_RUNTIME.md`
   - возможная будущая runtime boundary между planner/server/local host
 - `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`
   - перевод dimensions на каноническую `dim` domain model
 
 По состоянию кода:
 
-- `Views` это самый активный planner-блок
+- `ViewLayout` это активный planner-блок по компоновке листа
 - `Dimensions` уже переведены на line-first model, но redesign еще продолжается
 - `Marks` уже имеют отдельный layout engine и overlap resolver
 
@@ -213,6 +214,7 @@ Handlers:
 - `AGENTS.md`
 - `CLAUDE.md`
 - `PROJECT_MAP.md`
-- `TeklaMcpServer.Api/Drawing/Views/ROADMAP_VIEWS.md`
-- `TeklaMcpServer.Api/Drawing/Views/ROADMAP_RUNTIME.md`
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_VIEWS.md`
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_RUNTIME.md`
 - `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`

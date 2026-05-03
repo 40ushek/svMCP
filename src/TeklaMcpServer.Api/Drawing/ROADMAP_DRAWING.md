@@ -21,6 +21,13 @@
   - `Marks`
   - `TableLayout`
 
+Активный roadmap по компоновке видов вынесен отдельно:
+
+- `ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
+
+Этот документ остаётся roadmap'ом общего drawing-layer и не должен дублировать
+детали алгоритма `fit_views_to_sheet`.
+
 ## Главный принцип
 
 Нужно различать два уровня:
@@ -253,18 +260,15 @@
 
 ## Phase 4. Перевести `ViewLayout` на `DrawingContext`
 
-Статус: выполнено для `fit_views_to_sheet`.
+Статус: базовый слой выполнен, дальнейшая миграция вынесена в
+`ViewLayout/ROADMAP_DRAWING_LAYOUT.md`.
 
-Дальше `ViewLayout` должен использовать:
+Граница ответственности здесь:
 
-- `DrawingContext`
-
-как явный входной coarse context для:
-
-- fit
-- packing
-- centering
-- reserved-area avoidance
+- `DrawingContext` остаётся sheet-level source of truth
+- `DrawingViewContext` остаётся detailed per-view context
+- конкретная migration path для `fit_views_to_sheet`, lightweight layout view
+  context и projection context описывается в `ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
 
 ## Phase 5. Использовать те же уровни в других модулях
 

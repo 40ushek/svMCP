@@ -8,9 +8,9 @@ Capture the possible future boundary between:
 - local trusted Tekla runtime
 - remote/server-delivered logic
 
-This note is intentionally separate from `ROADMAP_VIEWS.md`.
-`ROADMAP_VIEWS.md` remains focused on view-layout domain redesign, not on
-deployment architecture.
+This note is intentionally separate from `ROADMAP_DRAWING_LAYOUT.md`.
+`ROADMAP_DRAWING_LAYOUT.md` remains focused on drawing layout context and
+view-layout domain work, not on deployment architecture.
 
 ## Why This Exists
 
@@ -92,7 +92,8 @@ If this architecture is pursued later:
 
 ## Why This Is Deferred
 
-This boundary is not part of the immediate `ROADMAP_VIEWS.md` execution plan.
+This boundary is not part of the immediate `ROADMAP_DRAWING_LAYOUT.md`
+execution plan.
 
 Reasons:
 
