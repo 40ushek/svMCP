@@ -357,22 +357,18 @@ public sealed partial class TeklaDrawingViewApi
 
     private static void TracePlannedVsActualParity(
         string stage,
+        DrawingLayoutWorkspace workspace,
         IReadOnlyList<ArrangedView> arranged,
-        IReadOnlyDictionary<int, View> viewsById,
-        IReadOnlyDictionary<int, (double Width, double Height)> frameSizesById,
         IReadOnlyDictionary<int, ReservedRect> actualRects)
     {
         foreach (var item in arranged)
         {
-            if (!viewsById.TryGetValue(item.Id, out var view))
+            if (!workspace.RuntimeViewsById.TryGetValue(item.Id, out var view))
                 continue;
 
-            var width = frameSizesById.TryGetValue(item.Id, out var frame)
-                ? frame.Width
-                : view.Width;
-            var height = frameSizesById.TryGetValue(item.Id, out var frame2)
-                ? frame2.Height
-                : view.Height;
+            var frame = workspace.GetSelectedFrameSize(item.Id, view.Width, view.Height);
+            var width = frame.Width;
+            var height = frame.Height;
 
             var plannedRect = ViewPlacementGeometryService.CreateCandidateRect(
                 view,
@@ -882,9 +878,8 @@ public sealed partial class TeklaDrawingViewApi
 
         TracePlannedVsActualParity(
             "post-arrange-pre-projection",
+            layoutWorkspace,
             arranged,
-            layoutWorkspace.RuntimeViewsById,
-            arrangedFrameSizes,
             DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
         var projectionSw = Stopwatch.StartNew();
@@ -942,9 +937,8 @@ public sealed partial class TeklaDrawingViewApi
 
         TracePlannedVsActualParity(
             "post-commit-final",
+            layoutWorkspace,
             arranged,
-            layoutWorkspace.RuntimeViewsById,
-            arrangedFrameSizes,
             DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
