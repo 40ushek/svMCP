@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Tekla.Structures;
+using Tekla.Structures.Drawing;
+using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -9,18 +12,37 @@ internal sealed class DrawingLayoutWorkspace
 {
     private DrawingLayoutWorkspace(
         DrawingContext source,
-        IReadOnlyList<DrawingLayoutViewItem> views)
+        IReadOnlyList<DrawingLayoutViewItem> views,
+        IReadOnlyList<View> runtimeViews)
     {
         Source = source ?? throw new ArgumentNullException(nameof(source));
         Views = views ?? throw new ArgumentNullException(nameof(views));
+        RuntimeViews = runtimeViews ?? throw new ArgumentNullException(nameof(runtimeViews));
         ViewsById = views.ToDictionary(static view => view.Id);
+        RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
+        SemanticKindsById = views.ToDictionary(static view => view.Id, static view => view.SemanticKindValue);
     }
 
     public DrawingContext Source { get; }
 
     public IReadOnlyList<DrawingLayoutViewItem> Views { get; }
 
+    public IReadOnlyList<View> RuntimeViews { get; }
+
     public IReadOnlyDictionary<int, DrawingLayoutViewItem> ViewsById { get; }
+
+    public IReadOnlyDictionary<int, View> RuntimeViewsById { get; }
+
+    public IReadOnlyDictionary<int, ViewSemanticKind> SemanticKindsById { get; }
+
+    public IReadOnlyDictionary<int, ReservedRect> ActualViewRectsById { get; private set; } =
+        new Dictionary<int, ReservedRect>();
+
+    public IReadOnlyDictionary<int, (double Width, double Height)> SelectedFrameSizesById { get; private set; } =
+        new Dictionary<int, (double Width, double Height)>();
+
+    public IReadOnlyDictionary<int, (double X, double Y)> FrameOffsetsById { get; private set; } =
+        new Dictionary<int, (double X, double Y)>();
 
     public double SheetWidth => Source.Sheet.Width;
 
@@ -39,16 +61,42 @@ internal sealed class DrawingLayoutWorkspace
     public DrawingLayoutViewItem? TryGetView(int viewId)
         => ViewsById.TryGetValue(viewId, out var view) ? view : null;
 
+    public View? TryGetRuntimeView(int viewId)
+        => RuntimeViewsById.TryGetValue(viewId, out var view) ? view : null;
+
+    public ViewSemanticKind GetSemanticKind(int viewId)
+        => SemanticKindsById.TryGetValue(viewId, out var kind) ? kind : ViewSemanticKind.Other;
+
+    public void SetActualViewRects(IReadOnlyDictionary<int, ReservedRect> actualRects)
+    {
+        ActualViewRectsById = actualRects ?? throw new ArgumentNullException(nameof(actualRects));
+    }
+
+    public void SetSelectedFrameSizes(IReadOnlyDictionary<int, (double Width, double Height)> frameSizes)
+    {
+        SelectedFrameSizesById = frameSizes ?? throw new ArgumentNullException(nameof(frameSizes));
+    }
+
+    public void SetFrameOffsets(IReadOnlyDictionary<int, (double X, double Y)> frameOffsets)
+    {
+        FrameOffsetsById = frameOffsets ?? throw new ArgumentNullException(nameof(frameOffsets));
+    }
+
     public static DrawingLayoutWorkspace From(DrawingContext source)
+        => From(source, Array.Empty<View>());
+
+    public static DrawingLayoutWorkspace From(DrawingContext source, IReadOnlyList<View> runtimeViews)
     {
         if (source == null)
             throw new ArgumentNullException(nameof(source));
+        if (runtimeViews == null)
+            throw new ArgumentNullException(nameof(runtimeViews));
 
         var views = source.Views
             .Select(DrawingLayoutViewItem.From)
             .ToList();
 
-        return new DrawingLayoutWorkspace(source, views);
+        return new DrawingLayoutWorkspace(source, views, runtimeViews);
     }
 }
 
@@ -80,6 +128,9 @@ internal sealed class DrawingLayoutViewItem
         BBoxRect = bboxRect;
         LayoutRect = layoutRect;
         LayoutRectSource = layoutRectSource;
+        SemanticKindValue = Enum.TryParse<ViewSemanticKind>(semanticKind, ignoreCase: true, out var parsed)
+            ? parsed
+            : ViewSemanticKind.Other;
     }
 
     public int Id { get; }
@@ -87,6 +138,8 @@ internal sealed class DrawingLayoutViewItem
     public string ViewType { get; }
 
     public string SemanticKind { get; }
+
+    public ViewSemanticKind SemanticKindValue { get; }
 
     public string Name { get; }
 

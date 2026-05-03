@@ -38,8 +38,41 @@ public sealed class DrawingLayoutWorkspaceTests
         Assert.Single(workspace.ReservedTables);
         Assert.Single(workspace.ReservedAreas);
         Assert.Equal([10, 20], workspace.Views.Select(static view => view.Id));
+        Assert.Equal(ViewSemanticKind.BaseProjected, workspace.GetSemanticKind(10));
+        Assert.Equal(ViewSemanticKind.Section, workspace.GetSemanticKind(20));
+        Assert.Equal(ViewSemanticKind.Other, workspace.GetSemanticKind(999));
         Assert.Same(workspace.Views[1], workspace.TryGetView(20));
         Assert.Null(workspace.TryGetView(999));
+    }
+
+    [Fact]
+    public void Workspace_StoresMutablePlanningGeometry()
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext(
+            views:
+            [
+                CreateView(10, "FrontView", "BaseProjected", 20, 100, 80, 50, 30)
+            ]));
+        var actualRects = new Dictionary<int, ReservedRect>
+        {
+            [10] = new ReservedRect(70, 65, 130, 95)
+        };
+        var frameSizes = new Dictionary<int, (double Width, double Height)>
+        {
+            [10] = (60, 30)
+        };
+        var offsets = new Dictionary<int, (double X, double Y)>
+        {
+            [10] = (2, -1)
+        };
+
+        workspace.SetActualViewRects(actualRects);
+        workspace.SetSelectedFrameSizes(frameSizes);
+        workspace.SetFrameOffsets(offsets);
+
+        Assert.Same(actualRects, workspace.ActualViewRectsById);
+        Assert.Same(frameSizes, workspace.SelectedFrameSizesById);
+        Assert.Same(offsets, workspace.FrameOffsetsById);
     }
 
     [Fact]

@@ -474,9 +474,6 @@ public sealed partial class TeklaDrawingViewApi
             throw new System.InvalidOperationException("No views found in active drawing.");
         var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         var viewsResult = BuildViewsResult(activeDrawing, views, actualRects);
-        var semanticKindById = views.ToDictionary(
-            v => v.GetIdentifier().ID,
-            v => ViewSemanticClassifier.Classify(v));
         List<View> scaleDriverViews;
 
         var viewIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
@@ -489,7 +486,9 @@ public sealed partial class TeklaDrawingViewApi
             viewIds);
         reservedRead.Stop();
         reservedMs = reservedRead.ElapsedMilliseconds;
-        var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext);
+        var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext, views);
+        layoutWorkspace.SetActualViewRects(actualRects);
+        var semanticKindById = layoutWorkspace.SemanticKindsById;
         var effectiveMargin = layoutWorkspace.Margin;
         var autoMargin = layoutWorkspace.SheetMargin;
         var layoutTables = layoutWorkspace.ReservedTables;
@@ -510,6 +509,7 @@ public sealed partial class TeklaDrawingViewApi
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
         var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
+        layoutWorkspace.SetSelectedFrameSizes(originalFrameSizes);
         var oversizedStandardSectionScaleDriverIds = uniformAllNonDetail
             ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, semanticKindById, originalFrameSizes, gap)
             : new HashSet<int>();
@@ -617,6 +617,7 @@ public sealed partial class TeklaDrawingViewApi
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
             selectedFrameSizesById = keepFrameSizes;
+            layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
         }
         else if (keepCurrentScales)
         {
@@ -661,6 +662,7 @@ public sealed partial class TeklaDrawingViewApi
 
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
             selectedFrameSizesById = keepFrameSizes;
+            layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
         }
         else
         {
@@ -745,6 +747,7 @@ public sealed partial class TeklaDrawingViewApi
                     selectedFrameSizesById = candidateViews
                         .Select((v, i) => new { Id = v.GetIdentifier().ID, Frame = actualFrames[i] })
                         .ToDictionary(x => x.Id, x => (x.Frame.w, x.Frame.h));
+                    layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
                     break;
@@ -792,8 +795,10 @@ public sealed partial class TeklaDrawingViewApi
             $"selectedScale=1:{optimalScale.Value.ToString("0.###", CultureInfo.InvariantCulture)} attempts={candidateAttempts} policy={scalePolicy} applyMode={applyMode}");
 
         actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+        layoutWorkspace.SetActualViewRects(actualRects);
 
         var offsetById = DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
+        layoutWorkspace.SetFrameOffsets(offsetById);
         // Read offsets from actual sheet geometry after the final scale state is already applied.
         // Keep-scale mode still needs real frame offsets; otherwise projection-pass collision checks
         // degrade to origin-centered boxes and may allow one view to move inside another.
