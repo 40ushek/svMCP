@@ -581,7 +581,7 @@ public sealed partial class TeklaDrawingViewApi
                     return (w: v.Width, h: v.Height);
                 })
                 .ToList();
-            var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
+            var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
             if (oversizeConflicts.Count > 0)
@@ -630,7 +630,7 @@ public sealed partial class TeklaDrawingViewApi
                     return (w: v.Width, h: v.Height);
                 })
                 .ToList();
-            var keepCtx = new DrawingArrangeContext(activeDrawing, currentViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, keepFrameSizes);
+            var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
             if (oversizeConflicts.Count > 0)
@@ -708,7 +708,7 @@ public sealed partial class TeklaDrawingViewApi
                         return (w: v.Width, h: v.Height);
                     })
                     .ToList();
-                ctx = new DrawingArrangeContext(activeDrawing, candidateViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas, effectiveFrameSizes);
+                ctx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, candidateViews, gap, effectiveFrameSizes);
 
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
@@ -822,8 +822,7 @@ public sealed partial class TeklaDrawingViewApi
         var arranged = arrangedViews.Count == 0
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(activeDrawing, arrangedViews, sheetW, sheetH, effectiveMargin, gap, reservedAreas,
-                    arrangedFrameSizes));
+                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, arrangedFrameSizes));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 

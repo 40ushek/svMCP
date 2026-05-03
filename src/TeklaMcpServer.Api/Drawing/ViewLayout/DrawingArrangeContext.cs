@@ -8,6 +8,25 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed class DrawingArrangeContext
 {
+    internal DrawingArrangeContext(
+        Tekla.Structures.Drawing.Drawing drawing,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View>? views,
+        double gap,
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        : this(
+            drawing,
+            views ?? workspace?.RuntimeViews ?? System.Array.Empty<View>(),
+            workspace?.SheetWidth ?? 0,
+            workspace?.SheetHeight ?? 0,
+            workspace?.Margin ?? 0,
+            gap,
+            workspace?.ReservedAreas,
+            effectiveFrameSizes ?? workspace?.SelectedFrameSizesById)
+    {
+        Workspace = workspace ?? throw new System.ArgumentNullException(nameof(workspace));
+    }
+
     public DrawingArrangeContext(
         Tekla.Structures.Drawing.Drawing drawing,
         IReadOnlyList<View> views,
@@ -27,6 +46,8 @@ public sealed class DrawingArrangeContext
         ReservedAreas = reservedAreas ?? System.Array.Empty<ReservedRect>();
         EffectiveFrameSizes = effectiveFrameSizes ?? new Dictionary<int, (double Width, double Height)>();
     }
+
+    internal DrawingLayoutWorkspace? Workspace { get; }
 
     public Tekla.Structures.Drawing.Drawing Drawing { get; }
     public IReadOnlyList<View> Views { get; }
