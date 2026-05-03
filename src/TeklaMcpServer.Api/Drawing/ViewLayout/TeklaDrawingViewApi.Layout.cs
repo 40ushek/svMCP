@@ -490,11 +490,8 @@ public sealed partial class TeklaDrawingViewApi
         layoutWorkspace.SetActualViewRects(actualRects);
         var semanticKindById = layoutWorkspace.SemanticKindsById;
         var effectiveMargin = layoutWorkspace.Margin;
-        var autoMargin = layoutWorkspace.SheetMargin;
-        var layoutTables = layoutWorkspace.ReservedTables;
         var sheetW = layoutWorkspace.SheetWidth;
         var sheetH = layoutWorkspace.SheetHeight;
-        IReadOnlyList<ReservedRect> reservedAreas = layoutWorkspace.ReservedAreas;
 
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
@@ -504,7 +501,7 @@ public sealed partial class TeklaDrawingViewApi
         if (availW <= 0 || availH <= 0)
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
-        var originalScales = views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale);
+        layoutWorkspace.SetOriginalScales(views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale));
         // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
@@ -552,7 +549,7 @@ public sealed partial class TeklaDrawingViewApi
             semanticKindById,
             scaleDriverViews,
             originalFrameSizes,
-            reservedAreas,
+            layoutWorkspace.ReservedAreas,
             candidates,
             sheetW,
             sheetH,
@@ -567,7 +564,6 @@ public sealed partial class TeklaDrawingViewApi
 
         double? optimalScale = null;
         var currentViews = views;
-        Dictionary<int, (double Width, double Height)> selectedFrameSizesById = originalFrameSizes;
 
         if (preserveExistingScales)
         {
@@ -616,8 +612,7 @@ public sealed partial class TeklaDrawingViewApi
             // is skipped only when every view is at or above the cutoff — the one correct
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
-            selectedFrameSizesById = keepFrameSizes;
-            layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
+            layoutWorkspace.SetSelectedFrameSizes(keepFrameSizes);
         }
         else if (keepCurrentScales)
         {
@@ -661,8 +656,7 @@ public sealed partial class TeklaDrawingViewApi
             }
 
             optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
-            selectedFrameSizesById = keepFrameSizes;
-            layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
+            layoutWorkspace.SetSelectedFrameSizes(keepFrameSizes);
         }
         else
         {
@@ -680,7 +674,7 @@ public sealed partial class TeklaDrawingViewApi
                 var anyScaleChanged = false;
                 foreach (var v in currentViews)
                 {
-                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, originalScales);
+                    var targetScale = ResolveTargetScale(v, semanticKindById[v.GetIdentifier().ID], s, uniformAllNonDetail, layoutWorkspace.OriginalScalesById);
                     if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
                         continue;
 
@@ -744,7 +738,8 @@ public sealed partial class TeklaDrawingViewApi
                 {
                     optimalScale = s;
                     currentViews = candidateViews;
-                    selectedFrameSizesById = candidateViews
+                    layoutWorkspace.SetRuntimeViews(currentViews);
+                    var selectedFrameSizesById = candidateViews
                         .Select((v, i) => new { Id = v.GetIdentifier().ID, Frame = actualFrames[i] })
                         .ToDictionary(x => x.Id, x => (x.Frame.w, x.Frame.h));
                     layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
@@ -753,6 +748,7 @@ public sealed partial class TeklaDrawingViewApi
                     break;
                 }
                 currentViews = candidateViews;
+                layoutWorkspace.SetRuntimeViews(currentViews);
                 candidateSw.Stop();
                 candidateFitMs += candidateSw.ElapsedMilliseconds;
             }
@@ -761,7 +757,7 @@ public sealed partial class TeklaDrawingViewApi
             {
                 foreach (var v in EnumerateViews(activeDrawing))
                 {
-                    if (originalScales.TryGetValue(v.GetIdentifier().ID, out var orig))
+                    if (layoutWorkspace.OriginalScalesById.TryGetValue(v.GetIdentifier().ID, out var orig))
                     {
                         v.Attributes.Scale = orig;
                         v.Modify();
@@ -786,6 +782,7 @@ public sealed partial class TeklaDrawingViewApi
             }
 
             currentViews = EnumerateViews(activeDrawing).ToList();
+            layoutWorkspace.SetRuntimeViews(currentViews);
         }
 
         PerfTrace.Write(
@@ -808,7 +805,7 @@ public sealed partial class TeklaDrawingViewApi
             .ToList();
         var arrangedFrameSizes = arrangedViews.ToDictionary(
             v => v.GetIdentifier().ID,
-            v => selectedFrameSizesById.TryGetValue(v.GetIdentifier().ID, out var size)
+            v => layoutWorkspace.SelectedFrameSizesById.TryGetValue(v.GetIdentifier().ID, out var size)
                 ? size
                 : (v.Width, v.Height));
 
@@ -831,7 +828,7 @@ public sealed partial class TeklaDrawingViewApi
         {
             foreach (var detailView in currentViews.Where(v => semanticKindById[v.GetIdentifier().ID] == ViewSemanticKind.Detail))
             {
-                if (!originalScales.TryGetValue(detailView.GetIdentifier().ID, out var detailScale))
+                if (!layoutWorkspace.OriginalScalesById.TryGetValue(detailView.GetIdentifier().ID, out var detailScale))
                     continue;
 
                 if (detailScale <= 0 || System.Math.Abs(detailView.Attributes.Scale - detailScale) < 0.01)
@@ -845,11 +842,10 @@ public sealed partial class TeklaDrawingViewApi
         if (offsetById.Count > 0)
         {
             var adjustSw = Stopwatch.StartNew();
-            var viewById = currentViews.ToDictionary(v => v.GetIdentifier().ID);
 
             for (int i = 0; i < arranged.Count; i++)
             {
-                if (!viewById.TryGetValue(arranged[i].Id, out var v))
+                if (!layoutWorkspace.RuntimeViewsById.TryGetValue(arranged[i].Id, out var v))
                     continue;
                 if (!offsetById.TryGetValue(arranged[i].Id, out var off))
                     continue;
@@ -891,7 +887,7 @@ public sealed partial class TeklaDrawingViewApi
         TracePlannedVsActualParity(
             "post-arrange-pre-projection",
             arranged,
-            currentViews.ToDictionary(v => v.GetIdentifier().ID),
+            layoutWorkspace.RuntimeViewsById,
             arrangedFrameSizes,
             DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
@@ -926,14 +922,16 @@ public sealed partial class TeklaDrawingViewApi
 
         // Center the arranged group inside the usable area.
         var finalViews = EnumerateViews(activeDrawing).ToList();
+        layoutWorkspace.SetRuntimeViews(finalViews);
         var finalArrangedViews = finalViews
             .Where(v => semanticKindById.TryGetValue(v.GetIdentifier().ID, out var kind) && kind != ViewSemanticKind.Detail)
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             effectiveMargin, sheetW - effectiveMargin,
             effectiveMargin, sheetH - effectiveMargin,
-            reservedAreas);
+            layoutWorkspace.ReservedAreas);
         finalViews = EnumerateViews(activeDrawing).ToList();
+        layoutWorkspace.SetRuntimeViews(finalViews);
         arranged = TryRepositionDetailViews(
             activeDrawing,
             finalViews,
@@ -943,20 +941,20 @@ public sealed partial class TeklaDrawingViewApi
             effectiveMargin,
             sheetH - effectiveMargin,
             gap,
-            reservedAreas,
+            layoutWorkspace.ReservedAreas,
             offsetById);
 
         TracePlannedVsActualParity(
             "post-commit-final",
             arranged,
-            finalViews.ToDictionary(v => v.GetIdentifier().ID),
+            layoutWorkspace.RuntimeViewsById,
             arrangedFrameSizes,
             DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
         var mergedForOutput = DrawingReservedAreaReader.Read(activeDrawing, effectiveMargin, 0.0,
-            preloadedTables: layoutTables);
+            preloadedTables: layoutWorkspace.ReservedTables);
 
         var result = new FitViewsResult
         {
@@ -977,8 +975,8 @@ public sealed partial class TeklaDrawingViewApi
                 SheetWidth  = sheetW,
                 SheetHeight = sheetH,
                 Margin      = effectiveMargin,
-                SheetMargin = autoMargin,
-                Tables      = layoutTables,
+                SheetMargin = layoutWorkspace.SheetMargin,
+                Tables      = layoutWorkspace.ReservedTables,
                 MergedAreas = mergedForOutput
             }
         };

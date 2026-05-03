@@ -57,6 +57,10 @@ public sealed class DrawingLayoutWorkspaceTests
         {
             [10] = new ReservedRect(70, 65, 130, 95)
         };
+        var originalScales = new Dictionary<int, double>
+        {
+            [10] = 20
+        };
         var frameSizes = new Dictionary<int, (double Width, double Height)>
         {
             [10] = (60, 30)
@@ -70,11 +74,13 @@ public sealed class DrawingLayoutWorkspaceTests
             [10] = []
         };
 
+        workspace.SetOriginalScales(originalScales);
         workspace.SetActualViewRects(actualRects);
         workspace.SetSelectedFrameSizes(frameSizes);
         workspace.SetFrameOffsets(offsets);
         workspace.SetGridAxes(gridAxes);
 
+        Assert.Same(originalScales, workspace.OriginalScalesById);
         Assert.Same(actualRects, workspace.ActualViewRectsById);
         Assert.Same(frameSizes, workspace.SelectedFrameSizesById);
         Assert.Same(offsets, workspace.FrameOffsetsById);

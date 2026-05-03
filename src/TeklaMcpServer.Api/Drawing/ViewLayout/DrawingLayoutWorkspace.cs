@@ -27,13 +27,16 @@ internal sealed class DrawingLayoutWorkspace
 
     public IReadOnlyList<DrawingLayoutViewItem> Views { get; }
 
-    public IReadOnlyList<View> RuntimeViews { get; }
+    public IReadOnlyList<View> RuntimeViews { get; private set; }
 
     public IReadOnlyDictionary<int, DrawingLayoutViewItem> ViewsById { get; }
 
-    public IReadOnlyDictionary<int, View> RuntimeViewsById { get; }
+    public IReadOnlyDictionary<int, View> RuntimeViewsById { get; private set; }
 
     public IReadOnlyDictionary<int, ViewSemanticKind> SemanticKindsById { get; }
+
+    public IReadOnlyDictionary<int, double> OriginalScalesById { get; private set; } =
+        new Dictionary<int, double>();
 
     public IReadOnlyDictionary<int, ReservedRect> ActualViewRectsById { get; private set; } =
         new Dictionary<int, ReservedRect>();
@@ -72,6 +75,11 @@ internal sealed class DrawingLayoutWorkspace
     public ViewSemanticKind GetSemanticKind(int viewId)
         => SemanticKindsById.TryGetValue(viewId, out var kind) ? kind : ViewSemanticKind.Other;
 
+    public void SetOriginalScales(IReadOnlyDictionary<int, double> originalScales)
+    {
+        OriginalScalesById = originalScales ?? throw new ArgumentNullException(nameof(originalScales));
+    }
+
     public void SetActualViewRects(IReadOnlyDictionary<int, ReservedRect> actualRects)
     {
         ActualViewRectsById = actualRects ?? throw new ArgumentNullException(nameof(actualRects));
@@ -85,6 +93,13 @@ internal sealed class DrawingLayoutWorkspace
     public void SetFrameOffsets(IReadOnlyDictionary<int, (double X, double Y)> frameOffsets)
     {
         FrameOffsetsById = frameOffsets ?? throw new ArgumentNullException(nameof(frameOffsets));
+    }
+
+    public void SetRuntimeViews(IReadOnlyList<View> runtimeViews)
+    {
+        RuntimeViews = runtimeViews ?? throw new ArgumentNullException(nameof(runtimeViews));
+        RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
+        _runtimeTopology = null;
     }
 
     public void SetGridAxes(IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>> gridAxesByViewId)
