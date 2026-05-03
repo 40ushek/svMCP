@@ -139,6 +139,19 @@ public sealed partial class TeklaDrawingViewApi
         return conflicts;
     }
 
+    private static List<(double w, double h)> BuildFrameList(
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes)
+        => views
+            .Select(v =>
+            {
+                if (frameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
+                    return (w: size.Width, h: size.Height);
+
+                return (w: v.Width, h: v.Height);
+            })
+            .ToList();
+
     internal static HashSet<int> CollectOversizedStandardSectionScaleDriverIds(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -558,14 +571,7 @@ public sealed partial class TeklaDrawingViewApi
         {
             // Validate that views fit at their current scales before committing to arrange.
             var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
-            var keepFrames = currentViews
-                .Select(v =>
-                {
-                    if (keepFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                        return (w: size.Width, h: size.Height);
-                    return (w: v.Width, h: v.Height);
-                })
-                .ToList();
+            var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
             var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
@@ -606,14 +612,7 @@ public sealed partial class TeklaDrawingViewApi
         else if (keepCurrentScales)
         {
             var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
-            var keepFrames = currentViews
-                .Select(v =>
-                {
-                    if (keepFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                        return (w: size.Width, h: size.Height);
-                    return (w: v.Width, h: v.Height);
-                })
-                .ToList();
+            var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
             var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
             var keepFitSw = Stopwatch.StartNew();
             var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
@@ -688,14 +687,7 @@ public sealed partial class TeklaDrawingViewApi
                 effectiveFrameSizes = anyScaleChanged
                     ? DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews)
                     : originalFrameSizes;
-                actualFrames = candidateViews
-                    .Select(v =>
-                    {
-                        if (effectiveFrameSizes.TryGetValue(v.GetIdentifier().ID, out var size))
-                            return (w: size.Width, h: size.Height);
-                        return (w: v.Width, h: v.Height);
-                    })
-                    .ToList();
+                actualFrames = BuildFrameList(candidateViews, effectiveFrameSizes);
                 ctx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, candidateViews, gap, effectiveFrameSizes);
 
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
@@ -797,11 +789,6 @@ public sealed partial class TeklaDrawingViewApi
         var arrangedViews = currentViews
             .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
             .ToList();
-        var arrangedFrameSizes = arrangedViews.ToDictionary(
-            v => v.GetIdentifier().ID,
-            v => layoutWorkspace.SelectedFrameSizesById.TryGetValue(v.GetIdentifier().ID, out var size)
-                ? size
-                : (v.Width, v.Height));
 
         var gridApi = new TeklaDrawingGridApi();
         var preloadedAxes = arrangedViews
@@ -814,7 +801,7 @@ public sealed partial class TeklaDrawingViewApi
         var arranged = arrangedViews.Count == 0
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, arrangedFrameSizes));
+                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
