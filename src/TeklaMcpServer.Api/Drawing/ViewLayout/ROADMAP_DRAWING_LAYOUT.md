@@ -34,9 +34,9 @@ It should contain:
 It must not contain heavy per-view geometry such as all parts, bolts, solid
 vertices, mark geometry, dimension geometry, or part hulls.
 
-### DrawingLayoutViewContext
+### DrawingLayoutViewItem
 
-`DrawingLayoutViewContext` is the lightweight view context used by layout.
+`DrawingLayoutViewItem` is the lightweight view item used by layout.
 
 It is effectively a layout-facing wrapper around the current coarse view facts:
 
@@ -50,6 +50,24 @@ It is effectively a layout-facing wrapper around the current coarse view facts:
 - placement side and fallback diagnostics
 
 It should be cheap to build for every view on the sheet.
+
+### DrawingLayoutWorkspace
+
+`DrawingLayoutWorkspace` is the temporary working area for one drawing-layout
+operation.
+
+It is built from `DrawingContext`, enriched with calculated layout facts, and
+discarded after the operation. It is not a new source of truth.
+
+It can hold:
+
+- `DrawingLayoutViewItem` list and lookup by view id
+- runtime `View` handles needed only for apply/probe operations
+- current/candidate frame sizes and frame offsets
+- topology and relation lookup
+- arranged positions
+- diagnostics
+- optional `DrawingProjectionContext`
 
 ### DrawingProjectionContext
 
@@ -103,10 +121,10 @@ Current gap:
 
 ## Phases
 
-### Phase 1. Define Lightweight Layout Context
+### Phase 1. Define Lightweight Layout Workspace
 
-- Add `DrawingLayoutViewContext`.
-- Add `DrawingLayoutPlanningContext`.
+- Add `DrawingLayoutViewItem`.
+- Add `DrawingLayoutWorkspace`.
 - Populate them from `DrawingContext` and existing runtime view facts.
 - Keep behavior unchanged.
 - Add tests for scale, rect, semantic kind, reserved areas, and lookup parity.
@@ -173,7 +191,8 @@ for `fit_views_to_sheet` behavior:
 
 - There is one clear active roadmap for drawing layout.
 - `DrawingContext` remains the sheet-level source.
-- `DrawingLayoutViewContext` is cheap and layout-specific.
+- `DrawingLayoutWorkspace` is temporary and not a source of truth.
+- `DrawingLayoutViewItem` is cheap and layout-specific.
 - `DrawingViewContext` remains reserved for dimensions/marks.
 - `fit_views_to_sheet` behavior remains stable during context migration.
 - Projection alignment gets only the lightweight geometry it needs.

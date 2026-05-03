@@ -68,8 +68,8 @@ Active follow-up work moved to `ROADMAP_DRAWING_LAYOUT.md`.
 
 The next work is context migration, not a new layout-policy rewrite:
 
-- introduce a lightweight `DrawingLayoutViewContext`
-- introduce `DrawingLayoutPlanningContext`
+- introduce `DrawingLayoutWorkspace`
+- introduce lightweight `DrawingLayoutViewItem` entries
 - move scattered lookup dictionaries into the planning context
 - make projection alignment consume lightweight projection signals
 - keep full `DrawingViewContext` reserved for dimensions/marks

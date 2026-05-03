@@ -82,8 +82,8 @@
 - следующий этап — не переписывание layout policy, а миграция на единый лёгкий
   контекст компоновки:
   - `DrawingContext` как sheet-level source
-  - `DrawingLayoutViewContext` как лёгкая обёртка над видом
-  - `DrawingLayoutPlanningContext` для topology/frame/scale lookup
+  - `DrawingLayoutWorkspace` как временная рабочая область компоновки
+  - `DrawingLayoutViewItem` как лёгкая обёртка над видом
   - ленивый `DrawingProjectionContext` для grid/anchor signals
 - полный `DrawingViewContext` остаётся для dimensions/marks и не должен
   строиться для обычной компоновки листа

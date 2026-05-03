@@ -168,7 +168,7 @@ Handlers:
 Документы:
 
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
-  - активный roadmap по компоновке чертежа и lightweight layout context
+  - активный roadmap по компоновке чертежа и lightweight layout workspace
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_VIEWS.md`
   - исторический roadmap по реализованному `fit_views_to_sheet`
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_RUNTIME.md`
