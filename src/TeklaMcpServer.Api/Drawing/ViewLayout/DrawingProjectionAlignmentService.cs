@@ -41,8 +41,54 @@ internal sealed partial class DrawingProjectionAlignmentService
         IList<ArrangedView>? arrangedViews = null,
         IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes = null)
     {
+        return ApplyCore(
+            drawing,
+            views,
+            frameOffsetsById,
+            sheetWidth,
+            sheetHeight,
+            margin,
+            reservedAreas,
+            ViewTopologyGraph.Build(views),
+            arrangedViews,
+            preloadedAxes);
+    }
+
+    public ProjectionAlignmentResult Apply(
+        Tekla.Structures.Drawing.Drawing drawing,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<DrawingView> views,
+        IList<ArrangedView>? arrangedViews = null)
+    {
+        if (workspace == null)
+            throw new System.ArgumentNullException(nameof(workspace));
+
+        return ApplyCore(
+            drawing,
+            views,
+            workspace.FrameOffsetsById,
+            workspace.SheetWidth,
+            workspace.SheetHeight,
+            workspace.Margin,
+            workspace.ReservedAreas,
+            workspace.GetTopology(views),
+            arrangedViews,
+            workspace.GridAxesByViewId);
+    }
+
+    private ProjectionAlignmentResult ApplyCore(
+        Tekla.Structures.Drawing.Drawing drawing,
+        IReadOnlyList<DrawingView> views,
+        IReadOnlyDictionary<int, (double X, double Y)> frameOffsetsById,
+        double sheetWidth,
+        double sheetHeight,
+        double margin,
+        IReadOnlyList<ReservedRect> reservedAreas,
+        ViewTopologyGraph topology,
+        IList<ArrangedView>? arrangedViews,
+        IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>>? preloadedAxes)
+    {
         var result = new ProjectionAlignmentResult();
-        var topology = ViewTopologyGraph.Build(views);
         var neighbors = topology.Neighbors;
 
         switch (drawing)

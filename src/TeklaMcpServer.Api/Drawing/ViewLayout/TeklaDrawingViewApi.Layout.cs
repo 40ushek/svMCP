@@ -817,6 +817,7 @@ public sealed partial class TeklaDrawingViewApi
             .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
             .Where(x => x.Result.Success)
             .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
+        layoutWorkspace.SetGridAxes(preloadedAxes);
 
         var arrangeSw = Stopwatch.StartNew();
         var arranged = arrangedViews.Count == 0
@@ -910,14 +911,9 @@ public sealed partial class TeklaDrawingViewApi
             var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
             projectionResult = projectionAlignmentService.Apply(
                 activeDrawing,
+                layoutWorkspace,
                 arrangedViews,
-                offsetById,
-                sheetW,
-                sheetH,
-                effectiveMargin,
-                reservedAreas,
-                arranged,
-                preloadedAxes);
+                arranged);
         }
         projectionSw.Stop();
         projectionMs = projectionSw.ElapsedMilliseconds;

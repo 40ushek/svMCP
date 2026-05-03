@@ -44,6 +44,9 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, (double X, double Y)> FrameOffsetsById { get; private set; } =
         new Dictionary<int, (double X, double Y)>();
 
+    public IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>> GridAxesByViewId { get; private set; } =
+        new Dictionary<int, IReadOnlyList<GridAxisInfo>>();
+
     private ViewTopologyGraph? _runtimeTopology;
 
     public double SheetWidth => Source.Sheet.Width;
@@ -82,6 +85,11 @@ internal sealed class DrawingLayoutWorkspace
     public void SetFrameOffsets(IReadOnlyDictionary<int, (double X, double Y)> frameOffsets)
     {
         FrameOffsetsById = frameOffsets ?? throw new ArgumentNullException(nameof(frameOffsets));
+    }
+
+    public void SetGridAxes(IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>> gridAxesByViewId)
+    {
+        GridAxesByViewId = gridAxesByViewId ?? throw new ArgumentNullException(nameof(gridAxesByViewId));
     }
 
     public ViewTopologyGraph GetTopology(IReadOnlyList<View>? views = null)

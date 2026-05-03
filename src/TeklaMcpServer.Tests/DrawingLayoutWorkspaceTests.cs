@@ -65,14 +65,20 @@ public sealed class DrawingLayoutWorkspaceTests
         {
             [10] = (2, -1)
         };
+        var gridAxes = new Dictionary<int, IReadOnlyList<GridAxisInfo>>
+        {
+            [10] = []
+        };
 
         workspace.SetActualViewRects(actualRects);
         workspace.SetSelectedFrameSizes(frameSizes);
         workspace.SetFrameOffsets(offsets);
+        workspace.SetGridAxes(gridAxes);
 
         Assert.Same(actualRects, workspace.ActualViewRectsById);
         Assert.Same(frameSizes, workspace.SelectedFrameSizesById);
         Assert.Same(offsets, workspace.FrameOffsetsById);
+        Assert.Same(gridAxes, workspace.GridAxesByViewId);
     }
 
     [Fact]
