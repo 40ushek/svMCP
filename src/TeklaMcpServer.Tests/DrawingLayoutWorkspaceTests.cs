@@ -13,10 +13,15 @@ public sealed class DrawingLayoutWorkspaceTests
             sheetWidth: 420,
             sheetHeight: 297,
             margin: 10,
+            sheetMargin: 7,
             views:
             [
                 CreateView(10, "FrontView", "BaseProjected", 20, 100, 80, 50, 30),
                 CreateView(20, "SectionView", "Section", 20, 180, 80, 40, 20)
+            ],
+            reservedTables:
+            [
+                new LayoutTableGeometryInfo()
             ],
             reservedAreas:
             [
@@ -29,6 +34,8 @@ public sealed class DrawingLayoutWorkspaceTests
         Assert.Equal(420, workspace.SheetWidth);
         Assert.Equal(297, workspace.SheetHeight);
         Assert.Equal(10, workspace.Margin);
+        Assert.Equal(7, workspace.SheetMargin);
+        Assert.Single(workspace.ReservedTables);
         Assert.Single(workspace.ReservedAreas);
         Assert.Equal([10, 20], workspace.Views.Select(static view => view.Id));
         Assert.Same(workspace.Views[1], workspace.TryGetView(20));
@@ -123,7 +130,9 @@ public sealed class DrawingLayoutWorkspaceTests
         double sheetWidth = 200,
         double sheetHeight = 100,
         double margin = 0,
+        double? sheetMargin = null,
         IReadOnlyList<DrawingViewInfo>? views = null,
+        IReadOnlyList<LayoutTableGeometryInfo>? reservedTables = null,
         IReadOnlyList<ReservedRect>? reservedAreas = null)
     {
         return new DrawingContext
@@ -137,6 +146,8 @@ public sealed class DrawingLayoutWorkspaceTests
             ReservedLayout = new DrawingReservedLayoutContext
             {
                 Margin = margin,
+                SheetMargin = sheetMargin,
+                Tables = reservedTables?.ToList() ?? [],
                 Areas = reservedAreas?.ToList() ?? []
             }
         };

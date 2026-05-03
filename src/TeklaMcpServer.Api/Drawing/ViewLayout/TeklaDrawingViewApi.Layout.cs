@@ -489,12 +489,13 @@ public sealed partial class TeklaDrawingViewApi
             viewIds);
         reservedRead.Stop();
         reservedMs = reservedRead.ElapsedMilliseconds;
-        var effectiveMargin = drawingContext.ReservedLayout.Margin;
-        var autoMargin = drawingContext.ReservedLayout.SheetMargin;
-        var layoutTables = drawingContext.ReservedLayout.Tables;
-        var sheetW = drawingContext.Sheet.Width;
-        var sheetH = drawingContext.Sheet.Height;
-        IReadOnlyList<ReservedRect> reservedAreas = drawingContext.ReservedLayout.Areas;
+        var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext);
+        var effectiveMargin = layoutWorkspace.Margin;
+        var autoMargin = layoutWorkspace.SheetMargin;
+        var layoutTables = layoutWorkspace.ReservedTables;
+        var sheetW = layoutWorkspace.SheetWidth;
+        var sheetH = layoutWorkspace.SheetHeight;
+        IReadOnlyList<ReservedRect> reservedAreas = layoutWorkspace.ReservedAreas;
 
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");

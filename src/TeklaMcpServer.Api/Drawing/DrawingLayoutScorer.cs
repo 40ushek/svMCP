@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -18,10 +19,11 @@ internal sealed class DrawingLayoutScorer
         var effectiveWeights = weights ?? new DrawingLayoutScoreWeights();
         var result = new DrawingLayoutScore();
         var diagnostics = result.Diagnostics;
+        var workspace = DrawingLayoutWorkspace.From(context);
 
-        var scoredViews = BuildViewRects(context.Views, diagnostics);
-        var sheetArea = Math.Max(context.Sheet.Width, 0.0) * Math.Max(context.Sheet.Height, 0.0);
-        var reservedAreaUnion = ComputeUnionArea(context.ReservedLayout.Areas);
+        var scoredViews = BuildViewRects(workspace.Views, diagnostics);
+        var sheetArea = Math.Max(workspace.SheetWidth, 0.0) * Math.Max(workspace.SheetHeight, 0.0);
+        var reservedAreaUnion = ComputeUnionArea(workspace.ReservedAreas);
         var availableSheetArea = Math.Max(sheetArea - reservedAreaUnion, 0.0);
         var totalViewArea = scoredViews.Sum(static view => view.Rect.Width * view.Rect.Height);
 
@@ -52,7 +54,7 @@ internal sealed class DrawingLayoutScorer
         foreach (var view in scoredViews)
         {
             var intersections = new List<ReservedRect>();
-            foreach (var reserved in context.ReservedLayout.Areas)
+            foreach (var reserved in workspace.ReservedAreas)
             {
                 if (!TryIntersect(view.Rect, reserved, out var intersection))
                     continue;
@@ -119,13 +121,13 @@ internal sealed class DrawingLayoutScorer
     }
 
     private static List<ScoredViewRect> BuildViewRects(
-        IReadOnlyList<ViewLayout.DrawingViewInfo> views,
+        IReadOnlyList<DrawingLayoutViewItem> views,
         List<string> diagnostics)
     {
         var result = new List<ScoredViewRect>(views.Count);
         foreach (var view in views)
         {
-            if (!TryGetViewRect(view, out var rect, out var rectSource))
+            if (view.LayoutRect == null)
             {
                 diagnostics.Add($"score:view-rect-missing:view={view.Id}");
                 continue;
@@ -135,8 +137,8 @@ internal sealed class DrawingLayoutScorer
                 view.Id,
                 view.SemanticKind,
                 view.Scale,
-                rect,
-                rectSource));
+                view.LayoutRect,
+                view.LayoutRectSource));
         }
 
         return result;
@@ -165,45 +167,6 @@ internal sealed class DrawingLayoutScorer
             return 1.0;
 
         return Math.Max(0.0, Math.Min(minScale / maxScale, 1.0));
-    }
-
-    private static bool TryGetViewRect(
-        ViewLayout.DrawingViewInfo view,
-        out ReservedRect rect,
-        out string source)
-    {
-        if (view.BBoxMinX.HasValue &&
-            view.BBoxMinY.HasValue &&
-            view.BBoxMaxX.HasValue &&
-            view.BBoxMaxY.HasValue &&
-            view.BBoxMaxX.Value > view.BBoxMinX.Value &&
-            view.BBoxMaxY.Value > view.BBoxMinY.Value)
-        {
-            rect = new ReservedRect(
-                view.BBoxMinX.Value,
-                view.BBoxMinY.Value,
-                view.BBoxMaxX.Value,
-                view.BBoxMaxY.Value);
-            source = "bbox";
-            return true;
-        }
-
-        if (view.Width > Epsilon && view.Height > Epsilon)
-        {
-            var halfWidth = view.Width * 0.5;
-            var halfHeight = view.Height * 0.5;
-            rect = new ReservedRect(
-                view.OriginX - halfWidth,
-                view.OriginY - halfHeight,
-                view.OriginX + halfWidth,
-                view.OriginY + halfHeight);
-            source = "origin-size";
-            return true;
-        }
-
-        rect = null!;
-        source = string.Empty;
-        return false;
     }
 
     private static double ComputeUnionArea(IReadOnlyList<ReservedRect> rects)

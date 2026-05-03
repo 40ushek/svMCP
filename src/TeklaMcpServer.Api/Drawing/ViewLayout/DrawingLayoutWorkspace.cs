@@ -28,6 +28,10 @@ internal sealed class DrawingLayoutWorkspace
 
     public double Margin => Source.ReservedLayout.Margin;
 
+    public double? SheetMargin => Source.ReservedLayout.SheetMargin;
+
+    public IReadOnlyList<LayoutTableGeometryInfo> ReservedTables => Source.ReservedLayout.Tables;
+
     public IReadOnlyList<ReservedRect> ReservedAreas => Source.ReservedLayout.Areas;
 
     public List<string> Diagnostics { get; } = new();

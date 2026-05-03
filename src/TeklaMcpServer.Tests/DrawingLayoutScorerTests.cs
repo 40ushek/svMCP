@@ -145,6 +145,23 @@ public sealed class DrawingLayoutScorerTests
         Assert.True(score.Breakdown.ReservedOverlapPenalty > 0);
     }
 
+    [Fact]
+    public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
+    {
+        var context = CreateContext(
+            sheetWidth: 100,
+            sheetHeight: 100,
+            views:
+            [
+                CreateView(1, "BaseProjected", 10, 20, 20, 0, 30)
+            ]);
+
+        var score = new DrawingLayoutScorer().Score(context);
+
+        Assert.Equal(0, score.Breakdown.ScoredViewCount);
+        Assert.Contains("score:view-rect-missing:view=1", score.Diagnostics);
+    }
+
     private static DrawingContext CreateContext(
         double sheetWidth,
         double sheetHeight,
