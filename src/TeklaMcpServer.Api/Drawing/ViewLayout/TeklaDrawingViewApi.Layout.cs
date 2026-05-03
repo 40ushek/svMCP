@@ -141,8 +141,8 @@ public sealed partial class TeklaDrawingViewApi
 
     internal static HashSet<int> CollectOversizedStandardSectionScaleDriverIds(
         Tekla.Structures.Drawing.Drawing drawing,
+        DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
-        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
         double gap)
     {
         var baseViewSelection = BaseViewSelection.Select(views);
@@ -151,8 +151,9 @@ public sealed partial class TeklaDrawingViewApi
             return new HashSet<int>();
 
         var baseId = baseView.GetIdentifier().ID;
-        var baseWidth = frameSizes.TryGetValue(baseId, out var baseFrame) ? baseFrame.Width : baseView.Width;
-        var baseHeight = frameSizes.TryGetValue(baseId, out var baseFrame2) ? baseFrame2.Height : baseView.Height;
+        var baseFrame = workspace.GetSelectedFrameSize(baseId, baseView.Width, baseView.Height);
+        var baseWidth = baseFrame.Width;
+        var baseHeight = baseFrame.Height;
         var semanticViews = SemanticViewSet.Build(views);
         var sectionGroups = SectionGroupSet.Build(
             semanticViews.Sections,
@@ -161,27 +162,28 @@ public sealed partial class TeklaDrawingViewApi
             new SectionPlacementSideResolver(new Model()));
 
         var result = new HashSet<int>();
-        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Top, SectionPlacementSide.Top, baseWidth, baseHeight, frameSizes, gap);
-        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Bottom, SectionPlacementSide.Bottom, baseWidth, baseHeight, frameSizes, gap);
-        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Left, SectionPlacementSide.Left, baseWidth, baseHeight, frameSizes, gap);
-        CollectOversizedStandardSectionScaleDriverIds(result, sectionGroups.Right, SectionPlacementSide.Right, baseWidth, baseHeight, frameSizes, gap);
+        CollectOversizedStandardSectionScaleDriverIds(workspace, result, sectionGroups.Top, SectionPlacementSide.Top, baseWidth, baseHeight, gap);
+        CollectOversizedStandardSectionScaleDriverIds(workspace, result, sectionGroups.Bottom, SectionPlacementSide.Bottom, baseWidth, baseHeight, gap);
+        CollectOversizedStandardSectionScaleDriverIds(workspace, result, sectionGroups.Left, SectionPlacementSide.Left, baseWidth, baseHeight, gap);
+        CollectOversizedStandardSectionScaleDriverIds(workspace, result, sectionGroups.Right, SectionPlacementSide.Right, baseWidth, baseHeight, gap);
         return result;
     }
 
     private static void CollectOversizedStandardSectionScaleDriverIds(
+        DrawingLayoutWorkspace workspace,
         HashSet<int> oversizedIds,
         IReadOnlyList<View> sections,
         SectionPlacementSide placementSide,
         double baseWidth,
         double baseHeight,
-        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
         double gap)
     {
         foreach (var section in sections)
         {
             var sectionId = section.GetIdentifier().ID;
-            var width = frameSizes.TryGetValue(sectionId, out var size) ? size.Width : section.Width;
-            var height = frameSizes.TryGetValue(sectionId, out var size2) ? size2.Height : section.Height;
+            var size = workspace.GetSelectedFrameSize(sectionId, section.Width, section.Height);
+            var width = size.Width;
+            var height = size.Height;
             if (BaseProjectedDrawingArrangeStrategy.IsOversizedStandardSection(placementSide, baseWidth, baseHeight, width, height, gap))
                 oversizedIds.Add(sectionId);
         }
@@ -206,7 +208,6 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
         IReadOnlyList<View> scaleDriverViews,
-        IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
         IReadOnlyList<double> candidates,
         double sheetW,
         double sheetH,
@@ -244,8 +245,9 @@ public sealed partial class TeklaDrawingViewApi
             var viewId = view.GetIdentifier().ID;
             var kind = workspace.GetSemanticKind(viewId);
             var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
-            var frameWidth = frameSizes.TryGetValue(viewId, out var frame) ? frame.Width : view.Width;
-            var frameHeight = frameSizes.TryGetValue(viewId, out var frame2) ? frame2.Height : view.Height;
+            var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
+            var frameWidth = frame.Width;
+            var frameHeight = frame.Height;
 
             sb.AppendFormat(
                 CultureInfo.InvariantCulture,
@@ -503,7 +505,7 @@ public sealed partial class TeklaDrawingViewApi
         var originalFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(views, actualRects);
         layoutWorkspace.SetSelectedFrameSizes(originalFrameSizes);
         var oversizedStandardSectionScaleDriverIds = uniformAllNonDetail
-            ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, views, originalFrameSizes, gap)
+            ? CollectOversizedStandardSectionScaleDriverIds(activeDrawing, layoutWorkspace, views, gap)
             : new HashSet<int>();
         scaleDriverViews = uniformAllNonDetail
             ? views
@@ -527,9 +529,7 @@ public sealed partial class TeklaDrawingViewApi
             {
                 var viewId = v.GetIdentifier().ID;
                 var scale = v.Attributes.Scale > 0 ? v.Attributes.Scale : 1.0;
-                var frame = originalFrameSizes.TryGetValue(viewId, out var size)
-                    ? size
-                    : (v.Width, v.Height);
+                var frame = layoutWorkspace.GetSelectedFrameSize(viewId, v.Width, v.Height);
                 return new DrawingScaleDriver(frame.Width, frame.Height, scale);
             })
             .ToList();
@@ -543,7 +543,6 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace,
             views,
             scaleDriverViews,
-            originalFrameSizes,
             candidates,
             sheetW,
             sheetH,

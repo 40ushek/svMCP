@@ -75,6 +75,9 @@ internal sealed class DrawingLayoutWorkspace
     public ViewSemanticKind GetSemanticKind(int viewId)
         => SemanticKindsById.TryGetValue(viewId, out var kind) ? kind : ViewSemanticKind.Other;
 
+    public (double Width, double Height) GetSelectedFrameSize(int viewId, double fallbackWidth, double fallbackHeight)
+        => SelectedFrameSizesById.TryGetValue(viewId, out var size) ? size : (fallbackWidth, fallbackHeight);
+
     public void SetOriginalScales(IReadOnlyDictionary<int, double> originalScales)
     {
         OriginalScalesById = originalScales ?? throw new ArgumentNullException(nameof(originalScales));

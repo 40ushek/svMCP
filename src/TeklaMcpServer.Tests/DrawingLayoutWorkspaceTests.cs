@@ -85,6 +85,8 @@ public sealed class DrawingLayoutWorkspaceTests
         Assert.Same(frameSizes, workspace.SelectedFrameSizesById);
         Assert.Same(offsets, workspace.FrameOffsetsById);
         Assert.Same(gridAxes, workspace.GridAxesByViewId);
+        Assert.Equal((60, 30), workspace.GetSelectedFrameSize(10, 1, 2));
+        Assert.Equal((1, 2), workspace.GetSelectedFrameSize(99, 1, 2));
     }
 
     [Fact]
