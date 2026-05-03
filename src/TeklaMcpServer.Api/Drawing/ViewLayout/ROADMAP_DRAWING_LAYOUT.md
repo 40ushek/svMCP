@@ -103,6 +103,8 @@ Normal drawing layout must not pay the cost of building it.
 Already present:
 
 - `DrawingContext`
+- `DrawingLayoutViewItem`
+- `DrawingLayoutWorkspace`
 - `DrawingLayoutContextBuilder`
 - `DrawingViewContext`
 - `DrawingViewContextBuilder`
@@ -113,11 +115,24 @@ Already present:
 - `ViewPlacementValidator`
 - `DrawingProjectionAlignmentService`
 
-Current gap:
+Current migration status:
 
-- `fit_views_to_sheet` builds/reads `DrawingContext`, but orchestration still
-  uses runtime `View` lists plus local dictionaries for semantics, frame sizes,
-  offsets, topology, arranged positions, and projection signals.
+- `fit_views_to_sheet` builds/reads `DrawingContext`.
+- `DrawingLayoutWorkspace` is created for the operation and now carries the
+  main lightweight layout state: view items, runtime view handles, semantic
+  lookup, original scales, actual rects, selected frame sizes, frame offsets,
+  topology cache, reserved areas, sheet facts, and GA grid axes.
+- `DrawingArrangeContext` preserves the workspace through derived contexts.
+- `DrawingProjectionAlignmentService` has a workspace-aware path and reads
+  sheet/reserved/frame/topology/grid facts from the workspace.
+
+Remaining refactor gap:
+
+- `fit_views_to_sheet` is still a large orchestration method.
+- Some helper methods still receive individual dictionaries such as semantic
+  kinds and frame sizes instead of receiving the workspace/arrange context.
+- Runtime `View` lists are still needed for Tekla apply/probe operations, but
+  should continue moving toward apply handles rather than layout state.
 
 ## Phases
 
@@ -128,6 +143,8 @@ Current gap:
 - Populate them from `DrawingContext` and existing runtime view facts.
 - Keep behavior unchanged.
 - Add tests for scale, rect, semantic kind, reserved areas, and lookup parity.
+
+Status: done.
 
 ### Phase 2. Move Existing Lookup State Into Planning Context
 
@@ -142,6 +159,16 @@ Move these scattered structures behind the planning context:
 
 No layout policy changes in this phase.
 
+Status: mostly done.
+
+Remaining cleanup:
+
+- Remove remaining local aliases where they no longer improve readability.
+- Prefer `DrawingLayoutWorkspace` / `DrawingArrangeContext` in helper method
+  signatures over passing separate semantic/frame/offset dictionaries.
+- Keep short-lived local candidate dictionaries only where they represent a
+  single probe result before it is stored into the workspace.
+
 ### Phase 3. Make Projection Alignment Context-Aware
 
 - Introduce lazy `DrawingProjectionContext`.
@@ -150,12 +177,28 @@ No layout policy changes in this phase.
 - Load assembly/single-part anchors only for the model id being aligned.
 - Keep full `DrawingViewContext` out of projection alignment.
 
+Status: workspace-aware path done; lazy `DrawingProjectionContext` remains
+optional follow-up if projection alignment needs more per-view geometry later.
+
 ### Phase 4. Refactor `fit_views_to_sheet` Orchestration
 
 - Make scale selection consume layout context facts.
 - Make arrange/diagnostics consume planning context facts.
 - Keep runtime `View` objects as apply handles only.
 - Preserve public MCP/bridge result shape.
+
+Status: active.
+
+Suggested order:
+
+- Move scale-selection helper inputs from scattered dictionaries to the
+  workspace/context.
+- Move arrange/parity/detail helper inputs from scattered dictionaries to the
+  workspace/context.
+- Split `fit_views_to_sheet` into private orchestration steps:
+  initialization, scale selection, main arrange, detail placement, projection
+  alignment, final result/diagnostics.
+- Keep each step behavior-preserving and separately buildable.
 
 ### Phase 5. Analytical Layout Follow-up
 

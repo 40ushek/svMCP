@@ -66,12 +66,15 @@ into `ROADMAP_DRAWING_LAYOUT.md`.
 
 Active follow-up work moved to `ROADMAP_DRAWING_LAYOUT.md`.
 
-The next work is context migration, not a new layout-policy rewrite:
+The active work is now the final layout-context refactor, not a new
+layout-policy rewrite:
 
-- introduce `DrawingLayoutWorkspace`
-- introduce lightweight `DrawingLayoutViewItem` entries
-- move scattered lookup dictionaries into the planning context
-- make projection alignment consume lightweight projection signals
+- keep `DrawingContext` as the coarse sheet-level source
+- keep `DrawingLayoutWorkspace` as the temporary operation workspace
+- finish moving helper inputs from scattered dictionaries into
+  `DrawingLayoutWorkspace` / `DrawingArrangeContext`
+- simplify `fit_views_to_sheet` orchestration into smaller behavior-preserving
+  steps
 - keep full `DrawingViewContext` reserved for dimensions/marks
 
 ## Validation Targets
