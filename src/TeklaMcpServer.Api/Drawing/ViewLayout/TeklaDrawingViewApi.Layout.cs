@@ -55,6 +55,26 @@ public sealed partial class TeklaDrawingViewApi
         public long ElapsedMilliseconds { get; }
     }
 
+    private readonly struct CandidateScaleProbeResult
+    {
+        public CandidateScaleProbeResult(
+            List<View> views,
+            IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
+            IReadOnlyList<(double w, double h)> frames,
+            long elapsedMilliseconds)
+        {
+            Views = views;
+            FrameSizes = frameSizes;
+            Frames = frames;
+            ElapsedMilliseconds = elapsedMilliseconds;
+        }
+
+        public List<View> Views { get; }
+        public IReadOnlyDictionary<int, (double Width, double Height)> FrameSizes { get; }
+        public IReadOnlyList<(double w, double h)> Frames { get; }
+        public long ElapsedMilliseconds { get; }
+    }
+
     internal const double ProjectionAlignmentScaleCutoff = 100.0;
     internal const double ProjectionAlignmentMixedScaleTolerance = 0.05;
 
@@ -506,6 +526,50 @@ public sealed partial class TeklaDrawingViewApi
         return new KeepScaleFitResult(keepFrameSizes, optimalScale, keepFitSw.ElapsedMilliseconds);
     }
 
+    private static CandidateScaleProbeResult ProbeCandidateScale(
+        Tekla.Structures.Drawing.Drawing drawing,
+        DrawingLayoutWorkspace workspace,
+        List<View> currentViews,
+        IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
+        double candidateScale,
+        bool uniformAllNonDetail)
+    {
+        var probeSw = Stopwatch.StartNew();
+        var anyScaleChanged = false;
+        foreach (var view in currentViews)
+        {
+            var targetScale = ResolveTargetScale(
+                view,
+                workspace.GetSemanticKind(view.GetIdentifier().ID),
+                candidateScale,
+                uniformAllNonDetail,
+                workspace.OriginalScalesById);
+            if (System.Math.Abs(view.Attributes.Scale - targetScale) < 0.01)
+                continue;
+
+            view.Attributes.Scale = targetScale;
+            view.Modify();
+            anyScaleChanged = true;
+        }
+
+        if (anyScaleChanged)
+            drawing.CommitChanges();
+        probeSw.Stop();
+
+        var candidateViews = anyScaleChanged
+            ? EnumerateViews(drawing).ToList()
+            : currentViews;
+        var effectiveFrameSizes = anyScaleChanged
+            ? DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews)
+            : originalFrameSizes;
+        var actualFrames = BuildFrameList(candidateViews, effectiveFrameSizes);
+        return new CandidateScaleProbeResult(
+            candidateViews,
+            effectiveFrameSizes,
+            actualFrames,
+            probeSw.ElapsedMilliseconds);
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -690,41 +754,17 @@ public sealed partial class TeklaDrawingViewApi
             {
                 candidateAttempts++;
                 var candidateSw = Stopwatch.StartNew();
-                List<View> candidateViews;
-                Dictionary<int, (double Width, double Height)> effectiveFrameSizes;
-                List<(double w, double h)> actualFrames;
-                DrawingArrangeContext ctx;
-                var probeSw = Stopwatch.StartNew();
-                var anyScaleChanged = false;
-                foreach (var v in currentViews)
-                {
-                    var targetScale = ResolveTargetScale(
-                        v,
-                        layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID),
-                        s,
-                        uniformAllNonDetail,
-                        layoutWorkspace.OriginalScalesById);
-                    if (System.Math.Abs(v.Attributes.Scale - targetScale) < 0.01)
-                        continue;
-
-                    v.Attributes.Scale = targetScale;
-                    v.Modify();
-                    anyScaleChanged = true;
-                }
-
-                if (anyScaleChanged)
-                    activeDrawing.CommitChanges();
-                probeSw.Stop();
-                probeMs += probeSw.ElapsedMilliseconds;
-
-                candidateViews = anyScaleChanged
-                    ? EnumerateViews(activeDrawing).ToList()
-                    : currentViews;
-                effectiveFrameSizes = anyScaleChanged
-                    ? DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews)
-                    : originalFrameSizes;
-                actualFrames = BuildFrameList(candidateViews, effectiveFrameSizes);
-                ctx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, candidateViews, gap, effectiveFrameSizes);
+                var probe = ProbeCandidateScale(
+                    activeDrawing,
+                    layoutWorkspace,
+                    currentViews,
+                    originalFrameSizes,
+                    s,
+                    uniformAllNonDetail);
+                probeMs += probe.ElapsedMilliseconds;
+                var candidateViews = probe.Views;
+                var actualFrames = probe.Frames;
+                var ctx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, candidateViews, gap, probe.FrameSizes);
 
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
