@@ -318,6 +318,10 @@ Implemented so far:
 - `fit_layout_apply_plan` and `fit_layout_apply_plan_move` trace events report
   the selected candidate apply plan without calling `Modify()` or
   `CommitChanges()`.
+- `DrawingLayoutCandidateApplyService` validates a selected apply plan against
+  available runtime view ids and supports explicit `DryRun` / `Apply` modes.
+  `fit_views_to_sheet` currently calls it only in `DryRun` mode and emits
+  `fit_layout_apply_execution`, so selected-candidate apply remains disabled.
 
 #### 5.5 Regression Cases
 

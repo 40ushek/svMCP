@@ -617,6 +617,25 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static void TraceLayoutCandidateApplyExecution(DrawingLayoutCandidateApplyExecutionResult result)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_apply_execution",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate={0} mode={1} success={2} reason={3} requestedMoves={4} appliedMoves={5} missingViews={6} missingViewIds=[{7}]",
+                string.IsNullOrWhiteSpace(result.CandidateName) ? "none" : result.CandidateName,
+                result.Mode,
+                result.Success ? 1 : 0,
+                DrawingLayoutCandidateApplyExecutionReasonFormatter.ToTraceString(result.Reason),
+                result.RequestedMoveCount,
+                result.AppliedMoveCount,
+                result.MissingRuntimeViewCount,
+                string.Join(",", result.MissingRuntimeViewIds)));
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -1194,8 +1213,12 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
-        TraceLayoutCandidateApplyPlan(
-            DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected));
+        var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
+        TraceLayoutCandidateApplyPlan(applyPlan);
+        TraceLayoutCandidateApplyExecution(new DrawingLayoutCandidateApplyService().Execute(
+            applyPlan,
+            layoutWorkspace.RuntimeViewsById.Keys.ToList(),
+            DrawingLayoutCandidateApplyExecutionMode.DryRun));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
