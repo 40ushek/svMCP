@@ -43,7 +43,8 @@ internal sealed class DrawingCaseCaptureService
         string drawingCategory,
         string operation,
         string? note = null,
-        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null)
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null,
+        DrawingLayoutStabilityReport? layoutStability = null)
     {
         if (before == null)
             throw new ArgumentNullException(nameof(before));
@@ -65,7 +66,8 @@ internal sealed class DrawingCaseCaptureService
             note,
             scoreBefore,
             scoreAfter,
-            layoutDiagnostics);
+            layoutDiagnostics,
+            layoutStability);
     }
 
     public DrawingCaseSnapshotSaveResult SaveLayoutCase(
@@ -74,7 +76,8 @@ internal sealed class DrawingCaseCaptureService
         FitViewsResult fitResult,
         string rootDirectory,
         string drawingCategory,
-        string? note = null)
+        string? note = null,
+        DrawingLayoutStabilityReport? layoutStability = null)
     {
         if (fitResult == null)
             throw new ArgumentNullException(nameof(fitResult));
@@ -86,7 +89,8 @@ internal sealed class DrawingCaseCaptureService
             drawingCategory,
             "fit_views_to_sheet",
             note,
-            fitResult.LayoutDiagnostics);
+            fitResult.LayoutDiagnostics,
+            layoutStability);
     }
 
     private static void ValidateSameDrawingGuid(DrawingContext before, DrawingContext after)

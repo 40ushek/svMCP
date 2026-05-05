@@ -169,7 +169,13 @@ public sealed class DrawingCaseCaptureServiceTests
                 fitResult,
                 tempRoot,
                 "assembly",
-                "layout case");
+                "layout case",
+                new DrawingLayoutStabilityReport
+                {
+                    DrawingGuid = "drawing-guid-1",
+                    SameDrawing = true,
+                    IsStable = true
+                });
 
             var meta = JsonSerializer.Deserialize<DrawingCaseMeta>(
                 File.ReadAllText(result.MetaPath),
@@ -178,6 +184,7 @@ public sealed class DrawingCaseCaptureServiceTests
             Assert.Equal("fit_views_to_sheet", meta?.Operation);
             Assert.Equal("layout case", meta?.Note);
             Assert.Equal("fit_views_to_sheet:planned-centered", meta?.LayoutDiagnostics?.SelectedCandidateName);
+            Assert.True(meta?.LayoutStability?.IsStable);
         }
         finally
         {

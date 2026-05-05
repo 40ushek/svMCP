@@ -398,6 +398,9 @@ Implemented so far:
 - `DrawingLayoutStabilityAnalyzer` compares two repeated-run after contexts
   and reports convergence signals: moved views, scale changes, missing/added
   views, score delta, and overlap-area deltas.
+- `DrawingCaseSnapshotWriter` / `DrawingCaseCaptureService` can persist an
+  optional `LayoutStability` report into `meta.json` together with score and
+  selected-candidate diagnostics.
 
 Phase 5 non-goal:
 

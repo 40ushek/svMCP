@@ -21,7 +21,8 @@ internal sealed class DrawingCaseSnapshotWriter
         string? note = null,
         DrawingLayoutScore? scoreBefore = null,
         DrawingLayoutScore? scoreAfter = null,
-        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null)
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null,
+        DrawingLayoutStabilityReport? layoutStability = null)
     {
         if (string.IsNullOrWhiteSpace(rootDirectory))
             throw new ArgumentException("Root directory is required.", nameof(rootDirectory));
@@ -51,7 +52,8 @@ internal sealed class DrawingCaseSnapshotWriter
                 note,
                 scoreBefore,
                 scoreAfter,
-                layoutDiagnostics),
+                layoutDiagnostics,
+                layoutStability),
             JsonOptions));
 
         return new DrawingCaseSnapshotSaveResult
@@ -71,7 +73,8 @@ internal sealed class DrawingCaseSnapshotWriter
         string? note,
         DrawingLayoutScore? scoreBefore,
         DrawingLayoutScore? scoreAfter,
-        DrawingCaseLayoutDiagnostics? layoutDiagnostics)
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics,
+        DrawingLayoutStabilityReport? layoutStability)
     {
         var drawing = after.Drawing ?? before.Drawing ?? new DrawingInfo();
 
@@ -84,7 +87,8 @@ internal sealed class DrawingCaseSnapshotWriter
             Note = note ?? string.Empty,
             ScoreBefore = scoreBefore == null ? null : CreateScoreSummary(scoreBefore),
             ScoreAfter = scoreAfter == null ? null : CreateScoreSummary(scoreAfter),
-            LayoutDiagnostics = layoutDiagnostics
+            LayoutDiagnostics = layoutDiagnostics,
+            LayoutStability = layoutStability
         };
     }
 
@@ -142,6 +146,7 @@ internal sealed class DrawingCaseMeta
     public DrawingCaseScoreSummary? ScoreBefore { get; set; }
     public DrawingCaseScoreSummary? ScoreAfter { get; set; }
     public DrawingCaseLayoutDiagnostics? LayoutDiagnostics { get; set; }
+    public DrawingLayoutStabilityReport? LayoutStability { get; set; }
 }
 
 internal sealed class DrawingCaseLayoutDiagnostics

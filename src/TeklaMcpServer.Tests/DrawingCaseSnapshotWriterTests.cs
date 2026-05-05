@@ -145,6 +145,47 @@ public sealed class DrawingCaseSnapshotWriterTests
         }
     }
 
+    [Fact]
+    public void Save_WritesLayoutStabilityIntoMeta()
+    {
+        var tempRoot = CreateTempDirectory();
+
+        try
+        {
+            var before = CreateContext("drawing-guid-1", "Assembly drawing");
+            var after = CreateContext("drawing-guid-1", "Assembly drawing");
+            var stability = new DrawingLayoutStabilityReport
+            {
+                DrawingGuid = "drawing-guid-1",
+                SameDrawing = true,
+                ComparableViewCount = 2,
+                MovedCount = 0,
+                ScaleChangedCount = 0,
+                IsStable = true
+            };
+
+            var result = new DrawingCaseSnapshotWriter().Save(
+                tempRoot,
+                "assembly",
+                "fit_views_to_sheet",
+                before,
+                after,
+                layoutStability: stability);
+
+            var meta = JsonSerializer.Deserialize<DrawingCaseMeta>(
+                File.ReadAllText(result.MetaPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            Assert.NotNull(meta?.LayoutStability);
+            Assert.True(meta.LayoutStability.IsStable);
+            Assert.Equal(2, meta.LayoutStability.ComparableViewCount);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "svmcp-drawing-case-tests", Guid.NewGuid().ToString("N"));
