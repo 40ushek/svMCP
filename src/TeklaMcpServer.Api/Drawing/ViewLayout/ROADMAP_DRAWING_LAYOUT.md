@@ -295,6 +295,9 @@ Implemented so far:
   computes a centered layout from planned DTOs without Tekla calls. The
   `fit_views_to_sheet:planned-centered` candidate appears in selection trace
   alongside `planned-arranged`, `post-projection`, and `final`.
+- `fit_layout_planned_variant` trace event emitted per variant with moved view
+  count, detailMoved (always 0), maxDelta, avgDelta, group bbox before/after,
+  and reserved overlap count before/after from scorer evaluation.
 
 #### 5.4 Apply Selected Candidate
 
