@@ -142,6 +142,49 @@ public sealed class DrawingCaseCaptureServiceTests
         }
     }
 
+    [Fact]
+    public void SaveLayoutCase_UsesFitViewsResultDiagnostics()
+    {
+        var tempRoot = CreateTempDirectory();
+
+        try
+        {
+            var before = CreateContext("drawing-guid-1", "Assembly drawing");
+            var after = CreateContext("drawing-guid-1", "Assembly drawing");
+            var fitResult = new FitViewsResult
+            {
+                LayoutDiagnostics = new DrawingCaseLayoutDiagnostics
+                {
+                    SelectedCandidateName = "fit_views_to_sheet:planned-centered"
+                }
+            };
+            var service = new DrawingCaseCaptureService(
+                () => throw new InvalidOperationException("Capture should not be used in SaveLayoutCase test."),
+                new DrawingLayoutScorer(),
+                new DrawingCaseSnapshotWriter());
+
+            var result = service.SaveLayoutCase(
+                before,
+                after,
+                fitResult,
+                tempRoot,
+                "assembly",
+                "layout case");
+
+            var meta = JsonSerializer.Deserialize<DrawingCaseMeta>(
+                File.ReadAllText(result.MetaPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            Assert.Equal("fit_views_to_sheet", meta?.Operation);
+            Assert.Equal("layout case", meta?.Note);
+            Assert.Equal("fit_views_to_sheet:planned-centered", meta?.LayoutDiagnostics?.SelectedCandidateName);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "svmcp-drawing-case-capture-tests", Guid.NewGuid().ToString("N"));

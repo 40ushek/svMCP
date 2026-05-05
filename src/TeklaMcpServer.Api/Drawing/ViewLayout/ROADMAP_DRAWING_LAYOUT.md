@@ -392,6 +392,9 @@ Implemented so far:
 - `fit_views_to_sheet` now builds that diagnostics DTO and stores it on an
   internal `FitViewsResult.LayoutDiagnostics` property for in-process case
   capture. The public JSON result contract remains unchanged.
+- `DrawingCaseCaptureService.SaveLayoutCase(...)` accepts the `FitViewsResult`
+  and persists its internal layout diagnostics with the before/after
+  `DrawingContext` snapshots.
 
 Phase 5 non-goal:
 

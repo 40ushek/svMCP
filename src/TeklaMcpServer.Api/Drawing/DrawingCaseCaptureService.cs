@@ -1,4 +1,5 @@
 using System;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -65,6 +66,27 @@ internal sealed class DrawingCaseCaptureService
             scoreBefore,
             scoreAfter,
             layoutDiagnostics);
+    }
+
+    public DrawingCaseSnapshotSaveResult SaveLayoutCase(
+        DrawingContext before,
+        DrawingContext after,
+        FitViewsResult fitResult,
+        string rootDirectory,
+        string drawingCategory,
+        string? note = null)
+    {
+        if (fitResult == null)
+            throw new ArgumentNullException(nameof(fitResult));
+
+        return SaveCase(
+            before,
+            after,
+            rootDirectory,
+            drawingCategory,
+            "fit_views_to_sheet",
+            note,
+            fitResult.LayoutDiagnostics);
     }
 
     private static void ValidateSameDrawingGuid(DrawingContext before, DrawingContext after)
