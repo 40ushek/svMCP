@@ -596,7 +596,7 @@ public sealed partial class TeklaDrawingViewApi
                 "candidate={0} canApply={1} reason={2} moves={3}",
                 string.IsNullOrWhiteSpace(plan.CandidateName) ? "none" : plan.CandidateName,
                 plan.CanApply ? 1 : 0,
-                string.IsNullOrWhiteSpace(plan.Reason) ? "unknown" : plan.Reason,
+                DrawingLayoutCandidateApplyPlanReasonFormatter.ToTraceString(plan.Reason),
                 plan.Moves.Count));
 
         foreach (var move in plan.Moves)

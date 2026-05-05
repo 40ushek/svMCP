@@ -24,7 +24,7 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(evaluation);
 
         Assert.True(plan.CanApply);
-        Assert.Equal("planned-candidate", plan.Reason);
+        Assert.Equal(DrawingLayoutCandidateApplyPlanReason.PlannedCandidate, plan.Reason);
         Assert.Equal("fit_views_to_sheet:planned-centered", plan.CandidateName);
         var move = Assert.Single(plan.Moves);
         Assert.Equal(7, move.ViewId);
@@ -51,7 +51,7 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(evaluation);
 
         Assert.False(plan.CanApply);
-        Assert.Equal("runtime-candidate", plan.Reason);
+        Assert.Equal(DrawingLayoutCandidateApplyPlanReason.RuntimeCandidate, plan.Reason);
         Assert.Empty(plan.Moves);
     }
 
@@ -61,8 +61,19 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(null);
 
         Assert.False(plan.CanApply);
-        Assert.Equal("no-selected-candidate", plan.Reason);
+        Assert.Equal(DrawingLayoutCandidateApplyPlanReason.NoSelectedCandidate, plan.Reason);
         Assert.Empty(plan.Moves);
+    }
+
+    [Theory]
+    [InlineData(DrawingLayoutCandidateApplyPlanReason.NoSelectedCandidate, "no-selected-candidate")]
+    [InlineData(DrawingLayoutCandidateApplyPlanReason.PlannedCandidate, "planned-candidate")]
+    [InlineData(DrawingLayoutCandidateApplyPlanReason.RuntimeCandidate, "runtime-candidate")]
+    public void ToTraceString_ReturnsStableTraceValue(
+        DrawingLayoutCandidateApplyPlanReason reason,
+        string expected)
+    {
+        Assert.Equal(expected, DrawingLayoutCandidateApplyPlanReasonFormatter.ToTraceString(reason));
     }
 
     private static DrawingLayoutCandidateEvaluation CreateEvaluation(
