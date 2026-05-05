@@ -210,13 +210,68 @@ Optional cleanup:
 
 ### Phase 5. Analytical Layout Follow-up
 
-Status: next after live validation.
+Status: active planning.
 
-After the context migration is validated on real drawings:
+Live validation of the context migration passed without required behavior
+changes. The next work is analytical candidate scoring, not another view-context
+refactor.
 
-- evaluate analytical scale/layout probing before Tekla `CommitChanges`
+Goal:
+
+- move toward `candidate -> validate -> score -> choose -> apply`
+- evaluate more layout decisions virtually before Tekla `CommitChanges`
 - compare candidate layouts with `DrawingLayoutScorer`
 - keep before/after `DrawingContext` cases as the canonical dataset format
+
+#### 5.1 Passive Scoring
+
+First step. No layout behavior changes.
+
+- Add `DrawingLayoutCandidate`.
+- Add `DrawingLayoutCandidateView`.
+- Add `DrawingLayoutScoreResult`, if the existing scorer result is not enough.
+- Build one candidate from the current `fit_views_to_sheet` result.
+- Score that candidate with `DrawingLayoutScorer`.
+- Write score and diagnostics to trace/log output.
+- Do not choose a different layout yet.
+- Do not change public MCP/bridge result shape.
+
+#### 5.2 Candidate Model
+
+- Represent virtual view origin, scale, frame rect, semantic kind, and placement
+  side without requiring a runtime `View`.
+- Carry sheet size, margins, reserved areas, and title-block/table conflicts.
+- Carry view-overlap, out-of-sheet, projection-quality, and movement
+  diagnostics.
+- Keep candidates serializable enough for case snapshots and regression data.
+- Keep heavy `DrawingViewContext` data out of normal candidates.
+
+#### 5.3 Multi-Candidate Evaluation
+
+- Generate several virtual layout candidates from the same workspace.
+- Start with behavior-equivalent variants before introducing new policies.
+- Evaluate candidates without `Modify()` / `CommitChanges()` where possible.
+- Score candidates through `DrawingLayoutScorer`.
+- Keep diagnostics explaining why the selected candidate won.
+
+#### 5.4 Apply Selected Candidate
+
+- Apply only the selected candidate to Tekla runtime views.
+- Preserve current public result shape.
+- Include selected-candidate score/diagnostics in trace first.
+- Add result fields only in a separate planned API contract step.
+
+#### 5.5 Regression Cases
+
+- Store before/after `DrawingContext` case snapshots.
+- Include candidate score and validation diagnostics.
+- Re-run the validation baseline on real drawings.
+- Compare geometry and score stability across repeated runs.
+
+Phase 5 non-goal:
+
+- Do not change layout behavior in 5.1. Passive scoring must observe and
+  explain the current result before candidate selection affects output.
 
 ## Non-Goals
 
