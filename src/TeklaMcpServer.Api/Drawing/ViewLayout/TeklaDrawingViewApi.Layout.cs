@@ -473,6 +473,81 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static DrawingLayoutCandidate BuildPassiveLayoutCandidate(
+        string name,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        IReadOnlyList<ArrangedView> arranged,
+        IReadOnlyDictionary<int, ReservedRect> actualRects)
+    {
+        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var candidate = new DrawingLayoutCandidate
+        {
+            Name = name,
+            Drawing = workspace.Source.Drawing,
+            Sheet = workspace.Source.Sheet,
+            ReservedLayout = workspace.Source.ReservedLayout
+        };
+
+        foreach (var view in views)
+        {
+            var viewId = view.GetIdentifier().ID;
+            var hasRect = actualRects.TryGetValue(viewId, out var rect);
+            var frame = hasRect
+                ? (Width: rect.Width, Height: rect.Height)
+                : workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
+
+            arrangedById.TryGetValue(viewId, out var arrangedView);
+            candidate.Views.Add(new DrawingLayoutCandidateView
+            {
+                Id = viewId,
+                ViewType = view.ViewType.ToString(),
+                SemanticKind = workspace.GetSemanticKind(viewId).ToString(),
+                Name = view.Name ?? string.Empty,
+                OriginX = view.Origin?.X ?? 0.0,
+                OriginY = view.Origin?.Y ?? 0.0,
+                Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
+                Width = frame.Width,
+                Height = frame.Height,
+                BBoxMinX = hasRect ? rect.MinX : null,
+                BBoxMinY = hasRect ? rect.MinY : null,
+                BBoxMaxX = hasRect ? rect.MaxX : null,
+                BBoxMaxY = hasRect ? rect.MaxY : null,
+                PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
+                ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
+                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
+            });
+        }
+
+        return candidate;
+    }
+
+    private static void TraceLayoutCandidateScore(
+        DrawingLayoutCandidate candidate,
+        DrawingLayoutScore score)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_score",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate={0} total={1:0.###} views={2} nonDetail={3} fill={4:0.###} uniformScale={5:0.###} viewOverlaps={6}:area={7:0.###}:penalty={8:0.###} reservedOverlaps={9}:area={10:0.###}:penalty={11:0.###} diagnostics={12}",
+                string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+                score.TotalScore,
+                score.Breakdown.ScoredViewCount,
+                score.Breakdown.NonDetailViewCount,
+                score.Breakdown.FillRatioScore,
+                score.Breakdown.UniformScaleScore,
+                score.Breakdown.ViewOverlapCount,
+                score.Breakdown.ViewOverlapArea,
+                score.Breakdown.ViewOverlapPenalty,
+                score.Breakdown.ReservedOverlapCount,
+                score.Breakdown.ReservedOverlapArea,
+                score.Breakdown.ReservedOverlapPenalty,
+                score.Diagnostics.Count));
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -998,11 +1073,21 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.ReservedAreas,
             offsetById);
 
+        var finalActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         TracePlannedVsActualParity(
             "post-commit-final",
             layoutWorkspace,
             arranged,
-            DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
+            finalActualRects);
+
+        var passiveCandidate = BuildPassiveLayoutCandidate(
+            "fit_views_to_sheet:final",
+            layoutWorkspace,
+            layoutWorkspace.RuntimeViews,
+            arranged,
+            finalActualRects);
+        var passiveScore = new DrawingLayoutScorer().Score(passiveCandidate);
+        TraceLayoutCandidateScore(passiveCandidate, passiveScore);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.

@@ -162,6 +162,43 @@ public sealed class DrawingLayoutScorerTests
         Assert.Contains("score:view-rect-missing:view=1", score.Diagnostics);
     }
 
+    [Fact]
+    public void Score_AcceptsLayoutCandidate()
+    {
+        var candidate = new DrawingLayoutCandidate
+        {
+            Name = "passive",
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            },
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 1,
+                    ViewType = "FrontView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    OriginX = 20,
+                    OriginY = 20,
+                    Width = 30,
+                    Height = 30,
+                    BBoxMinX = 5,
+                    BBoxMinY = 5,
+                    BBoxMaxX = 35,
+                    BBoxMaxY = 35
+                }
+            ]
+        };
+
+        var score = new DrawingLayoutScorer().Score(candidate);
+
+        Assert.Equal(1, score.Breakdown.ScoredViewCount);
+        Assert.Equal(900, score.Breakdown.TotalViewArea, 3);
+    }
+
     private static DrawingContext CreateContext(
         double sheetWidth,
         double sheetHeight,

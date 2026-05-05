@@ -10,6 +10,16 @@ internal sealed class DrawingLayoutScorer
     private const double Epsilon = 1e-6;
 
     public DrawingLayoutScore Score(
+        DrawingLayoutCandidate candidate,
+        DrawingLayoutScoreWeights? weights = null)
+    {
+        if (candidate == null)
+            throw new ArgumentNullException(nameof(candidate));
+
+        return Score(candidate.ToDrawingContext(), weights);
+    }
+
+    public DrawingLayoutScore Score(
         DrawingContext context,
         DrawingLayoutScoreWeights? weights = null)
     {

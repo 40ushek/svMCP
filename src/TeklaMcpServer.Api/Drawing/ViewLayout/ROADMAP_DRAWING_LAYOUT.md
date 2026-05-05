@@ -227,9 +227,11 @@ Goal:
 
 First step. No layout behavior changes.
 
+Status: initial implementation done.
+
 - Add `DrawingLayoutCandidate`.
 - Add `DrawingLayoutCandidateView`.
-- Add `DrawingLayoutScoreResult`, if the existing scorer result is not enough.
+- Reuse existing `DrawingLayoutScore`; no separate score result is needed yet.
 - Build one candidate from the current `fit_views_to_sheet` result.
 - Score that candidate with `DrawingLayoutScorer`.
 - Write score and diagnostics to trace/log output.
