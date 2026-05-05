@@ -386,6 +386,9 @@ Implemented so far:
   `LayoutDiagnostics` into `meta.json`, including selected candidate, apply
   plan summary, apply delta summary, and safety decision summary. Existing
   before/after snapshot files and existing save calls remain compatible.
+- `DrawingCaseLayoutDiagnosticsFactory` maps candidate selection, apply-plan,
+  apply-delta, and safety-decision objects into the case `LayoutDiagnostics`
+  DTO using the same stable reason strings as trace output.
 
 Phase 5 non-goal:
 
