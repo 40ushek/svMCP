@@ -1299,6 +1299,11 @@ public sealed partial class TeklaDrawingViewApi
             applyDeltas,
             selectedCandidateApplyPolicy,
             selectedCandidateApplySafety);
+        var layoutDiagnostics = DrawingCaseLayoutDiagnosticsFactory.FromSelection(
+            passiveSelection,
+            applyPlan,
+            applyDeltas,
+            selectedCandidateApplySafety);
         var selectedCandidateApplyExecution = new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
             layoutWorkspace.RuntimeViewsById,
@@ -1373,6 +1378,7 @@ public sealed partial class TeklaDrawingViewApi
             ["projection"]  = projectionMs,
             ["finalCommit"] = finalCommitMs,
         };
+        result.LayoutDiagnostics = layoutDiagnostics;
 
         PerfTrace.Write(
             "api-view",

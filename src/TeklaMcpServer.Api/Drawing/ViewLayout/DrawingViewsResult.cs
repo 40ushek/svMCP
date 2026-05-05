@@ -122,6 +122,7 @@ public sealed class FitViewsResult
     public DrawingReservedAreasResult? ReservedAreas { get; set; }
     public long                TotalMs             { get; set; }
     public Dictionary<string, long>? PhaseMs       { get; set; }
+    internal DrawingCaseLayoutDiagnostics? LayoutDiagnostics { get; set; }
 }
 
 public sealed class ArrangedView

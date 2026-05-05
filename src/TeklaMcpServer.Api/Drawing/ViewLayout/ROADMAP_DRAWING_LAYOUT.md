@@ -389,6 +389,9 @@ Implemented so far:
 - `DrawingCaseLayoutDiagnosticsFactory` maps candidate selection, apply-plan,
   apply-delta, and safety-decision objects into the case `LayoutDiagnostics`
   DTO using the same stable reason strings as trace output.
+- `fit_views_to_sheet` now builds that diagnostics DTO and stores it on an
+  internal `FitViewsResult.LayoutDiagnostics` property for in-process case
+  capture. The public JSON result contract remains unchanged.
 
 Phase 5 non-goal:
 
