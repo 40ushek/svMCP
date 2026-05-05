@@ -403,6 +403,9 @@ Implemented so far:
   selected-candidate diagnostics.
 - `DrawingCaseSnapshotReader` can load saved `before.json`, `after.json`, and
   `meta.json` files back into typed contexts for offline regression checks.
+- `DrawingLayoutRegressionCaseEvaluator` combines the snapshot reader and
+  stability analyzer to compare two saved repeated-run cases by their
+  after-contexts.
 
 Phase 5 non-goal:
 
