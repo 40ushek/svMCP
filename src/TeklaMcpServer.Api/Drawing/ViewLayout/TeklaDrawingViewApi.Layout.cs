@@ -38,6 +38,23 @@ public sealed partial class TeklaDrawingViewApi
         public IReadOnlyList<DrawingFitConflict> DiagnosedConflicts { get; }
     }
 
+    private readonly struct KeepScaleFitResult
+    {
+        public KeepScaleFitResult(
+            IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
+            double optimalScale,
+            long elapsedMilliseconds)
+        {
+            FrameSizes = frameSizes;
+            OptimalScale = optimalScale;
+            ElapsedMilliseconds = elapsedMilliseconds;
+        }
+
+        public IReadOnlyDictionary<int, (double Width, double Height)> FrameSizes { get; }
+        public double OptimalScale { get; }
+        public long ElapsedMilliseconds { get; }
+    }
+
     internal const double ProjectionAlignmentScaleCutoff = 100.0;
     internal const double ProjectionAlignmentMixedScaleTolerance = 0.05;
 
@@ -436,6 +453,59 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private KeepScaleFitResult ValidateCurrentScaleFit(
+        Tekla.Structures.Drawing.Drawing drawing,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> currentViews,
+        IReadOnlyDictionary<int, ReservedRect> actualRects,
+        double gap,
+        double availW,
+        double availH,
+        double currentScale,
+        string stage,
+        string oversizeMessage,
+        string fitFailedMessage)
+    {
+        var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
+        var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
+        var keepCtx = new DrawingArrangeContext(drawing, workspace, currentViews, gap, keepFrameSizes);
+        var keepFitSw = Stopwatch.StartNew();
+        var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
+        if (oversizeConflicts.Count > 0)
+        {
+            TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                stage,
+                currentScale,
+                fits: false,
+                oversizeConflicts,
+                diagnosedConflicts: null));
+            throw new DrawingFitFailedException(oversizeMessage, oversizeConflicts);
+        }
+
+        var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+        TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
+        keepFitSw.Stop();
+
+        if (!fits)
+        {
+            var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
+            TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                stage,
+                currentScale,
+                fits: false,
+                oversizeConflicts: null,
+                diagnosedConflicts: conflicts));
+            throw new DrawingFitFailedException(fitFailedMessage, conflicts);
+        }
+
+        var optimalScale = currentViews
+            .Select(v => v.Attributes.Scale)
+            .Where(s => s > 0)
+            .DefaultIfEmpty(1.0)
+            .Max();
+        return new KeepScaleFitResult(keepFrameSizes, optimalScale, keepFitSw.ElapsedMilliseconds);
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -570,81 +640,47 @@ public sealed partial class TeklaDrawingViewApi
         if (preserveExistingScales)
         {
             // Validate that views fit at their current scales before committing to arrange.
-            var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
-            var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
-            var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
-            var keepFitSw = Stopwatch.StartNew();
-            var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
-            if (oversizeConflicts.Count > 0)
-            {
-                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
-                    stage: "preserve-scales",
-                    candidateScale: currentScale,
-                    fits: false,
-                    oversizeConflicts,
-                    diagnosedConflicts: null));
-                throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
-            }
-            var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
-            TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
-            keepFitSw.Stop();
-            candidateFitMs = keepFitSw.ElapsedMilliseconds;
+            var keepResult = ValidateCurrentScaleFit(
+                activeDrawing,
+                layoutWorkspace,
+                currentViews,
+                actualRects,
+                gap,
+                availW,
+                availH,
+                currentScale,
+                stage: "preserve-scales",
+                oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
+                fitFailedMessage: "Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.");
+            candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
-            if (!fits)
-            {
-                var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
-                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
-                    stage: "preserve-scales",
-                    candidateScale: currentScale,
-                    fits: false,
-                    oversizeConflicts: null,
-                    diagnosedConflicts: conflicts));
-                throw new DrawingFitFailedException("Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.", conflicts);
-            }
 
             // ShouldSkipProjectionAlignment skips when scale >= cutoff (100), meaning all views
             // are small enough that alignment corrections are negligible. Use Max() so projection
             // is skipped only when every view is at or above the cutoff — the one correct
             // condition under which alignment adds no value for any view on the sheet.
-            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
-            layoutWorkspace.SetSelectedFrameSizes(keepFrameSizes);
+            optimalScale = keepResult.OptimalScale;
+            layoutWorkspace.SetSelectedFrameSizes(keepResult.FrameSizes);
         }
         else if (keepCurrentScales)
         {
-            var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
-            var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
-            var keepCtx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, currentViews, gap, keepFrameSizes);
-            var keepFitSw = Stopwatch.StartNew();
-            var oversizeConflicts = BuildOversizeConflicts(currentViews, keepFrames, availW, availH);
-            if (oversizeConflicts.Count > 0)
-            {
-                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
-                    stage: "keep-current-scales",
-                    candidateScale: currentScale,
-                    fits: false,
-                    oversizeConflicts,
-                    diagnosedConflicts: null));
-                throw new DrawingFitFailedException("One or more views are larger than the usable sheet area at current scales.", oversizeConflicts);
-            }
-            var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
-            TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
-            keepFitSw.Stop();
-            candidateFitMs = keepFitSw.ElapsedMilliseconds;
+            var keepResult = ValidateCurrentScaleFit(
+                activeDrawing,
+                layoutWorkspace,
+                currentViews,
+                actualRects,
+                gap,
+                availW,
+                availH,
+                currentScale,
+                stage: "keep-current-scales",
+                oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
+                fitFailedMessage: "Could not fit views on sheet at current scales.");
+            candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
-            if (!fits)
-            {
-                var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
-                TraceEstimateFailureDecision(new EstimateFitFailureDecision(
-                    stage: "keep-current-scales",
-                    candidateScale: currentScale,
-                    fits: false,
-                    oversizeConflicts: null,
-                    diagnosedConflicts: conflicts));
-                throw new DrawingFitFailedException("Could not fit views on sheet at current scales.", conflicts);
-            }
 
-            optimalScale = currentViews.Select(v => v.Attributes.Scale).Where(s => s > 0).DefaultIfEmpty(1.0).Max();
-            layoutWorkspace.SetSelectedFrameSizes(keepFrameSizes);
+            optimalScale = keepResult.OptimalScale;
+            layoutWorkspace.SetSelectedFrameSizes(keepResult.FrameSizes);
         }
         else
         {
