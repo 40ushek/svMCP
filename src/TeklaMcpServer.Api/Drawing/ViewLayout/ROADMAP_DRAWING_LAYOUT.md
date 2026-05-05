@@ -329,6 +329,11 @@ Implemented so far:
 - `DrawingLayoutCandidateApplyGate` is the internal behavior switch. By default
   it resolves every request to `DryRun`; when explicitly enabled, only
   `DrawingLayoutApplyMode.FinalOnly` resolves to `Apply`.
+- `fit_views_to_sheet` has a guarded selected-candidate apply branch: when the
+  gate resolves to `Apply` and all moves succeed, it commits once, refreshes
+  runtime views/actual rects, rebuilds the arranged result from the apply plan,
+  and emits `fit_layout_apply_commit`. With the default gate state this branch
+  is not executed.
 
 #### 5.5 Regression Cases
 

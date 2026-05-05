@@ -1215,10 +1215,37 @@ public sealed partial class TeklaDrawingViewApi
             TraceLayoutCandidateScore(evaluation);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
         TraceLayoutCandidateApplyPlan(applyPlan);
-        TraceLayoutCandidateApplyExecution(new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
+        var selectedCandidateApplyMode = DrawingLayoutCandidateApplyGate.Resolve(applyMode);
+        var selectedCandidateApplyExecution = new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
             layoutWorkspace.RuntimeViewsById,
-            DrawingLayoutCandidateApplyGate.Resolve(applyMode)));
+            selectedCandidateApplyMode);
+        TraceLayoutCandidateApplyExecution(selectedCandidateApplyExecution);
+        if (selectedCandidateApplyMode == DrawingLayoutCandidateApplyExecutionMode.Apply
+            && selectedCandidateApplyExecution.Success
+            && selectedCandidateApplyExecution.AppliedMoveCount > 0)
+        {
+            var selectedApplyCommitSw = Stopwatch.StartNew();
+            activeDrawing.CommitChanges();
+            selectedApplyCommitSw.Stop();
+
+            var selectedCandidateViews = EnumerateViews(activeDrawing).ToList();
+            layoutWorkspace.SetRuntimeViews(selectedCandidateViews);
+            finalActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+            arranged = BuildArrangedFromApplyPlan(arranged, layoutWorkspace, applyPlan);
+
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_apply_commit",
+                selectedApplyCommitSw.ElapsedMilliseconds,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} appliedMoves={1} runtimeViews={2} actualRects={3}",
+                    string.IsNullOrWhiteSpace(applyPlan.CandidateName) ? "none" : applyPlan.CandidateName,
+                    selectedCandidateApplyExecution.AppliedMoveCount,
+                    selectedCandidateViews.Count,
+                    finalActualRects.Count));
+        }
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
@@ -1269,6 +1296,32 @@ public sealed partial class TeklaDrawingViewApi
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
             $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+        return result;
+    }
+
+    private static List<ArrangedView> BuildArrangedFromApplyPlan(
+        IReadOnlyList<ArrangedView> existing,
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutCandidateApplyPlan applyPlan)
+    {
+        var existingById = existing.ToDictionary(static view => view.Id);
+        var result = new List<ArrangedView>(applyPlan.Moves.Count);
+        foreach (var move in applyPlan.Moves)
+        {
+            existingById.TryGetValue(move.ViewId, out var current);
+            var runtimeView = workspace.TryGetRuntimeView(move.ViewId);
+            result.Add(new ArrangedView
+            {
+                Id = move.ViewId,
+                ViewType = current?.ViewType ?? runtimeView?.ViewType.ToString() ?? string.Empty,
+                OriginX = move.TargetOriginX,
+                OriginY = move.TargetOriginY,
+                PreferredPlacementSide = current?.PreferredPlacementSide ?? string.Empty,
+                ActualPlacementSide = current?.ActualPlacementSide ?? string.Empty,
+                PlacementFallbackUsed = current?.PlacementFallbackUsed ?? false
+            });
+        }
+
         return result;
     }
 
