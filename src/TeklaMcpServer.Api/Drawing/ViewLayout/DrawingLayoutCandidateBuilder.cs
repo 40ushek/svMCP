@@ -64,14 +64,30 @@ internal static class DrawingLayoutCandidateBuilder
         IReadOnlyList<View> views,
         IReadOnlyList<ArrangedView> arranged)
     {
+        return FromPlannedViews(
+            name,
+            workspace,
+            BuildPlannedViews(workspace, views, arranged));
+    }
+
+    public static DrawingLayoutCandidate FromPlannedViews(
+        string name,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<DrawingLayoutPlannedView> plannedViews)
+        => DrawingLayoutCandidateFactory.FromPlannedViews(
+            name,
+            workspace.Source.Drawing,
+            workspace.Source.Sheet,
+            workspace.Source.ReservedLayout,
+            plannedViews);
+
+    private static List<DrawingLayoutPlannedView> BuildPlannedViews(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        IReadOnlyList<ArrangedView> arranged)
+    {
         var arrangedById = arranged.ToDictionary(static view => view.Id);
-        var candidate = new DrawingLayoutCandidate
-        {
-            Name = name,
-            Drawing = workspace.Source.Drawing,
-            Sheet = workspace.Source.Sheet,
-            ReservedLayout = workspace.Source.ReservedLayout
-        };
+        var plannedViews = new List<DrawingLayoutPlannedView>(views.Count);
 
         foreach (var view in views)
         {
@@ -87,7 +103,7 @@ internal static class DrawingLayoutCandidateBuilder
                 frame.Width,
                 frame.Height);
 
-            candidate.Views.Add(new DrawingLayoutCandidateView
+            plannedViews.Add(new DrawingLayoutPlannedView
             {
                 Id = viewId,
                 ViewType = view.ViewType.ToString(),
@@ -98,10 +114,6 @@ internal static class DrawingLayoutCandidateBuilder
                 Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
                 Width = frame.Width,
                 Height = frame.Height,
-                BBoxMinX = layoutRect.MinX,
-                BBoxMinY = layoutRect.MinY,
-                BBoxMaxX = layoutRect.MaxX,
-                BBoxMaxY = layoutRect.MaxY,
                 LayoutRect = layoutRect,
                 PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
                 ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
@@ -109,6 +121,6 @@ internal static class DrawingLayoutCandidateBuilder
             });
         }
 
-        return candidate;
+        return plannedViews;
     }
 }

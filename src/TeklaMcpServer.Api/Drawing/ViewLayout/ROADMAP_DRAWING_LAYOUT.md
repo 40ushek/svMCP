@@ -282,6 +282,9 @@ Implemented so far:
 - `DrawingLayoutCandidateBuilder.FromPlannedLayout` builds a virtual planned
   candidate from arranged origins and selected frame sizes without reading
   post-apply actual view rectangles.
+- Planned candidate construction now has a pure DTO/factory path:
+  `DrawingLayoutPlannedView` + `DrawingLayoutCandidateFactory.FromPlannedViews`.
+  Tekla `View` remains only in the current adapter builder.
 
 #### 5.4 Apply Selected Candidate
 
