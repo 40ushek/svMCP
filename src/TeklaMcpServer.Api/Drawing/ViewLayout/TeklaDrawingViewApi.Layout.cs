@@ -636,6 +636,54 @@ public sealed partial class TeklaDrawingViewApi
                 string.Join(",", result.MissingRuntimeViewIds)));
     }
 
+    private static void TraceLayoutCandidateApplyDeltas(DrawingLayoutCandidateApplyDeltaSummary summary)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_apply_delta",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate={0} baseline={1} moves={2} comparable={3} missingBaseline={4} moved={5} scaleChanged={6} maxDelta={7:F2} avgDelta={8:F2} movementTolerance={9:F3} scaleTolerance={10:F3}",
+                string.IsNullOrWhiteSpace(summary.CandidateName) ? "none" : summary.CandidateName,
+                string.IsNullOrWhiteSpace(summary.BaselineCandidateName) ? "none" : summary.BaselineCandidateName,
+                summary.MoveCount,
+                summary.ComparableMoveCount,
+                summary.MissingBaselineCount,
+                summary.MovedCount,
+                summary.ScaleChangedCount,
+                summary.MaxDelta,
+                summary.AverageDelta,
+                DrawingLayoutCandidateApplyTolerances.Movement,
+                DrawingLayoutCandidateApplyTolerances.Scale));
+
+        foreach (var delta in summary.Deltas.Where(static delta =>
+            delta.MissingBaseline || delta.Moved || delta.ScaleChanged))
+        {
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_apply_delta_view",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} view={1} missingBaseline={2} moved={3} scaleChanged={4} current={5:F2},{6:F2} target={7:F2},{8:F2} delta={9:F2},{10:F2} distance={11:F2} scale={12:F2}->{13:F2}",
+                    string.IsNullOrWhiteSpace(summary.CandidateName) ? "none" : summary.CandidateName,
+                    delta.ViewId,
+                    delta.MissingBaseline ? 1 : 0,
+                    delta.Moved ? 1 : 0,
+                    delta.ScaleChanged ? 1 : 0,
+                    delta.CurrentOriginX,
+                    delta.CurrentOriginY,
+                    delta.TargetOriginX,
+                    delta.TargetOriginY,
+                    delta.DeltaX,
+                    delta.DeltaY,
+                    delta.Distance,
+                    delta.CurrentScale,
+                    delta.TargetScale));
+        }
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -1215,6 +1263,8 @@ public sealed partial class TeklaDrawingViewApi
             TraceLayoutCandidateScore(evaluation);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
         TraceLayoutCandidateApplyPlan(applyPlan);
+        TraceLayoutCandidateApplyDeltas(
+            DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan));
         var selectedCandidateApplyMode = DrawingLayoutCandidateApplyGate.Resolve(applyMode);
         var selectedCandidateApplyExecution = new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,

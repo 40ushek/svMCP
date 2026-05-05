@@ -190,6 +190,103 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         }
     }
 
+    [Fact]
+    public void BuildDeltas_ReportsZeroMovement_WhenPlanMatchesBaseline()
+    {
+        var baseline = CreateCandidate(
+            "fit_views_to_sheet:final",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 });
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 }));
+
+        var summary = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+
+        Assert.Equal(1, summary.MoveCount);
+        Assert.Equal(1, summary.ComparableMoveCount);
+        Assert.Equal(0, summary.MissingBaselineCount);
+        Assert.Equal(0, summary.MovedCount);
+        Assert.Equal(0, summary.ScaleChangedCount);
+        Assert.Equal(0, summary.MaxDelta);
+        Assert.Equal(0, summary.AverageDelta);
+    }
+
+    [Fact]
+    public void BuildDeltas_UsesExplicitMovementThreshold()
+    {
+        var baseline = CreateCandidate(
+            "fit_views_to_sheet:final",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 });
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            new DrawingLayoutCandidateView
+            {
+                Id = 7,
+                OriginX = 15 + (DrawingLayoutCandidateApplyTolerances.Movement / 2.0),
+                OriginY = 10,
+                Scale = 20
+            },
+            new DrawingLayoutCandidateView
+            {
+                Id = 8,
+                OriginX = 30 + DrawingLayoutCandidateApplyTolerances.Movement,
+                OriginY = 10,
+                Scale = 20
+            }));
+        baseline.Views.Add(new DrawingLayoutCandidateView { Id = 8, OriginX = 30, OriginY = 10, Scale = 20 });
+
+        var summary = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+
+        Assert.Equal(1, summary.MovedCount);
+        Assert.False(summary.Deltas.Single(delta => delta.ViewId == 7).Moved);
+        Assert.True(summary.Deltas.Single(delta => delta.ViewId == 8).Moved);
+    }
+
+    [Fact]
+    public void BuildDeltas_UsesSharedScaleTolerance()
+    {
+        var baseline = CreateCandidate(
+            "fit_views_to_sheet:final",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 },
+            new DrawingLayoutCandidateView { Id = 8, OriginX = 30, OriginY = 10, Scale = 20 });
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            new DrawingLayoutCandidateView
+            {
+                Id = 7,
+                OriginX = 15,
+                OriginY = 10,
+                Scale = 20 + (DrawingLayoutCandidateApplyTolerances.Scale / 2.0)
+            },
+            new DrawingLayoutCandidateView
+            {
+                Id = 8,
+                OriginX = 30,
+                OriginY = 10,
+                Scale = 20 + DrawingLayoutCandidateApplyTolerances.Scale
+            }));
+
+        var summary = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+
+        Assert.Equal(1, summary.ScaleChangedCount);
+        Assert.False(summary.Deltas.Single(delta => delta.ViewId == 7).ScaleChanged);
+        Assert.True(summary.Deltas.Single(delta => delta.ViewId == 8).ScaleChanged);
+    }
+
+    [Fact]
+    public void BuildDeltas_ReportsMissingBaselineWithoutThrowing()
+    {
+        var baseline = CreateCandidate("fit_views_to_sheet:final");
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 }));
+
+        var summary = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+
+        Assert.Equal(1, summary.MissingBaselineCount);
+        Assert.True(Assert.Single(summary.Deltas).MissingBaseline);
+    }
+
     private static DrawingLayoutCandidateEvaluation CreateEvaluation(
         string candidateName,
         params DrawingLayoutCandidateView[] views)
@@ -200,5 +297,14 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
                 Name = candidateName,
                 Views = views.ToList()
             }
+        };
+
+    private static DrawingLayoutCandidate CreateCandidate(
+        string candidateName,
+        params DrawingLayoutCandidateView[] views)
+        => new()
+        {
+            Name = candidateName,
+            Views = views.ToList()
         };
 }

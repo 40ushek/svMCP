@@ -9,8 +9,6 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed class DrawingLayoutCandidateTeklaApplyAdapter
 {
-    private const double ScaleTolerance = 0.01;
-
     private readonly DrawingLayoutCandidateApplyService applyService;
 
     public DrawingLayoutCandidateTeklaApplyAdapter()
@@ -50,7 +48,7 @@ internal sealed class DrawingLayoutCandidateTeklaApplyAdapter
         origin.Y = move.TargetOriginY;
         view.Origin = origin;
 
-        if (move.Scale > 0 && Math.Abs(view.Attributes.Scale - move.Scale) >= ScaleTolerance)
+        if (move.Scale > 0 && Math.Abs(view.Attributes.Scale - move.Scale) >= DrawingLayoutCandidateApplyTolerances.Scale)
             view.Attributes.Scale = move.Scale;
 
         return view.Modify();

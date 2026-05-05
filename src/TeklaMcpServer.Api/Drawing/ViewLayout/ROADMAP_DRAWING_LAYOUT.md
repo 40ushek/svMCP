@@ -334,6 +334,12 @@ Implemented so far:
   runtime views/actual rects, rebuilds the arranged result from the apply plan,
   and emits `fit_layout_apply_commit`. With the default gate state this branch
   is not executed.
+- `DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan)`
+  compares the current final candidate with the selected apply plan before
+  apply. Trace now includes `fit_layout_apply_delta` summary for all moves and
+  `fit_layout_apply_delta_view` only for views that moved beyond the explicit
+  movement tolerance, changed scale beyond the shared scale tolerance, or are
+  missing from the baseline.
 
 #### 5.5 Regression Cases
 
