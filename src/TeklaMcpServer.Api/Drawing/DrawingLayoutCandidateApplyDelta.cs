@@ -33,6 +33,95 @@ internal sealed class DrawingLayoutCandidateApplyDeltaSummary
     public List<DrawingLayoutCandidateApplyDelta> Deltas { get; set; } = new();
 }
 
+internal enum DrawingLayoutCandidateApplySafetyDecisionReason
+{
+    NotRequested,
+    Allowed,
+    MissingBaseline,
+    ScaleChanged,
+    ExceedsMaxDelta
+}
+
+internal sealed class DrawingLayoutCandidateApplySafetyDecision
+{
+    public DrawingLayoutCandidateApplyExecutionMode RequestedMode { get; set; }
+
+    public DrawingLayoutCandidateApplyExecutionMode EffectiveMode { get; set; }
+
+    public DrawingLayoutCandidateApplySafetyDecisionReason Reason { get; set; }
+
+    public bool IsAllowed => EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply;
+}
+
+internal static class DrawingLayoutCandidateApplySafetyDecisionReasonFormatter
+{
+    public static string ToTraceString(DrawingLayoutCandidateApplySafetyDecisionReason reason)
+        => reason switch
+        {
+            DrawingLayoutCandidateApplySafetyDecisionReason.NotRequested => "not-requested",
+            DrawingLayoutCandidateApplySafetyDecisionReason.Allowed => "allowed",
+            DrawingLayoutCandidateApplySafetyDecisionReason.MissingBaseline => "missing-baseline",
+            DrawingLayoutCandidateApplySafetyDecisionReason.ScaleChanged => "scale-changed",
+            DrawingLayoutCandidateApplySafetyDecisionReason.ExceedsMaxDelta => "exceeds-max-delta",
+            _ => "unknown"
+        };
+}
+
+internal sealed class DrawingLayoutCandidateApplySafetyPolicy
+{
+    public static DrawingLayoutCandidateApplySafetyPolicy Default { get; } = new();
+
+    public bool AllowMissingBaseline { get; set; }
+
+    public bool AllowScaleChanges { get; set; }
+
+    public double MaxDelta { get; set; } = double.PositiveInfinity;
+
+    public DrawingLayoutCandidateApplySafetyDecision Resolve(
+        DrawingLayoutCandidateApplyExecutionMode requestedMode,
+        DrawingLayoutCandidateApplyDeltaSummary deltas)
+    {
+        if (deltas == null)
+            throw new ArgumentNullException(nameof(deltas));
+
+        var decision = new DrawingLayoutCandidateApplySafetyDecision
+        {
+            RequestedMode = requestedMode,
+            EffectiveMode = requestedMode
+        };
+
+        if (requestedMode != DrawingLayoutCandidateApplyExecutionMode.Apply)
+        {
+            decision.Reason = DrawingLayoutCandidateApplySafetyDecisionReason.NotRequested;
+            return decision;
+        }
+
+        if (!AllowMissingBaseline && deltas.MissingBaselineCount > 0)
+        {
+            decision.EffectiveMode = DrawingLayoutCandidateApplyExecutionMode.DryRun;
+            decision.Reason = DrawingLayoutCandidateApplySafetyDecisionReason.MissingBaseline;
+            return decision;
+        }
+
+        if (!AllowScaleChanges && deltas.ScaleChangedCount > 0)
+        {
+            decision.EffectiveMode = DrawingLayoutCandidateApplyExecutionMode.DryRun;
+            decision.Reason = DrawingLayoutCandidateApplySafetyDecisionReason.ScaleChanged;
+            return decision;
+        }
+
+        if (deltas.MaxDelta > MaxDelta)
+        {
+            decision.EffectiveMode = DrawingLayoutCandidateApplyExecutionMode.DryRun;
+            decision.Reason = DrawingLayoutCandidateApplySafetyDecisionReason.ExceedsMaxDelta;
+            return decision;
+        }
+
+        decision.Reason = DrawingLayoutCandidateApplySafetyDecisionReason.Allowed;
+        return decision;
+    }
+}
+
 internal sealed class DrawingLayoutCandidateApplyDelta
 {
     public int ViewId { get; set; }

@@ -684,6 +684,31 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static void TraceLayoutCandidateApplySafety(
+        DrawingLayoutCandidateApplyDeltaSummary summary,
+        DrawingLayoutCandidateApplySafetyPolicy policy,
+        DrawingLayoutCandidateApplySafetyDecision decision)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_apply_safety",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate={0} requestedMode={1} effectiveMode={2} allowed={3} reason={4} missingBaseline={5} scaleChanged={6} maxDelta={7:F2} maxAllowedDelta={8}",
+                string.IsNullOrWhiteSpace(summary.CandidateName) ? "none" : summary.CandidateName,
+                decision.RequestedMode,
+                decision.EffectiveMode,
+                decision.IsAllowed ? 1 : 0,
+                DrawingLayoutCandidateApplySafetyDecisionReasonFormatter.ToTraceString(decision.Reason),
+                summary.MissingBaselineCount,
+                summary.ScaleChangedCount,
+                summary.MaxDelta,
+                double.IsPositiveInfinity(policy.MaxDelta)
+                    ? "unlimited"
+                    : policy.MaxDelta.ToString("F2", CultureInfo.InvariantCulture)));
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -1263,15 +1288,23 @@ public sealed partial class TeklaDrawingViewApi
             TraceLayoutCandidateScore(evaluation);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
         TraceLayoutCandidateApplyPlan(applyPlan);
-        TraceLayoutCandidateApplyDeltas(
-            DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan));
+        var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan);
+        TraceLayoutCandidateApplyDeltas(applyDeltas);
         var selectedCandidateApplyMode = DrawingLayoutCandidateApplyGate.Resolve(applyMode);
+        var selectedCandidateApplyPolicy = DrawingLayoutCandidateApplySafetyPolicy.Default;
+        var selectedCandidateApplySafety = selectedCandidateApplyPolicy.Resolve(
+            selectedCandidateApplyMode,
+            applyDeltas);
+        TraceLayoutCandidateApplySafety(
+            applyDeltas,
+            selectedCandidateApplyPolicy,
+            selectedCandidateApplySafety);
         var selectedCandidateApplyExecution = new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
             layoutWorkspace.RuntimeViewsById,
-            selectedCandidateApplyMode);
+            selectedCandidateApplySafety.EffectiveMode);
         TraceLayoutCandidateApplyExecution(selectedCandidateApplyExecution);
-        if (selectedCandidateApplyMode == DrawingLayoutCandidateApplyExecutionMode.Apply
+        if (selectedCandidateApplySafety.EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply
             && selectedCandidateApplyExecution.Success
             && selectedCandidateApplyExecution.AppliedMoveCount > 0)
         {

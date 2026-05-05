@@ -340,6 +340,11 @@ Implemented so far:
   `fit_layout_apply_delta_view` only for views that moved beyond the explicit
   movement tolerance, changed scale beyond the shared scale tolerance, or are
   missing from the baseline.
+- `DrawingLayoutCandidateApplySafetyPolicy` converts requested apply mode to
+  effective mode using the delta summary. The default policy blocks real apply
+  when baseline views are missing or scale changes are detected. Movement is
+  reported but not blocked by default. Trace event `fit_layout_apply_safety`
+  records requested/effective mode and decision reason.
 
 #### 5.5 Regression Cases
 

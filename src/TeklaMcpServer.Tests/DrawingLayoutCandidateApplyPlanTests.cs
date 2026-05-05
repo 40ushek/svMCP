@@ -287,6 +287,105 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         Assert.True(Assert.Single(summary.Deltas).MissingBaseline);
     }
 
+    [Fact]
+    public void ApplySafetyPolicy_DefaultAllowsOriginOnlyApply()
+    {
+        var summary = BuildDeltaSummary(
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 },
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 25, OriginY = 10, Scale = 20 });
+
+        var decision = DrawingLayoutCandidateApplySafetyPolicy.Default.Resolve(
+            DrawingLayoutCandidateApplyExecutionMode.Apply,
+            summary);
+
+        Assert.True(decision.IsAllowed);
+        Assert.Equal(DrawingLayoutCandidateApplyExecutionMode.Apply, decision.EffectiveMode);
+        Assert.Equal(DrawingLayoutCandidateApplySafetyDecisionReason.Allowed, decision.Reason);
+    }
+
+    [Fact]
+    public void ApplySafetyPolicy_DefaultBlocksScaleChanges()
+    {
+        var summary = BuildDeltaSummary(
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 },
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 25 });
+
+        var decision = DrawingLayoutCandidateApplySafetyPolicy.Default.Resolve(
+            DrawingLayoutCandidateApplyExecutionMode.Apply,
+            summary);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(DrawingLayoutCandidateApplyExecutionMode.DryRun, decision.EffectiveMode);
+        Assert.Equal(DrawingLayoutCandidateApplySafetyDecisionReason.ScaleChanged, decision.Reason);
+    }
+
+    [Fact]
+    public void ApplySafetyPolicy_DefaultBlocksMissingBaseline()
+    {
+        var baseline = CreateCandidate("fit_views_to_sheet:final");
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 }));
+        var summary = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+
+        var decision = DrawingLayoutCandidateApplySafetyPolicy.Default.Resolve(
+            DrawingLayoutCandidateApplyExecutionMode.Apply,
+            summary);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(DrawingLayoutCandidateApplyExecutionMode.DryRun, decision.EffectiveMode);
+        Assert.Equal(DrawingLayoutCandidateApplySafetyDecisionReason.MissingBaseline, decision.Reason);
+    }
+
+    [Fact]
+    public void ApplySafetyPolicy_DryRunRequestRemainsDryRun()
+    {
+        var summary = BuildDeltaSummary(
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 },
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 25, OriginY = 10, Scale = 20 });
+
+        var decision = DrawingLayoutCandidateApplySafetyPolicy.Default.Resolve(
+            DrawingLayoutCandidateApplyExecutionMode.DryRun,
+            summary);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(DrawingLayoutCandidateApplyExecutionMode.DryRun, decision.EffectiveMode);
+        Assert.Equal(DrawingLayoutCandidateApplySafetyDecisionReason.NotRequested, decision.Reason);
+    }
+
+    [Fact]
+    public void ApplySafetyPolicy_BlocksWhenMaxDeltaExceeded()
+    {
+        var summary = BuildDeltaSummary(
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 15, OriginY = 10, Scale = 20 },
+            new DrawingLayoutCandidateView { Id = 7, OriginX = 25, OriginY = 10, Scale = 20 });
+        var policy = new DrawingLayoutCandidateApplySafetyPolicy
+        {
+            MaxDelta = 5
+        };
+
+        var decision = policy.Resolve(
+            DrawingLayoutCandidateApplyExecutionMode.Apply,
+            summary);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(DrawingLayoutCandidateApplyExecutionMode.DryRun, decision.EffectiveMode);
+        Assert.Equal(DrawingLayoutCandidateApplySafetyDecisionReason.ExceedsMaxDelta, decision.Reason);
+    }
+
+    [Theory]
+    [InlineData(DrawingLayoutCandidateApplySafetyDecisionReason.NotRequested, "not-requested")]
+    [InlineData(DrawingLayoutCandidateApplySafetyDecisionReason.Allowed, "allowed")]
+    [InlineData(DrawingLayoutCandidateApplySafetyDecisionReason.MissingBaseline, "missing-baseline")]
+    [InlineData(DrawingLayoutCandidateApplySafetyDecisionReason.ScaleChanged, "scale-changed")]
+    [InlineData(DrawingLayoutCandidateApplySafetyDecisionReason.ExceedsMaxDelta, "exceeds-max-delta")]
+    public void SafetyDecisionReasonToTraceString_ReturnsStableTraceValue(
+        DrawingLayoutCandidateApplySafetyDecisionReason reason,
+        string expected)
+    {
+        Assert.Equal(expected, DrawingLayoutCandidateApplySafetyDecisionReasonFormatter.ToTraceString(reason));
+    }
+
     private static DrawingLayoutCandidateEvaluation CreateEvaluation(
         string candidateName,
         params DrawingLayoutCandidateView[] views)
@@ -307,4 +406,15 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
             Name = candidateName,
             Views = views.ToList()
         };
+
+    private static DrawingLayoutCandidateApplyDeltaSummary BuildDeltaSummary(
+        DrawingLayoutCandidateView baselineView,
+        DrawingLayoutCandidateView targetView)
+    {
+        var baseline = CreateCandidate("fit_views_to_sheet:final", baselineView);
+        var plan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(CreateEvaluation(
+            "fit_views_to_sheet:planned-centered",
+            targetView));
+        return DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(baseline, plan);
+    }
 }
