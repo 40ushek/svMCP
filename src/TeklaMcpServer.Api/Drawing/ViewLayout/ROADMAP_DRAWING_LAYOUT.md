@@ -285,6 +285,10 @@ Implemented so far:
 - Planned candidate construction now has a pure DTO/factory path:
   `DrawingLayoutPlannedView` + `DrawingLayoutCandidateFactory.FromPlannedViews`.
   Tekla `View` remains only in the current adapter builder.
+- Adapter boundary is explicit: `DrawingLayoutCandidateBuilder.ToPlannedViews`
+  converts runtime `View + ArrangedView` to planned DTOs; `FromPlannedLayout`
+  is a convenience wrapper over it. Future variant generator receives planned
+  DTOs directly without touching Tekla `View`.
 
 #### 5.4 Apply Selected Candidate
 

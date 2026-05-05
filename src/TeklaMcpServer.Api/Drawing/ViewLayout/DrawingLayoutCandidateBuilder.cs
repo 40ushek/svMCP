@@ -63,12 +63,12 @@ internal static class DrawingLayoutCandidateBuilder
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
         IReadOnlyList<ArrangedView> arranged)
-    {
-        return FromPlannedViews(
+        => DrawingLayoutCandidateFactory.FromPlannedViews(
             name,
-            workspace,
-            BuildPlannedViews(workspace, views, arranged));
-    }
+            workspace.Source.Drawing,
+            workspace.Source.Sheet,
+            workspace.Source.ReservedLayout,
+            ToPlannedViews(workspace, views, arranged));
 
     public static DrawingLayoutCandidate FromPlannedViews(
         string name,
@@ -81,7 +81,7 @@ internal static class DrawingLayoutCandidateBuilder
             workspace.Source.ReservedLayout,
             plannedViews);
 
-    private static List<DrawingLayoutPlannedView> BuildPlannedViews(
+    public static List<DrawingLayoutPlannedView> ToPlannedViews(
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
         IReadOnlyList<ArrangedView> arranged)
