@@ -1,5 +1,6 @@
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
@@ -155,6 +156,38 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         string expected)
     {
         Assert.Equal(expected, DrawingLayoutCandidateApplyExecutionReasonFormatter.ToTraceString(reason));
+    }
+
+    [Theory]
+    [InlineData(DrawingLayoutApplyMode.DebugPreview)]
+    [InlineData(DrawingLayoutApplyMode.FinalOnly)]
+    public void ApplyGate_DefaultsToDryRun(DrawingLayoutApplyMode applyMode)
+    {
+        DrawingLayoutCandidateApplyGate.EnableSelectedCandidateApply = false;
+
+        Assert.Equal(
+            DrawingLayoutCandidateApplyExecutionMode.DryRun,
+            DrawingLayoutCandidateApplyGate.Resolve(applyMode));
+    }
+
+    [Fact]
+    public void ApplyGate_AllowsApplyOnlyForFinalOnlyWhenEnabled()
+    {
+        try
+        {
+            DrawingLayoutCandidateApplyGate.EnableSelectedCandidateApply = true;
+
+            Assert.Equal(
+                DrawingLayoutCandidateApplyExecutionMode.DryRun,
+                DrawingLayoutCandidateApplyGate.Resolve(DrawingLayoutApplyMode.DebugPreview));
+            Assert.Equal(
+                DrawingLayoutCandidateApplyExecutionMode.Apply,
+                DrawingLayoutCandidateApplyGate.Resolve(DrawingLayoutApplyMode.FinalOnly));
+        }
+        finally
+        {
+            DrawingLayoutCandidateApplyGate.EnableSelectedCandidateApply = false;
+        }
     }
 
     private static DrawingLayoutCandidateEvaluation CreateEvaluation(

@@ -326,6 +326,9 @@ Implemented so far:
   it can map apply-plan moves to runtime `View` handles, set origin/scale, and
   call `Modify()`. It intentionally does not call `CommitChanges()`, and the
   current `fit_views_to_sheet` integration still uses `DryRun`.
+- `DrawingLayoutCandidateApplyGate` is the internal behavior switch. By default
+  it resolves every request to `DryRun`; when explicitly enabled, only
+  `DrawingLayoutApplyMode.FinalOnly` resolves to `Apply`.
 
 #### 5.5 Regression Cases
 

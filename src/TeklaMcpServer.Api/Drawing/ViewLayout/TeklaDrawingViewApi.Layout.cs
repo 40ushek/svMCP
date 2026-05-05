@@ -1218,7 +1218,7 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateApplyExecution(new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
             layoutWorkspace.RuntimeViewsById,
-            DrawingLayoutCandidateApplyExecutionMode.DryRun));
+            DrawingLayoutCandidateApplyGate.Resolve(applyMode)));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
