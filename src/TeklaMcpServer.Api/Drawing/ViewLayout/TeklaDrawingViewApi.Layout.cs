@@ -585,6 +585,38 @@ public sealed partial class TeklaDrawingViewApi
                 rect.MaxX,
                 rect.MaxY);
 
+    private static void TraceLayoutCandidateApplyPlan(DrawingLayoutCandidateApplyPlan plan)
+    {
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_apply_plan",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate={0} canApply={1} reason={2} moves={3}",
+                string.IsNullOrWhiteSpace(plan.CandidateName) ? "none" : plan.CandidateName,
+                plan.CanApply ? 1 : 0,
+                string.IsNullOrWhiteSpace(plan.Reason) ? "unknown" : plan.Reason,
+                plan.Moves.Count));
+
+        foreach (var move in plan.Moves)
+        {
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_apply_plan_move",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} view={1} origin={2:F2},{3:F2} scale={4:F2} rect={5}",
+                    string.IsNullOrWhiteSpace(plan.CandidateName) ? "none" : plan.CandidateName,
+                    move.ViewId,
+                    move.TargetOriginX,
+                    move.TargetOriginY,
+                    move.Scale,
+                    FormatRect(move.LayoutRect)));
+        }
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -1162,6 +1194,8 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
+        TraceLayoutCandidateApplyPlan(
+            DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.

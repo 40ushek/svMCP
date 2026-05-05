@@ -304,10 +304,20 @@ Implemented so far:
 
 #### 5.4 Apply Selected Candidate
 
+Status: pre-apply diagnostics started.
+
 - Apply only the selected candidate to Tekla runtime views.
 - Preserve current public result shape.
 - Include selected-candidate score/diagnostics in trace first.
 - Add result fields only in a separate planned API contract step.
+
+Implemented so far:
+
+- `DrawingLayoutCandidateApplyPlan` describes whether the selected candidate is
+  currently applicable and which view origins/scales it would apply.
+- `fit_layout_apply_plan` and `fit_layout_apply_plan_move` trace events report
+  the selected candidate apply plan without calling `Modify()` or
+  `CommitChanges()`.
 
 #### 5.5 Regression Cases
 
