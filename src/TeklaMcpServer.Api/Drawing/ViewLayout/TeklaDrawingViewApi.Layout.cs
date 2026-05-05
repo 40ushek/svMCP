@@ -503,6 +503,25 @@ public sealed partial class TeklaDrawingViewApi
                 validation.Diagnostics.Count));
     }
 
+    private static void TraceLayoutCandidateSelection(DrawingLayoutCandidateSelection selection)
+    {
+        var selected = selection.Selected;
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_candidate_selection",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidates={0} selected={1} feasible={2} total={3:0.###} diagnostics={4}",
+                selection.Evaluations.Count,
+                selected != null
+                    ? (string.IsNullOrWhiteSpace(selected.Candidate.Name) ? "unnamed" : selected.Candidate.Name)
+                    : "none",
+                selected?.IsFeasible == true ? 1 : 0,
+                selected?.Score.TotalScore ?? 0.0,
+                selection.Diagnostics.Count));
+    }
+
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
         DrawingLayoutWorkspace workspace,
@@ -1041,8 +1060,11 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.RuntimeViews,
             arranged,
             finalActualRects);
-        var passiveEvaluation = new DrawingLayoutScorer().Evaluate(passiveCandidate);
-        TraceLayoutCandidateScore(passiveEvaluation);
+        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
+            new[] { passiveCandidate });
+        TraceLayoutCandidateSelection(passiveSelection);
+        if (passiveSelection.Selected != null)
+            TraceLayoutCandidateScore(passiveSelection.Selected);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.

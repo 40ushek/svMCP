@@ -260,11 +260,20 @@ Implemented so far:
 
 #### 5.3 Multi-Candidate Evaluation
 
+Status: initial implementation started.
+
 - Generate several virtual layout candidates from the same workspace.
 - Start with behavior-equivalent variants before introducing new policies.
 - Evaluate candidates without `Modify()` / `CommitChanges()` where possible.
 - Score candidates through `DrawingLayoutScorer`.
 - Keep diagnostics explaining why the selected candidate won.
+
+Implemented so far:
+
+- `DrawingLayoutCandidateSelector` evaluates candidate lists and selects the
+  best candidate by feasibility, score, and stable input order.
+- `fit_views_to_sheet` routes the current passive final candidate through the
+  selector, but still supplies only the existing behavior-equivalent candidate.
 
 #### 5.4 Apply Selected Candidate
 
