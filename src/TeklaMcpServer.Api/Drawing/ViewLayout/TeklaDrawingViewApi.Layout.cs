@@ -473,55 +473,6 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
-    private static DrawingLayoutCandidate BuildPassiveLayoutCandidate(
-        string name,
-        DrawingLayoutWorkspace workspace,
-        IReadOnlyList<View> views,
-        IReadOnlyList<ArrangedView> arranged,
-        IReadOnlyDictionary<int, ReservedRect> actualRects)
-    {
-        var arrangedById = arranged.ToDictionary(static view => view.Id);
-        var candidate = new DrawingLayoutCandidate
-        {
-            Name = name,
-            Drawing = workspace.Source.Drawing,
-            Sheet = workspace.Source.Sheet,
-            ReservedLayout = workspace.Source.ReservedLayout
-        };
-
-        foreach (var view in views)
-        {
-            var viewId = view.GetIdentifier().ID;
-            var hasRect = actualRects.TryGetValue(viewId, out var rect);
-            var frame = hasRect
-                ? (Width: rect.Width, Height: rect.Height)
-                : workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
-
-            arrangedById.TryGetValue(viewId, out var arrangedView);
-            candidate.Views.Add(new DrawingLayoutCandidateView
-            {
-                Id = viewId,
-                ViewType = view.ViewType.ToString(),
-                SemanticKind = workspace.GetSemanticKind(viewId).ToString(),
-                Name = view.Name ?? string.Empty,
-                OriginX = view.Origin?.X ?? 0.0,
-                OriginY = view.Origin?.Y ?? 0.0,
-                Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
-                Width = frame.Width,
-                Height = frame.Height,
-                BBoxMinX = hasRect ? rect.MinX : null,
-                BBoxMinY = hasRect ? rect.MinY : null,
-                BBoxMaxX = hasRect ? rect.MaxX : null,
-                BBoxMaxY = hasRect ? rect.MaxY : null,
-                PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
-                ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
-                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
-            });
-        }
-
-        return candidate;
-    }
-
     private static void TraceLayoutCandidateScore(
         DrawingLayoutCandidate candidate,
         DrawingLayoutScore score)
@@ -1080,7 +1031,7 @@ public sealed partial class TeklaDrawingViewApi
             arranged,
             finalActualRects);
 
-        var passiveCandidate = BuildPassiveLayoutCandidate(
+        var passiveCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
             "fit_views_to_sheet:final",
             layoutWorkspace,
             layoutWorkspace.RuntimeViews,

@@ -56,6 +56,8 @@ internal sealed class DrawingLayoutCandidateView
 
     public double? BBoxMaxY { get; set; }
 
+    public ReservedRect? LayoutRect { get; set; }
+
     public string PreferredPlacementSide { get; set; } = string.Empty;
 
     public string ActualPlacementSide { get; set; } = string.Empty;
@@ -74,9 +76,9 @@ internal sealed class DrawingLayoutCandidateView
             Scale = Scale,
             Width = Width,
             Height = Height,
-            BBoxMinX = BBoxMinX,
-            BBoxMinY = BBoxMinY,
-            BBoxMaxX = BBoxMaxX,
-            BBoxMaxY = BBoxMaxY
+            BBoxMinX = LayoutRect?.MinX ?? BBoxMinX,
+            BBoxMinY = LayoutRect?.MinY ?? BBoxMinY,
+            BBoxMaxX = LayoutRect?.MaxX ?? BBoxMaxX,
+            BBoxMaxY = LayoutRect?.MaxY ?? BBoxMaxY
         };
 }

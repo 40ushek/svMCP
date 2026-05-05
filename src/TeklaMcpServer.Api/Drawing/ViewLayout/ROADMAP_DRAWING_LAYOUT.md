@@ -240,6 +240,8 @@ Status: initial implementation done.
 
 #### 5.2 Candidate Model
 
+Status: initial implementation started.
+
 - Represent virtual view origin, scale, frame rect, semantic kind, and placement
   side without requiring a runtime `View`.
 - Carry sheet size, margins, reserved areas, and title-block/table conflicts.
@@ -247,6 +249,12 @@ Status: initial implementation done.
   diagnostics.
 - Keep candidates serializable enough for case snapshots and regression data.
 - Keep heavy `DrawingViewContext` data out of normal candidates.
+
+Implemented so far:
+
+- `DrawingLayoutCandidateView` carries an explicit layout rect.
+- Runtime `View` to candidate conversion is isolated in
+  `DrawingLayoutCandidateBuilder`.
 
 #### 5.3 Multi-Candidate Evaluation
 

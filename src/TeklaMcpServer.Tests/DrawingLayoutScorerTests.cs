@@ -185,10 +185,7 @@ public sealed class DrawingLayoutScorerTests
                     OriginY = 20,
                     Width = 30,
                     Height = 30,
-                    BBoxMinX = 5,
-                    BBoxMinY = 5,
-                    BBoxMaxX = 35,
-                    BBoxMaxY = 35
+                    LayoutRect = new ReservedRect(5, 5, 35, 35)
                 }
             ]
         };
