@@ -1215,9 +1215,9 @@ public sealed partial class TeklaDrawingViewApi
             TraceLayoutCandidateScore(evaluation);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
         TraceLayoutCandidateApplyPlan(applyPlan);
-        TraceLayoutCandidateApplyExecution(new DrawingLayoutCandidateApplyService().Execute(
+        TraceLayoutCandidateApplyExecution(new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
-            layoutWorkspace.RuntimeViewsById.Keys.ToList(),
+            layoutWorkspace.RuntimeViewsById,
             DrawingLayoutCandidateApplyExecutionMode.DryRun));
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).

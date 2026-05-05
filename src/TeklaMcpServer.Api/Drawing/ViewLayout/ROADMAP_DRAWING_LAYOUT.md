@@ -322,6 +322,10 @@ Implemented so far:
   available runtime view ids and supports explicit `DryRun` / `Apply` modes.
   `fit_views_to_sheet` currently calls it only in `DryRun` mode and emits
   `fit_layout_apply_execution`, so selected-candidate apply remains disabled.
+- `DrawingLayoutCandidateTeklaApplyAdapter` is the Tekla-facing apply boundary:
+  it can map apply-plan moves to runtime `View` handles, set origin/scale, and
+  call `Modify()`. It intentionally does not call `CommitChanges()`, and the
+  current `fit_views_to_sheet` integration still uses `DryRun`.
 
 #### 5.5 Regression Cases
 
