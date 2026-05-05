@@ -58,7 +58,9 @@
       "Bash(taskkill /IM TeklaMcpServer.exe /F)",
       "Bash(taskkill /IM dotnet.exe /F)",
       "Bash(powershell -Command \"Get-Process | Where-Object { $_.Name -like ''*TeklaMcp*'' -or $_.Name -like ''*dotnet*'' } | Select-Object Id, Name, Path\")",
-      "mcp__tekla__move_mark"
+      "mcp__tekla__move_mark",
+      "PowerShell(Stop-Process -Name \"TeklaMcpServer\" -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Name \"TeklaBridge\" -Force -ErrorAction SilentlyContinue)"
     ]
   }
 }

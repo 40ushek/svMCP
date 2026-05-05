@@ -473,20 +473,24 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
-    private static void TraceLayoutCandidateScore(
-        DrawingLayoutCandidate candidate,
-        DrawingLayoutScore score)
+    private static void TraceLayoutCandidateScore(DrawingLayoutCandidateEvaluation evaluation)
     {
+        var candidate = evaluation.Candidate;
+        var score = evaluation.Score;
+        var validation = evaluation.Validation;
+
         PerfTrace.Write(
             "api-view",
             "fit_layout_score",
             0,
             string.Format(
                 CultureInfo.InvariantCulture,
-                "candidate={0} total={1:0.###} views={2} nonDetail={3} fill={4:0.###} uniformScale={5:0.###} viewOverlaps={6}:area={7:0.###}:penalty={8:0.###} reservedOverlaps={9}:area={10:0.###}:penalty={11:0.###} diagnostics={12}",
+                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} viewOverlaps={8}:area={9:0.###}:penalty={10:0.###} reservedOverlaps={11}:area={12:0.###}:penalty={13:0.###} diagnostics={14}",
                 string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                 score.TotalScore,
+                evaluation.IsFeasible ? 1 : 0,
                 score.Breakdown.ScoredViewCount,
+                validation.MissingRectCount,
                 score.Breakdown.NonDetailViewCount,
                 score.Breakdown.FillRatioScore,
                 score.Breakdown.UniformScaleScore,
@@ -496,7 +500,7 @@ public sealed partial class TeklaDrawingViewApi
                 score.Breakdown.ReservedOverlapCount,
                 score.Breakdown.ReservedOverlapArea,
                 score.Breakdown.ReservedOverlapPenalty,
-                score.Diagnostics.Count));
+                validation.Diagnostics.Count));
     }
 
     private KeepScaleFitResult ValidateCurrentScaleFit(
@@ -1037,8 +1041,8 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.RuntimeViews,
             arranged,
             finalActualRects);
-        var passiveScore = new DrawingLayoutScorer().Score(passiveCandidate);
-        TraceLayoutCandidateScore(passiveCandidate, passiveScore);
+        var passiveEvaluation = new DrawingLayoutScorer().Evaluate(passiveCandidate);
+        TraceLayoutCandidateScore(passiveEvaluation);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.

@@ -255,6 +255,8 @@ Implemented so far:
 - `DrawingLayoutCandidateView` carries an explicit layout rect.
 - Runtime `View` to candidate conversion is isolated in
   `DrawingLayoutCandidateBuilder`.
+- `DrawingLayoutCandidateEvaluation` groups candidate, score, and feasibility
+  diagnostics for the next multi-candidate selection step.
 
 #### 5.3 Multi-Candidate Evaluation
 

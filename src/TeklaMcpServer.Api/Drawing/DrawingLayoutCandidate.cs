@@ -28,6 +28,37 @@ internal sealed class DrawingLayoutCandidate
         };
 }
 
+internal sealed class DrawingLayoutCandidateEvaluation
+{
+    public DrawingLayoutCandidate Candidate { get; set; } = new();
+
+    public DrawingLayoutScore Score { get; set; } = new();
+
+    public DrawingLayoutCandidateValidation Validation { get; set; } = new();
+
+    public bool IsFeasible => Validation.IsFeasible;
+}
+
+internal sealed class DrawingLayoutCandidateValidation
+{
+    public int MissingRectCount { get; set; }
+
+    public int ViewOverlapCount { get; set; }
+
+    public double ViewOverlapArea { get; set; }
+
+    public int ReservedOverlapCount { get; set; }
+
+    public double ReservedOverlapArea { get; set; }
+
+    public List<string> Diagnostics { get; set; } = new();
+
+    public bool IsFeasible =>
+        MissingRectCount == 0 &&
+        ViewOverlapCount == 0 &&
+        ReservedOverlapCount == 0;
+}
+
 internal sealed class DrawingLayoutCandidateView
 {
     public int Id { get; set; }

@@ -196,6 +196,73 @@ public sealed class DrawingLayoutScorerTests
         Assert.Equal(900, score.Breakdown.TotalViewArea, 3);
     }
 
+    [Fact]
+    public void Evaluate_ReportsCandidateFeasibilityDiagnostics()
+    {
+        var candidate = new DrawingLayoutCandidate
+        {
+            Name = "overlap",
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            },
+            ReservedLayout = new DrawingReservedLayoutContext
+            {
+                Areas =
+                [
+                    new ReservedRect(0, 0, 20, 20)
+                ]
+            },
+            Diagnostics =
+            [
+                "candidate:source=test"
+            ],
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 1,
+                    ViewType = "FrontView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    Width = 30,
+                    Height = 30,
+                    LayoutRect = new ReservedRect(10, 10, 40, 40)
+                },
+                new DrawingLayoutCandidateView
+                {
+                    Id = 2,
+                    ViewType = "TopView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    Width = 30,
+                    Height = 30,
+                    LayoutRect = new ReservedRect(25, 25, 55, 55)
+                },
+                new DrawingLayoutCandidateView
+                {
+                    Id = 3,
+                    ViewType = "SectionView",
+                    SemanticKind = "Section",
+                    Scale = 20,
+                    Width = 0,
+                    Height = 30
+                }
+            ]
+        };
+
+        var evaluation = new DrawingLayoutScorer().Evaluate(candidate);
+
+        Assert.False(evaluation.IsFeasible);
+        Assert.Equal(candidate, evaluation.Candidate);
+        Assert.Equal(1, evaluation.Validation.MissingRectCount);
+        Assert.Equal(1, evaluation.Validation.ViewOverlapCount);
+        Assert.Equal(1, evaluation.Validation.ReservedOverlapCount);
+        Assert.Contains("candidate:source=test", evaluation.Validation.Diagnostics);
+        Assert.Contains("score:view-rect-missing:view=3", evaluation.Validation.Diagnostics);
+    }
+
     private static DrawingContext CreateContext(
         double sheetWidth,
         double sheetHeight,

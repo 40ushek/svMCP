@@ -19,6 +19,34 @@ internal sealed class DrawingLayoutScorer
         return Score(candidate.ToDrawingContext(), weights);
     }
 
+    public DrawingLayoutCandidateEvaluation Evaluate(
+        DrawingLayoutCandidate candidate,
+        DrawingLayoutScoreWeights? weights = null)
+    {
+        if (candidate == null)
+            throw new ArgumentNullException(nameof(candidate));
+
+        var score = Score(candidate, weights);
+        var validation = new DrawingLayoutCandidateValidation
+        {
+            MissingRectCount = Math.Max(candidate.Views.Count - score.Breakdown.ScoredViewCount, 0),
+            ViewOverlapCount = score.Breakdown.ViewOverlapCount,
+            ViewOverlapArea = score.Breakdown.ViewOverlapArea,
+            ReservedOverlapCount = score.Breakdown.ReservedOverlapCount,
+            ReservedOverlapArea = score.Breakdown.ReservedOverlapArea,
+            Diagnostics = candidate.Diagnostics
+                .Concat(score.Diagnostics)
+                .ToList()
+        };
+
+        return new DrawingLayoutCandidateEvaluation
+        {
+            Candidate = candidate,
+            Score = score,
+            Validation = validation
+        };
+    }
+
     public DrawingLayoutScore Score(
         DrawingContext context,
         DrawingLayoutScoreWeights? weights = null)
