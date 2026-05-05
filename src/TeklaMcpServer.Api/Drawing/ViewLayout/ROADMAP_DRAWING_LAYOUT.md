@@ -420,6 +420,147 @@ Phase 5 non-goal:
 - Do not change layout behavior in 5.1. Passive scoring must observe and
   explain the current result before candidate selection affects output.
 
+### Phase 6. Качество компоновки
+
+Цель: чертеж должен быть понятен человеку. Крупный масштаб, близкое
+расположение видов и отсутствие пустого места важнее строгого соблюдения
+проекционной стороны.
+
+Проекционное выравнивание сторон (Top section над FrontView, Right section
+справа) остается бонусом, когда оно получается без ухудшения компоновки. Это не
+главная цель.
+
+Проекционная связь должна быть настраиваемой по силе:
+- strong projection: держать вид на канонической стороне и сохранять
+  проекционное выравнивание, если это не ухудшает масштаб/заполняемость;
+- relaxed projection: разрешить opposite/cross-axis placement, если strict
+  projection вынуждает уменьшать масштаб или оставляет много пустого места;
+- off/weak projection: для независимых дополнительных видов на GA drawing связь
+  с base view может быть слабой или отсутствовать, важнее компактная
+  компоновка без конфликтов.
+
+Для оценки качества layout нужно считать:
+- доступную площадь листа: usable sheet area минус union reserved/table areas;
+- суммарную площадь видов на текущем масштабе;
+- fill ratio: `sum(view area) / available sheet area`.
+
+Этот коэффициент характеризует заполняемость чертежа: насколько эффективно
+виды используют доступную площадь листа. Он помогает отличить плотную
+компоновку от листа с большим пустым пространством. При этом fill ratio не
+заменяет геометрическую проверку размещения: даже при высокой или достаточной
+заполняемости views могут не помещаться из-за формы свободных зон, reserved
+areas, projection constraints или конфликтов между видами.
+
+#### 6.1 Гибкое размещение дополнительных видов
+
+Текущее поведение: дополнительные виды размещаются на вычисленной стороне
+(Top -> сверху, Right -> справа). Если они там не помещаются, `GetFallbackZone`
+через
+`TryProbeSectionStackWithFallback` пробует противоположную сторону
+(Top -> Bottom, Right -> Left). Если не помещается и она, уменьшается масштаб.
+Cross-axis варианты (Top -> Right/Left, Right -> Top/Bottom) сейчас не
+пробуются.
+
+Целевое поведение: расширить существующую цепочку preferred -> opposite новым
+cross-axis шагом до уменьшения масштаба. Уменьшение масштаба остается последним
+вариантом.
+
+Приоритет размещения дополнительных видов:
+1. Preferred side (сторона, вычисленная из направления/отношения вида).
+2. Opposite side (Top -> Bottom, Right -> Left) — существующий fallback шаг.
+   Его нужно сохранить, но не считать достаточным: при некоторых layout
+   constraints opposite side тоже может не пройти.
+3. Cross-axis sides (Top -> Right или Left, Right -> Top или Bottom) — новый
+   шаг. Выбирать сторону, где больше свободного места.
+
+При cross-axis меняется только фактическая сторона и ориентация стека. Например,
+виды из группы Top остаются Top views, но если они переехали вправо, они
+размещаются вертикальным стеком справа от `baseRect`.
+
+Термин "дополнительные виды" здесь включает section/detail/secondary projected
+views, виды деталей на GA drawing и другие небазовые виды. Явная связь между
+видами не обязательна.
+Первый implementation scope идет через текущий section placement path
+(`SectionGroupSet`, `TryPlace...Section...`), но цель Phase 6 шире: не уменьшать
+масштаб, пока не исчерпаны допустимые варианты размещения дополнительных видов.
+
+Что нужно изменить:
+- Budget/base-rect selection в `TrySelectBaseRectWithBudgets` — главный
+  архитектурный риск. Он не должен резервировать место для дополнительных видов
+  на preferred стороне, если эти виды в итоге уходят на cross-axis сторону. Иначе
+  `baseRect` будет выбран так, будто сверху нужен top budget, даже когда top
+  views перенесены вправо.
+- Изменения вокруг budgets/base rect рискованнее, чем placement probing.
+  Сначала нужно покрыть cross-axis placement тестами и менять budget/base-rect
+  selection только если тест показывает, что старые budgets реально мешают
+  cross-axis placement.
+- `GetFallbackZone` сейчас возвращает только одну противоположную сторону.
+  Нужен дополнительный cross-axis fallback шаг рядом с ним, а не вместо него.
+- `TryPlaceHorizontalSectionStackWithFallback`,
+  `TryPlaceVerticalSectionStackWithFallback` и `TryPlaceDegradedStandardSections`
+  должны получить cross-axis кандидатов.
+- `SectionGroupSet` и семантическая группа вида не меняются. Например,
+  Top section/detail-like view остается в группе Top, даже если фактически
+  размещается справа.
+  Меняется только `ActualPlacementSide`/actual placement geometry.
+- Добавить явный projection-strength signal для кандидата/вида: strict,
+  relaxed или weak/off. В Phase 6.1 это может быть только diagnostic/scoring
+  input без изменения public contract.
+- Добавить diagnostics для площади: available sheet area, sum view area и fill
+  ratio для рассматриваемого масштаба/кандидата.
+
+Implementation note:
+- Для cross-axis использовать anchor целевой стороны:
+  `mainSkeleton.GetAnchorOrBase("<target>", baseRect)`, где target это
+  `right`, `left`, `top` или `bottom`.
+
+Диагностика:
+- Переиспользовать существующие `PlacementFallbackUsed`,
+  `PreferredPlacementSide`, `ActualPlacementSide` в arranged/planned view
+  diagnostics.
+- Расширить trace event `section_stack_result` флагом `crossAxis=1`, когда
+  использована cross-axis сторона.
+
+Acceptance criteria для 6.1:
+- На проблемном чертеже новая логика должна пробовать cross-axis размещение
+  дополнительных видов до уменьшения масштаба. Если такое размещение проходит
+  все layout constraints на текущем масштабе, масштаб не должен уменьшаться.
+- Preferred side по-прежнему пробуется первым, opposite side — вторым.
+  Cross-axis используется только если оба same-axis варианта не подходят.
+- В arranged/planned diagnostics у перенесенных видов заполнены
+  `PreferredPlacementSide`, `ActualPlacementSide` и `PlacementFallbackUsed`.
+- Trace `section_stack_result` показывает фактическую сторону и `crossAxis=1`
+  для cross-axis fallback.
+- Diagnostics показывают, была ли проекционная связь сохранена strict или
+  ослаблена до relaxed/weak ради лучшей компоновки.
+- Публичный JSON contract `fit_views_to_sheet` не меняется.
+
+Публичный result contract и scoring в этой фазе не меняются.
+
+Status: in design.
+
+#### Future. Agentic View Layout
+
+В перспективе нужен отдельный инструмент для agent-driven компоновки видов.
+Это не замена `fit_views_to_sheet`, а более свободный режим, где агент может
+сам искать расположение видов, менять масштабы видов, пробовать разные варианты
+и выбирать лучший по quality/score.
+
+Граница безопасности:
+- агент может двигать виды и менять масштабы видов только внутри явной
+  layout-команды пользователя;
+- команды диагностики, размеров, марок или проверки чертежа не должны
+  произвольно двигать виды или менять их масштабы;
+- результат agentic layout сначала должен быть представлен как план/preview с
+  diagnostics, score, списком перемещенных видов и списком scale changes;
+- apply должен быть отдельным явным шагом или защищен тем же safety gate, что и
+  остальные layout-команды.
+
+Этот режим может быть недетерминированным по поиску кандидатов, но результат
+должен быть объяснимым: какие виды двигались, какие масштабы изменились, почему
+выбран этот вариант, какие constraints сохранены, какие projection связи
+ослаблены.
+
 ## Non-Goals
 
 - Do not rewrite layout policy while introducing context.
