@@ -20,7 +20,8 @@ internal sealed class DrawingCaseSnapshotWriter
         DrawingContext after,
         string? note = null,
         DrawingLayoutScore? scoreBefore = null,
-        DrawingLayoutScore? scoreAfter = null)
+        DrawingLayoutScore? scoreAfter = null,
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null)
     {
         if (string.IsNullOrWhiteSpace(rootDirectory))
             throw new ArgumentException("Root directory is required.", nameof(rootDirectory));
@@ -41,7 +42,17 @@ internal sealed class DrawingCaseSnapshotWriter
 
         File.WriteAllText(beforePath, JsonSerializer.Serialize(before, JsonOptions));
         File.WriteAllText(afterPath, JsonSerializer.Serialize(after, JsonOptions));
-        File.WriteAllText(metaPath, JsonSerializer.Serialize(CreateMeta(drawingGuid, operation, before, after, note, scoreBefore, scoreAfter), JsonOptions));
+        File.WriteAllText(metaPath, JsonSerializer.Serialize(
+            CreateMeta(
+                drawingGuid,
+                operation,
+                before,
+                after,
+                note,
+                scoreBefore,
+                scoreAfter,
+                layoutDiagnostics),
+            JsonOptions));
 
         return new DrawingCaseSnapshotSaveResult
         {
@@ -59,7 +70,8 @@ internal sealed class DrawingCaseSnapshotWriter
         DrawingContext after,
         string? note,
         DrawingLayoutScore? scoreBefore,
-        DrawingLayoutScore? scoreAfter)
+        DrawingLayoutScore? scoreAfter,
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics)
     {
         var drawing = after.Drawing ?? before.Drawing ?? new DrawingInfo();
 
@@ -71,7 +83,8 @@ internal sealed class DrawingCaseSnapshotWriter
             Operation = operation,
             Note = note ?? string.Empty,
             ScoreBefore = scoreBefore == null ? null : CreateScoreSummary(scoreBefore),
-            ScoreAfter = scoreAfter == null ? null : CreateScoreSummary(scoreAfter)
+            ScoreAfter = scoreAfter == null ? null : CreateScoreSummary(scoreAfter),
+            LayoutDiagnostics = layoutDiagnostics
         };
     }
 
@@ -128,6 +141,44 @@ internal sealed class DrawingCaseMeta
     public string Note { get; set; } = string.Empty;
     public DrawingCaseScoreSummary? ScoreBefore { get; set; }
     public DrawingCaseScoreSummary? ScoreAfter { get; set; }
+    public DrawingCaseLayoutDiagnostics? LayoutDiagnostics { get; set; }
+}
+
+internal sealed class DrawingCaseLayoutDiagnostics
+{
+    public string SelectedCandidateName { get; set; } = string.Empty;
+    public double? SelectedCandidateScore { get; set; }
+    public bool? SelectedCandidateFeasible { get; set; }
+    public DrawingCaseApplyPlanSummary? ApplyPlan { get; set; }
+    public DrawingCaseApplyDeltaSummary? ApplyDelta { get; set; }
+    public DrawingCaseApplySafetySummary? ApplySafety { get; set; }
+    public List<string> Diagnostics { get; set; } = new();
+}
+
+internal sealed class DrawingCaseApplyPlanSummary
+{
+    public bool CanApply { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public int MoveCount { get; set; }
+}
+
+internal sealed class DrawingCaseApplyDeltaSummary
+{
+    public int MoveCount { get; set; }
+    public int ComparableMoveCount { get; set; }
+    public int MissingBaselineCount { get; set; }
+    public int MovedCount { get; set; }
+    public int ScaleChangedCount { get; set; }
+    public double MaxDelta { get; set; }
+    public double AverageDelta { get; set; }
+}
+
+internal sealed class DrawingCaseApplySafetySummary
+{
+    public string RequestedMode { get; set; } = string.Empty;
+    public string EffectiveMode { get; set; } = string.Empty;
+    public bool Allowed { get; set; }
+    public string Reason { get; set; } = string.Empty;
 }
 
 internal sealed class DrawingCaseScoreSummary

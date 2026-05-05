@@ -41,7 +41,8 @@ internal sealed class DrawingCaseCaptureService
         string rootDirectory,
         string drawingCategory,
         string operation,
-        string? note = null)
+        string? note = null,
+        DrawingCaseLayoutDiagnostics? layoutDiagnostics = null)
     {
         if (before == null)
             throw new ArgumentNullException(nameof(before));
@@ -62,7 +63,8 @@ internal sealed class DrawingCaseCaptureService
             after,
             note,
             scoreBefore,
-            scoreAfter);
+            scoreAfter,
+            layoutDiagnostics);
     }
 
     private static void ValidateSameDrawingGuid(DrawingContext before, DrawingContext after)

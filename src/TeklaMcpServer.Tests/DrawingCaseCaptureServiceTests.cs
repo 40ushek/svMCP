@@ -105,6 +105,43 @@ public sealed class DrawingCaseCaptureServiceTests
         Assert.Contains("same drawing_guid", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void SaveCase_PassesLayoutDiagnosticsToWriter()
+    {
+        var tempRoot = CreateTempDirectory();
+
+        try
+        {
+            var before = CreateContext("drawing-guid-1", "Assembly drawing");
+            var after = CreateContext("drawing-guid-1", "Assembly drawing");
+            var service = new DrawingCaseCaptureService(
+                () => throw new InvalidOperationException("Capture should not be used in SaveCase test."),
+                new DrawingLayoutScorer(),
+                new DrawingCaseSnapshotWriter());
+
+            var result = service.SaveCase(
+                before,
+                after,
+                tempRoot,
+                "assembly",
+                "fit_views_to_sheet",
+                layoutDiagnostics: new DrawingCaseLayoutDiagnostics
+                {
+                    SelectedCandidateName = "fit_views_to_sheet:final"
+                });
+
+            var meta = JsonSerializer.Deserialize<DrawingCaseMeta>(
+                File.ReadAllText(result.MetaPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            Assert.Equal("fit_views_to_sheet:final", meta?.LayoutDiagnostics?.SelectedCandidateName);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "svmcp-drawing-case-capture-tests", Guid.NewGuid().ToString("N"));

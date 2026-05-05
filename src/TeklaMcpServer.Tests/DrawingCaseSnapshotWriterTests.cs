@@ -84,6 +84,67 @@ public sealed class DrawingCaseSnapshotWriterTests
         }
     }
 
+    [Fact]
+    public void Save_WritesLayoutDiagnosticsIntoMeta()
+    {
+        var tempRoot = CreateTempDirectory();
+
+        try
+        {
+            var before = CreateContext("drawing-guid-1", "Assembly drawing");
+            var after = CreateContext("drawing-guid-1", "Assembly drawing");
+            var diagnostics = new DrawingCaseLayoutDiagnostics
+            {
+                SelectedCandidateName = "fit_views_to_sheet:planned-centered",
+                SelectedCandidateScore = 42.5,
+                SelectedCandidateFeasible = true,
+                ApplyPlan = new DrawingCaseApplyPlanSummary
+                {
+                    CanApply = true,
+                    Reason = "planned-candidate",
+                    MoveCount = 2
+                },
+                ApplyDelta = new DrawingCaseApplyDeltaSummary
+                {
+                    MoveCount = 2,
+                    ComparableMoveCount = 2,
+                    MovedCount = 1,
+                    MaxDelta = 10,
+                    AverageDelta = 5
+                },
+                ApplySafety = new DrawingCaseApplySafetySummary
+                {
+                    RequestedMode = "Apply",
+                    EffectiveMode = "DryRun",
+                    Allowed = false,
+                    Reason = "scale-changed"
+                }
+            };
+
+            var result = new DrawingCaseSnapshotWriter().Save(
+                tempRoot,
+                "assembly",
+                "fit_views_to_sheet",
+                before,
+                after,
+                layoutDiagnostics: diagnostics);
+
+            var meta = JsonSerializer.Deserialize<DrawingCaseMeta>(
+                File.ReadAllText(result.MetaPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            Assert.NotNull(meta?.LayoutDiagnostics);
+            Assert.Equal("fit_views_to_sheet:planned-centered", meta.LayoutDiagnostics.SelectedCandidateName);
+            Assert.Equal(2, meta.LayoutDiagnostics.ApplyPlan?.MoveCount);
+            Assert.Equal(1, meta.LayoutDiagnostics.ApplyDelta?.MovedCount);
+            Assert.Equal("scale-changed", meta.LayoutDiagnostics.ApplySafety?.Reason);
+        }
+        finally
+        {
+            Directory.Delete(tempRoot, recursive: true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "svmcp-drawing-case-tests", Guid.NewGuid().ToString("N"));

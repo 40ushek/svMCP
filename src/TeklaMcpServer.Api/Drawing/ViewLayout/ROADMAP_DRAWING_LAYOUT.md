@@ -380,6 +380,13 @@ Acceptance for enabling selected-candidate apply:
 - Reserved/table/title-block overlaps do not increase.
 - Projection/detail placement diagnostics do not regress.
 
+Implemented so far:
+
+- `DrawingCaseSnapshotWriter` / `DrawingCaseCaptureService` can write optional
+  `LayoutDiagnostics` into `meta.json`, including selected candidate, apply
+  plan summary, apply delta summary, and safety decision summary. Existing
+  before/after snapshot files and existing save calls remain compatible.
+
 Phase 5 non-goal:
 
 - Do not change layout behavior in 5.1. Passive scoring must observe and
