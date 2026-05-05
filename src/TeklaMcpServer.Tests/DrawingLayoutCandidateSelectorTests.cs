@@ -27,11 +27,11 @@ public sealed class DrawingLayoutCandidateSelectorTests
         Assert.Equal(feasible, selection.Items[0].Evaluation.Candidate);
         Assert.Equal(1, selection.Items[0].Rank);
         Assert.True(selection.Items[0].IsSelected);
-        Assert.Equal("selected", selection.Items[0].Reason);
+        Assert.Equal(DrawingLayoutCandidateSelectionReason.Selected, selection.Items[0].Reason);
         Assert.Equal(infeasible, selection.Items[1].Evaluation.Candidate);
         Assert.Equal(2, selection.Items[1].Rank);
         Assert.False(selection.Items[1].IsSelected);
-        Assert.Equal("rejected-feasibility", selection.Items[1].Reason);
+        Assert.Equal(DrawingLayoutCandidateSelectionReason.RejectedFeasibility, selection.Items[1].Reason);
         Assert.Contains("candidate-selection:selected:index=1:name=feasible", selection.Diagnostics);
     }
 
@@ -49,7 +49,7 @@ public sealed class DrawingLayoutCandidateSelectorTests
             [first, second]);
 
         Assert.Equal(first, selection.Selected?.Candidate);
-        Assert.Equal("rejected-input-order", selection.Items[1].Reason);
+        Assert.Equal(DrawingLayoutCandidateSelectionReason.RejectedInputOrder, selection.Items[1].Reason);
     }
 
     [Fact]
@@ -61,6 +61,23 @@ public sealed class DrawingLayoutCandidateSelectorTests
         Assert.Empty(selection.Evaluations);
         Assert.Empty(selection.Items);
         Assert.Contains("candidate-selection:no-candidates", selection.Diagnostics);
+    }
+
+    [Fact]
+    public void SelectionReasonFormatter_ReturnsStableTraceStrings()
+    {
+        Assert.Equal(
+            "selected",
+            DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.Selected));
+        Assert.Equal(
+            "rejected-feasibility",
+            DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedFeasibility));
+        Assert.Equal(
+            "rejected-score",
+            DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedScore));
+        Assert.Equal(
+            "rejected-input-order",
+            DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedInputOrder));
     }
 
     private static DrawingLayoutCandidate CreateCandidate(

@@ -535,7 +535,7 @@ public sealed partial class TeklaDrawingViewApi
                     item.Index,
                     item.Rank,
                     item.IsSelected ? 1 : 0,
-                    string.IsNullOrWhiteSpace(item.Reason) ? "unknown" : item.Reason,
+                    DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(item.Reason),
                     string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                     evaluation.IsFeasible ? 1 : 0,
                     evaluation.Score.TotalScore,

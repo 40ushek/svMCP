@@ -24,9 +24,30 @@ internal sealed class DrawingLayoutCandidateSelectionItem
 
     public bool IsSelected { get; set; }
 
-    public string Reason { get; set; } = string.Empty;
+    public DrawingLayoutCandidateSelectionReason Reason { get; set; }
 
     public DrawingLayoutCandidateEvaluation Evaluation { get; set; } = new();
+}
+
+internal enum DrawingLayoutCandidateSelectionReason
+{
+    Selected,
+    RejectedFeasibility,
+    RejectedScore,
+    RejectedInputOrder
+}
+
+internal static class DrawingLayoutCandidateSelectionReasonFormatter
+{
+    public static string ToTraceString(DrawingLayoutCandidateSelectionReason reason)
+        => reason switch
+        {
+            DrawingLayoutCandidateSelectionReason.Selected => "selected",
+            DrawingLayoutCandidateSelectionReason.RejectedFeasibility => "rejected-feasibility",
+            DrawingLayoutCandidateSelectionReason.RejectedScore => "rejected-score",
+            DrawingLayoutCandidateSelectionReason.RejectedInputOrder => "rejected-input-order",
+            _ => "unknown"
+        };
 }
 
 internal sealed class DrawingLayoutCandidateSelector
@@ -100,19 +121,19 @@ internal sealed class DrawingLayoutCandidateSelector
     private static string FormatName(DrawingLayoutCandidate candidate)
         => string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name;
 
-    private static string ResolveReason(
+    private static DrawingLayoutCandidateSelectionReason ResolveReason(
         (DrawingLayoutCandidateEvaluation Evaluation, int Index) candidate,
         (DrawingLayoutCandidateEvaluation Evaluation, int Index) selected)
     {
         if (candidate.Index == selected.Index)
-            return "selected";
+            return DrawingLayoutCandidateSelectionReason.Selected;
 
         if (selected.Evaluation.IsFeasible && !candidate.Evaluation.IsFeasible)
-            return "rejected-feasibility";
+            return DrawingLayoutCandidateSelectionReason.RejectedFeasibility;
 
         if (candidate.Evaluation.Score.TotalScore < selected.Evaluation.Score.TotalScore)
-            return "rejected-score";
+            return DrawingLayoutCandidateSelectionReason.RejectedScore;
 
-        return "rejected-input-order";
+        return DrawingLayoutCandidateSelectionReason.RejectedInputOrder;
     }
 }
