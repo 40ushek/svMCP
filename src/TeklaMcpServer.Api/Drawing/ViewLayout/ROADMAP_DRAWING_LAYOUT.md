@@ -126,13 +126,14 @@ Current migration status:
 - `DrawingProjectionAlignmentService` has a workspace-aware path and reads
   sheet/reserved/frame/topology/grid facts from the workspace.
 
-Remaining refactor gap:
+Remaining cleanup:
 
-- `fit_views_to_sheet` is still a large orchestration method.
-- Some helper methods still receive individual dictionaries such as semantic
-  kinds and frame sizes instead of receiving the workspace/arrange context.
+- `fit_views_to_sheet` is still a large orchestration method, but the main
+  context migration is complete.
+- Further splitting of post-arrange/projection/final-result steps is optional
+  readability work, not an architecture blocker.
 - Runtime `View` lists are still needed for Tekla apply/probe operations, but
-  should continue moving toward apply handles rather than layout state.
+  they are now treated as apply/probe handles rather than primary layout state.
 
 ## Phases
 
@@ -159,13 +160,12 @@ Move these scattered structures behind the planning context:
 
 No layout policy changes in this phase.
 
-Status: mostly done.
+Status: done.
 
-Remaining cleanup:
+Notes:
 
-- Remove remaining local aliases where they no longer improve readability.
-- Prefer `DrawingLayoutWorkspace` / `DrawingArrangeContext` in helper method
-  signatures over passing separate semantic/frame/offset dictionaries.
+- `DrawingLayoutWorkspace` now owns the main lookup state used by layout.
+- `DrawingArrangeContext` preserves workspace access through derived contexts.
 - Keep short-lived local candidate dictionaries only where they represent a
   single probe result before it is stored into the workspace.
 
@@ -187,22 +187,32 @@ optional follow-up if projection alignment needs more per-view geometry later.
 - Keep runtime `View` objects as apply handles only.
 - Preserve public MCP/bridge result shape.
 
-Status: active.
+Status: done.
 
-Suggested order:
+Completed:
 
-- Move scale-selection helper inputs from scattered dictionaries to the
-  workspace/context.
-- Move arrange/parity/detail helper inputs from scattered dictionaries to the
-  workspace/context.
-- Split `fit_views_to_sheet` into private orchestration steps:
-  initialization, scale selection, main arrange, detail placement, projection
-  alignment, final result/diagnostics.
-- Keep each step behavior-preserving and separately buildable.
+- Scale selection consumes workspace facts for semantic kind and frame sizes.
+- Arrange/parity/detail helpers read planning facts through
+  `DrawingLayoutWorkspace` / `DrawingArrangeContext`.
+- Keep-scale validation and candidate scale probing are split into private
+  behavior-preserving steps.
+- Runtime `View` objects remain only where Tekla apply/probe handles are
+  required.
+- Public MCP/bridge result shape is preserved.
+
+Optional cleanup:
+
+- Split final post-arrange orchestration into smaller private steps:
+  offset correction, projection alignment, centering, detail reposition, and
+  result/diagnostics assembly.
+- Do this only when it helps the next feature; it is not required before
+  analytical layout work.
 
 ### Phase 5. Analytical Layout Follow-up
 
-After the context migration is stable:
+Status: next after live validation.
+
+After the context migration is validated on real drawings:
 
 - evaluate analytical scale/layout probing before Tekla `CommitChanges`
 - compare candidate layouts with `DrawingLayoutScorer`
@@ -218,8 +228,8 @@ After the context migration is stable:
 
 ## Validation Baseline
 
-Before and during the context migration, keep a small live-validation baseline
-for `fit_views_to_sheet` behavior:
+Before Phase 5, run a small live-validation baseline for `fit_views_to_sheet`
+behavior:
 
 - assembly drawings with standard projected neighbors
 - sheets with `Top` / `Bottom` sections

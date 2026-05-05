@@ -62,19 +62,18 @@ into `ROADMAP_DRAWING_LAYOUT.md`.
 - `Origin` is an apply/runtime mechanism. Frame/bbox geometry is canonical for
   layout checks.
 
-## Remaining Work
+## Follow-Up
 
 Active follow-up work moved to `ROADMAP_DRAWING_LAYOUT.md`.
 
-The active work is now the final layout-context refactor, not a new
-layout-policy rewrite:
+The layout-context refactor is implemented. Current follow-up is validation and
+analytical layout work, not a new layout-policy rewrite:
 
 - keep `DrawingContext` as the coarse sheet-level source
 - keep `DrawingLayoutWorkspace` as the temporary operation workspace
-- finish moving helper inputs from scattered dictionaries into
-  `DrawingLayoutWorkspace` / `DrawingArrangeContext`
-- simplify `fit_views_to_sheet` orchestration into smaller behavior-preserving
-  steps
+- run the validation baseline on real drawings before analytical changes
+- use `DrawingLayoutScorer` and before/after `DrawingContext` cases for the
+  next layout improvements
 - keep full `DrawingViewContext` reserved for dimensions/marks
 
 ## Validation Targets
