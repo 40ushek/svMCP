@@ -1009,6 +1009,12 @@ public sealed partial class TeklaDrawingViewApi
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
+        var plannedArrangedCandidate = DrawingLayoutCandidateBuilder.FromPlannedLayout(
+            "fit_views_to_sheet:planned-arranged",
+            layoutWorkspace,
+            currentViews,
+            arranged);
+
         TracePlannedVsActualParity(
             "post-arrange-pre-projection",
             layoutWorkspace,
@@ -1102,7 +1108,7 @@ public sealed partial class TeklaDrawingViewApi
             arranged,
             finalActualRects);
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
-            new[] { postProjectionCandidate, passiveCandidate });
+            new[] { plannedArrangedCandidate, postProjectionCandidate, passiveCandidate });
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);

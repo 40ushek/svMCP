@@ -57,4 +57,58 @@ internal static class DrawingLayoutCandidateBuilder
 
         return candidate;
     }
+
+    public static DrawingLayoutCandidate FromPlannedLayout(
+        string name,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        IReadOnlyList<ArrangedView> arranged)
+    {
+        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var candidate = new DrawingLayoutCandidate
+        {
+            Name = name,
+            Drawing = workspace.Source.Drawing,
+            Sheet = workspace.Source.Sheet,
+            ReservedLayout = workspace.Source.ReservedLayout
+        };
+
+        foreach (var view in views)
+        {
+            var viewId = view.GetIdentifier().ID;
+            arrangedById.TryGetValue(viewId, out var arrangedView);
+            var originX = arrangedView?.OriginX ?? view.Origin?.X ?? 0.0;
+            var originY = arrangedView?.OriginY ?? view.Origin?.Y ?? 0.0;
+            var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
+            var layoutRect = ViewPlacementGeometryService.CreateCandidateRect(
+                view,
+                originX,
+                originY,
+                frame.Width,
+                frame.Height);
+
+            candidate.Views.Add(new DrawingLayoutCandidateView
+            {
+                Id = viewId,
+                ViewType = view.ViewType.ToString(),
+                SemanticKind = workspace.GetSemanticKind(viewId).ToString(),
+                Name = view.Name ?? string.Empty,
+                OriginX = originX,
+                OriginY = originY,
+                Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
+                Width = frame.Width,
+                Height = frame.Height,
+                BBoxMinX = layoutRect.MinX,
+                BBoxMinY = layoutRect.MinY,
+                BBoxMaxX = layoutRect.MaxX,
+                BBoxMaxY = layoutRect.MaxY,
+                LayoutRect = layoutRect,
+                PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
+                ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
+                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
+            });
+        }
+
+        return candidate;
+    }
 }

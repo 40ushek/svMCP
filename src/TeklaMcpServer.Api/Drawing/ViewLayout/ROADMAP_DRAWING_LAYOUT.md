@@ -279,6 +279,9 @@ Implemented so far:
   repositioning. The selected candidate is still not applied.
 - Selection trace now includes per-candidate index, rank, selected flag, and
   rejection/selection reason.
+- `DrawingLayoutCandidateBuilder.FromPlannedLayout` builds a virtual planned
+  candidate from arranged origins and selected frame sizes without reading
+  post-apply actual view rectangles.
 
 #### 5.4 Apply Selected Candidate
 
