@@ -401,6 +401,8 @@ Implemented so far:
 - `DrawingCaseSnapshotWriter` / `DrawingCaseCaptureService` can persist an
   optional `LayoutStability` report into `meta.json` together with score and
   selected-candidate diagnostics.
+- `DrawingCaseSnapshotReader` can load saved `before.json`, `after.json`, and
+  `meta.json` files back into typed contexts for offline regression checks.
 
 Phase 5 non-goal:
 
