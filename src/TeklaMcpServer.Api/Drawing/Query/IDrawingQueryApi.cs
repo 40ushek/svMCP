@@ -14,5 +14,9 @@ public interface IDrawingQueryApi
 
     CloseDrawingResult CloseActiveDrawing();
 
+    DrawingOperationResult UpdateDrawing(System.Guid drawingGuid);
+
+    DrawingOperationResult DeleteDrawing(System.Guid drawingGuid);
+
     ExportDrawingsPdfResult ExportDrawingsPdf(IReadOnlyCollection<string> drawingGuids, string outputDirectory);
 }

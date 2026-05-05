@@ -25,6 +25,12 @@ internal sealed partial class DrawingCommandHandler
             case "close_drawing":
                 return HandleCloseDrawing(api);
 
+            case "update_drawing":
+                return HandleUpdateDrawing(api, args);
+
+            case "delete_drawing":
+                return HandleDeleteDrawing(api, args);
+
             case "export_drawings_pdf":
                 return HandleExportDrawingsPdf(api, args);
 
@@ -76,6 +82,21 @@ internal sealed partial class DrawingCommandHandler
 
         if (!result.Opened)
         {
+            if (result.RequiresModelNumbering)
+            {
+                WriteJson(new
+                {
+                    error = result.Error,
+                    requiresModelNumbering = true,
+                    guid = result.RequestedGuid,
+                    name = result.Drawing.Name,
+                    mark = result.Drawing.Mark,
+                    type = result.Drawing.Type,
+                    status = result.Drawing.Status
+                });
+                return true;
+            }
+
             WriteDrawingFailure("Failed to open drawing", result.RequestedGuid);
             return true;
         }
@@ -122,6 +143,34 @@ internal sealed partial class DrawingCommandHandler
             result.Drawing.Title1,
             result.Drawing.Title2,
             result.Drawing.Title3);
+        return true;
+    }
+
+    private bool HandleUpdateDrawing(TeklaDrawingQueryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.UpdateDrawing(parseResult.Request.RequestedGuid);
+        WriteDrawingOperationResult("updated", result);
+        return true;
+    }
+
+    private bool HandleDeleteDrawing(TeklaDrawingQueryApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseOpenDrawingRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.DeleteDrawing(parseResult.Request.RequestedGuid);
+        WriteDrawingOperationResult("deleted", result);
         return true;
     }
 
@@ -238,6 +287,34 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+    private void WriteDrawingOperationResult(string operation, DrawingOperationResult result)
+    {
+        if (!result.Found)
+        {
+            WriteJson(new
+            {
+                error = "Drawing not found",
+                guid = result.RequestedGuid,
+                operation
+            });
+            return;
+        }
+
+        WriteJson(new
+        {
+            operation,
+            succeeded = result.Succeeded,
+            guid = result.Drawing.Guid,
+            name = result.Drawing.Name,
+            mark = result.Drawing.Mark,
+            type = result.Drawing.Type,
+            drawingType = result.Drawing.DrawingType,
+            status = result.Drawing.Status,
+            sourceModelObjectId = result.Drawing.SourceModelObjectId,
+            sourceModelObjectKind = result.Drawing.SourceModelObjectKind
+        });
+    }
+
     private static IEnumerable<object> MapBasicDrawings(
         IEnumerable<DrawingInfo> drawings,
         bool includeStatus = false)
@@ -265,7 +342,22 @@ internal sealed partial class DrawingCommandHandler
             title2 = d.Title2,
             title3 = d.Title3,
             type = d.Type,
-            status = d.Status
+            drawingType = d.DrawingType,
+            status = d.Status,
+            sourceModelObjectId = d.SourceModelObjectId,
+            sourceModelObjectGuid = d.SourceModelObjectGuid,
+            sourceModelObjectKind = d.SourceModelObjectKind,
+            isLocked = d.IsLocked,
+            isIssued = d.IsIssued,
+            isIssuedButModified = d.IsIssuedButModified,
+            isFrozen = d.IsFrozen,
+            isReadyForIssue = d.IsReadyForIssue,
+            isLockedBy = d.IsLockedBy,
+            isReadyForIssueBy = d.IsReadyForIssueBy,
+            creationDate = d.CreationDate,
+            modificationDate = d.ModificationDate,
+            issuingDate = d.IssuingDate,
+            outputDate = d.OutputDate
         });
     }
 }

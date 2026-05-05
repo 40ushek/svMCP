@@ -6,6 +6,8 @@ public sealed class OpenDrawingResult
 {
     public bool Found { get; set; }
     public bool Opened { get; set; }
+    public bool RequiresModelNumbering { get; set; }
+    public string Error { get; set; } = string.Empty;
     public string RequestedGuid { get; set; } = string.Empty;
     public DrawingInfo Drawing { get; set; } = new();
 }

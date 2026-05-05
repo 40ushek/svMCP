@@ -28,9 +28,21 @@ public static class DrawingPropertyFilterParser
                 var value = item.TryGetProperty("value", out var v)
                     ? (v.GetString() ?? string.Empty)
                     : string.Empty;
+                var operatorName = item.TryGetProperty("operator", out var op)
+                    ? (op.GetString() ?? string.Empty)
+                    : string.Empty;
+                if (string.IsNullOrWhiteSpace(operatorName) && item.TryGetProperty("op", out op))
+                    operatorName = op.GetString() ?? string.Empty;
 
                 if (!string.IsNullOrWhiteSpace(property))
-                    result.Add(new DrawingPropertyFilter { Property = property, Value = value });
+                {
+                    result.Add(new DrawingPropertyFilter
+                    {
+                        Property = property,
+                        Operator = string.IsNullOrWhiteSpace(operatorName) ? "equals" : operatorName,
+                        Value = value
+                    });
+                }
             }
         }
         catch

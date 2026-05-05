@@ -74,7 +74,7 @@ public static partial class DrawingCommandParsers
         if (filters.Count == 0)
         {
             return FindDrawingsByPropertiesParseResult.Fail(
-                "filtersJson must be a JSON array like [{\\\"property\\\":\\\"Name\\\",\\\"value\\\":\\\"GA\\\"}]");
+                "filtersJson must be a JSON array like [{\\\"property\\\":\\\"Name\\\",\\\"operator\\\":\\\"contains\\\",\\\"value\\\":\\\"GA\\\"}]");
         }
 
         return FindDrawingsByPropertiesParseResult.Success(new FindDrawingsByPropertiesRequest

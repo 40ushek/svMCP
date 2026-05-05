@@ -117,9 +117,53 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Find drawings by multiple properties using JSON filters")]
+    [McpServerTool, Description("Update a drawing by GUID through Tekla DrawingHandler.UpdateDrawing")]
+    public static string UpdateDrawing(
+        [Description("Drawing GUID from list_drawings or find_drawings_by_properties")] string drawingGuid)
+    {
+        if (string.IsNullOrWhiteSpace(drawingGuid))
+            return "Error: 'drawingGuid' is required and cannot be empty.";
+
+        var json = RunBridge("update_drawing", drawingGuid);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Drawing update command executed.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description("Delete a drawing by GUID. Use with care before recreating a drawing from its source model object.")]
+    public static string DeleteDrawing(
+        [Description("Drawing GUID from list_drawings or find_drawings_by_properties")] string drawingGuid)
+    {
+        if (string.IsNullOrWhiteSpace(drawingGuid))
+            return "Error: 'drawingGuid' is required and cannot be empty.";
+
+        var json = RunBridge("delete_drawing", drawingGuid);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return $"Drawing delete command executed.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description("Find drawings by multiple properties using JSON filters. Supports property/operator/value filters. Properties include name, mark, title1-3, type, drawingType, status, sourceModelObjectId, sourceModelObjectKind, isLocked, isIssued, isIssuedButModified, isFrozen, isReadyForIssue. Operators: equals, not_equals, contains, not_contains, starts_with, ends_with.")]
     public static string FindDrawingsByProperties(
-        [Description("JSON array of filters. Example: [{\"property\":\"Name\",\"value\":\"GA-001\"},{\"property\":\"Mark\",\"value\":\"A1\"}]")] string drawingPropertyFiltersJson)
+        [Description("JSON array of filters. Example: [{\"property\":\"status\",\"operator\":\"not_equals\",\"value\":\"UpToDate\"},{\"property\":\"type\",\"value\":\"SinglePartDrawing\"}]")] string drawingPropertyFiltersJson)
     {
         if (string.IsNullOrWhiteSpace(drawingPropertyFiltersJson))
             return "Error: 'drawingPropertyFiltersJson' is required and cannot be empty.";
