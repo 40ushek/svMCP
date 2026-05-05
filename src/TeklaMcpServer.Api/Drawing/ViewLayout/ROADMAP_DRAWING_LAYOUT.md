@@ -274,6 +274,9 @@ Implemented so far:
   best candidate by feasibility, score, and stable input order.
 - `fit_views_to_sheet` routes the current passive final candidate through the
   selector, but still supplies only the existing behavior-equivalent candidate.
+- `fit_views_to_sheet` now compares two passive candidates in trace:
+  post-projection before post-processing and final after centering/detail
+  repositioning. The selected candidate is still not applied.
 
 #### 5.4 Apply Selected Candidate
 

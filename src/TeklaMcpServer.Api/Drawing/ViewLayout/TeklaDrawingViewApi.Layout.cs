@@ -1023,17 +1023,37 @@ public sealed partial class TeklaDrawingViewApi
         finalCommitMs = commitSw.ElapsedMilliseconds;
         selectedScale = optimalScale;
 
+        var postProjectionViews = EnumerateViews(activeDrawing).ToList();
+        layoutWorkspace.SetRuntimeViews(postProjectionViews);
+        var postProjectionArranged = arranged
+            .Select(static view => new ArrangedView
+            {
+                Id = view.Id,
+                ViewType = view.ViewType,
+                OriginX = view.OriginX,
+                OriginY = view.OriginY,
+                PreferredPlacementSide = view.PreferredPlacementSide,
+                ActualPlacementSide = view.ActualPlacementSide,
+                PlacementFallbackUsed = view.PlacementFallbackUsed
+            })
+            .ToList();
+        var postProjectionActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+        var postProjectionCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
+            "fit_views_to_sheet:post-projection",
+            layoutWorkspace,
+            postProjectionViews,
+            postProjectionArranged,
+            postProjectionActualRects);
+
         // Center the arranged group inside the usable area.
-        var finalViews = EnumerateViews(activeDrawing).ToList();
-        layoutWorkspace.SetRuntimeViews(finalViews);
-        var finalArrangedViews = finalViews
+        var finalArrangedViews = postProjectionViews
             .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             effectiveMargin, sheetW - effectiveMargin,
             effectiveMargin, sheetH - effectiveMargin,
             layoutWorkspace.ReservedAreas);
-        finalViews = EnumerateViews(activeDrawing).ToList();
+        var finalViews = EnumerateViews(activeDrawing).ToList();
         layoutWorkspace.SetRuntimeViews(finalViews);
         arranged = TryRepositionDetailViews(
             activeDrawing,
@@ -1061,10 +1081,10 @@ public sealed partial class TeklaDrawingViewApi
             arranged,
             finalActualRects);
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
-            new[] { passiveCandidate });
+            new[] { postProjectionCandidate, passiveCandidate });
         TraceLayoutCandidateSelection(passiveSelection);
-        if (passiveSelection.Selected != null)
-            TraceLayoutCandidateScore(passiveSelection.Selected);
+        foreach (var evaluation in passiveSelection.Evaluations)
+            TraceLayoutCandidateScore(evaluation);
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open).
         // Read() without excludeViewIds to include view bounding boxes in the merged output.
