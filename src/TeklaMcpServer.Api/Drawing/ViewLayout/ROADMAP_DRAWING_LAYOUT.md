@@ -298,6 +298,9 @@ Implemented so far:
 - `fit_layout_planned_variant` trace event emitted per variant with moved view
   count, detailMoved (always 0), maxDelta, avgDelta, group bbox before/after,
   and reserved overlap count before/after from scorer evaluation.
+- Planned variant summary calculation is isolated in
+  `DrawingLayoutPlannedVariantDiagnostics`; `TeklaDrawingViewApi` only formats
+  and emits the trace event.
 
 #### 5.4 Apply Selected Candidate
 

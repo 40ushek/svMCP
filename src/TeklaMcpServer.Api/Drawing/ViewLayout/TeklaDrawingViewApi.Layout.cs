@@ -550,46 +550,11 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<DrawingLayoutPlannedView> variant,
         DrawingLayoutCandidateEvaluation? variantEval)
     {
-        var baselineById = baseline.ToDictionary(static v => v.Id);
-        var movedCount = 0;
-        var detailMovedCount = 0;
-        var maxDelta = 0.0;
-        var totalDelta = 0.0;
-        var deltaCount = 0;
-
-        foreach (var v in variant)
-        {
-            if (!baselineById.TryGetValue(v.Id, out var b))
-                continue;
-            var ddx = v.OriginX - b.OriginX;
-            var ddy = v.OriginY - b.OriginY;
-            var d = Math.Sqrt(ddx * ddx + ddy * ddy);
-            if (d >= 1.0)
-            {
-                movedCount++;
-                totalDelta += d;
-                deltaCount++;
-                if (d > maxDelta) maxDelta = d;
-                if (string.Equals(v.SemanticKind, "Detail", StringComparison.OrdinalIgnoreCase))
-                    detailMovedCount++;
-            }
-        }
-
-        var avgDelta = deltaCount > 0 ? totalDelta / deltaCount : 0.0;
-
-        var baseNonDetail = baseline.Where(static v => !string.Equals(v.SemanticKind, "Detail", StringComparison.OrdinalIgnoreCase)).ToList();
-        var varNonDetail  = variant.Where(static v => !string.Equals(v.SemanticKind, "Detail", StringComparison.OrdinalIgnoreCase)).ToList();
-
-        var bboxBefore = baseNonDetail.Count > 0
-            ? string.Format(CultureInfo.InvariantCulture, "{0:F1},{1:F1},{2:F1},{3:F1}",
-                baseNonDetail.Min(v => v.LayoutRect.MinX), baseNonDetail.Min(v => v.LayoutRect.MinY),
-                baseNonDetail.Max(v => v.LayoutRect.MaxX), baseNonDetail.Max(v => v.LayoutRect.MaxY))
-            : "none";
-        var bboxAfter = varNonDetail.Count > 0
-            ? string.Format(CultureInfo.InvariantCulture, "{0:F1},{1:F1},{2:F1},{3:F1}",
-                varNonDetail.Min(v => v.LayoutRect.MinX), varNonDetail.Min(v => v.LayoutRect.MinY),
-                varNonDetail.Max(v => v.LayoutRect.MaxX), varNonDetail.Max(v => v.LayoutRect.MaxY))
-            : "none";
+        var summary = DrawingLayoutPlannedVariantDiagnostics.BuildSummary(
+            baseline,
+            baselineEval,
+            variant,
+            variantEval);
 
         PerfTrace.Write(
             "api-view",
@@ -599,15 +564,26 @@ public sealed partial class TeklaDrawingViewApi
                 CultureInfo.InvariantCulture,
                 "variant={0} moved={1} detailMoved={2} maxDelta={3:F1} avgDelta={4:F1} bboxBefore=[{5}] bboxAfter=[{6}] reservedOverlapBefore={7} reservedOverlapAfter={8}",
                 variantName,
-                movedCount,
-                detailMovedCount,
-                maxDelta,
-                avgDelta,
-                bboxBefore,
-                bboxAfter,
-                baselineEval?.Validation.ReservedOverlapCount ?? -1,
-                variantEval?.Validation.ReservedOverlapCount ?? -1));
+                summary.MovedCount,
+                summary.DetailMovedCount,
+                summary.MaxDelta,
+                summary.AverageDelta,
+                FormatRect(summary.BoundingBoxBefore),
+                FormatRect(summary.BoundingBoxAfter),
+                summary.ReservedOverlapBefore,
+                summary.ReservedOverlapAfter));
     }
+
+    private static string FormatRect(ReservedRect? rect)
+        => rect == null
+            ? "none"
+            : string.Format(
+                CultureInfo.InvariantCulture,
+                "{0:F1},{1:F1},{2:F1},{3:F1}",
+                rect.MinX,
+                rect.MinY,
+                rect.MaxX,
+                rect.MaxY);
 
     private KeepScaleFitResult ValidateCurrentScaleFit(
         Tekla.Structures.Drawing.Drawing drawing,
