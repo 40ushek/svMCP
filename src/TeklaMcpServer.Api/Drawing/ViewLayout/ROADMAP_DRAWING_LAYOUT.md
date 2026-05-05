@@ -304,7 +304,7 @@ Implemented so far:
 
 #### 5.4 Apply Selected Candidate
 
-Status: pre-apply diagnostics started.
+Status: implemented, disabled by default.
 
 - Apply only the selected candidate to Tekla runtime views.
 - Preserve current public result shape.
@@ -348,10 +348,37 @@ Implemented so far:
 
 #### 5.5 Regression Cases
 
+Status: next active step.
+
 - Store before/after `DrawingContext` case snapshots.
 - Include candidate score and validation diagnostics.
 - Re-run the validation baseline on real drawings.
 - Compare geometry and score stability across repeated runs.
+
+Recommended sequence:
+
+1. Capture before/after `DrawingContext` snapshots for a small fixed drawing
+   set using `DrawingCaseCaptureService`.
+2. Store the trace-backed candidate metadata for each run: selected candidate,
+   apply-plan summary, delta summary, safety decision, and final score.
+3. Re-run `fit_views_to_sheet` twice on the same drawing and compare the second
+   run against the first after-state for stability.
+4. Cover the validation baseline categories:
+   standard projected neighbors, top/bottom sections, left/right sections,
+   details with `DetailMark` anchors, detail-like sections with `SectionMark`
+   anchors, GA grid-axis projection alignment, and reserved table/title-block
+   avoidance.
+5. Keep selected-candidate `Apply` disabled until the captured cases show that
+   the selected candidate is stable and the safety policy accepts only expected
+   origin-only moves.
+
+Acceptance for enabling selected-candidate apply:
+
+- No missing baseline views in selected apply deltas.
+- No unexpected scale changes.
+- Repeated runs converge: second run has zero or near-zero apply delta.
+- Reserved/table/title-block overlaps do not increase.
+- Projection/detail placement diagnostics do not regress.
 
 Phase 5 non-goal:
 
