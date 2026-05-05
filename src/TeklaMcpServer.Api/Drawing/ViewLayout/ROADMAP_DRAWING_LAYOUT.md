@@ -277,6 +277,8 @@ Implemented so far:
 - `fit_views_to_sheet` now compares two passive candidates in trace:
   post-projection before post-processing and final after centering/detail
   repositioning. The selected candidate is still not applied.
+- Selection trace now includes per-candidate index, rank, selected flag, and
+  rejection/selection reason.
 
 #### 5.4 Apply Selected Candidate
 

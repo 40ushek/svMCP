@@ -23,6 +23,15 @@ public sealed class DrawingLayoutCandidateSelectorTests
         Assert.Equal(2, selection.Evaluations.Count);
         Assert.Equal(feasible, selection.Selected?.Candidate);
         Assert.True(selection.Selected?.IsFeasible);
+        Assert.Equal(2, selection.Items.Count);
+        Assert.Equal(feasible, selection.Items[0].Evaluation.Candidate);
+        Assert.Equal(1, selection.Items[0].Rank);
+        Assert.True(selection.Items[0].IsSelected);
+        Assert.Equal("selected", selection.Items[0].Reason);
+        Assert.Equal(infeasible, selection.Items[1].Evaluation.Candidate);
+        Assert.Equal(2, selection.Items[1].Rank);
+        Assert.False(selection.Items[1].IsSelected);
+        Assert.Equal("rejected-feasibility", selection.Items[1].Reason);
         Assert.Contains("candidate-selection:selected:index=1:name=feasible", selection.Diagnostics);
     }
 
@@ -40,6 +49,7 @@ public sealed class DrawingLayoutCandidateSelectorTests
             [first, second]);
 
         Assert.Equal(first, selection.Selected?.Candidate);
+        Assert.Equal("rejected-input-order", selection.Items[1].Reason);
     }
 
     [Fact]
@@ -49,6 +59,7 @@ public sealed class DrawingLayoutCandidateSelectorTests
 
         Assert.Null(selection.Selected);
         Assert.Empty(selection.Evaluations);
+        Assert.Empty(selection.Items);
         Assert.Contains("candidate-selection:no-candidates", selection.Diagnostics);
     }
 

@@ -520,6 +520,27 @@ public sealed partial class TeklaDrawingViewApi
                 selected?.IsFeasible == true ? 1 : 0,
                 selected?.Score.TotalScore ?? 0.0,
                 selection.Diagnostics.Count));
+
+        foreach (var item in selection.Items)
+        {
+            var evaluation = item.Evaluation;
+            var candidate = evaluation.Candidate;
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_candidate_rank",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "index={0} rank={1} selected={2} reason={3} candidate={4} feasible={5} total={6:0.###} diagnostics={7}",
+                    item.Index,
+                    item.Rank,
+                    item.IsSelected ? 1 : 0,
+                    string.IsNullOrWhiteSpace(item.Reason) ? "unknown" : item.Reason,
+                    string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+                    evaluation.IsFeasible ? 1 : 0,
+                    evaluation.Score.TotalScore,
+                    evaluation.Validation.Diagnostics.Count));
+        }
     }
 
     private KeepScaleFitResult ValidateCurrentScaleFit(
