@@ -348,7 +348,7 @@ Implemented so far:
 
 #### 5.5 Regression Cases
 
-Status: next active step.
+Status: infrastructure done; live validation cases are next.
 
 - Store before/after `DrawingContext` case snapshots.
 - Include candidate score and validation diagnostics.
@@ -406,6 +406,14 @@ Implemented so far:
 - `DrawingLayoutRegressionCaseEvaluator` combines the snapshot reader and
   stability analyzer to compare two saved repeated-run cases by their
   after-contexts.
+
+Remaining work:
+
+- Capture the fixed live validation set in Tekla.
+- Store first-run and second-run cases for the same drawings.
+- Review `LayoutDiagnostics` and `LayoutStability` in `meta.json`.
+- Keep selected-candidate `Apply` disabled until the captured cases satisfy
+  the acceptance checks below.
 
 Phase 5 non-goal:
 
