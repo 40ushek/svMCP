@@ -395,6 +395,9 @@ Implemented so far:
 - `DrawingCaseCaptureService.SaveLayoutCase(...)` accepts the `FitViewsResult`
   and persists its internal layout diagnostics with the before/after
   `DrawingContext` snapshots.
+- `DrawingLayoutStabilityAnalyzer` compares two repeated-run after contexts
+  and reports convergence signals: moved views, scale changes, missing/added
+  views, score delta, and overlap-area deltas.
 
 Phase 5 non-goal:
 
