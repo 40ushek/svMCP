@@ -1009,11 +1009,13 @@ public sealed partial class TeklaDrawingViewApi
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
-        var plannedArrangedCandidate = DrawingLayoutCandidateBuilder.FromPlannedLayout(
-            "fit_views_to_sheet:planned-arranged",
-            layoutWorkspace,
-            currentViews,
-            arranged);
+        var baselinePlannedViews = DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, currentViews, arranged);
+        var plannedArrangedCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
+            "fit_views_to_sheet:planned-arranged", layoutWorkspace, baselinePlannedViews);
+        var centeredPlannedViews = DrawingLayoutPlannedCenteringService.TryCenterViews(
+            baselinePlannedViews, sheetW, sheetH, effectiveMargin, layoutWorkspace.ReservedAreas);
+        var plannedCenteredCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
+            "fit_views_to_sheet:planned-centered", layoutWorkspace, centeredPlannedViews);
 
         TracePlannedVsActualParity(
             "post-arrange-pre-projection",
@@ -1108,7 +1110,7 @@ public sealed partial class TeklaDrawingViewApi
             arranged,
             finalActualRects);
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
-            new[] { plannedArrangedCandidate, postProjectionCandidate, passiveCandidate });
+            new[] { plannedArrangedCandidate, plannedCenteredCandidate, postProjectionCandidate, passiveCandidate });
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
@@ -1165,68 +1167,6 @@ public sealed partial class TeklaDrawingViewApi
         return result;
     }
 
-    internal static bool TryFindCenteringDelta(
-        IReadOnlyList<ReservedRect> rects,
-        double usableMin,
-        double usableMax,
-        IReadOnlyList<ReservedRect> reserved,
-        bool horizontal,
-        out double delta)
-    {
-        delta = 0;
-        if (rects.Count == 0)
-            return false;
-
-        var groupMin = horizontal ? rects.Min(r => r.MinX) : rects.Min(r => r.MinY);
-        var groupMax = horizontal ? rects.Max(r => r.MaxX) : rects.Max(r => r.MaxY);
-        var groupSize = groupMax - groupMin;
-
-        var targetMin = usableMin + (usableMax - usableMin - groupSize) / 2.0;
-        var desired = targetMin - groupMin;
-
-        desired = desired < 0
-            ? System.Math.Max(desired, usableMin - groupMin)
-            : System.Math.Min(desired, usableMax - groupMax);
-
-        if (System.Math.Abs(desired) < 1.0)
-            return false;
-
-        double lo = 0;
-        double hi = System.Math.Abs(desired);
-        var sign = System.Math.Sign(desired);
-        while (hi - lo > 0.5)
-        {
-            var mid = (lo + hi) / 2.0;
-            var feasible = true;
-            foreach (var r in rects)
-            {
-                var shifted = horizontal
-                    ? new ReservedRect(r.MinX + sign * mid, r.MinY, r.MaxX + sign * mid, r.MaxY)
-                    : new ReservedRect(r.MinX, r.MinY + sign * mid, r.MaxX, r.MaxY + sign * mid);
-                foreach (var res in reserved)
-                {
-                    if (shifted.MinX < res.MaxX && shifted.MaxX > res.MinX &&
-                        shifted.MinY < res.MaxY && shifted.MaxY > res.MinY)
-                    {
-                        feasible = false;
-                        break;
-                    }
-                }
-
-                if (!feasible)
-                    break;
-            }
-
-            if (feasible) lo = mid; else hi = mid;
-        }
-
-        if (lo < 1.0)
-            return false;
-
-        delta = sign * lo;
-        return true;
-    }
-
     private static List<ReservedRect> GetViewRects(List<View> views)
     {
         var rects = new List<ReservedRect>(views.Count);
@@ -1240,9 +1180,6 @@ public sealed partial class TeklaDrawingViewApi
 
         return rects;
     }
-
-    private static List<ReservedRect> ShiftRects(IReadOnlyList<ReservedRect> rects, double dx, double dy)
-        => rects.Select(r => new ReservedRect(r.MinX + dx, r.MinY + dy, r.MaxX + dx, r.MaxY + dy)).ToList();
 
     private List<ArrangedView> TryRepositionDetailViews(
         Tekla.Structures.Drawing.Drawing activeDrawing,
@@ -1480,14 +1417,14 @@ public sealed partial class TeklaDrawingViewApi
             return arranged;
 
         var dx = 0.0;
-        if (TryFindCenteringDelta(rects, usableMinX, usableMaxX, reserved, horizontal: true, out var foundDx))
+        if (ViewGroupCenteringGeometry.TryFindCenteringDelta(rects, usableMinX, usableMaxX, reserved, horizontal: true, out var foundDx))
         {
             dx = foundDx;
-            rects = ShiftRects(rects, dx, 0);
+            rects = ViewGroupCenteringGeometry.ShiftRects(rects, dx, 0);
         }
 
         var dy = 0.0;
-        if (TryFindCenteringDelta(rects, usableMinY, usableMaxY, reserved, horizontal: false, out var foundDy))
+        if (ViewGroupCenteringGeometry.TryFindCenteringDelta(rects, usableMinY, usableMaxY, reserved, horizontal: false, out var foundDy))
             dy = foundDy;
 
         if (System.Math.Abs(dx) < 1.0 && System.Math.Abs(dy) < 1.0)

@@ -16,7 +16,7 @@ public sealed class DrawingLayoutCenteringTests
             new(80, 110, 120, 160)
         };
 
-        var ok = TeklaDrawingViewApi.TryFindCenteringDelta(
+        var ok = ViewGroupCenteringGeometry.TryFindCenteringDelta(
             rects,
             usableMin: 10,
             usableMax: 210,
@@ -37,7 +37,7 @@ public sealed class DrawingLayoutCenteringTests
             new(110, 80, 160, 120)
         };
 
-        var ok = TeklaDrawingViewApi.TryFindCenteringDelta(
+        var ok = ViewGroupCenteringGeometry.TryFindCenteringDelta(
             rects,
             usableMin: 10,
             usableMax: 210,
@@ -61,7 +61,7 @@ public sealed class DrawingLayoutCenteringTests
             new(95, 95, 130, 155)
         };
 
-        var ok = TeklaDrawingViewApi.TryFindCenteringDelta(
+        var ok = ViewGroupCenteringGeometry.TryFindCenteringDelta(
             rects,
             usableMin: 10,
             usableMax: 210,

@@ -289,6 +289,12 @@ Implemented so far:
   converts runtime `View + ArrangedView` to planned DTOs; `FromPlannedLayout`
   is a convenience wrapper over it. Future variant generator receives planned
   DTOs directly without touching Tekla `View`.
+- `ViewGroupCenteringGeometry` extracted from `TeklaDrawingViewApi` as a pure
+  static helper; `TryCenterViewGroup` now delegates to it.
+- First virtual variant: `DrawingLayoutPlannedCenteringService.TryCenterViews`
+  computes a centered layout from planned DTOs without Tekla calls. The
+  `fit_views_to_sheet:planned-centered` candidate appears in selection trace
+  alongside `planned-arranged`, `post-projection`, and `final`.
 
 #### 5.4 Apply Selected Candidate
 
