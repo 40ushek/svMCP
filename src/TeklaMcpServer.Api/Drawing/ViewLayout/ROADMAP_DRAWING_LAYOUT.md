@@ -451,6 +451,25 @@ Phase 5 non-goal:
 заполняемости views могут не помещаться из-за формы свободных зон, reserved
 areas, projection constraints или конфликтов между видами.
 
+Regression reference:
+- Fallback path из старого layout не удален: projection-aware anchors сначала,
+  затем packing оставшихся видов вокруг anchors. После workspace/candidate/
+  validation изменений этот path могут не достигать или его результат может
+  проигрывать более strict projection/budget constraints.
+- Git reference: `8a3c3c5^`, файл
+  `src/TeklaMcpServer.Api/Drawing/ViewLayout/BaseProjectedDrawingArrangeStrategy.cs`,
+  метод `Arrange(...)`: ветки `mode=anchor-then-maxrects`,
+  `mode=maxrects-fallback`, `mode=shelf-fallback`.
+- Дополнительный старый post-adjust reference: `8a3c3c5^`, файл
+  `src/TeklaMcpServer.Api/Drawing/ViewLayout/TeklaDrawingViewApi.Layout.cs`,
+  методы `TryCenterViewGroup(...)` и `TryRepositionDetailViews(...)`.
+- Phase 6 не должна возвращать старый код. Она должна восстановить свойство
+  старого поведения в новом validation/candidate контуре: projection side
+  является preference/score signal, а не абсолютным constraint.
+- Проверять нужно не только `Arrange`, но и `EstimateFit` /
+  `DiagnoseFitConflicts` / scale selection: они не должны отвергать масштаб до
+  попытки более гибкого размещения.
+
 #### 6.1 Гибкое размещение дополнительных видов
 
 Текущее поведение: дополнительные виды размещаются на вычисленной стороне
