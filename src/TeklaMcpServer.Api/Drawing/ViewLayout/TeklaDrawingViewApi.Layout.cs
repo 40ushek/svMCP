@@ -375,6 +375,100 @@ public sealed partial class TeklaDrawingViewApi
     private static void TraceEstimateFailureDecision(EstimateFitFailureDecision decision)
         => PerfTrace.Write("api-view", "fit_scale_conflicts", 0, FormatEstimateFitFailureDecision(decision));
 
+    private static void TraceScaleDecision(
+        DrawingScalePolicy scalePolicy,
+        DrawingLayoutApplyMode applyMode,
+        IReadOnlyList<double> candidates,
+        double? selectedScale,
+        IReadOnlyList<EstimateFitFailureDecision> rejectedCandidates,
+        string decisionLayer)
+    {
+        var firstRejected = rejectedCandidates.Count > 0 ? rejectedCandidates[0] : (EstimateFitFailureDecision?)null;
+        var lastRejected = rejectedCandidates.Count > 0 ? rejectedCandidates[rejectedCandidates.Count - 1] : (EstimateFitFailureDecision?)null;
+        var selectedIndex = -1;
+        if (selectedScale.HasValue)
+        {
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (System.Math.Abs(candidates[i] - selectedScale.Value) < 0.001)
+                {
+                    selectedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "fit_scale_decision",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "policy={0} applyMode={1} layer={2} selectedScale={3} selectedIndex={4} candidates=[{5}] rejectedBeforeSelected={6} firstRejected={7} lastRejected={8} lastOversizeConflicts={9} lastDiagnosedConflicts={10}",
+                scalePolicy,
+                applyMode,
+                decisionLayer,
+                selectedScale.HasValue
+                    ? "1:" + selectedScale.Value.ToString("0.###", CultureInfo.InvariantCulture)
+                    : "none",
+                selectedIndex,
+                string.Join(",", candidates.Select(c => "1:" + c.ToString("0.###", CultureInfo.InvariantCulture))),
+                rejectedCandidates.Count,
+                FormatRejectedScale(firstRejected),
+                FormatRejectedScale(lastRejected),
+                lastRejected?.OversizeConflicts.Count ?? 0,
+                lastRejected?.DiagnosedConflicts.Count ?? 0));
+    }
+
+    private static string FormatRejectedScale(EstimateFitFailureDecision? decision)
+    {
+        if (!decision.HasValue)
+            return "none";
+
+        var value = decision.Value;
+        var layer = value.OversizeConflicts.Count > 0
+            ? "oversize-check"
+            : value.DiagnosedConflicts.Count > 0
+                ? "estimate-fit"
+                : value.Stage;
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            "1:{0}:{1}:oversize={2}:diagnosed={3}",
+            value.CandidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            layer,
+            value.OversizeConflicts.Count,
+            value.DiagnosedConflicts.Count);
+    }
+
+    private static void TraceLayoutDecision(
+        double selectedScale,
+        DrawingLayoutCandidateSelection selection,
+        DrawingLayoutCandidateApplyPlan applyPlan,
+        DrawingLayoutCandidateApplySafetyDecision safetyDecision)
+    {
+        var selected = selection.Selected;
+        var selectedName = selected == null || string.IsNullOrWhiteSpace(selected.Candidate.Name)
+            ? "none"
+            : selected.Candidate.Name;
+
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_decision",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "selectedScale=1:{0} selectedCandidate={1} feasible={2} score={3:0.###} selectionDiagnostics={4} canApply={5} applyAllowed={6} effectiveMode={7} safetyReason={8}",
+                selectedScale.ToString("0.###", CultureInfo.InvariantCulture),
+                selectedName,
+                selected?.IsFeasible == true ? 1 : 0,
+                selected?.Score.TotalScore ?? 0.0,
+                selection.Diagnostics.Count,
+                applyPlan.CanApply ? 1 : 0,
+                safetyDecision.IsAllowed ? 1 : 0,
+                safetyDecision.EffectiveMode,
+                DrawingLayoutCandidateApplySafetyDecisionReasonFormatter.ToTraceString(safetyDecision.Reason)));
+    }
+
     private static void AppendEstimateConflict(StringBuilder sb, string source, DrawingFitConflict conflict)
     {
         sb.AppendFormat(
@@ -935,6 +1029,8 @@ public sealed partial class TeklaDrawingViewApi
             applyMode);
 
         double? optimalScale = null;
+        var rejectedScaleDecisions = new List<EstimateFitFailureDecision>();
+        var scaleDecisionLayer = "not-evaluated";
         var currentViews = views;
 
         if (preserveExistingScales)
@@ -961,6 +1057,7 @@ public sealed partial class TeklaDrawingViewApi
             // condition under which alignment adds no value for any view on the sheet.
             optimalScale = keepResult.OptimalScale;
             layoutWorkspace.SetSelectedFrameSizes(keepResult.FrameSizes);
+            scaleDecisionLayer = "preserve-scales";
         }
         else if (keepCurrentScales)
         {
@@ -981,6 +1078,7 @@ public sealed partial class TeklaDrawingViewApi
 
             optimalScale = keepResult.OptimalScale;
             layoutWorkspace.SetSelectedFrameSizes(keepResult.FrameSizes);
+            scaleDecisionLayer = "keep-current-scales";
         }
         else
         {
@@ -1005,12 +1103,14 @@ public sealed partial class TeklaDrawingViewApi
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
                 {
-                    TraceEstimateFailureDecision(new EstimateFitFailureDecision(
+                    var decision = new EstimateFitFailureDecision(
                         stage: "candidate-reject",
                         candidateScale: s,
                         fits: false,
                         oversizeConflicts,
-                        diagnosedConflicts: null));
+                        diagnosedConflicts: null);
+                    rejectedScaleDecisions.Add(decision);
+                    TraceEstimateFailureDecision(decision);
                     TraceScaleCandidate(s, candidateViews, actualFrames, fits: false, oversizeConflicts);
                     lastOversizeConflicts = oversizeConflicts;
                     candidateSw.Stop();
@@ -1029,6 +1129,7 @@ public sealed partial class TeklaDrawingViewApi
                         fits: false,
                         oversizeConflicts: null,
                         diagnosedConflicts: conflicts);
+                    rejectedScaleDecisions.Add(lastDiagnosedDecision.Value);
                     TraceEstimateFailureDecision(lastDiagnosedDecision.Value);
                 }
 
@@ -1041,6 +1142,9 @@ public sealed partial class TeklaDrawingViewApi
                         .Select((v, i) => new { Id = v.GetIdentifier().ID, Frame = actualFrames[i] })
                         .ToDictionary(x => x.Id, x => (x.Frame.w, x.Frame.h));
                     layoutWorkspace.SetSelectedFrameSizes(selectedFrameSizesById);
+                    scaleDecisionLayer = rejectedScaleDecisions.Count == 0
+                        ? "scale-selection:first-candidate-fit"
+                        : "scale-selection:after-rejections";
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
                     break;
@@ -1063,6 +1167,16 @@ public sealed partial class TeklaDrawingViewApi
                 }
 
                 activeDrawing.CommitChanges();
+                TraceScaleDecision(
+                    scalePolicy,
+                    applyMode,
+                    candidates,
+                    selectedScale: null,
+                    rejectedScaleDecisions,
+                    decisionLayer: lastOversizeConflicts is { Count: > 0 }
+                        ? "scale-selection:all-candidates-oversize"
+                        : "scale-selection:all-candidates-rejected");
+
                 if (lastOversizeConflicts is { Count: > 0 })
                     throw new DrawingFitFailedException("One or more views are larger than the usable sheet area for every available standard scale.", lastOversizeConflicts);
 
@@ -1082,6 +1196,14 @@ public sealed partial class TeklaDrawingViewApi
             currentViews = EnumerateViews(activeDrawing).ToList();
             layoutWorkspace.SetRuntimeViews(currentViews);
         }
+
+        TraceScaleDecision(
+            scalePolicy,
+            applyMode,
+            candidates,
+            optimalScale,
+            rejectedScaleDecisions,
+            scaleDecisionLayer);
 
         PerfTrace.Write(
             "api-view",
@@ -1298,6 +1420,11 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateApplySafety(
             applyDeltas,
             selectedCandidateApplyPolicy,
+            selectedCandidateApplySafety);
+        TraceLayoutDecision(
+            optimalScale.Value,
+            passiveSelection,
+            applyPlan,
             selectedCandidateApplySafety);
         var layoutDiagnostics = DrawingCaseLayoutDiagnosticsFactory.FromSelection(
             passiveSelection,
