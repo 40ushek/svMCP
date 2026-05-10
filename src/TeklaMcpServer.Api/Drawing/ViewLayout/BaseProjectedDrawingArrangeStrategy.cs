@@ -1366,6 +1366,14 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         if (TryPlanRelaxedLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned))
             return true;
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
+        TraceProjectedGroupPlannerIfFeasible(
+            context,
+            neighbors,
+            leftSections,
+            rightSections,
+            topSections,
+            bottomSections,
+            secondaryViews);
 
         var strictRetry = TryPlanStrictLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
@@ -1374,6 +1382,51 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     private static double GetCurrentScale(DrawingArrangeContext context)
         => context.Views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
+
+    private static void TraceProjectedGroupPlannerIfFeasible(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        IReadOnlyList<View> secondaryViews)
+    {
+        if (!PerfTrace.IsActive)
+            return;
+
+        var frames = context.Views
+            .Select(view => (
+                DrawingArrangeContextSizing.GetWidth(context, view),
+                DrawingArrangeContextSizing.GetHeight(context, view)))
+            .ToList();
+        var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
+            frames,
+            context.SheetWidth,
+            context.SheetHeight,
+            context.Margin,
+            context.Gap,
+            context.ReservedAreas);
+
+        PerfTrace.Write(
+            "api-view",
+            "projected_group_planner_gate",
+            0,
+            $"strict=failed relaxed=failed relaxedPackingFits={(relaxedPacking.Fits ? 1 : 0)} frames={relaxedPacking.FrameCount} reserved={relaxedPacking.ReservedAreaCount} order={relaxedPacking.Order} heuristic={relaxedPacking.Heuristic} attempts={relaxedPacking.Attempts}");
+
+        if (!relaxedPacking.Fits)
+            return;
+
+        ProjectedGroupLayoutPlanner.Trace(
+            context,
+            neighbors,
+            leftSections,
+            rightSections,
+            topSections,
+            bottomSections,
+            secondaryViews,
+            relaxedPacking);
+    }
 
     private bool TryPlanStrictLayout(
         DrawingArrangeContext context,
