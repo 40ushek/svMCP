@@ -160,32 +160,27 @@ internal static class ProjectedGroupLayoutPlanner
 
             return item.PreferredSide switch
             {
-                SectionPlacementSide.Top => ViewPlacementGeometryService.CreateCandidateRect(
-                    item.View,
+                SectionPlacementSide.Top => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
                     baseCenterX,
                     TopNextMinY + (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Bottom => ViewPlacementGeometryService.CreateCandidateRect(
-                    item.View,
+                SectionPlacementSide.Bottom => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
                     baseCenterX,
                     BottomNextMaxY - (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Right => ViewPlacementGeometryService.CreateCandidateRect(
-                    item.View,
+                SectionPlacementSide.Right => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
                     RightMinX + (width * 0.5),
                     RightNextMinY + (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Left => ViewPlacementGeometryService.CreateCandidateRect(
-                    item.View,
+                SectionPlacementSide.Left => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
                     LeftMaxX - (width * 0.5),
                     LeftNextMinY + (height * 0.5),
                     width,
                     height),
-                _ => ViewPlacementGeometryService.CreateCandidateRect(
-                    item.View,
+                _ => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
                     baseCenterX,
                     TopNextMinY + (height * 0.5),
                     width,
@@ -620,9 +615,9 @@ internal static class ProjectedGroupLayoutPlanner
             if (!packer.TryInsertClosestToPoint(width, height, target.X - minX, (context.SheetHeight - context.Margin) - target.Y, out var placement))
                 continue;
 
-            var originX = minX + placement.X + (width * 0.5);
-            var originY = context.SheetHeight - context.Margin - placement.Y - (height * 0.5);
-            var rect = ViewPlacementGeometryService.CreateCandidateRect(baseView, originX, originY, width, height);
+            var frameCenterX = minX + placement.X + (width * 0.5);
+            var frameCenterY = context.SheetHeight - context.Margin - placement.Y - (height * 0.5);
+            var rect = ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(frameCenterX, frameCenterY, width, height);
             var key = $"{Math.Round(rect.MinX, 2)}:{Math.Round(rect.MinY, 2)}:{Math.Round(rect.MaxX, 2)}:{Math.Round(rect.MaxY, 2)}";
             if (!seen.Add(key))
                 continue;

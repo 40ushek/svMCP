@@ -144,7 +144,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             {
                 var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                return ViewPlacementGeometryService.CreateCandidateRect(p.View, p.X, p.Y, w, h);
+                return ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(p.X, p.Y, w, h);
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
@@ -292,7 +292,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
     {
         if (TryCreatePlan(context, out var planned))
         {
-            var result = ApplyPlan(planned);
+            var result = ApplyPlan(context, planned);
 
             // If the plan only placed anchor views (FrontView, TopView, primary section etc.),
             // run MaxRects for any remaining unplanned views, treating the anchor placements
@@ -315,7 +315,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                     var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                    return ViewPlacementGeometryService.CreateCandidateRect(p.View, p.X, p.Y, w, h);
+                    return ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(p.X, p.Y, w, h);
                 }).ToList();
 
                 var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
@@ -1275,16 +1275,26 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
     private static bool TryGetViewBoundingRect(View view, out ReservedRect rect)
         => DrawingViewFrameGeometry.TryGetBoundingRect(view, out rect);
 
-    private static List<ArrangedView> ApplyPlan(List<PlannedPlacement> planned)
+    private static List<ArrangedView> ApplyPlan(DrawingArrangeContext context, List<PlannedPlacement> planned)
     {
         var arranged = new List<ArrangedView>(planned.Count);
         foreach (var item in planned)
         {
             var origin = item.View.Origin;
-            origin.X = item.X;
-            origin.Y = item.Y;
+            var frameOffset = ViewPlacementGeometryService.GetFrameOffsetSheet(context, item.View);
+            origin.X = item.X - frameOffset.X;
+            origin.Y = item.Y - frameOffset.Y;
             item.View.Origin = origin;
             item.View.Modify();
+            if (System.Math.Abs(frameOffset.X) > 0.01 || System.Math.Abs(frameOffset.Y) > 0.01)
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "view_frame_offset_apply",
+                    0,
+                    $"view={item.View.GetIdentifier().ID} frameCenter=({item.X:F2},{item.Y:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
+            }
+
             arranged.Add(new ArrangedView
             {
                 Id = item.View.GetIdentifier().ID,
