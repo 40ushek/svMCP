@@ -1378,6 +1378,10 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             bottomSections,
             secondaryViews);
 
+        if (TryPlanProjectedGroupLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, secondaryViews, out planned))
+            return true;
+        PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=projected-group result=failed");
+
         var strictRetry = TryPlanStrictLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned);
         PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict-retry result={(strictRetry ? "ok" : "failed")}");
         return strictRetry;
@@ -1385,6 +1389,52 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     private static double GetCurrentScale(DrawingArrangeContext context)
         => context.Views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
+
+    private bool TryPlanProjectedGroupLayout(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        IReadOnlyList<View> secondaryViews,
+        out List<PlannedPlacement> planned)
+    {
+        planned = new List<PlannedPlacement>();
+
+        var frames = context.Views
+            .Select(v => (DrawingArrangeContextSizing.GetWidth(context, v), DrawingArrangeContextSizing.GetHeight(context, v)))
+            .ToList();
+        var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
+            frames,
+            context.SheetWidth,
+            context.SheetHeight,
+            context.Margin,
+            context.Gap,
+            context.ReservedAreas);
+
+        if (!relaxedPacking.Fits)
+        {
+            PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=projected-group result=gate-relaxed-failed");
+            return false;
+        }
+
+        var result = ProjectedGroupLayoutPlanner.Plan(
+            context,
+            neighbors,
+            leftSections,
+            rightSections,
+            topSections,
+            bottomSections,
+            secondaryViews,
+            relaxedPacking);
+
+        if (result == null)
+            return false;
+
+        planned = result;
+        return true;
+    }
 
     private bool TryEstimateProjectedGroupPlannerFit(
         DrawingArrangeContext context,

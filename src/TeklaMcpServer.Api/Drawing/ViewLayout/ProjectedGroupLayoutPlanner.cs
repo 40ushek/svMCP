@@ -39,6 +39,8 @@ internal static class ProjectedGroupLayoutPlanner
         public ReservedRect? BaseRect { get; set; }
         public List<int> AddedIds { get; } = new();
         public List<int> DeferredIds { get; } = new();
+        public VirtualState? FinalState { get; set; }
+        public List<(PlannerItem Item, ReservedRect Rect)> FallbackPlacements { get; } = new();
     }
 
     private sealed class BaseRectCandidate
@@ -325,6 +327,86 @@ internal static class ProjectedGroupLayoutPlanner
         return best != null;
     }
 
+    public static List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>? Plan(
+        DrawingArrangeContext context,
+        NeighborSet neighbors,
+        IReadOnlyList<View> leftSections,
+        IReadOnlyList<View> rightSections,
+        IReadOnlyList<View> topSections,
+        IReadOnlyList<View> bottomSections,
+        IReadOnlyList<View> secondaryViews,
+        DrawingPackingEstimator.RelaxedPackingResult relaxedPacking)
+    {
+        var items = BuildItems(context, neighbors, leftSections, rightSections, topSections, bottomSections, secondaryViews);
+        if (items.Projected.Count == 0)
+            return null;
+
+        var scenarios = CreateScenarios(context, items.Projected);
+        var baseCandidates = CreateBaseRectCandidates(context, items.BaseItem.View);
+        if (baseCandidates.Count == 0)
+            return null;
+
+        var results = new List<ScenarioResult>(scenarios.Count * baseCandidates.Count);
+        foreach (var baseCandidate in baseCandidates)
+        foreach (var scenario in scenarios)
+        {
+            var result = RunScenario(
+                context,
+                items.BaseItem,
+                baseCandidate,
+                scenario.Name,
+                scenario.Items,
+                items.InitialFallback,
+                trace: false,
+                collectPlacements: true);
+            results.Add(result);
+        }
+
+        var best = results
+            .Where(r => r.Fits)
+            .OrderBy(r => r.DeferredCount)
+            .ThenByDescending(r => r.AddedCount)
+            .ThenBy(r => r.Scenario, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        if (best?.FinalState == null)
+            return null;
+
+        var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
+        foreach (var vp in best.FinalState.Placements.Values)
+        {
+            var cx = (vp.Rect.MinX + vp.Rect.MaxX) / 2.0;
+            var cy = (vp.Rect.MinY + vp.Rect.MaxY) / 2.0;
+            var preferred = vp.Item.PreferredSide == SectionPlacementSide.Unknown
+                ? (SectionPlacementSide?)null
+                : vp.Item.PreferredSide;
+            planned.Add(new BaseProjectedDrawingArrangeStrategy.PlannedPlacement(vp.Item.View, cx, cy, preferred, preferred));
+        }
+
+        foreach (var (item, rect) in best.FallbackPlacements)
+        {
+            var cx = (rect.MinX + rect.MaxX) / 2.0;
+            var cy = (rect.MinY + rect.MaxY) / 2.0;
+            var preferred = item.PreferredSide == SectionPlacementSide.Unknown
+                ? (SectionPlacementSide?)null
+                : item.PreferredSide;
+            planned.Add(new BaseProjectedDrawingArrangeStrategy.PlannedPlacement(
+                item.View,
+                cx,
+                cy,
+                preferred,
+                SectionPlacementSide.Unknown));
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "projected_group_plan_result",
+            0,
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} views={planned.Count}");
+
+        return planned;
+    }
+
     private static (PlannerItem BaseItem, List<PlannerItem> Projected, List<PlannerItem> InitialFallback) BuildItems(
         DrawingArrangeContext context,
         NeighborSet neighbors,
@@ -437,7 +519,8 @@ internal static class ProjectedGroupLayoutPlanner
         string scenarioName,
         IReadOnlyList<PlannerItem> orderedItems,
         IReadOnlyList<PlannerItem> initialFallback,
-        bool trace)
+        bool trace,
+        bool collectPlacements = false)
     {
         var result = new ScenarioResult { Scenario = scenarioName, BaseCandidate = baseCandidate.Name };
         var state = new VirtualState(context, baseItem, baseCandidate.Rect);
@@ -483,7 +566,8 @@ internal static class ProjectedGroupLayoutPlanner
         result.DeferredCount = deferred.Count;
         result.BaseRect = state.BaseRect;
 
-        if (!TryPlaceFallbackViews(context, scenarioName, state, deferred, trace, out var fallbackPlaced, out var fallbackReject))
+        var fallbackRects = collectPlacements ? result.FallbackPlacements : null;
+        if (!TryPlaceFallbackViews(context, scenarioName, state, deferred, trace, out var fallbackPlaced, out var fallbackReject, fallbackRects))
         {
             result.RejectReason = $"fallback:{fallbackReject}";
             result.FallbackPlacedCount = fallbackPlaced;
@@ -492,6 +576,8 @@ internal static class ProjectedGroupLayoutPlanner
 
         result.Fits = true;
         result.FallbackPlacedCount = fallbackPlaced;
+        if (collectPlacements)
+            result.FinalState = state;
         return result;
     }
 
@@ -615,7 +701,8 @@ internal static class ProjectedGroupLayoutPlanner
         IReadOnlyList<PlannerItem> fallbackItems,
         bool trace,
         out int placedCount,
-        out string rejectReason)
+        out string rejectReason,
+        List<(PlannerItem Item, ReservedRect Rect)>? collectPlacements = null)
     {
         placedCount = 0;
         rejectReason = string.Empty;
@@ -655,6 +742,16 @@ internal static class ProjectedGroupLayoutPlanner
             }
 
             placedCount++;
+            if (collectPlacements != null)
+            {
+                var rect = new ReservedRect(
+                    context.Margin + placement.X,
+                    context.SheetHeight - context.Margin - placement.Y - height,
+                    context.Margin + placement.X + width,
+                    context.SheetHeight - context.Margin - placement.Y);
+                collectPlacements.Add((item, rect));
+            }
+
             if (trace)
             {
                 PerfTrace.Write(
