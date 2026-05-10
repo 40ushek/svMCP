@@ -688,13 +688,9 @@ Section1 не включается в верхний стек и уходит в
 - показывать, какие views остались на preferred side, а какие ушли в fallback.
 
 Текущий diagnostic status:
-- `ProjectedGroupLayoutPlanner` уже может найти валидный виртуальный вариант на
-  масштабе `1:20` для проблемного чертежа;
-- текущий основной scale selection все равно выбирает меньший масштаб, потому
-  что результат planner пока только логируется;
-- следующий production-шаг: `EstimateFit` должен считать масштаб допустимым,
-  если strict layout отказал, relaxed packing показывает `fits=1`, а
-  `ProjectedGroupLayoutPlanner` нашел `result=ok`.
+- `ProjectedGroupLayoutPlanner` уже подключен к `EstimateFit` и `Arrange`;
+- на проблемном чертеже scale selection выбирает `1:20`;
+- `Arrange` применяет custom plan из planner, если он найден.
 
 Критерии приемки для 6.2:
 - На проблемном чертеже, где relaxed packing говорит `fits=1`, алгоритм
@@ -718,6 +714,45 @@ Section1 не включается в верхний стек и уходит в
 
 Статус: запланировано; может быть реализовано вместо отдельного production
 шага 6.1, если включает его diagnostics и cross-axis fallback поведение.
+
+#### 6.3 Учет смещения BBox относительно origin
+
+Проблема: часть views имеет реальный frame/BBox, смещенный относительно
+`View.Origin`. Если placement считает прямоугольник как центрированный на
+origin, то origin может оказаться внутри допустимого margin, но реальный
+`BBox.MinX` или `BBox.MinY` выйдет за рамку листа.
+
+Пример:
+- margin задан корректно: `5 мм`;
+- packer ставит origin около `24.5 мм`;
+- у view frame смещен относительно origin примерно на `24.5-36 мм`;
+- в результате реальный `BBox.MinX` становится около `0 мм`, хотя origin не
+  нарушает margin.
+
+Это не проблема настройки отступов. Это проблема геометрической модели
+placement: алгоритм должен размещать не абстрактный `width x height` вокруг
+origin, а реальный frame rect с offset от origin.
+
+Что нужно изменить:
+- использовать `DrawingViewFrameGeometry.TryGetFrameOffsets(...)` /
+  `DrawingLayoutWorkspace.SetFrameOffsets(...)` как источник offset;
+- при создании candidate rect учитывать offset:
+  `origin = targetFrameCenter - frameOffset`;
+- MaxRects и fallback должны оперировать реальным frame rect;
+- после применения placement проверять parity по реальному BBox, а не только по
+  расчетному centered rect.
+
+Критерии приемки:
+- при margin `5 мм` ни один final view не имеет `BBox.MinX < 5`,
+  `BBox.MinY < 5`, `BBox.MaxX > sheetWidth - 5`,
+  `BBox.MaxY > sheetHeight - 5`;
+- для B/C sections с несимметричным BBox trace показывает frame offset;
+- planner/fallback не выбирает позицию, где origin допустим, но реальный BBox
+  выходит за margin;
+- проблема воспроизводимой 6-видовой компоновки исправлена без увеличения
+  margin.
+
+Статус: следующая production-задача после подключения virtual planner.
 
 #### Будущее. Агентная компоновка видов
 
