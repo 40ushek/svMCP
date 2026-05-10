@@ -164,6 +164,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             return true;
         }
 
+        if (TryEstimateProjectedGroupPlannerFit(planningContext, frames))
+            return true;
+
         if (CollectSemanticSectionIds(planningContext).Count > 0)
             return false;
 
@@ -1382,6 +1385,67 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     private static double GetCurrentScale(DrawingArrangeContext context)
         => context.Views.Select(v => v.Attributes.Scale).FirstOrDefault(s => s > 0);
+
+    private bool TryEstimateProjectedGroupPlannerFit(
+        DrawingArrangeContext context,
+        IReadOnlyList<(double w, double h)> frames)
+    {
+        var topology = context.Topology;
+        var baseView = topology.BaseView;
+        var neighbors = topology.Neighbors;
+        if (baseView == null || neighbors == null)
+            return false;
+
+        var sections = topology.SemanticViews.Sections;
+        var sectionGroups = SectionGroupSet.Build(
+            sections,
+            context.Drawing,
+            baseView,
+            _sectionPlacementSideResolver);
+        var leftSections = sectionGroups.Left;
+        var rightSections = sectionGroups.Right;
+        var topSections = sectionGroups.Top;
+        var bottomSections = sectionGroups.Bottom;
+        var unknownSections = sectionGroups.Unknown;
+        var deferredSections = leftSections
+            .Concat(rightSections)
+            .Concat(topSections)
+            .Concat(bottomSections)
+            .Concat(unknownSections)
+            .ToList();
+        var secondaryViews = neighbors.ResidualProjected
+            .Concat(topology.SemanticViews.Other)
+            .Concat(deferredSections)
+            .ToList();
+
+        var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
+            frames,
+            context.SheetWidth,
+            context.SheetHeight,
+            context.Margin,
+            context.Gap,
+            context.ReservedAreas);
+
+        PerfTrace.Write(
+            "api-view",
+            "projected_group_planner_gate",
+            0,
+            $"source=estimate-fit strict=failed relaxedPackingFits={(relaxedPacking.Fits ? 1 : 0)} frames={relaxedPacking.FrameCount} reserved={relaxedPacking.ReservedAreaCount} order={relaxedPacking.Order} heuristic={relaxedPacking.Heuristic} attempts={relaxedPacking.Attempts}");
+
+        if (!relaxedPacking.Fits)
+            return false;
+
+        return ProjectedGroupLayoutPlanner.Fits(
+            context,
+            neighbors,
+            leftSections,
+            rightSections,
+            topSections,
+            bottomSections,
+            secondaryViews,
+            relaxedPacking,
+            trace: PerfTrace.IsActive);
+    }
 
     private static void TraceProjectedGroupPlannerIfFeasible(
         DrawingArrangeContext context,
