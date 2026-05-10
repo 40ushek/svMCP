@@ -347,6 +347,40 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
+    private static void TraceRelaxedPackingFeasibility(
+        double candidateScale,
+        DrawingArrangeContext context,
+        IReadOnlyList<(double w, double h)> frames)
+    {
+        if (!PerfTrace.IsActive)
+            return;
+
+        var result = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
+            frames,
+            context.SheetWidth,
+            context.SheetHeight,
+            context.Margin,
+            context.Gap,
+            context.ReservedAreas);
+
+        PerfTrace.Write(
+            "api-view",
+            "fit_scale_relaxed_packing",
+            0,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "candidate=1:{0} fits={1} frames={2} reserved={3} usable={4:F1}x{5:F1} attempts={6} order={7} heuristic={8}",
+                candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+                result.Fits ? 1 : 0,
+                result.FrameCount,
+                result.ReservedAreaCount,
+                result.AvailableWidth,
+                result.AvailableHeight,
+                result.Attempts,
+                string.IsNullOrWhiteSpace(result.Order) ? "none" : result.Order,
+                result.Fits ? result.Heuristic.ToString() : "none"));
+    }
+
     internal static string FormatEstimateFitFailureDecision(EstimateFitFailureDecision decision)
     {
         var sb = new StringBuilder();
@@ -1112,6 +1146,7 @@ public sealed partial class TeklaDrawingViewApi
                     rejectedScaleDecisions.Add(decision);
                     TraceEstimateFailureDecision(decision);
                     TraceScaleCandidate(s, candidateViews, actualFrames, fits: false, oversizeConflicts);
+                    TraceRelaxedPackingFeasibility(s, ctx, actualFrames);
                     lastOversizeConflicts = oversizeConflicts;
                     candidateSw.Stop();
                     candidateFitMs += candidateSw.ElapsedMilliseconds;
@@ -1131,6 +1166,7 @@ public sealed partial class TeklaDrawingViewApi
                         diagnosedConflicts: conflicts);
                     rejectedScaleDecisions.Add(lastDiagnosedDecision.Value);
                     TraceEstimateFailureDecision(lastDiagnosedDecision.Value);
+                    TraceRelaxedPackingFeasibility(s, ctx, actualFrames);
                 }
 
                 if (fits)
