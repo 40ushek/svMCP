@@ -226,18 +226,20 @@ workspace.
 
 #### 5.1 Пассивная оценка layout
 
-Статус: начальная реализация выполнена.
+Статус: реализовано.
 
-Первый шаг без изменения layout behavior:
+Сделано:
 - добавлены `DrawingLayoutCandidate` и `DrawingLayoutCandidateView`;
 - текущий результат `fit_views_to_sheet` строится как candidate;
 - candidate оценивается через `DrawingLayoutScorer`;
 - score и diagnostics пишутся в trace/log;
-- другой layout еще не выбирается.
+- другой layout может быть выбран диагностически, но real apply выбранного
+  candidate остается выключенным через safety gate.
 
 #### 5.2 Модель layout candidate
 
-Статус: начальная реализация начата.
+Статус: реализовано для текущего candidate set; расширение набора candidates
+остается future work.
 
 Модель candidate должна описывать:
 - virtual view origin;
@@ -257,7 +259,8 @@ workspace.
 
 #### 5.3 Оценка нескольких candidates
 
-Статус: начальная реализация начата.
+Статус: реализовано для текущих passive candidates; дальнейшее расширение
+набора candidates остается future work.
 
 Цель: генерировать и сравнивать несколько виртуальных layout-вариантов из
 одного workspace.
@@ -265,6 +268,8 @@ workspace.
 Сделано:
 - `DrawingLayoutCandidateSelector` выбирает лучший candidate по feasibility,
   score и stable input order;
+- `DrawingLayoutScorer` учитывает fill ratio, uniform scale, view/reserved
+  overlaps и `edgePenalty`;
 - `fit_views_to_sheet` пишет selection trace: index, rank, selected flag,
   rejection/selection reason;
 - появились passive candidates: `planned-arranged`, `planned-centered`,
@@ -279,10 +284,12 @@ workspace.
 - `fit_layout_planned_variant` trace показывает moved view count, max/avg
   delta, group bbox before/after и reserved overlap before/after;
 - summary generation изолирован в `DrawingLayoutPlannedVariantDiagnostics`.
+- На live trace `planned-centered` может победить `planned-arranged`, если у
+  него меньше `edgePenalty`.
 
 #### 5.4 Применение выбранного candidate
 
-Статус: реализовано, выключено по умолчанию.
+Статус: реализовано, real apply выключен по умолчанию.
 
 Цель: подготовить safe apply выбранного candidate, но не включать реальное
 применение до live validation.
@@ -488,8 +495,8 @@ views, виды деталей на GA drawing и другие небазовы�
 - Trace `fit_scale_relaxed_packing` показывает, есть ли свободная упаковка
   всех видов на отвергнутом масштабе, каким порядком видов и какой MaxRects
   эвристикой она нашлась.
-- Расширить trace event `section_stack_result` флагом `crossAxis=1`, когда
-  использована cross-axis сторона.
+- Для нового planner path использовать `projected_group_*` trace вместо
+  старого `section_stack_result`.
 
 Критерии приемки для 6.1:
 - Trace показывает, где именно отвергнут лучший scale/layout candidate:
@@ -505,15 +512,17 @@ views, виды деталей на GA drawing и другие небазовы�
   Cross-axis используется только если оба same-axis варианта не подходят.
 - В arranged/planned diagnostics у перенесенных видов заполнены
   `PreferredPlacementSide`, `ActualPlacementSide` и `PlacementFallbackUsed`.
-- Trace `section_stack_result` показывает фактическую сторону и `crossAxis=1`
-  для cross-axis fallback.
+- Trace показывает фактическую сторону через `ActualPlacementSide` и
+  `PlacementFallbackUsed`; для planner path это пишется в `projected_group_*`
+  событиях.
 - Diagnostics показывают, была ли проекционная связь сохранена strict или
   ослаблена до relaxed/weak ради лучшей компоновки.
 - Публичный JSON contract `fit_views_to_sheet` не меняется.
 
-Публичный result contract и scoring в этой фазе не меняются.
+Публичный result contract в этой фазе не меняется.
 
-Статус: в проектировании.
+Статус: superseded by 6.2. Отдельный placement-only cross-axis production path
+не нужен, пока `ProjectedGroupLayoutPlanner` покрывает этот сценарий.
 
 #### 6.2 Виртуальная проекционная группа
 
@@ -687,10 +696,30 @@ Section1 не включается в верхний стек и уходит в
   отдельное предварительное решение;
 - показывать, какие views остались на preferred side, а какие ушли в fallback.
 
-Текущий diagnostic status:
-- `ProjectedGroupLayoutPlanner` уже подключен к `EstimateFit` и `Arrange`;
-- на проблемном чертеже scale selection выбирает `1:20`;
-- `Arrange` применяет custom plan из planner, если он найден.
+Текущий production status:
+- `ProjectedGroupLayoutPlanner` подключен к `EstimateFit` и `Arrange`;
+- `EstimateFit` вызывает planner до уменьшения масштаба;
+- `Arrange` применяет custom plan из planner, если он найден;
+- planner пробует несколько стартовых позиций главного вида;
+- planner пробует несколько порядков views: top/bottom/left/right,
+  vertical/horizontal, large-first, projection-first и current order;
+- planner пробует несколько `(margin, gap)` candidates:
+  текущие значения, `(5,4)`, `(8,4)`, `(10,4)`, `(10,6)`;
+- fallback-placement сначала пытается разместить view ближе к preferred side,
+  затем использует общий packing;
+- `ActualPlacementSide` вычисляется постфактум относительно base rect;
+- score учитывает compactness, удаленность base от центра листа,
+  side mismatch penalty и `edgePenalty`;
+- trace пишет `selectedBase`, `selected`, `margin`, `gap`, `sidePenalty`,
+  `edgePenalty`, fallback views и reasons.
+
+Текущий live result:
+- на проблемном 6-view чертеже scale selection выбирает `1:20`, потому что это
+  первый влезший масштаб;
+- часть Top views уходит в fallback на Left, потому что сверху физически не
+  хватает места;
+- финальный candidate selection может выбрать `planned-centered`, если его
+  `edgePenalty` меньше.
 
 Критерии приемки для 6.2:
 - На проблемном чертеже, где relaxed packing говорит `fits=1`, алгоритм
@@ -712,10 +741,63 @@ Section1 не включается в верхний стек и уходит в
 - В Tekla применяются только финальные planned placements, промежуточные
   виртуальные варианты реальные views не двигают.
 
-Статус: запланировано; может быть реализовано вместо отдельного production
-шага 6.1, если включает его diagnostics и cross-axis fallback поведение.
+Статус: реализовано в production path; требуется live validation на нескольких
+чертежах перед дальнейшим усложнением.
 
-#### 6.3 Учет смещения BBox относительно origin
+#### 6.3 Quality-aware выбор масштаба
+
+Текущая политика выбора масштаба: scale selection идет по кандидатам от более
+крупного масштаба к более мелкому и останавливается на первом масштабе, который
+проходит layout feasibility. Например, если `1:20` влез, `1:25` уже не
+проверяется. Это нормальное базовое поведение: читаемость деталей важнее, чем
+небольшое улучшение пустых полей.
+
+Но для плотных чертежей нужен будущий режим сравнения качества нескольких
+влезших масштабов. Смысл: не уменьшать масштаб автоматически, а разрешить
+перейти с более крупного масштаба на чуть меньший только если layout заметно
+лучше.
+
+Предлагаемая политика:
+- сначала найти первый влезший масштаб как сейчас;
+- затем опционально проверить 1-2 следующих более мелких масштаба;
+- для каждого масштаба построить layout candidate и посчитать score;
+- оставить более крупный масштаб, если разница качества небольшая;
+- выбрать более мелкий масштаб только если он существенно лучше по качеству
+  компоновки.
+
+Критерии "существенно лучше" должны быть численными, например:
+- заметно меньше `edgePenalty`;
+- меньше fallback views или меньше side mismatch penalty;
+- меньше пересечений/diagnostics;
+- общий layout score лучше не менее чем на заданный порог, например 10-15%.
+
+Важно: это не замена текущей политики и не срочный фикс. Текущее поведение
+`1:20` вместо `1:25` допустимо, если `1:20` физически влезает и не создает
+конфликтов. Quality-aware scale selection нужен только для случаев, где более
+крупный масштаб дает слишком плотный или визуально плохой чертеж.
+
+Diagnostics:
+- `fit_scale_decision` должен явно писать, что выбран первый влезший масштаб
+  или что включено quality-aware сравнение;
+- если более мелкий масштаб отвергнут, trace должен показывать его score и
+  причину: улучшение недостаточно;
+- если более мелкий масштаб выбран, trace должен показывать, какие метрики
+  улучшились и почему уменьшение масштаба оправдано.
+
+Критерии приемки:
+- по умолчанию поведение не меняется: первый влезший масштаб продолжает
+  выбираться;
+- при включенной quality-aware политике `1:25` может победить `1:20` только
+  при явном выигрыше по score/diagnostics;
+- trace объясняет, почему масштаб сохранен или уменьшен;
+- trace явно различает diagnostic selected candidate и фактически примененный
+  layout: если safety gate оставил `DryRun`, выбранный candidate объясняет
+  качество, но не обязан физически двигать views.
+
+Статус: future / design note. Не реализовывать до проверки нескольких реальных
+чертежей и согласования порогов качества.
+
+#### 6.4 Учет смещения BBox относительно origin
 
 Проблема: часть views имеет реальный frame/BBox, смещенный относительно
 `View.Origin`. Если placement считает прямоугольник как центрированный на
@@ -746,13 +828,21 @@ origin, а реальный frame rect с offset от origin.
   https://developer.tekla.com/doc/tekla-structures/2024/get-axis-aligned-bounding-box-method-25432
 
 Что нужно изменить:
-- использовать `DrawingViewFrameGeometry.TryGetFrameOffsets(...)` /
-  `DrawingLayoutWorkspace.SetFrameOffsets(...)` как источник offset;
-- при создании candidate rect учитывать offset:
+- уже используется `DrawingViewFrameGeometry` /
+  `DrawingLayoutWorkspace.SetFrameOffsets(...)` как источник фактических
+  rect/offset facts;
+- `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` применяет placement как
+  frame center и вычисляет Tekla origin через
   `origin = targetFrameCenter - frameOffset`;
-- MaxRects и fallback должны оперировать реальным frame rect;
+- trace `view_frame_offset_apply` показывает примененную offset-correction;
+- post-arrange parity сравнивает planned/actual rects.
+
+Осталось проверить/доделать:
+- убедиться, что все MaxRects/fallback ветки используют frame-size/frame-rect
+  как canonical geometry, а не centered origin-size approximation;
+- добавить targeted regression на несимметричный BBox;
 - после применения placement проверять parity по реальному BBox, а не только по
-  расчетному centered rect.
+  расчетному centered rect, во всех fallback paths.
 
 Критерии приемки:
 - при margin `5 мм` ни один final view не имеет `BBox.MinX < 5`,
@@ -764,7 +854,8 @@ origin, а реальный frame rect с offset от origin.
 - проблема воспроизводимой 6-видовой компоновки исправлена без увеличения
   margin.
 
-Статус: следующая production-задача после подключения virtual planner.
+Статус: частично реализовано; нужен targeted regression/proof по всем fallback
+веткам.
 
 #### Будущее. Агентная компоновка видов
 
