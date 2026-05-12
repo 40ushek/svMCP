@@ -34,6 +34,7 @@ internal enum DrawingLayoutCandidateSelectionReason
     Selected,
     RejectedFeasibility,
     RejectedScore,
+    RejectedCandidatePriority,
     RejectedInputOrder
 }
 
@@ -45,6 +46,7 @@ internal static class DrawingLayoutCandidateSelectionReasonFormatter
             DrawingLayoutCandidateSelectionReason.Selected => "selected",
             DrawingLayoutCandidateSelectionReason.RejectedFeasibility => "rejected-feasibility",
             DrawingLayoutCandidateSelectionReason.RejectedScore => "rejected-score",
+            DrawingLayoutCandidateSelectionReason.RejectedCandidatePriority => "rejected-candidate-priority",
             DrawingLayoutCandidateSelectionReason.RejectedInputOrder => "rejected-input-order",
             _ => "unknown"
         };
@@ -52,6 +54,8 @@ internal static class DrawingLayoutCandidateSelectionReasonFormatter
 
 internal sealed class DrawingLayoutCandidateSelector
 {
+    private const double ScoreTieEpsilon = 1e-6;
+
     private readonly DrawingLayoutScorer scorer;
 
     public DrawingLayoutCandidateSelector()
@@ -88,7 +92,8 @@ internal sealed class DrawingLayoutCandidateSelector
 
         var ranked = indexedEvaluations
             .OrderByDescending(static item => item.Evaluation.IsFeasible)
-            .ThenByDescending(static item => item.Evaluation.Score.TotalScore)
+            .ThenByDescending(static item => GetScoreTieBucket(item.Evaluation.Score.TotalScore))
+            .ThenByDescending(static item => GetCandidateTiePriority(item.Evaluation.Candidate))
             .ThenBy(static item => item.Index)
             .ToList();
         var selected = ranked[0];
@@ -121,6 +126,14 @@ internal sealed class DrawingLayoutCandidateSelector
     private static string FormatName(DrawingLayoutCandidate candidate)
         => string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name;
 
+    private static long GetScoreTieBucket(double score)
+        => (long)Math.Round(score / ScoreTieEpsilon, MidpointRounding.AwayFromZero);
+
+    private static int GetCandidateTiePriority(DrawingLayoutCandidate candidate)
+        => string.Equals(candidate.Name, "fit_views_to_sheet:final", StringComparison.Ordinal)
+            ? 1
+            : 0;
+
     private static DrawingLayoutCandidateSelectionReason ResolveReason(
         (DrawingLayoutCandidateEvaluation Evaluation, int Index) candidate,
         (DrawingLayoutCandidateEvaluation Evaluation, int Index) selected)
@@ -131,8 +144,12 @@ internal sealed class DrawingLayoutCandidateSelector
         if (selected.Evaluation.IsFeasible && !candidate.Evaluation.IsFeasible)
             return DrawingLayoutCandidateSelectionReason.RejectedFeasibility;
 
-        if (candidate.Evaluation.Score.TotalScore < selected.Evaluation.Score.TotalScore)
+        if (candidate.Evaluation.Score.TotalScore < selected.Evaluation.Score.TotalScore - ScoreTieEpsilon)
             return DrawingLayoutCandidateSelectionReason.RejectedScore;
+
+        if (GetScoreTieBucket(candidate.Evaluation.Score.TotalScore) == GetScoreTieBucket(selected.Evaluation.Score.TotalScore)
+            && GetCandidateTiePriority(candidate.Evaluation.Candidate) < GetCandidateTiePriority(selected.Evaluation.Candidate))
+            return DrawingLayoutCandidateSelectionReason.RejectedCandidatePriority;
 
         return DrawingLayoutCandidateSelectionReason.RejectedInputOrder;
     }

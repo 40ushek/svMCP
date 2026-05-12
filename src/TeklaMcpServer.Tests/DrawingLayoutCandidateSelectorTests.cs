@@ -53,6 +53,23 @@ public sealed class DrawingLayoutCandidateSelectorTests
     }
 
     [Fact]
+    public void SelectBest_PrefersFinalCandidate_WhenScoresTie()
+    {
+        var planned = CreateCandidate(
+            "fit_views_to_sheet:planned-centered",
+            new ReservedRect(0, 0, 20, 20));
+        var final = CreateCandidate(
+            "fit_views_to_sheet:final",
+            new ReservedRect(0, 0, 20, 20));
+
+        var selection = new DrawingLayoutCandidateSelector().SelectBest(
+            [planned, final]);
+
+        Assert.Equal(final, selection.Selected?.Candidate);
+        Assert.Equal(DrawingLayoutCandidateSelectionReason.RejectedCandidatePriority, selection.Items[1].Reason);
+    }
+
+    [Fact]
     public void SelectBest_ReportsNoCandidates()
     {
         var selection = new DrawingLayoutCandidateSelector().SelectBest([]);
@@ -75,6 +92,9 @@ public sealed class DrawingLayoutCandidateSelectorTests
         Assert.Equal(
             "rejected-score",
             DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedScore));
+        Assert.Equal(
+            "rejected-candidate-priority",
+            DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedCandidatePriority));
         Assert.Equal(
             "rejected-input-order",
             DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(DrawingLayoutCandidateSelectionReason.RejectedInputOrder));
