@@ -1120,6 +1120,12 @@ public sealed partial class TeklaDrawingViewApi
 
         if (preserveExistingScales)
         {
+            PerfTrace.Write(
+                "api-view",
+                "fit_scale_preserve_existing",
+                0,
+                $"policy={scalePolicy} mode=arrange-existing-views currentScale=1:{currentScale.ToString("0.###", CultureInfo.InvariantCulture)} views={currentViews.Count}");
+
             // Validate that views fit at their current scales before committing to arrange.
             var keepResult = ValidateCurrentScaleFit(
                 activeDrawing,

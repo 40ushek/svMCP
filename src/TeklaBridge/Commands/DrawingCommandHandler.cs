@@ -50,6 +50,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "move_view":
             case "set_view_scale":
             case "fit_views_to_sheet":
+            case "arrange_views_only":
             case "get_drawing_reserved_areas":
                 return TryHandleViewCommands(command, args);
 

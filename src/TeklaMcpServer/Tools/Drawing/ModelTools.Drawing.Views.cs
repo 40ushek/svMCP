@@ -369,6 +369,32 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Arrange existing drawing views without changing their current scales. Uses the same layout planner/scoring as fit_views_to_sheet, but preserves View.Attributes.Scale and only moves view origins.")]
+    public static string ArrangeViewsOnly(
+        [Description("Margin from sheet edges in mm. Default: -1 = auto-read from drawing layout. Use 0 only for a true zero margin.")] double margin = -1,
+        [Description("Gap between views in mm. Default: 4")] double gap = 4,
+        [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0)
+    {
+        var marginStr = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
+        var gapStr = gap.ToString(CultureInfo.InvariantCulture);
+        var titleBlockStr = titleBlockHeight.ToString(CultureInfo.InvariantCulture);
+        var json = RunBridge("arrange_views_only", marginStr, gapStr, titleBlockStr);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return string.Concat("Error: ", err.GetString());
+
+            var count = doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("arranged", out var a) ? a.GetInt32() : 0;
+            var details = JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            return string.Concat("Arranged ", count, " views without changing scales.", System.Environment.NewLine, details);
+        }
+        catch
+        {
+            return string.Concat("Bridge error: ", json);
+        }
+    }
+
     [McpServerTool, Description("Debug: read reserved areas (tables, title block) as detected by the layout algorithm. Returns both raw per-table geometry and merged reserved rects used for view placement.")]
     public static string GetDrawingReservedAreas()
     {

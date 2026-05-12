@@ -1014,7 +1014,7 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.7 Arrange existing views без изменения масштаба
 
-Статус: запланировано.
+Статус: частично реализовано.
 
 Цель: дать команду/режим, который расставляет уже существующие views, но не
 меняет их scale.
@@ -1031,8 +1031,26 @@ origin, а реальный frame rect с offset от origin.
 - apply меняет только `Origin`, не `Scale`.
 
 Предлагаемый режим:
-- `ScalePolicy = PreserveCurrentScales`, либо отдельная команда
-  `arrange_views_only`, которая внутри вызывает тот же pipeline.
+- `ScalePolicy = PreserveExistingScales`;
+- отдельная команда `arrange_views_only`, которая внутри вызывает тот же
+  pipeline.
+
+Открытое решение по public API:
+- отдельная команда `arrange_views_only` может быть не обязательна, потому что
+  существующий `fit_views_to_sheet keepScale=true` уже покрывает тот же сценарий;
+- если цель — минимальный API surface, лучше оставить только
+  `fit_views_to_sheet keepScale=true`;
+- если цель — более понятный agent/user-facing command, можно оставить
+  `arrange_views_only` как alias без отдельного алгоритма;
+- важно: независимо от имени команды должен быть один implementation path через
+  `PreserveExistingScales`.
+
+Сделано:
+- `fit_views_to_sheet keepScale=true` уже использует
+  `DrawingScalePolicy.PreserveExistingScales`;
+- добавлена явная bridge/MCP-команда `arrange_views_only`;
+- команда вызывает `FitViewsToSheet(..., PreserveExistingScales, ...)`, то есть
+  не поддерживает отдельный старый алгоритм.
 
 Зачем нужно:
 - пользователь уже выставил нужные масштабы вручную;

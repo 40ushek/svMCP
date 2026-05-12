@@ -38,6 +38,9 @@ internal sealed partial class DrawingCommandHandler
             case "fit_views_to_sheet":
                 return HandleFitViewsToSheet(api, args);
 
+            case "arrange_views_only":
+                return HandleArrangeViewsOnly(api, args);
+
             case "get_drawing_reserved_areas":
                 return HandleGetDrawingReservedAreas();
 
@@ -168,6 +171,49 @@ internal sealed partial class DrawingCommandHandler
             parseResult.Request.Dy,
             parseResult.Request.Absolute);
         WriteMoveViewResult(result);
+        return true;
+    }
+
+    private bool HandleArrangeViewsOnly(TeklaDrawingViewApi api, string[] args)
+    {
+        var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
+        try
+        {
+            var result = api.FitViewsToSheet(
+                request.Margin,
+                request.Gap,
+                request.TitleBlockHeight,
+                DrawingScalePolicy.PreserveExistingScales,
+                request.ApplyMode);
+            WriteFitViewsToSheetResult(result, result.ReservedAreas);
+        }
+        catch (DrawingFitFailedException ex)
+        {
+            WriteJson(new
+            {
+                error = ex.Message,
+                type = ex.GetType().Name,
+                conflicts = ex.Conflicts.Select(conflict => new
+                {
+                    viewId = conflict.ViewId,
+                    viewType = conflict.ViewType,
+                    attemptedZone = conflict.AttemptedZone,
+                    bbox = new
+                    {
+                        minX = conflict.BBoxMinX,
+                        minY = conflict.BBoxMinY,
+                        maxX = conflict.BBoxMaxX,
+                        maxY = conflict.BBoxMaxY
+                    },
+                    conflicts = conflict.Conflicts.Select(item => new
+                    {
+                        type = item.Type,
+                        otherViewId = item.OtherViewId,
+                        target = item.Target
+                    })
+                })
+            });
+        }
         return true;
     }
 
