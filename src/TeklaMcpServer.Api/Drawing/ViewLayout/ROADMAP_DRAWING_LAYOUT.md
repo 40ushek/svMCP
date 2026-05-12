@@ -969,12 +969,32 @@ origin, а реальный frame rect с offset от origin.
 - candidate selection умеет сравнивать несколько candidates;
 - при равном score выбранный `final` candidate может побеждать planned
   snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
+- trace `fit_layout_score` пишет `edgePenalty`, `preferredSidePenalty` и
+  `compactnessPenalty`;
+- на live 6-view drawing `compactnessPenalty` уже различил `final` и
+  `planned-centered`: `final` получил меньший compactness penalty и победил по
+  score.
 
-Что добавить:
+Следующий шаг:
 - `stackOrderPenalty`: штраф за нелогичный порядок views внутри fallback-stack,
   если известен порядок по `SectionMark` / projection relation.
-- В trace ranking писать вклад основных метрик: `edgePenalty`,
-  `preferredSidePenalty`, `compactnessPenalty`, `stackOrderPenalty`.
+
+Почему это отдельный шаг:
+- fallback-stack ordering уже применяется фактически после planner/projection;
+- scorer пока не знает relation graph `SectionMark -> SectionView`;
+- нельзя считать stack order только по текущему Y/X без знания expected order:
+  это может закрепить случайный порядок packer.
+
+Минимальный план для `stackOrderPenalty`:
+1. Передать в candidate/scoring diagnostic expected order fallback-stack views,
+   построенный через `DetailRelationResolver.BuildSectionMarkRelations(...)`.
+2. Для каждой fallback-stack группы сравнить expected order с actual order в
+   candidate rects.
+3. Если порядок обратный или нарушен, добавить мягкий штраф.
+4. Писать в trace `stackOrderPenalty` и короткий diagnostic по группе:
+   preferred side, actual side, expected ids, actual ids.
+5. Добавить тест: два candidates с одинаковыми rect/side/fallback count, но один
+   с правильным stack order, второй с обратным.
 
 Приоритет реализации:
 1. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
@@ -988,6 +1008,10 @@ origin, а реальный frame rect с offset от origin.
   должен выбирать snapshot, который возвращает старый порядок.
 - Trace объясняет выбор коротко: score total и основные penalty components.
 - Публичный JSON contract `fit_views_to_sheet` не меняется.
+
+Сделано в коде:
+- `preferredSidePenalty`: `dfdeedc Add preferred side layout scoring`;
+- `compactnessPenalty`: `7f84344 Add compactness layout scoring`.
 
 #### Будущее. Агентная компоновка видов
 
