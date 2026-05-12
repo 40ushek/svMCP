@@ -16,7 +16,15 @@ internal sealed class DrawingLayoutScorer
         if (candidate == null)
             throw new ArgumentNullException(nameof(candidate));
 
-        return Score(candidate.ToDrawingContext(), weights);
+        var score = Score(candidate.ToDrawingContext(), weights);
+        var effectiveWeights = weights ?? new DrawingLayoutScoreWeights();
+        var preferredSidePenalty = ComputePreferredSidePenalty(candidate.Views);
+
+        score.TotalScore -= effectiveWeights.PreferredSidePenaltyWeight * preferredSidePenalty;
+        score.Breakdown.PreferredSidePenalty = preferredSidePenalty;
+        score.Breakdown.PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight;
+
+        return score;
     }
 
     public DrawingLayoutCandidateEvaluation Evaluate(
@@ -143,11 +151,13 @@ internal sealed class DrawingLayoutScorer
             ReservedOverlapArea = reservedOverlapArea,
             ReservedOverlapPenalty = reservedOverlapPenalty,
             EdgeMarginPenalty = edgeMarginPenalty,
+            PreferredSidePenalty = 0.0,
             FillRatioWeight = effectiveWeights.FillRatioWeight,
             UniformScaleWeight = effectiveWeights.UniformScaleWeight,
             ViewOverlapPenaltyWeight = effectiveWeights.ViewOverlapPenaltyWeight,
             ReservedOverlapPenaltyWeight = effectiveWeights.ReservedOverlapPenaltyWeight,
-            EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight
+            EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight,
+            PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight
         };
 
         if (sheetArea <= Epsilon)
@@ -160,6 +170,43 @@ internal sealed class DrawingLayoutScorer
             diagnostics.Add("score:no-view-rects");
 
         return result;
+    }
+
+    private static double ComputePreferredSidePenalty(IReadOnlyList<DrawingLayoutCandidateView> views)
+    {
+        var comparableCount = 0;
+        var mismatchCount = 0;
+
+        foreach (var view in views)
+        {
+            if (IsPlacementSideMissing(view.PreferredPlacementSide) ||
+                IsPlacementSideMissing(view.ActualPlacementSide))
+            {
+                continue;
+            }
+
+            comparableCount++;
+            if (!string.Equals(
+                    view.PreferredPlacementSide.Trim(),
+                    view.ActualPlacementSide.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                mismatchCount++;
+            }
+        }
+
+        return comparableCount == 0
+            ? 0.0
+            : (double)mismatchCount / comparableCount;
+    }
+
+    private static bool IsPlacementSideMissing(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return true;
+
+        return string.Equals(value.Trim(), "Unknown", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value.Trim(), "None", StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<ScoredViewRect> BuildViewRects(

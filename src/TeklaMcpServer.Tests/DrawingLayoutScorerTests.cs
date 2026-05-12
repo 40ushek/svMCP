@@ -173,6 +173,21 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Score_PenalizesCandidatePreferredSideMismatch()
+    {
+        var strict = CreateCandidateWithPlacementSides("Top", "Top");
+        var fallback = CreateCandidateWithPlacementSides("Top", "Left");
+
+        var scorer = new DrawingLayoutScorer();
+        var strictScore = scorer.Score(strict);
+        var fallbackScore = scorer.Score(fallback);
+
+        Assert.Equal(0.0, strictScore.Breakdown.PreferredSidePenalty, 6);
+        Assert.Equal(1.0, fallbackScore.Breakdown.PreferredSidePenalty, 6);
+        Assert.True(strictScore.TotalScore > fallbackScore.TotalScore);
+    }
+
+    [Fact]
     public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
     {
         var context = CreateContext(
@@ -341,6 +356,46 @@ public sealed class DrawingLayoutScorerTests
             BBoxMinY = bboxMinY,
             BBoxMaxX = bboxMaxX,
             BBoxMaxY = bboxMaxY
+        };
+    }
+
+    private static DrawingLayoutCandidate CreateCandidateWithPlacementSides(
+        string preferredPlacementSide,
+        string actualPlacementSide)
+    {
+        return new DrawingLayoutCandidate
+        {
+            Name = "candidate",
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            },
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 1,
+                    ViewType = "FrontView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    Width = 30,
+                    Height = 30,
+                    LayoutRect = new ReservedRect(35, 35, 65, 65)
+                },
+                new DrawingLayoutCandidateView
+                {
+                    Id = 2,
+                    ViewType = "SectionView",
+                    SemanticKind = "Section",
+                    Scale = 20,
+                    Width = 20,
+                    Height = 10,
+                    LayoutRect = new ReservedRect(40, 70, 60, 80),
+                    PreferredPlacementSide = preferredPlacementSide,
+                    ActualPlacementSide = actualPlacementSide
+                }
+            ]
         };
     }
 }

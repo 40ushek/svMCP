@@ -954,7 +954,7 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.6 Quality scoring для выбора лучшей раскладки
 
-Статус: следующий planned step.
+Статус: начато; `preferredSidePenalty` реализован.
 
 Цель: если несколько раскладок физически валидны, выбирать не просто первый
 вариант, который влез, а лучший для чтения чертежа.
@@ -962,14 +962,13 @@ origin, а реальный frame rect с offset от origin.
 Уже есть:
 - `DrawingLayoutScorer` считает общий score candidate;
 - `edgePenalty` штрафует близость views к краям листа;
+- `preferredSidePenalty` штрафует candidate, где view ушел не на
+  `PreferredPlacementSide`;
 - candidate selection умеет сравнивать несколько candidates;
 - при равном score выбранный `final` candidate может побеждать planned
   snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
 
 Что добавить:
-- `preferredSidePenalty`: штраф, если view ушел не на логичную сторону
-  (`PreferredPlacementSide != ActualPlacementSide`). Это не запрет, а мягкий
-  штраф: fallback допустим, но хуже strict placement при прочих равных.
 - `compactnessPenalty`: штраф за слишком растянутый общий bbox всех views.
   Простая метрика: `layoutBoundingBoxArea / usableSheetArea`.
 - `stackOrderPenalty`: штраф за нелогичный порядок views внутри fallback-stack,
@@ -978,12 +977,9 @@ origin, а реальный frame rect с offset от origin.
   `preferredSidePenalty`, `compactnessPenalty`, `stackOrderPenalty`.
 
 Приоритет реализации:
-1. `preferredSidePenalty` — прямо влияет на случаи, где верхний view лучше
-   держать сверху, нижний снизу, а перенос в fallback должен быть разрешен, но
-   иметь цену.
-2. `compactnessPenalty` — помогает отличать аккуратную группу от растянутой
+1. `compactnessPenalty` — помогает отличать аккуратную группу от растянутой
    раскладки с тем же числом fallback views.
-3. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
+2. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
 
 Критерии приемки:
 - Если две раскладки валидны, выбирается та, где больше views осталось на
