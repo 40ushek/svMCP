@@ -1012,6 +1012,45 @@ origin, а реальный frame rect с offset от origin.
 - `compactnessPenalty`: `7f84344 Add compactness layout scoring`;
 - `stackOrderPenalty`: мягкий штраф по expected/actual fallback-stack order.
 
+#### 6.7 Arrange existing views без изменения масштаба
+
+Статус: запланировано.
+
+Цель: дать команду/режим, который расставляет уже существующие views, но не
+меняет их scale.
+
+Важно: не возвращаться к старому отдельному алгоритму. Команда должна быть
+тонкой оберткой над новым layout pipeline:
+
+- scale candidate loop отключен;
+- текущий scale каждого view сохраняется;
+- реальные bbox/frame rect читаются на текущем масштабе;
+- `ProjectedGroupLayoutPlanner` используется для размещения;
+- projection alignment, fallback-stack ordering, centering и scoring остаются
+  теми же;
+- apply меняет только `Origin`, не `Scale`.
+
+Предлагаемый режим:
+- `ScalePolicy = PreserveCurrentScales`, либо отдельная команда
+  `arrange_views_only`, которая внутри вызывает тот же pipeline.
+
+Зачем нужно:
+- пользователь уже выставил нужные масштабы вручную;
+- нужно только разложить views аккуратно;
+- можно проверить, влезают ли текущие масштабы без автоматического уменьшения;
+- будущий агентный режим сможет отдельно менять scale отдельных views, а затем
+  запускать размещение без нового глобального scale selection.
+
+Критерии приемки:
+- команда не меняет `View.Attributes.Scale`;
+- если текущие масштабы не влезают, возвращается diagnostic, а не тихое
+  уменьшение масштаба;
+- trace пишет, что scale selection отключен / current scales preserved;
+- scoring использует те же penalty components:
+  `edgePenalty`, `preferredSidePenalty`, `compactnessPenalty`,
+  `stackOrderPenalty`;
+- public behavior старого `fit_views_to_sheet` не меняется.
+
 #### Будущее. Агентная компоновка видов
 
 В перспективе нужен отдельный инструмент для агентной компоновки видов.
