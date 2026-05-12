@@ -797,16 +797,38 @@ internal static class ProjectedGroupLayoutPlanner
             return false;
         }
 
-        var blocked = context.ReservedAreas
-            .Concat(state.Placements.Values.Select(placement => placement.Rect))
-            .SelectMany(rect => ToBlockedRectangles(context, rect))
-            .ToList();
-        var packer = new MaxRectsBinPacker(availableWidth + context.Gap, availableHeight + context.Gap, allowRotation: false, blocked);
+        var placedFallbacks = new List<(PlannerItem Item, ReservedRect Rect)>();
 
         foreach (var item in fallbackItems.OrderByDescending(item => GetArea(context, item)))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
             var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
+
+            if (TryPlacePreferredSideFallbackView(context, state, placedFallbacks, item, out var preferredRect))
+            {
+                placedFallbacks.Add((item, preferredRect));
+                collectPlacements?.Add((item, preferredRect));
+                placedCount++;
+
+                if (trace)
+                {
+                    PerfTrace.Write(
+                        "api-view",
+                        "projected_group_fallback_result",
+                        0,
+                        $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={item.PreferredSide} result=ok placementFallbackUsed=0 mode=preferred-side rect={FormatRect(preferredRect)}");
+                }
+
+                continue;
+            }
+
+            var blocked = context.ReservedAreas
+                .Concat(state.Placements.Values.Select(placement => placement.Rect))
+                .Concat(placedFallbacks.Select(placement => placement.Rect))
+                .SelectMany(rect => ToBlockedRectangles(context, rect))
+                .ToList();
+            var packer = new MaxRectsBinPacker(availableWidth + context.Gap, availableHeight + context.Gap, allowRotation: false, blocked);
+
             if (!packer.TryInsert(width + context.Gap, height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
             {
                 rejectReason = $"no-fallback-space:view={item.Id}";
@@ -821,34 +843,130 @@ internal static class ProjectedGroupLayoutPlanner
                 return false;
             }
 
+            var rect = new ReservedRect(
+                context.Margin + placement.X,
+                context.SheetHeight - context.Margin - placement.Y - height,
+                context.Margin + placement.X + width,
+                context.SheetHeight - context.Margin - placement.Y);
+            placedFallbacks.Add((item, rect));
+            collectPlacements?.Add((item, rect));
             placedCount++;
-            if (collectPlacements != null)
-            {
-                var rect = new ReservedRect(
-                    context.Margin + placement.X,
-                    context.SheetHeight - context.Margin - placement.Y - height,
-                    context.Margin + placement.X + width,
-                    context.SheetHeight - context.Margin - placement.Y);
-                collectPlacements.Add((item, rect));
-            }
 
             if (trace)
             {
-                var rect = new ReservedRect(
-                    context.Margin + placement.X,
-                    context.SheetHeight - context.Margin - placement.Y - height,
-                    context.Margin + placement.X + width,
-                    context.SheetHeight - context.Margin - placement.Y);
                 var actual = InferActualPlacementSide(state.BaseRect, rect);
                 PerfTrace.Write(
                     "api-view",
                     "projected_group_fallback_result",
                     0,
-                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={actual} result=ok placementFallbackUsed=1 rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
+                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={actual} result=ok placementFallbackUsed=1 mode=packed rect={FormatRect(rect)}");
             }
         }
 
         return true;
+    }
+
+    private static bool TryPlacePreferredSideFallbackView(
+        DrawingArrangeContext context,
+        VirtualState state,
+        IReadOnlyList<(PlannerItem Item, ReservedRect Rect)> placedFallbacks,
+        PlannerItem item,
+        out ReservedRect rect)
+    {
+        rect = null!;
+        if (item.PreferredSide == SectionPlacementSide.Unknown)
+            return false;
+
+        if (!TryCreatePreferredFallbackBand(context, state.BaseRect, item.PreferredSide, out var band))
+            return false;
+
+        var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
+        var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
+        if (width <= 0 || height <= 0 || width > band.Width || height > band.Height)
+            return false;
+
+        var blocked = context.ReservedAreas
+            .Concat(state.Placements.Values.Select(placement => placement.Rect))
+            .Concat(placedFallbacks.Select(placement => placement.Rect))
+            .SelectMany(blockedRect => ToBlockedRectanglesInBand(context, band, blockedRect))
+            .ToList();
+
+        var packer = new MaxRectsBinPacker(band.Width + context.Gap, band.Height + context.Gap, allowRotation: false, blocked);
+        var (targetX, targetY) = GetPreferredFallbackTargetPoint(state.BaseRect, band, item.PreferredSide);
+        if (!packer.TryInsertClosestToPoint(width + context.Gap, height + context.Gap, targetX - band.MinX, band.MaxY - targetY, out var placement))
+            return false;
+
+        rect = new ReservedRect(
+            band.MinX + placement.X,
+            band.MaxY - placement.Y - height,
+            band.MinX + placement.X + width,
+            band.MaxY - placement.Y);
+
+        return ValidateFallbackRect(context, state, placedFallbacks, item, rect);
+    }
+
+    private static bool TryCreatePreferredFallbackBand(
+        DrawingArrangeContext context,
+        ReservedRect baseRect,
+        SectionPlacementSide side,
+        out ReservedRect band)
+    {
+        var minX = context.Margin;
+        var maxX = context.SheetWidth - context.Margin;
+        var minY = context.Margin;
+        var maxY = context.SheetHeight - context.Margin;
+
+        band = side switch
+        {
+            SectionPlacementSide.Top => new ReservedRect(minX, baseRect.MaxY + context.Gap, maxX, maxY),
+            SectionPlacementSide.Bottom => new ReservedRect(minX, minY, maxX, baseRect.MinY - context.Gap),
+            SectionPlacementSide.Left => new ReservedRect(minX, minY, baseRect.MinX - context.Gap, maxY),
+            SectionPlacementSide.Right => new ReservedRect(baseRect.MaxX + context.Gap, minY, maxX, maxY),
+            _ => new ReservedRect(0, 0, 0, 0)
+        };
+
+        return band.Width > 0 && band.Height > 0;
+    }
+
+    private static (double X, double Y) GetPreferredFallbackTargetPoint(
+        ReservedRect baseRect,
+        ReservedRect band,
+        SectionPlacementSide side)
+    {
+        var baseCenterX = (baseRect.MinX + baseRect.MaxX) * 0.5;
+        var baseCenterY = (baseRect.MinY + baseRect.MaxY) * 0.5;
+
+        return side switch
+        {
+            SectionPlacementSide.Top => (baseCenterX, band.MinY),
+            SectionPlacementSide.Bottom => (baseCenterX, band.MaxY),
+            SectionPlacementSide.Left => (band.MaxX, baseCenterY),
+            SectionPlacementSide.Right => (band.MinX, baseCenterY),
+            _ => ((band.MinX + band.MaxX) * 0.5, (band.MinY + band.MaxY) * 0.5)
+        };
+    }
+
+    private static bool ValidateFallbackRect(
+        DrawingArrangeContext context,
+        VirtualState state,
+        IReadOnlyList<(PlannerItem Item, ReservedRect Rect)> placedFallbacks,
+        PlannerItem item,
+        ReservedRect rect)
+    {
+        var others = state.Placements
+            .Where(placement => placement.Key != item.Id)
+            .ToDictionary(placement => placement.Key, placement => Inflate(placement.Value.Rect, context.Gap));
+        foreach (var placed in placedFallbacks)
+            others[placed.Item.Id] = Inflate(placed.Rect, context.Gap);
+
+        return ViewPlacementValidator.Validate(
+            rect,
+            context.Margin,
+            context.SheetWidth - context.Margin,
+            context.Margin,
+            context.SheetHeight - context.Margin,
+            context.ReservedAreas,
+            others).Fits;
     }
 
     internal static SectionPlacementSide InferActualPlacementSide(ReservedRect baseRect, ReservedRect rect)
@@ -905,6 +1023,26 @@ internal static class ProjectedGroupLayoutPlanner
         yield return new PackedRectangle(
             minX - context.Margin,
             (context.SheetHeight - context.Margin) - maxY,
+            maxX - minX,
+            maxY - minY);
+    }
+
+    private static IEnumerable<PackedRectangle> ToBlockedRectanglesInBand(
+        DrawingArrangeContext context,
+        ReservedRect band,
+        ReservedRect area)
+    {
+        var minX = Math.Max(band.MinX, area.MinX - context.Gap);
+        var maxX = Math.Min(band.MaxX, area.MaxX + context.Gap);
+        var minY = Math.Max(band.MinY, area.MinY - context.Gap);
+        var maxY = Math.Min(band.MaxY, area.MaxY + context.Gap);
+
+        if (maxX <= minX || maxY <= minY)
+            yield break;
+
+        yield return new PackedRectangle(
+            minX - band.MinX,
+            band.MaxY - maxY,
             maxX - minX,
             maxY - minY);
     }
