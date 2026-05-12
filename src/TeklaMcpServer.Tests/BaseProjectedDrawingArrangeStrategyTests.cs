@@ -34,6 +34,26 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void InferActualPlacementSide_ReturnsLeft_WhenFallbackRectIsLeftOfBase()
+    {
+        var actual = ProjectedGroupLayoutPlanner.InferActualPlacementSide(
+            new ReservedRect(200, 50, 350, 250),
+            new ReservedRect(10, 170, 130, 220));
+
+        Assert.Equal(SectionPlacementSide.Left, actual);
+    }
+
+    [Fact]
+    public void InferActualPlacementSide_UsesDominantCenterDelta_WhenRectOverlapsBaseAxes()
+    {
+        var actual = ProjectedGroupLayoutPlanner.InferActualPlacementSide(
+            new ReservedRect(100, 100, 200, 200),
+            new ReservedRect(70, 170, 170, 230));
+
+        Assert.Equal(SectionPlacementSide.Top, actual);
+    }
+
+    [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {
         var free = BaseProjectedDrawingArrangeStrategy.ComputeFreeArea(

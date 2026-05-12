@@ -418,12 +418,13 @@ internal static class ProjectedGroupLayoutPlanner
             var preferred = item.PreferredSide == SectionPlacementSide.Unknown
                 ? (SectionPlacementSide?)null
                 : item.PreferredSide;
+            var actual = InferActualPlacementSide(best.FinalState.BaseRect, rect);
             planned.Add(new BaseProjectedDrawingArrangeStrategy.PlannedPlacement(
                 item.View,
                 cx,
                 cy,
                 preferred,
-                SectionPlacementSide.Unknown,
+                actual,
                 best.Margin,
                 best.Gap));
         }
@@ -832,15 +833,62 @@ internal static class ProjectedGroupLayoutPlanner
 
             if (trace)
             {
+                var rect = new ReservedRect(
+                    context.Margin + placement.X,
+                    context.SheetHeight - context.Margin - placement.Y - height,
+                    context.Margin + placement.X + width,
+                    context.SheetHeight - context.Margin - placement.Y);
+                var actual = InferActualPlacementSide(state.BaseRect, rect);
                 PerfTrace.Write(
                     "api-view",
                     "projected_group_fallback_result",
                     0,
-                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual=Packed result=ok placementFallbackUsed=1 rect=[{context.Margin + placement.X:F2},{context.SheetHeight - context.Margin - placement.Y - height:F2},{context.Margin + placement.X + width:F2},{context.SheetHeight - context.Margin - placement.Y:F2}]");
+                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={actual} result=ok placementFallbackUsed=1 rect=[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]");
             }
         }
 
         return true;
+    }
+
+    internal static SectionPlacementSide InferActualPlacementSide(ReservedRect baseRect, ReservedRect rect)
+    {
+        var leftGap = baseRect.MinX - rect.MaxX;
+        var rightGap = rect.MinX - baseRect.MaxX;
+        var topGap = rect.MinY - baseRect.MaxY;
+        var bottomGap = baseRect.MinY - rect.MaxY;
+
+        var side = SectionPlacementSide.Unknown;
+        var bestGap = 0.0;
+        Consider(SectionPlacementSide.Left, leftGap);
+        Consider(SectionPlacementSide.Right, rightGap);
+        Consider(SectionPlacementSide.Top, topGap);
+        Consider(SectionPlacementSide.Bottom, bottomGap);
+        if (side != SectionPlacementSide.Unknown)
+            return side;
+
+        var rectCenterX = (rect.MinX + rect.MaxX) * 0.5;
+        var rectCenterY = (rect.MinY + rect.MaxY) * 0.5;
+        var baseCenterX = (baseRect.MinX + baseRect.MaxX) * 0.5;
+        var baseCenterY = (baseRect.MinY + baseRect.MaxY) * 0.5;
+        var dx = rectCenterX - baseCenterX;
+        var dy = rectCenterY - baseCenterY;
+
+        if (Math.Abs(dx) < 1e-6 && Math.Abs(dy) < 1e-6)
+            return SectionPlacementSide.Unknown;
+
+        if (Math.Abs(dx) >= Math.Abs(dy))
+            return dx < 0 ? SectionPlacementSide.Left : SectionPlacementSide.Right;
+
+        return dy < 0 ? SectionPlacementSide.Bottom : SectionPlacementSide.Top;
+
+        void Consider(SectionPlacementSide candidate, double gap)
+        {
+            if (gap <= bestGap)
+                return;
+
+            bestGap = gap;
+            side = candidate;
+        }
     }
 
     private static IEnumerable<PackedRectangle> ToBlockedRectangles(DrawingArrangeContext context, ReservedRect area)
