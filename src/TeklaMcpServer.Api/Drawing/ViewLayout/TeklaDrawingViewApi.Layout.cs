@@ -614,7 +614,7 @@ public sealed partial class TeklaDrawingViewApi
             0,
             string.Format(
                 CultureInfo.InvariantCulture,
-                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} viewOverlaps={8}:area={9:0.###}:penalty={10:0.###} reservedOverlaps={11}:area={12:0.###}:penalty={13:0.###} diagnostics={14}",
+                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} viewOverlaps={9}:area={10:0.###}:penalty={11:0.###} reservedOverlaps={12}:area={13:0.###}:penalty={14:0.###} diagnostics={15}",
                 string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                 score.TotalScore,
                 evaluation.IsFeasible ? 1 : 0,
@@ -623,6 +623,7 @@ public sealed partial class TeklaDrawingViewApi
                 score.Breakdown.NonDetailViewCount,
                 score.Breakdown.FillRatioScore,
                 score.Breakdown.UniformScaleScore,
+                score.Breakdown.EdgeMarginPenalty,
                 score.Breakdown.ViewOverlapCount,
                 score.Breakdown.ViewOverlapArea,
                 score.Breakdown.ViewOverlapPenalty,

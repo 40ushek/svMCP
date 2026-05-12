@@ -114,12 +114,14 @@ internal sealed class DrawingLayoutScorer
         var reservedOverlapPenalty = availableSheetArea > Epsilon
             ? Math.Min(reservedOverlapArea / availableSheetArea, 1.0)
             : (reservedOverlapArea > Epsilon ? 1.0 : 0.0);
+        var edgeMarginPenalty = ComputeEdgeMarginPenalty(workspace, scoredViews);
 
         result.TotalScore =
             (effectiveWeights.FillRatioWeight * fillRatioScore) +
             (effectiveWeights.UniformScaleWeight * uniformScaleScore) -
             (effectiveWeights.ViewOverlapPenaltyWeight * viewOverlapPenalty) -
-            (effectiveWeights.ReservedOverlapPenaltyWeight * reservedOverlapPenalty);
+            (effectiveWeights.ReservedOverlapPenaltyWeight * reservedOverlapPenalty) -
+            (effectiveWeights.EdgeMarginPenaltyWeight * edgeMarginPenalty);
 
         result.Breakdown = new DrawingLayoutScoreBreakdown
         {
@@ -140,10 +142,12 @@ internal sealed class DrawingLayoutScorer
             ReservedOverlapCount = reservedOverlapCount,
             ReservedOverlapArea = reservedOverlapArea,
             ReservedOverlapPenalty = reservedOverlapPenalty,
+            EdgeMarginPenalty = edgeMarginPenalty,
             FillRatioWeight = effectiveWeights.FillRatioWeight,
             UniformScaleWeight = effectiveWeights.UniformScaleWeight,
             ViewOverlapPenaltyWeight = effectiveWeights.ViewOverlapPenaltyWeight,
-            ReservedOverlapPenaltyWeight = effectiveWeights.ReservedOverlapPenaltyWeight
+            ReservedOverlapPenaltyWeight = effectiveWeights.ReservedOverlapPenaltyWeight,
+            EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight
         };
 
         if (sheetArea <= Epsilon)
@@ -206,6 +210,43 @@ internal sealed class DrawingLayoutScorer
 
         return Math.Max(0.0, Math.Min(minScale / maxScale, 1.0));
     }
+
+    private static double ComputeEdgeMarginPenalty(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<ScoredViewRect> views)
+    {
+        if (views.Count == 0)
+            return 0.0;
+
+        var bounds = new ReservedRect(
+            views.Min(static view => view.Rect.MinX),
+            views.Min(static view => view.Rect.MinY),
+            views.Max(static view => view.Rect.MaxX),
+            views.Max(static view => view.Rect.MaxY));
+        var margin = Math.Max(workspace.Margin, 0.0);
+        var usableWidth = workspace.SheetWidth - (2 * margin);
+        var usableHeight = workspace.SheetHeight - (2 * margin);
+        var available = Math.Min(usableWidth, usableHeight);
+        if (available <= Epsilon)
+            return 0.0;
+
+        var safeDistance = Math.Min(Math.Max(margin, 10.0), available * 0.25);
+        if (safeDistance <= Epsilon)
+            return 0.0;
+
+        var left = bounds.MinX - margin;
+        var right = (workspace.SheetWidth - margin) - bounds.MaxX;
+        var bottom = bounds.MinY - margin;
+        var top = (workspace.SheetHeight - margin) - bounds.MaxY;
+
+        return (ComputeEdgeShortfall(left, safeDistance)
+                + ComputeEdgeShortfall(right, safeDistance)
+                + ComputeEdgeShortfall(bottom, safeDistance)
+                + ComputeEdgeShortfall(top, safeDistance)) * 0.05;
+    }
+
+    private static double ComputeEdgeShortfall(double distance, double safeDistance)
+        => distance >= safeDistance ? 0.0 : (safeDistance - Math.Max(distance, 0.0)) / safeDistance;
 
     private static double ComputeUnionArea(IReadOnlyList<ReservedRect> rects)
     {

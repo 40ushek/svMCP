@@ -146,6 +146,33 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Score_PenalizesViewsTouchingUsableEdge()
+    {
+        var centered = CreateContext(
+            sheetWidth: 100,
+            sheetHeight: 100,
+            views:
+            [
+                CreateView(1, "BaseProjected", 20, 50, 50, 30, 30, 35, 35, 65, 65)
+            ],
+            reservedMargin: 10);
+        var touching = CreateContext(
+            sheetWidth: 100,
+            sheetHeight: 100,
+            views:
+            [
+                CreateView(1, "BaseProjected", 20, 25, 50, 30, 30, 10, 35, 40, 65)
+            ],
+            reservedMargin: 10);
+
+        var centeredScore = new DrawingLayoutScorer().Score(centered);
+        var touchingScore = new DrawingLayoutScorer().Score(touching);
+
+        Assert.True(touchingScore.Breakdown.EdgeMarginPenalty > centeredScore.Breakdown.EdgeMarginPenalty);
+        Assert.True(centeredScore.TotalScore > touchingScore.TotalScore);
+    }
+
+    [Fact]
     public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
     {
         var context = CreateContext(
@@ -267,7 +294,8 @@ public sealed class DrawingLayoutScorerTests
         double sheetWidth,
         double sheetHeight,
         IReadOnlyList<DrawingViewInfo> views,
-        IReadOnlyList<ReservedRect>? reservedAreas = null)
+        IReadOnlyList<ReservedRect>? reservedAreas = null,
+        double reservedMargin = 0.0)
     {
         return new DrawingContext
         {
@@ -279,6 +307,7 @@ public sealed class DrawingLayoutScorerTests
             Views = views.ToList(),
             ReservedLayout = new DrawingReservedLayoutContext
             {
+                Margin = reservedMargin,
                 Areas = reservedAreas?.ToList() ?? []
             }
         };
