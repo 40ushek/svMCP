@@ -390,7 +390,7 @@ public sealed class DrawingProjectionAlignmentTests
     {
         var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
             arrangedView: null,
-            fallbackPlacementSide: SectionPlacementSide.Right,
+            resolvedPlacementSide: SectionPlacementSide.Right,
             out var alignX,
             out var reason);
 

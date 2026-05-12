@@ -28,7 +28,7 @@ internal sealed class DrawingLayoutCandidateApplyMove
     public ReservedRect? LayoutRect { get; set; }
 }
 
-internal enum DrawingLayoutCandidateApplyPlanReason
+public enum DrawingLayoutCandidateApplyPlanReason
 {
     NoSelectedCandidate,
     PlannedCandidate,

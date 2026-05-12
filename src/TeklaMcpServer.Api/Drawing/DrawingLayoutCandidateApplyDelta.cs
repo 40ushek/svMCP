@@ -33,7 +33,7 @@ internal sealed class DrawingLayoutCandidateApplyDeltaSummary
     public List<DrawingLayoutCandidateApplyDelta> Deltas { get; set; } = new();
 }
 
-internal enum DrawingLayoutCandidateApplySafetyDecisionReason
+public enum DrawingLayoutCandidateApplySafetyDecisionReason
 {
     NotRequested,
     Allowed,

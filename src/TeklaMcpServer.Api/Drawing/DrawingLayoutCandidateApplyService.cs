@@ -10,7 +10,7 @@ internal enum DrawingLayoutCandidateApplyExecutionMode
     Apply
 }
 
-internal enum DrawingLayoutCandidateApplyExecutionReason
+public enum DrawingLayoutCandidateApplyExecutionReason
 {
     DryRun,
     Applied,
