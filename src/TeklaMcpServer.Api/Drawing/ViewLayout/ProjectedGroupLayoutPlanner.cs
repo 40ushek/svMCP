@@ -37,6 +37,9 @@ internal static class ProjectedGroupLayoutPlanner
         public int DeferredCount { get; set; }
         public int FallbackPlacedCount { get; set; }
         public ReservedRect? BaseRect { get; set; }
+        public double CompactnessRatio { get; set; } = double.MaxValue;
+        public double BaseCenterDistanceRatio { get; set; } = double.MaxValue;
+        public double Score { get; set; } = double.MaxValue;
         public List<int> AddedIds { get; } = new();
         public List<int> DeferredIds { get; } = new();
         public VirtualState? FinalState { get; set; }
@@ -297,7 +300,7 @@ internal static class ProjectedGroupLayoutPlanner
                     "api-view",
                     "projected_group_scenario_result",
                     0,
-                    $"base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
+                    $"base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
             }
         }
 
@@ -305,6 +308,7 @@ internal static class ProjectedGroupLayoutPlanner
             .Where(result => result.Fits)
             .OrderBy(result => result.DeferredCount)
             .ThenByDescending(result => result.AddedCount)
+            .ThenBy(result => result.Score)
             .ThenBy(result => result.Scenario, StringComparer.Ordinal)
             .FirstOrDefault();
 
@@ -315,7 +319,7 @@ internal static class ProjectedGroupLayoutPlanner
                 "projected_group_planner_result",
                 0,
                 best != null
-                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} baseRect={FormatRect(best.BaseRect)}"
+                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} baseRect={FormatRect(best.BaseRect)}"
                     : $"result=reject candidates={results.Count} rejected={results.Count} reason=no-valid-scenario");
         }
 
@@ -361,6 +365,7 @@ internal static class ProjectedGroupLayoutPlanner
             .Where(r => r.Fits)
             .OrderBy(r => r.DeferredCount)
             .ThenByDescending(r => r.AddedCount)
+            .ThenBy(r => r.Score)
             .ThenBy(r => r.Scenario, StringComparer.Ordinal)
             .FirstOrDefault();
 
@@ -397,7 +402,7 @@ internal static class ProjectedGroupLayoutPlanner
             "api-view",
             "projected_group_plan_result",
             0,
-            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} views={planned.Count}");
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} views={planned.Count}");
 
         return planned;
     }
@@ -561,7 +566,8 @@ internal static class ProjectedGroupLayoutPlanner
         result.DeferredCount = deferred.Count;
         result.BaseRect = state.BaseRect;
 
-        var fallbackRects = collectPlacements ? result.FallbackPlacements : null;
+        var scoredFallbackRects = collectPlacements ? result.FallbackPlacements : new List<(PlannerItem Item, ReservedRect Rect)>();
+        var fallbackRects = scoredFallbackRects;
         if (!TryPlaceFallbackViews(context, scenarioName, state, deferred, trace, out var fallbackPlaced, out var fallbackReject, fallbackRects))
         {
             result.RejectReason = $"fallback:{fallbackReject}";
@@ -571,6 +577,7 @@ internal static class ProjectedGroupLayoutPlanner
 
         result.Fits = true;
         result.FallbackPlacedCount = fallbackPlaced;
+        ApplyScore(context, result, state, scoredFallbackRects);
         if (collectPlacements)
             result.FinalState = state;
         return result;
@@ -796,6 +803,36 @@ internal static class ProjectedGroupLayoutPlanner
             list.Max(rect => rect.MaxY));
     }
 
+    private static void ApplyScore(
+        DrawingArrangeContext context,
+        ScenarioResult result,
+        VirtualState state,
+        IReadOnlyList<(PlannerItem Item, ReservedRect Rect)> fallbackPlacements)
+    {
+        var allRects = state.Placements.Values
+            .Select(placement => placement.Rect)
+            .Concat(fallbackPlacements.Select(placement => placement.Rect));
+        var bounds = GetBounds(allRects);
+        var usableWidth = context.SheetWidth - (2 * context.Margin);
+        var usableHeight = context.SheetHeight - (2 * context.Margin);
+        var usableArea = usableWidth * usableHeight;
+        if (usableArea <= 0)
+            return;
+
+        var sheetCenterX = context.Margin + (usableWidth * 0.5);
+        var sheetCenterY = context.Margin + (usableHeight * 0.5);
+        var baseCenterX = (state.BaseRect.MinX + state.BaseRect.MaxX) * 0.5;
+        var baseCenterY = (state.BaseRect.MinY + state.BaseRect.MaxY) * 0.5;
+        var sheetDiagonal = Math.Sqrt((usableWidth * usableWidth) + (usableHeight * usableHeight));
+        var baseDistance = sheetDiagonal <= 0
+            ? 0
+            : Math.Sqrt(Math.Pow(baseCenterX - sheetCenterX, 2) + Math.Pow(baseCenterY - sheetCenterY, 2)) / sheetDiagonal;
+
+        result.CompactnessRatio = (bounds.Width * bounds.Height) / usableArea;
+        result.BaseCenterDistanceRatio = baseDistance;
+        result.Score = result.CompactnessRatio + (result.BaseCenterDistanceRatio * 0.25);
+    }
+
     private static ReservedRect Inflate(ReservedRect rect, double amount)
         => new(rect.MinX - amount, rect.MinY - amount, rect.MaxX + amount, rect.MaxY + amount);
 
@@ -813,4 +850,9 @@ internal static class ProjectedGroupLayoutPlanner
         => rect == null
             ? "[]"
             : $"[{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}]";
+
+    private static string FormatScore(double value)
+        => double.IsInfinity(value) || double.IsNaN(value) || value == double.MaxValue
+            ? "n/a"
+            : value.ToString("F4");
 }
