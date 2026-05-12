@@ -800,7 +800,9 @@ internal static class ProjectedGroupLayoutPlanner
 
         var placedFallbacks = new List<(PlannerItem Item, ReservedRect Rect)>();
 
-        foreach (var item in fallbackItems.OrderByDescending(item => GetArea(context, item)))
+        foreach (var item in fallbackItems
+                     .OrderBy(item => GetFallbackPlacementSortPriority(item.PreferredSide, item.StrongProjection))
+                     .ThenByDescending(item => GetArea(context, item)))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
             var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
@@ -830,7 +832,13 @@ internal static class ProjectedGroupLayoutPlanner
                 .ToList();
             var packer = new MaxRectsBinPacker(availableWidth + context.Gap, availableHeight + context.Gap, allowRotation: false, blocked);
 
-            if (!packer.TryInsert(width + context.Gap, height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
+            var target = GetPackedFallbackTargetPoint(context, state.BaseRect, item.PreferredSide);
+            if (!packer.TryInsertClosestToPoint(
+                    width + context.Gap,
+                    height + context.Gap,
+                    target.X - context.Margin,
+                    (context.SheetHeight - context.Margin) - target.Y,
+                    out var placement))
             {
                 rejectReason = $"no-fallback-space:view={item.Id}";
                 if (trace)
@@ -860,11 +868,48 @@ internal static class ProjectedGroupLayoutPlanner
                     "api-view",
                     "projected_group_fallback_result",
                     0,
-                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={actual} result=ok placementFallbackUsed=1 mode=packed rect={FormatRect(rect)}");
+                    $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual={actual} result=ok placementFallbackUsed=1 mode=packed-targeted target=({target.X:F1},{target.Y:F1}) rect={FormatRect(rect)}");
             }
         }
 
         return true;
+    }
+
+    internal static int GetFallbackPlacementSortPriority(SectionPlacementSide preferredSide, bool strongProjection)
+    {
+        var projectionRank = strongProjection ? 0 : 100;
+        var sideRank = preferredSide switch
+        {
+            SectionPlacementSide.Top => 0,
+            SectionPlacementSide.Bottom => 1,
+            SectionPlacementSide.Left => 2,
+            SectionPlacementSide.Right => 3,
+            _ => 4
+        };
+
+        return projectionRank + sideRank;
+    }
+
+    private static (double X, double Y) GetPackedFallbackTargetPoint(
+        DrawingArrangeContext context,
+        ReservedRect baseRect,
+        SectionPlacementSide side)
+    {
+        var minX = context.Margin;
+        var maxX = context.SheetWidth - context.Margin;
+        var minY = context.Margin;
+        var maxY = context.SheetHeight - context.Margin;
+        var baseCenterX = (baseRect.MinX + baseRect.MaxX) * 0.5;
+        var baseCenterY = (baseRect.MinY + baseRect.MaxY) * 0.5;
+
+        return side switch
+        {
+            SectionPlacementSide.Top => (baseCenterX, maxY),
+            SectionPlacementSide.Bottom => (baseCenterX, minY),
+            SectionPlacementSide.Left => (minX, baseCenterY),
+            SectionPlacementSide.Right => (maxX, baseCenterY),
+            _ => ((minX + maxX) * 0.5, (minY + maxY) * 0.5)
+        };
     }
 
     private static bool TryPlacePreferredSideFallbackView(

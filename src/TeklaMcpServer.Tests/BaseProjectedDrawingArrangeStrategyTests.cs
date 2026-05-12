@@ -83,6 +83,19 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void GetFallbackPlacementSortPriority_PutsStrongTopViewBeforeTopSections()
+    {
+        var topViewPriority = ProjectedGroupLayoutPlanner.GetFallbackPlacementSortPriority(
+            SectionPlacementSide.Top,
+            strongProjection: true);
+        var topSectionPriority = ProjectedGroupLayoutPlanner.GetFallbackPlacementSortPriority(
+            SectionPlacementSide.Top,
+            strongProjection: false);
+
+        Assert.True(topViewPriority < topSectionPriority);
+    }
+
+    [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {
         var free = BaseProjectedDrawingArrangeStrategy.ComputeFreeArea(
