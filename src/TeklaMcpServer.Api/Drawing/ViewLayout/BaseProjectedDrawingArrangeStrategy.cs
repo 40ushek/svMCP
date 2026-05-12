@@ -42,13 +42,17 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             double frameCenterX,
             double frameCenterY,
             SectionPlacementSide? preferredPlacementSide = null,
-            SectionPlacementSide? actualPlacementSide = null)
+            SectionPlacementSide? actualPlacementSide = null,
+            double layoutMargin = 0,
+            double layoutGap = 0)
         {
             View = view;
             FrameCenterX = frameCenterX;
             FrameCenterY = frameCenterY;
             PreferredPlacementSide = preferredPlacementSide;
             ActualPlacementSide = actualPlacementSide;
+            LayoutMargin = layoutMargin;
+            LayoutGap = layoutGap;
         }
 
         public View View { get; }
@@ -56,6 +60,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         public double FrameCenterY { get; }
         public SectionPlacementSide? PreferredPlacementSide { get; }
         public SectionPlacementSide? ActualPlacementSide { get; }
+        public double LayoutMargin { get; }
+        public double LayoutGap { get; }
     }
 
     private readonly struct ViewPlacementSearchArea
@@ -1306,7 +1312,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 ActualPlacementSide = ToPlacementSideString(item.ActualPlacementSide),
                 PlacementFallbackUsed = item.PreferredPlacementSide.HasValue
                     && item.ActualPlacementSide.HasValue
-                    && item.PreferredPlacementSide.Value != item.ActualPlacementSide.Value
+                    && item.PreferredPlacementSide.Value != item.ActualPlacementSide.Value,
+                LayoutMargin = item.LayoutMargin,
+                LayoutGap = item.LayoutGap
             });
         }
 

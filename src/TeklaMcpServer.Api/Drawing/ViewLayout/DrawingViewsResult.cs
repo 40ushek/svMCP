@@ -134,6 +134,8 @@ public sealed class ArrangedView
     public string PreferredPlacementSide { get; set; } = string.Empty;
     public string ActualPlacementSide    { get; set; } = string.Empty;
     public bool   PlacementFallbackUsed  { get; set; }
+    internal double LayoutMargin { get; set; }
+    internal double LayoutGap { get; set; }
 }
 
 public sealed class DrawingReservedAreasResult

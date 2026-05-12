@@ -326,7 +326,9 @@ internal sealed partial class DrawingProjectionAlignmentService
                 OriginY = originY,
                 PreferredPlacementSide = arrangedViews[i].PreferredPlacementSide,
                 ActualPlacementSide = arrangedViews[i].ActualPlacementSide,
-                PlacementFallbackUsed = arrangedViews[i].PlacementFallbackUsed
+                PlacementFallbackUsed = arrangedViews[i].PlacementFallbackUsed,
+                LayoutMargin = arrangedViews[i].LayoutMargin,
+                LayoutGap = arrangedViews[i].LayoutGap
             };
             return;
         }

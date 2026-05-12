@@ -1326,7 +1326,9 @@ public sealed partial class TeklaDrawingViewApi
                     OriginY = o.Y,
                     PreferredPlacementSide = arranged[i].PreferredPlacementSide,
                     ActualPlacementSide = arranged[i].ActualPlacementSide,
-                    PlacementFallbackUsed = arranged[i].PlacementFallbackUsed
+                    PlacementFallbackUsed = arranged[i].PlacementFallbackUsed,
+                    LayoutMargin = arranged[i].LayoutMargin,
+                    LayoutGap = arranged[i].LayoutGap
                 };
             }
 
@@ -1334,11 +1336,19 @@ public sealed partial class TeklaDrawingViewApi
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
 
+        var selectedLayoutMargin = ResolveSelectedLayoutMargin(effectiveMargin, arranged);
+        var selectedLayoutGap = ResolveSelectedLayoutGap(gap, arranged);
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_spacing",
+            0,
+            $"effectiveMargin={effectiveMargin:F1} effectiveGap={gap:F1} selectedMargin={selectedLayoutMargin:F1} selectedGap={selectedLayoutGap:F1}");
+
         var baselinePlannedViews = DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, currentViews, arranged);
         var plannedArrangedCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
             "fit_views_to_sheet:planned-arranged", layoutWorkspace, baselinePlannedViews);
         var centeredPlannedViews = DrawingLayoutPlannedCenteringService.TryCenterViews(
-            baselinePlannedViews, sheetW, sheetH, effectiveMargin, layoutWorkspace.ReservedAreas);
+            baselinePlannedViews, sheetW, sheetH, selectedLayoutMargin, layoutWorkspace.ReservedAreas);
         var plannedCenteredCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
             "fit_views_to_sheet:planned-centered", layoutWorkspace, centeredPlannedViews);
 
@@ -1388,7 +1398,9 @@ public sealed partial class TeklaDrawingViewApi
                 OriginY = view.OriginY,
                 PreferredPlacementSide = view.PreferredPlacementSide,
                 ActualPlacementSide = view.ActualPlacementSide,
-                PlacementFallbackUsed = view.PlacementFallbackUsed
+                PlacementFallbackUsed = view.PlacementFallbackUsed,
+                LayoutMargin = view.LayoutMargin,
+                LayoutGap = view.LayoutGap
             })
             .ToList();
         var postProjectionActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
@@ -1404,8 +1416,8 @@ public sealed partial class TeklaDrawingViewApi
             .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
-            effectiveMargin, sheetW - effectiveMargin,
-            effectiveMargin, sheetH - effectiveMargin,
+            selectedLayoutMargin, sheetW - selectedLayoutMargin,
+            selectedLayoutMargin, sheetH - selectedLayoutMargin,
             layoutWorkspace.ReservedAreas);
         var finalViews = EnumerateViews(activeDrawing).ToList();
         layoutWorkspace.SetRuntimeViews(finalViews);
@@ -1413,11 +1425,11 @@ public sealed partial class TeklaDrawingViewApi
             activeDrawing,
             finalViews,
             arranged,
-            effectiveMargin,
-            sheetW - effectiveMargin,
-            effectiveMargin,
-            sheetH - effectiveMargin,
-            gap,
+            selectedLayoutMargin,
+            sheetW - selectedLayoutMargin,
+            selectedLayoutMargin,
+            sheetH - selectedLayoutMargin,
+            selectedLayoutGap,
             layoutWorkspace.ReservedAreas,
             offsetById);
 
@@ -1571,12 +1583,28 @@ public sealed partial class TeklaDrawingViewApi
                 OriginY = move.TargetOriginY,
                 PreferredPlacementSide = current?.PreferredPlacementSide ?? string.Empty,
                 ActualPlacementSide = current?.ActualPlacementSide ?? string.Empty,
-                PlacementFallbackUsed = current?.PlacementFallbackUsed ?? false
+                PlacementFallbackUsed = current?.PlacementFallbackUsed ?? false,
+                LayoutMargin = current?.LayoutMargin ?? 0,
+                LayoutGap = current?.LayoutGap ?? 0
             });
         }
 
         return result;
     }
+
+    private static double ResolveSelectedLayoutMargin(double fallbackMargin, IReadOnlyList<ArrangedView> arranged)
+        => arranged
+            .Select(static view => view.LayoutMargin)
+            .Where(static margin => margin > 0)
+            .DefaultIfEmpty(fallbackMargin)
+            .Max();
+
+    private static double ResolveSelectedLayoutGap(double fallbackGap, IReadOnlyList<ArrangedView> arranged)
+        => arranged
+            .Select(static view => view.LayoutGap)
+            .Where(static gap => gap > 0)
+            .DefaultIfEmpty(fallbackGap)
+            .Max();
 
     private static List<ReservedRect> GetViewRects(List<View> views)
     {
@@ -1743,7 +1771,9 @@ public sealed partial class TeklaDrawingViewApi
                     OriginY = origin.Y,
                     PreferredPlacementSide = arranged[ai].PreferredPlacementSide,
                     ActualPlacementSide = arranged[ai].ActualPlacementSide,
-                    PlacementFallbackUsed = arranged[ai].PlacementFallbackUsed
+                    PlacementFallbackUsed = arranged[ai].PlacementFallbackUsed,
+                    LayoutMargin = arranged[ai].LayoutMargin,
+                    LayoutGap = arranged[ai].LayoutGap
                 };
                 break;
             }
@@ -1863,7 +1893,9 @@ public sealed partial class TeklaDrawingViewApi
             OriginY  = a.OriginY + dy,
             PreferredPlacementSide = a.PreferredPlacementSide,
             ActualPlacementSide = a.ActualPlacementSide,
-            PlacementFallbackUsed = a.PlacementFallbackUsed
+            PlacementFallbackUsed = a.PlacementFallbackUsed,
+            LayoutMargin = a.LayoutMargin,
+            LayoutGap = a.LayoutGap
         }).ToList();
     }
 

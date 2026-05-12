@@ -401,7 +401,14 @@ internal static class ProjectedGroupLayoutPlanner
             var preferred = vp.Item.PreferredSide == SectionPlacementSide.Unknown
                 ? (SectionPlacementSide?)null
                 : vp.Item.PreferredSide;
-            planned.Add(new BaseProjectedDrawingArrangeStrategy.PlannedPlacement(vp.Item.View, cx, cy, preferred, preferred));
+            planned.Add(new BaseProjectedDrawingArrangeStrategy.PlannedPlacement(
+                vp.Item.View,
+                cx,
+                cy,
+                preferred,
+                preferred,
+                best.Margin,
+                best.Gap));
         }
 
         foreach (var (item, rect) in best.FallbackPlacements)
@@ -416,7 +423,9 @@ internal static class ProjectedGroupLayoutPlanner
                 cx,
                 cy,
                 preferred,
-                SectionPlacementSide.Unknown));
+                SectionPlacementSide.Unknown,
+                best.Margin,
+                best.Gap));
         }
 
         PerfTrace.Write(
