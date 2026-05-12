@@ -146,6 +146,79 @@ internal static class DetailRelationResolver
         return new DetailRelationSet(dict);
     }
 
+    public static DetailRelationSet BuildSectionMarkRelations(
+        IEnumerable<View> allViews,
+        IEnumerable<View> sectionViews)
+    {
+        var sectionById = new Dictionary<int, View>();
+        foreach (var view in sectionViews)
+            sectionById[view.GetIdentifier().ID] = view;
+
+        if (sectionById.Count == 0)
+            return new DetailRelationSet(new Dictionary<int, DetailRelation>());
+
+        var dict = new Dictionary<int, DetailRelation>();
+        var seen = new HashSet<int>();
+        foreach (var ownerView in allViews)
+        {
+            DrawingObjectEnumerator? sectionMarks = null;
+            try
+            {
+                sectionMarks = ownerView.GetAllObjects(typeof(SectionMark));
+            }
+            catch
+            {
+            }
+
+            while (sectionMarks != null && sectionMarks.MoveNext())
+            {
+                if (sectionMarks.Current is not SectionMark sectionMark)
+                    continue;
+
+                DrawingObjectEnumerator? related = null;
+                try
+                {
+                    related = sectionMark.GetRelatedObjects();
+                }
+                catch
+                {
+                }
+
+                while (related != null && related.MoveNext())
+                {
+                    if (related.Current is not View relatedView)
+                        continue;
+
+                    var id = relatedView.GetIdentifier().ID;
+                    if (!sectionById.TryGetValue(id, out var sectionView))
+                        continue;
+                    if (!seen.Add(id))
+                        continue;
+
+                    var mid = TrySectionMarkMidPoint(sectionMark);
+                    double? ax = null;
+                    double? ay = null;
+                    if (mid != null && TryProjectToSheet(ownerView, mid, out var px, out var py))
+                    {
+                        ax = px;
+                        ay = py;
+                    }
+
+                    dict[id] = new DetailRelation
+                    {
+                        DetailView = sectionView,
+                        OwnerView = ownerView,
+                        AnchorX = ax,
+                        AnchorY = ay
+                    };
+                    break;
+                }
+            }
+        }
+
+        return new DetailRelationSet(dict);
+    }
+
     // --- anchor helpers ---
 
     private static double? ResolveDetailMarkAnchorX(View owner, DetailMark mark)

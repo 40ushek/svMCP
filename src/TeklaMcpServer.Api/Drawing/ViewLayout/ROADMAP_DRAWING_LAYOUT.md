@@ -841,16 +841,19 @@ fallback-раскладки, а не из положения линий разр
 - Если alignment не проходит, исходная fallback placement остается без отката
   всей компоновки.
 
-Что нужно добавить:
-- Упорядочивать views внутри fallback-stack по реальному положению линии
-  разреза/проекции на главном виде, а не по текущему положению после packer.
-- Для стеков слева/справа сортировать views сверху вниз по координате линии на
+Добавлено следующим шагом:
+- `DetailRelationResolver.BuildSectionMarkRelations(...)` строит связь
+  `SectionMark -> SectionView` и берет midpoint линии разреза на owner view.
+- Fallback-stack теперь упорядочивает section views по реальному положению
+  линии разреза/проекции на главном виде, а не по текущему положению после
+  packer.
+- Для стеков слева/справа views сортируются сверху вниз по координате линии на
   главном виде.
-- Для стеков сверху/снизу сортировать views слева направо по координате линии
+- Для стеков сверху/снизу views сортируются слева направо по координате линии
   на главном виде.
-- Если координату линии разреза найти нельзя, оставлять текущий
+- Если координату линии разреза найти нельзя, остается текущий
   детерминированный порядок как fallback.
-- После сортировки пересобирать локальный стек с сохранением gap и validation
+- После сортировки локальный стек пересобирается с сохранением gap и validation
   через тот же `ProjectionAlignmentMoveHelper`.
 
 Diagnostics:
@@ -873,10 +876,10 @@ Diagnostics:
   sheet margins, reserved areas и view overlaps.
 - Trace объясняет, был ли stack alignment применен или отклонен.
 
-Статус: partial implementation. Helper refactor и первый fallback-stack
-alignment pass добавлены и проверены логом на текущем чертеже. Следующий шаг —
-projection-aware ordering внутри fallback-stack, чтобы C-C/B-B/A-A шли по
-порядку линий разреза на главном виде.
+Статус: implementation in validation. Helper refactor, первый fallback-stack
+alignment pass и projection-aware ordering внутри fallback-stack добавлены.
+Нужно проверить на текущем чертеже, что C-C/B-B/A-A идут по порядку линий
+разреза на главном виде.
 
 #### 6.5 Учет смещения BBox относительно origin
 

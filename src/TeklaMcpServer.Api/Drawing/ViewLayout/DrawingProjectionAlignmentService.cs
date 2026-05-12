@@ -134,7 +134,7 @@ internal sealed partial class DrawingProjectionAlignmentService
                 break;
         }
 
-        ApplyFallbackStackAlignment(result, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
+        ApplyFallbackStackAlignment(result, topology, views, frameOffsetsById, sheetWidth, sheetHeight, margin, reservedAreas, arrangedViews);
         TraceProjectionParitySummary(result);
         return result;
     }
