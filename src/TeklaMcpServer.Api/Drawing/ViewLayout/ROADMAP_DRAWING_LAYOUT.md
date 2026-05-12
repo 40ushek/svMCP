@@ -857,8 +857,8 @@ Diagnostics:
   sheet margins, reserved areas и view overlaps.
 - Trace объясняет, был ли stack alignment применен или отклонен.
 
-Статус: planned. Сначала сделать helper refactor без изменения поведения,
-затем подключать fallback-stack alignment.
+Статус: initial implementation. Helper refactor и первый fallback-stack
+alignment pass добавлены; нужна live validation на реальных чертежах.
 
 #### 6.5 Учет смещения BBox относительно origin
 
