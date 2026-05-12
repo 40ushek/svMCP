@@ -41,6 +41,7 @@ internal static class ProjectedGroupLayoutPlanner
         public ReservedRect? BaseRect { get; set; }
         public double CompactnessRatio { get; set; } = double.MaxValue;
         public double BaseCenterDistanceRatio { get; set; } = double.MaxValue;
+        public double PlacementSidePenalty { get; set; }
         public double Score { get; set; } = double.MaxValue;
         public List<int> AddedIds { get; } = new();
         public List<int> DeferredIds { get; } = new();
@@ -314,7 +315,7 @@ internal static class ProjectedGroupLayoutPlanner
                         "api-view",
                         "projected_group_scenario_result",
                         0,
-                        $"margin={result.Margin:F1} gap={result.Gap:F1} base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
+                        $"margin={result.Margin:F1} gap={result.Gap:F1} base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} sidePenalty={FormatScore(result.PlacementSidePenalty)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
                 }
             }
         }
@@ -336,7 +337,7 @@ internal static class ProjectedGroupLayoutPlanner
                 "projected_group_planner_result",
                 0,
                 best != null
-                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} baseRect={FormatRect(best.BaseRect)}"
+                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} baseRect={FormatRect(best.BaseRect)}"
                     : $"result=reject candidates={results.Count} rejected={results.Count} reason=no-valid-scenario");
         }
 
@@ -433,7 +434,7 @@ internal static class ProjectedGroupLayoutPlanner
             "api-view",
             "projected_group_plan_result",
             0,
-            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} views={planned.Count}");
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} views={planned.Count}");
 
         return planned;
     }
@@ -945,8 +946,26 @@ internal static class ProjectedGroupLayoutPlanner
 
         result.CompactnessRatio = (bounds.Width * bounds.Height) / usableArea;
         result.BaseCenterDistanceRatio = baseDistance;
-        result.Score = result.CompactnessRatio + (result.BaseCenterDistanceRatio * 0.25);
+        result.PlacementSidePenalty = fallbackPlacements.Sum(placement =>
+            GetPlacementSideMismatchPenalty(
+                placement.Item.PreferredSide,
+                InferActualPlacementSide(state.BaseRect, placement.Rect)));
+        result.Score = result.CompactnessRatio + (result.BaseCenterDistanceRatio * 0.25) + result.PlacementSidePenalty;
     }
+
+    internal static double GetPlacementSideMismatchPenalty(SectionPlacementSide preferred, SectionPlacementSide actual)
+    {
+        if (preferred == SectionPlacementSide.Unknown || actual == SectionPlacementSide.Unknown || preferred == actual)
+            return 0;
+
+        return IsOppositeSide(preferred, actual) ? 0.16 : 0.08;
+    }
+
+    private static bool IsOppositeSide(SectionPlacementSide preferred, SectionPlacementSide actual)
+        => (preferred == SectionPlacementSide.Left && actual == SectionPlacementSide.Right)
+           || (preferred == SectionPlacementSide.Right && actual == SectionPlacementSide.Left)
+           || (preferred == SectionPlacementSide.Top && actual == SectionPlacementSide.Bottom)
+           || (preferred == SectionPlacementSide.Bottom && actual == SectionPlacementSide.Top);
 
     private static ReservedRect Inflate(ReservedRect rect, double amount)
         => new(rect.MinX - amount, rect.MinY - amount, rect.MaxX + amount, rect.MaxY + amount);

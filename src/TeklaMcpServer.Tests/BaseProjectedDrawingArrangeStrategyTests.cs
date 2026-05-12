@@ -53,6 +53,19 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.Equal(SectionPlacementSide.Top, actual);
     }
 
+    [Theory]
+    [InlineData(SectionPlacementSide.Top, SectionPlacementSide.Top, 0)]
+    [InlineData(SectionPlacementSide.Top, SectionPlacementSide.Left, 0.08)]
+    [InlineData(SectionPlacementSide.Top, SectionPlacementSide.Bottom, 0.16)]
+    [InlineData(SectionPlacementSide.Unknown, SectionPlacementSide.Left, 0)]
+    internal void GetPlacementSideMismatchPenalty_ReturnsSoftPenalty(
+        SectionPlacementSide preferred,
+        SectionPlacementSide actual,
+        double expected)
+    {
+        Assert.Equal(expected, ProjectedGroupLayoutPlanner.GetPlacementSideMismatchPenalty(preferred, actual), 6);
+    }
+
     [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {
