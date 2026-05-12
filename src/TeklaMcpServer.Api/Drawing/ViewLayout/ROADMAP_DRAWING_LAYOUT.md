@@ -856,6 +856,15 @@ fallback-раскладки, а не из положения линий разр
 - После сортировки локальный стек пересобирается с сохранением gap и validation
   через тот же `ProjectionAlignmentMoveHelper`.
 
+Что осталось согласовать с candidate scoring/apply:
+- После `fallback_stack_order_result applied` финальный layout уже содержит
+  правильный порядок fallback-stack, но diagnostic candidate `planned-centered`
+  может быть построен от snapshot до перестановки.
+- Из-за этого `fit_layout_apply_delta` может показывать обратную перестановку
+  C-C/B-B, хотя фактический `final` уже правильный.
+- Нужно синхронизировать candidate snapshot после stack-order или при равном
+  score предпочитать `final`, если именно он содержит примененный stack-order.
+
 Diagnostics:
 - Добавить trace `fallback_stack_alignment_group`:
   preferred side, actual side, view ids, выбранный anchor.
@@ -875,11 +884,13 @@ Diagnostics:
 - Все moves проходят тот же validator, что и обычная projection alignment:
   sheet margins, reserved areas и view overlaps.
 - Trace объясняет, был ли stack alignment применен или отклонен.
+- После примененного stack-order `fit_layout_apply_delta` не должен показывать
+  обратную перестановку тех же section views.
 
 Статус: implementation in validation. Helper refactor, первый fallback-stack
 alignment pass и projection-aware ordering внутри fallback-stack добавлены.
-Нужно проверить на текущем чертеже, что C-C/B-B/A-A идут по порядку линий
-разреза на главном виде.
+На текущем чертеже stack-order применился. Следующий шаг — синхронизировать
+candidate scoring/apply snapshot с примененным fallback-stack order.
 
 #### 6.5 Учет смещения BBox относительно origin
 
