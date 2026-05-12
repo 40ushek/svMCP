@@ -42,6 +42,7 @@ internal static class ProjectedGroupLayoutPlanner
         public double CompactnessRatio { get; set; } = double.MaxValue;
         public double BaseCenterDistanceRatio { get; set; } = double.MaxValue;
         public double PlacementSidePenalty { get; set; }
+        public double EdgeMarginPenalty { get; set; }
         public double Score { get; set; } = double.MaxValue;
         public List<int> AddedIds { get; } = new();
         public List<int> DeferredIds { get; } = new();
@@ -315,7 +316,7 @@ internal static class ProjectedGroupLayoutPlanner
                         "api-view",
                         "projected_group_scenario_result",
                         0,
-                        $"margin={result.Margin:F1} gap={result.Gap:F1} base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} sidePenalty={FormatScore(result.PlacementSidePenalty)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
+                        $"margin={result.Margin:F1} gap={result.Gap:F1} base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} sidePenalty={FormatScore(result.PlacementSidePenalty)} edgePenalty={FormatScore(result.EdgeMarginPenalty)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
                 }
             }
         }
@@ -337,7 +338,7 @@ internal static class ProjectedGroupLayoutPlanner
                 "projected_group_planner_result",
                 0,
                 best != null
-                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} baseRect={FormatRect(best.BaseRect)}"
+                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} edgePenalty={best.EdgeMarginPenalty:F4} baseRect={FormatRect(best.BaseRect)}"
                     : $"result=reject candidates={results.Count} rejected={results.Count} reason=no-valid-scenario");
         }
 
@@ -434,7 +435,7 @@ internal static class ProjectedGroupLayoutPlanner
             "api-view",
             "projected_group_plan_result",
             0,
-            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} views={planned.Count}");
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} edgePenalty={best.EdgeMarginPenalty:F4} views={planned.Count}");
 
         return planned;
     }
@@ -1088,8 +1089,39 @@ internal static class ProjectedGroupLayoutPlanner
             GetPlacementSideMismatchPenalty(
                 placement.Item.PreferredSide,
                 InferActualPlacementSide(state.BaseRect, placement.Rect)));
-        result.Score = result.CompactnessRatio + (result.BaseCenterDistanceRatio * 0.25) + result.PlacementSidePenalty;
+        result.EdgeMarginPenalty = GetEdgeMarginPenalty(context, bounds);
+        result.Score = result.CompactnessRatio
+                       + (result.BaseCenterDistanceRatio * 0.25)
+                       + result.PlacementSidePenalty
+                       + result.EdgeMarginPenalty;
     }
+
+    internal static double GetEdgeMarginPenalty(DrawingArrangeContext context, ReservedRect bounds)
+    {
+        var usableWidth = context.SheetWidth - (2 * context.Margin);
+        var usableHeight = context.SheetHeight - (2 * context.Margin);
+        var safeDistance = Math.Max(context.Gap * 2.0, 10.0);
+        var available = Math.Min(usableWidth, usableHeight);
+        if (safeDistance <= 0 || available <= 0)
+            return 0;
+
+        safeDistance = Math.Min(safeDistance, available * 0.25);
+        if (safeDistance <= 0)
+            return 0;
+
+        var left = bounds.MinX - context.Margin;
+        var right = (context.SheetWidth - context.Margin) - bounds.MaxX;
+        var bottom = bounds.MinY - context.Margin;
+        var top = (context.SheetHeight - context.Margin) - bounds.MaxY;
+
+        return (GetEdgeShortfall(left, safeDistance)
+                + GetEdgeShortfall(right, safeDistance)
+                + GetEdgeShortfall(bottom, safeDistance)
+                + GetEdgeShortfall(top, safeDistance)) * 0.03;
+    }
+
+    private static double GetEdgeShortfall(double distance, double safeDistance)
+        => distance >= safeDistance ? 0 : (safeDistance - Math.Max(distance, 0)) / safeDistance;
 
     internal static double GetPlacementSideMismatchPenalty(SectionPlacementSide preferred, SectionPlacementSide actual)
     {

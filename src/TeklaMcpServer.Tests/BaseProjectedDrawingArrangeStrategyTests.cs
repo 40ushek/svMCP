@@ -67,6 +67,22 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
     }
 
     [Fact]
+    public void GetEdgeMarginPenalty_PenalizesBoundsTouchingUsableEdge()
+    {
+        var baseView = ViewTestHelper.Create(View.ViewTypes.FrontView, width: 60, height: 40);
+        var context = CreateArrangeContext([baseView], sheetWidth: 200, sheetHeight: 160, margin: 10, gap: 6);
+
+        var centered = ProjectedGroupLayoutPlanner.GetEdgeMarginPenalty(
+            context,
+            new ReservedRect(40, 35, 160, 125));
+        var touching = ProjectedGroupLayoutPlanner.GetEdgeMarginPenalty(
+            context,
+            new ReservedRect(10, 35, 130, 125));
+
+        Assert.True(touching > centered);
+    }
+
+    [Fact]
     public void ComputeFreeArea_ShrinksForWideEdgeBands()
     {
         var free = BaseProjectedDrawingArrangeStrategy.ComputeFreeArea(
