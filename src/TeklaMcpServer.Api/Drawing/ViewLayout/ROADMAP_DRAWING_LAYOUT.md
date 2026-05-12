@@ -802,8 +802,9 @@ Diagnostics:
 Проблема: после `ProjectedGroupLayoutPlanner` несколько views могут уйти в
 одну fallback-зону. Например, на текущем 6-view assembly drawing C-C и B-B
 оказались слева как отдельные fallback views. Геометрически это читается как
-стек, но код пока не моделирует такой стек явно и не пытается выровнять views
-внутри него между собой.
+стек. Первый проход уже умеет распознать такой стек и выровнять views внутри
+него между собой, но порядок views внутри стека пока берется из текущей
+fallback-раскладки, а не из положения линий разреза на главном виде.
 
 Цель: если несколько fallback views имеют общий `PreferredPlacementSide` и
 общий `ActualPlacementSide`, рассматривать их как локальный fallback-stack.
@@ -818,26 +819,39 @@ Diagnostics:
 - C-C и B-B можно попробовать выровнять между собой по X, если это не ломает
   margins, reserved areas, gaps и пересечения с другими views.
 
-Что нужно изменить:
-- Вынести общий helper для projection move validation/application из
-  `DrawingProjectionAlignmentService`, чтобы не копировать приватную логику:
-  построение `ProjectionViewState`, расчет frame rect, проверка через
-  `ViewPlacementValidator`, применение move и обновление `ArrangedView`.
-- `DrawingProjectionAlignmentService` должен использовать этот helper без
-  изменения текущего поведения.
-- Добавить отдельный шаг fallback-stack alignment после planner/fallback
-  placement и до финального candidate scoring/commit.
-- Группировать fallback views по:
-  `PreferredPlacementSide`, `ActualPlacementSide`, `PlacementFallbackUsed=1`.
-- Для `PreferredPlacementSide=Top/Bottom` внутри группы пробовать alignment по
-  X; для `Left/Right` — по Y. Использовать существующее правило
+Сделано:
+- Вынесен общий helper `ProjectionAlignmentMoveHelper` для projection move
+  validation/application: построение `ProjectionViewState`, расчет frame rect,
+  проверка через `ViewPlacementValidator`, применение move и обновление
+  `ArrangedView`.
+- `DrawingProjectionAlignmentService` использует helper без изменения
+  основного projection behavior.
+- Добавлен отдельный шаг `ApplyFallbackStackAlignment(...)` после
+  planner/fallback placement.
+- Fallback views группируются по:
+  `PreferredPlacementSide`, `ActualPlacementSide`, `ViewType`,
+  `PlacementFallbackUsed=1`.
+- Для `PreferredPlacementSide=Top/Bottom` внутри группы пробуется alignment по
+  X; для `Left/Right` — по Y. Используется существующее правило
   `DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(...)`.
-- Выбирать anchor внутри группы детерминированно: первый/верхний view в стеке
-  или view с более сильной projection strength.
-- Остальные views двигать к anchor только если helper подтверждает, что move
-  не нарушает sheet margins, reserved areas, gap и view overlaps.
-- Если alignment не проходит, оставлять исходную fallback placement без
-  отката всей компоновки.
+- Anchor внутри группы выбирается детерминированно по текущему положению в
+  стеке.
+- Остальные views двигаются к anchor только если helper подтверждает, что move
+  не нарушает sheet margins, reserved areas и view overlaps.
+- Если alignment не проходит, исходная fallback placement остается без отката
+  всей компоновки.
+
+Что нужно добавить:
+- Упорядочивать views внутри fallback-stack по реальному положению линии
+  разреза/проекции на главном виде, а не по текущему положению после packer.
+- Для стеков слева/справа сортировать views сверху вниз по координате линии на
+  главном виде.
+- Для стеков сверху/снизу сортировать views слева направо по координате линии
+  на главном виде.
+- Если координату линии разреза найти нельзя, оставлять текущий
+  детерминированный порядок как fallback.
+- После сортировки пересобирать локальный стек с сохранением gap и validation
+  через тот же `ProjectionAlignmentMoveHelper`.
 
 Diagnostics:
 - Добавить trace `fallback_stack_alignment_group`:
@@ -853,12 +867,16 @@ Diagnostics:
   их позиции.
 - На текущем чертеже C-C/B-B распознаются как fallback-stack и получают
   попытку локального alignment.
+- Если в fallback-stack несколько разрезов, их порядок должен соответствовать
+  порядку линий разреза на главном виде, когда такая связь доступна.
 - Все moves проходят тот же validator, что и обычная projection alignment:
   sheet margins, reserved areas и view overlaps.
 - Trace объясняет, был ли stack alignment применен или отклонен.
 
-Статус: initial implementation. Helper refactor и первый fallback-stack
-alignment pass добавлены; нужна live validation на реальных чертежах.
+Статус: partial implementation. Helper refactor и первый fallback-stack
+alignment pass добавлены и проверены логом на текущем чертеже. Следующий шаг —
+projection-aware ordering внутри fallback-stack, чтобы C-C/B-B/A-A шли по
+порядку линий разреза на главном виде.
 
 #### 6.5 Учет смещения BBox относительно origin
 
