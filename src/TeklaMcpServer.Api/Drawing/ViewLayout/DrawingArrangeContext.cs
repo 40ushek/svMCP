@@ -83,14 +83,16 @@ public sealed class DrawingArrangeContext
     internal DrawingArrangeContext With(
         IReadOnlyList<View>? views = null,
         IReadOnlyList<ReservedRect>? reservedAreas = null,
-        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null,
+        double? margin = null,
+        double? gap = null)
         => new(
             Drawing,
             views ?? Views,
             SheetWidth,
             SheetHeight,
-            Margin,
-            Gap,
+            margin ?? Margin,
+            gap ?? Gap,
             reservedAreas ?? ReservedAreas,
             effectiveFrameSizes ?? EffectiveFrameSizes,
             Workspace);

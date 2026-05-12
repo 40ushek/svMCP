@@ -31,6 +31,8 @@ internal static class ProjectedGroupLayoutPlanner
     {
         public string Scenario { get; set; } = string.Empty;
         public string BaseCandidate { get; set; } = string.Empty;
+        public double Margin { get; set; }
+        public double Gap { get; set; }
         public bool Fits { get; set; }
         public string RejectReason { get; set; } = string.Empty;
         public int AddedCount { get; set; }
@@ -56,6 +58,18 @@ internal static class ProjectedGroupLayoutPlanner
 
         public string Name { get; }
         public ReservedRect Rect { get; }
+    }
+
+    private readonly struct SpacingCandidate
+    {
+        public SpacingCandidate(double margin, double gap)
+        {
+            Margin = margin;
+            Gap = gap;
+        }
+
+        public double Margin { get; }
+        public double Gap { get; }
     }
 
     private sealed class VirtualPlacement
@@ -269,38 +283,39 @@ internal static class ProjectedGroupLayoutPlanner
                 $"views={context.Views.Count} projected={items.Projected.Count} initialFallback={items.InitialFallback.Count} relaxedOrder={relaxedPacking.Order} heuristic={relaxedPacking.Heuristic} attempts={relaxedPacking.Attempts}");
         }
 
-        var scenarios = CreateScenarios(context, items.Projected);
-        var baseCandidates = CreateBaseRectCandidates(context, items.BaseItem.View);
-        if (baseCandidates.Count == 0)
-        {
-            if (trace)
-                PerfTrace.Write("api-view", "projected_group_planner_result", 0, "result=reject reason=no-base-candidates");
-            return false;
-        }
+        var spacingCandidates = CreateSpacingCandidates(context);
+        var results = new List<ScenarioResult>();
 
-        if (trace)
+        foreach (var spacing in spacingCandidates)
         {
-            PerfTrace.Write(
-                "api-view",
-                "projected_group_base_candidates",
-                0,
-                $"count={baseCandidates.Count} candidates={string.Join(";", baseCandidates.Select(candidate => $"{candidate.Name}:{FormatRect(candidate.Rect)}"))}");
-        }
+            var candidateContext = context.With(margin: spacing.Margin, gap: spacing.Gap);
+            var scenarios = CreateScenarios(candidateContext, items.Projected);
+            var baseCandidates = CreateBaseRectCandidates(candidateContext, items.BaseItem.View);
+            if (baseCandidates.Count == 0)
+                continue;
 
-        var results = new List<ScenarioResult>(scenarios.Count * baseCandidates.Count);
-
-        foreach (var baseCandidate in baseCandidates)
-        foreach (var scenario in scenarios)
-        {
-            var result = RunScenario(context, items.BaseItem, baseCandidate, scenario.Name, scenario.Items, items.InitialFallback, trace);
-            results.Add(result);
             if (trace)
             {
                 PerfTrace.Write(
                     "api-view",
-                    "projected_group_scenario_result",
+                    "projected_group_base_candidates",
                     0,
-                    $"base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
+                    $"margin={spacing.Margin:F1} gap={spacing.Gap:F1} count={baseCandidates.Count} candidates={string.Join(";", baseCandidates.Select(candidate => $"{candidate.Name}:{FormatRect(candidate.Rect)}"))}");
+            }
+
+            foreach (var baseCandidate in baseCandidates)
+            foreach (var scenario in scenarios)
+            {
+                var result = RunScenario(candidateContext, items.BaseItem, baseCandidate, scenario.Name, scenario.Items, items.InitialFallback, trace);
+                results.Add(result);
+                if (trace)
+                {
+                    PerfTrace.Write(
+                        "api-view",
+                        "projected_group_scenario_result",
+                        0,
+                        $"margin={result.Margin:F1} gap={result.Gap:F1} base={result.BaseCandidate} scenario={result.Scenario} result={(result.Fits ? "ok" : "reject")} added={result.AddedCount} deferred={result.DeferredCount} fallbackPlaced={result.FallbackPlacedCount} score={FormatScore(result.Score)} compactness={FormatScore(result.CompactnessRatio)} baseCenterDistance={FormatScore(result.BaseCenterDistanceRatio)} reason={result.RejectReason} baseRect={FormatRect(result.BaseRect)} addedIds={FormatIds(result.AddedIds)} deferredIds={FormatIds(result.DeferredIds)}");
+                }
             }
         }
 
@@ -308,6 +323,8 @@ internal static class ProjectedGroupLayoutPlanner
             .Where(result => result.Fits)
             .OrderBy(result => result.DeferredCount)
             .ThenByDescending(result => result.AddedCount)
+            .ThenByDescending(result => result.Margin)
+            .ThenByDescending(result => result.Gap)
             .ThenBy(result => result.Score)
             .ThenBy(result => result.Scenario, StringComparer.Ordinal)
             .FirstOrDefault();
@@ -319,7 +336,7 @@ internal static class ProjectedGroupLayoutPlanner
                 "projected_group_planner_result",
                 0,
                 best != null
-                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} baseRect={FormatRect(best.BaseRect)}"
+                    ? $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} candidates={results.Count} rejected={results.Count - results.Count(r => r.Fits)} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} baseRect={FormatRect(best.BaseRect)}"
                     : $"result=reject candidates={results.Count} rejected={results.Count} reason=no-valid-scenario");
         }
 
@@ -340,31 +357,35 @@ internal static class ProjectedGroupLayoutPlanner
         if (items.Projected.Count == 0)
             return null;
 
-        var scenarios = CreateScenarios(context, items.Projected);
-        var baseCandidates = CreateBaseRectCandidates(context, items.BaseItem.View);
-        if (baseCandidates.Count == 0)
-            return null;
-
-        var results = new List<ScenarioResult>(scenarios.Count * baseCandidates.Count);
-        foreach (var baseCandidate in baseCandidates)
-        foreach (var scenario in scenarios)
+        var results = new List<ScenarioResult>();
+        foreach (var spacing in CreateSpacingCandidates(context))
         {
-            var result = RunScenario(
-                context,
-                items.BaseItem,
-                baseCandidate,
-                scenario.Name,
-                scenario.Items,
-                items.InitialFallback,
-                trace: false,
-                collectPlacements: true);
-            results.Add(result);
+            var candidateContext = context.With(margin: spacing.Margin, gap: spacing.Gap);
+            var scenarios = CreateScenarios(candidateContext, items.Projected);
+            var baseCandidates = CreateBaseRectCandidates(candidateContext, items.BaseItem.View);
+
+            foreach (var baseCandidate in baseCandidates)
+            foreach (var scenario in scenarios)
+            {
+                var result = RunScenario(
+                    candidateContext,
+                    items.BaseItem,
+                    baseCandidate,
+                    scenario.Name,
+                    scenario.Items,
+                    items.InitialFallback,
+                    trace: false,
+                    collectPlacements: true);
+                results.Add(result);
+            }
         }
 
         var best = results
             .Where(r => r.Fits)
             .OrderBy(r => r.DeferredCount)
             .ThenByDescending(r => r.AddedCount)
+            .ThenByDescending(r => r.Margin)
+            .ThenByDescending(r => r.Gap)
             .ThenBy(r => r.Score)
             .ThenBy(r => r.Scenario, StringComparer.Ordinal)
             .FirstOrDefault();
@@ -402,7 +423,7 @@ internal static class ProjectedGroupLayoutPlanner
             "api-view",
             "projected_group_plan_result",
             0,
-            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} views={planned.Count}");
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} views={planned.Count}");
 
         return planned;
     }
@@ -512,6 +533,37 @@ internal static class ProjectedGroupLayoutPlanner
         return isHorizontal ? 0 : isVertical ? 1 : 2;
     }
 
+    private static IReadOnlyList<SpacingCandidate> CreateSpacingCandidates(DrawingArrangeContext context)
+    {
+        var raw = new[]
+        {
+            new SpacingCandidate(context.Margin, context.Gap),
+            new SpacingCandidate(5, 4),
+            new SpacingCandidate(8, 4),
+            new SpacingCandidate(10, 4),
+            new SpacingCandidate(10, 6)
+        };
+
+        var result = new List<SpacingCandidate>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in raw)
+        {
+            if (candidate.Margin < context.Margin || candidate.Gap < context.Gap)
+                continue;
+
+            if (candidate.Margin * 2 >= context.SheetWidth || candidate.Margin * 2 >= context.SheetHeight)
+                continue;
+
+            var key = $"{candidate.Margin:F3}:{candidate.Gap:F3}";
+            if (seen.Add(key))
+                result.Add(candidate);
+        }
+
+        return result.Count > 0
+            ? result
+            : new[] { new SpacingCandidate(context.Margin, context.Gap) };
+    }
+
     private static ScenarioResult RunScenario(
         DrawingArrangeContext context,
         PlannerItem baseItem,
@@ -522,7 +574,13 @@ internal static class ProjectedGroupLayoutPlanner
         bool trace,
         bool collectPlacements = false)
     {
-        var result = new ScenarioResult { Scenario = scenarioName, BaseCandidate = baseCandidate.Name };
+        var result = new ScenarioResult
+        {
+            Scenario = scenarioName,
+            BaseCandidate = baseCandidate.Name,
+            Margin = context.Margin,
+            Gap = context.Gap
+        };
         var state = new VirtualState(context, baseItem, baseCandidate.Rect);
 
         if (!TryValidateState(context, state, out var baseReject))
