@@ -39,21 +39,21 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
     {
         public PlannedPlacement(
             View view,
-            double x,
-            double y,
+            double frameCenterX,
+            double frameCenterY,
             SectionPlacementSide? preferredPlacementSide = null,
             SectionPlacementSide? actualPlacementSide = null)
         {
             View = view;
-            X = x;
-            Y = y;
+            FrameCenterX = frameCenterX;
+            FrameCenterY = frameCenterY;
             PreferredPlacementSide = preferredPlacementSide;
             ActualPlacementSide = actualPlacementSide;
         }
 
         public View View { get; }
-        public double X { get; }
-        public double Y { get; }
+        public double FrameCenterX { get; }
+        public double FrameCenterY { get; }
         public SectionPlacementSide? PreferredPlacementSide { get; }
         public SectionPlacementSide? ActualPlacementSide { get; }
     }
@@ -144,7 +144,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             {
                 var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                return ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(p.X, p.Y, w, h);
+                return ViewPlacementGeometryService.CreateRectFromFrameCenter(p.FrameCenterX, p.FrameCenterY, w, h);
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
@@ -253,14 +253,13 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             if (!packer.TryInsert(view.Width + context.Gap, view.Height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
                 return false;
 
-            var originX = context.Margin + placement.X + (view.Width / 2.0);
-            var originY = context.SheetHeight - context.Margin - placement.Y - (view.Height / 2.0);
+            var frameCenterX = context.Margin + placement.X + (view.Width / 2.0);
+            var frameCenterY = context.SheetHeight - context.Margin - placement.Y - (view.Height / 2.0);
             var width = DrawingArrangeContextSizing.GetWidth(context, view);
             var height = DrawingArrangeContextSizing.GetHeight(context, view);
-            residualRectsById[view.GetIdentifier().ID] = ViewPlacementGeometryService.CreateCandidateRect(
-                view,
-                originX,
-                originY,
+            residualRectsById[view.GetIdentifier().ID] = ViewPlacementGeometryService.CreateRectFromFrameCenter(
+                frameCenterX,
+                frameCenterY,
                 width,
                 height);
         }
@@ -315,7 +314,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 {
                     var w = DrawingArrangeContextSizing.GetWidth(context, p.View);
                     var h = DrawingArrangeContextSizing.GetHeight(context, p.View);
-                    return ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(p.X, p.Y, w, h);
+                    return ViewPlacementGeometryService.CreateRectFromFrameCenter(p.FrameCenterX, p.FrameCenterY, w, h);
                 }).ToList();
 
                 var extendedReserved = new System.Collections.Generic.List<ReservedRect>(context.ReservedAreas);
@@ -394,7 +393,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             {
                 var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
                 var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                return new ReservedRect(p.X - w / 2.0, p.Y - h / 2.0, p.X + w / 2.0, p.Y + h / 2.0);
+                return new ReservedRect(p.FrameCenterX - w / 2.0, p.FrameCenterY - h / 2.0, p.FrameCenterX + w / 2.0, p.FrameCenterY + h / 2.0);
             }).ToList();
             var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
             extendedReserved.AddRange(anchorRects);
@@ -1282,8 +1281,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         {
             var origin = item.View.Origin;
             var frameOffset = ViewPlacementGeometryService.GetFrameOffsetSheet(context, item.View);
-            origin.X = item.X - frameOffset.X;
-            origin.Y = item.Y - frameOffset.Y;
+            origin.X = item.FrameCenterX - frameOffset.X;
+            origin.Y = item.FrameCenterY - frameOffset.Y;
             item.View.Origin = origin;
             item.View.Modify();
             if (System.Math.Abs(frameOffset.X) > 0.01 || System.Math.Abs(frameOffset.Y) > 0.01)
@@ -1292,15 +1291,17 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                     "api-view",
                     "view_frame_offset_apply",
                     0,
-                    $"view={item.View.GetIdentifier().ID} frameCenter=({item.X:F2},{item.Y:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
+                    $"view={item.View.GetIdentifier().ID} frameCenter=({item.FrameCenterX:F2},{item.FrameCenterY:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
             }
 
             arranged.Add(new ArrangedView
             {
                 Id = item.View.GetIdentifier().ID,
                 ViewType = item.View.ViewType.ToString(),
-                OriginX = item.X,
-                OriginY = item.Y,
+                // These values are target frame centers. TeklaDrawingViewApi applies
+                // the captured frame offset later when it builds the final response DTO.
+                OriginX = item.FrameCenterX,
+                OriginY = item.FrameCenterY,
                 PreferredPlacementSide = ToPlacementSideString(item.PreferredPlacementSide),
                 ActualPlacementSide = ToPlacementSideString(item.ActualPlacementSide),
                 PlacementFallbackUsed = item.PreferredPlacementSide.HasValue

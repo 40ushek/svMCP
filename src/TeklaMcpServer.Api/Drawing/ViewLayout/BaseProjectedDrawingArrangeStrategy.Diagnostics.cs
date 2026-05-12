@@ -175,7 +175,11 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                var rect = ViewPlacementGeometryService.CreateCandidateRect(item.View, item.X, item.Y, width, height);
+                var rect = ViewPlacementGeometryService.CreateRectFromFrameCenter(
+                    item.FrameCenterX,
+                    item.FrameCenterY,
+                    width,
+                    height);
                 return $"{item.View.GetIdentifier().ID}:{rect.MinX:F2},{rect.MinY:F2},{rect.MaxX:F2},{rect.MaxY:F2}";
             }));
     }

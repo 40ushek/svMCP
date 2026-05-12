@@ -548,7 +548,7 @@ public sealed partial class TeklaDrawingViewApi
             var width = frame.Width;
             var height = frame.Height;
 
-            var plannedRect = ViewPlacementGeometryService.CreateCandidateRect(
+            var plannedRect = ViewPlacementGeometryService.CreateRectFromOrigin(
                 workspace,
                 view,
                 item.OriginX,

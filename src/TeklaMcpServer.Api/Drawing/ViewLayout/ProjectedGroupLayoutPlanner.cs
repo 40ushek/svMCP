@@ -160,27 +160,27 @@ internal static class ProjectedGroupLayoutPlanner
 
             return item.PreferredSide switch
             {
-                SectionPlacementSide.Top => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
+                SectionPlacementSide.Top => ViewPlacementGeometryService.CreateRectFromFrameCenter(
                     baseCenterX,
                     TopNextMinY + (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Bottom => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
+                SectionPlacementSide.Bottom => ViewPlacementGeometryService.CreateRectFromFrameCenter(
                     baseCenterX,
                     BottomNextMaxY - (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Right => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
+                SectionPlacementSide.Right => ViewPlacementGeometryService.CreateRectFromFrameCenter(
                     RightMinX + (width * 0.5),
                     RightNextMinY + (height * 0.5),
                     width,
                     height),
-                SectionPlacementSide.Left => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
+                SectionPlacementSide.Left => ViewPlacementGeometryService.CreateRectFromFrameCenter(
                     LeftMaxX - (width * 0.5),
                     LeftNextMinY + (height * 0.5),
                     width,
                     height),
-                _ => ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(
+                _ => ViewPlacementGeometryService.CreateRectFromFrameCenter(
                     baseCenterX,
                     TopNextMinY + (height * 0.5),
                     width,
@@ -617,7 +617,10 @@ internal static class ProjectedGroupLayoutPlanner
 
             var frameCenterX = minX + placement.X + (width * 0.5);
             var frameCenterY = context.SheetHeight - context.Margin - placement.Y - (height * 0.5);
-            var rect = ViewPlacementGeometryService.CreateCandidateRectFromFrameCenter(frameCenterX, frameCenterY, width, height);
+            var rect = ViewPlacementGeometryService.CreateRectFromFrameCenter(frameCenterX, frameCenterY, width, height);
+            if (!IsInsideSheetMargins(context, rect))
+                continue;
+
             var key = $"{Math.Round(rect.MinX, 2)}:{Math.Round(rect.MinY, 2)}:{Math.Round(rect.MaxX, 2)}:{Math.Round(rect.MaxY, 2)}";
             if (!seen.Add(key))
                 continue;
@@ -627,6 +630,12 @@ internal static class ProjectedGroupLayoutPlanner
 
         return result;
     }
+
+    private static bool IsInsideSheetMargins(DrawingArrangeContext context, ReservedRect rect)
+        => rect.MinX >= context.Margin
+           && rect.MaxX <= context.SheetWidth - context.Margin
+           && rect.MinY >= context.Margin
+           && rect.MaxY <= context.SheetHeight - context.Margin;
 
     private static bool TryShiftIntoSheet(DrawingArrangeContext context, VirtualState state, out string rejectReason)
     {

@@ -96,7 +96,7 @@ internal static class DrawingLayoutCandidateBuilder
             var originX = arrangedView?.OriginX ?? view.Origin?.X ?? 0.0;
             var originY = arrangedView?.OriginY ?? view.Origin?.Y ?? 0.0;
             var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
-            var layoutRect = ViewPlacementGeometryService.CreateCandidateRect(
+            var layoutRect = ViewPlacementGeometryService.CreateRectFromOrigin(
                 workspace,
                 view,
                 originX,

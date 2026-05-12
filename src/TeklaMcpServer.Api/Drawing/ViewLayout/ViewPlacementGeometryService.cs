@@ -6,7 +6,7 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal static class ViewPlacementGeometryService
 {
-    public static ReservedRect CreateCandidateRect(
+    public static ReservedRect CreateRectFromOrigin(
         DrawingArrangeContext context,
         View view,
         double originX,
@@ -18,7 +18,7 @@ internal static class ViewPlacementGeometryService
         return CreateCenteredRect(originX + offsetX, originY + offsetY, width, height);
     }
 
-    public static ReservedRect CreateCandidateRect(
+    public static ReservedRect CreateRectFromOrigin(
         DrawingLayoutWorkspace workspace,
         View view,
         double originX,
@@ -30,7 +30,7 @@ internal static class ViewPlacementGeometryService
         return CreateCenteredRect(originX + offsetX, originY + offsetY, width, height);
     }
 
-    public static ReservedRect CreateCandidateRect(
+    public static ReservedRect CreateRectFromOrigin(
         View view,
         double originX,
         double originY,
@@ -43,22 +43,12 @@ internal static class ViewPlacementGeometryService
         return CreateCenteredRect(originX, originY, width, height);
     }
 
-    public static ReservedRect CreateCandidateRectFromFrameCenter(
+    public static ReservedRect CreateRectFromFrameCenter(
         double frameCenterX,
         double frameCenterY,
         double width,
         double height)
         => CreateCenteredRect(frameCenterX, frameCenterY, width, height);
-
-    public static (double OriginX, double OriginY) GetOriginForFrameCenter(
-        DrawingArrangeContext context,
-        View view,
-        double frameCenterX,
-        double frameCenterY)
-    {
-        var (offsetX, offsetY) = GetFrameOffsetSheet(context, view);
-        return (frameCenterX - offsetX, frameCenterY - offsetY);
-    }
 
     public static (double X, double Y) GetFrameOffsetSheet(DrawingArrangeContext context, View view)
     {

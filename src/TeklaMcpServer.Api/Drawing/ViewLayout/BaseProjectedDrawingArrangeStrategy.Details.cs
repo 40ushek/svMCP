@@ -54,7 +54,11 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
             {
                 var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
                 var height = DrawingArrangeContextSizing.GetHeight(context, item.View);
-                return ViewPlacementGeometryService.CreateCandidateRect(item.View, item.X, item.Y, width, height);
+                return ViewPlacementGeometryService.CreateRectFromFrameCenter(
+                    item.FrameCenterX,
+                    item.FrameCenterY,
+                    width,
+                    height);
             });
         var blockedRects = new List<ReservedRect>(occupied.Take(reservedCount));
         foreach (var item in planned)
