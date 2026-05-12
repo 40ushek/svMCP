@@ -149,10 +149,16 @@ internal sealed partial class DrawingProjectionAlignmentService
 
     internal static bool TryResolveSectionAlignmentAxis(
         ArrangedView? arrangedView,
-        SectionPlacementSide fallbackPlacementSide,
+        SectionPlacementSide resolvedPlacementSide,
         out bool alignX,
         out string reason)
     {
+        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(resolvedPlacementSide, out alignX))
+        {
+            reason = string.Empty;
+            return true;
+        }
+
         if (arrangedView != null)
         {
             if (string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide))
@@ -170,14 +176,8 @@ internal sealed partial class DrawingProjectionAlignmentService
             }
         }
 
-        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(fallbackPlacementSide, out alignX))
-        {
-            reason = string.Empty;
-            return true;
-        }
-
         alignX = false;
-        reason = $"projection-skip:section-side-unknown:reason={fallbackPlacementSide}";
+        reason = $"projection-skip:section-side-unknown:reason={resolvedPlacementSide}";
         return false;
     }
 

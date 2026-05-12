@@ -319,7 +319,7 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Fact]
-    public void TryResolveSectionAlignmentAxis_SkipsSectionWhenActualPlacementSideMissing()
+    public void TryResolveSectionAlignmentAxis_UsesResolvedSideWhenActualPlacementSideMissing()
     {
         var arranged = new ArrangedView
         {
@@ -334,9 +334,9 @@ public sealed class DrawingProjectionAlignmentTests
             out var alignX,
             out var reason);
 
-        Assert.False(ok);
-        Assert.False(alignX);
-        Assert.Equal("projection-skip:section-unresolved:view=44", reason);
+        Assert.True(ok);
+        Assert.True(alignX);
+        Assert.Equal(string.Empty, reason);
     }
 
     [Theory]
@@ -344,7 +344,7 @@ public sealed class DrawingProjectionAlignmentTests
     [InlineData("Bottom", true)]
     [InlineData("Left", false)]
     [InlineData("Right", false)]
-    public void TryResolveSectionAlignmentAxis_UsesActualPlacementSide(string actualPlacementSide, bool expectedAlignX)
+    public void TryResolveSectionAlignmentAxis_UsesActualPlacementSideWhenResolvedSideUnknown(string actualPlacementSide, bool expectedAlignX)
     {
         var arranged = new ArrangedView
         {
@@ -361,6 +361,27 @@ public sealed class DrawingProjectionAlignmentTests
 
         Assert.True(ok);
         Assert.Equal(expectedAlignX, alignX);
+        Assert.Equal(string.Empty, reason);
+    }
+
+    [Fact]
+    public void TryResolveSectionAlignmentAxis_PrefersResolvedSideOverActualPlacementSide()
+    {
+        var arranged = new ArrangedView
+        {
+            Id = 46,
+            ActualPlacementSide = "Right",
+            PlacementFallbackUsed = true
+        };
+
+        var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
+            arranged,
+            SectionPlacementSide.Top,
+            out var alignX,
+            out var reason);
+
+        Assert.True(ok);
+        Assert.True(alignX);
         Assert.Equal(string.Empty, reason);
     }
 
