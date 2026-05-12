@@ -797,7 +797,70 @@ Diagnostics:
 Статус: future / design note. Не реализовывать до проверки нескольких реальных
 чертежей и согласования порогов качества.
 
-#### 6.4 Учет смещения BBox относительно origin
+#### 6.4 Fallback-stack projection alignment
+
+Проблема: после `ProjectedGroupLayoutPlanner` несколько views могут уйти в
+одну fallback-зону. Например, на текущем 6-view assembly drawing C-C и B-B
+оказались слева как отдельные fallback views. Геометрически это читается как
+стек, но код пока не моделирует такой стек явно и не пытается выровнять views
+внутри него между собой.
+
+Цель: если несколько fallback views имеют общий `PreferredPlacementSide` и
+общий `ActualPlacementSide`, рассматривать их как локальный fallback-stack.
+Внутри такого стека можно мягко восстановить проекционную связь между views
+самой группы, не заставляя каждый view выравниваться с главным видом.
+
+Пример:
+- `TopView`, C-C и B-B не помещаются сверху от главного вида;
+- planner переносит их в `ActualPlacementSide=Left`;
+- `TopView` остается выше;
+- C-C и B-B образуют локальный стек ниже;
+- C-C и B-B можно попробовать выровнять между собой по X, если это не ломает
+  margins, reserved areas, gaps и пересечения с другими views.
+
+Что нужно изменить:
+- Вынести общий helper для projection move validation/application из
+  `DrawingProjectionAlignmentService`, чтобы не копировать приватную логику:
+  построение `ProjectionViewState`, расчет frame rect, проверка через
+  `ViewPlacementValidator`, применение move и обновление `ArrangedView`.
+- `DrawingProjectionAlignmentService` должен использовать этот helper без
+  изменения текущего поведения.
+- Добавить отдельный шаг fallback-stack alignment после planner/fallback
+  placement и до финального candidate scoring/commit.
+- Группировать fallback views по:
+  `PreferredPlacementSide`, `ActualPlacementSide`, `PlacementFallbackUsed=1`.
+- Для `PreferredPlacementSide=Top/Bottom` внутри группы пробовать alignment по
+  X; для `Left/Right` — по Y. Использовать существующее правило
+  `DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(...)`.
+- Выбирать anchor внутри группы детерминированно: первый/верхний view в стеке
+  или view с более сильной projection strength.
+- Остальные views двигать к anchor только если helper подтверждает, что move
+  не нарушает sheet margins, reserved areas, gap и view overlaps.
+- Если alignment не проходит, оставлять исходную fallback placement без
+  отката всей компоновки.
+
+Diagnostics:
+- Добавить trace `fallback_stack_alignment_group`:
+  preferred side, actual side, view ids, выбранный anchor.
+- Добавить trace `fallback_stack_alignment_attempt`:
+  view id, anchor id, axis, delta, candidate rect.
+- Добавить trace `fallback_stack_alignment_result`:
+  applied/rejected и причина reject.
+
+Критерии приемки:
+- Текущая основная проекционная связь с главным видом не ухудшается.
+- Если fallback views уже лежат валидно, неуспешный stack alignment не меняет
+  их позиции.
+- На текущем чертеже C-C/B-B распознаются как fallback-stack и получают
+  попытку локального alignment.
+- Все moves проходят тот же validator, что и обычная projection alignment:
+  sheet margins, reserved areas и view overlaps.
+- Trace объясняет, был ли stack alignment применен или отклонен.
+
+Статус: planned. Сначала сделать helper refactor без изменения поведения,
+затем подключать fallback-stack alignment.
+
+#### 6.5 Учет смещения BBox относительно origin
 
 Проблема: часть views имеет реальный frame/BBox, смещенный относительно
 `View.Origin`. Если placement считает прямоугольник как центрированный на
