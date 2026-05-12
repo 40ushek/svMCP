@@ -614,7 +614,7 @@ public sealed partial class TeklaDrawingViewApi
             0,
             string.Format(
                 CultureInfo.InvariantCulture,
-                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} preferredSidePenalty={9:0.###} compactnessPenalty={10:0.###} viewOverlaps={11}:area={12:0.###}:penalty={13:0.###} reservedOverlaps={14}:area={15:0.###}:penalty={16:0.###} diagnostics={17}",
+                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} preferredSidePenalty={9:0.###} compactnessPenalty={10:0.###} stackOrderPenalty={11:0.###} viewOverlaps={12}:area={13:0.###}:penalty={14:0.###} reservedOverlaps={15}:area={16:0.###}:penalty={17:0.###} diagnostics={18}",
                 string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                 score.TotalScore,
                 evaluation.IsFeasible ? 1 : 0,
@@ -626,6 +626,7 @@ public sealed partial class TeklaDrawingViewApi
                 score.Breakdown.EdgeMarginPenalty,
                 score.Breakdown.PreferredSidePenalty,
                 score.Breakdown.CompactnessPenalty,
+                score.Breakdown.StackOrderPenalty,
                 score.Breakdown.ViewOverlapCount,
                 score.Breakdown.ViewOverlapArea,
                 score.Breakdown.ViewOverlapPenalty,
@@ -633,6 +634,52 @@ public sealed partial class TeklaDrawingViewApi
                 score.Breakdown.ReservedOverlapArea,
                 score.Breakdown.ReservedOverlapPenalty,
                 validation.Diagnostics.Count));
+
+        foreach (var group in candidate.StackOrderGroups)
+        {
+            var inversionCount = CountStackOrderInversions(group, out var pairCount);
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_stack_order_score",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} preferred={1} actual={2} viewType={3} expected={4} actualViews={5} inversions={6}/{7}",
+                    string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+                    string.IsNullOrWhiteSpace(group.PreferredPlacementSide) ? "none" : group.PreferredPlacementSide,
+                    string.IsNullOrWhiteSpace(group.ActualPlacementSide) ? "none" : group.ActualPlacementSide,
+                    string.IsNullOrWhiteSpace(group.ViewType) ? "none" : group.ViewType,
+                    string.Join(",", group.ExpectedViewIds),
+                    string.Join(",", group.ActualViewIds),
+                    inversionCount,
+                    pairCount));
+        }
+    }
+
+    private static int CountStackOrderInversions(
+        DrawingLayoutCandidateStackOrderGroup group,
+        out int pairCount)
+    {
+        pairCount = 0;
+        var expected = group.ExpectedViewIds
+            .Distinct()
+            .Select((id, index) => new { id, index })
+            .ToDictionary(static item => item.id, static item => item.index);
+        var actual = group.ActualViewIds
+            .Where(expected.ContainsKey)
+            .Distinct()
+            .ToList();
+
+        var inversions = 0;
+        for (var i = 0; i < actual.Count; i++)
+        for (var j = i + 1; j < actual.Count; j++)
+        {
+            pairCount++;
+            if (expected[actual[i]] > expected[actual[j]])
+                inversions++;
+        }
+
+        return inversions;
     }
 
     private static void TraceLayoutCandidateSelection(DrawingLayoutCandidateSelection selection)
@@ -1350,10 +1397,12 @@ public sealed partial class TeklaDrawingViewApi
         var baselinePlannedViews = DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, currentViews, arranged);
         var plannedArrangedCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
             "fit_views_to_sheet:planned-arranged", layoutWorkspace, baselinePlannedViews);
+        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(plannedArrangedCandidate, currentViews);
         var centeredPlannedViews = DrawingLayoutPlannedCenteringService.TryCenterViews(
             baselinePlannedViews, sheetW, sheetH, selectedLayoutMargin, layoutWorkspace.ReservedAreas);
         var plannedCenteredCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
             "fit_views_to_sheet:planned-centered", layoutWorkspace, centeredPlannedViews);
+        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(plannedCenteredCandidate, currentViews);
 
         TracePlannedVsActualParity(
             "post-arrange-pre-projection",

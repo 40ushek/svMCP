@@ -55,6 +55,7 @@ internal static class DrawingLayoutCandidateBuilder
             });
         }
 
+        AttachFallbackStackOrderGroups(candidate, views);
         return candidate;
     }
 
@@ -63,12 +64,16 @@ internal static class DrawingLayoutCandidateBuilder
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<View> views,
         IReadOnlyList<ArrangedView> arranged)
-        => DrawingLayoutCandidateFactory.FromPlannedViews(
+    {
+        var candidate = DrawingLayoutCandidateFactory.FromPlannedViews(
             name,
             workspace.Source.Drawing,
             workspace.Source.Sheet,
             workspace.Source.ReservedLayout,
             ToPlannedViews(workspace, views, arranged));
+        AttachFallbackStackOrderGroups(candidate, views);
+        return candidate;
+    }
 
     public static DrawingLayoutCandidate FromPlannedViews(
         string name,
@@ -120,8 +125,130 @@ internal static class DrawingLayoutCandidateBuilder
                 ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
                 PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
             });
-        }
+            }
 
         return plannedViews;
+    }
+
+    public static void AttachFallbackStackOrderGroups(
+        DrawingLayoutCandidate candidate,
+        IReadOnlyList<View> views)
+    {
+        if (candidate.Views.Count == 0 || views.Count == 0)
+            return;
+
+        candidate.StackOrderGroups.Clear();
+
+        var sectionTargetIds = candidate.Views
+            .Where(static view => view.PlacementFallbackUsed)
+            .Where(static view => string.Equals(view.ViewType, "SectionView", System.StringComparison.OrdinalIgnoreCase))
+            .Select(static view => view.Id)
+            .ToHashSet();
+        if (sectionTargetIds.Count == 0)
+            return;
+
+        var sectionTargets = views
+            .Where(view => sectionTargetIds.Contains(view.GetIdentifier().ID))
+            .ToList();
+        var sectionRelations = DetailRelationResolver.BuildSectionMarkRelations(views, sectionTargets);
+        if (sectionRelations.Count == 0)
+            return;
+
+        var groups = candidate.Views
+            .Where(static view => view.PlacementFallbackUsed)
+            .Where(static view => view.LayoutRect != null)
+            .Where(static view => !string.IsNullOrWhiteSpace(view.PreferredPlacementSide))
+            .Where(static view => !string.IsNullOrWhiteSpace(view.ActualPlacementSide))
+            .GroupBy(static view => new
+            {
+                view.PreferredPlacementSide,
+                view.ActualPlacementSide,
+                view.ViewType
+            })
+            .Where(static group => group.Count() >= 2);
+
+        foreach (var group in groups)
+        {
+            if (!System.Enum.TryParse<SectionPlacementSide>(group.Key.ActualPlacementSide, ignoreCase: true, out var actualSide))
+                continue;
+
+            var related = group
+                .Select(view =>
+                {
+                    var hasSourceKey = TryGetSectionSourceOrderKey(view.Id, sectionRelations, actualSide, out var sourceKey);
+                    return new
+                    {
+                        View = view,
+                        HasSourceKey = hasSourceKey,
+                        SourceKey = sourceKey,
+                        ActualKey = GetCandidateStackOrderKey(view, actualSide)
+                    };
+                })
+                .Where(static item => item.HasSourceKey)
+                .ToList();
+            if (related.Count < 2)
+                continue;
+
+            candidate.StackOrderGroups.Add(new DrawingLayoutCandidateStackOrderGroup
+            {
+                PreferredPlacementSide = group.Key.PreferredPlacementSide,
+                ActualPlacementSide = group.Key.ActualPlacementSide,
+                ViewType = group.Key.ViewType,
+                ExpectedViewIds = related
+                    .OrderBy(static item => item.SourceKey)
+                    .ThenBy(static item => item.View.Id)
+                    .Select(static item => item.View.Id)
+                    .ToList(),
+                ActualViewIds = related
+                    .OrderBy(static item => item.ActualKey)
+                    .ThenBy(static item => item.View.Id)
+                    .Select(static item => item.View.Id)
+                    .ToList()
+            });
+        }
+    }
+
+    private static bool TryGetSectionSourceOrderKey(
+        int viewId,
+        DetailRelationSet sectionRelations,
+        SectionPlacementSide actualSide,
+        out double orderKey)
+    {
+        orderKey = 0;
+        if (!sectionRelations.TryGet(viewId, out var relation))
+            return false;
+
+        if (actualSide is SectionPlacementSide.Left or SectionPlacementSide.Right)
+        {
+            if (!relation.AnchorY.HasValue)
+                return false;
+
+            orderKey = -relation.AnchorY.Value;
+            return true;
+        }
+
+        if (actualSide is SectionPlacementSide.Top or SectionPlacementSide.Bottom)
+        {
+            if (!relation.AnchorX.HasValue)
+                return false;
+
+            orderKey = relation.AnchorX.Value;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static double GetCandidateStackOrderKey(
+        DrawingLayoutCandidateView view,
+        SectionPlacementSide actualSide)
+    {
+        var rect = view.LayoutRect!;
+        return actualSide switch
+        {
+            SectionPlacementSide.Left or SectionPlacementSide.Right => -rect.MaxY,
+            SectionPlacementSide.Top or SectionPlacementSide.Bottom => rect.MinX,
+            _ => -rect.MaxY
+        };
     }
 }

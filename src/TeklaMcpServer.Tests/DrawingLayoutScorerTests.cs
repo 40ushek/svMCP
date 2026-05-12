@@ -206,6 +206,22 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Score_PenalizesCandidateFallbackStackOrderInversions()
+    {
+        var ordered = CreateCandidateWithStackOrder([10, 20], [10, 20]);
+        var inverted = CreateCandidateWithStackOrder([10, 20], [20, 10]);
+
+        var scorer = new DrawingLayoutScorer();
+        var orderedScore = scorer.Score(ordered);
+        var invertedScore = scorer.Score(inverted);
+
+        Assert.Equal(0.0, orderedScore.Breakdown.StackOrderPenalty, 6);
+        Assert.Equal(1.0, invertedScore.Breakdown.StackOrderPenalty, 6);
+        Assert.True(orderedScore.TotalScore > invertedScore.TotalScore);
+        Assert.Contains(invertedScore.Diagnostics, item => item.Contains("score:stack-order"));
+    }
+
+    [Fact]
     public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
     {
         var context = CreateContext(
@@ -445,5 +461,26 @@ public sealed class DrawingLayoutScorerTests
                 }
             ]
         };
+    }
+
+    private static DrawingLayoutCandidate CreateCandidateWithStackOrder(
+        List<int> expectedViewIds,
+        List<int> actualViewIds)
+    {
+        var candidate = CreateCandidateWithRects(
+            new ReservedRect(35, 35, 65, 65),
+            new ReservedRect(10, 70, 30, 80),
+            new ReservedRect(10, 50, 30, 60));
+
+        candidate.StackOrderGroups.Add(new DrawingLayoutCandidateStackOrderGroup
+        {
+            PreferredPlacementSide = "Top",
+            ActualPlacementSide = "Left",
+            ViewType = "SectionView",
+            ExpectedViewIds = expectedViewIds,
+            ActualViewIds = actualViewIds
+        });
+
+        return candidate;
     }
 }

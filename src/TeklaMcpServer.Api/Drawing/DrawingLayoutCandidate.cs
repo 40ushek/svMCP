@@ -15,6 +15,8 @@ internal sealed class DrawingLayoutCandidate
 
     public List<DrawingLayoutCandidateView> Views { get; set; } = new();
 
+    public List<DrawingLayoutCandidateStackOrderGroup> StackOrderGroups { get; set; } = new();
+
     public List<string> Diagnostics { get; set; } = new();
 
     public DrawingContext ToDrawingContext()
@@ -26,6 +28,19 @@ internal sealed class DrawingLayoutCandidate
             Views = Views.ConvertAll(static view => view.ToDrawingViewInfo()),
             Warnings = new List<string>(Diagnostics)
         };
+}
+
+internal sealed class DrawingLayoutCandidateStackOrderGroup
+{
+    public string PreferredPlacementSide { get; set; } = string.Empty;
+
+    public string ActualPlacementSide { get; set; } = string.Empty;
+
+    public string ViewType { get; set; } = string.Empty;
+
+    public List<int> ExpectedViewIds { get; set; } = new();
+
+    public List<int> ActualViewIds { get; set; } = new();
 }
 
 internal sealed class DrawingLayoutCandidateEvaluation

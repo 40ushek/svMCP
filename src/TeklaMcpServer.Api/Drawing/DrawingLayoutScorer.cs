@@ -19,10 +19,14 @@ internal sealed class DrawingLayoutScorer
         var score = Score(candidate.ToDrawingContext(), weights);
         var effectiveWeights = weights ?? new DrawingLayoutScoreWeights();
         var preferredSidePenalty = ComputePreferredSidePenalty(candidate.Views);
+        var stackOrderPenalty = ComputeStackOrderPenalty(candidate.StackOrderGroups, score.Diagnostics);
 
         score.TotalScore -= effectiveWeights.PreferredSidePenaltyWeight * preferredSidePenalty;
+        score.TotalScore -= effectiveWeights.StackOrderPenaltyWeight * stackOrderPenalty;
         score.Breakdown.PreferredSidePenalty = preferredSidePenalty;
+        score.Breakdown.StackOrderPenalty = stackOrderPenalty;
         score.Breakdown.PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight;
+        score.Breakdown.StackOrderPenaltyWeight = effectiveWeights.StackOrderPenaltyWeight;
 
         return score;
     }
@@ -155,13 +159,15 @@ internal sealed class DrawingLayoutScorer
             EdgeMarginPenalty = edgeMarginPenalty,
             PreferredSidePenalty = 0.0,
             CompactnessPenalty = compactnessPenalty,
+            StackOrderPenalty = 0.0,
             FillRatioWeight = effectiveWeights.FillRatioWeight,
             UniformScaleWeight = effectiveWeights.UniformScaleWeight,
             ViewOverlapPenaltyWeight = effectiveWeights.ViewOverlapPenaltyWeight,
             ReservedOverlapPenaltyWeight = effectiveWeights.ReservedOverlapPenaltyWeight,
             EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight,
             PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight,
-            CompactnessPenaltyWeight = effectiveWeights.CompactnessPenaltyWeight
+            CompactnessPenaltyWeight = effectiveWeights.CompactnessPenaltyWeight,
+            StackOrderPenaltyWeight = effectiveWeights.StackOrderPenaltyWeight
         };
 
         if (sheetArea <= Epsilon)
@@ -175,6 +181,50 @@ internal sealed class DrawingLayoutScorer
 
         return result;
     }
+
+    private static double ComputeStackOrderPenalty(
+        IReadOnlyList<DrawingLayoutCandidateStackOrderGroup> groups,
+        List<string> diagnostics)
+    {
+        var totalInversions = 0;
+        var totalPairs = 0;
+
+        foreach (var group in groups)
+        {
+            var expected = group.ExpectedViewIds
+                .Distinct()
+                .Select((id, index) => new { id, index })
+                .ToDictionary(static item => item.id, static item => item.index);
+            var actual = group.ActualViewIds
+                .Where(expected.ContainsKey)
+                .Distinct()
+                .ToList();
+            if (actual.Count < 2)
+                continue;
+
+            var inversions = 0;
+            var pairs = 0;
+            for (var i = 0; i < actual.Count; i++)
+            for (var j = i + 1; j < actual.Count; j++)
+            {
+                pairs++;
+                if (expected[actual[i]] > expected[actual[j]])
+                    inversions++;
+            }
+
+            totalInversions += inversions;
+            totalPairs += pairs;
+            diagnostics.Add(
+                $"score:stack-order:preferred={NormalizeTraceValue(group.PreferredPlacementSide)}:actual={NormalizeTraceValue(group.ActualPlacementSide)}:viewType={NormalizeTraceValue(group.ViewType)}:expected={string.Join(",", group.ExpectedViewIds)}:actualViews={string.Join(",", group.ActualViewIds)}:inversions={inversions}/{pairs}");
+        }
+
+        return totalPairs == 0
+            ? 0.0
+            : (double)totalInversions / totalPairs;
+    }
+
+    private static string NormalizeTraceValue(string value)
+        => string.IsNullOrWhiteSpace(value) ? "none" : value.Trim();
 
     private static double ComputePreferredSidePenalty(IReadOnlyList<DrawingLayoutCandidateView> views)
     {

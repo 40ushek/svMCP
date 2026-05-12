@@ -954,7 +954,8 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.6 Quality scoring для выбора лучшей раскладки
 
-Статус: начато; `preferredSidePenalty` и `compactnessPenalty` реализованы.
+Статус: начато; `preferredSidePenalty`, `compactnessPenalty` и
+`stackOrderPenalty` реализованы.
 
 Цель: если несколько раскладок физически валидны, выбирать не просто первый
 вариант, который влез, а лучший для чтения чертежа.
@@ -970,34 +971,29 @@ origin, а реальный frame rect с offset от origin.
 - при равном score выбранный `final` candidate может побеждать planned
   snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
 - trace `fit_layout_score` пишет `edgePenalty`, `preferredSidePenalty` и
-  `compactnessPenalty`;
+  `compactnessPenalty`, `stackOrderPenalty`;
+- trace `fit_layout_stack_order_score` пишет expected/actual порядок
+  fallback-stack группы;
+- `stackOrderPenalty` является мягким штрафом, а не layout constraint: если
+  правильный порядок не влезает, валидная раскладка с нарушенным порядком все
+  равно может победить;
 - на live 6-view drawing `compactnessPenalty` уже различил `final` и
   `planned-centered`: `final` получил меньший compactness penalty и победил по
   score.
 
-Следующий шаг:
-- `stackOrderPenalty`: штраф за нелогичный порядок views внутри fallback-stack,
-  если известен порядок по `SectionMark` / projection relation.
-
-Почему это отдельный шаг:
-- fallback-stack ordering уже применяется фактически после planner/projection;
-- scorer пока не знает relation graph `SectionMark -> SectionView`;
-- нельзя считать stack order только по текущему Y/X без знания expected order:
-  это может закрепить случайный порядок packer.
-
-Минимальный план для `stackOrderPenalty`:
-1. Передать в candidate/scoring diagnostic expected order fallback-stack views,
-   построенный через `DetailRelationResolver.BuildSectionMarkRelations(...)`.
-2. Для каждой fallback-stack группы сравнить expected order с actual order в
-   candidate rects.
-3. Если порядок обратный или нарушен, добавить мягкий штраф.
-4. Писать в trace `stackOrderPenalty` и короткий diagnostic по группе:
-   preferred side, actual side, expected ids, actual ids.
-5. Добавить тест: два candidates с одинаковыми rect/side/fallback count, но один
-   с правильным stack order, второй с обратным.
+Как работает `stackOrderPenalty`:
+1. `DrawingLayoutCandidateBuilder` строит fallback-stack groups по
+   `PreferredPlacementSide`, `ActualPlacementSide`, `ViewType`.
+2. Expected order берется через
+   `DetailRelationResolver.BuildSectionMarkRelations(...)`.
+3. Actual order берется из candidate rects на фактической стороне.
+4. `DrawingLayoutScorer` считает inversion ratio и умножает его на небольшой
+   вес.
 
 Приоритет реализации:
-1. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
+1. Проверить live logs после `stackOrderPenalty` на чертеже с B-B/C-C.
+2. Если штраф слишком слабый или сильный, отрегулировать
+   `StackOrderPenaltyWeight`.
 
 Критерии приемки:
 - Если две раскладки валидны, выбирается та, где больше views осталось на
@@ -1006,12 +1002,15 @@ origin, а реальный frame rect с offset от origin.
   и/или вариант дальше от краев листа.
 - Если fallback-stack уже отсортирован по section marks, candidate scoring не
   должен выбирать snapshot, который возвращает старый порядок.
+- Если правильный порядок нарушает constraints, алгоритм выбирает валидную
+  раскладку, а не отклоняет ее из-за `stackOrderPenalty`.
 - Trace объясняет выбор коротко: score total и основные penalty components.
 - Публичный JSON contract `fit_views_to_sheet` не меняется.
 
 Сделано в коде:
 - `preferredSidePenalty`: `dfdeedc Add preferred side layout scoring`;
-- `compactnessPenalty`: `7f84344 Add compactness layout scoring`.
+- `compactnessPenalty`: `7f84344 Add compactness layout scoring`;
+- `stackOrderPenalty`: мягкий штраф по expected/actual fallback-stack order.
 
 #### Будущее. Агентная компоновка видов
 
