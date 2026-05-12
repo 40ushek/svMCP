@@ -204,6 +204,8 @@ public sealed class MaxRectsBinPacker
         PruneFreeList();
     }
 
+    private const int MaxFreeRectangles = 4096;
+
     private bool SplitFreeRectangle(PackedRectangle free, PackedRectangle used)
     {
         if (!Intersects(free, used))
@@ -211,10 +213,10 @@ public sealed class MaxRectsBinPacker
 
         if (used.X < free.X + free.Width && used.X + used.Width > free.X)
         {
-            if (used.Y > free.Y && used.Y < free.Y + free.Height)
+            if (used.Y > free.Y && used.Y < free.Y + free.Height && _freeRectangles.Count < MaxFreeRectangles)
                 _freeRectangles.Add(new PackedRectangle(free.X, free.Y, free.Width, used.Y - free.Y));
 
-            if (used.Y + used.Height < free.Y + free.Height)
+            if (used.Y + used.Height < free.Y + free.Height && _freeRectangles.Count < MaxFreeRectangles)
                 _freeRectangles.Add(new PackedRectangle(
                     free.X,
                     used.Y + used.Height,
@@ -224,10 +226,10 @@ public sealed class MaxRectsBinPacker
 
         if (used.Y < free.Y + free.Height && used.Y + used.Height > free.Y)
         {
-            if (used.X > free.X && used.X < free.X + free.Width)
+            if (used.X > free.X && used.X < free.X + free.Width && _freeRectangles.Count < MaxFreeRectangles)
                 _freeRectangles.Add(new PackedRectangle(free.X, free.Y, used.X - free.X, free.Height));
 
-            if (used.X + used.Width < free.X + free.Width)
+            if (used.X + used.Width < free.X + free.Width && _freeRectangles.Count < MaxFreeRectangles)
                 _freeRectangles.Add(new PackedRectangle(
                     used.X + used.Width,
                     free.Y,
