@@ -954,7 +954,7 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.6 Quality scoring для выбора лучшей раскладки
 
-Статус: начато; `preferredSidePenalty` реализован.
+Статус: начато; `preferredSidePenalty` и `compactnessPenalty` реализованы.
 
 Цель: если несколько раскладок физически валидны, выбирать не просто первый
 вариант, который влез, а лучший для чтения чертежа.
@@ -964,22 +964,20 @@ origin, а реальный frame rect с offset от origin.
 - `edgePenalty` штрафует близость views к краям листа;
 - `preferredSidePenalty` штрафует candidate, где view ушел не на
   `PreferredPlacementSide`;
+- `compactnessPenalty` штрафует слишком растянутый общий bbox всех views:
+  `layoutBoundingBoxArea / usableSheetArea`;
 - candidate selection умеет сравнивать несколько candidates;
 - при равном score выбранный `final` candidate может побеждать planned
   snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
 
 Что добавить:
-- `compactnessPenalty`: штраф за слишком растянутый общий bbox всех views.
-  Простая метрика: `layoutBoundingBoxArea / usableSheetArea`.
 - `stackOrderPenalty`: штраф за нелогичный порядок views внутри fallback-stack,
   если известен порядок по `SectionMark` / projection relation.
 - В trace ranking писать вклад основных метрик: `edgePenalty`,
   `preferredSidePenalty`, `compactnessPenalty`, `stackOrderPenalty`.
 
 Приоритет реализации:
-1. `compactnessPenalty` — помогает отличать аккуратную группу от растянутой
-   раскладки с тем же числом fallback views.
-2. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
+1. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
 
 Критерии приемки:
 - Если две раскладки валидны, выбирается та, где больше views осталось на

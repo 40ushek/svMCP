@@ -188,6 +188,24 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Score_PenalizesLessCompactCandidate()
+    {
+        var compact = CreateCandidateWithRects(
+            new ReservedRect(20, 20, 40, 40),
+            new ReservedRect(45, 20, 65, 40));
+        var spread = CreateCandidateWithRects(
+            new ReservedRect(5, 5, 25, 25),
+            new ReservedRect(75, 75, 95, 95));
+
+        var scorer = new DrawingLayoutScorer();
+        var compactScore = scorer.Score(compact);
+        var spreadScore = scorer.Score(spread);
+
+        Assert.True(spreadScore.Breakdown.CompactnessPenalty > compactScore.Breakdown.CompactnessPenalty);
+        Assert.True(compactScore.TotalScore > spreadScore.TotalScore);
+    }
+
+    [Fact]
     public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
     {
         var context = CreateContext(
@@ -357,6 +375,36 @@ public sealed class DrawingLayoutScorerTests
             BBoxMaxX = bboxMaxX,
             BBoxMaxY = bboxMaxY
         };
+    }
+
+    private static DrawingLayoutCandidate CreateCandidateWithRects(params ReservedRect[] rects)
+    {
+        var candidate = new DrawingLayoutCandidate
+        {
+            Name = "candidate",
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            }
+        };
+
+        for (var i = 0; i < rects.Length; i++)
+        {
+            var rect = rects[i];
+            candidate.Views.Add(new DrawingLayoutCandidateView
+            {
+                Id = i + 1,
+                ViewType = "FrontView",
+                SemanticKind = "BaseProjected",
+                Scale = 20,
+                Width = rect.Width,
+                Height = rect.Height,
+                LayoutRect = rect
+            });
+        }
+
+        return candidate;
     }
 
     private static DrawingLayoutCandidate CreateCandidateWithPlacementSides(

@@ -123,13 +123,15 @@ internal sealed class DrawingLayoutScorer
             ? Math.Min(reservedOverlapArea / availableSheetArea, 1.0)
             : (reservedOverlapArea > Epsilon ? 1.0 : 0.0);
         var edgeMarginPenalty = ComputeEdgeMarginPenalty(workspace, scoredViews);
+        var compactnessPenalty = ComputeCompactnessPenalty(scoredViews, availableSheetArea);
 
         result.TotalScore =
             (effectiveWeights.FillRatioWeight * fillRatioScore) +
             (effectiveWeights.UniformScaleWeight * uniformScaleScore) -
             (effectiveWeights.ViewOverlapPenaltyWeight * viewOverlapPenalty) -
             (effectiveWeights.ReservedOverlapPenaltyWeight * reservedOverlapPenalty) -
-            (effectiveWeights.EdgeMarginPenaltyWeight * edgeMarginPenalty);
+            (effectiveWeights.EdgeMarginPenaltyWeight * edgeMarginPenalty) -
+            (effectiveWeights.CompactnessPenaltyWeight * compactnessPenalty);
 
         result.Breakdown = new DrawingLayoutScoreBreakdown
         {
@@ -152,12 +154,14 @@ internal sealed class DrawingLayoutScorer
             ReservedOverlapPenalty = reservedOverlapPenalty,
             EdgeMarginPenalty = edgeMarginPenalty,
             PreferredSidePenalty = 0.0,
+            CompactnessPenalty = compactnessPenalty,
             FillRatioWeight = effectiveWeights.FillRatioWeight,
             UniformScaleWeight = effectiveWeights.UniformScaleWeight,
             ViewOverlapPenaltyWeight = effectiveWeights.ViewOverlapPenaltyWeight,
             ReservedOverlapPenaltyWeight = effectiveWeights.ReservedOverlapPenaltyWeight,
             EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight,
-            PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight
+            PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight,
+            CompactnessPenaltyWeight = effectiveWeights.CompactnessPenaltyWeight
         };
 
         if (sheetArea <= Epsilon)
@@ -207,6 +211,23 @@ internal sealed class DrawingLayoutScorer
 
         return string.Equals(value.Trim(), "Unknown", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(value.Trim(), "None", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static double ComputeCompactnessPenalty(
+        IReadOnlyList<ScoredViewRect> views,
+        double availableSheetArea)
+    {
+        if (views.Count == 0 || availableSheetArea <= Epsilon)
+            return 0.0;
+
+        var bounds = new ReservedRect(
+            views.Min(static view => view.Rect.MinX),
+            views.Min(static view => view.Rect.MinY),
+            views.Max(static view => view.Rect.MaxX),
+            views.Max(static view => view.Rect.MaxY));
+
+        var boundsArea = Math.Max(bounds.Width, 0.0) * Math.Max(bounds.Height, 0.0);
+        return Math.Min(boundsArea / availableSheetArea, 1.0);
     }
 
     private static List<ScoredViewRect> BuildViewRects(

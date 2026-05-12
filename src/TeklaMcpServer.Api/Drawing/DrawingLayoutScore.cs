@@ -51,6 +51,8 @@ internal sealed class DrawingLayoutScoreBreakdown
 
     public double PreferredSidePenalty { get; set; }
 
+    public double CompactnessPenalty { get; set; }
+
     public double FillRatioWeight { get; set; }
 
     public double UniformScaleWeight { get; set; }
@@ -62,6 +64,8 @@ internal sealed class DrawingLayoutScoreBreakdown
     public double EdgeMarginPenaltyWeight { get; set; }
 
     public double PreferredSidePenaltyWeight { get; set; }
+
+    public double CompactnessPenaltyWeight { get; set; }
 }
 
 internal sealed class DrawingLayoutScoreWeights
@@ -77,4 +81,6 @@ internal sealed class DrawingLayoutScoreWeights
     public double EdgeMarginPenaltyWeight { get; set; } = 1.0;
 
     public double PreferredSidePenaltyWeight { get; set; } = 0.5;
+
+    public double CompactnessPenaltyWeight { get; set; } = 0.25;
 }
