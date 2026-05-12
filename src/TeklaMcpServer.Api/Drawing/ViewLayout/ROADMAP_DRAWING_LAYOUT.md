@@ -952,6 +952,49 @@ origin, а реальный frame rect с offset от origin.
 Статус: частично реализовано; нужен targeted regression/proof по всем fallback
 веткам.
 
+#### 6.6 Quality scoring для выбора лучшей раскладки
+
+Статус: следующий planned step.
+
+Цель: если несколько раскладок физически валидны, выбирать не просто первый
+вариант, который влез, а лучший для чтения чертежа.
+
+Уже есть:
+- `DrawingLayoutScorer` считает общий score candidate;
+- `edgePenalty` штрафует близость views к краям листа;
+- candidate selection умеет сравнивать несколько candidates;
+- при равном score выбранный `final` candidate может побеждать planned
+  snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
+
+Что добавить:
+- `preferredSidePenalty`: штраф, если view ушел не на логичную сторону
+  (`PreferredPlacementSide != ActualPlacementSide`). Это не запрет, а мягкий
+  штраф: fallback допустим, но хуже strict placement при прочих равных.
+- `compactnessPenalty`: штраф за слишком растянутый общий bbox всех views.
+  Простая метрика: `layoutBoundingBoxArea / usableSheetArea`.
+- `stackOrderPenalty`: штраф за нелогичный порядок views внутри fallback-stack,
+  если известен порядок по `SectionMark` / projection relation.
+- В trace ranking писать вклад основных метрик: `edgePenalty`,
+  `preferredSidePenalty`, `compactnessPenalty`, `stackOrderPenalty`.
+
+Приоритет реализации:
+1. `preferredSidePenalty` — прямо влияет на случаи, где верхний view лучше
+   держать сверху, нижний снизу, а перенос в fallback должен быть разрешен, но
+   иметь цену.
+2. `compactnessPenalty` — помогает отличать аккуратную группу от растянутой
+   раскладки с тем же числом fallback views.
+3. `stackOrderPenalty` — нужен после стабилизации fallback-stack ordering.
+
+Критерии приемки:
+- Если две раскладки валидны, выбирается та, где больше views осталось на
+  preferred side, при равных overlaps и scale.
+- Если число fallback views одинаковое, выбирается более компактная раскладка
+  и/или вариант дальше от краев листа.
+- Если fallback-stack уже отсортирован по section marks, candidate scoring не
+  должен выбирать snapshot, который возвращает старый порядок.
+- Trace объясняет выбор коротко: score total и основные penalty components.
+- Публичный JSON contract `fit_views_to_sheet` не меняется.
+
 #### Будущее. Агентная компоновка видов
 
 В перспективе нужен отдельный инструмент для агентной компоновки видов.
