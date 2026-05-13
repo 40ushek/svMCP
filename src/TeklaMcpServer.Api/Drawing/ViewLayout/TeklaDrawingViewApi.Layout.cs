@@ -614,7 +614,7 @@ public sealed partial class TeklaDrawingViewApi
             0,
             string.Format(
                 CultureInfo.InvariantCulture,
-                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} preferredSidePenalty={9:0.###} compactnessPenalty={10:0.###} stackOrderPenalty={11:0.###} viewOverlaps={12}:area={13:0.###}:penalty={14:0.###} reservedOverlaps={15}:area={16:0.###}:penalty={17:0.###} diagnostics={18}",
+                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} preferredSidePenalty={9:0.###} compactnessPenalty={10:0.###} stackOrderPenalty={11:0.###} projectedAxisPenalty={12:0.###} viewOverlaps={13}:area={14:0.###}:penalty={15:0.###} reservedOverlaps={16}:area={17:0.###}:penalty={18:0.###} diagnostics={19}",
                 string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                 score.TotalScore,
                 evaluation.IsFeasible ? 1 : 0,
@@ -627,6 +627,7 @@ public sealed partial class TeklaDrawingViewApi
                 score.Breakdown.PreferredSidePenalty,
                 score.Breakdown.CompactnessPenalty,
                 score.Breakdown.StackOrderPenalty,
+                score.Breakdown.ProjectedAxisPenalty,
                 score.Breakdown.ViewOverlapCount,
                 score.Breakdown.ViewOverlapArea,
                 score.Breakdown.ViewOverlapPenalty,

@@ -55,6 +55,8 @@ internal sealed class DrawingLayoutScoreBreakdown
 
     public double StackOrderPenalty { get; set; }
 
+    public double ProjectedAxisPenalty { get; set; }
+
     public double FillRatioWeight { get; set; }
 
     public double UniformScaleWeight { get; set; }
@@ -70,6 +72,8 @@ internal sealed class DrawingLayoutScoreBreakdown
     public double CompactnessPenaltyWeight { get; set; }
 
     public double StackOrderPenaltyWeight { get; set; }
+
+    public double ProjectedAxisPenaltyWeight { get; set; }
 }
 
 internal sealed class DrawingLayoutScoreWeights
@@ -89,4 +93,6 @@ internal sealed class DrawingLayoutScoreWeights
     public double CompactnessPenaltyWeight { get; set; } = 0.25;
 
     public double StackOrderPenaltyWeight { get; set; } = 0.15;
+
+    public double ProjectedAxisPenaltyWeight { get; set; } = 0.35;
 }

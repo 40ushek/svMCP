@@ -954,8 +954,8 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.6 Quality scoring для выбора лучшей раскладки
 
-Статус: начато; `preferredSidePenalty`, `compactnessPenalty` и
-`stackOrderPenalty` реализованы.
+Статус: начато; `preferredSidePenalty`, `compactnessPenalty`,
+`stackOrderPenalty` и `projectedAxisPenalty` реализованы.
 
 Цель: если несколько раскладок физически валидны, выбирать не просто первый
 вариант, который влез, а лучший для чтения чертежа.
@@ -967,11 +967,14 @@ origin, а реальный frame rect с offset от origin.
   `PreferredPlacementSide`;
 - `compactnessPenalty` штрафует слишком растянутый общий bbox всех views:
   `layoutBoundingBoxArea / usableSheetArea`;
+- `projectedAxisPenalty` штрафует раскладки, где основные проекционные views
+  не стоят на общей оси с `FrontView`: `Top/Bottom` стремятся к тому же `X`,
+  `Left/Right/Back` стремятся к тому же `Y`;
 - candidate selection умеет сравнивать несколько candidates;
 - при равном score выбранный `final` candidate может побеждать planned
   snapshot, чтобы не предлагать обратное движение уже примененной раскладки.
-- trace `fit_layout_score` пишет `edgePenalty`, `preferredSidePenalty` и
-  `compactnessPenalty`, `stackOrderPenalty`;
+- trace `fit_layout_score` пишет `edgePenalty`, `preferredSidePenalty`,
+  `compactnessPenalty`, `stackOrderPenalty`, `projectedAxisPenalty`;
 - trace `fit_layout_stack_order_score` пишет expected/actual порядок
   fallback-stack группы;
 - `stackOrderPenalty` является мягким штрафом, а не layout constraint: если
@@ -990,10 +993,19 @@ origin, а реальный frame rect с offset от origin.
 4. `DrawingLayoutScorer` считает inversion ratio и умножает его на небольшой
    вес.
 
+Как работает `projectedAxisPenalty`:
+1. Находит `FrontView` как базовый основной вид.
+2. Для основных проекционных views считает отклонение центра от оси `FrontView`.
+3. Views на `Top/Bottom` сравниваются по `X`, views на `Left/Right` — по `Y`.
+4. Это мягкий штраф: если иначе views не влезают, валидная раскладка все равно
+   может победить.
+
 Приоритет реализации:
 1. Проверить live logs после `stackOrderPenalty` на чертеже с B-B/C-C.
 2. Если штраф слишком слабый или сильный, отрегулировать
    `StackOrderPenaltyWeight`.
+3. Проверить live logs: `projectedAxisPenalty` должен отличать вариант, где
+   основные views стоят одной линией, от визуально разорванного варианта.
 
 Критерии приемки:
 - Если две раскладки валидны, выбирается та, где больше views осталось на
@@ -1004,13 +1016,19 @@ origin, а реальный frame rect с offset от origin.
   должен выбирать snapshot, который возвращает старый порядок.
 - Если правильный порядок нарушает constraints, алгоритм выбирает валидную
   раскладку, а не отклоняет ее из-за `stackOrderPenalty`.
+- Если две раскладки валидны, основные проекционные views по возможности
+  остаются на одной оси с `FrontView`.
+- Если выравнивание основных views по оси невозможно без overlaps/reserved
+  conflicts, алгоритм выбирает валидную раскладку и только снижает score.
 - Trace объясняет выбор коротко: score total и основные penalty components.
 - Публичный JSON contract `fit_views_to_sheet` не меняется.
 
 Сделано в коде:
 - `preferredSidePenalty`: `dfdeedc Add preferred side layout scoring`;
 - `compactnessPenalty`: `7f84344 Add compactness layout scoring`;
-- `stackOrderPenalty`: мягкий штраф по expected/actual fallback-stack order.
+- `stackOrderPenalty`: мягкий штраф по expected/actual fallback-stack order;
+- `projectedAxisPenalty`: мягкий штраф за разрыв оси основных проекционных
+  views относительно `FrontView`.
 
 #### 6.7 Arrange existing views без изменения масштаба
 

@@ -20,13 +20,17 @@ internal sealed class DrawingLayoutScorer
         var effectiveWeights = weights ?? new DrawingLayoutScoreWeights();
         var preferredSidePenalty = ComputePreferredSidePenalty(candidate.Views);
         var stackOrderPenalty = ComputeStackOrderPenalty(candidate.StackOrderGroups, score.Diagnostics);
+        var projectedAxisPenalty = ComputeProjectedAxisPenalty(candidate.Views, candidate.Sheet);
 
         score.TotalScore -= effectiveWeights.PreferredSidePenaltyWeight * preferredSidePenalty;
         score.TotalScore -= effectiveWeights.StackOrderPenaltyWeight * stackOrderPenalty;
+        score.TotalScore -= effectiveWeights.ProjectedAxisPenaltyWeight * projectedAxisPenalty;
         score.Breakdown.PreferredSidePenalty = preferredSidePenalty;
         score.Breakdown.StackOrderPenalty = stackOrderPenalty;
+        score.Breakdown.ProjectedAxisPenalty = projectedAxisPenalty;
         score.Breakdown.PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight;
         score.Breakdown.StackOrderPenaltyWeight = effectiveWeights.StackOrderPenaltyWeight;
+        score.Breakdown.ProjectedAxisPenaltyWeight = effectiveWeights.ProjectedAxisPenaltyWeight;
 
         return score;
     }
@@ -160,6 +164,7 @@ internal sealed class DrawingLayoutScorer
             PreferredSidePenalty = 0.0,
             CompactnessPenalty = compactnessPenalty,
             StackOrderPenalty = 0.0,
+            ProjectedAxisPenalty = 0.0,
             FillRatioWeight = effectiveWeights.FillRatioWeight,
             UniformScaleWeight = effectiveWeights.UniformScaleWeight,
             ViewOverlapPenaltyWeight = effectiveWeights.ViewOverlapPenaltyWeight,
@@ -167,7 +172,8 @@ internal sealed class DrawingLayoutScorer
             EdgeMarginPenaltyWeight = effectiveWeights.EdgeMarginPenaltyWeight,
             PreferredSidePenaltyWeight = effectiveWeights.PreferredSidePenaltyWeight,
             CompactnessPenaltyWeight = effectiveWeights.CompactnessPenaltyWeight,
-            StackOrderPenaltyWeight = effectiveWeights.StackOrderPenaltyWeight
+            StackOrderPenaltyWeight = effectiveWeights.StackOrderPenaltyWeight,
+            ProjectedAxisPenaltyWeight = effectiveWeights.ProjectedAxisPenaltyWeight
         };
 
         if (sheetArea <= Epsilon)
@@ -252,6 +258,93 @@ internal sealed class DrawingLayoutScorer
         return comparableCount == 0
             ? 0.0
             : (double)mismatchCount / comparableCount;
+    }
+
+    private static double ComputeProjectedAxisPenalty(
+        IReadOnlyList<DrawingLayoutCandidateView> views,
+        DrawingSheetContext sheet)
+    {
+        var front = views.FirstOrDefault(static view =>
+            string.Equals(view.ViewType, "FrontView", StringComparison.OrdinalIgnoreCase) &&
+            IsBaseProjected(view) &&
+            view.LayoutRect != null);
+        if (front?.LayoutRect == null)
+            return 0.0;
+
+        var horizontalNormalizer = Math.Max(sheet.Width, Epsilon);
+        var verticalNormalizer = Math.Max(sheet.Height, Epsilon);
+        var frontCenterX = CenterX(front.LayoutRect);
+        var frontCenterY = CenterY(front.LayoutRect);
+        var penalty = 0.0;
+        var comparableCount = 0;
+
+        foreach (var view in views)
+        {
+            if (view.Id == front.Id || view.LayoutRect == null || !IsBaseProjected(view))
+                continue;
+
+            if (TryResolveProjectedAxis(view, out var alignX))
+            {
+                var delta = alignX
+                    ? Math.Abs(CenterX(view.LayoutRect) - frontCenterX) / horizontalNormalizer
+                    : Math.Abs(CenterY(view.LayoutRect) - frontCenterY) / verticalNormalizer;
+                penalty += Math.Min(delta, 1.0);
+                comparableCount++;
+            }
+        }
+
+        return comparableCount == 0
+            ? 0.0
+            : penalty / comparableCount;
+    }
+
+    private static bool IsBaseProjected(DrawingLayoutCandidateView view)
+        => string.Equals(view.SemanticKind, "BaseProjected", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryResolveProjectedAxis(DrawingLayoutCandidateView view, out bool alignX)
+    {
+        var side = string.IsNullOrWhiteSpace(view.ActualPlacementSide)
+            ? view.PreferredPlacementSide
+            : view.ActualPlacementSide;
+
+        if (TryResolveAxisFromSide(side, out alignX))
+            return true;
+
+        if (string.Equals(view.ViewType, "TopView", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(view.ViewType, "BottomView", StringComparison.OrdinalIgnoreCase))
+        {
+            alignX = true;
+            return true;
+        }
+
+        if (string.Equals(view.ViewType, "BackView", StringComparison.OrdinalIgnoreCase))
+        {
+            alignX = false;
+            return true;
+        }
+
+        alignX = false;
+        return false;
+    }
+
+    private static bool TryResolveAxisFromSide(string side, out bool alignX)
+    {
+        if (string.Equals(side, "Top", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(side, "Bottom", StringComparison.OrdinalIgnoreCase))
+        {
+            alignX = true;
+            return true;
+        }
+
+        if (string.Equals(side, "Left", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(side, "Right", StringComparison.OrdinalIgnoreCase))
+        {
+            alignX = false;
+            return true;
+        }
+
+        alignX = false;
+        return false;
     }
 
     private static bool IsPlacementSideMissing(string value)
@@ -365,6 +458,12 @@ internal sealed class DrawingLayoutScorer
 
     private static double ComputeEdgeShortfall(double distance, double safeDistance)
         => distance >= safeDistance ? 0.0 : (safeDistance - Math.Max(distance, 0.0)) / safeDistance;
+
+    private static double CenterX(ReservedRect rect)
+        => (rect.MinX + rect.MaxX) * 0.5;
+
+    private static double CenterY(ReservedRect rect)
+        => (rect.MinY + rect.MaxY) * 0.5;
 
     private static double ComputeUnionArea(IReadOnlyList<ReservedRect> rects)
     {
