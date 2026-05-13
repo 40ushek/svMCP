@@ -1117,7 +1117,7 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: открытая архитектурная задача.
+Статус: согласовано, следующая архитектурная задача.
 
 Проблема: текущий `applyMode=DryRun` защищает только поздний candidate apply
 (`fit_layout_apply_execution`), но не весь pipeline.
@@ -1133,23 +1133,37 @@ origin, а реальный frame rect с offset от origin.
 Следствие: в trace может быть `effectiveMode=DryRun` и `appliedMoves=0`, но
 чертеж уже мог измениться раньше через базовый Arrange/Commit.
 
-Целевое поведение:
-- planner и scoring должны сначала считать полностью виртуальный план;
-- `DryRun` не должен вызывать `Modify()` и `CommitChanges()` вообще;
-- `DebugPreview` может возвращать план/diagnostics без изменения чертежа;
-- `FinalOnly`/apply mode должен быть единственным местом, где выполняются
-  `view.Modify()` и `CommitChanges()`;
-- scale probing должен либо восстанавливать исходные scale без видимого apply,
-  либо явно логироваться отдельно как технический probe с гарантированным
-  rollback.
+Цель: разделить layout pipeline на два этапа:
+- `Plan` - только расчет позиций, масштабов, score и diagnostics;
+- `Apply` - единственное место, где выполняются `view.Modify()` и
+  `CommitChanges()`.
+
+Что нужно изменить:
+- перенести projection alignment, centering, frame offset correction и final fit
+  в виртуальные операции над layout plan;
+- запретить `Modify()` внутри planner/scoring/probe веток;
+- `DryRun` должен строить тот же финальный план, что и apply режим, но не
+  менять drawing;
+- `DebugPreview` может возвращать plan/diagnostics без изменения чертежа;
+- `FinalOnly`/apply mode должен применять уже выбранный plan один раз в самом
+  конце;
+- scale probing должен либо быть полностью виртуальным, либо явно логироваться
+  как технический probe с гарантированным rollback.
+
+Trace:
+- отдельно логировать `plan`, `probe`, `preview`, `apply`;
+- в apply trace писать reason, mode, количество измененных views и факт commit;
+- `fit_layout_apply_execution appliedMoves=0` должен означать, что drawing
+  реально не менялся.
 
 Критерии приемки:
-- при `applyMode=DryRun` trace не содержит реальных `Modify()`/commit этапов
-  после построения плана;
+- при `applyMode=DryRun` не вызываются `Modify()` и `CommitChanges()`;
 - после `DryRun` повторное чтение drawing показывает те же origins/scales, что
   до запуска;
+- trace показывает выбранный candidate, score и финальные позиции views;
+- в обычном apply режиме результат совпадает с планом из DryRun;
 - `fit_layout_apply_execution appliedMoves=0` означает, что drawing реально не
-  изменен;
+  изменился;
 - ранний `activeDrawing.CommitChanges()` удален или исполняется только в apply
   ветке;
 - roadmap/trace ясно различают `plan`, `probe`, `preview`, `apply`.
