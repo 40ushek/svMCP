@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Drawing;
 
@@ -39,7 +40,7 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
             return _fallback.Arrange(context);
 
         var orderedViews = context.Views
-            .OrderByDescending(v => v.Width * v.Height)
+            .OrderByDescending(v => DrawingArrangeContextSizing.GetWidth(context, v) * DrawingArrangeContextSizing.GetHeight(context, v))
             .ToList();
 
         // Inflate with gap and expand bin by the same amount so sheet edges keep full usable span.
@@ -48,7 +49,9 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
 
         foreach (var view in orderedViews)
         {
-            if (!packer.TryInsert(view.Width + context.Gap, view.Height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
+            var width = DrawingArrangeContextSizing.GetWidth(context, view);
+            var height = DrawingArrangeContextSizing.GetHeight(context, view);
+            if (!packer.TryInsert(width + context.Gap, height + context.Gap, MaxRectsHeuristic.BestAreaFit, out var placement))
             {
                 if (context.ReservedAreas.Count == 0)
                     return _fallback.Arrange(context);
@@ -63,11 +66,17 @@ public sealed class GaDrawingMaxRectsArrangeStrategy : IDrawingViewArrangeStrate
         foreach (var view in orderedViews)
         {
             var rect = packed[view];
-            var origin = view.Origin;
-            origin.X = context.Margin + rect.X + view.Width / 2.0;
-            origin.Y = context.SheetHeight - context.Margin - rect.Y - view.Height / 2.0;
-            view.Origin = origin;
-            view.Modify();
+            var width = DrawingArrangeContextSizing.GetWidth(context, view);
+            var height = DrawingArrangeContextSizing.GetHeight(context, view);
+            var currentOrigin = view.Origin;
+            var origin = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
+            origin.X = context.Margin + rect.X + width / 2.0;
+            origin.Y = context.SheetHeight - context.Margin - rect.Y - height / 2.0;
+            if (context.ApplyChanges)
+            {
+                view.Origin = origin;
+                view.Modify();
+            }
 
             arranged.Add(new ArrangedView
             {

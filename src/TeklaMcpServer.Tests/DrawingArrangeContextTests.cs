@@ -92,6 +92,32 @@ public sealed class DrawingArrangeContextTests
         Assert.Same(frameSizes, derived.EffectiveFrameSizes);
     }
 
+    [Fact]
+    public void With_PreservesApplyChangesUnlessOverridden()
+    {
+        var workspace = DrawingLayoutWorkspace.From(new DrawingContext
+        {
+            Sheet = new DrawingSheetContext
+            {
+                Width = 200,
+                Height = 100
+            }
+        });
+        var context = new DrawingArrangeContext(
+            CreateDrawing(),
+            workspace,
+            views: [],
+            gap: 4,
+            applyChanges: false);
+
+        var inherited = context.With(gap: 6);
+        var overridden = context.With(applyChanges: true);
+
+        Assert.False(context.ApplyChanges);
+        Assert.False(inherited.ApplyChanges);
+        Assert.True(overridden.ApplyChanges);
+    }
+
     private static Drawing CreateDrawing()
     {
 #pragma warning disable SYSLIB0050

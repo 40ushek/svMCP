@@ -15,7 +15,8 @@ public sealed class DrawingArrangeContext
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<View>? views,
         double gap,
-        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null,
+        bool applyChanges = true)
         : this(
             drawing,
             views ?? workspace?.RuntimeViews ?? System.Array.Empty<View>(),
@@ -25,7 +26,8 @@ public sealed class DrawingArrangeContext
             gap,
             workspace?.ReservedAreas,
             effectiveFrameSizes ?? workspace?.SelectedFrameSizesById,
-            workspace)
+            workspace,
+            applyChanges)
     {
         if (workspace == null)
             throw new System.ArgumentNullException(nameof(workspace));
@@ -39,7 +41,8 @@ public sealed class DrawingArrangeContext
         double margin,
         double gap,
         IReadOnlyList<ReservedRect>? reservedAreas = null,
-        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null)
+        IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null,
+        bool applyChanges = true)
         : this(
             drawing,
             views,
@@ -49,7 +52,8 @@ public sealed class DrawingArrangeContext
             gap,
             reservedAreas,
             effectiveFrameSizes,
-            workspace: null)
+            workspace: null,
+            applyChanges)
     {
     }
 
@@ -62,7 +66,8 @@ public sealed class DrawingArrangeContext
         double gap,
         IReadOnlyList<ReservedRect>? reservedAreas,
         IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes,
-        DrawingLayoutWorkspace? workspace)
+        DrawingLayoutWorkspace? workspace,
+        bool applyChanges)
     {
         Drawing = drawing ?? throw new System.ArgumentNullException(nameof(drawing));
         Views = views ?? throw new System.ArgumentNullException(nameof(views));
@@ -73,6 +78,7 @@ public sealed class DrawingArrangeContext
         ReservedAreas = reservedAreas ?? System.Array.Empty<ReservedRect>();
         EffectiveFrameSizes = effectiveFrameSizes ?? new Dictionary<int, (double Width, double Height)>();
         Workspace = workspace;
+        ApplyChanges = applyChanges;
     }
 
     internal DrawingLayoutWorkspace? Workspace { get; }
@@ -85,7 +91,8 @@ public sealed class DrawingArrangeContext
         IReadOnlyList<ReservedRect>? reservedAreas = null,
         IReadOnlyDictionary<int, (double Width, double Height)>? effectiveFrameSizes = null,
         double? margin = null,
-        double? gap = null)
+        double? gap = null,
+        bool? applyChanges = null)
         => new(
             Drawing,
             views ?? Views,
@@ -95,7 +102,8 @@ public sealed class DrawingArrangeContext
             gap ?? Gap,
             reservedAreas ?? ReservedAreas,
             effectiveFrameSizes ?? EffectiveFrameSizes,
-            Workspace);
+            Workspace,
+            applyChanges ?? ApplyChanges);
 
     public Tekla.Structures.Drawing.Drawing Drawing { get; }
     public IReadOnlyList<View> Views { get; }
@@ -103,6 +111,7 @@ public sealed class DrawingArrangeContext
     public double SheetHeight { get; }
     public double Margin { get; }
     public double Gap { get; }
+    public bool ApplyChanges { get; }
     public IReadOnlyList<ReservedRect> ReservedAreas { get; }
     public IReadOnlyDictionary<int, (double Width, double Height)> EffectiveFrameSizes { get; }
 }

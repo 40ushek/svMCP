@@ -3,6 +3,7 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -30,23 +31,30 @@ public sealed class ShelfPackingDrawingArrangeStrategy : IDrawingViewArrangeStra
         double curY = sheetH - margin;
         double rowH = 0;
 
-        foreach (var v in context.Views.OrderByDescending(v => v.Height))
+        foreach (var v in context.Views.OrderByDescending(v => DrawingArrangeContextSizing.GetHeight(context, v)))
         {
-            if (curX + v.Width > sheetW - margin && curX > margin)
+            var width = DrawingArrangeContextSizing.GetWidth(context, v);
+            var height = DrawingArrangeContextSizing.GetHeight(context, v);
+
+            if (curX + width > sheetW - margin && curX > margin)
             {
                 curX = margin;
                 curY -= rowH + gap;
                 rowH = 0;
             }
 
-            var o = v.Origin;
-            o.X = curX + v.Width / 2;
-            o.Y = curY - v.Height / 2;
-            v.Origin = o;
-            v.Modify();
+            var currentOrigin = v.Origin;
+            var o = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
+            o.X = curX + width / 2;
+            o.Y = curY - height / 2;
+            if (context.ApplyChanges)
+            {
+                v.Origin = o;
+                v.Modify();
+            }
             arranged.Add(new ArrangedView { Id = v.GetIdentifier().ID, ViewType = v.ViewType.ToString(), OriginX = o.X, OriginY = o.Y });
-            curX += v.Width + gap;
-            if (v.Height > rowH) rowH = v.Height;
+            curX += width + gap;
+            if (height > rowH) rowH = height;
         }
 
         return arranged;

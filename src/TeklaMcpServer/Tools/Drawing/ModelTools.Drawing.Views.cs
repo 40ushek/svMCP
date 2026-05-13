@@ -339,19 +339,21 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. Set keepScale=true to preserve existing view scales and only rearrange positions. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
+    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. Set keepScale=true to preserve existing view scales and only rearrange positions. Set dryRun=true to compute layout without moving views in Tekla. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: -1 = auto-read from drawing layout. Use 0 only for a true zero margin.")] double margin = -1,
         [Description("Gap between views in mm. Default: 4")] double gap = 4,
         [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0,
-        [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false)
+        [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false,
+        [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false)
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
         var titleBlockStr     = titleBlockHeight.ToString(CultureInfo.InvariantCulture);
-        var json = keepScale
-            ? RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr, "preserveexistingscales")
-            : RunBridge("fit_views_to_sheet", marginStr, gapStr, titleBlockStr);
+        var tokens            = new System.Collections.Generic.List<string> { "fit_views_to_sheet", marginStr, gapStr, titleBlockStr };
+        if (keepScale) tokens.Add("preserveexistingscales");
+        if (dryRun)    tokens.Add("debugpreview");
+        var json = RunBridge(tokens.ToArray());
         try
         {
             var doc = JsonDocument.Parse(json);

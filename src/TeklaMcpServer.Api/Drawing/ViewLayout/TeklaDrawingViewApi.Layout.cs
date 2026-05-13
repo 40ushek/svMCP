@@ -954,9 +954,32 @@ public sealed partial class TeklaDrawingViewApi
         List<View> currentViews,
         IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
         double candidateScale,
-        bool uniformAllNonDetail)
+        bool uniformAllNonDetail,
+        bool applyProbe)
     {
         var probeSw = Stopwatch.StartNew();
+        if (!applyProbe)
+        {
+            var estimatedFrameSizes = EstimateCandidateFrameSizes(
+                workspace,
+                currentViews,
+                originalFrameSizes,
+                candidateScale,
+                uniformAllNonDetail);
+            var estimatedFrames = BuildFrameList(currentViews, estimatedFrameSizes);
+            probeSw.Stop();
+            PerfTrace.Write(
+                "api-view",
+                "fit_scale_probe",
+                probeSw.ElapsedMilliseconds,
+                $"mode=virtual candidateScale=1:{candidateScale.ToString("0.###", CultureInfo.InvariantCulture)} views={currentViews.Count}");
+            return new CandidateScaleProbeResult(
+                currentViews,
+                estimatedFrameSizes,
+                estimatedFrames,
+                probeSw.ElapsedMilliseconds);
+        }
+
         var anyScaleChanged = false;
         foreach (var view in currentViews)
         {
@@ -992,6 +1015,36 @@ public sealed partial class TeklaDrawingViewApi
             probeSw.ElapsedMilliseconds);
     }
 
+    private static IReadOnlyDictionary<int, (double Width, double Height)> EstimateCandidateFrameSizes(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
+        double candidateScale,
+        bool uniformAllNonDetail)
+    {
+        var result = new Dictionary<int, (double Width, double Height)>(views.Count);
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            var originalScale = workspace.OriginalScalesById.TryGetValue(id, out var storedScale) && storedScale > 0
+                ? storedScale
+                : (view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0);
+            var targetScale = ResolveTargetScale(
+                view,
+                workspace.GetSemanticKind(id),
+                candidateScale,
+                uniformAllNonDetail,
+                workspace.OriginalScalesById);
+            var frame = originalFrameSizes.TryGetValue(id, out var storedFrame)
+                ? storedFrame
+                : (view.Width, view.Height);
+            var factor = targetScale > 0 ? originalScale / targetScale : 1.0;
+            result[id] = (frame.Width * factor, frame.Height * factor);
+        }
+
+        return result;
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -1025,6 +1078,7 @@ public sealed partial class TeklaDrawingViewApi
         var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
         var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
         var keepCurrentScales = scalePolicy == DrawingScalePolicy.UniformMainWithSectionExceptions;
+        var allowTeklaMutation = applyMode == DrawingLayoutApplyMode.FinalOnly;
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -1196,7 +1250,8 @@ public sealed partial class TeklaDrawingViewApi
                     currentViews,
                     originalFrameSizes,
                     s,
-                    uniformAllNonDetail);
+                    uniformAllNonDetail,
+                    allowTeklaMutation);
                 probeMs += probe.ElapsedMilliseconds;
                 var candidateViews = probe.Views;
                 var actualFrames = probe.Frames;
@@ -1263,14 +1318,15 @@ public sealed partial class TeklaDrawingViewApi
             {
                 foreach (var v in EnumerateViews(activeDrawing))
                 {
-                    if (layoutWorkspace.OriginalScalesById.TryGetValue(v.GetIdentifier().ID, out var orig))
+                    if (allowTeklaMutation && layoutWorkspace.OriginalScalesById.TryGetValue(v.GetIdentifier().ID, out var orig))
                     {
                         v.Attributes.Scale = orig;
                         v.Modify();
                     }
                 }
 
-                activeDrawing.CommitChanges();
+                if (allowTeklaMutation)
+                    activeDrawing.CommitChanges();
                 TraceScaleDecision(
                     scalePolicy,
                     applyMode,
@@ -1297,7 +1353,9 @@ public sealed partial class TeklaDrawingViewApi
                 throw new System.InvalidOperationException("Could not fit views on sheet with available standard scales.");
             }
 
-            currentViews = EnumerateViews(activeDrawing).ToList();
+            currentViews = allowTeklaMutation
+                ? EnumerateViews(activeDrawing).ToList()
+                : currentViews;
             layoutWorkspace.SetRuntimeViews(currentViews);
         }
 
@@ -1339,7 +1397,7 @@ public sealed partial class TeklaDrawingViewApi
         var arranged = arrangedViews.Count == 0
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap));
+                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, applyChanges: allowTeklaMutation));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
@@ -1353,8 +1411,11 @@ public sealed partial class TeklaDrawingViewApi
                 if (detailScale <= 0 || System.Math.Abs(detailView.Attributes.Scale - detailScale) < 0.01)
                     continue;
 
-                detailView.Attributes.Scale = detailScale;
-                detailView.Modify();
+                if (allowTeklaMutation)
+                {
+                    detailView.Attributes.Scale = detailScale;
+                    detailView.Modify();
+                }
             }
         }
 
@@ -1380,11 +1441,15 @@ public sealed partial class TeklaDrawingViewApi
                     && (System.Math.Abs(corrX) > v.Width || System.Math.Abs(corrY) > v.Height))
                     continue;
 
-                var o = v.Origin;
+                var currentOrigin = v.Origin;
+                var o = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
                 o.X = arranged[i].OriginX - corrX;
                 o.Y = arranged[i].OriginY - corrY;
-                v.Origin = o;
-                v.Modify();
+                if (allowTeklaMutation)
+                {
+                    v.Origin = o;
+                    v.Modify();
+                }
                 arranged[i] = new ArrangedView
                 {
                     Id = arranged[i].Id,
@@ -1421,14 +1486,26 @@ public sealed partial class TeklaDrawingViewApi
             "fit_views_to_sheet:planned-centered", layoutWorkspace, centeredPlannedViews);
         DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(plannedCenteredCandidate, currentViews);
 
-        TracePlannedVsActualParity(
-            "post-arrange-pre-projection",
-            layoutWorkspace,
-            arranged,
-            DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
+        if (allowTeklaMutation)
+        {
+            TracePlannedVsActualParity(
+                "post-arrange-pre-projection",
+                layoutWorkspace,
+                arranged,
+                DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
+        }
 
         var projectionSw = Stopwatch.StartNew();
-        if (ShouldSkipProjectionAlignment(optimalScale.Value, arrangedViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
+        if (!allowTeklaMutation)
+        {
+            projectionResult = new ProjectionAlignmentResult
+            {
+                Mode = "dry-run",
+                SkippedMoves = 1
+            };
+            projectionResult.Diagnostics.Add("projection-skip:dry-run");
+        }
+        else if (ShouldSkipProjectionAlignment(optimalScale.Value, arrangedViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
         {
             projectionResult = new ProjectionAlignmentResult
             {
@@ -1451,12 +1528,15 @@ public sealed partial class TeklaDrawingViewApi
         projectionMs = projectionSw.ElapsedMilliseconds;
 
         var commitSw = Stopwatch.StartNew();
-        activeDrawing.CommitChanges();
+        if (allowTeklaMutation)
+            activeDrawing.CommitChanges();
         commitSw.Stop();
-        finalCommitMs = commitSw.ElapsedMilliseconds;
+        finalCommitMs = allowTeklaMutation ? commitSw.ElapsedMilliseconds : 0;
         selectedScale = optimalScale;
 
-        var postProjectionViews = EnumerateViews(activeDrawing).ToList();
+        var postProjectionViews = allowTeklaMutation
+            ? EnumerateViews(activeDrawing).ToList()
+            : currentViews;
         layoutWorkspace.SetRuntimeViews(postProjectionViews);
         var postProjectionArranged = arranged
             .Select(static view => new ArrangedView
@@ -1472,13 +1552,10 @@ public sealed partial class TeklaDrawingViewApi
                 LayoutGap = view.LayoutGap
             })
             .ToList();
-        var postProjectionActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
-        var postProjectionCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
+        var postProjectionCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
             "fit_views_to_sheet:post-projection",
             layoutWorkspace,
-            postProjectionViews,
-            postProjectionArranged,
-            postProjectionActualRects);
+            DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, postProjectionViews, postProjectionArranged));
 
         // Center the arranged group inside the usable area.
         var finalArrangedViews = postProjectionViews
@@ -1487,8 +1564,11 @@ public sealed partial class TeklaDrawingViewApi
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             selectedLayoutMargin, sheetW - selectedLayoutMargin,
             selectedLayoutMargin, sheetH - selectedLayoutMargin,
-            layoutWorkspace.ReservedAreas);
-        var finalViews = EnumerateViews(activeDrawing).ToList();
+            layoutWorkspace.ReservedAreas,
+            allowTeklaMutation);
+        var finalViews = allowTeklaMutation
+            ? EnumerateViews(activeDrawing).ToList()
+            : postProjectionViews;
         layoutWorkspace.SetRuntimeViews(finalViews);
         arranged = TryRepositionDetailViews(
             activeDrawing,
@@ -1500,21 +1580,32 @@ public sealed partial class TeklaDrawingViewApi
             sheetH - selectedLayoutMargin,
             selectedLayoutGap,
             layoutWorkspace.ReservedAreas,
-            offsetById);
+            offsetById,
+            allowTeklaMutation);
 
-        var finalActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
-        TracePlannedVsActualParity(
-            "post-commit-final",
-            layoutWorkspace,
-            arranged,
-            finalActualRects);
+        var finalActualRects = allowTeklaMutation
+            ? DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing)
+            : actualRects;
+        if (allowTeklaMutation)
+        {
+            TracePlannedVsActualParity(
+                "post-commit-final",
+                layoutWorkspace,
+                arranged,
+                finalActualRects);
+        }
 
-        var passiveCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
+        var passiveCandidate = allowTeklaMutation
+            ? DrawingLayoutCandidateBuilder.FromRuntimeLayout(
             "fit_views_to_sheet:final",
             layoutWorkspace,
             layoutWorkspace.RuntimeViews,
             arranged,
-            finalActualRects);
+            finalActualRects)
+            : DrawingLayoutCandidateBuilder.FromPlannedViews(
+                "fit_views_to_sheet:final",
+                layoutWorkspace,
+                DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, layoutWorkspace.RuntimeViews, arranged));
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
             new[] { plannedArrangedCandidate, plannedCenteredCandidate, postProjectionCandidate, passiveCandidate });
         TraceLayoutPlannedVariant(
@@ -1699,7 +1790,8 @@ public sealed partial class TeklaDrawingViewApi
         double usableMaxY,
         double gap,
         IReadOnlyList<ReservedRect> reserved,
-        IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets)
+        IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets,
+        bool applyChanges)
     {
         var topology = ViewTopologyGraph.Build(views);
         var detailViews = topology.SemanticViews.Details.ToList();
@@ -1790,12 +1882,13 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
-            var origin = detailView.Origin;
-            if (origin == null)
+            var currentOrigin = detailView.Origin;
+            if (currentOrigin == null)
             {
                 blocked.Add(detailRect);
                 continue;
             }
+            var origin = new Point(currentOrigin.X, currentOrigin.Y, currentOrigin.Z);
 
             // Use the frame offset captured BEFORE any moves in this fit cycle.
             // Re-reading the bbox here would return a stale value (center == origin, offset = 0)
@@ -1818,11 +1911,14 @@ public sealed partial class TeklaDrawingViewApi
                 origin.Y = targetCenterY;
             }
 
-            detailView.Origin = origin;
-            if (!detailView.Modify())
+            if (applyChanges)
             {
-                blocked.Add(detailRect);
-                continue;
+                detailView.Origin = origin;
+                if (!detailView.Modify())
+                {
+                    blocked.Add(detailRect);
+                    continue;
+                }
             }
 
             movedAny = true;
@@ -1848,7 +1944,7 @@ public sealed partial class TeklaDrawingViewApi
             }
         }
 
-        if (movedAny)
+        if (movedAny && applyChanges)
             activeDrawing.CommitChanges();
 
         return arranged;
@@ -1917,7 +2013,8 @@ public sealed partial class TeklaDrawingViewApi
         List<ArrangedView> arranged,
         double usableMinX, double usableMaxX,
         double usableMinY, double usableMaxY,
-        IReadOnlyList<ReservedRect> reserved)
+        IReadOnlyList<ReservedRect> reserved,
+        bool applyChanges)
     {
         if (views.Count == 0)
             return arranged;
@@ -1942,17 +2039,25 @@ public sealed partial class TeklaDrawingViewApi
 
         foreach (var v in views)
         {
-            var o = v.Origin;
+            var currentOrigin = v.Origin;
+            if (currentOrigin == null)
+                continue;
+
+            var o = new Point(currentOrigin.X, currentOrigin.Y, currentOrigin.Z);
             o.X += dx;
             o.Y += dy;
-            v.Origin = o;
-            v.Modify();
+            if (applyChanges)
+            {
+                v.Origin = o;
+                v.Modify();
+            }
         }
 
-        activeDrawing.CommitChanges();
+        if (applyChanges)
+            activeDrawing.CommitChanges();
 
-        PerfTrace.Write("api-view", "center_group", 0,
-            $"dx={dx:F1} dy={dy:F1} usableX={usableMinX:F1}-{usableMaxX:F1} usableY={usableMinY:F1}-{usableMaxY:F1}");
+        PerfTrace.Write("api-view", applyChanges ? "center_group" : "center_group_plan", 0,
+            $"applied={(applyChanges ? 1 : 0)} dx={dx:F1} dy={dy:F1} usableX={usableMinX:F1}-{usableMaxX:F1} usableY={usableMinY:F1}-{usableMaxY:F1}");
 
         return arranged.Select(a => new ArrangedView
         {

@@ -1285,19 +1285,23 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var arranged = new List<ArrangedView>(planned.Count);
         foreach (var item in planned)
         {
-            var origin = item.View.Origin;
+            var currentOrigin = item.View.Origin;
+            var origin = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
             var frameOffset = ViewPlacementGeometryService.GetFrameOffsetSheet(context, item.View);
             origin.X = item.FrameCenterX - frameOffset.X;
             origin.Y = item.FrameCenterY - frameOffset.Y;
-            item.View.Origin = origin;
-            item.View.Modify();
+            if (context.ApplyChanges)
+            {
+                item.View.Origin = origin;
+                item.View.Modify();
+            }
             if (System.Math.Abs(frameOffset.X) > 0.01 || System.Math.Abs(frameOffset.Y) > 0.01)
             {
                 PerfTrace.Write(
                     "api-view",
-                    "view_frame_offset_apply",
+                    context.ApplyChanges ? "view_frame_offset_apply" : "view_frame_offset_plan",
                     0,
-                    $"view={item.View.GetIdentifier().ID} frameCenter=({item.FrameCenterX:F2},{item.FrameCenterY:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
+                    $"view={item.View.GetIdentifier().ID} applied={(context.ApplyChanges ? 1 : 0)} frameCenter=({item.FrameCenterX:F2},{item.FrameCenterY:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
             }
 
             arranged.Add(new ArrangedView

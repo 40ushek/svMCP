@@ -1117,9 +1117,27 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: согласовано, следующая архитектурная задача.
+Статус: частично реализовано.
 
-Проблема: текущий `applyMode=DryRun` защищает только поздний candidate apply
+Сделано:
+- `DebugPreview`/`DryRun` передает в arrange context `ApplyChanges=false`;
+- стратегии раскладки считают `ArrangedView`, но не вызывают `view.Modify()` при
+  `ApplyChanges=false`;
+- scale probe в `DryRun` стал виртуальным: frame size оценивается от исходного
+  scale, без временного изменения `View.Attributes.Scale` и без
+  `CommitChanges()`;
+- projection alignment, group centering и detail reposition пропускают реальные
+  `Modify()`/`CommitChanges()` в `DryRun`;
+- `fit_layout_apply_execution` остается единственным поздним apply gate для
+  выбранного candidate.
+
+Осталось:
+- для `FinalOnly` старый pipeline все еще применяет часть изменений до позднего
+  candidate apply gate;
+- следующий этап - полностью собрать `Plan`, затем один раз применить его через
+  общий apply adapter.
+
+Исходная проблема: текущий `applyMode=DryRun` защищал только поздний candidate apply
 (`fit_layout_apply_execution`), но не весь pipeline.
 
 Сейчас часть старого pipeline все еще применяет изменения раньше:
