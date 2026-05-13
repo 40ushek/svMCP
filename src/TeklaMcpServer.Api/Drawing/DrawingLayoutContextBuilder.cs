@@ -13,7 +13,8 @@ internal sealed class DrawingLayoutContextBuilder
         DrawingViewsResult? views = null,
         double? margin = null,
         double titleBlockHeight = 0.0,
-        IReadOnlyCollection<int>? excludeViewIds = null)
+        IReadOnlyCollection<int>? excludeViewIds = null,
+        bool includeSheetObjects = true)
     {
         var viewResult = views ?? TeklaDrawingViewApi.BuildViewsResult(drawing);
         var (sheetMargin, tables) = DrawingReservedAreaReader.ReadLayoutInfo();
@@ -27,7 +28,8 @@ internal sealed class DrawingLayoutContextBuilder
             effectiveMargin,
             titleBlockHeight,
             effectiveExcludeViewIds,
-            tables);
+            tables,
+            includeSheetObjects);
 
         var reservedAreas = new DrawingReservedAreasResult
         {

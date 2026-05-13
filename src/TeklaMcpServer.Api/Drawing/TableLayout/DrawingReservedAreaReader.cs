@@ -27,7 +27,8 @@ internal static class DrawingReservedAreaReader
         double margin,
         double titleBlockHeight,
         IReadOnlyCollection<int>? excludeViewIds = null,
-        IReadOnlyList<LayoutTableGeometryInfo>? preloadedTables = null)
+        IReadOnlyList<LayoutTableGeometryInfo>? preloadedTables = null,
+        bool includeSheetObjects = true)
     {
         var reserved = new List<ReservedRect>();
         var size = drawing.Layout.SheetSize;
@@ -48,6 +49,9 @@ internal static class DrawingReservedAreaReader
 
         AddLayoutTableReservedAreas(reserved, usableMinX, usableMinY, usableMaxX, usableMaxY,
             preloadedTables ?? ReadLayoutTableGeometries());
+
+        if (!includeSheetObjects)
+            return MergeOverlaps(reserved);
 
         var sheet = drawing.GetSheet();
         var sheetId = sheet.GetIdentifier().ID;

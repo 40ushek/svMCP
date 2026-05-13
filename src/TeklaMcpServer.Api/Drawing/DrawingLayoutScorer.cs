@@ -101,6 +101,8 @@ internal sealed class DrawingLayoutScorer
 
             viewOverlapCount++;
             viewOverlapArea += overlapArea;
+            diagnostics.Add(
+                $"score:view-overlap:first={scoredViews[i].ViewId}:second={scoredViews[j].ViewId}:area={overlapArea:0.###}:firstRect={FormatRect(scoredViews[i].Rect)}:secondRect={FormatRect(scoredViews[j].Rect)}");
         }
 
         var reservedOverlapCount = 0;
@@ -489,6 +491,9 @@ internal sealed class DrawingLayoutScorer
 
     private static double CenterY(ReservedRect rect)
         => (rect.MinY + rect.MaxY) * 0.5;
+
+    private static string FormatRect(ReservedRect rect)
+        => $"[{rect.MinX:0.##},{rect.MinY:0.##},{rect.MaxX:0.##},{rect.MaxY:0.##}]";
 
     private static double ComputeUnionArea(IReadOnlyList<ReservedRect> rects)
     {

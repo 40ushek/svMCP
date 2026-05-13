@@ -857,6 +857,22 @@ internal static class ProjectedGroupLayoutPlanner
                 context.SheetHeight - context.Margin - placement.Y - height,
                 context.Margin + placement.X + width,
                 context.SheetHeight - context.Margin - placement.Y);
+
+            if (!ValidateFallbackRect(context, state, placedFallbacks, item, rect))
+            {
+                rejectReason = $"fallback-overlap:view={item.Id}";
+                if (trace)
+                {
+                    PerfTrace.Write(
+                        "api-view",
+                        "projected_group_fallback_result",
+                        0,
+                        $"scenario={scenarioName} view={item.Id} preferred={item.PreferredSide} actual=Packed result=reject reason=fallback-overlap rect={FormatRect(rect)}");
+                }
+
+                return false;
+            }
+
             placedFallbacks.Add((item, rect));
             collectPlacements?.Add((item, rect));
             placedCount++;

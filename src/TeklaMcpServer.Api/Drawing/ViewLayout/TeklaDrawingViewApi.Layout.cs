@@ -661,6 +661,20 @@ public sealed partial class TeklaDrawingViewApi
                     inversionCount,
                     pairCount));
         }
+
+        foreach (var diagnostic in validation.Diagnostics.Where(static diagnostic =>
+                     diagnostic.StartsWith("score:view-overlap:", StringComparison.Ordinal)))
+        {
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_score_diagnostic",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} diagnostic={1}",
+                    string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+                    diagnostic));
+        }
     }
 
     private static int CountStackOrderInversions(
@@ -1130,7 +1144,8 @@ public sealed partial class TeklaDrawingViewApi
             viewsResult,
             margin,
             titleBlockHeight,
-            viewIds);
+            viewIds,
+            includeSheetObjects: false);
         reservedRead.Stop();
         reservedMs = reservedRead.ElapsedMilliseconds;
         var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext, views);
@@ -1472,12 +1487,22 @@ public sealed partial class TeklaDrawingViewApi
                 var corrX = off.X / correctionScale;
                 var corrY = off.Y / correctionScale;
                 var semanticKind = layoutWorkspace.GetSemanticKind(arranged[i].Id);
-                // Skip implausibly large corrections: they indicate a bad frame-offset
-                // estimate (e.g. from probe-scale extrapolation on distant-origin views)
-                // and would displace the view far from where the packer intended.
+                var selectedFrameSize = layoutWorkspace.GetSelectedFrameSize(arranged[i].Id, v.Width, v.Height);
+                var maxPlausibleCorrection = System.Math.Max(selectedFrameSize.Width, selectedFrameSize.Height) * 2.0;
+                // Skip only clearly broken offsets. Real Tekla view BBoxes can be
+                // asymmetric enough that the center offset is slightly larger than
+                // one frame dimension, especially for section/back views.
                 if (semanticKind != ViewSemanticKind.Detail
-                    && (System.Math.Abs(corrX) > v.Width || System.Math.Abs(corrY) > v.Height))
+                    && maxPlausibleCorrection > 0
+                    && (System.Math.Abs(corrX) > maxPlausibleCorrection || System.Math.Abs(corrY) > maxPlausibleCorrection))
+                {
+                    PerfTrace.Write(
+                        "api-view",
+                        "view_frame_offset_skip",
+                        0,
+                        $"view={arranged[i].Id} reason=implausible offset=({corrX:F2},{corrY:F2}) limit={maxPlausibleCorrection:F2}");
                     continue;
+                }
 
                 var currentOrigin = v.Origin;
                 var o = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
@@ -1661,7 +1686,17 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateApplyPlan(applyPlan);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan);
         TraceLayoutCandidateApplyDeltas(applyDeltas);
-        var selectedCandidateApplyMode = applyMode == DrawingLayoutApplyMode.FinalOnly
+        var selectedCandidateFeasible = passiveSelection.Selected?.IsFeasible == true;
+        if (applyMode == DrawingLayoutApplyMode.FinalOnly && !selectedCandidateFeasible)
+        {
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_apply_blocked",
+                0,
+                $"candidate={(string.IsNullOrWhiteSpace(applyPlan.CandidateName) ? "none" : applyPlan.CandidateName)} reason=infeasible-candidate");
+        }
+
+        var selectedCandidateApplyMode = applyMode == DrawingLayoutApplyMode.FinalOnly && selectedCandidateFeasible
             ? DrawingLayoutCandidateApplyExecutionMode.Apply
             : DrawingLayoutCandidateApplyExecutionMode.DryRun;
         var selectedCandidateApplyPolicy = new DrawingLayoutCandidateApplySafetyPolicy
@@ -1716,10 +1751,11 @@ public sealed partial class TeklaDrawingViewApi
                     finalActualRects.Count));
         }
 
-        // Build reserved-areas output using already-read layoutTables (no extra editor open).
-        // Read() without excludeViewIds to include view bounding boxes in the merged output.
+        // Build reserved-areas output using already-read layoutTables (no extra editor open)
+        // and skip the full sheet-object scan; view rects are reported separately.
         var mergedForOutput = DrawingReservedAreaReader.Read(activeDrawing, effectiveMargin, 0.0,
-            preloadedTables: layoutWorkspace.ReservedTables);
+            preloadedTables: layoutWorkspace.ReservedTables,
+            includeSheetObjects: false);
 
         var result = new FitViewsResult
         {
