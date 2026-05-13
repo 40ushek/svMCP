@@ -237,6 +237,21 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Score_UsesTopViewAsProjectedAxisReference_WhenFrontViewIsMissing()
+    {
+        var aligned = CreateProjectedAxisCandidateWithoutFront(bottomCenterX: 50);
+        var shifted = CreateProjectedAxisCandidateWithoutFront(bottomCenterX: 80);
+
+        var scorer = new DrawingLayoutScorer();
+        var alignedScore = scorer.Score(aligned);
+        var shiftedScore = scorer.Score(shifted);
+
+        Assert.Equal(0.0, alignedScore.Breakdown.ProjectedAxisPenalty, 6);
+        Assert.True(shiftedScore.Breakdown.ProjectedAxisPenalty > alignedScore.Breakdown.ProjectedAxisPenalty);
+        Assert.True(alignedScore.TotalScore > shiftedScore.TotalScore);
+    }
+
+    [Fact]
     public void Score_ReportsMissingViewRect_WhenWorkspaceCannotBuildLayoutRect()
     {
         var context = CreateContext(
@@ -544,6 +559,46 @@ public sealed class DrawingLayoutScorerTests
                     LayoutRect = new ReservedRect(20, backCenterY - 10, 30, backCenterY + 10),
                     PreferredPlacementSide = "Left",
                     ActualPlacementSide = "Left"
+                }
+            ]
+        };
+    }
+
+    private static DrawingLayoutCandidate CreateProjectedAxisCandidateWithoutFront(double bottomCenterX)
+    {
+        return new DrawingLayoutCandidate
+        {
+            Name = "projected-axis-no-front",
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            },
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 2,
+                    ViewType = "TopView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    Width = 20,
+                    Height = 10,
+                    LayoutRect = new ReservedRect(40, 70, 60, 80),
+                    PreferredPlacementSide = "Top",
+                    ActualPlacementSide = "Top"
+                },
+                new DrawingLayoutCandidateView
+                {
+                    Id = 3,
+                    ViewType = "BottomView",
+                    SemanticKind = "BaseProjected",
+                    Scale = 20,
+                    Width = 20,
+                    Height = 10,
+                    LayoutRect = new ReservedRect(bottomCenterX - 10, 20, bottomCenterX + 10, 30),
+                    PreferredPlacementSide = "Bottom",
+                    ActualPlacementSide = "Bottom"
                 }
             ]
         };

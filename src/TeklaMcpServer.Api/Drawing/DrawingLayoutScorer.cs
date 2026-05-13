@@ -264,30 +264,27 @@ internal sealed class DrawingLayoutScorer
         IReadOnlyList<DrawingLayoutCandidateView> views,
         DrawingSheetContext sheet)
     {
-        var front = views.FirstOrDefault(static view =>
-            string.Equals(view.ViewType, "FrontView", StringComparison.OrdinalIgnoreCase) &&
-            IsBaseProjected(view) &&
-            view.LayoutRect != null);
-        if (front?.LayoutRect == null)
+        var reference = SelectProjectedAxisReferenceView(views);
+        if (reference?.LayoutRect == null)
             return 0.0;
 
         var horizontalNormalizer = Math.Max(sheet.Width, Epsilon);
         var verticalNormalizer = Math.Max(sheet.Height, Epsilon);
-        var frontCenterX = CenterX(front.LayoutRect);
-        var frontCenterY = CenterY(front.LayoutRect);
+        var referenceCenterX = CenterX(reference.LayoutRect);
+        var referenceCenterY = CenterY(reference.LayoutRect);
         var penalty = 0.0;
         var comparableCount = 0;
 
         foreach (var view in views)
         {
-            if (view.Id == front.Id || view.LayoutRect == null || !IsBaseProjected(view))
+            if (view.Id == reference.Id || view.LayoutRect == null || !IsBaseProjected(view))
                 continue;
 
             if (TryResolveProjectedAxis(view, out var alignX))
             {
                 var delta = alignX
-                    ? Math.Abs(CenterX(view.LayoutRect) - frontCenterX) / horizontalNormalizer
-                    : Math.Abs(CenterY(view.LayoutRect) - frontCenterY) / verticalNormalizer;
+                    ? Math.Abs(CenterX(view.LayoutRect) - referenceCenterX) / horizontalNormalizer
+                    : Math.Abs(CenterY(view.LayoutRect) - referenceCenterY) / verticalNormalizer;
                 penalty += Math.Min(delta, 1.0);
                 comparableCount++;
             }
@@ -296,6 +293,34 @@ internal sealed class DrawingLayoutScorer
         return comparableCount == 0
             ? 0.0
             : penalty / comparableCount;
+    }
+
+    private static DrawingLayoutCandidateView? SelectProjectedAxisReferenceView(
+        IReadOnlyList<DrawingLayoutCandidateView> views)
+    {
+        string[] preferredTypes =
+        [
+            "FrontView",
+            "TopView",
+            "BottomView",
+            "BackView"
+        ];
+
+        foreach (var viewType in preferredTypes)
+        {
+            var match = views.FirstOrDefault(view =>
+                string.Equals(view.ViewType, viewType, StringComparison.OrdinalIgnoreCase) &&
+                IsBaseProjected(view) &&
+                view.LayoutRect != null);
+            if (match != null)
+                return match;
+        }
+
+        return views
+            .Where(static view => IsBaseProjected(view) && view.LayoutRect != null)
+            .OrderByDescending(static view => view.LayoutRect!.Width * view.LayoutRect.Height)
+            .ThenBy(static view => view.Id)
+            .FirstOrDefault();
     }
 
     private static bool IsBaseProjected(DrawingLayoutCandidateView view)

@@ -994,8 +994,10 @@ origin, а реальный frame rect с offset от origin.
    вес.
 
 Как работает `projectedAxisPenalty`:
-1. Находит `FrontView` как базовый основной вид.
-2. Для основных проекционных views считает отклонение центра от оси `FrontView`.
+1. Находит reference view: `FrontView`, затем `TopView`, `BottomView`,
+   `BackView`, затем самый большой `BaseProjected`.
+2. Для основных проекционных views считает отклонение центра от оси reference
+   view.
 3. Views на `Top/Bottom` сравниваются по `X`, views на `Left/Right` — по `Y`.
 4. Это мягкий штраф: если иначе views не влезают, валидная раскладка все равно
    может победить.
@@ -1086,6 +1088,71 @@ origin, а реальный frame rect с offset от origin.
   `edgePenalty`, `preferredSidePenalty`, `compactnessPenalty`,
   `stackOrderPenalty`;
 - public behavior старого `fit_views_to_sheet` не меняется.
+
+#### 6.8 3D/Other views не должны менять масштаб
+
+Статус: реализовано базовое правило.
+
+Проблема из live log: `_3DView` попадал в `ScalePolicy=UniformAllNonDetail`
+как `driver=1`, из-за этого:
+- 3D view пересчитывался на candidate scale;
+- крупные масштабы могли отклоняться из-за 3D view;
+- общий масштаб основных видов выбирался хуже.
+
+Правило:
+- `BaseProjected` и `Section` могут быть scale drivers;
+- `Detail` сохраняет текущий scale;
+- `Other` (`_3DView` и похожие вспомогательные views) сохраняет текущий scale;
+- `Other` участвует в размещении после выбора масштаба, но не должен заставлять
+  уменьшать масштаб основных видов.
+
+Критерии приемки:
+- в `fit_scale_inputs` для `_3DView` ожидается `driver=0`, если на чертеже есть
+  `BaseProjected`/`Section` views;
+- в `fit_scale_candidate` scale/frame `_3DView` не пересчитывается на candidate
+  scale;
+- если candidate scale отклонен, `_3DView` не должен быть единственной причиной
+  выбора меньшего масштаба для основных видов;
+- apply не меняет `View.Attributes.Scale` для `_3DView`.
+
+#### 6.9 Настоящий DryRun для layout pipeline
+
+Статус: открытая архитектурная задача.
+
+Проблема: текущий `applyMode=DryRun` защищает только поздний candidate apply
+(`fit_layout_apply_execution`), но не весь pipeline.
+
+Сейчас часть старого pipeline все еще применяет изменения раньше:
+- `_arrangementSelector.Arrange(...)` может вызывать `view.Modify()`;
+- frame offset correction после Arrange тоже меняет `Origin` и вызывает
+  `Modify()`;
+- projection/centering/detail reposition также могут менять views;
+- затем выполняется ранний `activeDrawing.CommitChanges()` до финального
+  candidate safety gate.
+
+Следствие: в trace может быть `effectiveMode=DryRun` и `appliedMoves=0`, но
+чертеж уже мог измениться раньше через базовый Arrange/Commit.
+
+Целевое поведение:
+- planner и scoring должны сначала считать полностью виртуальный план;
+- `DryRun` не должен вызывать `Modify()` и `CommitChanges()` вообще;
+- `DebugPreview` может возвращать план/diagnostics без изменения чертежа;
+- `FinalOnly`/apply mode должен быть единственным местом, где выполняются
+  `view.Modify()` и `CommitChanges()`;
+- scale probing должен либо восстанавливать исходные scale без видимого apply,
+  либо явно логироваться отдельно как технический probe с гарантированным
+  rollback.
+
+Критерии приемки:
+- при `applyMode=DryRun` trace не содержит реальных `Modify()`/commit этапов
+  после построения плана;
+- после `DryRun` повторное чтение drawing показывает те же origins/scales, что
+  до запуска;
+- `fit_layout_apply_execution appliedMoves=0` означает, что drawing реально не
+  изменен;
+- ранний `activeDrawing.CommitChanges()` удален или исполняется только в apply
+  ветке;
+- roadmap/trace ясно различают `plan`, `probe`, `preview`, `apply`.
 
 #### Будущее. Агентная компоновка видов
 

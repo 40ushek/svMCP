@@ -101,6 +101,18 @@ public sealed class TeklaDrawingViewApiLayoutTests
                 gap));
     }
 
+    [Theory]
+    [InlineData(ViewSemanticKind.BaseProjected, true)]
+    [InlineData(ViewSemanticKind.Section, true)]
+    [InlineData(ViewSemanticKind.Detail, false)]
+    [InlineData(ViewSemanticKind.Other, false)]
+    internal void IsUniformScaleDriverKind_ExcludesOtherViews(
+        ViewSemanticKind semanticKind,
+        bool expected)
+    {
+        Assert.Equal(expected, TeklaDrawingViewApi.IsUniformScaleDriverKind(semanticKind));
+    }
+
     [Fact]
     public void ProbeDetailPlacement_UsesStableCrossBandDegradedReason()
     {

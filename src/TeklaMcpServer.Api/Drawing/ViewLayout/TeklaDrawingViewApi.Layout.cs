@@ -135,6 +135,9 @@ public sealed partial class TeklaDrawingViewApi
         if (semanticKind == ViewSemanticKind.Detail)
             return originalScale;
 
+        if (semanticKind == ViewSemanticKind.Other)
+            return originalScale;
+
         if (uniformAllNonDetail)
             return candidateScale;
 
@@ -143,6 +146,9 @@ public sealed partial class TeklaDrawingViewApi
 
         return originalScale;
     }
+
+    internal static bool IsUniformScaleDriverKind(ViewSemanticKind semanticKind)
+        => semanticKind is ViewSemanticKind.BaseProjected or ViewSemanticKind.Section;
 
     private static List<DrawingFitConflict> BuildOversizeConflicts(
         IReadOnlyList<View> views,
@@ -1069,7 +1075,7 @@ public sealed partial class TeklaDrawingViewApi
         scaleDriverViews = uniformAllNonDetail
             ? views
                 .Where(v =>
-                    layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail
+                    IsUniformScaleDriverKind(layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID))
                     && !oversizedStandardSectionScaleDriverIds.Contains(v.GetIdentifier().ID))
                 .ToList()
             : views
@@ -1078,11 +1084,15 @@ public sealed partial class TeklaDrawingViewApi
         if (scaleDriverViews.Count == 0)
         {
             scaleDriverViews = views
-                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
+                .Where(v => IsUniformScaleDriverKind(layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID)))
                 .ToList();
         }
         if (scaleDriverViews.Count == 0)
-            scaleDriverViews = views;
+        {
+            scaleDriverViews = views
+                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
+                .ToList();
+        }
         var scaleDrivers = scaleDriverViews
             .Select(v =>
             {
