@@ -1117,30 +1117,40 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: частично реализовано.
+Статус: реализовано как первый рабочий слой, нужна проверка на реальных
+чертежах.
 
 Сделано:
 - `DebugPreview`/`DryRun` передает в arrange context `ApplyChanges=false`;
+- `FinalOnly` тоже строит layout виртуально и применяет выбранный план один раз
+  в конце через candidate apply adapter;
 - стратегии раскладки считают `ArrangedView`, но не вызывают `view.Modify()` при
   `ApplyChanges=false`;
 - scale probe в `DryRun` стал виртуальным: frame size оценивается от исходного
   scale, без временного изменения `View.Attributes.Scale` и без
   `CommitChanges()`;
+- выбранные scale сохраняются в `DrawingLayoutWorkspace.SelectedScalesById`,
+  поэтому planned candidates несут целевой масштаб, даже если Tekla view еще не
+  изменен;
 - projection alignment, group centering и detail reposition пропускают реальные
-  `Modify()`/`CommitChanges()` в `DryRun`;
-- `fit_layout_apply_execution` остается единственным поздним apply gate для
-  выбранного candidate.
+  `Modify()`/`CommitChanges()`;
+- `fit_layout_apply_execution` стал единственным местом, где `FinalOnly`
+  вызывает `view.Modify()` для выбранного candidate;
+- scale changes разрешены apply safety policy только для scale-changing режима,
+  а режимы сохранения текущего масштаба продолжают блокировать изменение scale.
 
 Осталось:
-- для `FinalOnly` старый pipeline все еще применяет часть изменений до позднего
-  candidate apply gate;
-- следующий этап - полностью собрать `Plan`, затем один раз применить его через
-  общий apply adapter.
+- проверить на реальных чертежах, что `FinalOnly` применяет тот же candidate,
+  который виден в trace как selected;
+- вынести projection alignment в полноценную виртуальную операцию над plan, а не
+  только пропускать его в plan-only pipeline;
+- добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает
+  один commit выбранного plan.
 
 Исходная проблема: текущий `applyMode=DryRun` защищал только поздний candidate apply
 (`fit_layout_apply_execution`), но не весь pipeline.
 
-Сейчас часть старого pipeline все еще применяет изменения раньше:
+Раньше часть старого pipeline применяла изменения раньше:
 - `_arrangementSelector.Arrange(...)` может вызывать `view.Modify()`;
 - frame offset correction после Arrange тоже меняет `Origin` и вызывает
   `Modify()`;
@@ -1148,7 +1158,7 @@ origin, а реальный frame rect с offset от origin.
 - затем выполняется ранний `activeDrawing.CommitChanges()` до финального
   candidate safety gate.
 
-Следствие: в trace может быть `effectiveMode=DryRun` и `appliedMoves=0`, но
+Следствие было такое: в trace могло быть `effectiveMode=DryRun` и `appliedMoves=0`, но
 чертеж уже мог измениться раньше через базовый Arrange/Commit.
 
 Цель: разделить layout pipeline на два этапа:
@@ -1157,16 +1167,13 @@ origin, а реальный frame rect с offset от origin.
   `CommitChanges()`.
 
 Что нужно изменить:
-- перенести projection alignment, centering, frame offset correction и final fit
-  в виртуальные операции над layout plan;
-- запретить `Modify()` внутри planner/scoring/probe веток;
+- перенести projection alignment в виртуальную операцию над layout plan;
+- держать запрет `Modify()` внутри planner/scoring/probe веток;
 - `DryRun` должен строить тот же финальный план, что и apply режим, но не
   менять drawing;
 - `DebugPreview` может возвращать plan/diagnostics без изменения чертежа;
-- `FinalOnly`/apply mode должен применять уже выбранный plan один раз в самом
-  конце;
-- scale probing должен либо быть полностью виртуальным, либо явно логироваться
-  как технический probe с гарантированным rollback.
+- `FinalOnly`/apply mode применяет уже выбранный plan один раз в самом конце;
+- scale probing остается виртуальным для plan-only pipeline.
 
 Trace:
 - отдельно логировать `plan`, `probe`, `preview`, `apply`;
@@ -1182,8 +1189,8 @@ Trace:
 - в обычном apply режиме результат совпадает с планом из DryRun;
 - `fit_layout_apply_execution appliedMoves=0` означает, что drawing реально не
   изменился;
-- ранний `activeDrawing.CommitChanges()` удален или исполняется только в apply
-  ветке;
+- ранний `activeDrawing.CommitChanges()` не используется для виртуального
+  pipeline;
 - roadmap/trace ясно различают `plan`, `probe`, `preview`, `apply`.
 
 #### Будущее. Агентная компоновка видов

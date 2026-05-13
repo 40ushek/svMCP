@@ -1045,6 +1045,36 @@ public sealed partial class TeklaDrawingViewApi
         return result;
     }
 
+    private static IReadOnlyDictionary<int, double> ResolveSelectedScales(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        double selectedScale,
+        bool uniformAllNonDetail,
+        bool preserveCurrentScales)
+    {
+        var result = new Dictionary<int, double>(views.Count);
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            if (preserveCurrentScales)
+            {
+                result[id] = workspace.OriginalScalesById.TryGetValue(id, out var originalScale) && originalScale > 0
+                    ? originalScale
+                    : (view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0);
+                continue;
+            }
+
+            result[id] = ResolveTargetScale(
+                view,
+                workspace.GetSemanticKind(id),
+                selectedScale,
+                uniformAllNonDetail,
+                workspace.OriginalScalesById);
+        }
+
+        return result;
+    }
+
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
     public FitViewsResult FitViewsToSheet(
@@ -1078,7 +1108,7 @@ public sealed partial class TeklaDrawingViewApi
         var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
         var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
         var keepCurrentScales = scalePolicy == DrawingScalePolicy.UniformMainWithSectionExceptions;
-        var allowTeklaMutation = applyMode == DrawingLayoutApplyMode.FinalOnly;
+        var allowTeklaMutation = false;
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -1118,6 +1148,7 @@ public sealed partial class TeklaDrawingViewApi
             throw new System.InvalidOperationException("No drawable area left after applying margin.");
 
         layoutWorkspace.SetOriginalScales(views.ToDictionary(v => v.GetIdentifier().ID, v => v.Attributes.Scale));
+        layoutWorkspace.SetSelectedScales(layoutWorkspace.OriginalScalesById);
         // Build actual view rects once via sheet.GetAllObjects() — these always reflect the
         // physical frame position and are never stale, unlike GetAxisAlignedBoundingBox() on
         // views from GetViews() which may be stale after Modify/CommitChanges.
@@ -1373,6 +1404,13 @@ public sealed partial class TeklaDrawingViewApi
             0,
             $"selectedScale=1:{optimalScale.Value.ToString("0.###", CultureInfo.InvariantCulture)} attempts={candidateAttempts} policy={scalePolicy} applyMode={applyMode}");
 
+        layoutWorkspace.SetSelectedScales(ResolveSelectedScales(
+            layoutWorkspace,
+            currentViews,
+            optimalScale.Value,
+            uniformAllNonDetail,
+            preserveExistingScales || keepCurrentScales));
+
         actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         layoutWorkspace.SetActualViewRects(actualRects);
 
@@ -1553,7 +1591,9 @@ public sealed partial class TeklaDrawingViewApi
             })
             .ToList();
         var postProjectionCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
-            "fit_views_to_sheet:post-projection",
+            allowTeklaMutation
+                ? "fit_views_to_sheet:post-projection"
+                : "fit_views_to_sheet:planned-post-projection",
             layoutWorkspace,
             DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, postProjectionViews, postProjectionArranged));
 
@@ -1603,7 +1643,7 @@ public sealed partial class TeklaDrawingViewApi
             arranged,
             finalActualRects)
             : DrawingLayoutCandidateBuilder.FromPlannedViews(
-                "fit_views_to_sheet:final",
+                "fit_views_to_sheet:planned-final",
                 layoutWorkspace,
                 DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, layoutWorkspace.RuntimeViews, arranged));
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
@@ -1621,8 +1661,13 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateApplyPlan(applyPlan);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan);
         TraceLayoutCandidateApplyDeltas(applyDeltas);
-        var selectedCandidateApplyMode = DrawingLayoutCandidateApplyGate.Resolve(applyMode);
-        var selectedCandidateApplyPolicy = DrawingLayoutCandidateApplySafetyPolicy.Default;
+        var selectedCandidateApplyMode = applyMode == DrawingLayoutApplyMode.FinalOnly
+            ? DrawingLayoutCandidateApplyExecutionMode.Apply
+            : DrawingLayoutCandidateApplyExecutionMode.DryRun;
+        var selectedCandidateApplyPolicy = new DrawingLayoutCandidateApplySafetyPolicy
+        {
+            AllowScaleChanges = !preserveExistingScales && !keepCurrentScales
+        };
         var selectedCandidateApplySafety = selectedCandidateApplyPolicy.Resolve(
             selectedCandidateApplyMode,
             applyDeltas);

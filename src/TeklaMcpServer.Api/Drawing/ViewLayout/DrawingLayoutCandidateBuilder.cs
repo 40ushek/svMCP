@@ -41,7 +41,9 @@ internal static class DrawingLayoutCandidateBuilder
                 Name = view.Name ?? string.Empty,
                 OriginX = view.Origin?.X ?? 0.0,
                 OriginY = view.Origin?.Y ?? 0.0,
-                Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
+                Scale = workspace.GetSelectedScale(
+                    viewId,
+                    view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0),
                 Width = frame.Width,
                 Height = frame.Height,
                 BBoxMinX = layoutRect?.MinX,
@@ -117,7 +119,9 @@ internal static class DrawingLayoutCandidateBuilder
                 Name = view.Name ?? string.Empty,
                 OriginX = originX,
                 OriginY = originY,
-                Scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0,
+                Scale = workspace.GetSelectedScale(
+                    viewId,
+                    view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0),
                 Width = frame.Width,
                 Height = frame.Height,
                 LayoutRect = layoutRect,

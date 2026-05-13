@@ -44,6 +44,9 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, (double Width, double Height)> SelectedFrameSizesById { get; private set; } =
         new Dictionary<int, (double Width, double Height)>();
 
+    public IReadOnlyDictionary<int, double> SelectedScalesById { get; private set; } =
+        new Dictionary<int, double>();
+
     public IReadOnlyDictionary<int, (double X, double Y)> FrameOffsetsById { get; private set; } =
         new Dictionary<int, (double X, double Y)>();
 
@@ -78,6 +81,9 @@ internal sealed class DrawingLayoutWorkspace
     public (double Width, double Height) GetSelectedFrameSize(int viewId, double fallbackWidth, double fallbackHeight)
         => SelectedFrameSizesById.TryGetValue(viewId, out var size) ? size : (fallbackWidth, fallbackHeight);
 
+    public double GetSelectedScale(int viewId, double fallbackScale)
+        => SelectedScalesById.TryGetValue(viewId, out var scale) && scale > 0 ? scale : fallbackScale;
+
     public void SetOriginalScales(IReadOnlyDictionary<int, double> originalScales)
     {
         OriginalScalesById = originalScales ?? throw new ArgumentNullException(nameof(originalScales));
@@ -91,6 +97,11 @@ internal sealed class DrawingLayoutWorkspace
     public void SetSelectedFrameSizes(IReadOnlyDictionary<int, (double Width, double Height)> frameSizes)
     {
         SelectedFrameSizesById = frameSizes ?? throw new ArgumentNullException(nameof(frameSizes));
+    }
+
+    public void SetSelectedScales(IReadOnlyDictionary<int, double> scales)
+    {
+        SelectedScalesById = scales ?? throw new ArgumentNullException(nameof(scales));
     }
 
     public void SetFrameOffsets(IReadOnlyDictionary<int, (double X, double Y)> frameOffsets)
