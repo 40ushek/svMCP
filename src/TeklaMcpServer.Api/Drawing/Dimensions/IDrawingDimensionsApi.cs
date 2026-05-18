@@ -15,5 +15,6 @@ public interface IDrawingDimensionsApi
     CombineDimensionsResult CombineDimensions(int? viewId, IReadOnlyList<int>? dimensionIds, bool previewOnly);
     PlaceControlDiagonalsResult PlaceControlDiagonals(int? viewId, double distance, string attributesFile, int[] includeMaterialTypes);
     PlaceContourAngleDimensionsResult PlaceContourAngleDimensions(int? viewId, double distance, string attributesFile, bool skipRightAngles);
+    PlaceContourRadiusDimensionsResult PlaceContourRadiusDimensions(int? viewId, double distance, string attributesFile);
     ArrangeDimensionsResult ArrangeDimensions(int? viewId, double targetGap, bool allowInwardCorrectionFromPartsBounds = false);
 }

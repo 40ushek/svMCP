@@ -299,6 +299,26 @@ public sealed class PlaceContourAngleDimensionsParseResult
         new() { IsValid = false, Error = error };
 }
 
+public sealed class PlaceContourRadiusDimensionsRequest
+{
+    public int? ViewId { get; set; }
+    public double Distance { get; set; } = 20.0;
+    public string AttributesFile { get; set; } = "standard";
+}
+
+public sealed class PlaceContourRadiusDimensionsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public PlaceContourRadiusDimensionsRequest Request { get; private set; } = new();
+
+    public static PlaceContourRadiusDimensionsParseResult Success(PlaceContourRadiusDimensionsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static PlaceContourRadiusDimensionsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
 public sealed class NonNegativeDoubleParseResult
 {
     public bool IsValid { get; private set; }

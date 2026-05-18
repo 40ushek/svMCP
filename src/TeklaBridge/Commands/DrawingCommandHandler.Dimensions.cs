@@ -61,6 +61,9 @@ internal sealed partial class DrawingCommandHandler
             case "place_contour_angle_dimensions":
                 return HandlePlaceContourAngleDimensions(api, args);
 
+            case "place_contour_radius_dimensions":
+                return HandlePlaceContourRadiusDimensions(api, args);
+
             default:
                 return false;
         }
@@ -664,6 +667,34 @@ internal sealed partial class DrawingCommandHandler
             createMs = result.CreateMs,
             commitMs = result.CommitMs,
             totalMs = result.TotalMs,
+            error = result.Error
+        });
+        return true;
+    }
+
+    private bool HandlePlaceContourRadiusDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParsePlaceContourRadiusDimensionsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.PlaceContourRadiusDimensions(
+            parseResult.Request.ViewId,
+            parseResult.Request.Distance,
+            parseResult.Request.AttributesFile);
+
+        WriteJson(new
+        {
+            created = result.Created,
+            createdCount = result.CreatedCount,
+            viewId = result.ViewId,
+            viewType = result.ViewType,
+            modelId = result.ModelId,
+            arcCount = result.ArcCount,
+            dimensionIds = result.DimensionIds,
             error = result.Error
         });
         return true;

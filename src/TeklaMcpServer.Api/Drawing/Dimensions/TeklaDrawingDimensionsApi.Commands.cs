@@ -1212,5 +1212,95 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
+    public PlaceContourRadiusDimensionsResult PlaceContourRadiusDimensions(int? viewId, double distance, string attributesFile)
+    {
+        var result = new PlaceContourRadiusDimensionsResult();
+
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var targetView = ResolveTargetView(activeDrawing, viewId);
+        result.ViewId = targetView.GetIdentifier().ID;
+        result.ViewType = targetView.ViewType.ToString();
+
+        Tekla.Structures.Identifier? plateIdentifier = null;
+        var partObjects = targetView.GetAllObjects(typeof(Tekla.Structures.Drawing.Part));
+        while (partObjects.MoveNext())
+        {
+            if (partObjects.Current is not Tekla.Structures.Drawing.Part drawingPart)
+                continue;
+            if (_model.SelectModelObject(drawingPart.ModelIdentifier) is Tekla.Structures.Model.ContourPlate)
+            {
+                plateIdentifier = drawingPart.ModelIdentifier;
+                result.ModelId = drawingPart.ModelIdentifier.ID;
+                break;
+            }
+        }
+
+        if (plateIdentifier == null)
+        {
+            result.Error = "No ContourPlate found in the target view.";
+            return result;
+        }
+
+        var attributes = new RadiusDimensionAttributes();
+        try { attributes.LoadAttributes(DimensionAnglePlacementHelper.NormalizeAttributesFile(attributesFile)); }
+        catch { }
+
+        var viewCs = targetView.ViewCoordinateSystem;
+        var workPlaneHandler = _model.GetWorkPlaneHandler();
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+        workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+        var dimIds = new List<int>();
+        try
+        {
+            var viewPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
+            var polycurve = viewPlate.GetContourPolycurve();
+            if (polycurve == null)
+            {
+                result.Error = "GetContourPolycurve returned null.";
+                return result;
+            }
+
+            foreach (var curve in polycurve)
+            {
+                if (curve is not Tekla.Structures.Geometry3d.Arc arc)
+                    continue;
+
+                result.ArcCount++;
+                var p1 = ToViewPlanePoint(arc.StartPoint);
+                var p2 = ToViewPlanePoint(arc.ArcMiddlePoint);
+                var p3 = ToViewPlanePoint(arc.EndPoint);
+
+                var radiusDim = new RadiusDimension(targetView, p1, p2, p3, distance, attributes);
+                if (radiusDim.Insert())
+                    dimIds.Add(radiusDim.GetIdentifier().ID);
+            }
+        }
+        finally
+        {
+            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+        }
+
+        if (result.ArcCount == 0)
+        {
+            result.Error = "No arc segments found in the plate contour polycurve.";
+            return result;
+        }
+
+        if (dimIds.Count == 0)
+        {
+            result.Error = "RadiusDimension.Insert returned false for all arc segments.";
+            return result;
+        }
+
+        activeDrawing.CommitChanges("(MCP) PlaceContourRadiusDimensions");
+        result.Created = true;
+        result.CreatedCount = dimIds.Count;
+        result.DimensionIds = dimIds.ToArray();
+        return result;
+    }
+
     private static Point ToViewPlanePoint(Point p) => new(p.X, p.Y, 0.0);
 }
