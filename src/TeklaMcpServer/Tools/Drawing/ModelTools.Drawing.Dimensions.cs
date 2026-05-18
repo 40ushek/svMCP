@@ -200,7 +200,7 @@ public static partial class ModelTools
     [McpServerTool, Description("Place radius dimensions on arc (rounded chamfer) segments of the single ContourPlate in a single-part drawing view. Uses GetContourPolycurve to identify arc segments (CHAMFER_ROUNDING / CHAMFER_ARC) and places a RadiusDimension on each. If viewId is omitted, FrontView is preferred, otherwise the largest view is used.")]
     public static string PlaceContourRadiusDimensions(
         [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
-        [Description("Radius dimension line distance from the arc in mm. Default: 4")] double distance = 4.0,
+        [Description("Radius dimension line distance from the arc in mm. Default: 0")] double distance = 0.0,
         [Description("Radius dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
     {
         if (distance < 0)
