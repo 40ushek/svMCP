@@ -58,6 +58,9 @@ internal sealed partial class DrawingCommandHandler
             case "place_control_diagonals":
                 return HandlePlaceControlDiagonals(api, args);
 
+            case "place_contour_angle_dimensions":
+                return HandlePlaceContourAngleDimensions(api, args);
+
             default:
                 return false;
         }
@@ -661,6 +664,35 @@ internal sealed partial class DrawingCommandHandler
             createMs = result.CreateMs,
             commitMs = result.CommitMs,
             totalMs = result.TotalMs,
+            error = result.Error
+        });
+        return true;
+    }
+
+    private bool HandlePlaceContourAngleDimensions(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParsePlaceContourAngleDimensionsRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var result = api.PlaceContourAngleDimensions(
+            parseResult.Request.ViewId,
+            parseResult.Request.Distance,
+            parseResult.Request.AttributesFile);
+
+        WriteJson(new
+        {
+            created = result.Created,
+            createdCount = result.CreatedCount,
+            viewId = result.ViewId,
+            viewType = result.ViewType,
+            modelId = result.ModelId,
+            contourPointCount = result.ContourPointCount,
+            flipped = result.Flipped,
+            dimensionIds = result.DimensionIds,
             error = result.Error
         });
         return true;

@@ -92,6 +92,35 @@ public static partial class DrawingCommandParsers
         });
     }
 
+    public static PlaceContourAngleDimensionsParseResult ParsePlaceContourAngleDimensionsRequest(string[] args)
+    {
+        int? viewId = null;
+        if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+        {
+            if (!int.TryParse(args[1], out var parsedViewId))
+                return PlaceContourAngleDimensionsParseResult.Fail("viewId must be an integer");
+            viewId = parsedViewId;
+        }
+
+        var distance = 0.0;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out distance) || distance < 0)
+                return PlaceContourAngleDimensionsParseResult.Fail("distance must be a non-negative number");
+        }
+
+        var attributesFile = (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]))
+            ? args[3]
+            : "standard";
+
+        return PlaceContourAngleDimensionsParseResult.Success(new PlaceContourAngleDimensionsRequest
+        {
+            ViewId = viewId,
+            Distance = distance,
+            AttributesFile = attributesFile
+        });
+    }
+
     public static MoveDimensionParseResult ParseMoveDimensionRequest(string[] args)
     {
         if (args.Length < 3 ||

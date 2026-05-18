@@ -603,28 +603,18 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         var deleted = false;
-        var viewEnum = activeDrawing.GetSheet().GetViews();
-        while (viewEnum.MoveNext())
+        var dimEnum = activeDrawing.GetSheet().GetAllObjects(typeof(DimensionBase));
+        while (dimEnum.MoveNext())
         {
-            if (viewEnum.Current is not Tekla.Structures.Drawing.View view)
+            if (dimEnum.Current is not DimensionBase dimension)
+                continue;
+            if (dimension.GetIdentifier().ID != dimensionId)
                 continue;
 
-            var dimEnum = view.GetAllObjects(new[] { typeof(StraightDimensionSet) });
-            while (dimEnum.MoveNext())
-            {
-                if (dimEnum.Current is not StraightDimensionSet dimensionSet)
-                    continue;
-                if (dimensionSet.GetIdentifier().ID != dimensionId)
-                    continue;
-
-                dimensionSet.Delete();
-                activeDrawing.CommitChanges();
-                deleted = true;
-                break;
-            }
-
-            if (deleted)
-                break;
+            dimension.Delete();
+            activeDrawing.CommitChanges();
+            deleted = true;
+            break;
         }
 
         return new DeleteDimensionResult
@@ -1106,4 +1096,111 @@ public sealed partial class TeklaDrawingDimensionsApi
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
     }
+
+    public PlaceContourAngleDimensionsResult PlaceContourAngleDimensions(int? viewId, double distance, string attributesFile)
+    {
+        var result = new PlaceContourAngleDimensionsResult();
+
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var targetView = ResolveTargetView(activeDrawing, viewId);
+        result.ViewId = targetView.GetIdentifier().ID;
+        result.ViewType = targetView.ViewType.ToString();
+
+        Tekla.Structures.Identifier? plateIdentifier = null;
+        var partObjects = targetView.GetAllObjects(typeof(Tekla.Structures.Drawing.Part));
+        while (partObjects.MoveNext())
+        {
+            if (partObjects.Current is not Tekla.Structures.Drawing.Part drawingPart)
+                continue;
+
+            if (_model.SelectModelObject(drawingPart.ModelIdentifier) is Tekla.Structures.Model.ContourPlate)
+            {
+                plateIdentifier = drawingPart.ModelIdentifier;
+                result.ModelId = drawingPart.ModelIdentifier.ID;
+                break;
+            }
+        }
+
+        if (plateIdentifier == null)
+        {
+            result.Error = "No ContourPlate found in the target view.";
+            return result;
+        }
+
+        // Flip detection uses world-space normals — must be read before the
+        // work plane is switched, otherwise GetCoordinateSystem() returns the
+        // plate CS expressed in the view plane and the dot test is meaningless.
+        var worldPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
+        var plateCs = worldPlate.GetCoordinateSystem();
+        var plateNormal = plateCs.AxisX.Cross(plateCs.AxisY);
+        var viewCs = targetView.ViewCoordinateSystem;
+        var viewNormal = viewCs.AxisX.Cross(viewCs.AxisY);
+        var flipped = DimensionAnglePlacementHelper.IsContourFlipped(plateNormal, viewNormal);
+        result.Flipped = flipped;
+
+        var attributes = new AngleDimensionAttributes();
+        try
+        {
+            attributes.LoadAttributes(DimensionAnglePlacementHelper.NormalizeAttributesFile(attributesFile));
+        }
+        catch
+        {
+        }
+
+        attributes.Type = AngleTypes.AngleAtVertex;
+
+        // AngleDimension expects points in the view plane. Read the contour
+        // under the view's transformation plane so coordinates land on the
+        // sheet next to the part instead of in raw model space.
+        var workPlaneHandler = _model.GetWorkPlaneHandler();
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+        workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+        var dimIds = new List<int>();
+        try
+        {
+            var viewPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
+            var contourPoints = viewPlate.Contour.ContourPoints;
+            var n = contourPoints.Count;
+            result.ContourPointCount = n;
+            if (n < 3)
+            {
+                result.Error = $"Contour has too few points ({n}); need at least 3.";
+                return result;
+            }
+
+            for (var i = 0; i < n; i++)
+            {
+                var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
+                var vertex = ToViewPlanePoint((Point)contourPoints[i]);
+                var first = ToViewPlanePoint((Point)contourPoints[firstIndex]);
+                var second = ToViewPlanePoint((Point)contourPoints[secondIndex]);
+
+                var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
+                if (angleDim.Insert())
+                    dimIds.Add(angleDim.GetIdentifier().ID);
+            }
+        }
+        finally
+        {
+            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+        }
+
+        if (dimIds.Count == 0)
+        {
+            result.Error = "AngleDimension.Insert returned false for all contour vertices.";
+            return result;
+        }
+
+        activeDrawing.CommitChanges("(MCP) PlaceContourAngleDimensions");
+
+        result.Created = true;
+        result.CreatedCount = dimIds.Count;
+        result.DimensionIds = dimIds.ToArray();
+        return result;
+    }
+
+    private static Point ToViewPlanePoint(Point p) => new(p.X, p.Y, 0.0);
 }

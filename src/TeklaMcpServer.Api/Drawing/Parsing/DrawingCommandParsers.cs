@@ -278,6 +278,26 @@ public sealed class PlaceControlDiagonalsParseResult
         new() { IsValid = false, Error = error };
 }
 
+public sealed class PlaceContourAngleDimensionsRequest
+{
+    public int? ViewId { get; set; }
+    public double Distance { get; set; }
+    public string AttributesFile { get; set; } = "standard";
+}
+
+public sealed class PlaceContourAngleDimensionsParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public PlaceContourAngleDimensionsRequest Request { get; private set; } = new();
+
+    public static PlaceContourAngleDimensionsParseResult Success(PlaceContourAngleDimensionsRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static PlaceContourAngleDimensionsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
 public sealed class NonNegativeDoubleParseResult
 {
     public bool IsValid { get; private set; }

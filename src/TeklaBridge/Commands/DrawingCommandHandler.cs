@@ -69,6 +69,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "create_dimension":
             case "delete_dimension":
             case "place_control_diagonals":
+            case "place_contour_angle_dimensions":
                 return TryHandleDimensionCommands(command, args);
 
             case "get_part_geometry_in_view":

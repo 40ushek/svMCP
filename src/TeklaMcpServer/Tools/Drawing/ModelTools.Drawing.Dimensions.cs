@@ -196,4 +196,32 @@ public static partial class ModelTools
             return $"Bridge error: {json}";
         }
     }
+
+    [McpServerTool, Description("Place interior angle dimensions at every vertex of the single ContourPlate in a single-part drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used. Detects plate/view normal flip to keep selecting the interior angle.")]
+    public static string PlaceContourAngleDimensions(
+        [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
+        [Description("Angle dimension line offset distance in mm. Default: 0")] double distance = 0.0,
+        [Description("Angle dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
+    {
+        if (distance < 0)
+            return "Error: 'distance' must be a non-negative number.";
+
+        var json = RunBridge(
+            "place_contour_angle_dimensions",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            distance.ToString(CultureInfo.InvariantCulture),
+            attributesFile ?? "standard");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
 }
