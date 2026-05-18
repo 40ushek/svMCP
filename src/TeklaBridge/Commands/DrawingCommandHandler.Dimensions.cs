@@ -694,7 +694,6 @@ internal sealed partial class DrawingCommandHandler
             viewType = result.ViewType,
             modelId = result.ModelId,
             arcCount = result.ArcCount,
-            segmentTypes = result.SegmentTypes,
             dimensionIds = result.DimensionIds,
             error = result.Error
         });

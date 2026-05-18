@@ -1174,9 +1174,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             for (var i = 0; i < n; i++)
             {
                 var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
-                var vertex = ToViewPlanePoint((Point)contourPoints[i]);
-                var first = ToViewPlanePoint((Point)contourPoints[firstIndex]);
-                var second = ToViewPlanePoint((Point)contourPoints[secondIndex]);
+                var vertex = FlattenZ((Point)contourPoints[i]);
+                var first = FlattenZ((Point)contourPoints[firstIndex]);
+                var second = FlattenZ((Point)contourPoints[secondIndex]);
 
                 if (skipRightAngles &&
                     DimensionAnglePlacementHelper.IsRightAngle(
@@ -1244,68 +1244,107 @@ public sealed partial class TeklaDrawingDimensionsApi
             return result;
         }
 
+        var viewCs = targetView.ViewCoordinateSystem;
+        var workPlaneHandler = _model.GetWorkPlaneHandler();
+        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+
         var attributes = new RadiusDimensionAttributes();
         try { attributes.LoadAttributes(DimensionAnglePlacementHelper.NormalizeAttributesFile(attributesFile)); }
         catch { }
 
-        var viewCs = targetView.ViewCoordinateSystem;
-        var workPlaneHandler = _model.GetWorkPlaneHandler();
-        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+        // GetContourPolycurve() always returns world-space coordinates regardless of the current
+        // TransformationPlane. RadiusDimension accepts world contour points when the targetView
+        // is passed - verified at runtime for both CHAMFER_ROUNDING and CHAMFER_ARC_POINT plates.
+        // Select() is required before the call; without it the method returns null.
+        var worldPlateForPolycurve = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
+        worldPlateForPolycurve.Select();
+        var polycurve = worldPlateForPolycurve.GetContourPolycurve();
+
         var dimIds = new List<int>();
         try
         {
-            var viewPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
-            var contourPoints = viewPlate.Contour.ContourPoints;
-            var n = contourPoints.Count;
-            if (n < 3)
+            workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+
+            if (polycurve != null)
             {
-                result.Error = $"Contour has too few points ({n}).";
-                return result;
+                foreach (var curve in polycurve)
+                {
+                    if (curve is not Tekla.Structures.Geometry3d.Arc arc)
+                        continue;
+
+                    result.ArcCount++;
+                    TryInsertRadiusDimension(
+                        targetView,
+                        FlattenZ(arc.StartPoint),
+                        FlattenZ(arc.ArcMiddlePoint),
+                        FlattenZ(arc.EndPoint),
+                        distance,
+                        attributes,
+                        dimIds);
+                }
+
+                if (result.ArcCount > 0 && dimIds.Count == 0)
+                {
+                    result.Error = $"Found {result.ArcCount} arc(s) via polycurve but RadiusDimension.Insert failed for all.";
+                    return result;
+                }
             }
 
-            for (var i = 0; i < n; i++)
+            // Analytical fallback for plates where GetContourPolycurve returned null or no arcs.
+            // Handles CHAMFER_ROUNDING by computing arc geometry from the chamfer radius and neighbors.
+            if (result.ArcCount == 0)
             {
-                var cp = (Tekla.Structures.Model.ContourPoint)contourPoints[i];
-                var chamfer = cp.Chamfer;
-                if (chamfer.Type != Tekla.Structures.Model.Chamfer.ChamferTypeEnum.CHAMFER_ROUNDING)
-                    continue;
+                var viewPlateMain = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
+                var contourPoints = viewPlateMain.Contour.ContourPoints;
 
-                var radius = chamfer.X;
-                if (radius <= 0)
-                    continue;
+                var n = contourPoints.Count;
+                if (n < 3)
+                {
+                    result.Error = $"Contour has too few points ({n}).";
+                    return result;
+                }
 
-                result.ArcCount++;
+                for (var i = 0; i < n; i++)
+                {
+                    var cp = (Tekla.Structures.Model.ContourPoint)contourPoints[i];
+                    var chamfer = cp.Chamfer;
+                    if (chamfer.Type != Tekla.Structures.Model.Chamfer.ChamferTypeEnum.CHAMFER_ROUNDING)
+                        continue;
 
-                var vertex = ToViewPlanePoint((Point)cp);
-                var prevPt = ToViewPlanePoint((Point)contourPoints[((i - 1) % n + n) % n]);
-                var nextPt = ToViewPlanePoint((Point)contourPoints[(i + 1) % n]);
+                    var radius = chamfer.X;
+                    if (radius <= 0)
+                        continue;
 
-                var up = new Vector(prevPt.X - vertex.X, prevPt.Y - vertex.Y, 0);
-                var un = new Vector(nextPt.X - vertex.X, nextPt.Y - vertex.Y, 0);
-                up.Normalize();
-                un.Normalize();
+                    result.ArcCount++;
 
-                var cosHalf = System.Math.Sqrt((1.0 + up.Dot(un)) / 2.0);
-                var sinHalf = System.Math.Sqrt((1.0 - up.Dot(un)) / 2.0);
-                if (sinHalf < 1e-9) continue;
+                    var vertex = FlattenZ((Point)cp);
+                    var prevPt = FlattenZ((Point)contourPoints[((i - 1) % n + n) % n]);
+                    var nextPt = FlattenZ((Point)contourPoints[(i + 1) % n]);
 
-                var t = radius * cosHalf / sinHalf;
-                var centerDist = radius / sinHalf;
+                    var up = new Vector(prevPt.X - vertex.X, prevPt.Y - vertex.Y, 0);
+                    var un = new Vector(nextPt.X - vertex.X, nextPt.Y - vertex.Y, 0);
+                    up.Normalize();
+                    un.Normalize();
 
-                var bx = up.X + un.X;
-                var by = up.Y + un.Y;
-                var blen = System.Math.Sqrt(bx * bx + by * by);
-                if (blen < 1e-9) continue;
-                bx /= blen; by /= blen;
+                    var cosHalf = System.Math.Sqrt((1.0 + up.Dot(un)) / 2.0);
+                    var sinHalf = System.Math.Sqrt((1.0 - up.Dot(un)) / 2.0);
+                    if (sinHalf < 1e-9) continue;
 
-                var p1 = new Point(vertex.X + t * up.X, vertex.Y + t * up.Y, 0);
-                var p3 = new Point(vertex.X + t * un.X, vertex.Y + t * un.Y, 0);
-                var p2 = new Point(vertex.X + (centerDist - radius) * bx, vertex.Y + (centerDist - radius) * by, 0);
+                    var t = radius * cosHalf / sinHalf;
+                    var centerDist = radius / sinHalf;
 
-                var radiusDim = new RadiusDimension(targetView, p1, p2, p3, distance, attributes);
-                if (radiusDim.Insert())
-                    dimIds.Add(radiusDim.GetIdentifier().ID);
+                    var bx = up.X + un.X;
+                    var by = up.Y + un.Y;
+                    var blen = System.Math.Sqrt(bx * bx + by * by);
+                    if (blen < 1e-9) continue;
+                    bx /= blen; by /= blen;
+
+                    var p1 = new Point(vertex.X + t * up.X, vertex.Y + t * up.Y, 0);
+                    var p3 = new Point(vertex.X + t * un.X, vertex.Y + t * un.Y, 0);
+                    var p2 = new Point(vertex.X + (centerDist - radius) * bx, vertex.Y + (centerDist - radius) * by, 0);
+
+                    TryInsertRadiusDimension(targetView, p1, p2, p3, distance, attributes, dimIds);
+                }
             }
         }
         finally
@@ -1315,13 +1354,13 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (result.ArcCount == 0)
         {
-            result.Error = "No CHAMFER_ROUNDING vertices found in the plate contour.";
+            result.Error = "No arc segments found: polycurve returned no arcs and no CHAMFER_ROUNDING vertices in contour.";
             return result;
         }
 
         if (dimIds.Count == 0)
         {
-            result.Error = "RadiusDimension.Insert returned false for all arc segments.";
+            result.Error = $"Found {result.ArcCount} arc(s) via analytical fallback but RadiusDimension.Insert failed for all.";
             return result;
         }
 
@@ -1332,19 +1371,14 @@ public sealed partial class TeklaDrawingDimensionsApi
         return result;
     }
 
-    private static System.Collections.Generic.IEnumerable<Tekla.Structures.Geometry3d.Arc> EnumerateArcs(
-        System.Collections.Generic.IEnumerable<ICurve> curves, List<string> segmentTypes)
-    {
-        foreach (var curve in curves)
-        {
-            segmentTypes.Add(curve.GetType().Name);
-            if (curve is Tekla.Structures.Geometry3d.Arc arc)
-                yield return arc;
-            else if (curve is Polycurve nested)
-                foreach (var inner in EnumerateArcs(nested, segmentTypes))
-                    yield return inner;
-        }
-    }
+    private static Point FlattenZ(Point p) => new(p.X, p.Y, 0.0);
 
-    private static Point ToViewPlanePoint(Point p) => new(p.X, p.Y, 0.0);
+    private static void TryInsertRadiusDimension(
+        ViewBase view, Point p1, Point p2, Point p3,
+        double distance, RadiusDimensionAttributes attributes, List<int> dimIds)
+    {
+        var dim = new RadiusDimension(view, p1, p2, p3, distance, attributes);
+        if (dim.Insert())
+            dimIds.Add(dim.GetIdentifier().ID);
+    }
 }

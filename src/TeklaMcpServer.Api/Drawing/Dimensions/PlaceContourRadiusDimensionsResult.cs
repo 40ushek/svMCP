@@ -9,6 +9,5 @@ public sealed class PlaceContourRadiusDimensionsResult
     public int ModelId { get; set; }
     public int ArcCount { get; set; }
     public int[] DimensionIds { get; set; } = [];
-    public string[] SegmentTypes { get; set; } = [];
     public string? Error { get; set; }
 }
