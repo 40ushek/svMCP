@@ -200,8 +200,9 @@ public static partial class ModelTools
     [McpServerTool, Description("Place interior angle dimensions at every vertex of the single ContourPlate in a single-part drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used. Detects plate/view normal flip to keep selecting the interior angle.")]
     public static string PlaceContourAngleDimensions(
         [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
-        [Description("Angle dimension line offset distance in mm. Default: 0")] double distance = 0.0,
-        [Description("Angle dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
+        [Description("Angle dimension arc radius (offset from vertex) in mm. Default: 4")] double distance = 4.0,
+        [Description("Angle dimension attributes file name (style). Default: standard")] string attributesFile = "standard",
+        [Description("Skip right angles (~90°): do not dimension square corners. Default: true")] bool skipRightAngles = true)
     {
         if (distance < 0)
             return "Error: 'distance' must be a non-negative number.";
@@ -210,7 +211,8 @@ public static partial class ModelTools
             "place_contour_angle_dimensions",
             viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             distance.ToString(CultureInfo.InvariantCulture),
-            attributesFile ?? "standard");
+            attributesFile ?? "standard",
+            skipRightAngles ? "true" : "false");
         try
         {
             var doc = JsonDocument.Parse(json);

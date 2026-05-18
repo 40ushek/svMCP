@@ -9,6 +9,7 @@ public sealed class PlaceContourAngleDimensionsResult
     public int ModelId { get; set; }
     public int ContourPointCount { get; set; }
     public bool Flipped { get; set; }
+    public int SkippedRightAngleCount { get; set; }
     public int[] DimensionIds { get; set; } = [];
     public string? Error { get; set; }
 }

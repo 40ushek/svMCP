@@ -33,4 +33,23 @@ internal static class DimensionAnglePlacementHelper
         var after = (index + 1) % count;
         return flipped ? (after, before) : (before, after);
     }
+
+    /// <summary>
+    /// Angle in degrees (0..180) between the two contour legs meeting at
+    /// <paramref name="vertex"/>, where the legs run to <paramref name="first"/>
+    /// and <paramref name="second"/>.
+    /// </summary>
+    internal static double LegAngleDegrees(Point vertex, Point first, Point second)
+    {
+        var ux = first.X - vertex.X;
+        var uy = first.Y - vertex.Y;
+        var wx = second.X - vertex.X;
+        var wy = second.Y - vertex.Y;
+        var cross = (ux * wy) - (uy * wx);
+        var dot = (ux * wx) + (uy * wy);
+        return System.Math.Atan2(System.Math.Abs(cross), dot) * (180.0 / System.Math.PI);
+    }
+
+    internal static bool IsRightAngle(double angleDegrees, double toleranceDegrees = 0.5)
+        => System.Math.Abs(angleDegrees - 90.0) <= toleranceDegrees;
 }

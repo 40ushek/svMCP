@@ -102,7 +102,7 @@ public static partial class DrawingCommandParsers
             viewId = parsedViewId;
         }
 
-        var distance = 0.0;
+        var distance = 4.0;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out distance) || distance < 0)
@@ -113,11 +113,19 @@ public static partial class DrawingCommandParsers
             ? args[3]
             : "standard";
 
+        var skipRightAngles = true;
+        if (args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]))
+        {
+            if (!bool.TryParse(args[4], out skipRightAngles))
+                return PlaceContourAngleDimensionsParseResult.Fail("skipRightAngles must be true or false");
+        }
+
         return PlaceContourAngleDimensionsParseResult.Success(new PlaceContourAngleDimensionsRequest
         {
             ViewId = viewId,
             Distance = distance,
-            AttributesFile = attributesFile
+            AttributesFile = attributesFile,
+            SkipRightAngles = skipRightAngles
         });
     }
 

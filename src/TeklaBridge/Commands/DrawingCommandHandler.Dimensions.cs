@@ -681,7 +681,8 @@ internal sealed partial class DrawingCommandHandler
         var result = api.PlaceContourAngleDimensions(
             parseResult.Request.ViewId,
             parseResult.Request.Distance,
-            parseResult.Request.AttributesFile);
+            parseResult.Request.AttributesFile,
+            parseResult.Request.SkipRightAngles);
 
         WriteJson(new
         {
@@ -692,6 +693,7 @@ internal sealed partial class DrawingCommandHandler
             modelId = result.ModelId,
             contourPointCount = result.ContourPointCount,
             flipped = result.Flipped,
+            skippedRightAngleCount = result.SkippedRightAngleCount,
             dimensionIds = result.DimensionIds,
             error = result.Error
         });

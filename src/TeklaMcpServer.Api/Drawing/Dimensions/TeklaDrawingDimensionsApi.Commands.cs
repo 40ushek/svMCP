@@ -1097,7 +1097,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
-    public PlaceContourAngleDimensionsResult PlaceContourAngleDimensions(int? viewId, double distance, string attributesFile)
+    public PlaceContourAngleDimensionsResult PlaceContourAngleDimensions(int? viewId, double distance, string attributesFile, bool skipRightAngles)
     {
         var result = new PlaceContourAngleDimensionsResult();
 
@@ -1178,6 +1178,14 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var first = ToViewPlanePoint((Point)contourPoints[firstIndex]);
                 var second = ToViewPlanePoint((Point)contourPoints[secondIndex]);
 
+                if (skipRightAngles &&
+                    DimensionAnglePlacementHelper.IsRightAngle(
+                        DimensionAnglePlacementHelper.LegAngleDegrees(vertex, first, second)))
+                {
+                    result.SkippedRightAngleCount++;
+                    continue;
+                }
+
                 var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
                 if (angleDim.Insert())
                     dimIds.Add(angleDim.GetIdentifier().ID);
@@ -1190,7 +1198,9 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (dimIds.Count == 0)
         {
-            result.Error = "AngleDimension.Insert returned false for all contour vertices.";
+            result.Error = result.SkippedRightAngleCount > 0
+                ? $"All {result.SkippedRightAngleCount} contour vertices were right angles and skipped (skipRightAngles=true)."
+                : "AngleDimension.Insert returned false for all contour vertices.";
             return result;
         }
 

@@ -281,8 +281,9 @@ public sealed class PlaceControlDiagonalsParseResult
 public sealed class PlaceContourAngleDimensionsRequest
 {
     public int? ViewId { get; set; }
-    public double Distance { get; set; }
+    public double Distance { get; set; } = 4.0;
     public string AttributesFile { get; set; } = "standard";
+    public bool SkipRightAngles { get; set; } = true;
 }
 
 public sealed class PlaceContourAngleDimensionsParseResult
