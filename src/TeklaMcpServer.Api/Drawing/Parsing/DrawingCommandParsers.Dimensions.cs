@@ -139,7 +139,7 @@ public static partial class DrawingCommandParsers
             viewId = parsedViewId;
         }
 
-        var distance = 20.0;
+        var distance = 4.0;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
             if (!double.TryParse(args[2], NumberStyles.Float, CultureInfo.InvariantCulture, out distance) || distance < 0)

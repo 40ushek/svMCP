@@ -302,7 +302,7 @@ public sealed class PlaceContourAngleDimensionsParseResult
 public sealed class PlaceContourRadiusDimensionsRequest
 {
     public int? ViewId { get; set; }
-    public double Distance { get; set; } = 20.0;
+    public double Distance { get; set; } = 4.0;
     public string AttributesFile { get; set; } = "standard";
 }
 

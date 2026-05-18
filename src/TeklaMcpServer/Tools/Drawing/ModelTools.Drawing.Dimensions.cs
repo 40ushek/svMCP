@@ -200,7 +200,7 @@ public static partial class ModelTools
     [McpServerTool, Description("Place radius dimensions on arc (rounded chamfer) segments of the single ContourPlate in a single-part drawing view. Uses GetContourPolycurve to identify arc segments (CHAMFER_ROUNDING / CHAMFER_ARC) and places a RadiusDimension on each. If viewId is omitted, FrontView is preferred, otherwise the largest view is used.")]
     public static string PlaceContourRadiusDimensions(
         [Description("Optional target view ID. Omit to use main view auto-selection.")] int? viewId = null,
-        [Description("Radius dimension line distance from the arc in mm. Default: 20")] double distance = 20.0,
+        [Description("Radius dimension line distance from the arc in mm. Default: 4")] double distance = 4.0,
         [Description("Radius dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
     {
         if (distance < 0)
@@ -214,9 +214,6 @@ public static partial class ModelTools
         try
         {
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
-                return $"Error: {e}";
-
             return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
         }
         catch

@@ -1256,22 +1256,52 @@ public sealed partial class TeklaDrawingDimensionsApi
         try
         {
             var viewPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
-            var polycurve = viewPlate.GetContourPolycurve();
-            if (polycurve == null)
+            var contourPoints = viewPlate.Contour.ContourPoints;
+            var n = contourPoints.Count;
+            if (n < 3)
             {
-                result.Error = "GetContourPolycurve returned null.";
+                result.Error = $"Contour has too few points ({n}).";
                 return result;
             }
 
-            foreach (var curve in polycurve)
+            for (var i = 0; i < n; i++)
             {
-                if (curve is not Tekla.Structures.Geometry3d.Arc arc)
+                var cp = (Tekla.Structures.Model.ContourPoint)contourPoints[i];
+                var chamfer = cp.Chamfer;
+                if (chamfer.Type != Tekla.Structures.Model.Chamfer.ChamferTypeEnum.CHAMFER_ROUNDING)
+                    continue;
+
+                var radius = chamfer.X;
+                if (radius <= 0)
                     continue;
 
                 result.ArcCount++;
-                var p1 = ToViewPlanePoint(arc.StartPoint);
-                var p2 = ToViewPlanePoint(arc.ArcMiddlePoint);
-                var p3 = ToViewPlanePoint(arc.EndPoint);
+
+                var vertex = ToViewPlanePoint((Point)cp);
+                var prevPt = ToViewPlanePoint((Point)contourPoints[((i - 1) % n + n) % n]);
+                var nextPt = ToViewPlanePoint((Point)contourPoints[(i + 1) % n]);
+
+                var up = new Vector(prevPt.X - vertex.X, prevPt.Y - vertex.Y, 0);
+                var un = new Vector(nextPt.X - vertex.X, nextPt.Y - vertex.Y, 0);
+                up.Normalize();
+                un.Normalize();
+
+                var cosHalf = System.Math.Sqrt((1.0 + up.Dot(un)) / 2.0);
+                var sinHalf = System.Math.Sqrt((1.0 - up.Dot(un)) / 2.0);
+                if (sinHalf < 1e-9) continue;
+
+                var t = radius * cosHalf / sinHalf;
+                var centerDist = radius / sinHalf;
+
+                var bx = up.X + un.X;
+                var by = up.Y + un.Y;
+                var blen = System.Math.Sqrt(bx * bx + by * by);
+                if (blen < 1e-9) continue;
+                bx /= blen; by /= blen;
+
+                var p1 = new Point(vertex.X + t * up.X, vertex.Y + t * up.Y, 0);
+                var p3 = new Point(vertex.X + t * un.X, vertex.Y + t * un.Y, 0);
+                var p2 = new Point(vertex.X + (centerDist - radius) * bx, vertex.Y + (centerDist - radius) * by, 0);
 
                 var radiusDim = new RadiusDimension(targetView, p1, p2, p3, distance, attributes);
                 if (radiusDim.Insert())
@@ -1285,7 +1315,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         if (result.ArcCount == 0)
         {
-            result.Error = "No arc segments found in the plate contour polycurve.";
+            result.Error = "No CHAMFER_ROUNDING vertices found in the plate contour.";
             return result;
         }
 
@@ -1300,6 +1330,20 @@ public sealed partial class TeklaDrawingDimensionsApi
         result.CreatedCount = dimIds.Count;
         result.DimensionIds = dimIds.ToArray();
         return result;
+    }
+
+    private static System.Collections.Generic.IEnumerable<Tekla.Structures.Geometry3d.Arc> EnumerateArcs(
+        System.Collections.Generic.IEnumerable<ICurve> curves, List<string> segmentTypes)
+    {
+        foreach (var curve in curves)
+        {
+            segmentTypes.Add(curve.GetType().Name);
+            if (curve is Tekla.Structures.Geometry3d.Arc arc)
+                yield return arc;
+            else if (curve is Polycurve nested)
+                foreach (var inner in EnumerateArcs(nested, segmentTypes))
+                    yield return inner;
+        }
     }
 
     private static Point ToViewPlanePoint(Point p) => new(p.X, p.Y, 0.0);
