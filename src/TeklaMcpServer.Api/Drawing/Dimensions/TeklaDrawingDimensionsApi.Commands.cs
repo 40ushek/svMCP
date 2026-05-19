@@ -382,28 +382,36 @@ public sealed partial class TeklaDrawingDimensionsApi
             throw new DrawingNotOpenException();
 
         var targetView = viewId.HasValue ? ResolveTargetView(activeDrawing, viewId) : null;
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
 
-        DrawingEnumeratorBase.AutoFetch = true;
-        var angleDimensions = viewId.HasValue
-            ? targetView!.GetAllObjects(typeof(AngleDimension))
-            : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
-        DrawingEnumeratorBase.AutoFetch = false;
-
-        while (angleDimensions.MoveNext())
+        try
         {
-            if (angleDimensions.Current is not AngleDimension dim)
-                continue;
+            DrawingEnumeratorBase.AutoFetch = true;
+            var angleDimensions = viewId.HasValue
+                ? targetView!.GetAllObjects(typeof(AngleDimension))
+                : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+            DrawingEnumeratorBase.AutoFetch = false;
 
-            var currentId = dim.GetIdentifier().ID;
-            if (dimensionId.HasValue && currentId != dimensionId.Value)
-                continue;
+            while (angleDimensions.MoveNext())
+            {
+                if (angleDimensions.Current is not AngleDimension dim)
+                    continue;
 
-            dim.Select();
-            result.Dimensions.Add(CreateAngleDimensionDebugInfo(dim));
+                var currentId = dim.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentId != dimensionId.Value)
+                    continue;
+
+                dim.Select();
+                result.Dimensions.Add(CreateAngleDimensionDebugInfo(dim));
+            }
+
+            result.Total = result.Dimensions.Count;
+            return result;
         }
-
-        result.Total = result.Dimensions.Count;
-        return result;
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
     }
 
     public DrawAngleDimensionDebugGeometryResult DrawAngleDimensionDebugGeometry(int? viewId, int? dimensionId, string group)
@@ -426,65 +434,73 @@ public sealed partial class TeklaDrawingDimensionsApi
         var selectedAngleDimensions = new List<AngleDimension>();
         using var presentationConnection = TryCreatePresentationConnection();
         presentationDiagnostics.Add(presentationConnection == null ? "presentation=null" : "presentation=connected");
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
 
-        if (!dimensionId.HasValue)
+        try
         {
-            var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
-            while (selected.MoveNext())
+            if (!dimensionId.HasValue)
             {
-                if (selected.Current is not AngleDimension selectedDim)
-                    continue;
+                var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
+                while (selected.MoveNext())
+                {
+                    if (selected.Current is not AngleDimension selectedDim)
+                        continue;
 
-                if (viewId.HasValue && selectedDim.GetView()?.GetIdentifier().ID != viewId.Value)
-                    continue;
+                    if (viewId.HasValue && selectedDim.GetView()?.GetIdentifier().ID != viewId.Value)
+                        continue;
 
-                selectedAngleDimensions.Add(selectedDim);
+                    selectedAngleDimensions.Add(selectedDim);
+                }
             }
-        }
 
-        if (selectedAngleDimensions.Count > 0)
-        {
-            foreach (var dim in selectedAngleDimensions)
-                AddAngleDimensionDebugShapes(dim);
-        }
-        else
-        {
-            DrawingEnumeratorBase.AutoFetch = true;
-            var angleDimensions = viewId.HasValue
-                ? targetView!.GetAllObjects(typeof(AngleDimension))
-                : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
-            DrawingEnumeratorBase.AutoFetch = false;
-
-            while (angleDimensions.MoveNext())
+            if (selectedAngleDimensions.Count > 0)
             {
-                if (angleDimensions.Current is AngleDimension dim)
+                foreach (var dim in selectedAngleDimensions)
                     AddAngleDimensionDebugShapes(dim);
             }
-        }
+            else
+            {
+                DrawingEnumeratorBase.AutoFetch = true;
+                var angleDimensions = viewId.HasValue
+                    ? targetView!.GetAllObjects(typeof(AngleDimension))
+                    : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+                DrawingEnumeratorBase.AutoFetch = false;
 
-        var overlayApi = new TeklaDrawingDebugOverlayApi();
-        if (request.Shapes.Count == 0)
-        {
-            var cleared = overlayApi.ClearOverlay(normalizedGroup);
+                while (angleDimensions.MoveNext())
+                {
+                    if (angleDimensions.Current is AngleDimension dim)
+                        AddAngleDimensionDebugShapes(dim);
+                }
+            }
+
+            var overlayApi = new TeklaDrawingDebugOverlayApi();
+            if (request.Shapes.Count == 0)
+            {
+                var cleared = overlayApi.ClearOverlay(normalizedGroup);
+                return new DrawAngleDimensionDebugGeometryResult
+                {
+                    Group = normalizedGroup,
+                    ClearedCount = cleared.ClearedCount,
+                    PresentationDiagnostics = presentationDiagnostics
+                };
+            }
+
+            var overlayResult = overlayApi.DrawOverlay(JsonSerializer.Serialize(request));
             return new DrawAngleDimensionDebugGeometryResult
             {
-                Group = normalizedGroup,
-                ClearedCount = cleared.ClearedCount,
+                Group = overlayResult.Group,
+                ClearedCount = overlayResult.ClearedCount,
+                CreatedCount = overlayResult.CreatedCount,
+                CreatedIds = overlayResult.CreatedIds,
+                DimensionCount = dimensionIds.Count,
+                ShapeCount = request.Shapes.Count,
                 PresentationDiagnostics = presentationDiagnostics
             };
         }
-
-        var overlayResult = overlayApi.DrawOverlay(JsonSerializer.Serialize(request));
-        return new DrawAngleDimensionDebugGeometryResult
+        finally
         {
-            Group = overlayResult.Group,
-            ClearedCount = overlayResult.ClearedCount,
-            CreatedCount = overlayResult.CreatedCount,
-            CreatedIds = overlayResult.CreatedIds,
-            DimensionCount = dimensionIds.Count,
-            ShapeCount = request.Shapes.Count,
-            PresentationDiagnostics = presentationDiagnostics
-        };
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
 
         void AddAngleDimensionDebugShapes(AngleDimension dim)
         {

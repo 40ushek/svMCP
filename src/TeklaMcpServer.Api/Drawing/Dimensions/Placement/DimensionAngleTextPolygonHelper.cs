@@ -114,21 +114,24 @@ internal static class DimensionAngleTextPolygonHelper
         }
     }
 
-    // Find the TextPrimitive that contains '°' to avoid picking up leader labels.
+    // Prefer the exact angle value, then any degree text to avoid picking up leader labels.
     private static TextPrimitive? FindAngleTextPrimitive(
         IList<PrimitiveBase> primitives,
         string expectedText,
         int depth = 0)
     {
         if (depth > 4) return null;
+        TextPrimitive? degreeFallback = null;
         TextPrimitive? fallback = null;
 
         foreach (var prim in primitives)
         {
             if (prim is TextPrimitive text)
             {
-                if (text.Text != null && text.Text.Contains("°"))
+                if (IsExpectedAngleText(text.Text, expectedText))
                     return text;
+                if (ContainsDegreeText(text.Text))
+                    degreeFallback ??= text;
                 fallback ??= text;
             }
 
@@ -139,13 +142,42 @@ internal static class DimensionAngleTextPolygonHelper
             if (children != null)
             {
                 var found = FindAngleTextPrimitive(children, expectedText, depth + 1);
-                if (found != null && found.Text != null && found.Text.Contains("°"))
+                if (IsExpectedAngleText(found?.Text, expectedText))
                     return found;
+                if (ContainsDegreeText(found?.Text))
+                    degreeFallback ??= found;
                 fallback ??= found;
             }
         }
 
-        return fallback;
+        return degreeFallback ?? fallback;
+    }
+
+    private static bool IsExpectedAngleText(string? candidate, string expectedText)
+    {
+        var normalizedCandidate = NormalizeAngleText(candidate);
+        var normalizedExpected = NormalizeAngleText(expectedText);
+        if (normalizedCandidate.Length == 0 || normalizedExpected.Length == 0)
+            return false;
+
+        return normalizedCandidate == normalizedExpected
+            || normalizedCandidate.Contains(normalizedExpected)
+            || normalizedExpected.Contains(normalizedCandidate);
+    }
+
+    private static bool ContainsDegreeText(string? value) =>
+        value != null && value.Contains("°");
+
+    private static string NormalizeAngleText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        return value!
+            .Replace(" ", string.Empty)
+            .Replace("\t", string.Empty)
+            .Replace(",", ".")
+            .Trim();
     }
 
     private static bool TryCreateAnalyticalAxes(
