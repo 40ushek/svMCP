@@ -10,6 +10,8 @@ public interface IDrawingDimensionsApi
     GetDimensionContextsResult GetDimensionContexts(int viewId);
     MoveDimensionResult MoveDimension(int dimensionId, double delta);
     DrawDimensionTextBoxesResult DrawDimensionTextBoxes(int? viewId, int? dimensionId, string color, string group);
+    DrawAngleDimensionDebugGeometryResult DrawAngleDimensionDebugGeometry(int? viewId, int? dimensionId, string group);
+    AngleDimensionDebugResult GetAngleDimensionDebug(int? viewId, int? dimensionId);
     CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);
     CombineDimensionsResult CombineDimensions(int? viewId, IReadOnlyList<int>? dimensionIds, bool previewOnly);

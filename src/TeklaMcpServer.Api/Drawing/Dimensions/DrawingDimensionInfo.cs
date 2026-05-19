@@ -134,6 +134,56 @@ public sealed class DrawDimensionTextBoxesResult
     public List<int> CreatedIds { get; set; } = new();
     public int DimensionCount { get; set; }
     public int SegmentCount { get; set; }
+    public List<string> DebugChildTypes { get; set; } = new();
+}
+
+public sealed class DrawAngleDimensionDebugGeometryResult
+{
+    public string Group { get; set; } = string.Empty;
+    public int ClearedCount { get; set; }
+    public int CreatedCount { get; set; }
+    public List<int> CreatedIds { get; set; } = new();
+    public int DimensionCount { get; set; }
+    public int ShapeCount { get; set; }
+    public List<string> PresentationDiagnostics { get; set; } = new();
+}
+
+public sealed class AngleDimensionDebugResult
+{
+    public int? ViewId { get; set; }
+    public int Total { get; set; }
+    public List<AngleDimensionDebugInfo> Dimensions { get; set; } = new();
+}
+
+public sealed class AngleDimensionDebugInfo
+{
+    public int DimensionId { get; set; }
+    public int? ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
+    public double ViewScale { get; set; }
+    public string AngleType { get; set; } = string.Empty;
+    public string TextPlacing { get; set; } = string.Empty;
+    public string DimensionPlacing { get; set; } = string.Empty;
+    public double AngleDegrees { get; set; }
+    public double Distance { get; set; }
+    public double DistanceTimesScale { get; set; }
+    public double DistanceDivScale { get; set; }
+    public DrawingPointInfo Origin { get; set; } = new();
+    public DrawingPointInfo Point1 { get; set; } = new();
+    public DrawingPointInfo Point2 { get; set; } = new();
+    public DrawingVectorInfo FirstUnit { get; set; } = new();
+    public DrawingVectorInfo SecondUnit { get; set; } = new();
+    public DrawingVectorInfo BisectorUnit { get; set; } = new();
+    public List<AngleDimensionRadiusCandidateInfo> RadiusCandidates { get; set; } = new();
+}
+
+public sealed class AngleDimensionRadiusCandidateInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public double Radius { get; set; }
+    public DrawingPointInfo FirstRayPoint { get; set; } = new();
+    public DrawingPointInfo SecondRayPoint { get; set; } = new();
+    public DrawingPointInfo BisectorPoint { get; set; } = new();
 }
 
 public sealed class DimensionTextPlacementDebugResult

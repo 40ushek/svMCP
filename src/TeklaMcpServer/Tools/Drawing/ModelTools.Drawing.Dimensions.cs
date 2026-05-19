@@ -76,6 +76,59 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Read raw AngleDimension geometry and radius candidates for debugging manual angle dimension movement. " +
+        "Returns Origin/Point1/Point2, Distance, view scale, angle type, and candidate points for Distance, Distance*Scale, and Distance/Scale.")]
+    public static string GetAngleDimensionDebug(
+        [Description("Optional drawing view ID. Omit to scan the whole sheet.")] int? viewId = null,
+        [Description("Optional AngleDimension ID to limit output to one dimension.")] int? dimensionId = null)
+    {
+        var json = RunBridge(
+            "get_angle_dimension_debug",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            dimensionId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
+        "Draw compact debug overlay geometry for AngleDimension objects. " +
+        "If one or more AngleDimensions are selected, draws only selected dimensions; otherwise uses viewId/dimensionId or scans the sheet. " +
+        "Shows angle rays, bisector, and point-average radius candidates with scale variants.")]
+    public static string DrawAngleDimensionDebugGeometry(
+        [Description("Optional drawing view ID. Omit to scan the whole sheet.")] int? viewId = null,
+        [Description("Optional AngleDimension ID to limit output to one dimension.")] int? dimensionId = null,
+        [Description("Overlay group name. Default: angle-dimension-debug")] string group = "angle-dimension-debug")
+    {
+        var json = RunBridge(
+            "draw_angle_dimension_debug_geometry",
+            viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            dimensionId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            group ?? "angle-dimension-debug");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
         "Arrange existing straight dimensions in the active drawing by analyzing parallel line stacks and increasing spacing where needed. " +
         "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale. " +
         "When allowInwardCorrectionFromPartsBounds=true, the nearest chain may also be pulled toward the overall parts box to restore the exact target gap.")]

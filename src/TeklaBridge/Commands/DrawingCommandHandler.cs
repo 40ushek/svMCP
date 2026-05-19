@@ -57,6 +57,8 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_drawing_dimensions":
             case "get_dimension_contexts":
             case "draw_dimension_text_boxes":
+            case "draw_angle_dimension_debug_geometry":
+            case "get_angle_dimension_debug":
             case "get_dimension_text_placement_debug":
             case "get_dimension_source_debug":
             case "get_dimension_groups_debug":

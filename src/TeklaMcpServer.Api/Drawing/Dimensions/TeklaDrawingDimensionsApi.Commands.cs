@@ -228,18 +228,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
-            DrawingObjectEnumerator dimObjects;
-            if (viewId.HasValue)
-            {
-                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
-                    ?? throw new ViewNotFoundException(viewId.Value);
-                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
-            }
-            else
-            {
-                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-            }
-
             var normalizedGroup = string.IsNullOrWhiteSpace(group) ? "dimension-text-boxes" : group.Trim();
             var normalizedColor = string.IsNullOrWhiteSpace(color) ? "Yellow" : color.Trim();
             var request = new DrawingDebugOverlayRequest
@@ -250,9 +238,21 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             var dimensionIds = new HashSet<int>();
             var segmentCount = 0;
-            while (dimObjects.MoveNext())
+            using var presentationConnection = TryCreatePresentationConnection();
+
+            Tekla.Structures.Drawing.View? targetView = null;
+            if (viewId.HasValue)
+                targetView = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                    ?? throw new ViewNotFoundException(viewId.Value);
+
+            // StraightDimensionSet
+            var straightDimObjects = viewId.HasValue
+                ? targetView!.GetAllObjects(typeof(StraightDimensionSet))
+                : activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+
+            while (straightDimObjects.MoveNext())
             {
-                if (dimObjects.Current is not StraightDimensionSet dimSet)
+                if (straightDimObjects.Current is not StraightDimensionSet dimSet)
                     continue;
 
                 var currentDimensionId = dimSet.GetIdentifier().ID;
@@ -290,11 +290,51 @@ public sealed partial class TeklaDrawingDimensionsApi
                             Color = normalizedColor,
                             LineType = "DashDot"
                         });
-
                         segmentCount++;
                     }
                     dimensionIds.Add(currentDimensionId);
                 }
+            }
+
+            var debugChildTypes = new List<string>();
+
+            // AngleDimension has no child text objects; text OBB is reconstructed from
+            // presentation primitives (primary) with analytical fallback.
+            // GetAllObjects requires AutoFetch = true to enumerate AngleDimension objects.
+            DrawingEnumeratorBase.AutoFetch = true;
+            var angleDimObjects = viewId.HasValue
+                ? targetView!.GetAllObjects(typeof(AngleDimension))
+                : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+            DrawingEnumeratorBase.AutoFetch = false;
+
+            while (angleDimObjects.MoveNext())
+            {
+                if (angleDimObjects.Current is not AngleDimension dim)
+                    continue;
+
+                var currentDimensionId = dim.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentDimensionId != dimensionId.Value)
+                    continue;
+
+                var ownerView = dim.GetView();
+                var ownerViewId = ownerView?.GetIdentifier().ID;
+                if (ownerView is not Tekla.Structures.Drawing.View drawingView)
+                    continue;
+
+                var polygon = DimensionAngleTextPolygonHelper.TryCreateTextPolygon(dim, drawingView, presentationConnection);
+                if (polygon == null || polygon.Count < 4)
+                    continue;
+
+                request.Shapes.Add(new DrawingDebugShape
+                {
+                    Kind = "polygon",
+                    ViewId = ownerViewId,
+                    Points = polygon,
+                    Color = normalizedColor,
+                    LineType = "DashDot"
+                });
+                segmentCount++;
+                dimensionIds.Add(currentDimensionId);
             }
 
             var overlayApi = new TeklaDrawingDebugOverlayApi();
@@ -307,7 +347,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                     ClearedCount = cleared.ClearedCount,
                     CreatedCount = 0,
                     DimensionCount = 0,
-                    SegmentCount = 0
+                    SegmentCount = 0,
+                    DebugChildTypes = debugChildTypes
                 };
             }
 
@@ -319,12 +360,184 @@ public sealed partial class TeklaDrawingDimensionsApi
                 CreatedCount = overlayResult.CreatedCount,
                 CreatedIds = overlayResult.CreatedIds,
                 DimensionCount = dimensionIds.Count,
-                SegmentCount = segmentCount
+                SegmentCount = segmentCount,
+                DebugChildTypes = debugChildTypes
             };
         }
         finally
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    public AngleDimensionDebugResult GetAngleDimensionDebug(int? viewId, int? dimensionId)
+    {
+        var result = new AngleDimensionDebugResult
+        {
+            ViewId = viewId
+        };
+
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var targetView = viewId.HasValue ? ResolveTargetView(activeDrawing, viewId) : null;
+
+        DrawingEnumeratorBase.AutoFetch = true;
+        var angleDimensions = viewId.HasValue
+            ? targetView!.GetAllObjects(typeof(AngleDimension))
+            : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+        DrawingEnumeratorBase.AutoFetch = false;
+
+        while (angleDimensions.MoveNext())
+        {
+            if (angleDimensions.Current is not AngleDimension dim)
+                continue;
+
+            var currentId = dim.GetIdentifier().ID;
+            if (dimensionId.HasValue && currentId != dimensionId.Value)
+                continue;
+
+            dim.Select();
+            result.Dimensions.Add(CreateAngleDimensionDebugInfo(dim));
+        }
+
+        result.Total = result.Dimensions.Count;
+        return result;
+    }
+
+    public DrawAngleDimensionDebugGeometryResult DrawAngleDimensionDebugGeometry(int? viewId, int? dimensionId, string group)
+    {
+        var drawingHandler = new DrawingHandler();
+        var activeDrawing = drawingHandler.GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var normalizedGroup = string.IsNullOrWhiteSpace(group) ? "angle-dimension-debug" : group.Trim();
+        var request = new DrawingDebugOverlayRequest
+        {
+            Group = normalizedGroup,
+            ClearGroupFirst = true
+        };
+
+        var dimensionIds = new HashSet<int>();
+        var presentationDiagnostics = new List<string>();
+        var targetView = viewId.HasValue ? ResolveTargetView(activeDrawing, viewId) : null;
+        var selectedAngleDimensions = new List<AngleDimension>();
+        using var presentationConnection = TryCreatePresentationConnection();
+        presentationDiagnostics.Add(presentationConnection == null ? "presentation=null" : "presentation=connected");
+
+        if (!dimensionId.HasValue)
+        {
+            var selected = drawingHandler.GetDrawingObjectSelector().GetSelected();
+            while (selected.MoveNext())
+            {
+                if (selected.Current is not AngleDimension selectedDim)
+                    continue;
+
+                if (viewId.HasValue && selectedDim.GetView()?.GetIdentifier().ID != viewId.Value)
+                    continue;
+
+                selectedAngleDimensions.Add(selectedDim);
+            }
+        }
+
+        if (selectedAngleDimensions.Count > 0)
+        {
+            foreach (var dim in selectedAngleDimensions)
+                AddAngleDimensionDebugShapes(dim);
+        }
+        else
+        {
+            DrawingEnumeratorBase.AutoFetch = true;
+            var angleDimensions = viewId.HasValue
+                ? targetView!.GetAllObjects(typeof(AngleDimension))
+                : activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+            DrawingEnumeratorBase.AutoFetch = false;
+
+            while (angleDimensions.MoveNext())
+            {
+                if (angleDimensions.Current is AngleDimension dim)
+                    AddAngleDimensionDebugShapes(dim);
+            }
+        }
+
+        var overlayApi = new TeklaDrawingDebugOverlayApi();
+        if (request.Shapes.Count == 0)
+        {
+            var cleared = overlayApi.ClearOverlay(normalizedGroup);
+            return new DrawAngleDimensionDebugGeometryResult
+            {
+                Group = normalizedGroup,
+                ClearedCount = cleared.ClearedCount,
+                PresentationDiagnostics = presentationDiagnostics
+            };
+        }
+
+        var overlayResult = overlayApi.DrawOverlay(JsonSerializer.Serialize(request));
+        return new DrawAngleDimensionDebugGeometryResult
+        {
+            Group = overlayResult.Group,
+            ClearedCount = overlayResult.ClearedCount,
+            CreatedCount = overlayResult.CreatedCount,
+            CreatedIds = overlayResult.CreatedIds,
+            DimensionCount = dimensionIds.Count,
+            ShapeCount = request.Shapes.Count,
+            PresentationDiagnostics = presentationDiagnostics
+        };
+
+        void AddAngleDimensionDebugShapes(AngleDimension dim)
+        {
+            var currentId = dim.GetIdentifier().ID;
+            if (dimensionId.HasValue && currentId != dimensionId.Value)
+                return;
+
+            dim.Select();
+            if (dim.GetView() is not Tekla.Structures.Drawing.View view)
+                return;
+
+            presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: view.Origin=({view.Origin.X:0.###},{view.Origin.Y:0.###}), view.Scale={TryGetViewScale(view)}");
+            var shapes = CreateAngleDimensionPresentationShapes(dim, view);
+            if (shapes.Count == 0)
+                shapes = DimensionAngleDebugOverlayBuilder.CreateShapes(dim, view);
+            if (shapes.Count == 0)
+                return;
+
+            request.Shapes.AddRange(shapes);
+            dimensionIds.Add(currentId);
+        }
+
+        List<DrawingDebugShape> CreateAngleDimensionPresentationShapes(AngleDimension dim, Tekla.Structures.Drawing.View view)
+        {
+            if (presentationConnection == null)
+            {
+                presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: no presentation connection");
+                return new List<DrawingDebugShape>();
+            }
+
+            try
+            {
+                var segment = presentationConnection.Service.GetObjectPresentation(dim.GetIdentifier().ID);
+                if (segment == null)
+                {
+                    presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: segment=null");
+                    return new List<DrawingDebugShape>();
+                }
+
+                var primitiveCount = segment.Primitives?.Count ?? 0;
+                var primitiveTypes = segment.Primitives == null ? "" : string.Join(",", System.Linq.Enumerable.Select(segment.Primitives, p => p?.GetType().Name ?? "null"));
+                presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: segment.Primitives.Count={primitiveCount}, types=[{primitiveTypes}]");
+                if (segment.Primitives != null)
+                    CollectPrimitivesDiagnostics(segment.Primitives, presentationDiagnostics, depth: 0, scale: TryGetViewScale(view));
+                var shapes = DimensionAngleDebugOverlayBuilder.CreatePresentationShapes(dim, view, segment);
+                presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: presentation shapes={shapes.Count}");
+                return shapes;
+            }
+            catch (System.Exception ex)
+            {
+                presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: exception={ex.Message}");
+                return new List<DrawingDebugShape>();
+            }
         }
     }
 
@@ -405,6 +618,47 @@ public sealed partial class TeklaDrawingDimensionsApi
         catch
         {
             return null;
+        }
+    }
+
+    private static void CollectPrimitivesDiagnostics(
+        System.Collections.Generic.IList<PrimitiveBase> primitives,
+        List<string> diag,
+        int depth,
+        double scale = 1.0)
+    {
+        if (depth > 4) return;
+        var indent = new string(' ', depth * 2);
+        foreach (var prim in primitives)
+        {
+            if (prim is ArcPrimitive arcPrim)
+            {
+                try
+                {
+                    var g = arcPrim.GetArc();
+                    diag.Add($"{indent}ArcPrimitive: center=({g.Circle.Center.X:0.###},{g.Circle.Center.Y:0.###}), r={g.Circle.Radius:0.###}");
+                }
+                catch (System.Exception ex)
+                {
+                    diag.Add($"{indent}ArcPrimitive: GetArc() failed: {ex.Message}");
+                }
+            }
+            else if (prim is TextPrimitive txtPrim)
+            {
+                diag.Add($"{indent}TextPrimitive: pos=({txtPrim.Position.X:0.###},{txtPrim.Position.Y:0.###}), angle={txtPrim.Angle:0.###}rad, height_paper={txtPrim.Height:0.###}, height_view={txtPrim.Height * scale:0.###}, proportion={txtPrim.Proportion:0.###}, text=\"{txtPrim.Text}\"");
+            }
+            else if (prim is PrimitiveGroup grp)
+            {
+                diag.Add($"{indent}PrimitiveGroup: count={grp.Primitives?.Count ?? 0}");
+                if (grp.Primitives != null)
+                    CollectPrimitivesDiagnostics(grp.Primitives, diag, depth + 1, scale);
+            }
+            else if (prim is Segment seg)
+            {
+                diag.Add($"{indent}Segment: count={seg.Primitives?.Count ?? 0}");
+                if (seg.Primitives != null)
+                    CollectPrimitivesDiagnostics(seg.Primitives, diag, depth + 1, scale);
+            }
         }
     }
 
@@ -1370,6 +1624,131 @@ public sealed partial class TeklaDrawingDimensionsApi
         result.DimensionIds = dimIds.ToArray();
         return result;
     }
+
+    private static AngleDimensionDebugInfo CreateAngleDimensionDebugInfo(AngleDimension dim)
+    {
+        var ownerView = dim.GetView();
+        var view = ownerView as Tekla.Structures.Drawing.View;
+        var viewScale = view?.Attributes?.Scale > 0 ? view.Attributes.Scale : 1.0;
+        var origin = dim.Origin;
+        var point1 = dim.Point1;
+        var point2 = dim.Point2;
+
+        TryNormalizeDirection(point1.X - origin.X, point1.Y - origin.Y, out var firstUnit);
+        TryNormalizeDirection(point2.X - origin.X, point2.Y - origin.Y, out var secondUnit);
+        var bisectorUnit = ResolveAngleBisector(firstUnit, secondUnit);
+        var firstLength = System.Math.Sqrt(System.Math.Pow(point1.X - origin.X, 2) + System.Math.Pow(point1.Y - origin.Y, 2));
+        var secondLength = System.Math.Sqrt(System.Math.Pow(point2.X - origin.X, 2) + System.Math.Pow(point2.Y - origin.Y, 2));
+
+        var info = new AngleDimensionDebugInfo
+        {
+            DimensionId = dim.GetIdentifier().ID,
+            ViewId = ownerView?.GetIdentifier().ID,
+            ViewType = view?.ViewType.ToString() ?? ownerView?.GetType().Name ?? string.Empty,
+            ViewScale = RoundDebug(viewScale),
+            AngleType = SafeToString(() => dim.Attributes.Type),
+            TextPlacing = SafeToString(() => dim.Attributes.Text.TextPlacing),
+            DimensionPlacing = SafeToString(() => dim.Attributes.Placing.Placing),
+            AngleDegrees = RoundDebug(SafeDouble(dim.GetAngle)),
+            Distance = RoundDebug(dim.Distance),
+            DistanceTimesScale = RoundDebug(dim.Distance * viewScale),
+            DistanceDivScale = RoundDebug(viewScale > 1e-9 ? dim.Distance / viewScale : dim.Distance),
+            Origin = CreateDebugPoint(origin),
+            Point1 = CreateDebugPoint(point1),
+            Point2 = CreateDebugPoint(point2),
+            FirstUnit = CreateDebugVector(firstUnit),
+            SecondUnit = CreateDebugVector(secondUnit),
+            BisectorUnit = CreateDebugVector(bisectorUnit)
+        };
+
+        AddAngleRadiusCandidate(info, "distance", dim.Distance, origin, firstUnit, secondUnit, bisectorUnit);
+        AddAngleRadiusCandidate(info, "distance_times_scale", dim.Distance * viewScale, origin, firstUnit, secondUnit, bisectorUnit);
+        if (viewScale > 1e-9)
+            AddAngleRadiusCandidate(info, "distance_div_scale", dim.Distance / viewScale, origin, firstUnit, secondUnit, bisectorUnit);
+        var averagePointRadius = (firstLength + secondLength) / 2.0;
+        AddAngleRadiusCandidate(info, "origin_point1", firstLength, origin, firstUnit, secondUnit, bisectorUnit);
+        AddAngleRadiusCandidate(info, "origin_point2", secondLength, origin, firstUnit, secondUnit, bisectorUnit);
+        AddAngleRadiusCandidate(info, "point_average", averagePointRadius, origin, firstUnit, secondUnit, bisectorUnit);
+        AddAngleRadiusCandidate(info, "point_average_times_scale", averagePointRadius * viewScale, origin, firstUnit, secondUnit, bisectorUnit);
+        if (viewScale > 1e-9)
+            AddAngleRadiusCandidate(info, "point_average_div_scale", averagePointRadius / viewScale, origin, firstUnit, secondUnit, bisectorUnit);
+
+        return info;
+    }
+
+    private static (double X, double Y) ResolveAngleBisector((double X, double Y) firstUnit, (double X, double Y) secondUnit)
+    {
+        if (TryNormalizeDirection(firstUnit.X + secondUnit.X, firstUnit.Y + secondUnit.Y, out var bisector))
+            return bisector;
+
+        var perpendicular = (-firstUnit.Y, firstUnit.X);
+        var dot = (perpendicular.Item1 * secondUnit.X) + (perpendicular.Item2 * secondUnit.Y);
+        return dot >= 0.0
+            ? perpendicular
+            : (-perpendicular.Item1, -perpendicular.Item2);
+    }
+
+    private static void AddAngleRadiusCandidate(
+        AngleDimensionDebugInfo info,
+        string name,
+        double radius,
+        Point origin,
+        (double X, double Y) firstUnit,
+        (double X, double Y) secondUnit,
+        (double X, double Y) bisectorUnit)
+    {
+        info.RadiusCandidates.Add(new AngleDimensionRadiusCandidateInfo
+        {
+            Name = name,
+            Radius = RoundDebug(radius),
+            FirstRayPoint = CreateDebugPoint(origin.X + (firstUnit.X * radius), origin.Y + (firstUnit.Y * radius)),
+            SecondRayPoint = CreateDebugPoint(origin.X + (secondUnit.X * radius), origin.Y + (secondUnit.Y * radius)),
+            BisectorPoint = CreateDebugPoint(origin.X + (bisectorUnit.X * radius), origin.Y + (bisectorUnit.Y * radius))
+        });
+    }
+
+    private static DrawingPointInfo CreateDebugPoint(Point point) =>
+        CreateDebugPoint(point.X, point.Y);
+
+    private static DrawingPointInfo CreateDebugPoint(double x, double y) =>
+        new()
+        {
+            X = RoundDebug(x),
+            Y = RoundDebug(y)
+        };
+
+    private static DrawingVectorInfo CreateDebugVector((double X, double Y) vector) =>
+        new()
+        {
+            X = RoundDebug(vector.X),
+            Y = RoundDebug(vector.Y)
+        };
+
+    private static double SafeDouble(System.Func<double> valueFactory)
+    {
+        try
+        {
+            return valueFactory();
+        }
+        catch
+        {
+            return 0.0;
+        }
+    }
+
+    private static string SafeToString<T>(System.Func<T> valueFactory)
+    {
+        try
+        {
+            return valueFactory()?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static double RoundDebug(double value) => System.Math.Round(value, 6);
 
     private static Point FlattenZ(Point p) => new(p.X, p.Y, 0.0);
 

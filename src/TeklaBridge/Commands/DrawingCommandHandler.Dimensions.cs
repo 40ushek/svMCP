@@ -22,6 +22,12 @@ internal sealed partial class DrawingCommandHandler
             case "draw_dimension_text_boxes":
                 return HandleDrawDimensionTextBoxes(api, args);
 
+            case "draw_angle_dimension_debug_geometry":
+                return HandleDrawAngleDimensionDebugGeometry(api, args);
+
+            case "get_angle_dimension_debug":
+                return HandleGetAngleDimensionDebug(api, args);
+
             case "get_dimension_text_placement_debug":
                 return HandleGetDimensionTextPlacementDebug(api, args);
 
@@ -116,8 +122,52 @@ internal sealed partial class DrawingCommandHandler
             createdCount = result.CreatedCount,
             createdIds = result.CreatedIds,
             dimensionCount = result.DimensionCount,
-            segmentCount = result.SegmentCount
+            segmentCount = result.SegmentCount,
+            debugChildTypes = result.DebugChildTypes
         });
+        return true;
+    }
+
+    private bool HandleDrawAngleDimensionDebugGeometry(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        int? dimensionId = null;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDimensionId))
+            {
+                WriteError("dimensionId must be an integer.");
+                return true;
+            }
+
+            dimensionId = parsedDimensionId;
+        }
+
+        var group = args.Length > 3 && !string.IsNullOrWhiteSpace(args[3])
+            ? args[3]
+            : "angle-dimension-debug";
+        var result = api.DrawAngleDimensionDebugGeometry(viewId, dimensionId, group);
+        WriteJson(result);
+        return true;
+    }
+
+    private bool HandleGetAngleDimensionDebug(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
+        int? dimensionId = null;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!int.TryParse(args[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedDimensionId))
+            {
+                WriteError("dimensionId must be an integer.");
+                return true;
+            }
+
+            dimensionId = parsedDimensionId;
+        }
+
+        var result = api.GetAngleDimensionDebug(viewId, dimensionId);
+        WriteJson(result);
         return true;
     }
 
