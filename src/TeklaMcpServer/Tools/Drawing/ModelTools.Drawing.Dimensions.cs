@@ -129,6 +129,32 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Move an AngleDimension by changing its Distance offset. " +
+        "deltaPaper is added directly to AngleDimension.Distance in paper millimeters; positive values move the angle arc/text outward. " +
+        "AngleAtVertex is reported as not moved because Tekla saves Distance but does not move it visually.")]
+    public static string MoveAngleDimension(
+        [Description("AngleDimension ID from get_angle_dimension_debug or get_drawing_dimensions.")] int dimensionId,
+        [Description("Delta to add to AngleDimension.Distance, in paper millimeters. Positive = outward, negative = inward.")] double deltaPaper)
+    {
+        var json = RunBridge(
+            "move_angle_dimension",
+            dimensionId.ToString(CultureInfo.InvariantCulture),
+            deltaPaper.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
         "Arrange existing straight dimensions in the active drawing by analyzing parallel line stacks and increasing spacing where needed. " +
         "Optionally limit to one viewId. targetGap is in paper units; internally it is translated using the owning view scale. " +
         "When allowInwardCorrectionFromPartsBounds=true, the nearest chain may also be pulled toward the overall parts box to restore the exact target gap.")]

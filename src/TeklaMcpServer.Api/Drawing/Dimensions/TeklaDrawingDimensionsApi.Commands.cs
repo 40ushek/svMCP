@@ -822,6 +822,53 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
+    public MoveDimensionResult MoveAngleDimension(int dimensionId, double delta)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = true;
+        try
+        {
+            AngleDimension? angleDimension = null;
+            var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(AngleDimension));
+            while (allDims.MoveNext())
+            {
+                if (allDims.Current is AngleDimension dim && dim.GetIdentifier().ID == dimensionId)
+                {
+                    angleDimension = dim;
+                    break;
+                }
+            }
+
+            if (angleDimension == null)
+                throw new System.Exception($"AngleDimension {dimensionId} not found");
+
+            var angleType = angleDimension.Attributes.Type;
+            if (angleType == AngleTypes.AngleAtVertex || angleType == AngleTypes.AngleAtVertexGradian)
+            {
+                return new MoveDimensionResult
+                {
+                    Moved = false,
+                    DimensionId = dimensionId,
+                    NewDistance = angleDimension.Distance,
+                    Reason = "AngleAtVertex distance is saved by Tekla API but does not move the dimension visually."
+                };
+            }
+
+            angleDimension.Distance += delta;
+            angleDimension.Modify();
+            activeDrawing.CommitChanges();
+            return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = angleDimension.Distance };
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
     public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();

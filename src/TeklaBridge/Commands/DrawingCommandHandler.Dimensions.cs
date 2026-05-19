@@ -55,6 +55,9 @@ internal sealed partial class DrawingCommandHandler
             case "move_dimension":
                 return HandleMoveDimension(api, args);
 
+            case "move_angle_dimension":
+                return HandleMoveAngleDimension(api, args);
+
             case "create_dimension":
                 return HandleCreateDimension(api, args);
 
@@ -641,6 +644,20 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    private bool HandleMoveAngleDimension(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseMoveDimensionRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError("Usage: move_angle_dimension <dimensionId> <deltaPaper>");
+            return true;
+        }
+
+        var result = api.MoveAngleDimension(parseResult.Request.DimensionId, parseResult.Request.Delta);
+        WriteMoveDimensionResult(result);
+        return true;
+    }
+
     private bool HandleCreateDimension(TeklaDrawingDimensionsApi api, string[] args)
     {
         var parseResult = DrawingCommandParsers.ParseCreateDimensionRequest(args);
@@ -869,7 +886,8 @@ internal sealed partial class DrawingCommandHandler
         {
             moved = result.Moved,
             dimensionId = result.DimensionId,
-            newDistance = result.NewDistance
+            newDistance = result.NewDistance,
+            reason = result.Reason
         });
     }
 

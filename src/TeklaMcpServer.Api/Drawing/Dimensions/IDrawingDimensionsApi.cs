@@ -9,6 +9,7 @@ public interface IDrawingDimensionsApi
     GetDimensionsResult GetDimensions(int? viewId);
     GetDimensionContextsResult GetDimensionContexts(int viewId);
     MoveDimensionResult MoveDimension(int dimensionId, double delta);
+    MoveDimensionResult MoveAngleDimension(int dimensionId, double delta);
     DrawDimensionTextBoxesResult DrawDimensionTextBoxes(int? viewId, int? dimensionId, string color, string group);
     DrawAngleDimensionDebugGeometryResult DrawAngleDimensionDebugGeometry(int? viewId, int? dimensionId, string group);
     AngleDimensionDebugResult GetAngleDimensionDebug(int? viewId, int? dimensionId);

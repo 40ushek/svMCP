@@ -68,6 +68,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "arrange_dimensions":
             case "combine_dimensions":
             case "move_dimension":
+            case "move_angle_dimension":
             case "create_dimension":
             case "delete_dimension":
             case "place_control_diagonals":

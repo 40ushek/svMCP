@@ -124,6 +124,7 @@ public sealed class MoveDimensionResult
     public bool   Moved        { get; set; }
     public int    DimensionId  { get; set; }
     public double NewDistance  { get; set; }
+    public string Reason       { get; set; } = string.Empty;
 }
 
 public sealed class DrawDimensionTextBoxesResult
