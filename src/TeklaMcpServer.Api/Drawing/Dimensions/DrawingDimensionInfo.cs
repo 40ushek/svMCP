@@ -136,6 +136,26 @@ public sealed class DrawDimensionTextBoxesResult
     public int DimensionCount { get; set; }
     public int SegmentCount { get; set; }
     public List<string> DebugChildTypes { get; set; } = new();
+    public List<DimensionPresentationTextBoxDebugInfo> PresentationTextBoxes { get; set; } = new();
+    public List<string> PresentationDiagnostics { get; set; } = new();
+}
+
+public sealed class DimensionPresentationTextBoxDebugInfo
+{
+    public int DimensionId { get; set; }
+    public int SourceObjectId { get; set; }
+    public string SourceObjectKind { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+    public double PositionX { get; set; }
+    public double PositionY { get; set; }
+    public double Angle { get; set; }
+    public double Height { get; set; }
+    public double Proportion { get; set; }
+    public double ViewScale { get; set; }
+    public double ViewPositionX { get; set; }
+    public double ViewPositionY { get; set; }
+    public double ViewHeight { get; set; }
+    public double ViewWidthFromProportion { get; set; }
 }
 
 public sealed class DrawAngleDimensionDebugGeometryResult

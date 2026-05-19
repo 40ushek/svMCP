@@ -126,7 +126,9 @@ internal sealed partial class DrawingCommandHandler
             createdIds = result.CreatedIds,
             dimensionCount = result.DimensionCount,
             segmentCount = result.SegmentCount,
-            debugChildTypes = result.DebugChildTypes
+            debugChildTypes = result.DebugChildTypes,
+            presentationTextBoxes = result.PresentationTextBoxes,
+            presentationDiagnostics = result.PresentationDiagnostics
         });
         return true;
     }

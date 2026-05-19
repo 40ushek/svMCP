@@ -238,7 +238,10 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             var dimensionIds = new HashSet<int>();
             var segmentCount = 0;
+            var presentationTextBoxDiagnostics = new List<DimensionPresentationTextBoxDebugInfo>();
+            var presentationDiagnostics = new List<string>();
             using var presentationConnection = TryCreatePresentationConnection();
+            presentationDiagnostics.Add(presentationConnection == null ? "presentation=null" : "presentation=connected");
 
             Tekla.Structures.Drawing.View? targetView = null;
             if (viewId.HasValue)
@@ -262,6 +265,59 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var ownerView = dimSet.GetView();
                 var ownerViewId = ownerView?.GetIdentifier().ID;
                 var segments = EnumerateSegments(dimSet);
+                if (ownerView is Tekla.Structures.Drawing.View straightDrawingView)
+                {
+                    CollectObjectPresentationDiagnostics(
+                        presentationConnection,
+                        currentDimensionId,
+                        $"straightDimensionSet={currentDimensionId}",
+                        TryGetViewScale(straightDrawingView),
+                        presentationDiagnostics);
+
+                    foreach (var segment in segments)
+                    {
+                        var segmentId = segment.GetIdentifier().ID;
+                        CollectObjectPresentationDiagnostics(
+                            presentationConnection,
+                            segmentId,
+                            $"straightSegment={segmentId}, parentSet={currentDimensionId}",
+                            TryGetViewScale(straightDrawingView),
+                            presentationDiagnostics);
+                    }
+                }
+
+                var presentationBoxes =
+                    ownerView is Tekla.Structures.Drawing.View drawingView
+                    && DimensionTextAttributeMapper.TryCreate(dimSet) is { } textAttributes
+                        ? CollectStraightDimensionPresentationTextBoxes(
+                            presentationConnection,
+                            currentDimensionId,
+                            segments,
+                            drawingView,
+                            textAttributes)
+                        : [];
+                if (presentationBoxes.Count > 0)
+                {
+                    presentationTextBoxDiagnostics.AddRange(presentationBoxes.Select(textBox =>
+                        CreatePresentationTextBoxDebugInfo(currentDimensionId, textBox)));
+
+                    foreach (var textBox in presentationBoxes)
+                    {
+                        request.Shapes.Add(new DrawingDebugShape
+                        {
+                            Kind = "polygon",
+                            ViewId = ownerViewId,
+                            Points = textBox.Polygon,
+                            Color = normalizedColor,
+                            LineType = "DashDot"
+                        });
+                        segmentCount++;
+                    }
+
+                    dimensionIds.Add(currentDimensionId);
+                    continue;
+                }
+
                 var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
                 foreach (var segment in segments)
                 {
@@ -348,7 +404,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                     CreatedCount = 0,
                     DimensionCount = 0,
                     SegmentCount = 0,
-                    DebugChildTypes = debugChildTypes
+                    DebugChildTypes = debugChildTypes,
+                    PresentationTextBoxes = presentationTextBoxDiagnostics,
+                    PresentationDiagnostics = presentationDiagnostics
                 };
             }
 
@@ -361,13 +419,100 @@ public sealed partial class TeklaDrawingDimensionsApi
                 CreatedIds = overlayResult.CreatedIds,
                 DimensionCount = dimensionIds.Count,
                 SegmentCount = segmentCount,
-                DebugChildTypes = debugChildTypes
+                DebugChildTypes = debugChildTypes,
+                PresentationTextBoxes = presentationTextBoxDiagnostics,
+                PresentationDiagnostics = presentationDiagnostics
             };
         }
         finally
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
+    }
+
+    private static List<DimensionPresentationTextBox> CollectStraightDimensionPresentationTextBoxes(
+        PresentationConnection? presentationConnection,
+        int dimensionSetId,
+        IReadOnlyList<StraightDimension> segments,
+        Tekla.Structures.Drawing.View view,
+        Text.TextAttributes textAttributes)
+    {
+        var boxes = new List<DimensionPresentationTextBox>();
+        boxes.AddRange(DimensionPresentationTextBoxCollector.Collect(
+            presentationConnection,
+            dimensionSetId,
+            "dimensionSet",
+            view,
+            textAttributes));
+
+        foreach (var segment in segments)
+        {
+            boxes.AddRange(DimensionPresentationTextBoxCollector.Collect(
+                presentationConnection,
+                segment.GetIdentifier().ID,
+                "segment",
+                view,
+                textAttributes));
+        }
+
+        return DimensionPresentationTextBoxCollector.DistinctByGeometry(boxes);
+    }
+
+    private static void CollectObjectPresentationDiagnostics(
+        PresentationConnection? presentationConnection,
+        int objectId,
+        string label,
+        double scale,
+        List<string> diagnostics)
+    {
+        if (presentationConnection == null)
+            return;
+
+        try
+        {
+            var segment = presentationConnection.Service.GetObjectPresentation(objectId);
+            if (segment == null)
+            {
+                diagnostics.Add($"{label}: presentation segment=null");
+                return;
+            }
+
+            var primitiveCount = segment.Primitives?.Count ?? 0;
+            var primitiveTypes = segment.Primitives == null
+                ? string.Empty
+                : string.Join(",", segment.Primitives.Select(static primitive => primitive?.GetType().Name ?? "null"));
+            diagnostics.Add($"{label}: primitives.Count={primitiveCount}, types=[{primitiveTypes}]");
+
+            if (segment.Primitives != null)
+                CollectPrimitivesDiagnostics(segment.Primitives, diagnostics, depth: 1, scale);
+        }
+        catch (System.Exception ex)
+        {
+            diagnostics.Add($"{label}: exception={ex.Message}");
+        }
+    }
+
+    private static DimensionPresentationTextBoxDebugInfo CreatePresentationTextBoxDebugInfo(
+        int dimensionId,
+        DimensionPresentationTextBox textBox)
+    {
+        return new DimensionPresentationTextBoxDebugInfo
+        {
+            DimensionId = dimensionId,
+            SourceObjectId = textBox.SourceObjectId,
+            SourceObjectKind = textBox.SourceObjectKind,
+            Text = textBox.Text,
+            PositionX = System.Math.Round(textBox.PositionX, 3),
+            PositionY = System.Math.Round(textBox.PositionY, 3),
+            Angle = System.Math.Round(textBox.Angle, 6),
+            Height = System.Math.Round(textBox.Height, 3),
+            Proportion = System.Math.Round(textBox.Proportion, 6),
+            ViewScale = System.Math.Round(textBox.ViewScale, 3),
+            ViewPositionX = System.Math.Round(textBox.ViewPositionX, 3),
+            ViewPositionY = System.Math.Round(textBox.ViewPositionY, 3),
+            ViewHeight = System.Math.Round(textBox.ViewHeight, 3),
+            ViewWidthFromProportion = System.Math.Round(textBox.ViewWidthFromProportion, 3)
+        };
     }
 
     public AngleDimensionDebugResult GetAngleDimensionDebug(int? viewId, int? dimensionId)
@@ -647,7 +792,11 @@ public sealed partial class TeklaDrawingDimensionsApi
         var indent = new string(' ', depth * 2);
         foreach (var prim in primitives)
         {
-            if (prim is ArcPrimitive arcPrim)
+            if (prim is LinePrimitive linePrim)
+            {
+                diag.Add($"{indent}LinePrimitive: start=({linePrim.StartPoint.X:0.###},{linePrim.StartPoint.Y:0.###}), end=({linePrim.EndPoint.X:0.###},{linePrim.EndPoint.Y:0.###})");
+            }
+            else if (prim is ArcPrimitive arcPrim)
             {
                 try
                 {
@@ -663,6 +812,38 @@ public sealed partial class TeklaDrawingDimensionsApi
             {
                 diag.Add($"{indent}TextPrimitive: pos=({txtPrim.Position.X:0.###},{txtPrim.Position.Y:0.###}), angle={txtPrim.Angle:0.###}rad, height_paper={txtPrim.Height:0.###}, height_view={txtPrim.Height * scale:0.###}, proportion={txtPrim.Proportion:0.###}, text=\"{txtPrim.Text}\"");
             }
+            else if (prim is CirclePrimitive circlePrim)
+            {
+                diag.Add($"{indent}CirclePrimitive: center=({circlePrim.CenterPoint.X:0.###},{circlePrim.CenterPoint.Y:0.###}), r={circlePrim.Radius:0.###}");
+            }
+            else if (prim is PointPrimitive pointPrim)
+            {
+                diag.Add($"{indent}PointPrimitive: pos=({pointPrim.Position.X:0.###},{pointPrim.Position.Y:0.###})");
+            }
+            else if (prim is PathPrimitive)
+            {
+                diag.Add($"{indent}PathPrimitive");
+            }
+            else if (prim is LoopPrimitive)
+            {
+                diag.Add($"{indent}LoopPrimitive");
+            }
+            else if (prim is PolygonPrimitive polygonPrim)
+            {
+                diag.Add($"{indent}PolygonPrimitive: innerLoops={polygonPrim.InnerLoops?.Count ?? 0}");
+                CollectPrimitivesDiagnostics([polygonPrim.OuterLoop], diag, depth + 1, scale);
+                if (polygonPrim.InnerLoops != null)
+                    foreach (var innerLoop in polygonPrim.InnerLoops)
+                        CollectPrimitivesDiagnostics([innerLoop], diag, depth + 1, scale);
+            }
+            else if (prim is BitmapPrimitive bitmapPrim)
+            {
+                diag.Add($"{indent}BitmapPrimitive: pos=({bitmapPrim.Position.X:0.###},{bitmapPrim.Position.Y:0.###}), w={bitmapPrim.Width:0.###}, h={bitmapPrim.Height:0.###}");
+            }
+            else if (prim is SymbolPrimitive symbolPrim)
+            {
+                diag.Add($"{indent}SymbolPrimitive: pos=({symbolPrim.Position.X:0.###},{symbolPrim.Position.Y:0.###}), w={symbolPrim.Width:0.###}, h={symbolPrim.Height:0.###}");
+            }
             else if (prim is PrimitiveGroup grp)
             {
                 diag.Add($"{indent}PrimitiveGroup: count={grp.Primitives?.Count ?? 0}");
@@ -674,6 +855,10 @@ public sealed partial class TeklaDrawingDimensionsApi
                 diag.Add($"{indent}Segment: count={seg.Primitives?.Count ?? 0}");
                 if (seg.Primitives != null)
                     CollectPrimitivesDiagnostics(seg.Primitives, diag, depth + 1, scale);
+            }
+            else
+            {
+                diag.Add($"{indent}{prim?.GetType().Name ?? "null"}");
             }
         }
     }
