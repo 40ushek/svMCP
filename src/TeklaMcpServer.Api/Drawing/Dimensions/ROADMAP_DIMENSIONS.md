@@ -518,6 +518,31 @@ The following are intentionally not part of the current baseline.
 - re-centering the module around DTOs, bounds or orientation summaries
 - transactional unification of combine commit and arrange handoff in the current phase
 
+## Tekla API Limitation: AngleAtVertex Movement
+
+Tekla support confirmed that `AngleDimension` objects with
+`AngleTypes.AngleAtVertex` cannot be moved visually by changing `Distance`
+through Open API.
+
+Observed behavior:
+
+- `Distance` can be changed and persisted.
+- `Modify()` returns `true`.
+- The drawing does not visually move the angular dimension arc/text.
+- Changing `Origin` is not a valid workaround because it changes the measured
+  angle geometry.
+- `Placing` (`Free` / `Fixed`) does not solve this behavior.
+
+Current policy:
+
+- `MoveAngleDimension` must return `Moved=false` for:
+  - `AngleTypes.AngleAtVertex`
+  - `AngleTypes.AngleAtVertexGradian`
+- The result must include a clear reason.
+- Do not move `Origin` as a fallback.
+- Any workaround based on delete/recreate must be designed as a separate,
+  explicit feature.
+
 ## Acceptance Criteria
 
 The roadmap is being followed when the following remain true.

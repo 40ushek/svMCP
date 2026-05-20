@@ -135,6 +135,7 @@ Exposed through `TeklaMcpServer/Tools`:
 - `arrange_dimensions`
 - `combine_dimensions`
 - `move_dimension`
+- `move_angle_dimension`
 - `create_dimension`
 - `delete_dimension`
 - `place_control_diagonals`
@@ -175,6 +176,17 @@ Current arrangement semantics in practice:
 - if the gap is larger than target, the later dimension may be pulled inward
 - single-dimension stacks are left unchanged
 - runtime apply still changes only `StraightDimensionSet.Distance`
+
+Current `move_angle_dimension` limitation:
+
+- `AngleTypes.AngleAtVertex` and `AngleTypes.AngleAtVertexGradian` are reported
+  as not moved.
+- Tekla support confirmed that changing `AngleDimension.Distance` is persisted
+  but does not visually move those angle dimension types.
+- `Origin` movement is intentionally not used because it changes the measured
+  angle geometry.
+- Delete/recreate workarounds, if needed, must be implemented as a separate
+  explicit feature.
 
 ## Internal / Bridge-Only Debug Surface
 
