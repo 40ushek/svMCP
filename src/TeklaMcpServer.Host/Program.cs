@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
 
@@ -12,20 +11,8 @@ internal static class Program
     [STAThread]
     static void Main()
     {
-        ViewTest.CheckView();
-
-        //var dr = new TeklaMcpServer.Api.Drawing.TeklaDrawingPartGeometryApi(new Model());
-        //var g = dr.GetAllPartsGeometryInView(3700);
-
-        ApplyTeklaChannelFixes();
-
         var model = new Model();
-        //var part = model.SelectModelObject(new Tekla.Structures.Identifier("fd029a2f-2668-4fb1-beb7-745d94860d72"));
-        //int d = 0;
-        //var s = string.Empty;
-        //part.GetReportProperty("HISTORY.TOUCHED", ref s);
-        //part.GetReportProperty("HISTORY.MODIFIED", ref s);
-
+        ApplyTeklaChannelFixes();
 
         if (!model.GetConnectionStatus())
         {
@@ -48,16 +35,21 @@ internal static class Program
 
         Console.WriteLine($"Drawing: {activeDrawing.Name}");
 
-        var mark = MarkSelector.GetSelected(drawingHandler);
-        if (mark == null)
-        {
-            Console.WriteLine("No mark selected. Select a mark in the drawing and try again.");
-            Console.ReadLine();
-            return;
-        }
+        int? viewId = null;
+        const string attributesFile = "standard";
 
-        Console.WriteLine($"Mark type: {mark.GetType().Name}  InsertionPoint: {mark.InsertionPoint}");
-        MarkBoxDrawer.DrawBoundingBox(mark, activeDrawing);
+        var anglePlacer = new ContourPlateAngleDimensionPlacer();
+        anglePlacer.Run(
+            viewId: viewId,
+            distance: 2.0,
+            attributesFile: attributesFile,
+            skipRightAngles: false);
+
+        var radiusPlacer = new ContourPlateRadiusDimensionPlacer();
+        radiusPlacer.Run(
+            viewId: viewId,
+            distance: 8.0,
+            attributesFile: attributesFile);
 
         Console.ReadLine();
     }
