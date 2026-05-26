@@ -108,12 +108,13 @@ internal static class DimensionPresentationTextBoxCollector
         TextPrimitive textPrimitive)
     {
         var scale = viewScale > 1e-9 ? viewScale : 1.0;
-        var insertX = textPrimitive.Position.X * scale;
-        var insertY = textPrimitive.Position.Y * scale;
-        var measurement = DimensionPresentationTextMeasureHelper.Measure(textPrimitive, scale);
-        var angle = textPrimitive.Angle;
-        var widthAxis = (X: System.Math.Cos(angle), Y: System.Math.Sin(angle));
-        var heightAxis = (X: -System.Math.Sin(angle), Y: System.Math.Cos(angle));
+
+        // TryComputeObb establishes the canonical TextPrimitive -> OBB pipeline.
+        // If it fails (zero-size text), fall back to a zero-size box at the insert point.
+        DimensionPresentationTextGeometryHelper.TryComputeObb(
+            textPrimitive, scale,
+            out var center, out var widthAxis, out var heightAxis,
+            out var measurement);
 
         return new DimensionPresentationTextBox
         {
@@ -123,38 +124,20 @@ internal static class DimensionPresentationTextBoxCollector
             Font = measurement.Font,
             PositionX = textPrimitive.Position.X,
             PositionY = textPrimitive.Position.Y,
-            Angle = angle,
+            Angle = textPrimitive.Angle,
             Height = textPrimitive.Height,
             Proportion = textPrimitive.Proportion,
             ViewScale = scale,
-            ViewPositionX = insertX,
-            ViewPositionY = insertY,
+            ViewPositionX = textPrimitive.Position.X * scale,
+            ViewPositionY = textPrimitive.Position.Y * scale,
             ViewHeight = measurement.Height,
             ViewWidth = measurement.Width,
             ViewWidthFromProportion = measurement.WidthFromProportion,
             GlyphMeasured = measurement.GlyphMeasured,
-            Polygon =
-            [
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, 0.0),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, measurement.Height),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, measurement.Width, measurement.Height),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, measurement.Width, 0.0)
-            ]
+            Polygon = DimensionPresentationTextGeometryHelper.CreateOrientedPolygon(
+                center, widthAxis, heightAxis, measurement.Width, measurement.Height)
         };
     }
-
-    private static double[] CreatePoint(
-        double insertX,
-        double insertY,
-        (double X, double Y) widthAxis,
-        (double X, double Y) heightAxis,
-        double widthOffset,
-        double heightOffset)
-        =>
-        [
-            System.Math.Round(insertX + widthAxis.X * widthOffset + heightAxis.X * heightOffset, 3),
-            System.Math.Round(insertY + widthAxis.Y * widthOffset + heightAxis.Y * heightOffset, 3)
-        ];
 
     private static string BuildKey(DimensionPresentationTextBox box)
     {

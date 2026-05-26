@@ -22,71 +22,31 @@ internal static class DimensionRadiusTextPolygonHelper
 
         var scale = TryGetViewScale(view);
 
-        // Primary: use presentation TextPrimitive for position, orientation, and size.
-        if (TryGetTextPlacementFromPresentation(
-                dimensionId, scale,
-                presentationConnection,
-                out var center, out var widthAxis, out var heightAxis,
-                out var presWidth, out var presHeight))
-        {
-            if (presWidth > Epsilon && presHeight > Epsilon)
-                return CreateOrientedPolygon(center, widthAxis, heightAxis, presWidth, presHeight);
-        }
-
-        return null;
-    }
-
-    private static bool TryGetTextPlacementFromPresentation(
-        int dimensionId,
-        double scale,
-        PresentationConnection? presentationConnection,
-        out (double X, double Y) center,
-        out (double X, double Y) widthAxis,
-        out (double X, double Y) heightAxis,
-        out double width,
-        out double height)
-    {
-        center = default;
-        widthAxis = (1, 0);
-        heightAxis = (0, 1);
-        width = 0;
-        height = 0;
-
         if (presentationConnection == null)
-            return false;
+            return null;
 
         try
         {
             var segment = presentationConnection.Service.GetObjectPresentation(dimensionId);
             if (segment?.Primitives == null)
-                return false;
+                return null;
 
             var textPrim = FindRadiusTextPrimitive(segment.Primitives);
             if (textPrim == null)
-                return false;
+                return null;
 
-            var insertX = textPrim.Position.X * scale;
-            var insertY = textPrim.Position.Y * scale;
-            var measurement = DimensionPresentationTextMeasureHelper.Measure(textPrim, scale);
-            width = measurement.Width;
-            height = measurement.Height;
+            if (!DimensionPresentationTextGeometryHelper.TryComputeObb(
+                    textPrim, scale,
+                    out var center, out var widthAxis, out var heightAxis,
+                    out var measurement))
+                return null;
 
-            var angle = textPrim.Angle;
-            var cos = System.Math.Cos(angle);
-            var sin = System.Math.Sin(angle);
-
-            // Insert point is bottom-left corner; center = insert + half-width along angle + half-height perpendicular.
-            center = (
-                insertX + cos * (width / 2.0) - sin * (height / 2.0),
-                insertY + sin * (width / 2.0) + cos * (height / 2.0));
-
-            widthAxis = (cos, sin);
-            heightAxis = (-sin, cos);
-            return true;
+            return DimensionPresentationTextGeometryHelper.CreateOrientedPolygon(
+                center, widthAxis, heightAxis, measurement.Width, measurement.Height);
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
@@ -102,10 +62,8 @@ internal static class DimensionRadiusTextPolygonHelper
             {
                 if (IsRadiusText(text.Text))
                     return text;
-
                 if (ContainsDigit(text.Text))
                     numericFallback ??= text;
-
                 fallback ??= text;
             }
 
@@ -118,10 +76,8 @@ internal static class DimensionRadiusTextPolygonHelper
                 var found = FindRadiusTextPrimitive(children, depth + 1);
                 if (IsRadiusText(found?.Text))
                     return found;
-
                 if (ContainsDigit(found?.Text))
                     numericFallback ??= found;
-
                 fallback ??= found;
             }
         }
@@ -130,53 +86,14 @@ internal static class DimensionRadiusTextPolygonHelper
     }
 
     private static bool IsRadiusText(string? value) =>
-        value != null
-        && value.IndexOf('R') >= 0
-        && ContainsDigit(value);
+        value != null && value.IndexOf('R') >= 0 && ContainsDigit(value);
 
     private static bool ContainsDigit(string? value)
     {
-        if (string.IsNullOrEmpty(value))
-            return false;
-
-        foreach (var ch in value!)
-        {
-            if (char.IsDigit(ch))
-                return true;
-        }
-
+        if (string.IsNullOrEmpty(value)) return false;
+        foreach (var ch in value!) if (char.IsDigit(ch)) return true;
         return false;
     }
-
-    private static List<double[]> CreateOrientedPolygon(
-        (double X, double Y) center,
-        (double X, double Y) widthAxis,
-        (double X, double Y) heightAxis,
-        double width,
-        double height)
-    {
-        var halfWidth = width / 2.0;
-        var halfHeight = height / 2.0;
-        return
-        [
-            CreatePoint(center, widthAxis, heightAxis, -halfWidth, -halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, -halfWidth, halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, halfWidth, halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, halfWidth, -halfHeight)
-        ];
-    }
-
-    private static double[] CreatePoint(
-        (double X, double Y) center,
-        (double X, double Y) widthAxis,
-        (double X, double Y) heightAxis,
-        double widthOffset,
-        double heightOffset)
-        =>
-        [
-            System.Math.Round(center.X + widthAxis.X * widthOffset + heightAxis.X * heightOffset, 3),
-            System.Math.Round(center.Y + widthAxis.Y * widthOffset + heightAxis.Y * heightOffset, 3)
-        ];
 
     private static double TryGetViewScale(DrawingView view)
     {

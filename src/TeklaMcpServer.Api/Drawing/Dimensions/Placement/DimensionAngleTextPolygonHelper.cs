@@ -37,7 +37,7 @@ internal static class DimensionAngleTextPolygonHelper
         {
             diagnostics?.Add(
                 $"angleTextMeasurement dimension={dimensionId}, text=\"{measurement.Text}\", font=\"{measurement.Font}\", glyphMeasured={measurement.GlyphMeasured}, width={measurement.Width:0.###}, height={measurement.Height:0.###}, widthFromProportion={measurement.WidthFromProportion:0.###}");
-            return CreateOrientedPolygon(center, widthAxis, heightAxis, measurement.Width, measurement.Height);
+            return DimensionPresentationTextGeometryHelper.CreateOrientedPolygon(center, widthAxis, heightAxis, measurement.Width, measurement.Height);
         }
 
         // Fallback: analytical placement along bisector.
@@ -46,7 +46,7 @@ internal static class DimensionAngleTextPolygonHelper
             && TryCreateAnalyticalAxes(dimension, scale, fallbackMeasurement.Height,
                 out center, out widthAxis, out heightAxis))
         {
-            return CreateOrientedPolygon(center, widthAxis, heightAxis, fallbackMeasurement.Width, fallbackMeasurement.Height);
+            return DimensionPresentationTextGeometryHelper.CreateOrientedPolygon(center, widthAxis, heightAxis, fallbackMeasurement.Width, fallbackMeasurement.Height);
         }
 
         return null;
@@ -80,23 +80,11 @@ internal static class DimensionAngleTextPolygonHelper
             if (textPrim == null)
                 return false;
 
-            measurement = DimensionPresentationTextMeasureHelper.Measure(textPrim, scale, expectedText);
-
-            // Presentation coords are paper space (view / scale). Multiply by scale → view coords.
-            var insertX = textPrim.Position.X * scale;
-            var insertY = textPrim.Position.Y * scale;
-
-            // Position is left baseline corner. Center = insert + width/2 along angle + height/2 perpendicular upward.
-            var angle = textPrim.Angle;
-            var cos = System.Math.Cos(angle);
-            var sin = System.Math.Sin(angle);
-            center = (
-                insertX + cos * (measurement.Width / 2.0) - sin * (measurement.Height / 2.0),
-                insertY + sin * (measurement.Width / 2.0) + cos * (measurement.Height / 2.0));
-
-            widthAxis = (cos, sin);
-            heightAxis = (-sin, cos);
-            return true;
+            return DimensionPresentationTextGeometryHelper.TryComputeObb(
+                textPrim, scale,
+                out center, out widthAxis, out heightAxis,
+                out measurement,
+                fallbackText: expectedText);
         }
         catch
         {
@@ -281,36 +269,6 @@ internal static class DimensionAngleTextPolygonHelper
 
         return fontAttributes.ToString();
     }
-
-    private static List<double[]> CreateOrientedPolygon(
-        (double X, double Y) center,
-        (double X, double Y) widthAxis,
-        (double X, double Y) heightAxis,
-        double width,
-        double height)
-    {
-        var halfWidth = width / 2.0;
-        var halfHeight = height / 2.0;
-        return
-        [
-            CreatePoint(center, widthAxis, heightAxis, -halfWidth, -halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, -halfWidth, halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, halfWidth, halfHeight),
-            CreatePoint(center, widthAxis, heightAxis, halfWidth, -halfHeight)
-        ];
-    }
-
-    private static double[] CreatePoint(
-        (double X, double Y) center,
-        (double X, double Y) widthAxis,
-        (double X, double Y) heightAxis,
-        double widthOffset,
-        double heightOffset)
-        =>
-        [
-            System.Math.Round(center.X + widthAxis.X * widthOffset + heightAxis.X * heightOffset, 3),
-            System.Math.Round(center.Y + widthAxis.Y * widthOffset + heightAxis.Y * heightOffset, 3)
-        ];
 
     private static bool TryNormalize(double x, double y, out (double X, double Y) normalized)
     {
