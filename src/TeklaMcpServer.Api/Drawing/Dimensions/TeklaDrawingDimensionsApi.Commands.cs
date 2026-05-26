@@ -288,13 +288,11 @@ public sealed partial class TeklaDrawingDimensionsApi
 
                 var presentationBoxes =
                     ownerView is Tekla.Structures.Drawing.View drawingView
-                    && DimensionTextAttributeMapper.TryCreate(dimSet) is { } textAttributes
                         ? CollectStraightDimensionPresentationTextBoxes(
                             presentationConnection,
                             currentDimensionId,
                             segments,
-                            drawingView,
-                            textAttributes)
+                            drawingView)
                         : [];
                 if (presentationBoxes.Count > 0)
                 {
@@ -377,7 +375,51 @@ public sealed partial class TeklaDrawingDimensionsApi
                 if (ownerView is not Tekla.Structures.Drawing.View drawingView)
                     continue;
 
-                var polygon = DimensionAngleTextPolygonHelper.TryCreateTextPolygon(dim, drawingView, presentationConnection);
+                var polygon = DimensionAngleTextPolygonHelper.TryCreateTextPolygon(
+                    dim,
+                    drawingView,
+                    presentationConnection,
+                    presentationDiagnostics);
+                if (polygon == null || polygon.Count < 4)
+                    continue;
+
+                request.Shapes.Add(new DrawingDebugShape
+                {
+                    Kind = "polygon",
+                    ViewId = ownerViewId,
+                    Points = polygon,
+                    Color = normalizedColor,
+                    LineType = "DashDot"
+                });
+                segmentCount++;
+                dimensionIds.Add(currentDimensionId);
+            }
+
+            // RadiusDimension — text OBB from presentation primitives with analytical fallback.
+            DrawingEnumeratorBase.AutoFetch = true;
+            var radiusDimObjects = viewId.HasValue
+                ? targetView!.GetAllObjects(typeof(RadiusDimension))
+                : activeDrawing.GetSheet().GetAllObjects(typeof(RadiusDimension));
+            DrawingEnumeratorBase.AutoFetch = false;
+
+            while (radiusDimObjects.MoveNext())
+            {
+                if (radiusDimObjects.Current is not RadiusDimension radiusDim)
+                    continue;
+
+                var currentDimensionId = radiusDim.GetIdentifier().ID;
+                if (dimensionId.HasValue && currentDimensionId != dimensionId.Value)
+                    continue;
+
+                var ownerView = radiusDim.GetView();
+                var ownerViewId = ownerView?.GetIdentifier().ID;
+                if (ownerView is not Tekla.Structures.Drawing.View radiusDrawingView)
+                    continue;
+
+                var polygon = DimensionRadiusTextPolygonHelper.TryCreateTextPolygon(
+                    radiusDim,
+                    radiusDrawingView,
+                    presentationConnection);
                 if (polygon == null || polygon.Count < 4)
                     continue;
 
@@ -434,16 +476,14 @@ public sealed partial class TeklaDrawingDimensionsApi
         PresentationConnection? presentationConnection,
         int dimensionSetId,
         IReadOnlyList<StraightDimension> segments,
-        Tekla.Structures.Drawing.View view,
-        Text.TextAttributes textAttributes)
+        Tekla.Structures.Drawing.View view)
     {
         var boxes = new List<DimensionPresentationTextBox>();
         boxes.AddRange(DimensionPresentationTextBoxCollector.Collect(
             presentationConnection,
             dimensionSetId,
             "dimensionSet",
-            view,
-            textAttributes));
+            view));
 
         foreach (var segment in segments)
         {
@@ -451,8 +491,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 presentationConnection,
                 segment.GetIdentifier().ID,
                 "segment",
-                view,
-                textAttributes));
+                view));
         }
 
         return DimensionPresentationTextBoxCollector.DistinctByGeometry(boxes);
@@ -810,7 +849,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             }
             else if (prim is TextPrimitive txtPrim)
             {
-                diag.Add($"{indent}TextPrimitive: pos=({txtPrim.Position.X:0.###},{txtPrim.Position.Y:0.###}), angle={txtPrim.Angle:0.###}rad, height_paper={txtPrim.Height:0.###}, height_view={txtPrim.Height * scale:0.###}, proportion={txtPrim.Proportion:0.###}, text=\"{txtPrim.Text}\"");
+                diag.Add($"{indent}TextPrimitive: pos=({txtPrim.Position.X:0.###},{txtPrim.Position.Y:0.###}), angle={txtPrim.Angle:0.###}rad, height_paper={txtPrim.Height:0.###}, height_view={txtPrim.Height * scale:0.###}, proportion={txtPrim.Proportion:0.###}, font=\"{txtPrim.Font}\", text=\"{txtPrim.Text}\"");
             }
             else if (prim is CirclePrimitive circlePrim)
             {

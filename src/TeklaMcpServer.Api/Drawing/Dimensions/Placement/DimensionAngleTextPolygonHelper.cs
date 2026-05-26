@@ -17,7 +17,8 @@ internal static class DimensionAngleTextPolygonHelper
     internal static List<double[]>? TryCreateTextPolygon(
         AngleDimension dimension,
         DrawingView view,
-        PresentationConnection? presentationConnection = null)
+        PresentationConnection? presentationConnection = null,
+        List<string>? diagnostics = null)
     {
         if (dimension == null || view == null)
             return null;
@@ -88,13 +89,17 @@ internal static class DimensionAngleTextPolygonHelper
             if (textPrim == null)
                 return false;
 
+            var presentationText = textPrim.Text ?? expectedText;
+
             // Presentation coords are paper space (view / scale). Multiply by scale → view coords.
             var insertX = textPrim.Position.X * scale;
             var insertY = textPrim.Position.Y * scale;
 
-            // Size from presentation: height_paper * scale, width_paper = height * proportion.
             presHeight = textPrim.Height * scale;
-            presWidth = textPrim.Height * textPrim.Proportion * scale;
+            var proportionWidth = textPrim.Height * textPrim.Proportion * scale;
+            var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
+                presentationText, textPrim.Font, presHeight, out var glyphWidth, out _);
+            presWidth = glyphMeasured ? glyphWidth : proportionWidth;
 
             // Position is left baseline corner. Center = insert + width/2 along angle + height/2 perpendicular upward.
             var angle = textPrim.Angle;

@@ -1,9 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
-using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingPresentationModel;
 using Tekla.Structures.DrawingPresentationModelInterface;
-using Tekla.Structures.Geometry3d;
 using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 using DrawingView = Tekla.Structures.Drawing.View;
 
@@ -14,6 +12,7 @@ internal sealed class DimensionPresentationTextBox
     public int SourceObjectId { get; set; }
     public string SourceObjectKind { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
+    public string? Font { get; set; }
     public double PositionX { get; set; }
     public double PositionY { get; set; }
     public double Angle { get; set; }
@@ -23,7 +22,9 @@ internal sealed class DimensionPresentationTextBox
     public double ViewPositionX { get; set; }
     public double ViewPositionY { get; set; }
     public double ViewHeight { get; set; }
+    public double ViewWidth { get; set; }
     public double ViewWidthFromProportion { get; set; }
+    public bool GlyphMeasured { get; set; }
     public List<double[]> Polygon { get; set; } = [];
 }
 
@@ -33,8 +34,7 @@ internal static class DimensionPresentationTextBoxCollector
         PresentationConnection? connection,
         int sourceObjectId,
         string sourceObjectKind,
-        DrawingView view,
-        Text.TextAttributes textAttributes)
+        DrawingView view)
     {
         if (connection == null)
             return [];
@@ -47,7 +47,7 @@ internal static class DimensionPresentationTextBoxCollector
 
             var viewScale = TryGetViewScale(view);
             return EnumerateTextPrimitives(segment)
-                .Select(textPrimitive => CreateTextBox(sourceObjectId, sourceObjectKind, view, textAttributes, viewScale, textPrimitive))
+                .Select(textPrimitive => CreateTextBox(sourceObjectId, sourceObjectKind, viewScale, textPrimitive))
                 .Where(static textBox => textBox.Polygon.Count >= 4)
                 .ToList();
         }
@@ -104,8 +104,6 @@ internal static class DimensionPresentationTextBoxCollector
     private static DimensionPresentationTextBox CreateTextBox(
         int sourceObjectId,
         string sourceObjectKind,
-        DrawingView view,
-        Text.TextAttributes textAttributes,
         double viewScale,
         TextPrimitive textPrimitive)
     {
@@ -115,9 +113,14 @@ internal static class DimensionPresentationTextBoxCollector
         var text = textPrimitive.Text ?? string.Empty;
         var presentationHeight = textPrimitive.Height * scale;
         var presentationWidth = textPrimitive.Height * textPrimitive.Proportion * scale;
-        var measuredSize = TryMeasureTextSize(view, text, textAttributes);
-        var height = measuredSize?.Height ?? presentationHeight;
-        var width = measuredSize?.Width ?? presentationWidth;
+        var height = presentationHeight;
+        var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
+            text,
+            textPrimitive.Font,
+            presentationHeight,
+            out var measuredWidth,
+            out _);
+        var width = glyphMeasured ? measuredWidth : presentationWidth;
         var angle = textPrimitive.Angle;
         var widthAxis = (X: System.Math.Cos(angle), Y: System.Math.Sin(angle));
         var heightAxis = (X: -System.Math.Sin(angle), Y: System.Math.Cos(angle));
@@ -127,6 +130,7 @@ internal static class DimensionPresentationTextBoxCollector
             SourceObjectId = sourceObjectId,
             SourceObjectKind = sourceObjectKind,
             Text = text,
+            Font = textPrimitive.Font,
             PositionX = textPrimitive.Position.X,
             PositionY = textPrimitive.Position.Y,
             Angle = angle,
@@ -136,7 +140,9 @@ internal static class DimensionPresentationTextBoxCollector
             ViewPositionX = insertX,
             ViewPositionY = insertY,
             ViewHeight = height,
+            ViewWidth = width,
             ViewWidthFromProportion = presentationWidth,
+            GlyphMeasured = glyphMeasured,
             Polygon =
             [
                 CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, 0.0),
@@ -167,36 +173,6 @@ internal static class DimensionPresentationTextBoxCollector
             box.Polygon.Select(static point => $"{point[0]:0.###},{point[1]:0.###}"));
 
         return $"{box.Text}::{polygonKey}";
-    }
-
-    private static (double Width, double Height)? TryMeasureTextSize(
-        DrawingView view,
-        string textValue,
-        Text.TextAttributes textAttributes)
-    {
-        if (string.IsNullOrEmpty(textValue))
-            return null;
-
-        Text? text = null;
-        try
-        {
-            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
-            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
-            if (!text.Insert())
-                return null;
-
-            var box = text.GetObjectAlignedBoundingBox();
-            return (box.Width, box.Height);
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            if (text != null)
-                try { text.Delete(); } catch { }
-        }
     }
 
     private static double TryGetViewScale(DrawingView view)
