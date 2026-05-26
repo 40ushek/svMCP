@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
-using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.DrawingPresentationModel;
 using DrawingView = Tekla.Structures.Drawing.View;
 using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
@@ -15,6 +14,7 @@ internal static class DimensionRadiusTextPolygonHelper
     internal static List<double[]>? TryCreateTextPolygon(
         RadiusDimension dimension,
         DrawingView view,
+        int dimensionId,
         PresentationConnection? presentationConnection = null)
     {
         if (dimension == null || view == null)
@@ -24,7 +24,7 @@ internal static class DimensionRadiusTextPolygonHelper
 
         // Primary: use presentation TextPrimitive for position, orientation, and size.
         if (TryGetTextPlacementFromPresentation(
-                dimension, scale,
+                dimensionId, scale,
                 presentationConnection,
                 out var center, out var widthAxis, out var heightAxis,
                 out var presWidth, out var presHeight))
@@ -37,7 +37,7 @@ internal static class DimensionRadiusTextPolygonHelper
     }
 
     private static bool TryGetTextPlacementFromPresentation(
-        RadiusDimension dimension,
+        int dimensionId,
         double scale,
         PresentationConnection? presentationConnection,
         out (double X, double Y) center,
@@ -57,7 +57,7 @@ internal static class DimensionRadiusTextPolygonHelper
 
         try
         {
-            var segment = presentationConnection.Service.GetObjectPresentation(dimension.GetIdentifier().ID);
+            var segment = presentationConnection.Service.GetObjectPresentation(dimensionId);
             if (segment?.Primitives == null)
                 return false;
 

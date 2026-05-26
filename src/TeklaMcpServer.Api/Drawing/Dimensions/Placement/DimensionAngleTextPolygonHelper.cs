@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using Tekla.Structures.Drawing;
-using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.DrawingPresentationModel;
 using DrawingView = Tekla.Structures.Drawing.View;
 using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
@@ -16,6 +15,7 @@ internal static class DimensionAngleTextPolygonHelper
     internal static List<double[]>? TryCreateTextPolygon(
         AngleDimension dimension,
         DrawingView view,
+        int dimensionId,
         PresentationConnection? presentationConnection = null,
         List<string>? diagnostics = null)
     {
@@ -30,13 +30,13 @@ internal static class DimensionAngleTextPolygonHelper
 
         // Primary: use presentation TextPrimitive for center, orientation, and size.
         if (TryGetTextPlacementFromPresentation(
-                dimension, scale, textValue,
+                dimensionId, scale, textValue,
                 presentationConnection,
                 out var center, out var widthAxis, out var heightAxis,
                 out var measurement))
         {
             diagnostics?.Add(
-                $"angleTextMeasurement dimension={dimension.GetIdentifier().ID}, text=\"{measurement.Text}\", font=\"{measurement.Font}\", glyphMeasured={measurement.GlyphMeasured}, width={measurement.Width:0.###}, height={measurement.Height:0.###}, widthFromProportion={measurement.WidthFromProportion:0.###}");
+                $"angleTextMeasurement dimension={dimensionId}, text=\"{measurement.Text}\", font=\"{measurement.Font}\", glyphMeasured={measurement.GlyphMeasured}, width={measurement.Width:0.###}, height={measurement.Height:0.###}, widthFromProportion={measurement.WidthFromProportion:0.###}");
             return CreateOrientedPolygon(center, widthAxis, heightAxis, measurement.Width, measurement.Height);
         }
 
@@ -53,7 +53,7 @@ internal static class DimensionAngleTextPolygonHelper
     }
 
     private static bool TryGetTextPlacementFromPresentation(
-        AngleDimension dimension,
+        int dimensionId,
         double scale,
         string expectedText,
         PresentationConnection? presentationConnection,
@@ -72,7 +72,7 @@ internal static class DimensionAngleTextPolygonHelper
 
         try
         {
-            var segment = presentationConnection.Service.GetObjectPresentation(dimension.GetIdentifier().ID);
+            var segment = presentationConnection.Service.GetObjectPresentation(dimensionId);
             if (segment?.Primitives == null)
                 return false;
 

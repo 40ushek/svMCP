@@ -378,6 +378,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var polygon = DimensionAngleTextPolygonHelper.TryCreateTextPolygon(
                     dim,
                     drawingView,
+                    currentDimensionId,
                     presentationConnection,
                     presentationDiagnostics);
                 if (polygon == null || polygon.Count < 4)
@@ -419,6 +420,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 var polygon = DimensionRadiusTextPolygonHelper.TryCreateTextPolygon(
                     radiusDim,
                     radiusDrawingView,
+                    currentDimensionId,
                     presentationConnection);
                 if (polygon == null || polygon.Count < 4)
                     continue;
