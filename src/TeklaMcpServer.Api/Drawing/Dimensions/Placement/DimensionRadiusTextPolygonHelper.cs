@@ -11,8 +11,7 @@ internal static class DimensionRadiusTextPolygonHelper
 {
     private const double Epsilon = 1e-9;
 
-    // RadiusDimension has no child text objects; text OBB is reconstructed from
-    // presentation primitives (primary) with analytical fallback.
+    // RadiusDimension text OBB is reconstructed from presentation primitives.
     internal static List<double[]>? TryCreateTextPolygon(
         RadiusDimension dimension,
         DrawingView view,
@@ -44,14 +43,14 @@ internal static class DimensionRadiusTextPolygonHelper
         out (double X, double Y) center,
         out (double X, double Y) widthAxis,
         out (double X, double Y) heightAxis,
-        out double presWidth,
-        out double presHeight)
+        out double width,
+        out double height)
     {
         center = default;
         widthAxis = (1, 0);
         heightAxis = (0, 1);
-        presWidth = 0;
-        presHeight = 0;
+        width = 0;
+        height = 0;
 
         if (presentationConnection == null)
             return false;
@@ -62,18 +61,15 @@ internal static class DimensionRadiusTextPolygonHelper
             if (segment?.Primitives == null)
                 return false;
 
-            var textPrim = FindFirstTextPrimitive(segment.Primitives);
+            var textPrim = FindRadiusTextPrimitive(segment.Primitives);
             if (textPrim == null)
                 return false;
 
             var insertX = textPrim.Position.X * scale;
             var insertY = textPrim.Position.Y * scale;
-
-            presHeight = textPrim.Height * scale;
-            var proportionWidth = textPrim.Height * textPrim.Proportion * scale;
-            var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
-                textPrim.Text, textPrim.Font, presHeight, out var glyphWidth, out _);
-            presWidth = glyphMeasured ? glyphWidth : proportionWidth;
+            var measurement = DimensionPresentationTextMeasureHelper.Measure(textPrim, scale);
+            width = measurement.Width;
+            height = measurement.Height;
 
             var angle = textPrim.Angle;
             var cos = System.Math.Cos(angle);
@@ -81,8 +77,8 @@ internal static class DimensionRadiusTextPolygonHelper
 
             // Insert point is bottom-left corner; center = insert + half-width along angle + half-height perpendicular.
             center = (
-                insertX + cos * (presWidth / 2.0) - sin * (presHeight / 2.0),
-                insertY + sin * (presWidth / 2.0) + cos * (presHeight / 2.0));
+                insertX + cos * (width / 2.0) - sin * (height / 2.0),
+                insertY + sin * (width / 2.0) + cos * (height / 2.0));
 
             widthAxis = (cos, sin);
             heightAxis = (-sin, cos);
@@ -94,13 +90,24 @@ internal static class DimensionRadiusTextPolygonHelper
         }
     }
 
-    private static TextPrimitive? FindFirstTextPrimitive(IList<PrimitiveBase> primitives, int depth = 0)
+    private static TextPrimitive? FindRadiusTextPrimitive(IList<PrimitiveBase> primitives, int depth = 0)
     {
         if (depth > 4) return null;
+        TextPrimitive? numericFallback = null;
+        TextPrimitive? fallback = null;
+
         foreach (var prim in primitives)
         {
             if (prim is TextPrimitive text)
-                return text;
+            {
+                if (IsRadiusText(text.Text))
+                    return text;
+
+                if (ContainsDigit(text.Text))
+                    numericFallback ??= text;
+
+                fallback ??= text;
+            }
 
             IList<PrimitiveBase>? children = null;
             if (prim is PrimitiveGroup g) children = g.Primitives;
@@ -108,12 +115,37 @@ internal static class DimensionRadiusTextPolygonHelper
 
             if (children != null)
             {
-                var found = FindFirstTextPrimitive(children, depth + 1);
-                if (found != null)
+                var found = FindRadiusTextPrimitive(children, depth + 1);
+                if (IsRadiusText(found?.Text))
                     return found;
+
+                if (ContainsDigit(found?.Text))
+                    numericFallback ??= found;
+
+                fallback ??= found;
             }
         }
-        return null;
+
+        return numericFallback ?? fallback;
+    }
+
+    private static bool IsRadiusText(string? value) =>
+        value != null
+        && value.IndexOf('R') >= 0
+        && ContainsDigit(value);
+
+    private static bool ContainsDigit(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        foreach (var ch in value!)
+        {
+            if (char.IsDigit(ch))
+                return true;
+        }
+
+        return false;
     }
 
     private static List<double[]> CreateOrientedPolygon(

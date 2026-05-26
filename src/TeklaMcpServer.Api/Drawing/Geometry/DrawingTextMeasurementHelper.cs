@@ -13,11 +13,9 @@ internal static class DrawingTextMeasurementHelper
         string? text,
         string? fontName,
         double height,
-        out double width,
-        out double measuredHeight)
+        out double width)
     {
         width = 0.0;
-        measuredHeight = 0.0;
 
         if (string.IsNullOrEmpty(text) || height <= Epsilon)
             return false;
@@ -42,7 +40,6 @@ internal static class DrawingTextMeasurementHelper
 
             var heightScale = height / bounds.Height;
             width = bounds.Width * heightScale;
-            measuredHeight = bounds.Height * (height / MeasurementEmSize);
             return width > Epsilon;
         }
         catch

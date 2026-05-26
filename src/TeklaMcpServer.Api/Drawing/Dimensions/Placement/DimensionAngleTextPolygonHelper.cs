@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.DrawingPresentationModel;
-using Tekla.Structures.Geometry3d;
 using DrawingView = Tekla.Structures.Drawing.View;
 using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
@@ -29,31 +28,25 @@ internal static class DimensionAngleTextPolygonHelper
         if (string.IsNullOrWhiteSpace(textValue))
             return null;
 
-        var textAttributes = TryCreateTextAttributes(dimension);
-        if (textAttributes == null)
-            return null;
-
-        var size = TryMeasureTextSize(view, textValue, textAttributes);
-        if (!size.HasValue)
-            return null;
-
         // Primary: use presentation TextPrimitive for center, orientation, and size.
         if (TryGetTextPlacementFromPresentation(
                 dimension, scale, textValue,
                 presentationConnection,
                 out var center, out var widthAxis, out var heightAxis,
-                out var presWidth, out var presHeight))
+                out var measurement))
         {
-            var w = presWidth > Epsilon ? presWidth : size.Value.Width;
-            var h = presHeight > Epsilon ? presHeight : size.Value.Height;
-            return CreateOrientedPolygon(center, widthAxis, heightAxis, w, h);
+            diagnostics?.Add(
+                $"angleTextMeasurement dimension={dimension.GetIdentifier().ID}, text=\"{measurement.Text}\", font=\"{measurement.Font}\", glyphMeasured={measurement.GlyphMeasured}, width={measurement.Width:0.###}, height={measurement.Height:0.###}, widthFromProportion={measurement.WidthFromProportion:0.###}");
+            return CreateOrientedPolygon(center, widthAxis, heightAxis, measurement.Width, measurement.Height);
         }
 
         // Fallback: analytical placement along bisector.
-        if (TryCreateAnalyticalAxes(dimension, scale, size.Value.Height,
+        var fallbackMeasurement = TryCreateFallbackTextMeasurement(dimension, scale, textValue);
+        if (fallbackMeasurement != null
+            && TryCreateAnalyticalAxes(dimension, scale, fallbackMeasurement.Height,
                 out center, out widthAxis, out heightAxis))
         {
-            return CreateOrientedPolygon(center, widthAxis, heightAxis, size.Value.Width, size.Value.Height);
+            return CreateOrientedPolygon(center, widthAxis, heightAxis, fallbackMeasurement.Width, fallbackMeasurement.Height);
         }
 
         return null;
@@ -67,14 +60,12 @@ internal static class DimensionAngleTextPolygonHelper
         out (double X, double Y) center,
         out (double X, double Y) widthAxis,
         out (double X, double Y) heightAxis,
-        out double presWidth,
-        out double presHeight)
+        out DimensionPresentationTextMeasurement measurement)
     {
         center = default;
         widthAxis = default;
         heightAxis = default;
-        presWidth = 0;
-        presHeight = 0;
+        measurement = new DimensionPresentationTextMeasurement();
 
         if (presentationConnection == null)
             return false;
@@ -89,25 +80,19 @@ internal static class DimensionAngleTextPolygonHelper
             if (textPrim == null)
                 return false;
 
-            var presentationText = textPrim.Text ?? expectedText;
+            measurement = DimensionPresentationTextMeasureHelper.Measure(textPrim, scale, expectedText);
 
             // Presentation coords are paper space (view / scale). Multiply by scale → view coords.
             var insertX = textPrim.Position.X * scale;
             var insertY = textPrim.Position.Y * scale;
-
-            presHeight = textPrim.Height * scale;
-            var proportionWidth = textPrim.Height * textPrim.Proportion * scale;
-            var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
-                presentationText, textPrim.Font, presHeight, out var glyphWidth, out _);
-            presWidth = glyphMeasured ? glyphWidth : proportionWidth;
 
             // Position is left baseline corner. Center = insert + width/2 along angle + height/2 perpendicular upward.
             var angle = textPrim.Angle;
             var cos = System.Math.Cos(angle);
             var sin = System.Math.Sin(angle);
             center = (
-                insertX + cos * (presWidth / 2.0) - sin * (presHeight / 2.0),
-                insertY + sin * (presWidth / 2.0) + cos * (presHeight / 2.0));
+                insertX + cos * (measurement.Width / 2.0) - sin * (measurement.Height / 2.0),
+                insertY + sin * (measurement.Width / 2.0) + cos * (measurement.Height / 2.0));
 
             widthAxis = (cos, sin);
             heightAxis = (-sin, cos);
@@ -235,18 +220,37 @@ internal static class DimensionAngleTextPolygonHelper
         }
     }
 
-    private static Text.TextAttributes? TryCreateTextAttributes(AngleDimension dimension)
+    private static DimensionPresentationTextMeasurement? TryCreateFallbackTextMeasurement(
+        AngleDimension dimension,
+        double scale,
+        string textValue)
     {
         try
         {
             var attributes = dimension.Attributes;
-            var textAttributes = new Text.TextAttributes
+            var height = TryReadTextHeight(attributes.Text) * (scale > Epsilon ? scale : 1.0);
+            if (height <= Epsilon)
+                return null;
+
+            var font = TryReadFontName(attributes.Text.Font);
+            var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
+                textValue,
+                font,
+                height,
+                out var width);
+
+            if (!glyphMeasured)
+                return null;
+
+            return new DimensionPresentationTextMeasurement
             {
-                PreferredPlacing = PreferredTextPlacingTypes.AlongLinePlacingType(),
-                Font = attributes.Text.Font
+                Text = textValue,
+                Font = font,
+                Height = height,
+                Width = width,
+                WidthFromProportion = 0.0,
+                GlyphMeasured = true
             };
-            textAttributes.Frame.Type = DimensionTextAttributeMapper.MapFrameType(attributes.Text.Frame);
-            return textAttributes;
         }
         catch
         {
@@ -254,31 +258,28 @@ internal static class DimensionAngleTextPolygonHelper
         }
     }
 
-    private static (double Width, double Height)? TryMeasureTextSize(
-        DrawingView view,
-        string textValue,
-        Text.TextAttributes textAttributes)
+    private static double TryReadTextHeight(object textAttributes)
     {
-        Text? text = null;
-        try
-        {
-            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
-            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
-            if (!text.Insert())
-                return null;
+        var property = textAttributes.GetType().GetProperty("Height");
+        var value = property?.GetValue(textAttributes);
+        try { return value == null ? 0.0 : System.Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture); }
+        catch { return 0.0; }
+    }
 
-            var box = text.GetObjectAlignedBoundingBox();
-            return (box.Width, box.Height);
-        }
-        catch
-        {
+    private static string? TryReadFontName(object? fontAttributes)
+    {
+        if (fontAttributes == null)
             return null;
-        }
-        finally
+
+        foreach (var propertyName in new[] { "Name", "FontName", "Typeface" })
         {
-            if (text != null)
-                try { text.Delete(); } catch { }
+            var property = fontAttributes.GetType().GetProperty(propertyName);
+            var value = property?.GetValue(fontAttributes)?.ToString();
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
         }
+
+        return fontAttributes.ToString();
     }
 
     private static List<double[]> CreateOrientedPolygon(

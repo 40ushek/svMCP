@@ -110,17 +110,7 @@ internal static class DimensionPresentationTextBoxCollector
         var scale = viewScale > 1e-9 ? viewScale : 1.0;
         var insertX = textPrimitive.Position.X * scale;
         var insertY = textPrimitive.Position.Y * scale;
-        var text = textPrimitive.Text ?? string.Empty;
-        var presentationHeight = textPrimitive.Height * scale;
-        var presentationWidth = textPrimitive.Height * textPrimitive.Proportion * scale;
-        var height = presentationHeight;
-        var glyphMeasured = DrawingTextMeasurementHelper.TryMeasureText(
-            text,
-            textPrimitive.Font,
-            presentationHeight,
-            out var measuredWidth,
-            out _);
-        var width = glyphMeasured ? measuredWidth : presentationWidth;
+        var measurement = DimensionPresentationTextMeasureHelper.Measure(textPrimitive, scale);
         var angle = textPrimitive.Angle;
         var widthAxis = (X: System.Math.Cos(angle), Y: System.Math.Sin(angle));
         var heightAxis = (X: -System.Math.Sin(angle), Y: System.Math.Cos(angle));
@@ -129,8 +119,8 @@ internal static class DimensionPresentationTextBoxCollector
         {
             SourceObjectId = sourceObjectId,
             SourceObjectKind = sourceObjectKind,
-            Text = text,
-            Font = textPrimitive.Font,
+            Text = measurement.Text,
+            Font = measurement.Font,
             PositionX = textPrimitive.Position.X,
             PositionY = textPrimitive.Position.Y,
             Angle = angle,
@@ -139,16 +129,16 @@ internal static class DimensionPresentationTextBoxCollector
             ViewScale = scale,
             ViewPositionX = insertX,
             ViewPositionY = insertY,
-            ViewHeight = height,
-            ViewWidth = width,
-            ViewWidthFromProportion = presentationWidth,
-            GlyphMeasured = glyphMeasured,
+            ViewHeight = measurement.Height,
+            ViewWidth = measurement.Width,
+            ViewWidthFromProportion = measurement.WidthFromProportion,
+            GlyphMeasured = measurement.GlyphMeasured,
             Polygon =
             [
                 CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, 0.0),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, height),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, width, height),
-                CreatePoint(insertX, insertY, widthAxis, heightAxis, width, 0.0)
+                CreatePoint(insertX, insertY, widthAxis, heightAxis, 0.0, measurement.Height),
+                CreatePoint(insertX, insertY, widthAxis, heightAxis, measurement.Width, measurement.Height),
+                CreatePoint(insertX, insertY, widthAxis, heightAxis, measurement.Width, 0.0)
             ]
         };
     }
