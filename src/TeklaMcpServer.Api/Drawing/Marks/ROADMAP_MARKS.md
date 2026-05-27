@@ -169,11 +169,29 @@ Marks не должны вводить отдельный базовый view-co
 - `get_drawing_marks` использует context-based projection;
 - `arrange_marks` использует `MarkContext -> MarkLayoutItem`;
 - `resolve_mark_overlaps` использует тот же context-based layout path.
+- `arrange_marks` и `resolve_mark_overlaps` учитывают текстовые боксы размеров как
+  fixed blockers:
+  - `DimensionTextBoxContextLoader` собирает `DrawingViewContext.DimensionTextBoxes`
+    из presentation primitives размеров;
+  - `MarkLayoutFixedBlockerBuilder` передаёт только polygons в
+    `MarkLayoutOptions.FixedTextBoxPolygons`;
+  - `SimpleMarkCostEvaluator` штрафует кандидатов меток за пересечение с
+    fixed blockers;
+  - `MarkOverlapResolver` откатывает push/nudge, если метка попала в fixed
+    blocker;
+  - сами метки не добавляются в `FixedTextBoxPolygons`, mark-mark conflicts
+    остаются динамической частью mark layout.
 - базовая `leader-anchor` оптимизация уже встроена в `arrange_marks` как отдельный post-step после `ApplyPlacements`;
 - `leader-anchor` path уже учитывает:
   - inward shift от ближайшей грани через нормаль к ребру;
   - corner avoidance (2mm clearance от вершин полигона);
   - halve-until-inside fallback для тонких деталей.
+
+Ограничение текущего состояния:
+
+- `ArrangeMarksForce` / `arrange_marks_force` пока не учитывает
+  `DimensionTextBoxes` как fixed blockers. Это отдельная доработка, потому что
+  force-directed path не использует `MarkLayoutOptions.FixedTextBoxPolygons`.
 
 ## Текущее состояние лидеров
 
