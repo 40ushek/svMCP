@@ -4,6 +4,7 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Algorithms.Marks;
 using TeklaMcpServer.Api.Diagnostics;
+using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -20,6 +21,7 @@ public sealed partial class TeklaDrawingMarkApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
+            using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
             var movedIds = new List<int>();
             var totalIterations = 0;
             var totalRemainingOverlaps = 0;
@@ -28,8 +30,9 @@ public sealed partial class TeklaDrawingMarkApi
             {
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
+                var viewContext = BuildDrawingViewContext(view, presentationConnection);
                 var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
-                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext);
+                var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
                 collect.Stop();
 
                 if (markEntries.Count == 0)
@@ -63,7 +66,8 @@ public sealed partial class TeklaDrawingMarkApi
                     {
                         Gap = margin,
                         MaxResolverIterations = 24,
-                        MaxDistanceFromAnchor = 40.0
+                        MaxDistanceFromAnchor = 40.0,
+                        FixedTextBoxPolygons = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)
                     },
                     out var iterations);
                 resolve.Stop();
@@ -110,6 +114,7 @@ public sealed partial class TeklaDrawingMarkApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
+            using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
             var engine = new MarkLayoutEngine();
             var movedIds = new List<int>();
             var totalIterations = 0;
@@ -119,7 +124,7 @@ public sealed partial class TeklaDrawingMarkApi
             {
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
-                var viewContext = BuildDrawingViewContext(view);
+                var viewContext = BuildDrawingViewContext(view, presentationConnection);
                 var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
                 var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
@@ -146,7 +151,8 @@ public sealed partial class TeklaDrawingMarkApi
                         LeaderLengthWeight = 15.0,
                         LeaderCrossingPenalty = 500.0,
                         ViewContext = viewContext,
-                        PartPolygonsByModelId = partPolygonsByModelId
+                        PartPolygonsByModelId = partPolygonsByModelId,
+                        FixedTextBoxPolygons = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)
                     });
                 arrange.Stop();
 
@@ -215,7 +221,9 @@ public sealed partial class TeklaDrawingMarkApi
         }
     }
 
-    private DrawingViewContext BuildDrawingViewContext(View view)
+    private DrawingViewContext BuildDrawingViewContext(
+        View view,
+        PresentationConnection? presentationConnection = null)
     {
         var viewId = view.GetIdentifier().ID;
         var viewScale = MarksViewContextBuilder.ResolveViewScale(view);
@@ -223,6 +231,8 @@ public sealed partial class TeklaDrawingMarkApi
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
-        return builder.Build(viewId, viewScale);
+        var context = builder.Build(viewId, viewScale);
+        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(context, view, presentationConnection);
+        return context;
     }
 }
