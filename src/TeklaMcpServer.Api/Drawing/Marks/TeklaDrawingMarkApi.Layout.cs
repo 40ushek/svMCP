@@ -58,6 +58,9 @@ public sealed partial class TeklaDrawingMarkApi
                     LocalCorners = e.Item.LocalCorners.Select(c => new[] { c[0], c[1] }).ToList()
                 }).ToList();
 
+                var fixedBlockers = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext);
+                WriteBlockerTrace("resolve_mark_overlaps", view.GetIdentifier().ID, viewContext, fixedBlockers.Count, markEntries.Count);
+
                 var resolver = new MarkOverlapResolver();
                 var resolve = Stopwatch.StartNew();
                 var resolved = resolver.ResolvePlacedMarks(
@@ -67,7 +70,7 @@ public sealed partial class TeklaDrawingMarkApi
                         Gap = margin,
                         MaxResolverIterations = 24,
                         MaxDistanceFromAnchor = 40.0,
-                        FixedTextBoxPolygons = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)
+                        FixedTextBoxPolygons = fixedBlockers
                     },
                     out var iterations);
                 resolve.Stop();
@@ -135,6 +138,9 @@ public sealed partial class TeklaDrawingMarkApi
                     continue;
                 }
 
+                var fixedBlockers = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext);
+                WriteBlockerTrace("arrange_marks", view.GetIdentifier().ID, viewContext, fixedBlockers.Count, markEntries.Count);
+
                 var arrange = Stopwatch.StartNew();
                 var layoutResult = engine.Arrange(
                     markEntries.Select(x => x.Item),
@@ -152,7 +158,7 @@ public sealed partial class TeklaDrawingMarkApi
                         LeaderCrossingPenalty = 500.0,
                         ViewContext = viewContext,
                         PartPolygonsByModelId = partPolygonsByModelId,
-                        FixedTextBoxPolygons = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)
+                        FixedTextBoxPolygons = fixedBlockers
                     });
                 arrange.Stop();
 
@@ -234,5 +240,19 @@ public sealed partial class TeklaDrawingMarkApi
         var context = builder.Build(viewId, viewScale);
         DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(context, view, presentationConnection);
         return context;
+    }
+
+    private static void WriteBlockerTrace(
+        string operation,
+        int viewId,
+        DrawingViewContext viewContext,
+        int blockerCount,
+        int markCount)
+    {
+        PerfTrace.Write(
+            "api-mark",
+            $"{operation}_dimension_blockers",
+            0,
+            $"viewId={viewId} dimensionTextBoxes={viewContext.DimensionTextBoxes.Count} fixedBlockers={blockerCount} marks={markCount}");
     }
 }
