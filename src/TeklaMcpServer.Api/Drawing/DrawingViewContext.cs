@@ -11,6 +11,8 @@ internal sealed class DrawingViewContext
     public List<DrawingPointInfo> PartsHull { get; } = [];
     public List<BoltGroupGeometry> Bolts { get; } = [];
     public List<string> GridIds { get; } = [];
+    public List<DrawingTextBox> DimensionTextBoxes { get; } = [];
+    public List<DrawingTextBox> MarkTextBoxes { get; } = [];
     public List<string> Warnings { get; } = [];
 
     public bool IsEmpty => Parts.Count == 0 && Bolts.Count == 0 && GridIds.Count == 0;

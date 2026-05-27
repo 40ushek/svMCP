@@ -5,9 +5,9 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class DrawingTextBoxOverlap
 {
-    public DrawingTextBox First { get; set; } = new();
+    public DrawingTextBox First { get; set; } = null!;
 
-    public DrawingTextBox Second { get; set; } = new();
+    public DrawingTextBox Second { get; set; } = null!;
 
     public double SeparationAxisX { get; set; }
 
@@ -37,7 +37,7 @@ public static class DrawingTextBoxOverlapAnalyzer
         DrawingTextBox second,
         out DrawingTextBoxOverlap overlap)
     {
-        overlap = new DrawingTextBoxOverlap();
+        overlap = null!;
 
         if (!MightOverlapByBounds(first, second))
             return false;

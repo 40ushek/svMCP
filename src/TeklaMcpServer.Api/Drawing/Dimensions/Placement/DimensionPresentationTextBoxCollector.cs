@@ -21,6 +21,8 @@ internal sealed class DimensionPresentationTextBox
     public double ViewScale { get; set; }
     public double ViewPositionX { get; set; }
     public double ViewPositionY { get; set; }
+    public double CenterX { get; set; }
+    public double CenterY { get; set; }
     public double ViewHeight { get; set; }
     public double ViewWidth { get; set; }
     public double ViewWidthFromProportion { get; set; }
@@ -111,10 +113,12 @@ internal static class DimensionPresentationTextBoxCollector
 
         // TryComputeObb establishes the canonical TextPrimitive -> OBB pipeline.
         // If it fails (zero-size text), fall back to a zero-size box at the insert point.
-        DimensionPresentationTextGeometryHelper.TryComputeObb(
+        var hasObb = DimensionPresentationTextGeometryHelper.TryComputeObb(
             textPrimitive, scale,
             out var center, out var widthAxis, out var heightAxis,
             out var measurement);
+        if (!hasObb)
+            center = (textPrimitive.Position.X * scale, textPrimitive.Position.Y * scale);
 
         return new DimensionPresentationTextBox
         {
@@ -127,6 +131,8 @@ internal static class DimensionPresentationTextBoxCollector
             Angle = textPrimitive.Angle,
             Height = textPrimitive.Height,
             Proportion = textPrimitive.Proportion,
+            CenterX = center.X,
+            CenterY = center.Y,
             ViewScale = scale,
             ViewPositionX = textPrimitive.Position.X * scale,
             ViewPositionY = textPrimitive.Position.Y * scale,
