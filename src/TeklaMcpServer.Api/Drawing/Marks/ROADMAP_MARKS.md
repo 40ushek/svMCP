@@ -191,18 +191,138 @@ Marks не должны вводить отдельный базовый view-co
   - corner avoidance (2mm clearance от вершин полигона);
   - halve-until-inside fallback для тонких деталей.
 
-Ограничение текущего состояния:
+Текущее состояние dimension blockers:
 
-- `ArrangeMarksForce` / `arrange_marks_force` пока не учитывает
-  `DimensionTextBoxes` как fixed blockers. Это отдельная доработка, потому что
-  force-directed path не использует `MarkLayoutOptions.FixedTextBoxPolygons`.
-- Для force-path согласован отдельный план: использовать текстовые боксы размеров
-  как дополнительные неподвижные polygon obstacles в существующем `PartBbox` /
-  foreign-obstacle механизме, без немедленного рефакторинга в новый тип.
-- Текущая реализация force-path уже умеет работать с неподвижными obstacles
-  через `PartBbox` / `ForeignPartOverlapAnalyzer`; недостающая часть — подать
-  туда dimension text boxes и скорректировать порядок cleanup после axis
-  separation.
+- `arrange_marks` и `resolve_mark_overlaps` учитывают текстовые боксы размеров
+  через `MarkLayoutOptions.FixedTextBoxPolygons`.
+- `ArrangeMarksForce` / `arrange_marks_force` тоже учитывает текстовые боксы
+  размеров на MVP-уровне:
+  - `ForceMarkLayoutOrchestrator` создаёт `PresentationConnection`;
+  - `BuildDrawingViewContext` заполняет `DrawingViewContext.DimensionTextBoxes`;
+  - `ForceDimensionBlockerBuilder` превращает polygons текста размеров в
+    synthetic `PartBbox` obstacles с отрицательными `ModelId`;
+  - synthetic obstacles добавляются в общий `partBboxes`, поэтому участвуют в
+    `PlaceInitial`, force repulsion и `CleanupForeignPartOverlaps`;
+  - после `AxisMarkSeparationCleanup.Resolve(...)` добавлен безусловный
+    post-axis obstacle cleanup.
+- Для force-path намеренно не вводился новый `ForceObstacle`: текущий MVP
+  переиспользует существующий `PartBbox` / `ForeignPartOverlapAnalyzer`
+  механизм.
+
+### Known limitation: dimension blockers на views с shortening
+
+На views с включённым `Cut parts: Yes` (Tekla view shortening) dimension
+blockers собираются и подаются в force-path корректно, но координаты текстов
+размеров и координаты меток оказываются в разных системах:
+
+- `TextPrimitive.Position` от presentation API — в исходной (несокращённой)
+  системе координат вида;
+- `Mark.InsertionPoint` и `LeaderLinePlacing.StartPoint` — в системе вида,
+  которая отображается с применённым shortening.
+
+Из-за этого:
+
+- Force видит и устраняет коллизии в исходных координатах, но визуально на
+  чертеже метка может остаться на размере (или, наоборот, force-pass даёт
+  `foreignFinalConflicts=0`, а глаз видит конфликт).
+- Визуализация `draw_dimension_text_boxes` на shortened view рисует рамки
+  не на месте текстов, потому что overlay получает исходные координаты.
+
+Попытки решить через `Tekla.Structures.Drawing.Tools.DrawingCoordinateConverter`
+описаны ниже в отдельном перечне; ни одна не дала shortening-aware координаты
+текста размера внутри view.
+
+Tekla Open API публично не даёт способа получить ranges shortening или
+преобразовать координаты текста размера с учётом cut parts. `DrawingCoordinateConverter`
+обещает в документации "empty areas in views", но эмпирически работает для
+transform между разными coordinate systems (view ↔ sheet через origin/scale),
+а не для shortening внутри одного view.
+
+Что подтверждено эмпирически:
+
+- На views **без shortening** — dimension blockers работают корректно,
+  визуально метки уходят от размерных текстов, конфликты устраняются.
+- На views **с shortening** — feature рабочая в исходных drawing units, но
+  визуально и реально результат может расходиться.
+
+Возможные направления на будущее (не решены сейчас):
+
+- Найти undocumented Tekla API для получения shortening ranges
+  (`view.Shortenings` или подобное).
+- Получать координаты текста размера из runtime API (`StraightDimension.TextPosition`?)
+  если оно даёт уже shortened coords, и использовать его вместо presentation
+  API на shortened views.
+- Как deopt-fallback: при `view.Attributes.Shortening.CutParts == true` выключать
+  dimension blockers для этого view, чтобы избежать ложного поведения.
+
+#### Tekla API references
+
+Документация по `DrawingCoordinateConverter` и связанным классам, изученная во
+время попыток решения:
+
+- [DrawingCoordinateConverter Class](https://developer.tekla.com/doc/tekla-structures/2024/drawing-coordinate-converter-class-25557)
+  — описание класса. Заявлено: "used to move coordinates from one view to
+  another. This tool takes into account the empty areas in the views."
+  Эмпирически: трактуется как inter-view transform (view ↔ sheet),
+  shortening внутри одного и того же view не применяет.
+- [DrawingCoordinateConverter Methods](https://developer.tekla.com/tekla-structures/api/22/12586)
+  — список доступных перегрузок `Convert`.
+- [DrawingCoordinateConverter.Convert(ViewBase, ViewBase, Point)](https://developer.tekla.com/tekla-structures/api/22/12589)
+  — single-point overload, namespace `Tekla.Structures.Drawing.Tools`.
+- [View.ViewAttributes.Shortening Property](https://developer.tekla.com/doc/tekla-structures/2024/shortening-property-25362)
+  — точка доступа к настройкам shortening на уровне view; даёт только
+  конфигурацию, не runtime ranges.
+- [View.ViewShorteningAttributes Constructor](https://developer.tekla.com/doc/tekla-structures/2025/view-view-shortening-attributes-constructor-boolean-boolean-double-double-view-shortening-cut-part-type-50535)
+  — поля: `CutParts`, `CutSkewParts`, `MinimumLength`, `Offset`, `CutPartType`.
+  Чисто декларативные настройки; **нет** API для получения фактических
+  диапазонов укорочения, применённых к виду.
+
+#### Документированный пример использования `DrawingCoordinateConverter`
+
+Из официальной документации (view → sheet через `PointList`):
+
+```csharp
+using Tekla.Structures.Drawing;
+using Tekla.Structures.Drawing.Tools;
+using Tekla.Structures.Geometry3d;
+
+DrawingHandler DrawingHandler = new DrawingHandler();
+ViewBase sheet = DrawingHandler.GetActiveDrawing().GetSheet();
+DrawingObjectEnumerator Views = sheet.GetAllObjects(typeof(View));
+Views.MoveNext();
+View myView = Views.Current as View;
+
+PointList PointsInView = new PointList();
+PointsInView.Add(new Point(0, 0));
+PointsInView.Add(new Point(100, 0));
+PointsInView.Add(new Point(100, 100));
+
+Polygon polygonInView = new Polygon(myView, PointsInView);
+polygonInView.Insert();
+
+PointList PointsInSheet = DrawingCoordinateConverter.Convert(myView, sheet, PointsInView);
+Polygon polygon = new Polygon(sheet, PointsInSheet);
+polygon.Insert();
+```
+
+В этом примере точки `(0,0)`, `(100,0)`, `(100,100)` — это **drawing units
+внутри view** (paper-mm координаты относительно origin вида). Конвертер
+переводит их в координаты sheet, чтобы тот же полигон можно было нарисовать
+как sheet object.
+
+#### Перечень попыток, которые не дали shortening-aware результата
+
+1. `Convert(view, view, point)` — identity для одного и того же view;
+   shortening не применяется.
+2. `Convert(view, sheet, point)` + рендер полигона как sheet object —
+   полигон рисуется в произвольной точке, не на текстах размеров.
+3. То же + предварительное деление координат на `viewScale` — полигон
+   попадает на правильную позицию, но в `viewScale` раз меньше реального
+   размера текста (двойное масштабирование).
+4. Без деления, прямой `Convert(view, sheet, point)` — повтор п.2.
+
+Tekla Open API публично **не даёт способа** получить ranges shortening или
+shortening-aware transform для текста размера внутри view.
 
 ## Текущее состояние лидеров
 
@@ -665,27 +785,32 @@ Leader geometry отдельной линией:
 **Текущий цикл `arrange_marks_force`:**
 1. `Equilibrium`
    - двигаются все marks
-   - учитываются только детали
+   - учитываются детали и synthetic dimension text blockers
    - mark-mark repulsion выключен
-2. `Foreign cleanup`
+2. `Foreign/dimension cleanup`
    - последовательно уменьшает частичные пересечения меток с чужими деталями
-   - не трогает `MarkInsideForeignPart` и `ForeignPartInsideMark`
+   - и synthetic dimension text blockers
+   - для real parts не трогает `MarkInsideForeignPart` и `ForeignPartInsideMark`
 3. `Axis separation`
    - для axis-based меток пробует прямое разъезжание конфликтующей пары вдоль осей
    - применяется до общего mark separation
-4. `Mark separation`
+4. `Post-axis obstacle cleanup`
+   - безусловно запускается после `Axis separation`
+   - нужен потому, что axis step может сдвинуть метку в part/dimension obstacle
+   - выполняется до вычисления `collidingIds` для mark separation
+5. `Mark separation`
    - двигаются только marks, которые после `Equilibrium` ещё конфликтуют
    - в расчёте участвуют все детали и все marks
    - включён mark-mark repulsion
    - для baseline/along-line marks работает weak return-to-axis-line
    - есть early exit, когда mark-mark overlaps среди `movableIds` устранены
-5. `Final foreign cleanup`
+6. `Final foreign cleanup`
    - после mark separation ещё раз уменьшает частичные foreign-part overlaps
    - не откатывает весь mark separation, но использует per-mark/global rollback внутри cleanup
-6. `Apply + Leader anchor optimization`
+7. `Apply + Leader anchor optimization`
    - сначала применяется body movement
    - затем leader anchor post-step выбирает безопасную точку крепления на детали
-7. `Leader text diagnostics`
+8. `Leader text diagnostics`
    - только при активном `PerfTrace`
    - считает пересечения leader polyline с own/foreign text polygons до/после layout
 
@@ -743,7 +868,7 @@ for iter in 0..100:
 
 Touching edge case сохранён: если polygon-ы только касаются (`gap = 0`) и overlap нет → repulsion не применяется.
 
-#### Pending high-impact task: Dimension text blockers in force path
+#### Completed high-impact task: Dimension text blockers in force path
 
 Цель:
 
@@ -753,6 +878,8 @@ Touching edge case сохранён: если polygon-ы только касаю
 - метки не должны заезжать на текст размеров во время force-layout;
 - текст размеров остаётся неподвижным obstacle, сами размеры на этом этапе не
   двигаются.
+
+Status: completed MVP.
 
 Почему нельзя просто использовать `FixedTextBoxPolygons`:
 
@@ -783,49 +910,48 @@ Touching edge case сохранён: если polygon-ы только касаю
 Точки встраивания:
 
 1. `ForceMarkLayoutOrchestrator.Arrange(...)`
-   - создать `PresentationConnection` на время всего force-run;
-   - оставить внешний `TeklaDrawingMarkApi.ArrangeMarksForce` без изменения
-     сигнатуры, если это возможно.
+   - создаёт `PresentationConnection` на время всего force-run;
+   - внешний `TeklaDrawingMarkApi.ArrangeMarksForce` не меняет сигнатуру.
 
 2. `ForceMarkLayoutOrchestrator.BuildDrawingViewContext(...)`
-   - передать туда `PresentationConnection?`;
+   - принимает `PresentationConnection?`;
    - после `DrawingViewContextBuilder.Build(...)` вызвать
      `DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(...)`.
 
 3. После построения `partBboxes`
-   - получить `dimensionBlockers =
+   - получает `dimensionBlockers =
      MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)`;
-   - добавить synthetic `PartBbox` entries в тот же список obstacles;
-   - логировать:
+   - добавляет synthetic `PartBbox` entries в тот же список obstacles;
+   - логирует:
      - `dimensionTextBoxes`;
      - `dimensionBlockers`;
      - `partObstacles`;
      - `totalObstacles`.
 
 4. `ForceDirectedMarkPlacer.PlaceInitial(...)`
-   - без изменения логики: `WouldOverlapForeignPart(...)` уже начнёт учитывать
+   - без изменения логики: `WouldOverlapForeignPart(...)` учитывает
      dimension blockers как part obstacles.
 
 5. `ForceDirectedMarkPlacer.Relax(...)`
    - без изменения основной физики: `ComputeForce(...)` уже считает repulsion
      от `allParts`;
-   - dimension text blockers войдут в этот же force component.
+   - dimension text blockers входят в этот же force component.
 
 6. `CleanupForeignPartOverlaps(...)`
    - без изменения основного cleanup algorithm;
-   - dimension text blockers будут участвовать в
+   - dimension text blockers участвуют в
      `ForeignPartOverlapAnalyzer.Analyze(...)` как polygon obstacles.
 
 Обязательная правка порядка cleanup:
 
-- сейчас final cleanup запускается только если `markSeparationResult.StopReason
+- прежний final cleanup запускался только если `markSeparationResult.StopReason
   != ForceRelaxStopReason.NotRun`;
-- это недостаточно, потому что `AxisMarkSeparationCleanup.Resolve(...)`
+- это было недостаточно, потому что `AxisMarkSeparationCleanup.Resolve(...)`
   выполняется до mark separation и может сдвинуть axis-mark в obstacle даже если
   `collidingIds.Count == 0`;
-- нужен новый отдельный post-axis cleanup сразу после
+- добавлен новый отдельный post-axis cleanup сразу после
   `AxisMarkSeparationCleanup.Resolve(...)`, до mark separation;
-- этот post-axis cleanup должен запускаться безусловно, даже если последующий
+- этот post-axis cleanup запускается безусловно, даже если последующий
   mark separation не запустится;
 - существующий final/post-mark cleanup после mark separation можно сохранить
   отдельным шагом, потому что mark separation тоже может снова создать obstacle
@@ -864,7 +990,7 @@ Touching edge case сохранён: если polygon-ы только касаю
 
 Диагностика:
 
-- добавить отдельный trace event, например
+- добавлен отдельный trace event:
   `arrange_marks_force_dimension_blockers`;
 - fields:
   - `viewId`;
@@ -872,7 +998,7 @@ Touching edge case сохранён: если polygon-ы только касаю
   - `dimensionBlockers`;
   - `partObstacles`;
   - `totalObstacles`;
-  - optionally `residualDimensionConflicts`.
+- `arrange_marks_force_view` также содержит `postAxisCleanup...` summary fields.
 
 Тест-план:
 
@@ -898,6 +1024,22 @@ Touching edge case сохранён: если polygon-ы только касаю
    - проверить `dimensionTextBoxes > 0`;
    - проверить `dimensionBlockers > 0`;
    - сравнить before/after на чертеже с текстом размеров рядом с метками.
+
+Выполненные тесты MVP:
+
+- `BuildSyntheticObstacles_ComputesBoundsFromPolygonGetBounds`;
+- `BuildSyntheticObstacles_AssignsNegativeUniqueIds`;
+- `BuildSyntheticObstacles_SkipsDegeneratePolygons`;
+- `BuildSyntheticObstacles_SkipsCollinearZeroAreaPolygons`;
+- `BuildSyntheticObstacles_SkipsZeroWidthPolygons`.
+
+Остаётся как follow-up:
+
+- integration/unit test на фактическое влияние synthetic blocker на
+  `Relax(...)` или `CleanupForeignPartOverlaps(...)`;
+- residual diagnostics для случаев, где synthetic dimension blocker полностью
+  внутри mark polygon (`ForeignPartInsideMark`);
+- проверить поведение на реальных Tekla drawings с `PerfTrace`.
 
 Future refactor, только если MVP подтвердится:
 
