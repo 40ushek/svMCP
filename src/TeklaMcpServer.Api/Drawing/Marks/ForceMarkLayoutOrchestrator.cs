@@ -5,6 +5,7 @@ using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 using TeklaMcpServer.Api.Algorithms.Marks;
 using TeklaMcpServer.Api.Diagnostics;
+using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -20,11 +21,13 @@ internal sealed class ForceMarkLayoutOrchestrator
         var totalIterations = 0;
         var totalRemainingOverlaps = 0;
 
+        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
+
         foreach (var view in views)
         {
             var viewTotal = Stopwatch.StartNew();
             var collect = Stopwatch.StartNew();
-            var viewContext = BuildDrawingViewContext(view);
+            var viewContext = BuildDrawingViewContext(view, presentationConnection);
             var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
             var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
             var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
@@ -36,6 +39,16 @@ internal sealed class ForceMarkLayoutOrchestrator
                     return new PartBbox(part.ModelId, part.BboxMin[0], part.BboxMin[1], part.BboxMax[0], part.BboxMax[1], poly);
                 })
                 .ToList();
+            var partObstacleCount = partBboxes.Count;
+            var dimensionBlockerPolygons = MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext);
+            var dimensionBlockerObstacles = ForceDimensionBlockerBuilder.BuildSyntheticObstacles(dimensionBlockerPolygons);
+            partBboxes.AddRange(dimensionBlockerObstacles);
+            WriteDimensionBlockerTrace(
+                view.GetIdentifier().ID,
+                viewContext.DimensionTextBoxes.Count,
+                dimensionBlockerObstacles.Count,
+                partObstacleCount,
+                partBboxes.Count);
             collect.Stop();
 
             if (markEntries.Count == 0)
@@ -130,6 +143,28 @@ internal sealed class ForceMarkLayoutOrchestrator
             var axisSeparationResult = AxisMarkSeparationCleanup.Resolve(
                 forceItems.Values.ToList(),
                 markSeparationOptions.MarkGapMm);
+
+            // Post-axis obstacle cleanup: axis separation may have pushed an axis-bound mark
+            // into a part or dimension blocker. Run cleanup unconditionally before mark separation.
+            var postAxisCleanupResult = force.CleanupForeignPartOverlaps(
+                forceItems.Values.ToList(),
+                partBboxes,
+                foreignPartThreshold,
+                maxStep: 0.5 * normalizedScale,
+                trace: details =>
+                {
+                    if (!PerfTrace.IsActive)
+                        return;
+
+                    PerfTrace.Write(
+                        "api-mark",
+                        "arrange_marks_force_foreign_cleanup",
+                        0,
+                        $"viewId={view.GetIdentifier().ID} stage=postAxisSeparation {details}");
+                });
+            var foreignAfterPostAxis = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
+            WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "afterPostAxisCleanup", foreignAfterPostAxis);
+
             var preSeparationPlacements = BuildForcePlacements(markEntries, forceItems);
             var collidingIds = GetOverlappingMarkIds(preSeparationPlacements);
 
@@ -279,9 +314,9 @@ internal sealed class ForceMarkLayoutOrchestrator
                         $"viewId={view.GetIdentifier().ID} markId={m.MarkId} currentSeverity={m.CurrentSeverity:F3} hasImprovement={m.HasImprovement} bestKind={m.BestKind} bestDelta={m.BestDeltaSeverity:F3} bestProjected={m.BestProjectedSeverity:F3} bestAnchor=({m.BestAnchorX:F1},{m.BestAnchorY:F1})");
             }
 
-            totalIterations += equilibriumResult.Iterations + foreignCleanupResult.Iterations + axisSeparationResult.Iterations + markSeparationResult.Iterations + finalForeignCleanupResult.Iterations;
+            totalIterations += equilibriumResult.Iterations + foreignCleanupResult.Iterations + axisSeparationResult.Iterations + postAxisCleanupResult.Iterations + markSeparationResult.Iterations + finalForeignCleanupResult.Iterations;
             totalRemainingOverlaps += resolver.CountOverlaps(BuildPlacementsFromEntries(postCleanupEntries));
-            PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} anchorAccepted={leaderAnchorResult.AcceptedIds.Count} anchorRejected={leaderAnchorResult.RejectedIds.Count} leaderCleanupMs={leaderTextCleanup.ElapsedMilliseconds} leaderCleanupAccepted={leaderTextCleanupResult.AcceptedIds.Count} leaderCleanupRejected={leaderTextCleanupResult.RejectedIds.Count} equilibriumIterations={equilibriumResult.Iterations} foreignCleanupIterations={foreignCleanupResult.Iterations} foreignCleanupMoved={foreignCleanupResult.MovedMarks} foreignCleanupBeforePartial={foreignCleanupResult.BeforePartialConflicts} foreignCleanupBeforeSeverity={foreignCleanupResult.BeforePartialSeverity:F3} foreignCleanupAfterPartial={foreignCleanupResult.AfterPartialConflicts} foreignCleanupAfterSeverity={foreignCleanupResult.AfterPartialSeverity:F3} axisSeparationIterations={axisSeparationResult.Iterations} axisSeparationMoved={axisSeparationResult.MovedMarks} axisSeparationBeforeOverlaps={axisSeparationResult.BeforeOverlaps} axisSeparationAfterOverlaps={axisSeparationResult.AfterOverlaps} markSeparationIterations={markSeparationResult.Iterations} collidingMarks={collidingIds.Count} markSeparationStopReason={markSeparationResult.StopReason} markSeparationEarlyExit={markSeparationResult.StopReason == ForceRelaxStopReason.OverlapsCleared} finalForeignCleanupIterations={finalForeignCleanupResult.Iterations} finalForeignCleanupMoved={finalForeignCleanupResult.MovedMarks} finalForeignCleanupBeforePartial={finalForeignCleanupResult.BeforePartialConflicts} finalForeignCleanupBeforeSeverity={finalForeignCleanupResult.BeforePartialSeverity:F3} finalForeignCleanupAfterPartial={finalForeignCleanupResult.AfterPartialConflicts} finalForeignCleanupAfterSeverity={finalForeignCleanupResult.AfterPartialSeverity:F3} foreignThreshold={foreignPartThreshold:F3} leaderTextThreshold={leaderTextThreshold:F3} leaderTextInitialCrossings={leaderTextInitial.TotalCrossings} leaderTextInitialOwn={leaderTextInitial.OwnCrossings} leaderTextInitialForeign={leaderTextInitial.ForeignCrossings} leaderTextInitialSeverity={leaderTextInitial.Severity:F3} leaderTextFinalCrossings={leaderTextFinal.TotalCrossings} leaderTextFinalOwn={leaderTextFinal.OwnCrossings} leaderTextFinalForeign={leaderTextFinal.ForeignCrossings} leaderTextFinalSeverity={leaderTextFinal.Severity:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignInitialInsideConflicts={foreignInitial.MarkInsideConflicts} foreignInitialInsideSeverity={foreignInitial.MarkInsideSeverity:F3} foreignInitialPartialConflicts={foreignInitial.PartialConflicts} foreignInitialPartialSeverity={foreignInitial.PartialSeverity:F3} foreignInitialPartInsideConflicts={foreignInitial.PartInsideConflicts} foreignInitialPartInsideSeverity={foreignInitial.PartInsideSeverity:F3} foreignAfterEquilibriumConflicts={foreignAfterEquilibrium.Conflicts} foreignAfterEquilibriumSeverity={foreignAfterEquilibrium.Severity:F3} foreignAfterEquilibriumInsideConflicts={foreignAfterEquilibrium.MarkInsideConflicts} foreignAfterEquilibriumInsideSeverity={foreignAfterEquilibrium.MarkInsideSeverity:F3} foreignAfterEquilibriumPartialConflicts={foreignAfterEquilibrium.PartialConflicts} foreignAfterEquilibriumPartialSeverity={foreignAfterEquilibrium.PartialSeverity:F3} foreignAfterEquilibriumPartInsideConflicts={foreignAfterEquilibrium.PartInsideConflicts} foreignAfterEquilibriumPartInsideSeverity={foreignAfterEquilibrium.PartInsideSeverity:F3} foreignAfterCleanupConflicts={foreignAfterCleanup.Conflicts} foreignAfterCleanupSeverity={foreignAfterCleanup.Severity:F3} foreignAfterCleanupInsideConflicts={foreignAfterCleanup.MarkInsideConflicts} foreignAfterCleanupInsideSeverity={foreignAfterCleanup.MarkInsideSeverity:F3} foreignAfterCleanupPartialConflicts={foreignAfterCleanup.PartialConflicts} foreignAfterCleanupPartialSeverity={foreignAfterCleanup.PartialSeverity:F3} foreignAfterCleanupPartInsideConflicts={foreignAfterCleanup.PartInsideConflicts} foreignAfterCleanupPartInsideSeverity={foreignAfterCleanup.PartInsideSeverity:F3} foreignAfterMarkSeparationConflicts={foreignAfterMarkSeparation.Conflicts} foreignAfterMarkSeparationSeverity={foreignAfterMarkSeparation.Severity:F3} foreignAfterMarkSeparationInsideConflicts={foreignAfterMarkSeparation.MarkInsideConflicts} foreignAfterMarkSeparationInsideSeverity={foreignAfterMarkSeparation.MarkInsideSeverity:F3} foreignAfterMarkSeparationPartialConflicts={foreignAfterMarkSeparation.PartialConflicts} foreignAfterMarkSeparationPartialSeverity={foreignAfterMarkSeparation.PartialSeverity:F3} foreignAfterMarkSeparationPartInsideConflicts={foreignAfterMarkSeparation.PartInsideConflicts} foreignAfterMarkSeparationPartInsideSeverity={foreignAfterMarkSeparation.PartInsideSeverity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3} foreignFinalInsideConflicts={foreignFinal.MarkInsideConflicts} foreignFinalInsideSeverity={foreignFinal.MarkInsideSeverity:F3} foreignFinalPartialConflicts={foreignFinal.PartialConflicts} foreignFinalPartialSeverity={foreignFinal.PartialSeverity:F3} foreignFinalPartInsideConflicts={foreignFinal.PartInsideConflicts} foreignFinalPartInsideSeverity={foreignFinal.PartInsideSeverity:F3}");
+            PerfTrace.Write("api-mark", "arrange_marks_force_view", viewTotal.ElapsedMilliseconds, $"viewId={view.GetIdentifier().ID} scale={viewContext.ViewScale} forceScalePolicy=paperThresholds marks={markEntries.Count} collectMs={collect.ElapsedMilliseconds} relaxMs={arrange.ElapsedMilliseconds} applyMs={apply.ElapsedMilliseconds} anchorMs={leaderAnchor.ElapsedMilliseconds} anchorAccepted={leaderAnchorResult.AcceptedIds.Count} anchorRejected={leaderAnchorResult.RejectedIds.Count} leaderCleanupMs={leaderTextCleanup.ElapsedMilliseconds} leaderCleanupAccepted={leaderTextCleanupResult.AcceptedIds.Count} leaderCleanupRejected={leaderTextCleanupResult.RejectedIds.Count} equilibriumIterations={equilibriumResult.Iterations} foreignCleanupIterations={foreignCleanupResult.Iterations} foreignCleanupMoved={foreignCleanupResult.MovedMarks} foreignCleanupBeforePartial={foreignCleanupResult.BeforePartialConflicts} foreignCleanupBeforeSeverity={foreignCleanupResult.BeforePartialSeverity:F3} foreignCleanupAfterPartial={foreignCleanupResult.AfterPartialConflicts} foreignCleanupAfterSeverity={foreignCleanupResult.AfterPartialSeverity:F3} axisSeparationIterations={axisSeparationResult.Iterations} axisSeparationMoved={axisSeparationResult.MovedMarks} axisSeparationBeforeOverlaps={axisSeparationResult.BeforeOverlaps} axisSeparationAfterOverlaps={axisSeparationResult.AfterOverlaps} postAxisCleanupIterations={postAxisCleanupResult.Iterations} postAxisCleanupMoved={postAxisCleanupResult.MovedMarks} postAxisCleanupBeforePartial={postAxisCleanupResult.BeforePartialConflicts} postAxisCleanupBeforeSeverity={postAxisCleanupResult.BeforePartialSeverity:F3} postAxisCleanupAfterPartial={postAxisCleanupResult.AfterPartialConflicts} postAxisCleanupAfterSeverity={postAxisCleanupResult.AfterPartialSeverity:F3} markSeparationIterations={markSeparationResult.Iterations} collidingMarks={collidingIds.Count} markSeparationStopReason={markSeparationResult.StopReason} markSeparationEarlyExit={markSeparationResult.StopReason == ForceRelaxStopReason.OverlapsCleared} finalForeignCleanupIterations={finalForeignCleanupResult.Iterations} finalForeignCleanupMoved={finalForeignCleanupResult.MovedMarks} finalForeignCleanupBeforePartial={finalForeignCleanupResult.BeforePartialConflicts} finalForeignCleanupBeforeSeverity={finalForeignCleanupResult.BeforePartialSeverity:F3} finalForeignCleanupAfterPartial={finalForeignCleanupResult.AfterPartialConflicts} finalForeignCleanupAfterSeverity={finalForeignCleanupResult.AfterPartialSeverity:F3} foreignThreshold={foreignPartThreshold:F3} leaderTextThreshold={leaderTextThreshold:F3} leaderTextInitialCrossings={leaderTextInitial.TotalCrossings} leaderTextInitialOwn={leaderTextInitial.OwnCrossings} leaderTextInitialForeign={leaderTextInitial.ForeignCrossings} leaderTextInitialSeverity={leaderTextInitial.Severity:F3} leaderTextFinalCrossings={leaderTextFinal.TotalCrossings} leaderTextFinalOwn={leaderTextFinal.OwnCrossings} leaderTextFinalForeign={leaderTextFinal.ForeignCrossings} leaderTextFinalSeverity={leaderTextFinal.Severity:F3} foreignInitialConflicts={foreignInitial.Conflicts} foreignInitialSeverity={foreignInitial.Severity:F3} foreignInitialInsideConflicts={foreignInitial.MarkInsideConflicts} foreignInitialInsideSeverity={foreignInitial.MarkInsideSeverity:F3} foreignInitialPartialConflicts={foreignInitial.PartialConflicts} foreignInitialPartialSeverity={foreignInitial.PartialSeverity:F3} foreignInitialPartInsideConflicts={foreignInitial.PartInsideConflicts} foreignInitialPartInsideSeverity={foreignInitial.PartInsideSeverity:F3} foreignAfterEquilibriumConflicts={foreignAfterEquilibrium.Conflicts} foreignAfterEquilibriumSeverity={foreignAfterEquilibrium.Severity:F3} foreignAfterEquilibriumInsideConflicts={foreignAfterEquilibrium.MarkInsideConflicts} foreignAfterEquilibriumInsideSeverity={foreignAfterEquilibrium.MarkInsideSeverity:F3} foreignAfterEquilibriumPartialConflicts={foreignAfterEquilibrium.PartialConflicts} foreignAfterEquilibriumPartialSeverity={foreignAfterEquilibrium.PartialSeverity:F3} foreignAfterEquilibriumPartInsideConflicts={foreignAfterEquilibrium.PartInsideConflicts} foreignAfterEquilibriumPartInsideSeverity={foreignAfterEquilibrium.PartInsideSeverity:F3} foreignAfterCleanupConflicts={foreignAfterCleanup.Conflicts} foreignAfterCleanupSeverity={foreignAfterCleanup.Severity:F3} foreignAfterCleanupInsideConflicts={foreignAfterCleanup.MarkInsideConflicts} foreignAfterCleanupInsideSeverity={foreignAfterCleanup.MarkInsideSeverity:F3} foreignAfterCleanupPartialConflicts={foreignAfterCleanup.PartialConflicts} foreignAfterCleanupPartialSeverity={foreignAfterCleanup.PartialSeverity:F3} foreignAfterCleanupPartInsideConflicts={foreignAfterCleanup.PartInsideConflicts} foreignAfterCleanupPartInsideSeverity={foreignAfterCleanup.PartInsideSeverity:F3} foreignAfterMarkSeparationConflicts={foreignAfterMarkSeparation.Conflicts} foreignAfterMarkSeparationSeverity={foreignAfterMarkSeparation.Severity:F3} foreignAfterMarkSeparationInsideConflicts={foreignAfterMarkSeparation.MarkInsideConflicts} foreignAfterMarkSeparationInsideSeverity={foreignAfterMarkSeparation.MarkInsideSeverity:F3} foreignAfterMarkSeparationPartialConflicts={foreignAfterMarkSeparation.PartialConflicts} foreignAfterMarkSeparationPartialSeverity={foreignAfterMarkSeparation.PartialSeverity:F3} foreignAfterMarkSeparationPartInsideConflicts={foreignAfterMarkSeparation.PartInsideConflicts} foreignAfterMarkSeparationPartInsideSeverity={foreignAfterMarkSeparation.PartInsideSeverity:F3} foreignFinalConflicts={foreignFinal.Conflicts} foreignFinalSeverity={foreignFinal.Severity:F3} foreignFinalInsideConflicts={foreignFinal.MarkInsideConflicts} foreignFinalInsideSeverity={foreignFinal.MarkInsideSeverity:F3} foreignFinalPartialConflicts={foreignFinal.PartialConflicts} foreignFinalPartialSeverity={foreignFinal.PartialSeverity:F3} foreignFinalPartInsideConflicts={foreignFinal.PartInsideConflicts} foreignFinalPartInsideSeverity={foreignFinal.PartInsideSeverity:F3}");
         }
 
         movedIds = movedIds.Distinct().ToList();
@@ -298,7 +333,7 @@ internal sealed class ForceMarkLayoutOrchestrator
         };
     }
 
-    private DrawingViewContext BuildDrawingViewContext(View view)
+    private DrawingViewContext BuildDrawingViewContext(View view, PresentationConnection? presentationConnection = null)
     {
         var viewId = view.GetIdentifier().ID;
         var viewScale = MarksViewContextBuilder.ResolveViewScale(view);
@@ -306,7 +341,26 @@ internal sealed class ForceMarkLayoutOrchestrator
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
-        return builder.Build(viewId, viewScale);
+        var context = builder.Build(viewId, viewScale);
+        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(context, view, presentationConnection);
+        return context;
+    }
+
+    private static void WriteDimensionBlockerTrace(
+        int viewId,
+        int dimensionTextBoxes,
+        int dimensionBlockers,
+        int partObstacles,
+        int totalObstacles)
+    {
+        if (!PerfTrace.IsActive)
+            return;
+
+        PerfTrace.Write(
+            "api-mark",
+            "arrange_marks_force_dimension_blockers",
+            0,
+            $"viewId={viewId} dimensionTextBoxes={dimensionTextBoxes} dimensionBlockers={dimensionBlockers} partObstacles={partObstacles} totalObstacles={totalObstacles}");
     }
 
     private static void WriteForeignPartOverlapTrace(
