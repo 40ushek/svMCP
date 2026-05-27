@@ -181,6 +181,10 @@ Marks не должны вводить отдельный базовый view-co
     blocker;
   - сами метки не добавляются в `FixedTextBoxPolygons`, mark-mark conflicts
     остаются динамической частью mark layout.
+- Для этого path добавлена диагностика dimension blockers через `PerfTrace`:
+  - `resolve_mark_overlaps_dimension_blockers`;
+  - `arrange_marks_dimension_blockers`;
+  - поля: `viewId`, `dimensionTextBoxes`, `fixedBlockers`, `marks`.
 - базовая `leader-anchor` оптимизация уже встроена в `arrange_marks` как отдельный post-step после `ApplyPlacements`;
 - `leader-anchor` path уже учитывает:
   - inward shift от ближайшей грани через нормаль к ребру;
@@ -192,6 +196,13 @@ Marks не должны вводить отдельный базовый view-co
 - `ArrangeMarksForce` / `arrange_marks_force` пока не учитывает
   `DimensionTextBoxes` как fixed blockers. Это отдельная доработка, потому что
   force-directed path не использует `MarkLayoutOptions.FixedTextBoxPolygons`.
+- Для force-path согласован отдельный план: использовать текстовые боксы размеров
+  как дополнительные неподвижные polygon obstacles в существующем `PartBbox` /
+  foreign-obstacle механизме, без немедленного рефакторинга в новый тип.
+- Текущая реализация force-path уже умеет работать с неподвижными obstacles
+  через `PartBbox` / `ForeignPartOverlapAnalyzer`; недостающая часть — подать
+  туда dimension text boxes и скорректировать порядок cleanup после axis
+  separation.
 
 ## Текущее состояние лидеров
 
@@ -731,6 +742,170 @@ for iter in 0..100:
 3. `TryGetPolygonGapVector` живёт в `PolygonGeometry` как geometry helper
 
 Touching edge case сохранён: если polygon-ы только касаются (`gap = 0`) и overlap нет → repulsion не применяется.
+
+#### Pending high-impact task: Dimension text blockers in force path
+
+Цель:
+
+- `arrange_marks_force` должен учитывать текстовые боксы размеров так же, как
+  обычные `arrange_marks` / `resolve_mark_overlaps` уже учитывают их через
+  `MarkLayoutOptions.FixedTextBoxPolygons`;
+- метки не должны заезжать на текст размеров во время force-layout;
+- текст размеров остаётся неподвижным obstacle, сами размеры на этом этапе не
+  двигаются.
+
+Почему нельзя просто использовать `FixedTextBoxPolygons`:
+
+- `ArrangeMarksForce` не использует `MarkLayoutEngine.Arrange()`;
+- force-path работает через `ForceMarkLayoutOrchestrator` и
+  `ForceDirectedMarkPlacer`;
+- текущий force-solver принимает неподвижные препятствия как `PartBbox` в
+  параметре `allParts`.
+
+Выбранный MVP-подход:
+
+- не вводить новый `ForceObstacle` на первом шаге;
+- использовать существующий `PartBbox` как carrier для dimension text polygon;
+- для каждого dimension text polygon построить:
+  - `ModelId = -(index + 1)`;
+  - `MinX/MinY/MaxX/MaxY` из bounds polygon-а;
+  - `Polygon = dimension text polygon`.
+
+Почему отрицательный `ModelId` допустим:
+
+- `ForeignPartOverlapAnalyzer` и cleanup исключают только собственную деталь:
+  `part.ModelId == mark.OwnModelId`;
+- `OwnModelId` метки приходит из реальной модели и не должен совпасть с
+  отрицательным synthetic id;
+- значит dimension text blockers всегда считаются foreign obstacles для всех
+  меток, что соответствует нужному поведению.
+
+Точки встраивания:
+
+1. `ForceMarkLayoutOrchestrator.Arrange(...)`
+   - создать `PresentationConnection` на время всего force-run;
+   - оставить внешний `TeklaDrawingMarkApi.ArrangeMarksForce` без изменения
+     сигнатуры, если это возможно.
+
+2. `ForceMarkLayoutOrchestrator.BuildDrawingViewContext(...)`
+   - передать туда `PresentationConnection?`;
+   - после `DrawingViewContextBuilder.Build(...)` вызвать
+     `DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(...)`.
+
+3. После построения `partBboxes`
+   - получить `dimensionBlockers =
+     MarkLayoutFixedBlockerBuilder.BuildDimensionTextBoxPolygons(viewContext)`;
+   - добавить synthetic `PartBbox` entries в тот же список obstacles;
+   - логировать:
+     - `dimensionTextBoxes`;
+     - `dimensionBlockers`;
+     - `partObstacles`;
+     - `totalObstacles`.
+
+4. `ForceDirectedMarkPlacer.PlaceInitial(...)`
+   - без изменения логики: `WouldOverlapForeignPart(...)` уже начнёт учитывать
+     dimension blockers как part obstacles.
+
+5. `ForceDirectedMarkPlacer.Relax(...)`
+   - без изменения основной физики: `ComputeForce(...)` уже считает repulsion
+     от `allParts`;
+   - dimension text blockers войдут в этот же force component.
+
+6. `CleanupForeignPartOverlaps(...)`
+   - без изменения основного cleanup algorithm;
+   - dimension text blockers будут участвовать в
+     `ForeignPartOverlapAnalyzer.Analyze(...)` как polygon obstacles.
+
+Обязательная правка порядка cleanup:
+
+- сейчас final cleanup запускается только если `markSeparationResult.StopReason
+  != ForceRelaxStopReason.NotRun`;
+- это недостаточно, потому что `AxisMarkSeparationCleanup.Resolve(...)`
+  выполняется до mark separation и может сдвинуть axis-mark в obstacle даже если
+  `collidingIds.Count == 0`;
+- нужен новый отдельный post-axis cleanup сразу после
+  `AxisMarkSeparationCleanup.Resolve(...)`, до mark separation;
+- этот post-axis cleanup должен запускаться безусловно, даже если последующий
+  mark separation не запустится;
+- существующий final/post-mark cleanup после mark separation можно сохранить
+  отдельным шагом, потому что mark separation тоже может снова создать obstacle
+  conflict.
+
+Целевой force-cycle после подключения blockers:
+
+1. `Equilibrium`
+   - attraction к own-part;
+   - repulsion от real parts + dimension text blockers.
+2. `Foreign/dimension cleanup`
+   - уменьшает частичные пересечения с real parts и dimension blockers.
+3. `Axis separation`
+   - раздвигает axis-based mark-mark conflicts.
+4. `Post-axis obstacle cleanup`
+   - безусловно чистит пересечения, которые мог создать axis step.
+5. `Mark separation`
+   - если есть mark-mark conflicts, запускает mark-mark repulsion.
+6. `Post-mark obstacle cleanup`
+   - повторная очистка после mark separation, если mark separation запускался
+     или если нужна единая финальная проверка.
+7. `Apply + leader anchor optimization + leader text diagnostics`
+   - остаются отдельными post-steps.
+
+Поведенческие ограничения MVP:
+
+- dimension text blockers не двигаются;
+- сами размеры не переставляются;
+- для real parts `MarkInsideForeignPart` и `ForeignPartInsideMark` остаются
+  non-fixable categories, как и сейчас;
+- для synthetic dimension blockers семантика другая: если dimension text box
+  полностью находится внутри mark polygon (`ForeignPartInsideMark`), это всё
+  ещё реальная текстовая коллизия, которую нужно как минимум диагностировать;
+- MVP может сначала логировать такие случаи как residual dimension blocker
+  conflicts, но roadmap не должен закреплять их как permanently non-fixable.
+
+Диагностика:
+
+- добавить отдельный trace event, например
+  `arrange_marks_force_dimension_blockers`;
+- fields:
+  - `viewId`;
+  - `dimensionTextBoxes`;
+  - `dimensionBlockers`;
+  - `partObstacles`;
+  - `totalObstacles`;
+  - optionally `residualDimensionConflicts`.
+
+Тест-план:
+
+1. Unit test для conversion dimension polygon → synthetic `PartBbox`:
+   - bounds считаются правильно через `PolygonGeometry.GetBounds(polygon)`;
+   - AABB берётся из фактического polygon-а, а не из внешних cached
+     `DrawingTextBox.MinX/MaxX/MinY/MaxY`;
+   - ids отрицательные и уникальные.
+
+2. Unit test для force repulsion:
+   - mark рядом с synthetic obstacle после `Relax(...)` смещается от obstacle.
+
+3. Unit test для cleanup:
+   - mark частично пересекает synthetic obstacle;
+   - `CleanupForeignPartOverlaps(...)` уменьшает severity.
+
+4. Regression test для own-part exclusion:
+   - real own part всё ещё исключается через `OwnModelId`;
+   - synthetic negative blocker не исключается.
+
+5. Manual smoke в Tekla:
+   - включить `PerfTrace`;
+   - проверить `dimensionTextBoxes > 0`;
+   - проверить `dimensionBlockers > 0`;
+   - сравнить before/after на чертеже с текстом размеров рядом с метками.
+
+Future refactor, только если MVP подтвердится:
+
+- переименовать `PartBbox` в более общий internal тип (`ForceObstacle` или
+  similar);
+- добавить `Kind = Part | DimensionText`;
+- разделить trace на `foreign_part` и `dimension_blocker`;
+- сохранить текущий force behavior без изменения физики.
 
 #### Completed high-impact tasks
 
