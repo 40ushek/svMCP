@@ -49,8 +49,8 @@ public sealed class MarkOverlapResolver
 
                 // Use MoveWithAnchorClamp so baseline marks (HasAxis && !HasLeaderLine)
                 // are only pushed along their part axis, never perpendicular to it.
-                var movedA2 = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
-                var movedB2 = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
+                var movedA2 = MoveWithBlockerRollback(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
+                var movedB2 = MoveWithBlockerRollback(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
                 movedAny |= movedA2 || movedB2;
             }
 
@@ -108,8 +108,8 @@ public sealed class MarkOverlapResolver
                 var moveX = axisX * push;
                 var moveY = axisY * push;
 
-                var movedA = MoveWithAnchorClamp(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
-                var movedB = MoveWithAnchorClamp(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
+                var movedA = MoveWithBlockerRollback(a, -moveX * split.MoveA, -moveY * split.MoveA, options);
+                var movedB = MoveWithBlockerRollback(b, +moveX * split.MoveB, +moveY * split.MoveB, options);
                 movedAny |= movedA || movedB;
             }
 
@@ -162,14 +162,14 @@ public sealed class MarkOverlapResolver
 
         if (separation.Mode == AxisMarkPairSeparationMode.ParallelAxes)
         {
-            var movedA = MoveWithAnchorClamp(a, separation.DeltaAx, separation.DeltaAy, options);
-            var movedB = MoveWithAnchorClamp(b, separation.DeltaBx, separation.DeltaBy, options);
+            var movedA = MoveWithBlockerRollback(a, separation.DeltaAx, separation.DeltaAy, options);
+            var movedB = MoveWithBlockerRollback(b, separation.DeltaBx, separation.DeltaBy, options);
             movedAny = movedA || movedB;
             return true;
         }
 
-        var movedIndependentA = MoveWithAnchorClamp(a, separation.DeltaAx, separation.DeltaAy, options);
-        var movedIndependentB = MoveWithAnchorClamp(b, separation.DeltaBx, separation.DeltaBy, options);
+        var movedIndependentA = MoveWithBlockerRollback(a, separation.DeltaAx, separation.DeltaAy, options);
+        var movedIndependentB = MoveWithBlockerRollback(b, separation.DeltaBx, separation.DeltaBy, options);
         movedAny = movedIndependentA || movedIndependentB;
 
         return true;
@@ -351,6 +351,9 @@ public sealed class MarkOverlapResolver
             if (HasAnyOverlap(placements, mark))
                 continue;
 
+            if (IntersectsAnyBlocker(mark, options))
+                continue;
+
             return true;
         }
 
@@ -367,6 +370,57 @@ public sealed class MarkOverlapResolver
                 continue;
 
             if (Overlaps(mark, other))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool MoveWithBlockerRollback(
+        MarkLayoutPlacement placement,
+        double dx,
+        double dy,
+        MarkLayoutOptions options)
+    {
+        if (options.FixedTextBoxPolygons.Count == 0)
+            return MoveWithAnchorClamp(placement, dx, dy, options);
+
+        var previousX = placement.X;
+        var previousY = placement.Y;
+
+        if (!MoveWithAnchorClamp(placement, dx, dy, options))
+            return false;
+
+        if (IntersectsAnyBlocker(placement, options))
+        {
+            placement.X = previousX;
+            placement.Y = previousY;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool IntersectsAnyBlocker(MarkLayoutPlacement placement, MarkLayoutOptions options)
+    {
+        if (options.FixedTextBoxPolygons.Count == 0)
+            return false;
+
+        List<double[]> markPolygon;
+        if (placement.LocalCorners.Count >= 3)
+            markPolygon = TranslateCorners(placement);
+        else
+            markPolygon =
+            [
+                new[] { placement.X - placement.Width / 2.0, placement.Y - placement.Height / 2.0 },
+                new[] { placement.X + placement.Width / 2.0, placement.Y - placement.Height / 2.0 },
+                new[] { placement.X + placement.Width / 2.0, placement.Y + placement.Height / 2.0 },
+                new[] { placement.X - placement.Width / 2.0, placement.Y + placement.Height / 2.0 }
+            ];
+
+        foreach (var blocker in options.FixedTextBoxPolygons)
+        {
+            if (blocker.Count >= 3 && PolygonGeometry.Intersects(markPolygon, blocker))
                 return true;
         }
 

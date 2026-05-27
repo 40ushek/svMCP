@@ -64,6 +64,8 @@ public sealed class MarkLayoutOptions
 
     internal Dictionary<int, List<double[]>> PartPolygonsByModelId { get; set; } = [];
 
+    internal List<IReadOnlyList<double[]>> FixedTextBoxPolygons { get; set; } = [];
+
     private static double[] NormalizeCandidateDistanceMultipliers(double[]? values)
     {
         if (values == null || values.Length == 0)

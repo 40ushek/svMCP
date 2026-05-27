@@ -28,6 +28,7 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         score += CalculateSourceDistancePenalty(candidate, item, options);
         score += CalculateOwnPartContainmentPenalty(candidate, item, options);
         score += CalculateForeignPartOverlapPenalty(item, options, candidatePolygon);
+        score += CalculateFixedBlockerPenalty(candidate, item, options, candidatePolygon);
         score += CalculatePreferredSidePenalty(candidate, item, options);
         score += CalculateLeaderCrossingPenalty(candidate, item, placements, options);
 
@@ -179,6 +180,43 @@ public sealed class SimpleMarkCostEvaluator : IMarkCostEvaluator
         }
 
         return overlapCount * options.ForeignPartOverlapPenalty;
+    }
+
+    private static double CalculateFixedBlockerPenalty(
+        MarkCandidate candidate,
+        MarkLayoutItem item,
+        MarkLayoutOptions options,
+        IReadOnlyList<double[]>? candidatePolygon)
+    {
+        if (options.FixedTextBoxPolygons.Count == 0)
+            return 0;
+
+        IReadOnlyList<double[]> markPolygon;
+        if (candidatePolygon != null)
+        {
+            markPolygon = candidatePolygon;
+        }
+        else
+        {
+            var hw = item.Width / 2.0;
+            var hh = item.Height / 2.0;
+            markPolygon = new[]
+            {
+                new[] { candidate.X - hw, candidate.Y - hh },
+                new[] { candidate.X + hw, candidate.Y - hh },
+                new[] { candidate.X + hw, candidate.Y + hh },
+                new[] { candidate.X - hw, candidate.Y + hh }
+            };
+        }
+
+        var count = 0;
+        foreach (var blocker in options.FixedTextBoxPolygons)
+        {
+            if (blocker.Count >= 3 && PolygonGeometry.Intersects(markPolygon, blocker))
+                count++;
+        }
+
+        return count * options.OverlapPenalty;
     }
 
     private static double CalculatePreferredSidePenalty(
