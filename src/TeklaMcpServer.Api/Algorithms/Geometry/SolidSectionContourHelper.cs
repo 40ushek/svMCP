@@ -63,6 +63,39 @@ public static class SolidSectionContourHelper
     }
 
     /// <summary>
+    /// Контур детали в плоскости, ПАРАЛЛЕЛЬНОЙ текущей рабочей плоскости (XY), на глубине
+    /// Z = центр solid по Z. Предполагается, что вызывающий код уже установил рабочую плоскость
+    /// в СК вида (WorkPlaneHandler.SetCurrentTransformationPlane(view.ViewCoordinateSystem)) —
+    /// тогда solid и возвращаемый контур уже в координатах вида.
+    ///
+    /// Это и есть нужный путь для угловых размеров: секущая плоскость параллельна плоскости
+    /// чертежа (вида), а не плоскости детали — поэтому корректно работает и для балок, и для плит.
+    /// </summary>
+    /// <param name="part">Деталь (work plane уже должен быть в СК вида).</param>
+    /// <param name="solidType">Тип solid; для учёта булен — NORMAL/HIGH_ACCURACY.</param>
+    public static (List<Point> contour, List<List<Point>> openings) GetViewPlaneSectionPolygons(
+        Part part,
+        Solid.SolidCreationTypeEnum solidType = Solid.SolidCreationTypeEnum.NORMAL)
+    {
+        if (part == null)
+            throw new ArgumentNullException(nameof(part));
+
+        var solid = part.GetSolid(solidType);
+        if (solid == null)
+            return (new List<Point>(), new List<List<Point>>());
+
+        // Z по центру тела в координатах текущей рабочей плоскости (= СК вида).
+        var z = (solid.MinimumPoint.Z + solid.MaximumPoint.Z) * 0.5;
+
+        // Три точки в плоскости, параллельной XY вида, на глубине z.
+        var p1 = new Point(0, 0, z);
+        var p2 = new Point(1000, 0, z);
+        var p3 = new Point(0, 1000, z);
+
+        return IntersectToPolygons(solid, p1, p2, p3);
+    }
+
+    /// <summary>
     /// Низкоуровневый вызов: сечение solid плоскостью, заданной тремя точками.
     /// Первый полигон трактуется как внешний контур, остальные — как отверстия.
     /// </summary>
@@ -88,9 +121,41 @@ public static class SolidSectionContourHelper
         if (polygons.Count == 0)
             return (new List<Point>(), new List<List<Point>>());
 
-        var contour = polygons[0];
-        var openings = polygons.Skip(1).ToList();
+        // Explicitly pick the outer contour by largest area — do not assume Tekla returns
+        // the outer polygon first. The remaining polygons are treated as openings (holes).
+        var outerIndex = 0;
+        var maxArea = PolygonArea(polygons[0]);
+        for (var i = 1; i < polygons.Count; i++)
+        {
+            var area = PolygonArea(polygons[i]);
+            if (area > maxArea)
+            {
+                maxArea = area;
+                outerIndex = i;
+            }
+        }
+
+        var contour = polygons[outerIndex];
+        var openings = polygons.Where((_, i) => i != outerIndex).ToList();
         return (contour, openings);
+    }
+
+    // Absolute polygon area via the shoelace formula in the section plane (XY).
+    // The section lies on a constant-Z plane in the active work plane, so XY is sufficient.
+    private static double PolygonArea(IReadOnlyList<Point> pts)
+    {
+        if (pts.Count < 3)
+            return 0;
+
+        var sum = 0.0;
+        for (var i = 0; i < pts.Count; i++)
+        {
+            var a = pts[i];
+            var b = pts[(i + 1) % pts.Count];
+            sum += a.X * b.Y - b.X * a.Y;
+        }
+
+        return Math.Abs(sum) * 0.5;
     }
 
     // Три точки на плоскости (для IntersectAllFaces). Аналог sv_tekla_lib Utils.Get3PointOnGeomPlane.
