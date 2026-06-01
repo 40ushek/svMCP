@@ -275,6 +275,29 @@ $bridge = "C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\TeklaB
 Формат запроса: `{"id":<int>,"cmd":"<command>","args":[<arg1>,<arg2>,...]}`.
 Список команд — см. `TeklaBridge/Commands/DrawingCommandHandler.cs` и `ModelCommandHandler.cs`.
 
+### Производительность открытия чертежей (batch)
+
+Профилирование `open_drawing` по фазам выявило, что узким местом было **не** `SetActiveDrawing`, а **поиск чертежа по GUID**:
+
+| Фаза | Время |
+|---|---|
+| поиск чертежа (перебор всех чертежей модели, IPC-вызов `GetIdentifier().GUID` на каждый) | **~6.7 с** |
+| само `SetActiveDrawing` | ~0.17 с |
+
+**Фикс:** статический кэш `Dictionary<Guid, Drawing>` в `TeklaDrawingQueryApi` (строится один раз за `--loop`-сессию, инвалидация — `InvalidateDrawingCache()`). Поиск O(1) вместо перебора 251 чертежа.
+
+Результат на батче из 100 single-part чертежей (простановка угловых размеров):
+
+| Режим | Время |
+|---|---|
+| Визуальный, без кэша | ~20 мин |
+| Фон (`showDrawing=false`), без кэша | ~12 мин |
+| **Фон + кэш GUID** | **~68 с** |
+
+Параметр `showDrawing` в `open_drawing` (`args[2]`, по умолчанию `true`): `false` активирует чертёж в фоне без рендера Drawing Editor. `SetActiveDrawing(drawing, false)` — заметно быстрее для batch (видимый режим ~1 с/чертёж, фон с прогретым кэшем ~0.2 с/чертёж).
+
+`place_contour_angle_dimensions` **идемпотентен**: перед простановкой удаляет существующие `AngleDimension` в целевом виде, поэтому повторный прогон не двоит размеры.
+
 ---
 
 ## История отладки: как это всё заработало

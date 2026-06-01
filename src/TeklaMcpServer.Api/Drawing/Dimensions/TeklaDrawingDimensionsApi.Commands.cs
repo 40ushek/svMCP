@@ -1652,6 +1652,18 @@ public sealed partial class TeklaDrawingDimensionsApi
         result.ViewId = targetView.GetIdentifier().ID;
         result.ViewType = targetView.ViewType.ToString();
 
+        // Make the command idempotent: a re-run must not duplicate angle dimensions.
+        // Delete any existing AngleDimension objects in the target view before placing new ones.
+        var existingAngleDims = targetView.GetAllObjects(typeof(AngleDimension));
+        var toDelete = new List<AngleDimension>();
+        while (existingAngleDims.MoveNext())
+        {
+            if (existingAngleDims.Current is AngleDimension existing)
+                toDelete.Add(existing);
+        }
+        foreach (var dim in toDelete)
+            dim.Delete();
+
         Tekla.Structures.Identifier? plateIdentifier = null;
         var partObjects = targetView.GetAllObjects(typeof(Tekla.Structures.Drawing.Part));
         while (partObjects.MoveNext())

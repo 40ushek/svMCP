@@ -207,6 +207,8 @@ TS2025: NuGet `2025.0.0.0` vs FileVersion `2025.0.52577.0` → channel mismatch 
 
 **stdout-дисциплина:** только протокольные JSON-строки, одна на запрос. `Console.SetOut(teklaLog)` — **до** `ApplyTeklaChannelFixes()`. Автовосстановление: IPC-ошибка → `KillProcess()` → рестарт на следующем вызове.
 
+**Кэш чертежей ✅ (2026-06-01):** `open_drawing` искал чертёж перебором всех чертежей модели с IPC-вызовом `GetIdentifier().GUID` на каждый (~6.7 с при 251 чертеже); само `SetActiveDrawing` — ~0.17 с. Добавлен статический `Dictionary<Guid, Drawing>` в `TeklaDrawingQueryApi` (строится раз за сессию, `InvalidateDrawingCache()` для сброса). Batch из 100 чертежей: ~12 мин → **~68 с**. Параметр `showDrawing` в `open_drawing` (фоновое открытие без рендера). `place_contour_angle_dimensions` сделан идемпотентным (удаляет старые `AngleDimension` перед простановкой).
+
 ---
 
 ## Архитектурный долг

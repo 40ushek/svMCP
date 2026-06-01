@@ -11,6 +11,32 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
 {
+    // Per-session cache of GUID -> Drawing. Building it once avoids re-enumerating all
+    // drawings (and one IPC call per drawing for GetIdentifier().GUID) on every OpenDrawing —
+    // that scan was the real cost (~6.7 s for 251 drawings), not SetActiveDrawing (~0.17 s).
+    // The bridge is a long-lived process per --loop session, so the cache stays warm across calls.
+    // Same pattern as svCustom DrawingHelper (cached Drawing objects stay valid for reuse).
+    private static Dictionary<Guid, Tekla.Structures.Drawing.Drawing>? _drawingsByGuid;
+
+    internal static void InvalidateDrawingCache() => _drawingsByGuid = null;
+
+    private static Dictionary<Guid, Tekla.Structures.Drawing.Drawing> GetDrawingsByGuid(DrawingHandler drawingHandler)
+    {
+        if (_drawingsByGuid != null)
+            return _drawingsByGuid;
+
+        var map = new Dictionary<Guid, Tekla.Structures.Drawing.Drawing>();
+        var enumerator = drawingHandler.GetDrawings();
+        while (enumerator.MoveNext())
+        {
+            if (enumerator.Current is Tekla.Structures.Drawing.Drawing drawing)
+                map[drawing.GetIdentifier().GUID] = drawing;
+        }
+
+        _drawingsByGuid = map;
+        return map;
+    }
+
     public IReadOnlyList<DrawingInfo> ListDrawings()
     {
         var drawingHandler = new DrawingHandler();
@@ -69,7 +95,13 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         return drawings;
     }
 
-    public OpenDrawingResult OpenDrawing(Guid drawingGuid)
+    // Writes a message to the Tekla status bar (bottom of the main window).
+    public void SetStatus(string message)
+    {
+        Tekla.Structures.Model.Operations.Operation.DisplayPrompt(message ?? string.Empty);
+    }
+
+    public OpenDrawingResult OpenDrawing(Guid drawingGuid, bool showDrawing = true)
     {
         var drawingHandler = new DrawingHandler();
 
@@ -80,19 +112,8 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         if (activeDrawing != null)
             drawingHandler.CloseActiveDrawing(true);
 
-        var drawingEnumerator = drawingHandler.GetDrawings();
-        Tekla.Structures.Drawing.Drawing? targetDrawing = null;
-
-        while (drawingEnumerator.MoveNext())
-        {
-            if (drawingEnumerator.Current is not Tekla.Structures.Drawing.Drawing drawing)
-                continue;
-            if (drawing.GetIdentifier().GUID != drawingGuid)
-                continue;
-
-            targetDrawing = drawing;
-            break;
-        }
+        // O(1) lookup via the per-session cache instead of re-enumerating all drawings.
+        GetDrawingsByGuid(drawingHandler).TryGetValue(drawingGuid, out var targetDrawing);
 
         if (targetDrawing == null)
         {
@@ -115,7 +136,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
                 Thread.Sleep(500);
             try
             {
-                opened = drawingHandler.SetActiveDrawing(targetDrawing);
+                opened = drawingHandler.SetActiveDrawing(targetDrawing, showDrawing);
                 lastEx = null;
                 break;
             }

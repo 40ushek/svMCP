@@ -73,7 +73,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = api.OpenDrawing(parseResult.Request.RequestedGuid);
+        var result = api.OpenDrawing(parseResult.Request.RequestedGuid, parseResult.Request.ShowDrawing);
         if (!result.Found)
         {
             WriteDrawingFailure("Drawing not found", result.RequestedGuid);

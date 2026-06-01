@@ -84,6 +84,11 @@ public sealed class FindDrawingsParseResult
 public sealed class OpenDrawingRequest
 {
     public Guid RequestedGuid { get; set; }
+
+    // When false, the drawing is activated in the background without rendering the
+    // Drawing Editor (DrawingHandler.SetActiveDrawing showDrawing=false) — much faster
+    // for batch operations. Defaults to true to preserve interactive open behavior.
+    public bool ShowDrawing { get; set; } = true;
 }
 
 public sealed class OpenDrawingParseResult

@@ -9,16 +9,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Run
 
 ```bash
-# Build everything (TeklaMcpServer + TeklaBridge)
-dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
+# Build and deploy everything (TeklaBridge + TeklaMcpServer.Api + TeklaMcpServer)
+dotnet build src/TeklaMcpServer.Host/TeklaMcpServer.Host.csproj -c Release
 
-# Bridge-only rebuild (no need to close Claude Desktop)
+# Bridge-only rebuild
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 ```
 
-- Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2021 or 2025 (Windows only)
-- The server communicates via **stdio** — launched by an MCP client (e.g., Claude Desktop), not run interactively
-- **TeklaMcpServer.exe is locked by Claude Desktop** while it's open — always close Claude Desktop before rebuilding TeklaMcpServer. TeklaBridge.exe can be rebuilt without closing Claude Desktop.
+- Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2025 (Windows only)
+- The server communicates via **stdio** — launched by an MCP client, not run interactively
+- **Claude Desktop is NOT used** — TeklaMcpServer.exe is never locked. Rebuild and redeploy at any time without closing anything.
+- Both TeklaBridge.exe and TeklaMcpServer.exe deploy automatically to `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` on build (MSBuild target in Host .csproj)
 
 ## Architecture
 

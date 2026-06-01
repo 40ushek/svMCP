@@ -29,9 +29,18 @@ public static partial class DrawingCommandParsers
         if (!Guid.TryParse(args[1], out var requestedGuid))
             return OpenDrawingParseResult.Fail("Invalid drawing GUID format");
 
+        // Optional args[2]: showDrawing (true/false). Defaults to true (interactive open).
+        var showDrawing = true;
+        if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
+        {
+            if (!bool.TryParse(args[2], out showDrawing))
+                return OpenDrawingParseResult.Fail("showDrawing must be true or false");
+        }
+
         return OpenDrawingParseResult.Success(new OpenDrawingRequest
         {
-            RequestedGuid = requestedGuid
+            RequestedGuid = requestedGuid,
+            ShowDrawing = showDrawing
         });
     }
 
