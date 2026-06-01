@@ -1723,25 +1723,40 @@ public sealed partial class TeklaDrawingDimensionsApi
         var dimIds = new List<int>();
         try
         {
-            // Use the REAL contour from a solid section (parallel to the view plane), which
-            // accounts for boolean cuts — unlike Contour.ContourPoints, which returns the
-            // original uncut contour. Re-select the part under the active work plane.
+            // Re-select the part under the active work plane (view CS).
             var viewPart = (Tekla.Structures.Model.Part)_model.SelectModelObject(partIdentifier);
-            var (contourPoints, _) = SolidSectionContourHelper.GetViewPlaneSectionPolygons(viewPart);
+
+            // Contour source selection:
+            // - plain ContourPlate WITHOUT booleans -> fast path via Contour.ContourPoints (polycurve);
+            // - otherwise (booleans present, or any non-plate part like a beam) -> solid section,
+            //   which reflects boolean cuts and works for any part type.
+            List<Point> contourPoints;
+            if (viewPart is Tekla.Structures.Model.ContourPlate viewPlate && !HasBooleans(viewPlate))
+            {
+                contourPoints = new List<Point>();
+                foreach (Point cp in viewPlate.Contour.ContourPoints)
+                    contourPoints.Add(FlattenZ(cp));
+            }
+            else
+            {
+                var (sectionContour, _) = SolidSectionContourHelper.GetViewPlaneSectionPolygons(viewPart);
+                contourPoints = sectionContour.Select(FlattenZ).ToList();
+            }
+
             var n = contourPoints.Count;
             result.ContourPointCount = n;
             if (n < 3)
             {
-                result.Error = $"Section contour has too few points ({n}); need at least 3.";
+                result.Error = $"Contour has too few points ({n}); need at least 3.";
                 return result;
             }
 
             for (var i = 0; i < n; i++)
             {
                 var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
-                var vertex = FlattenZ(contourPoints[i]);
-                var first = FlattenZ(contourPoints[firstIndex]);
-                var second = FlattenZ(contourPoints[secondIndex]);
+                var vertex = contourPoints[i];
+                var first = contourPoints[firstIndex];
+                var second = contourPoints[secondIndex];
 
                 if (skipRightAngles &&
                     DimensionAnglePlacementHelper.IsRightAngle(
@@ -2062,6 +2077,22 @@ public sealed partial class TeklaDrawingDimensionsApi
     private static double RoundDebug(double value) => System.Math.Round(value, 6);
 
     private static Point FlattenZ(Point p) => new(p.X, p.Y, 0.0);
+
+    // True if the part has any boolean operations (cut/add) attached. Used to decide whether the
+    // original contour (Contour.ContourPoints) is trustworthy or the solid section is required.
+    private static bool HasBooleans(Tekla.Structures.Model.Part part)
+    {
+        try
+        {
+            var booleans = part.GetBooleans();
+            return booleans != null && booleans.MoveNext();
+        }
+        catch
+        {
+            // If booleans cannot be queried, fall back to the solid path (safer for geometry).
+            return true;
+        }
+    }
 
     private static void TryInsertRadiusDimension(
         ViewBase view, Point p1, Point p2, Point p3,

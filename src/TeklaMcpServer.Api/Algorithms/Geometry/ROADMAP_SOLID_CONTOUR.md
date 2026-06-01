@@ -55,10 +55,15 @@ Tekla не гарантирует порядок полигонов от `Inters
 
 ## Подключено к `place_contour_angle_dimensions` ✅ (2026-06-01)
 
-Реализовано: команда берёт контур из `SolidSectionContourHelper.GetViewPlaneSectionPolygons(part)`
-вместо `Contour.ContourPoints`, принимает любой `Part` (балки тоже). Проверено на балке
-(ранее давала `count=0` "No ContourPlate") и на плите P.1337 (результат не изменился — 4 угла).
-Winding/flip подтверждён визуально на балке. Flip-детекция оставлена только для `ContourPlate`.
+Реализовано с ветвлением источника контура:
+- **чистая `ContourPlate` без булевых операций** (`HasBooleans` через `Part.GetBooleans()`) →
+  старый быстрый путь через `Contour.ContourPoints` (polycurve);
+- **иначе** (есть booleans, или любой не-plate `Part` — балка и т.п.) →
+  `SolidSectionContourHelper.GetViewPlaneSectionPolygons(part)` (учитывает обрезки).
+
+`HasBooleans` при ошибке запроса возвращает `true` (fallback на solid — безопаснее).
+Проверено: P.1337 (плита, polycurve) — 4 угла без изменений; P.1646 (балка, solid) — 4 угла,
+ранее давала `count=0`. Winding/flip подтверждён визуально. Flip-детекция — только для `ContourPlate`.
 
 ## Детали реализации
 
