@@ -57,13 +57,21 @@ Tekla не гарантирует порядок полигонов от `Inters
 
 Реализовано с ветвлением источника контура:
 - **чистая `ContourPlate` без булевых операций** (`HasBooleans` через `Part.GetBooleans()`) →
-  старый быстрый путь через `Contour.ContourPoints` (polycurve);
+  `GetContourPolycurve()` — полилиния с развёрнутыми фасками/скруглениями. Угол ставится
+  только в **line–line** стыках; стыки с дугой (`Arc` = фаска/скругление) пропускаются.
 - **иначе** (есть booleans, или любой не-plate `Part` — балка и т.п.) →
   `SolidSectionContourHelper.GetViewPlaneSectionPolygons(part)` (учитывает обрезки).
 
 `HasBooleans` при ошибке запроса возвращает `true` (fallback на solid — безопаснее).
-Проверено: P.1337 (плита, polycurve) — 4 угла без изменений; P.1646 (балка, solid) — 4 угла,
-ранее давала `count=0`. Winding/flip подтверждён визуально. Flip-детекция — только для `ContourPlate`.
+
+⚠️ **Координаты — ключевой нюанс:** `GetContourPolycurve()` всегда возвращает **world**, и
+`AngleDimension` ждёт точки в **СК вида** (в отличие от `RadiusDimension`, который принимает
+world при переданном `targetView`). Поэтому world-точки polycurve **явно трансформируются**
+в СК вида (`TransformationPlane(viewCs).TransformationMatrixToLocal`) перед `AngleDimension`,
+и только потом `FlattenZ`. Без этого углы «улетают» за деталь.
+Solid-ветка проблемы не имеет: `GetSolid()` под work plane = viewCS уже даёт точки в СК вида.
+
+Проверено: плита с фасками — углы в реальных вершинах, на скруглениях нет; балка (solid) — 4 угла.
 
 ## Детали реализации
 

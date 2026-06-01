@@ -1715,65 +1715,112 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         attributes.Type = AngleTypes.AngleAtVertex;
 
-        // AngleDimension expects points in the view plane. Set the work plane to the view CS
-        // so the solid (and the section contour) come back in view-local coordinates.
-        var workPlaneHandler = _model.GetWorkPlaneHandler();
-        var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
         var dimIds = new List<int>();
-        try
+
+        // Contour source selection:
+        // - plain ContourPlate WITHOUT booleans -> GetContourPolycurve() (polycurve), which
+        //   expands chamfers/roundings into real segments. Angle is placed only at LINE-LINE
+        //   joins (arc joins are skipped — those are chamfer/rounding, handled by radius dims).
+        //   GetContourPolycurve() returns WORLD coords, but AngleDimension expects view-local
+        //   points, so polycurve endpoints are explicitly transformed to the view CS below.
+        // - otherwise (booleans present, or any non-plate part like a beam) -> solid section
+        //   under the view CS work plane, which reflects boolean cuts and works for any part.
+        if (_model.SelectModelObject(partIdentifier) is Tekla.Structures.Model.ContourPlate plateForPolycurve
+            && !HasBooleans(plateForPolycurve))
         {
-            // Re-select the part under the active work plane (view CS).
-            var viewPart = (Tekla.Structures.Model.Part)_model.SelectModelObject(partIdentifier);
-
-            // Contour source selection:
-            // - plain ContourPlate WITHOUT booleans -> fast path via Contour.ContourPoints (polycurve);
-            // - otherwise (booleans present, or any non-plate part like a beam) -> solid section,
-            //   which reflects boolean cuts and works for any part type.
-            List<Point> contourPoints;
-            if (viewPart is Tekla.Structures.Model.ContourPlate viewPlate && !HasBooleans(viewPlate))
+            // Get the polycurve in the ORIGINAL (world) work plane, exactly like radius dimensions.
+            // It always returns world coords; unlike RadiusDimension, AngleDimension needs
+            // view-local vertex/leg points, so transform segment endpoints explicitly.
+            var segments = GetPolycurveSegments(plateForPolycurve);
+            result.ContourPointCount = segments.Count;
+            if (segments.Count < 3)
             {
-                contourPoints = new List<Point>();
-                foreach (Point cp in viewPlate.Contour.ContourPoints)
-                    contourPoints.Add(FlattenZ(cp));
-            }
-            else
-            {
-                var (sectionContour, _) = SolidSectionContourHelper.GetViewPlaneSectionPolygons(viewPart);
-                contourPoints = sectionContour.Select(FlattenZ).ToList();
-            }
-
-            var n = contourPoints.Count;
-            result.ContourPointCount = n;
-            if (n < 3)
-            {
-                result.Error = $"Contour has too few points ({n}); need at least 3.";
+                result.Error = $"Contour has too few segments ({segments.Count}); need at least 3.";
                 return result;
             }
 
-            for (var i = 0; i < n; i++)
+            var workPlaneHandler = _model.GetWorkPlaneHandler();
+            var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+            var worldToView = new Tekla.Structures.Model.TransformationPlane(viewCs).TransformationMatrixToLocal;
+            workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+            try
             {
-                var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
-                var vertex = contourPoints[i];
-                var first = contourPoints[firstIndex];
-                var second = contourPoints[secondIndex];
-
-                if (skipRightAngles &&
-                    DimensionAnglePlacementHelper.IsRightAngle(
-                        DimensionAnglePlacementHelper.LegAngleDegrees(vertex, first, second)))
+                // Vertex i is the join between segment[i-1] and segment[i]; place an angle only
+                // when both adjacent segments are straight lines (skip arc joins = chamfer/rounding).
+                var m = segments.Count;
+                for (var i = 0; i < m; i++)
                 {
-                    result.SkippedRightAngleCount++;
-                    continue;
-                }
+                    var prevSeg = segments[(i - 1 + m) % m];
+                    var curSeg = segments[i];
+                    if (!prevSeg.IsLine || !curSeg.IsLine)
+                        continue;
 
-                var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
-                if (angleDim.Insert())
-                    dimIds.Add(angleDim.GetIdentifier().ID);
+                    var vertex = FlattenZ(worldToView.Transform(curSeg.Start)); // join point of prevSeg.End == curSeg.Start
+                    var first = FlattenZ(worldToView.Transform(prevSeg.Start));  // away along previous line
+                    var second = FlattenZ(worldToView.Transform(curSeg.End));    // away along current line
+
+                    if (skipRightAngles &&
+                        DimensionAnglePlacementHelper.IsRightAngle(
+                            DimensionAnglePlacementHelper.LegAngleDegrees(vertex, first, second)))
+                    {
+                        result.SkippedRightAngleCount++;
+                        continue;
+                    }
+
+                    var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
+                    if (angleDim.Insert())
+                        dimIds.Add(angleDim.GetIdentifier().ID);
+                }
+            }
+            finally
+            {
+                workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
             }
         }
-        finally
+        else
         {
-            workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+            // Solid section path: work plane in view CS so the section contour is in view coords.
+            var workPlaneHandler = _model.GetWorkPlaneHandler();
+            var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
+            workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
+            try
+            {
+                var viewPart = (Tekla.Structures.Model.Part)_model.SelectModelObject(partIdentifier);
+                var (sectionContour, _) = SolidSectionContourHelper.GetViewPlaneSectionPolygons(viewPart);
+                var contourPoints = sectionContour.Select(FlattenZ).ToList();
+
+                var n = contourPoints.Count;
+                result.ContourPointCount = n;
+                if (n < 3)
+                {
+                    result.Error = $"Section contour has too few points ({n}); need at least 3.";
+                    return result;
+                }
+
+                for (var i = 0; i < n; i++)
+                {
+                    var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
+                    var vertex = contourPoints[i];
+                    var first = contourPoints[firstIndex];
+                    var second = contourPoints[secondIndex];
+
+                    if (skipRightAngles &&
+                        DimensionAnglePlacementHelper.IsRightAngle(
+                            DimensionAnglePlacementHelper.LegAngleDegrees(vertex, first, second)))
+                    {
+                        result.SkippedRightAngleCount++;
+                        continue;
+                    }
+
+                    var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
+                    if (angleDim.Insert())
+                        dimIds.Add(angleDim.GetIdentifier().ID);
+                }
+            }
+            finally
+            {
+                workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
+            }
         }
 
         if (dimIds.Count == 0)
@@ -2077,6 +2124,51 @@ public sealed partial class TeklaDrawingDimensionsApi
     private static double RoundDebug(double value) => System.Math.Round(value, 6);
 
     private static Point FlattenZ(Point p) => new(p.X, p.Y, 0.0);
+
+    // One segment of a plate contour polycurve: its endpoints and whether it is a straight line.
+    private readonly struct ContourSegment
+    {
+        public ContourSegment(Point start, Point end, bool isLine)
+        {
+            Start = start;
+            End = end;
+            IsLine = isLine;
+        }
+
+        public Point Start { get; }
+        public Point End { get; }
+        public bool IsLine { get; }
+    }
+
+    // Ordered segments of a ContourPlate contour via GetContourPolycurve(), which expands
+    // chamfers/roundings into real segments (unlike Contour.ContourPoints). Arc segments are
+    // kept (flagged IsLine=false) so callers can skip angle dimensions at arc joins.
+    // GetContourPolycurve() always returns WORLD coordinates regardless of the work plane.
+    // Select() is required before the call, otherwise it returns null. Keep full 3D points here;
+    // callers that feed AngleDimension must transform them to view-local coordinates first.
+    private List<ContourSegment> GetPolycurveSegments(Tekla.Structures.Model.ContourPlate plate)
+    {
+        var segments = new List<ContourSegment>();
+        plate.Select();
+        var polycurve = plate.GetContourPolycurve();
+        if (polycurve == null)
+            return segments;
+
+        foreach (var curve in polycurve)
+        {
+            switch (curve)
+            {
+                case Tekla.Structures.Geometry3d.Arc arc:
+                    segments.Add(new ContourSegment(arc.StartPoint, arc.EndPoint, false));
+                    break;
+                case Tekla.Structures.Geometry3d.LineSegment seg:
+                    segments.Add(new ContourSegment(seg.StartPoint, seg.EndPoint, true));
+                    break;
+            }
+        }
+
+        return segments;
+    }
 
     // True if the part has any boolean operations (cut/add) attached. Used to decide whether the
     // original contour (Contour.ContourPoints) is trustworthy or the solid section is required.
