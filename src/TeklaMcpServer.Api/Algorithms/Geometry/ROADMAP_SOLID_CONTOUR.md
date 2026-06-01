@@ -53,7 +53,14 @@ Tekla не гарантирует порядок полигонов от `Inters
 
 Для шага 2-4 предназначен `GetViewPlaneSectionPolygons(part)`.
 
-## Следующий этап — подключение к `place_contour_angle_dimensions`
+## Подключено к `place_contour_angle_dimensions` ✅ (2026-06-01)
+
+Реализовано: команда берёт контур из `SolidSectionContourHelper.GetViewPlaneSectionPolygons(part)`
+вместо `Contour.ContourPoints`, принимает любой `Part` (балки тоже). Проверено на балке
+(ранее давала `count=0` "No ContourPlate") и на плите P.1337 (результат не изменился — 4 угла).
+Winding/flip подтверждён визуально на балке. Flip-детекция оставлена только для `ContourPlate`.
+
+## Детали реализации
 
 Файл: `Drawing/Dimensions/TeklaDrawingDimensionsApi.Commands.cs`.
 

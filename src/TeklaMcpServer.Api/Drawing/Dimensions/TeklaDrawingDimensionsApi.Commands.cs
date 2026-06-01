@@ -1664,36 +1664,44 @@ public sealed partial class TeklaDrawingDimensionsApi
         foreach (var dim in toDelete)
             dim.Delete();
 
-        Tekla.Structures.Identifier? plateIdentifier = null;
+        // Find the first model Part in the view (ContourPlate, Beam, etc.).
+        // The contour is taken from the solid section (below), so any part type works.
+        Tekla.Structures.Identifier? partIdentifier = null;
+        Tekla.Structures.Model.Part? worldPart = null;
         var partObjects = targetView.GetAllObjects(typeof(Tekla.Structures.Drawing.Part));
         while (partObjects.MoveNext())
         {
             if (partObjects.Current is not Tekla.Structures.Drawing.Part drawingPart)
                 continue;
 
-            if (_model.SelectModelObject(drawingPart.ModelIdentifier) is Tekla.Structures.Model.ContourPlate)
+            if (_model.SelectModelObject(drawingPart.ModelIdentifier) is Tekla.Structures.Model.Part modelPart)
             {
-                plateIdentifier = drawingPart.ModelIdentifier;
+                partIdentifier = drawingPart.ModelIdentifier;
+                worldPart = modelPart;
                 result.ModelId = drawingPart.ModelIdentifier.ID;
                 break;
             }
         }
 
-        if (plateIdentifier == null)
+        if (partIdentifier == null || worldPart == null)
         {
-            result.Error = "No ContourPlate found in the target view.";
+            result.Error = "No model Part found in the target view.";
             return result;
         }
 
-        // Flip detection uses world-space normals — must be read before the
-        // work plane is switched, otherwise GetCoordinateSystem() returns the
-        // plate CS expressed in the view plane and the dot test is meaningless.
-        var worldPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
-        var plateCs = worldPlate.GetCoordinateSystem();
-        var plateNormal = plateCs.AxisX.Cross(plateCs.AxisY);
+        // Flip detection (world-space normals) applies to ContourPlate, whose own plane
+        // matches the contour. For other parts (beams) the contour comes from the view-plane
+        // section and is already oriented in the view plane, so flip is not applied.
+        // Must be read before the work plane is switched.
         var viewCs = targetView.ViewCoordinateSystem;
-        var viewNormal = viewCs.AxisX.Cross(viewCs.AxisY);
-        var flipped = DimensionAnglePlacementHelper.IsContourFlipped(plateNormal, viewNormal);
+        var flipped = false;
+        if (worldPart is Tekla.Structures.Model.ContourPlate worldPlate)
+        {
+            var plateCs = worldPlate.GetCoordinateSystem();
+            var plateNormal = plateCs.AxisX.Cross(plateCs.AxisY);
+            var viewNormal = viewCs.AxisX.Cross(viewCs.AxisY);
+            flipped = DimensionAnglePlacementHelper.IsContourFlipped(plateNormal, viewNormal);
+        }
         result.Flipped = flipped;
 
         var attributes = new AngleDimensionAttributes();
@@ -1707,31 +1715,33 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         attributes.Type = AngleTypes.AngleAtVertex;
 
-        // AngleDimension expects points in the view plane. Read the contour
-        // under the view's transformation plane so coordinates land on the
-        // sheet next to the part instead of in raw model space.
+        // AngleDimension expects points in the view plane. Set the work plane to the view CS
+        // so the solid (and the section contour) come back in view-local coordinates.
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
         workPlaneHandler.SetCurrentTransformationPlane(new Tekla.Structures.Model.TransformationPlane(viewCs));
         var dimIds = new List<int>();
         try
         {
-            var viewPlate = (Tekla.Structures.Model.ContourPlate)_model.SelectModelObject(plateIdentifier);
-            var contourPoints = viewPlate.Contour.ContourPoints;
+            // Use the REAL contour from a solid section (parallel to the view plane), which
+            // accounts for boolean cuts — unlike Contour.ContourPoints, which returns the
+            // original uncut contour. Re-select the part under the active work plane.
+            var viewPart = (Tekla.Structures.Model.Part)_model.SelectModelObject(partIdentifier);
+            var (contourPoints, _) = SolidSectionContourHelper.GetViewPlaneSectionPolygons(viewPart);
             var n = contourPoints.Count;
             result.ContourPointCount = n;
             if (n < 3)
             {
-                result.Error = $"Contour has too few points ({n}); need at least 3.";
+                result.Error = $"Section contour has too few points ({n}); need at least 3.";
                 return result;
             }
 
             for (var i = 0; i < n; i++)
             {
                 var (firstIndex, secondIndex) = DimensionAnglePlacementHelper.ResolveNeighbors(i, n, flipped);
-                var vertex = FlattenZ((Point)contourPoints[i]);
-                var first = FlattenZ((Point)contourPoints[firstIndex]);
-                var second = FlattenZ((Point)contourPoints[secondIndex]);
+                var vertex = FlattenZ(contourPoints[i]);
+                var first = FlattenZ(contourPoints[firstIndex]);
+                var second = FlattenZ(contourPoints[secondIndex]);
 
                 if (skipRightAngles &&
                     DimensionAnglePlacementHelper.IsRightAngle(
