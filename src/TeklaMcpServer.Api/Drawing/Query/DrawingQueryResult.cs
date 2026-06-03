@@ -26,3 +26,10 @@ public sealed class ExportDrawingsPdfResult
     public List<string> MissingGuids { get; set; } = new();
     public string OutputDirectory { get; set; } = string.Empty;
 }
+
+public sealed class SelectedDrawingsInDocumentManagerResult
+{
+    public bool Success { get; set; }
+    public string Error { get; set; } = string.Empty;
+    public List<DrawingInfo> Drawings { get; set; } = new();
+}

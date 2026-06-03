@@ -54,6 +54,34 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         return drawings;
     }
 
+    public SelectedDrawingsInDocumentManagerResult GetSelectedDrawingsInDocumentManager()
+    {
+        var result = new SelectedDrawingsInDocumentManagerResult();
+        try
+        {
+            var drawingHandler = new DrawingHandler();
+            var selector = drawingHandler.GetDrawingSelector();
+            var selected = selector.GetSelected();
+
+            while (selected.MoveNext())
+            {
+                if (selected.Current is not Tekla.Structures.Drawing.Drawing drawing)
+                    continue;
+
+                result.Drawings.Add(ToDrawingInfo(drawing));
+            }
+
+            result.Success = true;
+            return result;
+        }
+        catch (System.Exception ex)
+        {
+            result.Success = false;
+            result.Error = $"Unable to read Document Manager selection: {ex.Message}";
+            return result;
+        }
+    }
+
     public IReadOnlyList<DrawingInfo> FindDrawings(string? nameContains = null, string? markContains = null)
     {
         var drawingHandler = new DrawingHandler();

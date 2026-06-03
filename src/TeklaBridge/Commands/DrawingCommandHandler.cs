@@ -29,6 +29,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "delete_drawing":
             case "export_drawings_pdf":
             case "find_drawings_by_properties":
+            case "get_selected_drawings_in_document_manager":
                 return TryHandleDrawingCatalogCommands(command, args);
 
             case "create_ga_drawing":

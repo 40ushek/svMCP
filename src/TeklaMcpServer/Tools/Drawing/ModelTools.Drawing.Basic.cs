@@ -27,6 +27,24 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Get drawings currently selected by the user in Tekla's Document Manager (drawing list dialog). Returns an empty list if no drawings are selected, the Document Manager is not open, or the user has focus elsewhere — these states are indistinguishable via Tekla API.")]
+    public static string GetSelectedDrawingsInDocumentManager()
+    {
+        var json = RunBridge("get_selected_drawings_in_document_manager");
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Find drawings by name and/or mark (case-insensitive contains search)")]
     public static string FindDrawings(
         [Description("Optional drawing name filter (contains match)")] string? nameContains = null,

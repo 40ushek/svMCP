@@ -37,6 +37,9 @@ internal sealed partial class DrawingCommandHandler
             case "find_drawings_by_properties":
                 return HandleFindDrawingsByProperties(api, args);
 
+            case "get_selected_drawings_in_document_manager":
+                return HandleGetSelectedDrawingsInDocumentManager(api);
+
             default:
                 return false;
         }
@@ -46,6 +49,25 @@ internal sealed partial class DrawingCommandHandler
     {
         var drawings = MapBasicDrawings(api.ListDrawings());
         WriteDrawingsList(drawings);
+        return true;
+    }
+
+    private bool HandleGetSelectedDrawingsInDocumentManager(TeklaDrawingQueryApi api)
+    {
+        var result = api.GetSelectedDrawingsInDocumentManager();
+        if (!result.Success)
+        {
+            WriteError(result.Error);
+            return true;
+        }
+
+        var drawings = MapBasicDrawings(result.Drawings).ToList();
+        WriteJson(new
+        {
+            success = true,
+            count = drawings.Count,
+            drawings = drawings
+        });
         return true;
     }
 

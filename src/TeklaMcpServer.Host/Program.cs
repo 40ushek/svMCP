@@ -25,15 +25,28 @@ internal static class Program
         Console.WriteLine($"Connected: {info.ModelName}  ({info.ModelPath})");
 
         var drawingHandler = new DrawingHandler();
-        var activeDrawing = drawingHandler.GetActiveDrawing();
-        if (activeDrawing == null)
-        {
-            Console.WriteLine("No active drawing. Open a drawing in Tekla and try again.");
-            Console.ReadLine();
-            return;
-        }
+        //var activeDrawing = drawingHandler.GetActiveDrawing();
+        //if (activeDrawing == null)
+        //{
+        //    Console.WriteLine("No active drawing. Open a drawing in Tekla and try again.");
+        //    Console.ReadLine();
+        //    return;
+        //}
 
-        Console.WriteLine($"Drawing: {activeDrawing.Name}");
+        //Console.WriteLine($"Drawing: {activeDrawing.Name}");
+
+        var docManResult = new TeklaMcpServer.Api.Drawing.TeklaDrawingQueryApi().GetSelectedDrawingsInDocumentManager();
+        if (!docManResult.Success)
+        {
+            Console.WriteLine($"Error: {docManResult.Error}");
+        }
+        else
+        {
+            Console.WriteLine($"Selected in Document Manager: {docManResult.Drawings.Count}");
+            foreach (var d in docManResult.Drawings)
+                Console.WriteLine($"  - {d.Type} {d.Mark} {d.Name} [{d.Guid}]");
+        }
+        return;
 
         int? viewId = null;
         const string attributesFile = "standard";

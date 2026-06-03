@@ -10,6 +10,8 @@ public interface IDrawingQueryApi
 
     IReadOnlyList<DrawingInfo> FindDrawingsByProperties(IReadOnlyCollection<DrawingPropertyFilter> filters);
 
+    SelectedDrawingsInDocumentManagerResult GetSelectedDrawingsInDocumentManager();
+
     OpenDrawingResult OpenDrawing(System.Guid drawingGuid, bool showDrawing = true);
 
     CloseDrawingResult CloseActiveDrawing();
