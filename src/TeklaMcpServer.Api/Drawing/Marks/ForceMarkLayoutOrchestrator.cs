@@ -21,13 +21,11 @@ internal sealed class ForceMarkLayoutOrchestrator
         var totalIterations = 0;
         var totalRemainingOverlaps = 0;
 
-        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
-
         foreach (var view in views)
         {
             var viewTotal = Stopwatch.StartNew();
             var collect = Stopwatch.StartNew();
-            var viewContext = BuildDrawingViewContext(view, presentationConnection);
+            var viewContext = BuildDrawingViewContext(view);
             var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
             var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
             var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
@@ -45,10 +43,11 @@ internal sealed class ForceMarkLayoutOrchestrator
             partBboxes.AddRange(dimensionBlockerObstacles);
             WriteDimensionBlockerTrace(
                 view.GetIdentifier().ID,
-                viewContext.DimensionTextBoxes.Count,
+                viewContext.DimensionTextBoxes,
                 dimensionBlockerObstacles.Count,
                 partObstacleCount,
-                partBboxes.Count);
+                partBboxes.Count,
+                viewContext.AppliedDimensionTextBoxShorteningMode);
             collect.Stop();
 
             if (markEntries.Count == 0)
@@ -333,7 +332,7 @@ internal sealed class ForceMarkLayoutOrchestrator
         };
     }
 
-    private DrawingViewContext BuildDrawingViewContext(View view, PresentationConnection? presentationConnection = null)
+    private DrawingViewContext BuildDrawingViewContext(View view)
     {
         var viewId = view.GetIdentifier().ID;
         var viewScale = MarksViewContextBuilder.ResolveViewScale(view);
@@ -341,17 +340,28 @@ internal sealed class ForceMarkLayoutOrchestrator
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
+
+        var dimensionContext = new DrawingViewContext
+        {
+            ViewId = viewId,
+            ViewScale = viewScale
+        };
+        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
+        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(dimensionContext, view, presentationConnection);
+
         var context = builder.Build(viewId, viewScale);
-        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(context, view, presentationConnection);
+        context.DimensionTextBoxes.AddRange(dimensionContext.DimensionTextBoxes);
+        context.AppliedDimensionTextBoxShorteningMode = dimensionContext.AppliedDimensionTextBoxShorteningMode;
         return context;
     }
 
     private static void WriteDimensionBlockerTrace(
         int viewId,
-        int dimensionTextBoxes,
+        IReadOnlyList<DrawingTextBox> dimensionTextBoxes,
         int dimensionBlockers,
         int partObstacles,
-        int totalObstacles)
+        int totalObstacles,
+        string shorteningMode)
     {
         if (!PerfTrace.IsActive)
             return;
@@ -360,7 +370,7 @@ internal sealed class ForceMarkLayoutOrchestrator
             "api-mark",
             "arrange_marks_force_dimension_blockers",
             0,
-            $"viewId={viewId} dimensionTextBoxes={dimensionTextBoxes} dimensionBlockers={dimensionBlockers} partObstacles={partObstacles} totalObstacles={totalObstacles}");
+            $"viewId={viewId} dimensionTextBoxes={dimensionTextBoxes.Count} dimensionBlockers={dimensionBlockers} partObstacles={partObstacles} totalObstacles={totalObstacles} shorteningMode={shorteningMode} sources={DrawingTextBoxDiagnostics.FormatSources(dimensionTextBoxes)}");
     }
 
     private static void WriteForeignPartOverlapTrace(

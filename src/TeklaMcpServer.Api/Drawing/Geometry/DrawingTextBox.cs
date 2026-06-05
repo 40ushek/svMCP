@@ -15,6 +15,8 @@ public sealed class DrawingTextBox
 
     public int SourceObjectId { get; set; }
 
+    public string SourceObjectKind { get; set; } = string.Empty;
+
     public int TextIndex { get; set; }
 
     public string Text { get; set; } = string.Empty;

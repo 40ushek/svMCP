@@ -243,9 +243,13 @@ public static partial class ModelTools
 
     [McpServerTool, Description("Experimental force-directed mark improvement pass. Keeps current mark positions as the start state, then relaxes marks using only source-part attraction and part repulsion.")]
     public static string ArrangeMarksForce(
-        [Description("Unused experimental parameter kept for command compatibility. Default: 2.")] double gap = 2.0)
+        [Description("Unused experimental parameter kept for command compatibility. Default: 2.")] double gap = 2.0,
+        [Description("Experimental smoke switch for dimension text box shortening conversion. Values: none (default), toVisual, toRaw. Used to compare blocker behavior on shortened views.")] string shorteningMode = "none")
     {
-        var json = RunBridge("arrange_marks_force", gap.ToString(CultureInfo.InvariantCulture));
+        var json = RunBridge(
+            "arrange_marks_force",
+            gap.ToString(CultureInfo.InvariantCulture),
+            shorteningMode);
         try
         {
             var doc = JsonDocument.Parse(json);

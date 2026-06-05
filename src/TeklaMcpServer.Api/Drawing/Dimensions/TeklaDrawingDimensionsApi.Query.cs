@@ -544,6 +544,42 @@ public sealed partial class TeklaDrawingDimensionsApi
         return segments;
     }
 
+    internal static List<DimensionTextBoxCandidate> CollectFallbackTextPolygons(StraightDimensionSet dimSet)
+    {
+        var results = new List<DimensionTextBoxCandidate>();
+        var segments = EnumerateSegments(dimSet);
+        var lineContext = TryCreateDimensionLineContext(segments, dimSet.Distance);
+
+        foreach (var segment in segments)
+        {
+            var snapshot = BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext);
+            var polygon = TryCreateTextPolygon(segment, dimSet, snapshot.DimensionLine);
+            if (polygon == null || polygon.Count < 4)
+                continue;
+
+            var text = string.Empty;
+            try
+            {
+                if (segment.GetView() is View view)
+                    text = TryGetMeasuredValueText(segment, dimSet, view) ?? string.Empty;
+            }
+            catch
+            {
+                text = string.Empty;
+            }
+
+            results.Add(new DimensionTextBoxCandidate
+            {
+                Owner = "dimensionSet.analyticalFallback",
+                Type = "analyticalFallback",
+                Text = text,
+                Polygon = polygon
+            });
+        }
+
+        return results;
+    }
+
     private static DimensionLineContext? TryCreateDimensionLineContext(
         IReadOnlyList<StraightDimension> segments,
         double distance)

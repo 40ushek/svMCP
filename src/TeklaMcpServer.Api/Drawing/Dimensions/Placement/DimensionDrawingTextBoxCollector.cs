@@ -10,7 +10,9 @@ internal static class DimensionDrawingTextBoxCollector
         PresentationConnection? connection,
         int sourceObjectId,
         string sourceObjectKind,
-        DrawingView view)
+        DrawingView view,
+        ViewShorteningCoordinateMapper? shorteningMapper = null,
+        DimensionTextBoxShorteningMode shorteningMode = DimensionTextBoxShorteningMode.None)
     {
         var presentationBoxes = DimensionPresentationTextBoxCollector.Collect(
             connection,
@@ -18,13 +20,15 @@ internal static class DimensionDrawingTextBoxCollector
             sourceObjectKind,
             view);
 
-        return DimensionDrawingTextBoxMapper.ToDrawingTextBoxes(presentationBoxes);
+        return DimensionDrawingTextBoxMapper.ToDrawingTextBoxes(presentationBoxes, shorteningMapper, shorteningMode);
     }
 
     internal static List<DrawingTextBox> CollectDistinct(
         PresentationConnection? connection,
         IEnumerable<DimensionDrawingTextBoxSource> sources,
-        DrawingView view)
+        DrawingView view,
+        ViewShorteningCoordinateMapper? shorteningMapper = null,
+        DimensionTextBoxShorteningMode shorteningMode = DimensionTextBoxShorteningMode.None)
     {
         var presentationBoxes = new List<DimensionPresentationTextBox>();
 
@@ -38,7 +42,7 @@ internal static class DimensionDrawingTextBoxCollector
         }
 
         var distinctPresentationBoxes = DimensionPresentationTextBoxCollector.DistinctByGeometry(presentationBoxes);
-        return DimensionDrawingTextBoxMapper.ToDrawingTextBoxes(distinctPresentationBoxes);
+        return DimensionDrawingTextBoxMapper.ToDrawingTextBoxes(distinctPresentationBoxes, shorteningMapper, shorteningMode);
     }
 }
 

@@ -206,11 +206,25 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var total = Stopwatch.StartNew();
-        var result = api.ArrangeMarksForce(parseResult.Value);
-        TeklaBridge.PerfTrace.Write("bridge-mark", "arrange_marks_force", total.ElapsedMilliseconds, $"gap={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
-        WriteMarkArrangementResult(result);
-        return true;
+        // Third optional arg is shortening mode for dimension text boxes (smoke switch).
+        // Values: none, toVisual, toRaw. Sets SVMCP_DIM_SHORTENING_MODE for this call only.
+        const string envVar = "SVMCP_DIM_SHORTENING_MODE";
+        var previousEnv = System.Environment.GetEnvironmentVariable(envVar);
+        if (args.Length >= 3 && !string.IsNullOrWhiteSpace(args[2]))
+            System.Environment.SetEnvironmentVariable(envVar, args[2]);
+
+        try
+        {
+            var total = Stopwatch.StartNew();
+            var result = api.ArrangeMarksForce(parseResult.Value);
+            TeklaBridge.PerfTrace.Write("bridge-mark", "arrange_marks_force", total.ElapsedMilliseconds, $"gap={parseResult.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)} moved={result.MarksMovedCount} overlaps={result.RemainingOverlaps} iterations={result.Iterations}");
+            WriteMarkArrangementResult(result);
+            return true;
+        }
+        finally
+        {
+            System.Environment.SetEnvironmentVariable(envVar, previousEnv);
+        }
     }
 
     private bool HandleMoveMark(TeklaDrawingMarkApi api, string[] args)

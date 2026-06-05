@@ -4,7 +4,6 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Algorithms.Marks;
 using TeklaMcpServer.Api.Diagnostics;
-using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -21,7 +20,6 @@ public sealed partial class TeklaDrawingMarkApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
-            using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
             var movedIds = new List<int>();
             var totalIterations = 0;
             var totalRemainingOverlaps = 0;
@@ -30,7 +28,7 @@ public sealed partial class TeklaDrawingMarkApi
             {
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
-                var viewContext = BuildDrawingViewContext(view, presentationConnection);
+                var viewContext = BuildDrawingViewContext(view);
                 var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
                 collect.Stop();
@@ -117,7 +115,6 @@ public sealed partial class TeklaDrawingMarkApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
-            using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
             var engine = new MarkLayoutEngine();
             var movedIds = new List<int>();
             var totalIterations = 0;
@@ -127,7 +124,7 @@ public sealed partial class TeklaDrawingMarkApi
             {
                 var viewTotal = Stopwatch.StartNew();
                 var collect = Stopwatch.StartNew();
-                var viewContext = BuildDrawingViewContext(view, presentationConnection);
+                var viewContext = BuildDrawingViewContext(view);
                 var marksViewContext = new MarksViewContextBuilder().Build(view, _model);
                 var markEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, marksViewContext, viewContext);
                 var partPolygonsByModelId = MarkSourceResolver.BuildPartPolygons(viewContext.Parts);
@@ -227,9 +224,7 @@ public sealed partial class TeklaDrawingMarkApi
         }
     }
 
-    private DrawingViewContext BuildDrawingViewContext(
-        View view,
-        PresentationConnection? presentationConnection = null)
+    private DrawingViewContext BuildDrawingViewContext(View view)
     {
         var viewId = view.GetIdentifier().ID;
         var viewScale = MarksViewContextBuilder.ResolveViewScale(view);
@@ -237,8 +232,18 @@ public sealed partial class TeklaDrawingMarkApi
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
+
+        var dimensionContext = new DrawingViewContext
+        {
+            ViewId = viewId,
+            ViewScale = viewScale
+        };
+        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
+        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(dimensionContext, view, presentationConnection);
+
         var context = builder.Build(viewId, viewScale);
-        DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(context, view, presentationConnection);
+        context.DimensionTextBoxes.AddRange(dimensionContext.DimensionTextBoxes);
+        context.AppliedDimensionTextBoxShorteningMode = dimensionContext.AppliedDimensionTextBoxShorteningMode;
         return context;
     }
 
@@ -253,6 +258,6 @@ public sealed partial class TeklaDrawingMarkApi
             "api-mark",
             $"{operation}_dimension_blockers",
             0,
-            $"viewId={viewId} dimensionTextBoxes={viewContext.DimensionTextBoxes.Count} fixedBlockers={blockerCount} marks={markCount}");
+            $"viewId={viewId} dimensionTextBoxes={viewContext.DimensionTextBoxes.Count} fixedBlockers={blockerCount} marks={markCount} shorteningMode={viewContext.AppliedDimensionTextBoxShorteningMode} sources={DrawingTextBoxDiagnostics.FormatSources(viewContext.DimensionTextBoxes)}");
     }
 }

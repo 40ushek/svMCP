@@ -127,7 +127,31 @@ internal sealed class DrawingViewRestrictionBoxProbe
             activeDrawing.CommitChanges();
 
         Log($"Dimension text boxes: {textBoxes.Count}");
+        Log($"Dimension text box sources: {FormatDimensionTextBoxSources(textBoxes)}");
         Log($"Drawn mapped dimension text boxes: {mappedInserted}");
+    }
+
+    private static string FormatDimensionTextBoxSources(IReadOnlyList<DrawingTextBox> textBoxes)
+    {
+        if (textBoxes.Count == 0)
+            return "none";
+
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var textBox in textBoxes)
+        {
+            var key = string.IsNullOrWhiteSpace(textBox.SourceObjectKind)
+                ? "<unknown>"
+                : textBox.SourceObjectKind;
+            counts.TryGetValue(key, out var count);
+            counts[key] = count + 1;
+        }
+
+        var parts = new List<string>();
+        foreach (var item in counts)
+            parts.Add($"{item.Key}:{item.Value}");
+
+        parts.Sort(StringComparer.Ordinal);
+        return string.Join(",", parts);
     }
 
     private static void DrawMarkGeometry(Drawing activeDrawing, View view)

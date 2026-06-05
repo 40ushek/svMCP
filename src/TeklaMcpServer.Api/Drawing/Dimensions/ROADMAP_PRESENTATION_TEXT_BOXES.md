@@ -63,6 +63,17 @@ Fallback
 
 The core rule is: a dimension may produce zero, one, or many text boxes.
 
+Verified case:
+
+- Tekla absolute dimension can produce multiple visible text boxes from one
+  dimension object. Example: one absolute dimension produced three labels
+  (`6105`, `27`, `6133`).
+- On a shortened view smoke test, presentation segment sources produced
+  `segment:7` text boxes. This was the correct result.
+- Analytical fallback produced only 5 boxes for the same view and missed the
+  full drawn text-box set. That fallback is therefore a degraded approximation,
+  not an equivalent replacement for presentation primitives.
+
 ## Target Architecture
 
 Add a shared collector facade:
