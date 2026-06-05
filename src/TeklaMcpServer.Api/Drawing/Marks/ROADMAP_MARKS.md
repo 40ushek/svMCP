@@ -215,21 +215,25 @@ Marks не должны вводить отдельный базовый view-co
 к production-flow.
 
 На views с включённым `Cut parts: Yes` (Tekla view shortening) dimension
-blockers собираются и подаются в force-path корректно, но координаты текстов
-размеров и координаты меток оказываются в разных системах:
+blockers собираются и подаются в force-path, но координатные системы
+разных источников отличаются и не все подтверждены эмпирически:
 
-- `TextPrimitive.Position` от presentation API — в исходной (несокращённой)
-  системе координат вида;
-- `Mark.InsertionPoint` и `LeaderLinePlacing.StartPoint` — в системе вида,
-  которая отображается с применённым shortening.
+- `TextPrimitive.Position` от presentation API — система не подтверждена;
+  по последним наблюдениям presentation polygons выглядят уже visual / shortened.
+- `Mark.InsertionPoint` и `LeaderLinePlacing.StartPoint` — по экспериментам
+  тоже выглядят visual / shortened.
+- Part geometry и mark geometry corners из view-context — система не
+  подтверждена, предположительно raw; это отдельно от `Mark.InsertionPoint`.
 
-Из-за этого:
+Точная классификация источников по системам координат — задача отдельного
+эмпирического шага (см. "Корректный порядок шагов" ниже).
 
-- Force видит и устраняет коллизии в исходных координатах, но визуально на
-  чертеже метка может остаться на размере (или, наоборот, force-pass даёт
-  `foreignFinalConflicts=0`, а глаз видит конфликт).
-- Визуализация `draw_dimension_text_boxes` на shortened view рисует рамки
-  не на месте текстов, потому что overlay получает исходные координаты.
+Из-за этой неопределённости:
+
+- Force может сравнивать blockers и marks в разных coordinate systems:
+  часть объектов уже visual, часть может быть raw.
+- `draw_dimension_text_boxes` на shortened view должен явно показывать,
+  какой source был converted/unconverted, иначе рамки легко интерпретировать неверно.
 
 #### Решение: `ViewShorteningCoordinateMapper`
 
@@ -243,49 +247,97 @@ blockers собираются и подаются в force-path корректн
 
 - собрать `AABB` → построить intervals `[Min..Max]`;
 - отсортировать и слить пересекающиеся;
-- gap между соседними intervals вычитается из координаты точки, если точка
-  находится после gap;
+- между соседними intervals из координаты точки вычитается не весь raw gap,
+  а `rawGap - spaceBetweenCutParts`, где `spaceBetweenCutParts = Offset * Scale`
+  — это видимый break gap, который Tekla оставляет между cut-сегментами.
+  То есть удаляется только "скрытая" часть пробела, а Tekla-видимый зазор
+  сохраняется;
 - если intervals ≤ 1 — identity (`HasShortening = false`).
 
-Эмпирически подтверждено на shortened view: после `mapper.ConvertPolygon(raw)`
-рамки text box ложатся точно на сами тексты размеров.
+Эмпирически подтверждено: mapper корректно преобразует raw visible boxes/blockers
+в visual систему shortened view, если source действительно raw.
 
 Файлы:
 
 - `TeklaMcpServer.Api/Drawing/Geometry/ViewShorteningCoordinateMapper.cs` —
   алгоритм; public surface: `FromAabbs`, `FromVisibleBoxes`, `ConvertPoint`,
-  `ConvertPolygon`, `HasShorteningX/Y/Shortening`, `XIntervals`/`YIntervals`.
+  `ConvertPolygon`, `HasShortening`, `HasShorteningX`, `HasShorteningY`,
+  `XIntervals`, `YIntervals`.
 - `TeklaMcpServer.Api/Drawing/Geometry/ViewShorteningAttributesReader.cs` —
-  читает `view.Attributes.Shortening.Offset`.
+  читает `view.Attributes.Shortening.Offset` и переводит в координаты вида;
+  результат — `SpaceBetweenCutPartsInViewCoordinates`, который надо передать
+  вторым аргументом в `FromAabbs(boxes, spaceBetweenCutParts)`.
 - `TeklaMcpServer.Api/Drawing/Dimensions/Placement/DimensionDrawingTextBoxDebugReader.cs` —
   public debug facade, переиспользует `DimensionTextBoxContextLoader`.
 - `TeklaMcpServer.Tests/ViewShorteningCoordinateMapperTests.cs` — 11 тестов:
   identity, X-only, Y-only, X+Y, polygon, точка в gap, точка на границе,
   invalid input.
 - `TeklaMcpServer.Host/DrawingViewRestrictionBoxProbe.cs` — visual probe
-  (зелёный: visible boxes, красный: raw text box polygons, magenta: converted)
-  для эмпирической проверки. Запускается через `--restriction-box-probe`.
+  (зелёный: visible boxes, синий: converted visible boxes, красный:
+  unconverted text box polygons, magenta: text box polygons converted to raw)
+  для эмпирической проверки. Сейчас Host тестовый: probe запускается из
+  `Program.cs` напрямую, без аргумента командной строки.
 
 #### Pending: подключение mapper-а к production-flow
 
 Сейчас mapper существует как алгоритмическая библиотека, но никто из
-production-кода его не использует. Что предстоит сделать:
+production-кода его не использует.
 
-1. В `BuildDrawingViewContext` (Marks + Dimensions) построить mapper из
-   `view.GetVisibleAreaRestrictionBoxes()` и положить в `DrawingViewContext`
-   как `ShorteningMapper`.
-2. На уровне `DimensionPresentationTextBoxCollector` / `MarkLayoutFixedBlockerBuilder`
-   применять `mapper.ConvertPolygon(...)` для polygon-ов dimension blockers,
-   если `mapper.HasShortening`.
-3. Опционально — сделать то же самое для mark coords, если эмпирически
-   подтвердится что `Mark.InsertionPoint` уже visual (тогда blockers надо
-   привести к той же visual системе, что делает mapper).
-4. Подключить mapper к `draw_dimension_text_boxes` — рамки будут правильно
-   ложиться на тексты на shortened views.
+##### Главный риск: двойное shortening
 
-Перед подключением — точечная эмпирическая проверка: подтвердить что mark
-coords и blocker coords после mapper transform совпадают на конкретном
-shortened view.
+`DimensionPresentationTextBoxCollector.CreateTextBox` может уже получать
+polygon в visual / shortened координатах (по нашим экспериментам
+presentation text boxes и `Mark.InsertionPoint` выглядят visual). Если там
+применить `mapper.ConvertPolygon(polygon)` raw → visual вслепую, получим
+двойное shortening и уведём боксы ещё дальше от текстов.
+
+Поэтому **нельзя подключать mapper к presentation collector без явного
+подтверждения системы координат каждого источника.**
+
+##### Корректный порядок шагов
+
+1. **`DrawingViewContext.ShorteningMapper`** — строить один раз на view в
+   `BuildDrawingViewContext` (Marks + Dimensions):
+   ```
+   boxes = ReadAabbs(view.GetVisibleAreaRestrictionBoxes())
+   spaceBetweenCutParts = ViewShorteningAttributesReader.Read(view).SpaceBetweenCutPartsInViewCoordinates
+   mapper = ViewShorteningCoordinateMapper.FromAabbs(boxes, spaceBetweenCutParts)
+   ```
+   `FromAabbs` сам не читает `view.Attributes`; reader вызывается отдельно
+   и его результат передаётся вторым аргументом.
+
+2. **Эмпирическая проверка системы координат каждого источника** до
+   изменения production-кода. Расширить `DrawingViewRestrictionBoxProbe`:
+   - нарисовать presentation text box polygon без конвертации;
+   - нарисовать `Mark.InsertionPoint` через `MarkDrawingGeometryDebugReader`;
+   - нарисовать part polygon из view geometry;
+   - на shortened view увидеть какие источники уже визуально совпадают с
+     самими объектами, а какие нет.
+
+3. **Конвертация применяется только к подтверждённо raw источникам.**
+   Если presentation выдаёт уже visual (что вероятно), его не трогаем.
+   Если part polygon raw — конвертируем при сборке blockers.
+
+4. **Force-flow** — целевая система visual (потому что marks visual). Raw
+   blockers пропускаются через `mapper.ConvertPolygon(...)`, visual blockers
+   остаются как есть. Это делается на уровне сборки blockers, где известен
+   источник координат, а не внутри presentation collector.
+
+5. **Debug trace** для каждого source во время сборки blockers:
+   ```
+   blocker_source kind=dimension_text_box converted=false hasShortening=true axes=X
+   blocker_source kind=part_polygon converted=true hasShortening=true axes=X
+   ```
+   Через месяц будет понятно почему один blocker конвертируется, а другой нет.
+
+6. **`draw_dimension_text_boxes`** — подключать только после п.2.
+   Если presentation visual, mapper не нужен. Если raw — конвертируем.
+
+##### Чего не делать
+
+- Не применять `ConvertPolygon` "на всякий случай" к presentation polygons.
+- Не строить mapper повторно на каждом blocker / mark.
+- Не подключать mapper к force-flow без debug trace по источникам.
 
 Попытки решить через `Tekla.Structures.Drawing.Tools.DrawingCoordinateConverter`
 описаны ниже в отдельном перечне; ни одна не дала shortening-aware координаты
@@ -298,38 +350,19 @@ coordinate systems (view ↔ sheet через origin/scale), а не для shor
 внутри одного view.
 
 При этом `View.GetVisibleAreaRestrictionBoxes()` возвращает `AABB` видимых
-областей вида. Это делает задачу решаемой через собственный mapper:
+областей вида, что делает задачу решаемой через собственный mapper.
 
-- считать visible boxes;
-- отсортировать их по `MinPoint.X` для X-shortening или по `MinPoint.Y` для
-  Y-shortening;
-- найти gaps между соседними visible boxes;
-- для исходной координаты вычесть сумму gaps, которые находятся до этой точки;
-- применить такой же transform ко всем corners polygon-а text box / blocker.
-
-Пример X-shortening:
-
-```text
-Visible boxes:
-box1: X 0..100
-box2: X 300..500
-box3: X 800..1000
-
-Gaps:
-100..300 = 200
-500..800 = 300
-
-original X = 850
-removed gaps before point = 200 + 300 = 500
-shortened X = 850 - 500 = 350
-```
+Актуальный алгоритм и применение описаны выше в разделе
+"Решение: `ViewShorteningCoordinateMapper`". Старое описание из этого места
+удалено, чтобы roadmap не противоречил сам себе.
 
 Что подтверждено эмпирически:
 
 - На views **без shortening** — dimension blockers работают корректно,
   визуально метки уходят от размерных текстов, конфликты устраняются.
-- На views **с shortening** — feature рабочая в исходных drawing units, но
-  визуально и реально результат может расходиться.
+- На views **с shortening** — алгоритмическое ядро работает (commit `d872d38`),
+  но production-flow ещё не подключён; до подключения возможны расхождения
+  между конфликтами в данных и визуальным результатом.
 
 Открытые edge-cases (не критичны для текущего MVP):
 
