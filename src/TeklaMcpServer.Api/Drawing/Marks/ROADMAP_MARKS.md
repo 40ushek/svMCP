@@ -232,11 +232,38 @@ blockers собираются и подаются в force-path корректн
 описаны ниже в отдельном перечне; ни одна не дала shortening-aware координаты
 текста размера внутри view.
 
-Tekla Open API публично не даёт способа получить ranges shortening или
-преобразовать координаты текста размера с учётом cut parts. `DrawingCoordinateConverter`
-обещает в документации "empty areas in views", но эмпирически работает для
-transform между разными coordinate systems (view ↔ sheet через origin/scale),
-а не для shortening внутри одного view.
+Tekla support подтвердил: Open API сейчас не учитывает shortening при
+преобразовании координат. `DrawingCoordinateConverter` обещает в документации
+"empty areas in views", но эмпирически работает для transform между разными
+coordinate systems (view ↔ sheet через origin/scale), а не для shortening
+внутри одного view.
+
+При этом `View.GetVisibleAreaRestrictionBoxes()` возвращает `AABB` видимых
+областей вида. Это делает задачу решаемой через собственный mapper:
+
+- считать visible boxes;
+- отсортировать их по `MinPoint.X` для X-shortening или по `MinPoint.Y` для
+  Y-shortening;
+- найти gaps между соседними visible boxes;
+- для исходной координаты вычесть сумму gaps, которые находятся до этой точки;
+- применить такой же transform ко всем corners polygon-а text box / blocker.
+
+Пример X-shortening:
+
+```text
+Visible boxes:
+box1: X 0..100
+box2: X 300..500
+box3: X 800..1000
+
+Gaps:
+100..300 = 200
+500..800 = 300
+
+original X = 850
+removed gaps before point = 200 + 300 = 500
+shortened X = 850 - 500 = 350
+```
 
 Что подтверждено эмпирически:
 
@@ -245,15 +272,23 @@ transform между разными coordinate systems (view ↔ sheet чере�
 - На views **с shortening** — feature рабочая в исходных drawing units, но
   визуально и реально результат может расходиться.
 
-Возможные направления на будущее (не решены сейчас):
+Возможные направления на будущее:
 
-- Найти undocumented Tekla API для получения shortening ranges
-  (`view.Shortenings` или подобное).
+- Реализовать `ViewShorteningCoordinateMapper` на базе
+  `View.GetVisibleAreaRestrictionBoxes()`.
+- Проверить на реальных drawings:
+  - coordinate system `AABB` относительно `TextPrimitive.Position`;
+  - порядок и стабильность boxes;
+  - X/Y shortening и X+Y одновременно;
+  - нужно ли сохранять visual offset / break gap вместо полного удаления
+    промежутка;
+  - поведение `CutSkewParts` / сложных shortening settings.
 - Получать координаты текста размера из runtime API (`StraightDimension.TextPosition`?)
   если оно даёт уже shortened coords, и использовать его вместо presentation
   API на shortened views.
-- Как deopt-fallback: при `view.Attributes.Shortening.CutParts == true` выключать
-  dimension blockers для этого view, чтобы избежать ложного поведения.
+- Как deopt-fallback: если mapper не может построить надёжный transform,
+  выключать dimension blockers для shortened view, чтобы избежать ложного
+  поведения.
 
 #### Tekla API references
 
@@ -276,6 +311,9 @@ transform между разными coordinate systems (view ↔ sheet чере�
   — поля: `CutParts`, `CutSkewParts`, `MinimumLength`, `Offset`, `CutPartType`.
   Чисто декларативные настройки; **нет** API для получения фактических
   диапазонов укорочения, применённых к виду.
+- `View.GetVisibleAreaRestrictionBoxes()` — support-recommended runtime source
+  для проверки наличия shortening и получения `AABB` видимых областей. Эти
+  boxes можно использовать как основу собственного shortening mapper-а.
 
 #### Документированный пример использования `DrawingCoordinateConverter`
 
@@ -321,8 +359,10 @@ polygon.Insert();
    размера текста (двойное масштабирование).
 4. Без деления, прямой `Convert(view, sheet, point)` — повтор п.2.
 
-Tekla Open API публично **не даёт способа** получить ranges shortening или
-shortening-aware transform для текста размера внутри view.
+Tekla Open API публично **не даёт готового shortening-aware transform** для
+координат внутри view, но `GetVisibleAreaRestrictionBoxes()` даёт visible boxes,
+на базе которых можно построить собственный transform через вычитание gaps
+между boxes.
 
 ## Текущее состояние лидеров
 
