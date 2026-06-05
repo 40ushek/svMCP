@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
@@ -9,8 +10,12 @@ namespace TeklaMcpServer.Host;
 
 internal sealed class DrawingViewRestrictionBoxProbe
 {
+    private static readonly List<string> LogLines = new();
+
     public void Run()
     {
+        LogLines.Clear();
+
         var drawingHandler = new DrawingHandler();
         var activeDrawing = drawingHandler.GetActiveDrawing()
             ?? throw new InvalidOperationException("No active drawing. Open a drawing in Tekla and try again.");
@@ -22,37 +27,40 @@ internal sealed class DrawingViewRestrictionBoxProbe
             boxes,
             shortening.SpaceBetweenCutPartsInViewCoordinates);
 
-        Console.WriteLine($"Drawing: {activeDrawing.Name}");
-        Console.WriteLine($"View id: {ResolveViewId(view)}");
-        Console.WriteLine($"View name: {view.Name}");
-        Console.WriteLine($"View scale: {shortening.ViewScale}");
-        Console.WriteLine(
+        Log($"Drawing: {activeDrawing.Name}");
+        Log($"Drawing type: {activeDrawing.GetType().Name}");
+        Log($"View id: {ResolveViewId(view)}");
+        Log($"View name: {view.Name}");
+        Log($"View type: {view.ViewType}");
+        Log($"View scale: {shortening.ViewScale}");
+        Log(
             $"Shortening attributes: cutParts={shortening.CutParts} " +
             $"cutSkewParts={shortening.CutSkewParts} " +
             $"minimumLength={shortening.MinimumLength:0.###} " +
             $"offset={shortening.Offset:0.###} " +
             $"cutPartType={shortening.CutPartType}");
-        Console.WriteLine($"Space between cut parts in paper coordinates: {shortening.SpaceBetweenCutParts:0.###}");
-        Console.WriteLine($"Space between cut parts in view coordinates: {shortening.SpaceBetweenCutPartsInViewCoordinates:0.###}");
-        Console.WriteLine($"Visible area restriction boxes: {boxes.Count}");
+        Log($"Space between cut parts in paper coordinates: {shortening.SpaceBetweenCutParts:0.###}");
+        Log($"Space between cut parts in view coordinates: {shortening.SpaceBetweenCutPartsInViewCoordinates:0.###}");
+        Log($"Visible area restriction boxes: {boxes.Count}");
         for (var i = 0; i < boxes.Count; i++)
         {
             var box = boxes[i];
-            Console.WriteLine(
+            Log(
                 $"  box[{i}]: min=({box.MinPoint.X:0.###}, {box.MinPoint.Y:0.###}, {box.MinPoint.Z:0.###}) " +
                 $"max=({box.MaxPoint.X:0.###}, {box.MaxPoint.Y:0.###}, {box.MaxPoint.Z:0.###}) " +
                 $"size=({box.MaxPoint.X - box.MinPoint.X:0.###} x {box.MaxPoint.Y - box.MinPoint.Y:0.###})");
         }
 
-        Console.WriteLine($"Shortening in X: {mapper.HasShorteningX}");
-        Console.WriteLine($"Shortening in Y: {mapper.HasShorteningY}");
+        Log($"Shortening in X: {mapper.HasShorteningX}");
+        Log($"Shortening in Y: {mapper.HasShorteningY}");
 
         WriteAxisMap("X", mapper.XIntervals);
         WriteAxisMap("Y", mapper.YIntervals);
 
-        DrawRestrictionBoxes(activeDrawing, view, boxes, mapper);
-        DrawDimensionTextBoxComparison(activeDrawing, view, mapper);
-        DrawMarkGeometryComparison(activeDrawing, view, mapper);
+        DrawDimensionTextBoxes(activeDrawing, view, mapper);
+        DrawMarkGeometry(activeDrawing, view);
+        DrawPartBlockers(activeDrawing, view);
+        WriteLogFile();
     }
 
     private static View ResolveTargetView(DrawingHandler drawingHandler, Drawing activeDrawing)
@@ -95,131 +103,71 @@ internal sealed class DrawingViewRestrictionBoxProbe
         return result;
     }
 
-    private static void DrawRestrictionBoxes(
-        Drawing activeDrawing,
-        View view,
-        IReadOnlyList<AABB> boxes,
-        ViewShorteningCoordinateMapper mapper)
-    {
-        var rawInserted = 0;
-        var convertedInserted = 0;
-        foreach (var box in boxes)
-        {
-            if (box.MaxPoint.X <= box.MinPoint.X || box.MaxPoint.Y <= box.MinPoint.Y)
-                continue;
-
-            if (DrawBox(view, box, DrawingColors.Green))
-                rawInserted++;
-
-            if (mapper.HasShortening && DrawConvertedBox(view, box, mapper, DrawingColors.Blue))
-                convertedInserted++;
-        }
-
-        if (rawInserted > 0 || convertedInserted > 0)
-            activeDrawing.CommitChanges();
-
-        Console.WriteLine($"Drawn raw visible area restriction boxes: {rawInserted}");
-        Console.WriteLine($"Drawn converted visible area restriction boxes: {convertedInserted}");
-    }
-
-    private static bool DrawBox(View view, AABB box, DrawingColors color)
-    {
-        var rectangle = new Rectangle(
-            view,
-            new Point(box.MinPoint.X, box.MinPoint.Y, 0.0),
-            new Point(box.MaxPoint.X, box.MaxPoint.Y, 0.0));
-        rectangle.Attributes.Line.Color = color;
-        return rectangle.Insert();
-    }
-
-    private static bool DrawConvertedBox(
-        View view,
-        AABB box,
-        ViewShorteningCoordinateMapper mapper,
-        DrawingColors color)
-    {
-        var polygon = new List<double[]>
-        {
-            new[] { box.MinPoint.X, box.MinPoint.Y },
-            new[] { box.MaxPoint.X, box.MinPoint.Y },
-            new[] { box.MaxPoint.X, box.MaxPoint.Y },
-            new[] { box.MinPoint.X, box.MaxPoint.Y }
-        };
-
-        return DrawPolygon(view, mapper.ConvertPolygon(polygon), color);
-    }
-
-    private static void DrawDimensionTextBoxComparison(
+    private static void DrawDimensionTextBoxes(
         Drawing activeDrawing,
         View view,
         ViewShorteningCoordinateMapper mapper)
     {
         var textBoxes = DimensionDrawingTextBoxDebugReader.Collect(view);
 
-        var rawInserted = 0;
-        var convertedInserted = 0;
+        var mappedInserted = 0;
         foreach (var textBox in textBoxes)
         {
             if (textBox.Polygon.Count < 3)
                 continue;
 
-            if (DrawPolygon(view, textBox.Polygon, DrawingColors.Red))
-                rawInserted++;
-
-            if (mapper.HasShortening)
-            {
-                var convertedPolygon = mapper.ConvertPolygonToRaw(textBox.Polygon);
-                if (DrawPolygon(view, convertedPolygon, DrawingColors.Magenta))
-                    convertedInserted++;
-            }
+            var mappedPolygon = mapper.HasShortening
+                ? mapper.ConvertPolygonToRaw(textBox.Polygon)
+                : textBox.Polygon;
+            if (DrawPolygon(view, mappedPolygon, DrawingColors.Magenta))
+                mappedInserted++;
         }
 
-        if (rawInserted > 0 || convertedInserted > 0)
+        if (mappedInserted > 0)
             activeDrawing.CommitChanges();
 
-        Console.WriteLine($"Dimension text boxes: {textBoxes.Count}");
-        Console.WriteLine($"Drawn raw dimension text boxes: {rawInserted}");
-        Console.WriteLine($"Drawn converted dimension text boxes: {convertedInserted}");
+        Log($"Dimension text boxes: {textBoxes.Count}");
+        Log($"Drawn mapped dimension text boxes: {mappedInserted}");
     }
 
-    private static void DrawMarkGeometryComparison(
-        Drawing activeDrawing,
-        View view,
-        ViewShorteningCoordinateMapper mapper)
+    private static void DrawMarkGeometry(Drawing activeDrawing, View view)
     {
         var marks = MarkDrawingGeometryDebugReader.Collect(view);
 
         var rawInserted = 0;
-        var convertedInserted = 0;
         foreach (var mark in marks)
         {
             if (mark.Geometry.Corners.Count >= 3 && DrawPolygon(view, mark.Geometry.Corners, DrawingColors.Black))
                 rawInserted++;
-
-            if (DrawPointMarker(view, mark.InsertionX, mark.InsertionY, 2.0, DrawingColors.Black))
-                rawInserted++;
-
-            if (!mapper.HasShortening)
-                continue;
-
-            if (mark.Geometry.Corners.Count >= 3)
-            {
-                var convertedPolygon = mapper.ConvertPolygonToRaw(mark.Geometry.Corners);
-                if (DrawPolygon(view, convertedPolygon, DrawingColors.Blue))
-                    convertedInserted++;
-            }
-
-            mapper.ConvertPointToRaw(mark.InsertionX, mark.InsertionY, out var convertedX, out var convertedY);
-            if (DrawPointMarker(view, convertedX, convertedY, 2.0, DrawingColors.Blue))
-                convertedInserted++;
         }
 
-        if (rawInserted > 0 || convertedInserted > 0)
+        if (rawInserted > 0)
             activeDrawing.CommitChanges();
 
-        Console.WriteLine($"Marks: {marks.Count}");
-        Console.WriteLine($"Drawn raw mark geometry items: {rawInserted}");
-        Console.WriteLine($"Drawn converted mark geometry items: {convertedInserted}");
+        Log($"Marks: {marks.Count}");
+        Log($"Drawn unconverted mark geometry items: {rawInserted}");
+    }
+
+    private static void DrawPartBlockers(Drawing activeDrawing, View view)
+    {
+        var parts = PartBlockerGeometryDebugReader.Collect(view);
+
+        var unconvertedInserted = 0;
+        foreach (var part in parts)
+        {
+            if (part.Polygon.Count < 3)
+                continue;
+
+            // Yellow: unconverted polygon as production force-flow consumes it today.
+            if (DrawPolygon(view, part.Polygon, DrawingColors.Yellow))
+                unconvertedInserted++;
+        }
+
+        if (unconvertedInserted > 0)
+            activeDrawing.CommitChanges();
+
+        Log($"Part blockers: {parts.Count}");
+        Log($"Drawn unconverted part blocker polygons: {unconvertedInserted}");
     }
 
     private static bool DrawPolygon(View view, IReadOnlyList<double[]> polygon, DrawingColors color)
@@ -241,32 +189,33 @@ internal sealed class DrawingViewRestrictionBoxProbe
         return polyline.Insert();
     }
 
-    private static bool DrawPointMarker(View view, double x, double y, double halfSize, DrawingColors color)
-    {
-        var rectangle = new Rectangle(
-            view,
-            new Point(x - halfSize, y - halfSize, 0.0),
-            new Point(x + halfSize, y + halfSize, 0.0));
-        rectangle.Attributes.Line.Color = color;
-        return rectangle.Insert();
-    }
-
     private static void WriteAxisMap(string axisName, IReadOnlyList<ViewShorteningInterval> intervals)
     {
-        Console.WriteLine($"{axisName} visible intervals: {intervals.Count}");
+        Log($"{axisName} visible intervals: {intervals.Count}");
         for (var i = 0; i < intervals.Count; i++)
-            Console.WriteLine($"  {axisName}[{i}]: {intervals[i].Min:0.###}..{intervals[i].Max:0.###}");
+            Log($"  {axisName}[{i}]: {intervals[i].Min:0.###}..{intervals[i].Max:0.###}");
 
         if (intervals.Count <= 1)
             return;
 
-        Console.WriteLine($"{axisName} gaps:");
+        Log($"{axisName} gaps:");
         for (var i = 1; i < intervals.Count; i++)
         {
             var gapStart = intervals[i - 1].Max;
             var gapEnd = intervals[i].Min;
-            Console.WriteLine($"  gap[{i - 1}]: {gapStart:0.###}..{gapEnd:0.###} size={gapEnd - gapStart:0.###}");
+            Log($"  gap[{i - 1}]: {gapStart:0.###}..{gapEnd:0.###} size={gapEnd - gapStart:0.###}");
         }
+    }
+
+    private static void Log(string message)
+    {
+        LogLines.Add($"{DateTime.Now:HH:mm:ss.fff} {message}");
+    }
+
+    private static void WriteLogFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "TeklaMcpServer.RestrictionBoxProbe.log");
+        File.WriteAllLines(path, LogLines);
     }
 
     private static bool NearlyEqual(double a, double b)

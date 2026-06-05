@@ -211,29 +211,31 @@ Marks не должны вводить отдельный базовый view-co
 
 ### Resolved: dimension blockers на views с shortening
 
-**Статус:** алгоритмическое ядро готово (commit `d872d38`), осталось подключение
-к production-flow.
+**Статус:** алгоритмическое ядро готово (commit `d872d38`), runtime probe
+подтвердил координатные системы источников. Осталось подключение к
+production-flow только для dimension text boxes.
 
 На views с включённым `Cut parts: Yes` (Tekla view shortening) dimension
-blockers собираются и подаются в force-path, но координатные системы
-разных источников отличаются и не все подтверждены эмпирически:
+blockers собираются и подаются в force-path. Проблема была в том, что
+разные источники координат ведут себя по-разному относительно shortening.
+Текущий probe подтвердил:
 
-- `TextPrimitive.Position` от presentation API — система не подтверждена;
-  по последним наблюдениям presentation polygons выглядят уже visual / shortened.
-- `Mark.InsertionPoint` и `LeaderLinePlacing.StartPoint` — по экспериментам
-  тоже выглядят visual / shortened.
-- Part geometry и mark geometry corners из view-context — система не
-  подтверждена, предположительно raw; это отдельно от `Mark.InsertionPoint`.
+- dimension text box polygons требуют применения `ViewShorteningCoordinateMapper`;
+- mark geometry corners уже совпадают с нужной системой координат, mapper
+  к ним не применять;
+- part blocker geometry уже совпадает с нужной системой координат, mapper
+  к ней не применять.
 
-Точная классификация источников по системам координат — задача отдельного
-эмпирического шага (см. "Корректный порядок шагов" ниже).
+Итоговый контракт: mapper применяется не глобально ко всем blockers, а только
+к текстовым боксам размеров. Глобальное применение mapper ломает part blockers
+и создаёт ложные конфликты.
 
-Из-за этой неопределённости:
+Из-за этого production-подключение должно быть точечным:
 
-- Force может сравнивать blockers и marks в разных coordinate systems:
-  часть объектов уже visual, часть может быть raw.
-- `draw_dimension_text_boxes` на shortened view должен явно показывать,
-  какой source был converted/unconverted, иначе рамки легко интерпретировать неверно.
+- dimension text boxes приводятся через mapper перед попаданием в fixed blockers;
+- marks и part blockers остаются без shortening-конвертации;
+- debug trace должен явно показывать `kind` и `converted`, чтобы не вернуть
+  двойное shortening при будущих изменениях.
 
 #### Решение: `ViewShorteningCoordinateMapper`
 
@@ -254,8 +256,9 @@ blockers собираются и подаются в force-path, но коорд
   сохраняется;
 - если intervals ≤ 1 — identity (`HasShortening = false`).
 
-Эмпирически подтверждено: mapper корректно преобразует raw visible boxes/blockers
-в visual систему shortened view, если source действительно raw.
+Эмпирически подтверждено: mapper корректно преобразует координаты dimension
+text boxes для shortened view. Для mark geometry и part blocker geometry mapper
+не нужен: эти источники уже совпадают с проверенной системой координат.
 
 Файлы:
 
@@ -272,10 +275,10 @@ blockers собираются и подаются в force-path, но коорд
 - `TeklaMcpServer.Tests/ViewShorteningCoordinateMapperTests.cs` — 11 тестов:
   identity, X-only, Y-only, X+Y, polygon, точка в gap, точка на границе,
   invalid input.
-- `TeklaMcpServer.Host/DrawingViewRestrictionBoxProbe.cs` — visual probe
-  (зелёный: visible boxes, синий: converted visible boxes, красный:
-  unconverted text box polygons, magenta: text box polygons converted to raw)
-  для эмпирической проверки. Сейчас Host тестовый: probe запускается из
+- `TeklaMcpServer.Host/DrawingViewRestrictionBoxProbe.cs` — visual probe для
+  эмпирической проверки. Текущая подтверждённая схема: magenta — dimension
+  text boxes через mapper, black — mark geometry без mapper, yellow — part
+  blocker geometry без mapper. Сейчас Host тестовый: probe запускается из
   `Program.cs` напрямую, без аргумента командной строки.
 
 #### Pending: подключение mapper-а к production-flow
@@ -283,16 +286,15 @@ blockers собираются и подаются в force-path, но коорд
 Сейчас mapper существует как алгоритмическая библиотека, но никто из
 production-кода его не использует.
 
-##### Главный риск: двойное shortening
+##### Главный риск: двойное / неправильное shortening
 
-`DimensionPresentationTextBoxCollector.CreateTextBox` может уже получать
-polygon в visual / shortened координатах (по нашим экспериментам
-presentation text boxes и `Mark.InsertionPoint` выглядят visual). Если там
-применить `mapper.ConvertPolygon(polygon)` raw → visual вслепую, получим
-двойное shortening и уведём боксы ещё дальше от текстов.
+Probe подтвердил, что mapper нужен только dimension text boxes. Если применить
+его ко всем blockers "на всякий случай", part blocker geometry уедет от детали.
+Если применить неверное направление transform к текстовым боксам, они также
+уедут от реального текста.
 
-Поэтому **нельзя подключать mapper к presentation collector без явного
-подтверждения системы координат каждого источника.**
+Поэтому **нельзя подключать mapper глобально к force-flow или presentation
+collector. Конвертация должна быть source-aware.**
 
 ##### Корректный порядок шагов
 
@@ -306,36 +308,36 @@ presentation text boxes и `Mark.InsertionPoint` выглядят visual). Ес�
    `FromAabbs` сам не читает `view.Attributes`; reader вызывается отдельно
    и его результат передаётся вторым аргументом.
 
-2. **Эмпирическая проверка системы координат каждого источника** до
-   изменения production-кода. Расширить `DrawingViewRestrictionBoxProbe`:
-   - нарисовать presentation text box polygon без конвертации;
-   - нарисовать `Mark.InsertionPoint` через `MarkDrawingGeometryDebugReader`;
-   - нарисовать part polygon из view geometry;
-   - на shortened view увидеть какие источники уже визуально совпадают с
-     самими объектами, а какие нет.
+2. **Dimension text boxes** — при сборке fixed dimension blockers применять
+   mapper только к polygon текстового бокса размера. Подтверждённое для probe
+   направление: `ConvertPolygonToRaw(...)`.
 
-3. **Конвертация применяется только к подтверждённо raw источникам.**
-   Если presentation выдаёт уже visual (что вероятно), его не трогаем.
-   Если part polygon raw — конвертируем при сборке blockers.
+3. **Marks и parts не конвертировать.**
+   - mark geometry рисуется и сравнивается без mapper;
+   - part blocker geometry рисуется и сравнивается без mapper;
+   - mapper для них создаёт неверные дублирующие polygons.
 
-4. **Force-flow** — целевая система visual (потому что marks visual). Raw
-   blockers пропускаются через `mapper.ConvertPolygon(...)`, visual blockers
-   остаются как есть. Это делается на уровне сборки blockers, где известен
-   источник координат, а не внутри presentation collector.
+4. **Force-flow** — не менять общую логику obstacles. Точечно привести только
+   dimension text box polygons перед тем, как они попадут в
+   `FixedTextBoxPolygons` / synthetic `PartBbox` obstacles. Дальше solver
+   работает по прежней схеме.
 
 5. **Debug trace** для каждого source во время сборки blockers:
    ```
-   blocker_source kind=dimension_text_box converted=false hasShortening=true axes=X
-   blocker_source kind=part_polygon converted=true hasShortening=true axes=X
+   blocker_source kind=dimension_text_box converted=true hasShortening=true axes=X
+   blocker_source kind=mark_geometry converted=false hasShortening=true axes=X
+   blocker_source kind=part_polygon converted=false hasShortening=true axes=X
    ```
    Через месяц будет понятно почему один blocker конвертируется, а другой нет.
 
-6. **`draw_dimension_text_boxes`** — подключать только после п.2.
-   Если presentation visual, mapper не нужен. Если raw — конвертируем.
+6. **`draw_dimension_text_boxes`** — на shortened view должен использовать ту
+   же source-aware схему: текстовые боксы через mapper, mark/part debug
+   overlays без mapper.
 
 ##### Чего не делать
 
-- Не применять `ConvertPolygon` "на всякий случай" к presentation polygons.
+- Не применять mapper "на всякий случай" ко всем polygons.
+- Не применять mapper к mark geometry и part blocker geometry.
 - Не строить mapper повторно на каждом blocker / mark.
 - Не подключать mapper к force-flow без debug trace по источникам.
 
@@ -361,8 +363,9 @@ coordinate systems (view ↔ sheet через origin/scale), а не для shor
 - На views **без shortening** — dimension blockers работают корректно,
   визуально метки уходят от размерных текстов, конфликты устраняются.
 - На views **с shortening** — алгоритмическое ядро работает (commit `d872d38`),
-  но production-flow ещё не подключён; до подключения возможны расхождения
-  между конфликтами в данных и визуальным результатом.
+  probe подтвердил source-aware контракт: dimension text boxes через mapper,
+  mark geometry и part blocker geometry без mapper. Production-flow ещё не
+  подключён; подключать нужно только dimension text boxes.
 
 Открытые edge-cases (не критичны для текущего MVP):
 
