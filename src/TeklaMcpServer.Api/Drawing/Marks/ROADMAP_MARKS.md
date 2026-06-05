@@ -209,7 +209,10 @@ Marks не должны вводить отдельный базовый view-co
   переиспользует существующий `PartBbox` / `ForeignPartOverlapAnalyzer`
   механизм.
 
-### Known limitation: dimension blockers на views с shortening
+### Resolved: dimension blockers на views с shortening
+
+**Статус:** алгоритмическое ядро готово (commit `d872d38`), осталось подключение
+к production-flow.
 
 На views с включённым `Cut parts: Yes` (Tekla view shortening) dimension
 blockers собираются и подаются в force-path корректно, но координаты текстов
@@ -227,6 +230,62 @@ blockers собираются и подаются в force-path корректн
   `foreignFinalConflicts=0`, а глаз видит конфликт).
 - Визуализация `draw_dimension_text_boxes` на shortened view рисует рамки
   не на месте текстов, потому что overlay получает исходные координаты.
+
+#### Решение: `ViewShorteningCoordinateMapper`
+
+Реализован собственный coordinate transform на основе двух runtime источников:
+
+1. `View.GetVisibleAreaRestrictionBoxes()` — `AABB` видимых областей вида.
+2. `view.Attributes.Shortening.Offset` — paper-mm gap между cut-сегментами,
+   переводится в координаты вида как `Offset * Scale`.
+
+Алгоритм (на каждую ось X / Y):
+
+- собрать `AABB` → построить intervals `[Min..Max]`;
+- отсортировать и слить пересекающиеся;
+- gap между соседними intervals вычитается из координаты точки, если точка
+  находится после gap;
+- если intervals ≤ 1 — identity (`HasShortening = false`).
+
+Эмпирически подтверждено на shortened view: после `mapper.ConvertPolygon(raw)`
+рамки text box ложатся точно на сами тексты размеров.
+
+Файлы:
+
+- `TeklaMcpServer.Api/Drawing/Geometry/ViewShorteningCoordinateMapper.cs` —
+  алгоритм; public surface: `FromAabbs`, `FromVisibleBoxes`, `ConvertPoint`,
+  `ConvertPolygon`, `HasShorteningX/Y/Shortening`, `XIntervals`/`YIntervals`.
+- `TeklaMcpServer.Api/Drawing/Geometry/ViewShorteningAttributesReader.cs` —
+  читает `view.Attributes.Shortening.Offset`.
+- `TeklaMcpServer.Api/Drawing/Dimensions/Placement/DimensionDrawingTextBoxDebugReader.cs` —
+  public debug facade, переиспользует `DimensionTextBoxContextLoader`.
+- `TeklaMcpServer.Tests/ViewShorteningCoordinateMapperTests.cs` — 11 тестов:
+  identity, X-only, Y-only, X+Y, polygon, точка в gap, точка на границе,
+  invalid input.
+- `TeklaMcpServer.Host/DrawingViewRestrictionBoxProbe.cs` — visual probe
+  (зелёный: visible boxes, красный: raw text box polygons, magenta: converted)
+  для эмпирической проверки. Запускается через `--restriction-box-probe`.
+
+#### Pending: подключение mapper-а к production-flow
+
+Сейчас mapper существует как алгоритмическая библиотека, но никто из
+production-кода его не использует. Что предстоит сделать:
+
+1. В `BuildDrawingViewContext` (Marks + Dimensions) построить mapper из
+   `view.GetVisibleAreaRestrictionBoxes()` и положить в `DrawingViewContext`
+   как `ShorteningMapper`.
+2. На уровне `DimensionPresentationTextBoxCollector` / `MarkLayoutFixedBlockerBuilder`
+   применять `mapper.ConvertPolygon(...)` для polygon-ов dimension blockers,
+   если `mapper.HasShortening`.
+3. Опционально — сделать то же самое для mark coords, если эмпирически
+   подтвердится что `Mark.InsertionPoint` уже visual (тогда blockers надо
+   привести к той же visual системе, что делает mapper).
+4. Подключить mapper к `draw_dimension_text_boxes` — рамки будут правильно
+   ложиться на тексты на shortened views.
+
+Перед подключением — точечная эмпирическая проверка: подтвердить что mark
+coords и blocker coords после mapper transform совпадают на конкретном
+shortened view.
 
 Попытки решить через `Tekla.Structures.Drawing.Tools.DrawingCoordinateConverter`
 описаны ниже в отдельном перечне; ни одна не дала shortening-aware координаты
@@ -272,23 +331,15 @@ shortened X = 850 - 500 = 350
 - На views **с shortening** — feature рабочая в исходных drawing units, но
   визуально и реально результат может расходиться.
 
-Возможные направления на будущее:
+Открытые edge-cases (не критичны для текущего MVP):
 
-- Реализовать `ViewShorteningCoordinateMapper` на базе
-  `View.GetVisibleAreaRestrictionBoxes()`.
-- Проверить на реальных drawings:
-  - coordinate system `AABB` относительно `TextPrimitive.Position`;
-  - порядок и стабильность boxes;
-  - X/Y shortening и X+Y одновременно;
-  - нужно ли сохранять visual offset / break gap вместо полного удаления
-    промежутка;
-  - поведение `CutSkewParts` / сложных shortening settings.
-- Получать координаты текста размера из runtime API (`StraightDimension.TextPosition`?)
-  если оно даёт уже shortened coords, и использовать его вместо presentation
-  API на shortened views.
-- Как deopt-fallback: если mapper не может построить надёжный transform,
-  выключать dimension blockers для shortened view, чтобы избежать ложного
-  поведения.
+- Поведение `CutSkewParts = true` (наклонные cut planes) — пока не проверено.
+- Несколько independent shortening intervals на одной оси (3+ visible boxes)
+  — алгоритм корректен по тестам, но empirically на реальном чертеже с 3+
+  shortening regions ещё не проверен.
+- Mapper берёт `Offset` из `view.Attributes.Shortening.Offset` — если
+  пользователь сменил Offset после построения чертежа без regenerate, mapper
+  может использовать stale значение. Стоит подтвердить runtime обновление.
 
 #### Tekla API references
 
