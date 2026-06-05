@@ -35,7 +35,7 @@ internal static class DimensionTextBoxContextLoader
             view));
     }
 
-    private static List<DimensionDrawingTextBoxSource> CollectDimensionTextBoxSources(View view)
+    internal static List<DimensionDrawingTextBoxSource> CollectDimensionTextBoxSources(View view)
     {
         var sources = new List<DimensionDrawingTextBoxSource>();
 

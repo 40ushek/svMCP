@@ -9,7 +9,7 @@ namespace TeklaMcpServer.Host;
 internal static class Program
 {
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
         var model = new Model();
         ApplyTeklaChannelFixes();
@@ -24,16 +24,9 @@ internal static class Program
         var info = model.GetInfo();
         Console.WriteLine($"Connected: {info.ModelName}  ({info.ModelPath})");
 
-        var drawingHandler = new DrawingHandler();
-        //var activeDrawing = drawingHandler.GetActiveDrawing();
-        //if (activeDrawing == null)
-        //{
-        //    Console.WriteLine("No active drawing. Open a drawing in Tekla and try again.");
-        //    Console.ReadLine();
-        //    return;
-        //}
-
-        //Console.WriteLine($"Drawing: {activeDrawing.Name}");
+        RunRestrictionBoxProbe();
+        Console.ReadLine();
+        return;
 
         var docManResult = new TeklaMcpServer.Api.Drawing.TeklaDrawingQueryApi().GetSelectedDrawingsInDocumentManager();
         if (!docManResult.Success)
@@ -46,25 +39,29 @@ internal static class Program
             foreach (var d in docManResult.Drawings)
                 Console.WriteLine($"  - {d.Type} {d.Mark} {d.Name} [{d.Guid}]");
         }
-        return;
+    }
 
-        int? viewId = null;
-        const string attributesFile = "standard";
+    private static bool ShouldRunRestrictionBoxProbe(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--restriction-box-probe", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
 
-        var anglePlacer = new ContourPlateAngleDimensionPlacer();
-        anglePlacer.Run(
-            viewId: viewId,
-            distance: 2.0,
-            attributesFile: attributesFile,
-            skipRightAngles: false);
+        return false;
+    }
 
-        var radiusPlacer = new ContourPlateRadiusDimensionPlacer();
-        radiusPlacer.Run(
-            viewId: viewId,
-            distance: 8.0,
-            attributesFile: attributesFile);
-
-        Console.ReadLine();
+    private static void RunRestrictionBoxProbe()
+    {
+        try
+        {
+            new DrawingViewRestrictionBoxProbe().Run();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Restriction box probe failed: {ex.Message}");
+        }
     }
 
     private static void ApplyTeklaChannelFixes()
