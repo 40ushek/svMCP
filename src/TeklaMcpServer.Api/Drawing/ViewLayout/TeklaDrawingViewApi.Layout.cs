@@ -1162,7 +1162,7 @@ public sealed partial class TeklaDrawingViewApi
         var preserveExistingScales = scalePolicy == DrawingScalePolicy.PreserveExistingScales;
         var uniformAllNonDetail = scalePolicy == DrawingScalePolicy.UniformAllNonDetail;
         var keepCurrentScales = scalePolicy == DrawingScalePolicy.UniformMainWithSectionExceptions;
-        var allowTeklaMutation = false;
+        var allowTeklaMutation = applyMode == DrawingLayoutApplyMode.FinalOnly;
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
