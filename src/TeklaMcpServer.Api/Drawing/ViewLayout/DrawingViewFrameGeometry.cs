@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Globalization;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Diagnostics;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -181,7 +183,38 @@ internal static class DrawingViewFrameGeometry
             }
 
             var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
-            offsets[view.GetIdentifier().ID] = ((centerX - originX) * scale, (centerY - originY) * scale);
+            var offsetSheetX = centerX - originX;
+            var offsetSheetY = centerY - originY;
+            var offsetStoredX = offsetSheetX * scale;
+            var offsetStoredY = offsetSheetY * scale;
+            var viewId = view.GetIdentifier().ID;
+            offsets[viewId] = (offsetStoredX, offsetStoredY);
+
+            if (PerfTrace.IsActive && actualRects.TryGetValue(viewId, out var rect))
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "view_frame_offset_capture",
+                    0,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "view={0} origin=({1:F2},{2:F2}) bbox=[{3:F2},{4:F2},{5:F2},{6:F2}] center=({7:F2},{8:F2}) scale={9:F2} offsetSheet=({10:F2},{11:F2}) offsetStored=({12:F2},{13:F2}) plausible={14}",
+                        viewId,
+                        originX,
+                        originY,
+                        rect.MinX,
+                        rect.MinY,
+                        rect.MaxX,
+                        rect.MaxY,
+                        centerX,
+                        centerY,
+                        scale,
+                        offsetSheetX,
+                        offsetSheetY,
+                        offsetStoredX,
+                        offsetStoredY,
+                        IsBoundingBoxOffsetPlausible(originX, originY, view.Width, view.Height, rect) ? 1 : 0));
+            }
         }
 
         return offsets;
@@ -208,4 +241,3 @@ internal static class DrawingViewFrameGeometry
         return sizes;
     }
 }
-

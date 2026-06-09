@@ -55,7 +55,8 @@ internal static class ViewPlacementGeometryService
         var id = view.GetIdentifier().ID;
         if (context.Workspace?.FrameOffsetsById.TryGetValue(id, out var storedOffset) == true)
         {
-            var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+            var fallbackScale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+            var scale = context.Workspace.GetSelectedScale(id, fallbackScale);
             return (storedOffset.X / scale, storedOffset.Y / scale);
         }
 
@@ -69,7 +70,8 @@ internal static class ViewPlacementGeometryService
         var id = view.GetIdentifier().ID;
         if (workspace.FrameOffsetsById.TryGetValue(id, out var storedOffset))
         {
-            var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+            var fallbackScale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+            var scale = workspace.GetSelectedScale(id, fallbackScale);
             return (storedOffset.X / scale, storedOffset.Y / scale);
         }
 

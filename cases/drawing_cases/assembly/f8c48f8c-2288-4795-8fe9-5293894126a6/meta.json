@@ -1,0 +1,25 @@
+{
+  "drawingGuid": "f8c48f8c-2288-4795-8fe9-5293894126a6",
+  "drawingType": "AssemblyDrawing",
+  "drawingName": "Timber Wall Zone 0",
+  "operation": "fit_views_to_sheet",
+  "note": "",
+  "scoreBefore": {
+    "total": 0.9999999999999999,
+    "breakdown": {
+      "fillRatio": 0.5970434516462212,
+      "uniformScaleScore": 1.0,
+      "viewOverlapPenalty": 0.0,
+      "reservedAreaOverlapPenalty": 0.5970434516462212
+    }
+  },
+  "scoreAfter": {
+    "total": 1.0,
+    "breakdown": {
+      "fillRatio": 0.62620828615966,
+      "uniformScaleScore": 1.0,
+      "viewOverlapPenalty": 0.0,
+      "reservedAreaOverlapPenalty": 0.62620828615966
+    }
+  }
+}

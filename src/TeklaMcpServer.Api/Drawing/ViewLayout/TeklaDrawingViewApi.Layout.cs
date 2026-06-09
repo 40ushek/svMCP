@@ -785,7 +785,9 @@ public sealed partial class TeklaDrawingViewApi
                 rect.MaxX,
                 rect.MaxY);
 
-    private static void TraceLayoutCandidateApplyPlan(DrawingLayoutCandidateApplyPlan plan)
+    private static void TraceLayoutCandidateApplyPlan(
+        DrawingLayoutCandidateApplyPlan plan,
+        DrawingLayoutWorkspace? workspace = null)
     {
         PerfTrace.Write(
             "api-view",
@@ -814,6 +816,44 @@ public sealed partial class TeklaDrawingViewApi
                     move.TargetOriginY,
                     move.Scale,
                     FormatRect(move.LayoutRect)));
+
+            if (workspace == null || !workspace.FrameOffsetsById.TryGetValue(move.ViewId, out var storedOffset))
+                continue;
+
+            var scale = move.Scale > 0 ? move.Scale : 1.0;
+
+            var offsetX = storedOffset.X / scale;
+            var offsetY = storedOffset.Y / scale;
+            var expectedCenterX = move.TargetOriginX + offsetX;
+            var expectedCenterY = move.TargetOriginY + offsetY;
+            var expectedRect = move.LayoutRect != null
+                ? new ReservedRect(
+                    expectedCenterX - move.LayoutRect.Width * 0.5,
+                    expectedCenterY - move.LayoutRect.Height * 0.5,
+                    expectedCenterX + move.LayoutRect.Width * 0.5,
+                    expectedCenterY + move.LayoutRect.Height * 0.5)
+                : null;
+
+            PerfTrace.Write(
+                "api-view",
+                "fit_layout_apply_plan_offset",
+                0,
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "candidate={0} view={1} targetOrigin=({2:F2},{3:F2}) scale={4:F2} storedOffset=({5:F2},{6:F2}) usedOffset=({7:F2},{8:F2}) expectedCenter=({9:F2},{10:F2}) plannedRect={11} expectedRect={12}",
+                    string.IsNullOrWhiteSpace(plan.CandidateName) ? "none" : plan.CandidateName,
+                    move.ViewId,
+                    move.TargetOriginX,
+                    move.TargetOriginY,
+                    scale,
+                    storedOffset.X,
+                    storedOffset.Y,
+                    offsetX,
+                    offsetY,
+                    expectedCenterX,
+                    expectedCenterY,
+                    FormatRect(move.LayoutRect),
+                    FormatRect(expectedRect)));
         }
     }
 
@@ -1429,6 +1469,16 @@ public sealed partial class TeklaDrawingViewApi
         actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         layoutWorkspace.SetActualViewRects(actualRects);
 
+        // Refresh SelectedFrameSizes from actual post-scale bbox. The virtual probe estimates
+        // sizes by proportional scaling, which underestimates section views that have
+        // scale-invariant components (marks, labels) in their bbox.
+        if (allowTeklaMutation && actualRects.Count > 0)
+        {
+            var refreshedSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
+            if (refreshedSizes.Count > 0)
+                layoutWorkspace.SetSelectedFrameSizes(refreshedSizes);
+        }
+
         var offsetById = DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
         layoutWorkspace.SetFrameOffsets(offsetById);
         // Read offsets from actual sheet geometry after the final scale state is already applied.
@@ -1483,7 +1533,8 @@ public sealed partial class TeklaDrawingViewApi
                 if (!offsetById.TryGetValue(arranged[i].Id, out var off))
                     continue;
 
-                var correctionScale = v.Attributes.Scale > 0 ? v.Attributes.Scale : optimalScale.Value;
+                var fallbackScale = v.Attributes.Scale > 0 ? v.Attributes.Scale : optimalScale.Value;
+                var correctionScale = layoutWorkspace.GetSelectedScale(arranged[i].Id, fallbackScale);
                 var corrX = off.X / correctionScale;
                 var corrY = off.Y / correctionScale;
                 var semanticKind = layoutWorkspace.GetSemanticKind(arranged[i].Id);
@@ -1683,7 +1734,7 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
-        TraceLayoutCandidateApplyPlan(applyPlan);
+        TraceLayoutCandidateApplyPlan(applyPlan, layoutWorkspace);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(passiveCandidate, applyPlan);
         TraceLayoutCandidateApplyDeltas(applyDeltas);
         var selectedCandidateFeasible = passiveSelection.Selected?.IsFeasible == true;
@@ -1723,7 +1774,8 @@ public sealed partial class TeklaDrawingViewApi
         var selectedCandidateApplyExecution = new DrawingLayoutCandidateTeklaApplyAdapter().Execute(
             applyPlan,
             layoutWorkspace.RuntimeViewsById,
-            selectedCandidateApplySafety.EffectiveMode);
+            selectedCandidateApplySafety.EffectiveMode,
+            activeDrawing);
         TraceLayoutCandidateApplyExecution(selectedCandidateApplyExecution);
         if (selectedCandidateApplySafety.EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply
             && selectedCandidateApplyExecution.Success
@@ -1737,6 +1789,30 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.SetRuntimeViews(selectedCandidateViews);
             finalActualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
             arranged = BuildArrangedFromApplyPlan(arranged, layoutWorkspace, applyPlan);
+            var appliedActualCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
+                "fit_views_to_sheet:applied-actual",
+                layoutWorkspace,
+                selectedCandidateViews,
+                arranged,
+                finalActualRects);
+            var appliedActualEvaluation = new DrawingLayoutScorer().Evaluate(appliedActualCandidate);
+            TraceLayoutCandidateScore(appliedActualEvaluation);
+            if (!appliedActualEvaluation.IsFeasible)
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "fit_layout_apply_actual_conflict",
+                    0,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "candidate={0} viewOverlaps={1} viewOverlapArea={2:0.###} reservedOverlaps={3} reservedOverlapArea={4:0.###} diagnostics={5}",
+                        appliedActualCandidate.Name,
+                        appliedActualEvaluation.Validation.ViewOverlapCount,
+                        appliedActualEvaluation.Validation.ViewOverlapArea,
+                        appliedActualEvaluation.Validation.ReservedOverlapCount,
+                        appliedActualEvaluation.Validation.ReservedOverlapArea,
+                        appliedActualEvaluation.Validation.Diagnostics.Count));
+            }
 
             PerfTrace.Write(
                 "api-view",
