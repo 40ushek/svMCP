@@ -1747,7 +1747,9 @@ public sealed partial class TeklaDrawingViewApi
                 $"candidate={(string.IsNullOrWhiteSpace(applyPlan.CandidateName) ? "none" : applyPlan.CandidateName)} reason=infeasible-candidate");
         }
 
-        var selectedCandidateApplyMode = applyMode == DrawingLayoutApplyMode.FinalOnly && selectedCandidateFeasible
+        var selectedCandidateApplyMode = applyMode == DrawingLayoutApplyMode.FinalOnly
+            && selectedCandidateFeasible
+            && !allowTeklaMutation
             ? DrawingLayoutCandidateApplyExecutionMode.Apply
             : DrawingLayoutCandidateApplyExecutionMode.DryRun;
         var selectedCandidateApplyPolicy = new DrawingLayoutCandidateApplySafetyPolicy
