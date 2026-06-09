@@ -1117,8 +1117,20 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: реализовано как первый рабочий слой, нужна проверка на реальных
-чертежах.
+Статус: частично реализовано; `allowTeklaMutation` временно возвращён к
+`applyMode == FinalOnly` (коммит `1fe8677`) — технический долг, требует замены
+на раздельные флаги.
+
+⚠️ Текущее состояние (после `1fe8677`): `allowTeklaMutation = FinalOnly` снова
+разрешает ранние `Modify()`/`CommitChanges()` во всём старом pipeline (scale
+probe, arrange strategy, projection, centering, detail reposition). То есть
+`FinalOnly` применяет изменения дважды: сначала через старый pipeline, потом
+через selected-candidate apply adapter. Это работает корректно, но не
+соответствует цели 6.9.
+
+Цель 6.9 остаётся: разделить `allowTeklaMutation` на два отдельных флага:
+- `allowVirtualPlan` — всегда `true`; весь pipeline работает виртуально;
+- `allowApply` — `true` только для `FinalOnly`; единственное место `Modify()`.
 
 Сделано:
 - `DebugPreview`/`DryRun` передает в arrange context `ApplyChanges=false`;
