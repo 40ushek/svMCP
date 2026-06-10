@@ -9,6 +9,8 @@ namespace TeklaMcpServer.Tools;
 
 internal sealed class PersistentBridge : IDisposable
 {
+    internal static readonly TimeSpan DefaultResponseTimeout = TimeSpan.FromSeconds(30);
+
     private static readonly JsonSerializerOptions ProtocolJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -18,7 +20,6 @@ internal sealed class PersistentBridge : IDisposable
     private readonly string _bridgePath;
     private readonly string _workingDirectory;
     private readonly string[] _startupArgs;
-    private readonly TimeSpan _responseTimeout;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private Process? _process;
@@ -31,18 +32,23 @@ internal sealed class PersistentBridge : IDisposable
     internal PersistentBridge(
         string bridgePath,
         string workingDirectory,
-        string[] startupArgs,
-        TimeSpan responseTimeout)
+        string[] startupArgs)
     {
         _bridgePath = bridgePath;
         _workingDirectory = workingDirectory;
         _startupArgs = startupArgs;
-        _responseTimeout = responseTimeout;
     }
 
     public string Send(string command, params string[] args)
+        => SendCore(command, args, null);
+
+    public string SendWithTimeout(string command, string[] args, TimeSpan responseTimeout)
+        => SendCore(command, args, responseTimeout);
+
+    private string SendCore(string command, string[] args, TimeSpan? responseTimeout)
     {
         var total = Stopwatch.StartNew();
+        var effectiveResponseTimeout = responseTimeout ?? DefaultResponseTimeout;
         var wait = Stopwatch.StartNew();
         _lock.Wait();
         wait.Stop();
@@ -64,7 +70,7 @@ internal sealed class PersistentBridge : IDisposable
             write.Stop();
 
             var read = Stopwatch.StartNew();
-            var responseLine = ReadResponseLine();
+            var responseLine = ReadResponseLine(effectiveResponseTimeout);
             read.Stop();
 
             var parse = Stopwatch.StartNew();
@@ -90,7 +96,7 @@ internal sealed class PersistentBridge : IDisposable
                 "transport",
                 command,
                 total.ElapsedMilliseconds,
-                $"ok=true waitMs={wait.ElapsedMilliseconds} writeMs={write.ElapsedMilliseconds} readMs={read.ElapsedMilliseconds} parseMs={parse.ElapsedMilliseconds} requestBytes={requestJson.Length} responseBytes={responseLine.Length} restarted={restart}");
+                $"ok=true waitMs={wait.ElapsedMilliseconds} writeMs={write.ElapsedMilliseconds} readMs={read.ElapsedMilliseconds} parseMs={parse.ElapsedMilliseconds} timeoutMs={effectiveResponseTimeout.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} requestBytes={requestJson.Length} responseBytes={responseLine.Length} restarted={restart}");
 
             return result;
         }
@@ -100,7 +106,7 @@ internal sealed class PersistentBridge : IDisposable
                 "transport",
                 command,
                 total.ElapsedMilliseconds,
-                $"ok=false waitMs={wait.ElapsedMilliseconds} errorType={ex.GetType().Name} message={ex.Message}");
+                $"ok=false waitMs={wait.ElapsedMilliseconds} timeoutMs={effectiveResponseTimeout.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} errorType={ex.GetType().Name} message={ex.Message}");
             KillProcess();
             throw;
         }
@@ -144,16 +150,16 @@ internal sealed class PersistentBridge : IDisposable
         _stderrDrainTask = Task.Run(() => DrainStderrAsync(_stderr));
     }
 
-    private string ReadResponseLine()
+    private string ReadResponseLine(TimeSpan responseTimeout)
     {
         var readTask = _stdout!.ReadLineAsync();
-        if (!readTask.Wait(_responseTimeout))
+        if (!readTask.Wait(responseTimeout))
         {
             throw new TimeoutException(
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "Timed out waiting for TeklaBridge response after {0} ms.",
-                    _responseTimeout.TotalMilliseconds));
+                    responseTimeout.TotalMilliseconds));
         }
 
         return readTask.Result

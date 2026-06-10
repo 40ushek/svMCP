@@ -13,8 +13,7 @@ public static partial class ModelTools
     private static readonly PersistentBridge Bridge = new(
         BridgePath,
         Path.GetDirectoryName(BridgePath) ?? AppContext.BaseDirectory,
-        ["--loop"],
-        TimeSpan.FromSeconds(30));
+        ["--loop"]);
 
     static ModelTools()
     {
@@ -63,8 +62,9 @@ public static partial class ModelTools
 
         try
         {
-            var result = Bridge.Send(command, args.Skip(1).ToArray());
-            PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=true args={Math.Max(0, args.Length - 1)} resultBytes={result.Length}");
+            var timeout = ResolveBridgeResponseTimeout(command);
+            var result = Bridge.SendWithTimeout(command, args.Skip(1).ToArray(), timeout);
+            PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=true args={Math.Max(0, args.Length - 1)} timeoutMs={timeout.TotalMilliseconds} resultBytes={result.Length}");
             return result;
         }
         catch (Exception ex)
@@ -87,4 +87,13 @@ public static partial class ModelTools
             ? ex.Message
             : prefix + ex.Message;
     }
+
+    private static TimeSpan ResolveBridgeResponseTimeout(string command)
+        => command switch
+        {
+            "arrange_marks_force" => TimeSpan.FromMinutes(5),
+            "fit_views_to_sheet" => TimeSpan.FromMinutes(3),
+            "arrange_views_only" => TimeSpan.FromMinutes(3),
+            _ => PersistentBridge.DefaultResponseTimeout
+        };
 }
