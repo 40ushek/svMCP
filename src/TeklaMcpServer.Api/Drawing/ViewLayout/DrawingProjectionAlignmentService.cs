@@ -154,27 +154,22 @@ internal sealed partial class DrawingProjectionAlignmentService
         out bool alignX,
         out string reason)
     {
-        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(resolvedPlacementSide, out alignX))
+        // Actual placement side (where the arranger actually put the view) takes priority
+        // over the geometry-resolved side, because the arranger may use a fallback position.
+        if (arrangedView != null && !string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide))
         {
-            reason = string.Empty;
-            return true;
-        }
-
-        if (arrangedView != null)
-        {
-            if (string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide))
-            {
-                alignX = false;
-                reason = $"projection-skip:section-unresolved:view={arrangedView.Id}";
-                return false;
-            }
-
             if (System.Enum.TryParse<SectionPlacementSide>(arrangedView.ActualPlacementSide, ignoreCase: true, out var actualPlacementSide)
                 && DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(actualPlacementSide, out alignX))
             {
                 reason = string.Empty;
                 return true;
             }
+        }
+
+        if (DrawingProjectionAlignmentMath.TryGetSectionAlignmentAxis(resolvedPlacementSide, out alignX))
+        {
+            reason = string.Empty;
+            return true;
         }
 
         alignX = false;
@@ -193,6 +188,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     {
         var sectionSide = _sectionPlacementSideResolver.Resolve(drawing, baseView, sectionView);
         var arrangedView = arrangedViews?.FirstOrDefault(item => item.Id == sectionId);
+        DrawingProjectionAlignmentService.Log($"  section={sectionId} resolvedSide={sectionSide.PlacementSide} resolvedReason={sectionSide.Reason} arrangedActualSide={arrangedView?.ActualPlacementSide}");
         if (TryResolveSectionAlignmentAxis(arrangedView, sectionSide.PlacementSide, out alignX, out var reason))
             return true;
 

@@ -75,6 +75,15 @@ internal sealed partial class DrawingProjectionAlignmentService
         var posById = BuildPositionLookup(views, arrangedViews);
         posById.TryGetValue(baseView.GetIdentifier().ID, out var basePos);
 
+        Log($"--- projection start mainPartId={mainPartId} baseView={baseView.GetIdentifier().ID}");
+        Log($"  neighbors: top={neighbors.TopNeighbor?.GetIdentifier().ID} bottom={neighbors.BottomNeighbor?.GetIdentifier().ID} left={neighbors.SideNeighborLeft?.GetIdentifier().ID} right={neighbors.SideNeighborRight?.GetIdentifier().ID}");
+        Log($"  sections: {string.Join(",", topology.SemanticViews.Sections.Select(s => s.GetIdentifier().ID))}");
+        foreach (var v in views)
+        {
+            posById.TryGetValue(v.GetIdentifier().ID, out var vp);
+            Log($"  view={v.GetIdentifier().ID} type={v.GetType().Name} origin=({vp.X:F2},{vp.Y:F2}) w={v.Width:F2} h={v.Height:F2}");
+        }
+
         if (!TryGetPartAnchorSheet(baseView, mainPartId, basePos.X, basePos.Y, out var baseAnchorX, out var baseAnchorY, out var reason))
         {
             TraceSkip(result, reason);
@@ -250,6 +259,7 @@ internal sealed partial class DrawingProjectionAlignmentService
 
         var dx = alignX ? frontAnchorX - targetAnchorX : 0.0;
         var dy = alignX ? 0.0 : frontAnchorY - targetAnchorY;
+        Log($"MOVE view={targetId} axis={(alignX ? "X" : "Y")} frontAnchor=({frontAnchorX:F2},{frontAnchorY:F2}) targetAnchor=({targetAnchorX:F2},{targetAnchorY:F2}) delta=({dx:F2},{dy:F2}) origin=({targetPos.X:F2},{targetPos.Y:F2})");
         PerfTrace.Write(
             "api-view",
             "projection_move_attempt",

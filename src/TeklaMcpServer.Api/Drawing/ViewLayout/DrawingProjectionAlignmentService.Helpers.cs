@@ -11,6 +11,10 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
+    private static readonly object ProjectionDebugLogSync = new();
+    private static readonly bool ProjectionDebugLogEnabled = IsProjectionDebugLogEnabled();
+    private static readonly string ProjectionDebugLogPath = ResolveProjectionDebugLogPath();
+
     internal static ProjectionMoveRejectDecision CreateProjectionMoveRejectDecision(
         string stage,
         int viewId,
@@ -69,6 +73,49 @@ internal sealed partial class DrawingProjectionAlignmentService
             : $"projection-skip:{decision.Reason}:view={decision.ViewId}";
     }
 
+    internal static void Log(string message)
+    {
+        if (!ProjectionDebugLogEnabled)
+            return;
+
+        try
+        {
+            lock (ProjectionDebugLogSync)
+            {
+                var directory = System.IO.Path.GetDirectoryName(ProjectionDebugLogPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                    System.IO.Directory.CreateDirectory(directory);
+
+                System.IO.File.AppendAllText(ProjectionDebugLogPath, message + Environment.NewLine, System.Text.Encoding.UTF8);
+            }
+        }
+        catch
+        {
+            // Ignore diagnostic IO failures.
+        }
+    }
+
+    private static bool IsProjectionDebugLogEnabled()
+    {
+        var raw = Environment.GetEnvironmentVariable("SVMCP_VIEW_LAYOUT_LOG");
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        return raw.Equals("1", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("on", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveProjectionDebugLogPath()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("SVMCP_VIEW_LAYOUT_LOG_PATH");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return fromEnv;
+
+        return @"C:\temp\view_layout.txt";
+    }
+
     private static void TraceProjectionMoveReject(
         ProjectionAlignmentResult? result,
         ProjectionMoveRejectDecision decision,
@@ -81,6 +128,7 @@ internal sealed partial class DrawingProjectionAlignmentService
             return;
 
         result.RecordValidatorReject(decision.Reason);
+        Log($"REJECT view={decision.ViewId} reason={decision.Reason} delta=({decision.Dx:F2},{decision.Dy:F2}) candidate=[{decision.CandidateRect.MinX:F1},{decision.CandidateRect.MinY:F1},{decision.CandidateRect.MaxX:F1},{decision.CandidateRect.MaxY:F1}] blockers={string.Join(";", decision.Blockers.Select(b => $"view={b.ViewId}:[{b.Rect.MinX:F1},{b.Rect.MinY:F1},{b.Rect.MaxX:F1},{b.Rect.MaxY:F1}]"))}");
         PerfTrace.Write("api-view", "projection_move_reject", 0, FormatProjectionMoveRejectDecision(decision));
         TraceSkip(result, FormatProjectionSkipReason(decision, sheetWidth, sheetHeight, margin, state));
     }
