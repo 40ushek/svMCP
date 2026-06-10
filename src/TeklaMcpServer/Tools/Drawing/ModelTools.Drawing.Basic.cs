@@ -97,12 +97,13 @@ public static partial class ModelTools
 
     [McpServerTool, Description("Open (activate) drawing by GUID in Tekla Drawing Editor")]
     public static string OpenDrawing(
-        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid)
+        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid,
+        [Description("Show drawing in editor. Default true for interactive use; pass false for background automation.")] bool showDrawing = true)
     {
         if (string.IsNullOrWhiteSpace(drawingGuid))
             return "Error: 'drawingGuid' is required and cannot be empty.";
 
-        var json = RunBridge("open_drawing", drawingGuid);
+        var json = RunBridge("open_drawing", drawingGuid, showDrawing.ToString().ToLowerInvariant());
         try
         {
             var doc = JsonDocument.Parse(json);
