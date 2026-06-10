@@ -94,6 +94,7 @@ public static partial class ModelTools
             "arrange_marks_force" => TimeSpan.FromMinutes(5),
             "fit_views_to_sheet" => TimeSpan.FromMinutes(3),
             "arrange_views_only" => TimeSpan.FromMinutes(3),
+            "open_drawing" => TimeSpan.FromMinutes(2),
             _ => PersistentBridge.DefaultResponseTimeout
         };
 }
