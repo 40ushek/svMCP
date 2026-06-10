@@ -365,7 +365,7 @@ public sealed class DrawingProjectionAlignmentTests
     }
 
     [Fact]
-    public void TryResolveSectionAlignmentAxis_PrefersResolvedSideOverActualPlacementSide()
+    public void TryResolveSectionAlignmentAxis_PrefersActualPlacementSideOverResolvedSide()
     {
         var arranged = new ArrangedView
         {
@@ -374,6 +374,8 @@ public sealed class DrawingProjectionAlignmentTests
             PlacementFallbackUsed = true
         };
 
+        // ActualPlacementSide ("Right") is where the arranger really put the view,
+        // so it wins over the geometry-resolved side ("Top"). Right => align on Y => alignX = false.
         var ok = DrawingProjectionAlignmentService.TryResolveSectionAlignmentAxis(
             arranged,
             SectionPlacementSide.Top,
@@ -381,7 +383,7 @@ public sealed class DrawingProjectionAlignmentTests
             out var reason);
 
         Assert.True(ok);
-        Assert.True(alignX);
+        Assert.False(alignX);
         Assert.Equal(string.Empty, reason);
     }
 
