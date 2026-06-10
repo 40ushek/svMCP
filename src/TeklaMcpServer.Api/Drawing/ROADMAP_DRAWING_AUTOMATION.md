@@ -62,6 +62,17 @@ uses `SetActiveDrawing(drawing, showDrawing: false)` by default through its
 `Run in background` option. That avoids Drawing Editor redraw/flicker and makes
 automation significantly faster.
 
+Current MCP surface uses separate tools instead of an optional `showDrawing`
+parameter:
+
+```text
+open_drawing            -> visible/manual open
+open_drawing_background -> background automation open
+```
+
+This avoids Claude Code / MCP client issues with optional boolean tool
+parameters while keeping the bridge/API contract unchanged internally.
+
 ## Non-Goals
 
 - Do not create a disk cache for live Tekla `Drawing` objects.
@@ -142,16 +153,17 @@ This mirrors the working Plantech pattern:
 - automation should avoid visible Drawing Editor redraw;
 - this reduces open latency and avoids flicker while processing many drawings.
 
-Keep the existing interactive `open_drawing` behavior unless intentionally
-changed. The safer rule is:
+Keep the existing interactive `open_drawing` behavior visible. The safer MCP
+surface is:
 
 ```text
-manual/interactive open: showDrawing=true unless user passes false
-automation open:         showDrawing=false by default
+manual/interactive open: open_drawing
+automation open:         open_drawing_background
 ```
 
-For existing multi-step MCP workflows, callers should explicitly pass
-`showDrawing=false` when opening drawings for automated layout/mark operations.
+For existing multi-step MCP workflows, callers should use
+`open_drawing_background` before automated layout/mark operations. The MCP
+tool does not expose `showDrawing` as an optional parameter.
 
 ## Timeout Policy
 
@@ -216,23 +228,23 @@ before reporting the drawing as missing.
 
 ### Phase 1: Bridge Timeout Policy
 
-- Add per-command timeout support in `PersistentBridge`.
-- Keep default timeout for small commands.
-- Give known heavy drawing commands longer timeouts.
-- Log selected timeout and timeout source in `PerfTrace`.
+- Done: add per-command timeout support in `PersistentBridge`.
+- Done: keep default timeout for small commands.
+- Done: give known heavy drawing commands longer timeouts.
+- Done: log selected timeout in `PerfTrace`.
 - Do not change drawing algorithms.
 
 ### Phase 2: Background Drawing Open
 
-- Make automation paths open drawings with `showDrawing=false`.
-- Preserve interactive/manual behavior unless explicitly changed.
-- Document how callers should pass `showDrawing=false` today.
+- Done: preserve visible/manual `open_drawing`.
+- Done: add separate `open_drawing_background` tool for automation.
+- Do not expose optional `showDrawing` on the MCP tool surface.
 - Measure open time with visible and background modes.
 
 ### Phase 3: Cache and Lifecycle Hardening
 
+- Rebuild cache once on missing GUID during open.
 - Ensure drawing cache invalidation happens after create/delete/update.
-- Rebuild cache once on missing GUID during automated open.
 - Confirm active drawing is closed in success and failure paths.
 
 ### Phase 4: Queue Command, If Still Needed
@@ -251,8 +263,8 @@ before reporting the drawing as missing.
 - Which commands need extended timeout in the first implementation?
 - What timeout values are acceptable for `arrange_marks_force` and
   `fit_views_to_sheet`?
-- Should `open_drawing` keep `showDrawing=true` by default for manual use while
-  automation wrappers pass `false` explicitly?
+- Should other bool-heavy MCP tools also be split into explicit mode tools if
+  Claude Code shows the same optional boolean issue?
 - Where should drawing cache hit/miss/rebuild be traced?
 - After phases 1-3, is a queue command still needed?
 
@@ -271,8 +283,8 @@ future queue commands  -> longest timeout
 This keeps the existing command model and prevents long-but-valid drawing
 operations from killing the persistent bridge.
 
-In parallel, make automated drawing opens use background mode
-(`showDrawing=false`) wherever the caller does not need the Drawing Editor UI.
+In parallel, make automated drawing opens use `open_drawing_background`
+wherever the caller does not need the Drawing Editor UI.
 
 Do not add a generic command runner yet.
 

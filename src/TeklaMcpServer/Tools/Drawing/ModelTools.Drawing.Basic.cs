@@ -95,18 +95,22 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Open (activate) drawing by GUID in Tekla Drawing Editor")]
+    [McpServerTool, Description("Open (activate) drawing by GUID in Tekla Drawing Editor (visible)")]
     public static string OpenDrawing(
-        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid,
-        [Description("Show drawing in editor: true or false. Default true for interactive use; pass false for background automation.")] string showDrawing = "true")
+        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid)
+        => OpenDrawingCore(drawingGuid, showDrawing: true);
+
+    [McpServerTool, Description("Open drawing by GUID in background (no Drawing Editor redraw) — use for batch automation")]
+    public static string OpenDrawingBackground(
+        [Description("Drawing GUID from list_drawings or find_drawings")] string drawingGuid)
+        => OpenDrawingCore(drawingGuid, showDrawing: false);
+
+    private static string OpenDrawingCore(string drawingGuid, bool showDrawing)
     {
         if (string.IsNullOrWhiteSpace(drawingGuid))
             return "Error: 'drawingGuid' is required and cannot be empty.";
 
-        if (!bool.TryParse(showDrawing, out var showDrawingValue))
-            return "Error: 'showDrawing' must be true or false.";
-
-        var json = RunBridge("open_drawing", drawingGuid, showDrawingValue.ToString().ToLowerInvariant());
+        var json = RunBridge("open_drawing", drawingGuid, showDrawing.ToString().ToLowerInvariant());
         try
         {
             var doc = JsonDocument.Parse(json);
