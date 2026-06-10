@@ -141,7 +141,13 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
             drawingHandler.CloseActiveDrawing(true);
 
         // O(1) lookup via the per-session cache instead of re-enumerating all drawings.
+        // If not found, invalidate and rebuild once — handles drawings created/deleted after warm-up.
         GetDrawingsByGuid(drawingHandler).TryGetValue(drawingGuid, out var targetDrawing);
+        if (targetDrawing == null)
+        {
+            InvalidateDrawingCache();
+            GetDrawingsByGuid(drawingHandler).TryGetValue(drawingGuid, out targetDrawing);
+        }
 
         if (targetDrawing == null)
         {
