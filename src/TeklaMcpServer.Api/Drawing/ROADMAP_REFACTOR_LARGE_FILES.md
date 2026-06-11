@@ -195,24 +195,95 @@ private helpers together.
 
 ### Phase 3: Bridge Dimension Handler Split
 
+Status: planned.
+
+Starting size from initial hotspot audit: 1383 lines.
+
 Target:
 
 ```text
 TeklaBridge/Commands/DrawingCommandHandler.Dimensions.cs
 ```
 
-Possible split:
+Planned split:
 
 ```text
-DrawingCommandHandler.Dimensions.cs          command routing if it can stay small
-DrawingCommandHandler.Dimensions.<Group>.cs  one file per real handler/helper group
+DrawingCommandHandler.Dimensions.cs
+  TryHandleDimensionCommands
+  HandleGetDrawingDimensions
+  HandleGetDimensionContexts
+  WriteGetDimensionsResult
+
+DrawingCommandHandler.Dimensions.Debug.cs
+  HandleDrawDimensionTextBoxes
+  HandleDrawAngleDimensionDebugGeometry
+  HandleGetAngleDimensionDebug
+  HandleGetDimensionTextPlacementDebug
+  HandleGetDimensionSourceDebug
+  HandleGetDimensionGroupsDebug
+  HandleGetDimensionOrchestrationDebug
+  HandleGetDimensionAiOrchestrationPlan
+  HandleGetDimensionArrangementDebug
+  SerializeRepresentativePackets
+  SerializeCombineCandidates
+  SerializeCombinePreview
+  SerializePoint
+  SerializeAiOrchestrationPlanSteps
+  SerializeAiToolArguments
+  SerializeOrchestrationPackets
+  WriteDimensionArrangementDebugResult
+  SerializeDirection
+  SerializeMembers
+  SerializeGroup
+  SerializeReductionItems
+  GetContextPropertyValue
+  GetLayoutPolicyPropertyValue
+  SerializeDebugLine
+  SerializeDebugBounds
+  SerializeDebugVector
+  SerializeGeometryBand
+
+DrawingCommandHandler.Dimensions.Apply.cs
+  HandleArrangeDimensions
+  HandleCombineDimensions
+  HandleMoveDimension
+  HandleMoveAngleDimension
+  HandleCreateDimension
+  HandleDeleteDimension
+  HandlePlaceControlDiagonals
+  HandlePlaceContourRadiusDimensions
+  HandlePlaceContourAngleDimensions
+  WriteMoveDimensionResult
+  WriteCreateDimensionResult
+  WriteDeleteDimensionResult
+  WriteArrangeDimensionsResult
+  WriteCombineDimensionsResult
 ```
 
 Avoid changing the bridge command protocol in this phase.
 
-Use the Phase 2 API groups as a guide, but do not start the bridge split before
-the API command split is complete. The bridge file should remain protocol-only:
-routing, argument parsing, and result serialization.
+Pre-move checks:
+
+- keep `TryHandleDimensionCommands` in the main file so bridge routing remains
+  easy to review;
+- verify every moved `Handle*` method is still called only by
+  `TryHandleDimensionCommands`;
+- verify every moved `Serialize*`, `Get*PropertyValue`, and `Write*` helper is
+  called only by the same group before moving it;
+- verify `SerializeGeometryBand` is still called only by debug serializers
+  before moving it to `DrawingCommandHandler.Dimensions.Debug.cs`;
+- if a serializer is shared across debug and apply paths, leave it in the main
+  file for that split and document the dependency.
+
+Recommended order:
+
+1. Move the debug/read/plan handlers and their serializers first.
+2. Move apply/mutation handlers and their result writers.
+3. Leave routing and basic read handlers in
+   `DrawingCommandHandler.Dimensions.cs`.
+
+Use the Phase 2 API groups as a guide. The bridge file should remain
+protocol-only: routing, argument parsing, and result serialization.
 
 ### Phase 4: Core Layout Strategy Split
 
