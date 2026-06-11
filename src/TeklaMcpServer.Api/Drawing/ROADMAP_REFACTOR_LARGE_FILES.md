@@ -83,6 +83,8 @@ Current decision:
 
 ### Phase 2: TeklaDrawingDimensionsApi Commands Split
 
+Status: done.
+
 Starting size: 1933 lines.
 
 Target:
@@ -91,7 +93,16 @@ Target:
 TeklaMcpServer.Api/Drawing/Dimensions/TeklaDrawingDimensionsApi.Commands.cs
 ```
 
-Observed command groups:
+Completed split:
+
+```text
+TeklaDrawingDimensionsApi.Commands.cs          173 lines, simple move/create/delete commands
+TeklaDrawingDimensionsApi.Commands.Debug.cs   1015 lines, debug/read/overlay commands
+TeklaDrawingDimensionsApi.Commands.Combine.cs 345 lines, combine command and apply helpers
+TeklaDrawingDimensionsApi.Commands.Place.cs   718 lines, control/contour placement commands
+```
+
+Completed command groups:
 
 ```text
 TeklaDrawingDimensionsApi.Commands.cs
@@ -116,6 +127,10 @@ TeklaDrawingDimensionsApi.Commands.Debug.cs
 
 TeklaDrawingDimensionsApi.Commands.Combine.cs
   CombineDimensions
+  CreateCombineCandidateResult
+  ResolveArrangeHandoffResult
+  TryApplyCombineCandidate
+  FindDimensionSetsById
   CreateCombinePointList
   TryGetCombineAttributes
   TryResolveCombineOffsetVector
@@ -126,6 +141,7 @@ TeklaDrawingDimensionsApi.Commands.Place.cs
   PlaceContourRadiusDimensions
   CreateAngleDimensionDebugInfo
   ResolveAngleBisector
+  AddAngleRadiusCandidate
   CreateDebugPoint
   CreateDebugVector
   SafeDouble
@@ -137,7 +153,7 @@ TeklaDrawingDimensionsApi.Commands.Place.cs
   HasBooleans
 ```
 
-Pre-move checks:
+Completed pre-move checks:
 
 - verify `TryCreatePresentationConnection`,
   `EnumeratePresentationTextPrimitives`, and `TryGetShortDimension` are still
@@ -152,15 +168,14 @@ Pre-move checks:
   `TeklaDrawingDimensionsApi.Commands.cs` for that split and document the
   dependency.
 
-Recommended order:
+Completed order:
 
 1. Move the debug/read/overlay group first. It is large, cohesive, and lower
    risk than mutating dimension commands.
 2. Move `CombineDimensions` and its private helpers.
 3. Move contour/control placement commands and their tail helpers.
 4. Leave the simple move/create/delete commands in
-   `TeklaDrawingDimensionsApi.Commands.cs` unless the file still stays too
-   large after the obvious splits.
+   `TeklaDrawingDimensionsApi.Commands.cs`.
 
 Boundary decision:
 
