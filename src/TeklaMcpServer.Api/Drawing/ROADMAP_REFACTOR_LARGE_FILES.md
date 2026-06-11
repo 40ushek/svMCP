@@ -40,6 +40,8 @@ responsibility. File names below are examples, not a fixed contract.
 
 ### Phase 1: TeklaDrawingViewApi Layout Split
 
+Status: done.
+
 Target:
 
 ```text
@@ -63,9 +65,25 @@ Do not invent file groups before reading the file. Possible groups may be
 apply/commit, candidate tracing, plan/candidate orchestration, or diagnostics,
 but the final split should follow the actual method clusters.
 
-Keep the first split conservative. Move only clearly grouped private helpers.
+Completed split:
+
+```text
+TeklaDrawingViewApi.Layout.cs              825 lines, orchestration/core helpers
+TeklaDrawingViewApi.Layout.Diagnostics.cs  650 lines, trace and diagnostics helpers
+TeklaDrawingViewApi.Layout.Scale.cs        333 lines, scale selection/probing helpers
+TeklaDrawingViewApi.Layout.Details.cs      273 lines, detail view helpers
+```
+
+Current decision:
+
+- consider Phase 1 closed;
+- do not split `TeklaDrawingViewApi.Layout.cs` further in this pass;
+- keep remaining layout orchestration together unless a later functional change
+  reveals a clearer boundary.
 
 ### Phase 2: TeklaDrawingDimensionsApi Commands Split
+
+Starting size: 1933 lines.
 
 Target:
 
@@ -73,25 +91,92 @@ Target:
 TeklaMcpServer.Api/Drawing/Dimensions/TeklaDrawingDimensionsApi.Commands.cs
 ```
 
-Possible split:
+Observed command groups:
 
 ```text
-TeklaDrawingDimensionsApi.Commands.cs          command entry points that remain together
-TeklaDrawingDimensionsApi.Commands.<Group>.cs  one file per real command/helper group
+TeklaDrawingDimensionsApi.Commands.cs
+  MoveDimension
+  MoveAngleDimension
+  CreateDimension
+  DeleteDimension
+
+TeklaDrawingDimensionsApi.Commands.Debug.cs
+  GetDimensionSourceDebug
+  ReadDimensionSourceDebugInfosCore
+  GetDimensionTextPlacementDebug
+  ReadDimensionTextPlacementDebugInfosCore
+  DrawDimensionTextBoxes
+  GetAngleDimensionDebug
+  DrawAngleDimensionDebugGeometry
+  BuildDimensionSourceDebugFingerprint
+  BuildDimensionTextPlacementDebugFingerprint
+  TryCreatePresentationConnection
+  EnumeratePresentationTextPrimitives
+  TryGetShortDimension
+
+TeklaDrawingDimensionsApi.Commands.Combine.cs
+  CombineDimensions
+  CreateCombinePointList
+  TryGetCombineAttributes
+  TryResolveCombineOffsetVector
+
+TeklaDrawingDimensionsApi.Commands.Place.cs
+  PlaceControlDiagonals
+  PlaceContourAngleDimensions
+  PlaceContourRadiusDimensions
+  CreateAngleDimensionDebugInfo
+  ResolveAngleBisector
+  CreateDebugPoint
+  CreateDebugVector
+  SafeDouble
+  SafeToString
+  RoundDebug
+  FlattenZ
+  ContourSegment
+  GetPolycurveSegments
+  HasBooleans
 ```
 
-Keep method bodies unchanged. Only move related command methods and their
-private helpers together.
+Pre-move checks:
 
-Before splitting, inspect both:
+- verify `TryCreatePresentationConnection`,
+  `EnumeratePresentationTextPrimitives`, and `TryGetShortDimension` are still
+  called only by the debug/read/overlay group before moving them to
+  `Commands.Debug.cs`;
+- verify `CreateDebugPoint`, `CreateDebugVector`, `SafeDouble`,
+  `SafeToString`, `RoundDebug`, and `FlattenZ` are still local to the
+  contour/angle debug placement tail before moving them to `Commands.Place.cs`;
+- verify `ContourSegment`, `GetPolycurveSegments`, and `HasBooleans` are still
+  local to contour/control placement before moving them to `Commands.Place.cs`;
+- if a helper has a non-debug or cross-group caller, leave it in
+  `TeklaDrawingDimensionsApi.Commands.cs` for that split and document the
+  dependency.
+
+Recommended order:
+
+1. Move the debug/read/overlay group first. It is large, cohesive, and lower
+   risk than mutating dimension commands.
+2. Move `CombineDimensions` and its private helpers.
+3. Move contour/control placement commands and their tail helpers.
+4. Leave the simple move/create/delete commands in
+   `TeklaDrawingDimensionsApi.Commands.cs` unless the file still stays too
+   large after the obvious splits.
+
+Boundary decision:
 
 ```text
 TeklaDrawingDimensionsApi.Commands.cs
 TeklaDrawingDimensionsApi.cs
 ```
 
-If the boundary between command methods and shared helpers is unclear, document
-the observed groups first and split only the obvious parts.
+`TeklaDrawingDimensionsApi.cs` is a shared helper surface used by command,
+query, arrangement, text-placement, and geometry paths. Do not split it during
+the first Phase 2 pass. If it becomes a later hotspot, split it separately by
+actual shared responsibility, for example geometry, text placement, and view
+resolution.
+
+Keep method bodies unchanged. Only move related command methods and their
+private helpers together.
 
 ### Phase 3: Bridge Dimension Handler Split
 
@@ -109,6 +194,10 @@ DrawingCommandHandler.Dimensions.<Group>.cs  one file per real handler/helper gr
 ```
 
 Avoid changing the bridge command protocol in this phase.
+
+Use the Phase 2 API groups as a guide, but do not start the bridge split before
+the API command split is complete. The bridge file should remain protocol-only:
+routing, argument parsing, and result serialization.
 
 ### Phase 4: Core Layout Strategy Split
 
@@ -157,7 +246,7 @@ After every phase:
 
 ```text
 git diff --check
-dotnet build TeklaMcpServer/TeklaMcpServer.csproj -v minimal
+dotnet build src/TeklaMcpServer.Host/TeklaMcpServer.Host.csproj -c Release
 ```
 
 Existing warnings are acceptable if no new errors are introduced.
