@@ -1,16 +1,9 @@
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Text.Json;
-using TeklaMcpServer.Api.Algorithms.Geometry;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
-using Tekla.Structures.DrawingPresentationModel;
-using Tekla.Structures.DrawingPresentationModelInterface;
 using Tekla.Structures.Geometry3d;
-using PresentationConnection = Tekla.Structures.DrawingPresentationModelInterface.Connection;
 
 namespace TeklaMcpServer.Api.Drawing;
 
