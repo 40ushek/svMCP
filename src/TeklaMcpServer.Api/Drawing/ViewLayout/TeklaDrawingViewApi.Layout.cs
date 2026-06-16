@@ -567,6 +567,9 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         var projectionSw = Stopwatch.StartNew();
+        var projectionScaleGuardViews = arrangedViews
+            .Where(v => IsUniformScaleDriverKind(layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID)))
+            .ToList();
         if (!allowTeklaMutation)
         {
             projectionResult = new ProjectionAlignmentResult
@@ -576,7 +579,7 @@ public sealed partial class TeklaDrawingViewApi
             };
             projectionResult.Diagnostics.Add("projection-skip:dry-run");
         }
-        else if (ShouldSkipProjectionAlignment(optimalScale.Value, arrangedViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
+        else if (ShouldSkipProjectionAlignment(optimalScale.Value, projectionScaleGuardViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
         {
             projectionResult = new ProjectionAlignmentResult
             {

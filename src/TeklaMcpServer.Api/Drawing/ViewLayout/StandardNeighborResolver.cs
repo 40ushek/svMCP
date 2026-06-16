@@ -129,7 +129,7 @@ internal static class StandardNeighborResolver
         {
             View.ViewTypes.TopView => NeighborRole.Top,
             View.ViewTypes.BottomView => NeighborRole.Bottom,
-            View.ViewTypes.BackView => NeighborRole.SideLeft,
+            View.ViewTypes.BackView => NeighborRole.Bottom,
             View.ViewTypes.EndView => NeighborRole.SideRight,
             _ => NeighborRole.Unknown
         };
@@ -180,7 +180,12 @@ internal static class StandardNeighborResolver
         => role switch
         {
             NeighborRole.Top => viewType == View.ViewTypes.TopView ? 0 : 1,
-            NeighborRole.Bottom => viewType == View.ViewTypes.BottomView ? 0 : 1,
+            NeighborRole.Bottom => viewType switch
+            {
+                View.ViewTypes.BottomView => 0,
+                View.ViewTypes.BackView => 2,
+                _ => 1
+            },
             NeighborRole.SideLeft => viewType switch
             {
                 View.ViewTypes.BackView => 0,
