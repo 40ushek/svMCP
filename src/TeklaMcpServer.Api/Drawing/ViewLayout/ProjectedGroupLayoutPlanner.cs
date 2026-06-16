@@ -486,16 +486,6 @@ internal static class ProjectedGroupLayoutPlanner
             if (id == baseItem.Id || byId.ContainsKey(id))
                 continue;
 
-            if (view.ViewType == View.ViewTypes.BackView)
-            {
-                // Residual BackView goes into the projected group (byId) so VirtualState.BottomNextMaxY
-                // is respected: it will be placed below any already-committed BottomNeighbor via
-                // CreateSideRect(Bottom). Sending it to initialFallback instead causes it to land
-                // in the global MaxRects fallback, ignoring the stacked Bottom cursor.
-                byId[id] = new PlannerItem(view, SectionPlacementSide.Bottom, strongProjection: true);
-                continue;
-            }
-
             initialFallback.Add(new PlannerItem(view, SectionPlacementSide.Unknown, strongProjection: false));
             fallbackIds.Add(id);
         }

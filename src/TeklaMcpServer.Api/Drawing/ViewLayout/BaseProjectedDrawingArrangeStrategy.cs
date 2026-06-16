@@ -1348,6 +1348,16 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var topSections = sectionGroups.Top;
         var bottomSections = sectionGroups.Bottom;
         var unknownSections = sectionGroups.Unknown;
+
+        // Residual BackView (lost Bottom role competition to BottomView) is treated as a bottom
+        // section so all layout planners (Strict, Relaxed, ProjectedGroup) place it below BottomView.
+        // It is removed from secondaryViews to avoid duplication.
+        var residualBackViews = neighbors.ResidualProjected
+            .Where(v => v.ViewType == View.ViewTypes.BackView)
+            .ToList();
+        if (residualBackViews.Count > 0)
+            bottomSections = bottomSections.Concat(residualBackViews).ToList();
+
         var deferredSections = leftSections
             .Concat(rightSections)
             .Concat(topSections)
@@ -1355,6 +1365,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .Concat(unknownSections)
             .ToList();
         var nonDetailSecondaryViews = neighbors.ResidualProjected
+            .Where(v => v.ViewType != View.ViewTypes.BackView)
             .Concat(otherViews)
             .ToList();
         var secondaryViews = nonDetailSecondaryViews
@@ -1480,6 +1491,13 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var topSections = sectionGroups.Top;
         var bottomSections = sectionGroups.Bottom;
         var unknownSections = sectionGroups.Unknown;
+
+        var residualBackViews = neighbors.ResidualProjected
+            .Where(v => v.ViewType == View.ViewTypes.BackView)
+            .ToList();
+        if (residualBackViews.Count > 0)
+            bottomSections = bottomSections.Concat(residualBackViews).ToList();
+
         var deferredSections = leftSections
             .Concat(rightSections)
             .Concat(topSections)
@@ -1487,6 +1505,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .Concat(unknownSections)
             .ToList();
         var secondaryViews = neighbors.ResidualProjected
+            .Where(v => v.ViewType != View.ViewTypes.BackView)
             .Concat(topology.SemanticViews.Other)
             .Concat(deferredSections)
             .ToList();
