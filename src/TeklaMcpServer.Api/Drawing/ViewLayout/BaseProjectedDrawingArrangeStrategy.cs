@@ -146,22 +146,31 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 return true;
 
             // Check if unplanned views can fit in the space left around anchors.
-            var anchorRects = planned.Select(p =>
-            {
-                var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
-                var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
-                return ViewPlacementGeometryService.CreateRectFromFrameCenter(p.FrameCenterX, p.FrameCenterY, w, h);
-            }).ToList();
-            var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
-            extendedReserved.AddRange(anchorRects);
-            var unplannedCtx = planningContext.With(
-                views: unplannedViews,
-                reservedAreas: extendedReserved);
-            var unplannedFrames = unplannedViews
-                .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
+            // Other-kind views (_3DView etc.) are excluded: they are always placed via MaxRects
+            // fallback and must not block scale selection if they don't fit the estimate.
+            var unplannedNonOther = unplannedViews
+                .Where(v => planningContext.Workspace?.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Other)
                 .ToList();
-            if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
-                return false;
+
+            if (unplannedNonOther.Count > 0)
+            {
+                var anchorRects = planned.Select(p =>
+                {
+                    var w = DrawingArrangeContextSizing.GetWidth(planningContext, p.View);
+                    var h = DrawingArrangeContextSizing.GetHeight(planningContext, p.View);
+                    return ViewPlacementGeometryService.CreateRectFromFrameCenter(p.FrameCenterX, p.FrameCenterY, w, h);
+                }).ToList();
+                var extendedReserved = new System.Collections.Generic.List<ReservedRect>(planningContext.ReservedAreas);
+                extendedReserved.AddRange(anchorRects);
+                var unplannedCtx = planningContext.With(
+                    views: unplannedNonOther,
+                    reservedAreas: extendedReserved);
+                var unplannedFrames = unplannedNonOther
+                    .Select(v => (DrawingArrangeContextSizing.GetWidth(unplannedCtx, v), DrawingArrangeContextSizing.GetHeight(unplannedCtx, v)))
+                    .ToList();
+                if (!_maxRectsFallback.EstimateFit(unplannedCtx, unplannedFrames))
+                    return false;
+            }
 
             var unplannedSectionIds = CollectUnplannedSemanticSectionIds(planningContext, plannedIds);
             if (unplannedSectionIds.Count > 0)
@@ -1436,7 +1445,10 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
     {
         planned = new List<PlannedPlacement>();
 
-        var frames = context.Views
+        var packingViews = context.Views
+            .Where(v => context.Workspace?.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Other)
+            .ToList();
+        var frames = packingViews
             .Select(v => (DrawingArrangeContextSizing.GetWidth(context, v), DrawingArrangeContextSizing.GetHeight(context, v)))
             .ToList();
         var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
@@ -1510,8 +1522,15 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .Concat(deferredSections)
             .ToList();
 
+        if (frames.Count != context.Views.Count)
+            return false;
+        var packingFrames = context.Views
+            .Select((v, i) => (v, frames[i]))
+            .Where(x => context.Workspace?.GetSemanticKind(x.v.GetIdentifier().ID) != ViewSemanticKind.Other)
+            .Select(x => x.Item2)
+            .ToList();
         var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(
-            frames,
+            packingFrames,
             context.SheetWidth,
             context.SheetHeight,
             context.Margin,
