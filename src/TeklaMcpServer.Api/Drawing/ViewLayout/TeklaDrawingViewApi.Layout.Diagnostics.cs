@@ -359,6 +359,64 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static void TraceActualViewOverlaps(
+        string stage,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ReservedRect> actualRects)
+    {
+        var ids = actualRects.Keys.OrderBy(static id => id).ToList();
+        for (var i = 0; i < ids.Count; i++)
+        {
+            for (var j = i + 1; j < ids.Count; j++)
+            {
+                var firstId = ids[i];
+                var secondId = ids[j];
+                var firstRect = actualRects[firstId];
+                var secondRect = actualRects[secondId];
+                if (!ViewPlacementValidator.Intersects(firstRect, secondRect))
+                    continue;
+
+                PerfTrace.Write(
+                    "api-view",
+                    "fit_layout_actual_overlap",
+                    0,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "stage={0} a={1}:{2} b={3}:{4} aRect=[{5:F2},{6:F2},{7:F2},{8:F2}] bRect=[{9:F2},{10:F2},{11:F2},{12:F2}]",
+                        stage,
+                        firstId,
+                        workspace.GetSemanticKind(firstId),
+                        secondId,
+                        workspace.GetSemanticKind(secondId),
+                        firstRect.MinX,
+                        firstRect.MinY,
+                        firstRect.MaxX,
+                        firstRect.MaxY,
+                        secondRect.MinX,
+                        secondRect.MinY,
+                        secondRect.MaxX,
+                        secondRect.MaxY));
+
+                DrawingProjectionAlignmentService.Log(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "OVERLAP stage={0} a={1}:{2} b={3}:{4} aRect=[{5:F1},{6:F1},{7:F1},{8:F1}] bRect=[{9:F1},{10:F1},{11:F1},{12:F1}]",
+                    stage,
+                    firstId,
+                    workspace.GetSemanticKind(firstId),
+                    secondId,
+                    workspace.GetSemanticKind(secondId),
+                    firstRect.MinX,
+                    firstRect.MinY,
+                    firstRect.MaxX,
+                    firstRect.MaxY,
+                    secondRect.MinX,
+                    secondRect.MinY,
+                    secondRect.MaxX,
+                    secondRect.MaxY));
+            }
+        }
+    }
+
     private static void TraceLayoutCandidateScore(DrawingLayoutCandidateEvaluation evaluation)
     {
         var candidate = evaluation.Candidate;

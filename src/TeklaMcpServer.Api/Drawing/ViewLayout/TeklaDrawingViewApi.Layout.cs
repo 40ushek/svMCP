@@ -673,6 +673,7 @@ public sealed partial class TeklaDrawingViewApi
                 layoutWorkspace,
                 arranged,
                 finalActualRects);
+            TraceActualViewOverlaps("post-commit-final", layoutWorkspace, finalActualRects);
         }
 
         var passiveCandidate = allowTeklaMutation
