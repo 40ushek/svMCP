@@ -486,7 +486,11 @@ internal static class ProjectedGroupLayoutPlanner
             if (id == baseItem.Id || byId.ContainsKey(id))
                 continue;
 
-            initialFallback.Add(new PlannerItem(view, SectionPlacementSide.Unknown, strongProjection: false));
+            var isResidualBackView = view.ViewType == View.ViewTypes.BackView;
+            var residualSide = isResidualBackView
+                ? SectionPlacementSide.Bottom
+                : SectionPlacementSide.Unknown;
+            initialFallback.Add(new PlannerItem(view, residualSide, strongProjection: isResidualBackView));
             fallbackIds.Add(id);
         }
 
