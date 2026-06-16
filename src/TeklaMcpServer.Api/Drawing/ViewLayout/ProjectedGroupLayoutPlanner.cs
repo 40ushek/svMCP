@@ -536,6 +536,7 @@ internal static class ProjectedGroupLayoutPlanner
         return items
             .OrderBy(item => orderBySide.TryGetValue(item.PreferredSide, out var index) ? index : int.MaxValue)
             .ThenBy(item => item.StrongProjection ? 0 : 1)
+            .ThenBy(item => GetViewTypeStackRank(item.View.ViewType, item.PreferredSide))
             .ThenByDescending(item => GetArea(context, item))
             .ToList();
     }
@@ -544,6 +545,7 @@ internal static class ProjectedGroupLayoutPlanner
         => items
             .OrderBy(item => GetAxisOrder(item.PreferredSide, verticalFirst))
             .ThenBy(item => item.StrongProjection ? 0 : 1)
+            .ThenBy(item => GetViewTypeStackRank(item.View.ViewType, item.PreferredSide))
             .ThenByDescending(item => GetArea(context, item))
             .ToList();
 
@@ -902,6 +904,20 @@ internal static class ProjectedGroupLayoutPlanner
 
         return true;
     }
+
+    private static int GetViewTypeStackRank(View.ViewTypes viewType, SectionPlacementSide side)
+        => side switch
+        {
+            // Bottom stack: BottomView commits first (lands closest to FrontView),
+            // BackView commits second (lands furthest from FrontView, at the very bottom).
+            SectionPlacementSide.Bottom => viewType switch
+            {
+                View.ViewTypes.BottomView => 0,
+                View.ViewTypes.BackView => 1,
+                _ => 2
+            },
+            _ => 0
+        };
 
     internal static int GetFallbackPlacementSortPriority(SectionPlacementSide preferredSide, bool strongProjection)
     {
