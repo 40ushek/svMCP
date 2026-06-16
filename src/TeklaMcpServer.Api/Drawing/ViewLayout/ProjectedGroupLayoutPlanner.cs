@@ -486,11 +486,17 @@ internal static class ProjectedGroupLayoutPlanner
             if (id == baseItem.Id || byId.ContainsKey(id))
                 continue;
 
-            var isResidualBackView = view.ViewType == View.ViewTypes.BackView;
-            var residualSide = isResidualBackView
-                ? SectionPlacementSide.Bottom
-                : SectionPlacementSide.Unknown;
-            initialFallback.Add(new PlannerItem(view, residualSide, strongProjection: isResidualBackView));
+            if (view.ViewType == View.ViewTypes.BackView)
+            {
+                // Residual BackView goes into the projected group (byId) so VirtualState.BottomNextMaxY
+                // is respected: it will be placed below any already-committed BottomNeighbor via
+                // CreateSideRect(Bottom). Sending it to initialFallback instead causes it to land
+                // in the global MaxRects fallback, ignoring the stacked Bottom cursor.
+                byId[id] = new PlannerItem(view, SectionPlacementSide.Bottom, strongProjection: true);
+                continue;
+            }
+
+            initialFallback.Add(new PlannerItem(view, SectionPlacementSide.Unknown, strongProjection: false));
             fallbackIds.Add(id);
         }
 
@@ -529,6 +535,7 @@ internal static class ProjectedGroupLayoutPlanner
 
         return items
             .OrderBy(item => orderBySide.TryGetValue(item.PreferredSide, out var index) ? index : int.MaxValue)
+            .ThenBy(item => item.StrongProjection ? 0 : 1)
             .ThenByDescending(item => GetArea(context, item))
             .ToList();
     }
@@ -536,6 +543,7 @@ internal static class ProjectedGroupLayoutPlanner
     private static IReadOnlyList<PlannerItem> OrderByAxis(DrawingArrangeContext context, IReadOnlyList<PlannerItem> items, bool verticalFirst)
         => items
             .OrderBy(item => GetAxisOrder(item.PreferredSide, verticalFirst))
+            .ThenBy(item => item.StrongProjection ? 0 : 1)
             .ThenByDescending(item => GetArea(context, item))
             .ToList();
 
