@@ -187,7 +187,11 @@ public sealed partial class TeklaDrawingViewApi
         if (scaleDriverViews.Count == 0)
         {
             scaleDriverViews = views
-                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
+                .Where(v =>
+                {
+                    var semanticKind = layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID);
+                    return semanticKind is not ViewSemanticKind.Detail and not ViewSemanticKind.Model3D;
+                })
                 .ToList();
         }
         var scaleDrivers = scaleDriverViews

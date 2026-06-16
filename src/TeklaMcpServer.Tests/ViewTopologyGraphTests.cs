@@ -47,6 +47,7 @@ public sealed class ViewTopologyGraphTests
     [InlineData(ViewSemanticKind.Detail, NeighborRole.Unknown, true, ProjectionMethod.DetailAnchor)]
     [InlineData(ViewSemanticKind.Section, NeighborRole.Unknown, false, ProjectionMethod.SectionSide)]
     [InlineData(ViewSemanticKind.BaseProjected, NeighborRole.Top, false, ProjectionMethod.NeighborAxis)]
+    [InlineData(ViewSemanticKind.Model3D, NeighborRole.Unknown, false, ProjectionMethod.None)]
     [InlineData(ViewSemanticKind.Other, NeighborRole.Unknown, false, ProjectionMethod.None)]
     internal void ResolveProjectionMethod_UsesSemanticAndDependencyPriority(
         ViewSemanticKind semanticKind,

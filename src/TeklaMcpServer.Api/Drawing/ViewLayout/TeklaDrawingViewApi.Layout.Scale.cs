@@ -62,7 +62,7 @@ public sealed partial class TeklaDrawingViewApi
         if (semanticKind == ViewSemanticKind.Detail)
             return originalScale;
 
-        if (semanticKind == ViewSemanticKind.Other)
+        if (semanticKind is ViewSemanticKind.Other or ViewSemanticKind.Model3D)
             return originalScale;
 
         if (uniformAllNonDetail)

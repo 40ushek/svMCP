@@ -7,6 +7,7 @@ internal enum ViewSemanticKind
 {
     Other,
     BaseProjected,
+    Model3D,
     Section,
     Detail
 }
@@ -32,7 +33,7 @@ internal static class ViewSemanticClassifier
             View.ViewTypes.BackView => ViewSemanticKind.BaseProjected,
             View.ViewTypes.BottomView => ViewSemanticKind.BaseProjected,
             View.ViewTypes.EndView => ViewSemanticKind.BaseProjected,
-            View.ViewTypes.ModelView => ViewSemanticKind.BaseProjected,
+            View.ViewTypes.ModelView => ViewSemanticKind.Model3D,
             View.ViewTypes.SectionView => ViewSemanticKind.Section,
             View.ViewTypes.DetailView => ViewSemanticKind.Detail,
             _ => ViewSemanticKind.Other

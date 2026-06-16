@@ -11,6 +11,7 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 internal sealed class SemanticViewSet
 {
     public List<View> BaseProjected { get; } = new();
+    public List<View> Model3D { get; } = new();
     public List<View> Sections { get; } = new();      // "normal" sections only (not detail-like)
     public List<View> Details { get; } = new();       // real DetailView + detail-like SectionView
     public List<View> Other { get; } = new();
@@ -30,6 +31,7 @@ internal sealed class SemanticViewSet
             switch (kind)
             {
                 case ViewSemanticKind.BaseProjected: set.BaseProjected.Add(v); break;
+                case ViewSemanticKind.Model3D:       set.Model3D.Add(v);       break;
                 case ViewSemanticKind.Section:       set.Sections.Add(v);      break;
                 case ViewSemanticKind.Detail:        set.Details.Add(v);       break;
                 default:                             set.Other.Add(v);         break;

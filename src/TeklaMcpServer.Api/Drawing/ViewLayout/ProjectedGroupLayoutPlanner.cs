@@ -806,6 +806,7 @@ internal static class ProjectedGroupLayoutPlanner
 
         foreach (var item in fallbackItems
                      .OrderBy(item => GetFallbackPlacementSortPriority(item.PreferredSide, item.StrongProjection))
+                     .ThenBy(item => IsModel3D(context, item.View) ? 1 : 0)
                      .ThenByDescending(item => GetArea(context, item)))
         {
             var width = DrawingArrangeContextSizing.GetWidth(context, item.View);
@@ -923,6 +924,11 @@ internal static class ProjectedGroupLayoutPlanner
 
         return projectionRank + sideRank;
     }
+
+    private static bool IsModel3D(DrawingArrangeContext context, View view)
+        // Workspace may be absent in estimate/test contexts; ViewType keeps ModelView last there too.
+        => view.ViewType == View.ViewTypes.ModelView
+           || context.Workspace?.GetSemanticKind(view.GetIdentifier().ID) == ViewSemanticKind.Model3D;
 
     private static (double X, double Y) GetPackedFallbackTargetPoint(
         DrawingArrangeContext context,

@@ -149,7 +149,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             // Other-kind views (_3DView etc.) are excluded: they are always placed via MaxRects
             // fallback and must not block scale selection if they don't fit the estimate.
             var unplannedNonOther = unplannedViews
-                .Where(v => planningContext.Workspace?.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Other)
+                .Where(v => IsProjectedFitEstimateView(planningContext, v))
                 .ToList();
 
             if (unplannedNonOther.Count > 0)
@@ -203,6 +203,12 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     private static HashSet<int> CollectSemanticSectionIds(DrawingArrangeContext context)
         => CollectUnplannedSemanticSectionIds(context, new HashSet<int>());
+
+    private static bool IsProjectedFitEstimateView(DrawingArrangeContext context, View view)
+    {
+        var semanticKind = context.Workspace?.GetSemanticKind(view.GetIdentifier().ID) ?? ViewSemanticKind.Other;
+        return semanticKind is not ViewSemanticKind.Other and not ViewSemanticKind.Model3D;
+    }
 
     private static bool ValidateResidualFallbackLayout(
         DrawingArrangeContext context,
@@ -1347,6 +1353,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var detailViews = topology.SemanticViews.Details;
         var detailRelations = topology.DetailRelations.All.ToList();
         var otherViews = topology.SemanticViews.Other;
+        var model3DViews = topology.SemanticViews.Model3D;
         var sectionGroups = SectionGroupSet.Build(
             sections,
             context.Drawing,
@@ -1379,13 +1386,14 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .ToList();
         var secondaryViews = nonDetailSecondaryViews
             .Concat(deferredSections)
+            .Concat(model3DViews)
             .ToList();
 
         PerfTrace.Write(
             "api-view",
             "view_semantic_summary",
             0,
-            $"baseProjected={topology.SemanticViews.BaseProjected.Count} sections={sections.Count} details={detailViews.Count} other={otherViews.Count}");
+            $"baseProjected={topology.SemanticViews.BaseProjected.Count} sections={sections.Count} details={detailViews.Count} model3D={model3DViews.Count} other={otherViews.Count}");
         PerfTrace.Write(
             "api-view",
             "view_topology_summary",
@@ -1446,7 +1454,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         planned = new List<PlannedPlacement>();
 
         var packingViews = context.Views
-            .Where(v => context.Workspace?.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Other)
+            .Where(v => IsProjectedFitEstimateView(context, v))
             .ToList();
         var frames = packingViews
             .Select(v => (DrawingArrangeContextSizing.GetWidth(context, v), DrawingArrangeContextSizing.GetHeight(context, v)))
@@ -1520,13 +1528,14 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .Where(v => v.ViewType != View.ViewTypes.BackView)
             .Concat(topology.SemanticViews.Other)
             .Concat(deferredSections)
+            .Concat(topology.SemanticViews.Model3D)
             .ToList();
 
         if (frames.Count != context.Views.Count)
             return false;
         var packingFrames = context.Views
             .Select((v, i) => (v, frames[i]))
-            .Where(x => context.Workspace?.GetSemanticKind(x.v.GetIdentifier().ID) != ViewSemanticKind.Other)
+            .Where(x => IsProjectedFitEstimateView(context, x.v))
             .Select(x => x.Item2)
             .ToList();
         var relaxedPacking = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(

@@ -104,6 +104,7 @@ public sealed class TeklaDrawingViewApiLayoutTests
     [Theory]
     [InlineData(ViewSemanticKind.BaseProjected, true)]
     [InlineData(ViewSemanticKind.Section, true)]
+    [InlineData(ViewSemanticKind.Model3D, false)]
     [InlineData(ViewSemanticKind.Detail, false)]
     [InlineData(ViewSemanticKind.Other, false)]
     internal void IsUniformScaleDriverKind_ExcludesOtherViews(
