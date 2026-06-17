@@ -84,7 +84,8 @@ public sealed partial class TeklaDrawingViewApi
         ViewSemanticKind semanticKind,
         double candidateScale,
         bool uniformAllNonDetail,
-        IReadOnlyDictionary<int, double> originalScales)
+        IReadOnlyDictionary<int, double> originalScales,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         if (!originalScales.TryGetValue(view.GetIdentifier().ID, out var originalScale))
             originalScale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
@@ -94,6 +95,18 @@ public sealed partial class TeklaDrawingViewApi
 
         if (semanticKind is ViewSemanticKind.Other or ViewSemanticKind.Model3D)
             return originalScale;
+
+        // Secondary policy for Section takes priority over uniformAllNonDetail when active:
+        // it explicitly opts this Section out of uniform scaling.
+        if (semanticKind == ViewSemanticKind.Section
+            && (secondaryScalePolicy == SecondaryScalePolicy.PreserveIfNotSmaller
+                || secondaryScalePolicy == SecondaryScalePolicy.PreserveLargerIfFits))
+        {
+            // originalScale denominator < candidateScale denominator → original is larger scale
+            // Keep it; if it doesn't fit, EstimateCandidateFrameSizes downgrades.
+            // If original is equal or smaller — downgrade to candidateScale (never go below main).
+            return originalScale < candidateScale ? originalScale : candidateScale;
+        }
 
         if (uniformAllNonDetail)
             return candidateScale;
@@ -290,7 +303,10 @@ public sealed partial class TeklaDrawingViewApi
             originalFrameSizes,
             candidateScale,
             uniformAllNonDetail,
-            secondaryScalePolicy);
+            secondaryScalePolicy,
+            availW,
+            availH,
+            out var resolvedScales);
 
         // Log estimate before any Modify() so it reflects pre-mutation state
         TraceScaleCandidateEstimate(candidateScale, workspace, currentViews, estimatedSizes, availW, availH);
@@ -335,12 +351,15 @@ public sealed partial class TeklaDrawingViewApi
         var anyScaleChanged = false;
         foreach (var view in currentViews)
         {
-            var targetScale = ResolveTargetScale(
-                view,
-                workspace.GetSemanticKind(view.GetIdentifier().ID),
-                candidateScale,
-                uniformAllNonDetail,
-                workspace.OriginalScalesById);
+            var id = view.GetIdentifier().ID;
+            var targetScale = resolvedScales.TryGetValue(id, out var rs) ? rs
+                : ResolveTargetScale(
+                    view,
+                    workspace.GetSemanticKind(id),
+                    candidateScale,
+                    uniformAllNonDetail,
+                    workspace.OriginalScalesById,
+                    secondaryScalePolicy);
             if (System.Math.Abs(view.Attributes.Scale - targetScale) < 0.01)
                 continue;
 
@@ -376,9 +395,13 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
         double candidateScale,
         bool uniformAllNonDetail,
-        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
+        SecondaryScalePolicy secondaryScalePolicy,
+        double availW,
+        double availH,
+        out IReadOnlyDictionary<int, double> resolvedScales)
     {
-        var result = new Dictionary<int, (double Width, double Height)>(views.Count);
+        var frameSizes = new Dictionary<int, (double Width, double Height)>(views.Count);
+        var scales = new Dictionary<int, double>(views.Count);
         foreach (var view in views)
         {
             var id = view.GetIdentifier().ID;
@@ -390,17 +413,36 @@ public sealed partial class TeklaDrawingViewApi
                 workspace.GetSemanticKind(id),
                 candidateScale,
                 uniformAllNonDetail,
-                workspace.OriginalScalesById);
+                workspace.OriginalScalesById,
+                secondaryScalePolicy);
             var frame = originalFrameSizes.TryGetValue(id, out var storedFrame)
                 ? storedFrame
                 : (view.Width, view.Height);
             var factor = targetScale > 0 ? originalScale / targetScale : 1.0;
-            result[id] = (frame.Width * factor, frame.Height * factor);
+            var estimatedW = frame.Width * factor;
+            var estimatedH = frame.Height * factor;
 
+            // PreserveLargerIfFits: if the preserved larger scale makes this view exceed the
+            // available sheet area, fall back to candidateScale for this view.
+            if (secondaryScalePolicy == SecondaryScalePolicy.PreserveLargerIfFits
+                && targetScale < candidateScale   // view was promoted to larger scale
+                && availW > 0 && availH > 0
+                && (estimatedW > availW * ScaleEstimateOversizeTolerance
+                    || estimatedH > availH * ScaleEstimateOversizeTolerance))
+            {
+                targetScale = candidateScale;
+                factor = originalScale / targetScale;
+                estimatedW = frame.Width * factor;
+                estimatedH = frame.Height * factor;
+            }
+
+            frameSizes[id] = (estimatedW, estimatedH);
+            scales[id] = targetScale;
             TraceSecondaryScaleDecision(workspace, view, id, originalScale, targetScale, candidateScale, secondaryScalePolicy);
         }
 
-        return result;
+        resolvedScales = scales;
+        return frameSizes;
     }
 
     private static IReadOnlyDictionary<int, double> ResolveSelectedScales(
@@ -428,7 +470,8 @@ public sealed partial class TeklaDrawingViewApi
                 workspace.GetSemanticKind(id),
                 selectedScale,
                 uniformAllNonDetail,
-                workspace.OriginalScalesById);
+                workspace.OriginalScalesById,
+                secondaryScalePolicy);
         }
 
         return result;
