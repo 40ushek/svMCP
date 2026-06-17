@@ -49,6 +49,27 @@ public sealed class DrawingLayoutWorkspaceTests
     }
 
     [Theory]
+    [InlineData("BaseProjected", ScaleFlexibility.SameAsMain)]
+    [InlineData("Section", ScaleFlexibility.SameAsMain)]
+    [InlineData("Detail", ScaleFlexibility.CanBeLarger)]
+    [InlineData("Model3D", ScaleFlexibility.Fixed)]
+    [InlineData("Other", ScaleFlexibility.Fixed)]
+    [InlineData("Unknown", ScaleFlexibility.Fixed)]
+    internal void ViewItem_StoresDefaultScaleFlexibility(string semanticKind, ScaleFlexibility expected)
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext(
+            views:
+            [
+                CreateView(10, "FrontView", semanticKind, 20, 100, 80, 50, 30)
+            ]));
+
+        var view = workspace.Views.Single();
+
+        Assert.Equal(expected, view.ScaleFlexibility);
+        Assert.Equal(expected, workspace.GetScaleFlexibility(10));
+    }
+
+    [Theory]
     [InlineData("BaseProjected", ProjectionStrength.Strong)]
     [InlineData("Section", ProjectionStrength.Relaxed)]
     [InlineData("Detail", ProjectionStrength.Weak)]

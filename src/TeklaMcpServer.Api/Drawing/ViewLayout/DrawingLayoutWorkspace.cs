@@ -22,6 +22,7 @@ internal sealed class DrawingLayoutWorkspace
         RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
         SemanticKindsById = views.ToDictionary(static view => view.Id, static view => view.SemanticKindValue);
         ProjectionStrengthsById = views.ToDictionary(static view => view.Id, static view => view.ProjectionStrength);
+        ScaleFlexibilitiesById = views.ToDictionary(static view => view.Id, static view => view.ScaleFlexibility);
     }
 
     public DrawingContext Source { get; }
@@ -37,6 +38,8 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, ViewSemanticKind> SemanticKindsById { get; }
 
     public IReadOnlyDictionary<int, ProjectionStrength> ProjectionStrengthsById { get; }
+
+    public IReadOnlyDictionary<int, ScaleFlexibility> ScaleFlexibilitiesById { get; }
 
     public IReadOnlyDictionary<int, double> OriginalScalesById { get; private set; } =
         new Dictionary<int, double>();
@@ -83,6 +86,9 @@ internal sealed class DrawingLayoutWorkspace
 
     public ProjectionStrength GetProjectionStrength(int viewId)
         => ProjectionStrengthsById.TryGetValue(viewId, out var strength) ? strength : ProjectionStrength.Off;
+
+    public ScaleFlexibility GetScaleFlexibility(int viewId)
+        => ScaleFlexibilitiesById.TryGetValue(viewId, out var flexibility) ? flexibility : ScaleFlexibility.Fixed;
 
     public (double Width, double Height) GetSelectedFrameSize(int viewId, double fallbackWidth, double fallbackHeight)
         => SelectedFrameSizesById.TryGetValue(viewId, out var size) ? size : (fallbackWidth, fallbackHeight);
@@ -200,6 +206,7 @@ internal sealed class DrawingLayoutViewItem
             ? parsed
             : ViewSemanticKind.Other;
         ProjectionStrength = ProjectionStrengthResolver.ResolveDefault(SemanticKindValue);
+        ScaleFlexibility = ScaleFlexibilityResolver.ResolveDefault(SemanticKindValue);
     }
 
     public int Id { get; }
@@ -211,6 +218,8 @@ internal sealed class DrawingLayoutViewItem
     public ViewSemanticKind SemanticKindValue { get; }
 
     public ProjectionStrength ProjectionStrength { get; }
+
+    public ScaleFlexibility ScaleFlexibility { get; }
 
     public string Name { get; }
 
