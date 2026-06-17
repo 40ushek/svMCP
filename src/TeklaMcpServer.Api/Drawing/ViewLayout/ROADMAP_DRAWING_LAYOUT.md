@@ -419,6 +419,9 @@ Projection strength должно жить в layout/candidate модели, а �
 views, например деталей, узлов и некоторых разрезов, `CanBeLarger` может быть
 лучше читаемости, чем принудительное сохранение масштаба главной группы.
 
+Целевая политика для `Section` / `Detail` scale flexibility описана в
+разделе 6.10 (`SecondaryScalePolicy`).
+
 Для оценки качества layout нужно считать:
 - доступную площадь листа: usable sheet area минус union reserved/table areas;
 - занятую площадь видов на текущем масштабе: `union(view rects)`, а не простую
@@ -1265,6 +1268,82 @@ Trace:
 - ранний `activeDrawing.CommitChanges()` не используется для виртуального
   pipeline;
 - roadmap/trace ясно различают `plan`, `probe`, `preview`, `apply`.
+
+#### 6.10 SecondaryScalePolicy — гибкое управление масштабом второстепенных видов
+
+Статус: design / future.
+
+Проблема: текущая `DrawingScalePolicy.UniformAllNonDetail` принудительно
+приводит все `Section` к одному общему масштабу. Если автор намеренно поставил
+крупный масштаб на маленьких сечениях, это теряется.
+
+Контракт:
+
+```
+SecondaryScalePolicy (параметр fit_views_to_sheet, независим от DrawingScalePolicy):
+  SameAsMain               — текущее поведение (дефолт)
+  PreserveIfNotSmaller     — сохранить originalScale если он не мельче mainScale
+                             (denominator <= main denominator; т.е. 1:5 не мельче 1:10)
+  PreserveLargerIfFits     — сохранить originalScale если он крупнее mainScale
+                             (denominator < main denominator) AND estimate fits
+  AllowLargerIfFits        — выбрать максимальный стандартный масштаб при котором fits
+
+Применяется только к видам с ScaleFlexibility = CanBeLarger или Independent.
+ScaleFlexibility = Fixed или SameAsMain игнорируют политику.
+```
+
+Дефолты `ScaleFlexibility` по semantic kind (уже реализованы):
+- `BaseProjected` → `SameAsMain` (scale driver)
+- `Section` → `SameAsMain` (по умолчанию — политика не действует)
+- `Detail` → `CanBeLarger`
+- `Other` / `Model3D` → `Fixed`
+
+Bootstrap для Section: текущий default `Section → SameAsMain` означает, что
+`SecondaryScalePolicy` не действует для сечений без дополнительных шагов.
+Чтобы политика заработала для `Section`, нужно одно из двух:
+- сменить default `Section → CanBeLarger` в `ScaleFlexibilityResolver` (меняет
+  поведение глобально, требует regression validation);
+- или сделать resolver context-aware: повышать `Section` до `CanBeLarger`
+  автоматически при `SecondaryScalePolicy != SameAsMain` (политика локально
+  активирует гибкость).
+
+Первый этап реализации: выбрать один из двух подходов и зафиксировать до кода.
+
+Связь с существующим кодом:
+- `ScaleFlexibility` уже живёт в `DrawingLayoutWorkspace` и `DrawingLayoutViewItem`;
+- `DrawingScalePolicy` управляет выбором общего масштаба (кто driver);
+- `SecondaryScalePolicy` управляет тем, что делают secondary views
+  относительно выбранного mainScale;
+- оба параметра ортогональны и не пересекаются.
+
+Важные правила:
+- secondary view никогда не становится мельче mainScale (даже при
+  `PreserveIfNotSmaller`): если original denominator > main denominator (т.е. originalScale мельче mainScale), view приводится к
+  mainScale;
+- решение принимается не для каждого view отдельно, а для группы одной стороны
+  (Left-стопка, Right-стопка), чтобы стек сечений выглядел согласованно;
+- проверка "fits" для `PreserveLargerIfFits` использует estimate с tolerance
+  `ScaleEstimateOversizeTolerance = 1.05` (уже реализован для pre-reject);
+- в ответе: поле `scaleDowngradedViews: [{id, originalScale, appliedScale}]`
+  сигнализирует о тихом откате масштаба;
+- разброс масштабов ограничен: не более двух различных значений на листе
+  (mainScale + один более крупный для групп secondary views);
+- `AllowLargerIfFits` реализовывать последним: требует критерий "насколько
+  укрупнить" (не более одного шага вверх по стандартному ряду на старте).
+
+Стандартный ряд масштабов (восходящий порядок):
+`1:100, 1:75, 1:50, 1:40, 1:30, 1:25, 1:20, 1:15, 1:10, 1:8, 1:5, 1:4, 1:2.5, 1:2, 1:1`
+
+Критерии приемки:
+- при `SameAsMain` поведение не меняется относительно текущего;
+- при `PreserveLargerIfFits` view с originalScale=5 при mainScale=10 сохраняет
+  `scale=5`, если estimate показывает что он помещается;
+- при откате trace пишет `secondary-scale-downgrade view=... originalScale=...
+  appliedScale=... reason=...`;
+- все views одной стороны получают одинаковый итоговый масштаб;
+- `scaleDowngradedViews` в public result правильно отражает откаты;
+- `AllowLargerIfFits` не реализуется, пока три предыдущих варианта не
+  проверены на нескольких реальных чертежах.
 
 #### Будущее. Агентная компоновка видов
 
