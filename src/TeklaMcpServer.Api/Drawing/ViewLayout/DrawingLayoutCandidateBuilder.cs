@@ -56,7 +56,7 @@ internal static class DrawingLayoutCandidateBuilder
                 PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false,
                 ProjectionStrength = workspace.GetProjectionStrength(viewId).ToString(),
                 ScaleFlexibility = workspace.GetScaleFlexibility(viewId).ToString(),
-                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide)
+                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide, view.ViewType.ToString())
             });
         }
 
@@ -64,7 +64,7 @@ internal static class DrawingLayoutCandidateBuilder
         return candidate;
     }
 
-    private static string ResolveProjectionRole(ViewSemanticKind kind, string? actualPlacementSide)
+    private static string ResolveProjectionRole(ViewSemanticKind kind, string? actualPlacementSide, string? viewType = null)
     {
         if (kind == ViewSemanticKind.Section)
             return "section";
@@ -73,12 +73,23 @@ internal static class DrawingLayoutCandidateBuilder
         if (kind == ViewSemanticKind.Model3D || kind == ViewSemanticKind.Other)
             return "other";
 
-        return actualPlacementSide switch
+        if (!string.IsNullOrEmpty(actualPlacementSide))
+            return actualPlacementSide switch
+            {
+                "Top" => "top",
+                "Bottom" => "bottom",
+                "Left" => "left",
+                "Right" => "right",
+                _ => "front"
+            };
+
+        // Fallback: infer from ViewType when placement side is not set (stacked views)
+        return viewType switch
         {
-            "Top" => "top",
-            "Bottom" => "bottom",
-            "Left" => "left",
-            "Right" => "right",
+            "TopView" => "top",
+            "BottomView" => "bottom",
+            "BackView" => "bottom",
+            "EndView" => "right",
             _ => "front"
         };
     }
@@ -112,7 +123,7 @@ internal static class DrawingLayoutCandidateBuilder
             var kind = workspace.GetSemanticKind(view.Id);
             view.ProjectionStrength = workspace.GetProjectionStrength(view.Id).ToString();
             view.ScaleFlexibility = workspace.GetScaleFlexibility(view.Id).ToString();
-            view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide);
+            view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide, view.ViewType);
         }
 
         return DrawingLayoutCandidateFactory.FromPlannedViews(
@@ -165,7 +176,7 @@ internal static class DrawingLayoutCandidateBuilder
                 PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false,
                 ProjectionStrength = workspace.GetProjectionStrength(viewId).ToString(),
                 ScaleFlexibility = workspace.GetScaleFlexibility(viewId).ToString(),
-                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide)
+                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide, view.ViewType.ToString())
             });
             }
 

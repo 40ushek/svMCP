@@ -298,15 +298,40 @@ public sealed partial class TeklaDrawingViewApi
                     originalFrameSizes,
                     s,
                     uniformAllNonDetail,
-                    allowTeklaMutation);
+                    allowTeklaMutation,
+                    availW,
+                    availH);
                 probeMs += probe.ElapsedMilliseconds;
                 var candidateViews = probe.Views;
                 var actualFrames = probe.Frames;
+
+                if (probe.PreRejectedByEstimate)
+                {
+                    var preRejectOversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
+                    var preRejectDecision = new EstimateFitFailureDecision(
+                        stage: "candidate-pre-reject",
+                        candidateScale: s,
+                        fits: false,
+                        oversizeConflicts: preRejectOversizeConflicts,
+                        diagnosedConflicts: null);
+                    rejectedScaleDecisions.Add(preRejectDecision);
+                    TraceEstimateFailureDecision(preRejectDecision);
+                    lastOversizeConflicts = preRejectOversizeConflicts;
+                    candidateSw.Stop();
+                    candidateFitMs += candidateSw.ElapsedMilliseconds;
+                    continue;
+                }
+
                 var ctx = new DrawingArrangeContext(activeDrawing, layoutWorkspace, candidateViews, gap, probe.FrameSizes);
+
+                if (probe.TeklaMutationApplied && probe.EstimatedFrameSizes != null)
+                    TraceScaleCandidateApply(s, candidateViews, probe.FrameSizes, probe.EstimatedFrameSizes);
 
                 var oversizeConflicts = BuildOversizeConflicts(candidateViews, actualFrames, availW, availH);
                 if (oversizeConflicts.Count > 0)
                 {
+                    TraceScaleCandidateReject(s,
+                        $"oversize({string.Join(",", oversizeConflicts.Select(c => $"{c.ViewId}:{c.ViewType}"))})");
                     var decision = new EstimateFitFailureDecision(
                         stage: "candidate-reject",
                         candidateScale: s,
@@ -337,10 +362,17 @@ public sealed partial class TeklaDrawingViewApi
                     rejectedScaleDecisions.Add(lastDiagnosedDecision.Value);
                     TraceEstimateFailureDecision(lastDiagnosedDecision.Value);
                     TraceRelaxedPackingFeasibility(s, ctx, actualFrames);
+                    TraceScaleCandidateReject(s,
+                        $"no-fit({string.Join(",", conflicts.Select(c => $"{c.ViewId}:{c.ViewType}"))})");
+                }
+                else if (!fits)
+                {
+                    TraceScaleCandidateReject(s, "no-fit");
                 }
 
                 if (fits)
                 {
+                    TraceScaleCandidateAccept(s);
                     optimalScale = s;
                     currentViews = candidateViews;
                     layoutWorkspace.SetRuntimeViews(currentViews);

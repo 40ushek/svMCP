@@ -110,6 +110,106 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
     }
 
+    private static void TraceScaleCandidateEstimate(
+        double candidateScale,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, (double Width, double Height)> estimatedFrames,
+        double availW,
+        double availH)
+    {
+        var sb = new StringBuilder();
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "SCALE_CANDIDATE_ESTIMATE scale=1:{0} availW={1:F1} availH={2:F1}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            availW,
+            availH);
+
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            estimatedFrames.TryGetValue(id, out var frame);
+            var oversize = frame.Width > availW || frame.Height > availH;
+            sb.AppendFormat(
+                CultureInfo.InvariantCulture,
+                " | view={0}:{1}:{2}:w={3:F1}:h={4:F1}{5}",
+                id,
+                view.ViewType,
+                workspace.GetSemanticKind(id),
+                frame.Width,
+                frame.Height,
+                oversize ? ":OVERSIZE" : string.Empty);
+        }
+
+        DrawingProjectionAlignmentService.Log(sb.ToString());
+    }
+
+    private static void TraceScaleCandidateApply(
+        double candidateScale,
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, (double Width, double Height)> actualFrames,
+        IReadOnlyDictionary<int, (double Width, double Height)> estimatedFrames)
+    {
+        var sb = new StringBuilder();
+        sb.AppendFormat(
+            CultureInfo.InvariantCulture,
+            "SCALE_CANDIDATE_APPLY scale=1:{0}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture));
+
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            actualFrames.TryGetValue(id, out var actual);
+            estimatedFrames.TryGetValue(id, out var estimated);
+            var dw = actual.Width - estimated.Width;
+            var dh = actual.Height - estimated.Height;
+            sb.AppendFormat(
+                CultureInfo.InvariantCulture,
+                " | view={0}:{1}:actualW={2:F1}:actualH={3:F1}:dW={4:+0.0;-0.0;0.0}:dH={5:+0.0;-0.0;0.0}",
+                id,
+                view.ViewType,
+                actual.Width,
+                actual.Height,
+                dw,
+                dh);
+        }
+
+        DrawingProjectionAlignmentService.Log(sb.ToString());
+    }
+
+    private static void TraceScaleCandidatePreReject(
+        double candidateScale,
+        IReadOnlyList<(int Id, string ViewType, double W, double H)> oversizeViews,
+        double tolerance)
+    {
+        var views = string.Join(",", oversizeViews.Select(v =>
+            string.Format(CultureInfo.InvariantCulture, "{0}:{1}:{2:F1}x{3:F1}", v.Id, v.ViewType, v.W, v.H)));
+        DrawingProjectionAlignmentService.Log(string.Format(
+            CultureInfo.InvariantCulture,
+            "SCALE_CANDIDATE_PRE_REJECT scale=1:{0} reason=estimate-oversize tolerance={1:F2} views={2}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            tolerance,
+            views));
+    }
+
+    private static void TraceScaleCandidateReject(double candidateScale, string reason)
+    {
+        DrawingProjectionAlignmentService.Log(string.Format(
+            CultureInfo.InvariantCulture,
+            "SCALE_CANDIDATE_REJECT scale=1:{0} reason={1}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture),
+            reason));
+    }
+
+    private static void TraceScaleCandidateAccept(double candidateScale)
+    {
+        DrawingProjectionAlignmentService.Log(string.Format(
+            CultureInfo.InvariantCulture,
+            "SCALE_CANDIDATE_ACCEPT scale=1:{0}",
+            candidateScale.ToString("0.###", CultureInfo.InvariantCulture)));
+    }
+
     private static void TraceRelaxedPackingFeasibility(
         double candidateScale,
         DrawingArrangeContext context,

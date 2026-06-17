@@ -29,24 +29,54 @@ public sealed partial class TeklaDrawingViewApi
         public long ElapsedMilliseconds { get; }
     }
 
+    internal const double ScaleEstimateOversizeTolerance = 1.05;
+
     private readonly struct CandidateScaleProbeResult
     {
         public CandidateScaleProbeResult(
             List<View> views,
             IReadOnlyDictionary<int, (double Width, double Height)> frameSizes,
             IReadOnlyList<(double w, double h)> frames,
-            long elapsedMilliseconds)
+            long elapsedMilliseconds,
+            IReadOnlyDictionary<int, (double Width, double Height)>? estimatedFrameSizes = null,
+            bool teklaMutationApplied = false,
+            bool preRejectedByEstimate = false)
         {
             Views = views;
             FrameSizes = frameSizes;
             Frames = frames;
             ElapsedMilliseconds = elapsedMilliseconds;
+            EstimatedFrameSizes = estimatedFrameSizes;
+            TeklaMutationApplied = teklaMutationApplied;
+            PreRejectedByEstimate = preRejectedByEstimate;
         }
 
         public List<View> Views { get; }
         public IReadOnlyDictionary<int, (double Width, double Height)> FrameSizes { get; }
         public IReadOnlyList<(double w, double h)> Frames { get; }
         public long ElapsedMilliseconds { get; }
+        public IReadOnlyDictionary<int, (double Width, double Height)>? EstimatedFrameSizes { get; }
+        public bool TeklaMutationApplied { get; }
+        public bool PreRejectedByEstimate { get; }
+    }
+
+    private static List<(int Id, string ViewType, double W, double H)> FindEstimateOversizeViews(
+        IReadOnlyList<View> views,
+        IReadOnlyDictionary<int, (double Width, double Height)> estimatedSizes,
+        double availW,
+        double availH,
+        double tolerance)
+    {
+        var result = new List<(int, string, double, double)>();
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            if (!estimatedSizes.TryGetValue(id, out var size))
+                continue;
+            if (size.Width > availW * tolerance || size.Height > availH * tolerance)
+                result.Add((id, view.ViewType.ToString(), size.Width, size.Height));
+        }
+        return result;
     }
 
     private static double ResolveTargetScale(
@@ -248,18 +278,44 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
         double candidateScale,
         bool uniformAllNonDetail,
-        bool applyProbe)
+        bool applyProbe,
+        double availW,
+        double availH)
     {
         var probeSw = Stopwatch.StartNew();
+        var estimatedSizes = EstimateCandidateFrameSizes(
+            workspace,
+            currentViews,
+            originalFrameSizes,
+            candidateScale,
+            uniformAllNonDetail);
+
+        // Log estimate before any Modify() so it reflects pre-mutation state
+        TraceScaleCandidateEstimate(candidateScale, workspace, currentViews, estimatedSizes, availW, availH);
+
+        // Pre-reject by estimate before mutating Tekla: if any view clearly exceeds the sheet
+        // within tolerance, skip Modify() entirely to avoid visible scale jumps on screen.
+        if (applyProbe && availW > 0 && availH > 0)
+        {
+            var overEstimate = FindEstimateOversizeViews(currentViews, estimatedSizes, availW, availH, ScaleEstimateOversizeTolerance);
+            if (overEstimate.Count > 0)
+            {
+                var estimatedFrames = BuildFrameList(currentViews, estimatedSizes);
+                probeSw.Stop();
+                TraceScaleCandidatePreReject(candidateScale, overEstimate, ScaleEstimateOversizeTolerance);
+                return new CandidateScaleProbeResult(
+                    currentViews,
+                    estimatedSizes,
+                    estimatedFrames,
+                    probeSw.ElapsedMilliseconds,
+                    estimatedFrameSizes: estimatedSizes,
+                    preRejectedByEstimate: true);
+            }
+        }
+
         if (!applyProbe)
         {
-            var estimatedFrameSizes = EstimateCandidateFrameSizes(
-                workspace,
-                currentViews,
-                originalFrameSizes,
-                candidateScale,
-                uniformAllNonDetail);
-            var estimatedFrames = BuildFrameList(currentViews, estimatedFrameSizes);
+            var estimatedFrames = BuildFrameList(currentViews, estimatedSizes);
             probeSw.Stop();
             PerfTrace.Write(
                 "api-view",
@@ -268,9 +324,10 @@ public sealed partial class TeklaDrawingViewApi
                 $"mode=virtual candidateScale=1:{candidateScale.ToString("0.###", CultureInfo.InvariantCulture)} views={currentViews.Count}");
             return new CandidateScaleProbeResult(
                 currentViews,
-                estimatedFrameSizes,
+                estimatedSizes,
                 estimatedFrames,
-                probeSw.ElapsedMilliseconds);
+                probeSw.ElapsedMilliseconds,
+                estimatedFrameSizes: estimatedSizes);
         }
 
         var anyScaleChanged = false;
@@ -301,11 +358,14 @@ public sealed partial class TeklaDrawingViewApi
             ? DrawingViewFrameGeometry.TryGetFrameSizes(candidateViews)
             : originalFrameSizes;
         var actualFrames = BuildFrameList(candidateViews, effectiveFrameSizes);
+
         return new CandidateScaleProbeResult(
             candidateViews,
             effectiveFrameSizes,
             actualFrames,
-            probeSw.ElapsedMilliseconds);
+            probeSw.ElapsedMilliseconds,
+            estimatedFrameSizes: estimatedSizes,
+            teklaMutationApplied: anyScaleChanged);
     }
 
     private static IReadOnlyDictionary<int, (double Width, double Height)> EstimateCandidateFrameSizes(
