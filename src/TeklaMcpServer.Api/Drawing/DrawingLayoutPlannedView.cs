@@ -11,6 +11,8 @@ internal sealed class DrawingLayoutPlannedView
 
     public string SemanticKind { get; set; } = string.Empty;
 
+    public string LayoutViewKind { get; set; } = string.Empty;
+
     public string Name { get; set; } = string.Empty;
 
     public double OriginX { get; set; }

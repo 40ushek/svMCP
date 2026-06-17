@@ -10,6 +10,8 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed class DrawingLayoutWorkspace
 {
+    private readonly Dictionary<int, LayoutViewKind> _layoutViewKindsById;
+
     private DrawingLayoutWorkspace(
         DrawingContext source,
         IReadOnlyList<DrawingLayoutViewItem> views,
@@ -21,6 +23,8 @@ internal sealed class DrawingLayoutWorkspace
         ViewsById = views.ToDictionary(static view => view.Id);
         RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
         SemanticKindsById = views.ToDictionary(static view => view.Id, static view => view.SemanticKindValue);
+        _layoutViewKindsById = views.ToDictionary(static view => view.Id, static view => view.LayoutViewKind);
+        LayoutViewKindsById = _layoutViewKindsById;
         ProjectionStrengthsById = views.ToDictionary(static view => view.Id, static view => view.ProjectionStrength);
         ScaleFlexibilitiesById = views.ToDictionary(static view => view.Id, static view => view.ScaleFlexibility);
     }
@@ -36,6 +40,8 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, View> RuntimeViewsById { get; private set; }
 
     public IReadOnlyDictionary<int, ViewSemanticKind> SemanticKindsById { get; }
+
+    public IReadOnlyDictionary<int, LayoutViewKind> LayoutViewKindsById { get; }
 
     public IReadOnlyDictionary<int, ProjectionStrength> ProjectionStrengthsById { get; }
 
@@ -83,6 +89,19 @@ internal sealed class DrawingLayoutWorkspace
 
     public ViewSemanticKind GetSemanticKind(int viewId)
         => SemanticKindsById.TryGetValue(viewId, out var kind) ? kind : ViewSemanticKind.Other;
+
+    public LayoutViewKind GetLayoutViewKind(int viewId)
+        => LayoutViewKindsById.TryGetValue(viewId, out var kind) ? kind : LayoutViewKind.Other;
+
+    public bool SetLayoutViewKind(int viewId, LayoutViewKind kind)
+    {
+        if (!ViewsById.TryGetValue(viewId, out var view))
+            return false;
+
+        view.SetLayoutViewKind(kind);
+        _layoutViewKindsById[viewId] = kind;
+        return true;
+    }
 
     public ProjectionStrength GetProjectionStrength(int viewId)
         => ProjectionStrengthsById.TryGetValue(viewId, out var strength) ? strength : ProjectionStrength.Off;
@@ -242,6 +261,7 @@ internal sealed class DrawingLayoutViewItem
         SemanticKindValue = Enum.TryParse<ViewSemanticKind>(semanticKind, ignoreCase: true, out var parsed)
             ? parsed
             : ViewSemanticKind.Other;
+        LayoutViewKind = LayoutViewKindResolver.ResolveDefault(SemanticKindValue);
         ProjectionStrength = ProjectionStrengthResolver.ResolveDefault(SemanticKindValue);
         ScaleFlexibility = ScaleFlexibilityResolver.ResolveDefault(SemanticKindValue);
     }
@@ -253,6 +273,8 @@ internal sealed class DrawingLayoutViewItem
     public string SemanticKind { get; }
 
     public ViewSemanticKind SemanticKindValue { get; }
+
+    public LayoutViewKind LayoutViewKind { get; private set; }
 
     public ProjectionStrength ProjectionStrength { get; }
 
@@ -293,6 +315,11 @@ internal sealed class DrawingLayoutViewItem
     public double? ParentAnchorY { get; set; }
 
     public List<string> Warnings { get; } = new();
+
+    internal void SetLayoutViewKind(LayoutViewKind kind)
+    {
+        LayoutViewKind = kind;
+    }
 
     public static DrawingLayoutViewItem From(DrawingViewInfo view)
     {

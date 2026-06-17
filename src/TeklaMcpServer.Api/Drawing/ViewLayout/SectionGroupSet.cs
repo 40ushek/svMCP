@@ -112,6 +112,13 @@ internal sealed class SectionGroupSet
 
         foreach (var v in outliers)
         {
+            var id = v.GetIdentifier().ID;
+            if (!workspace.SetLayoutViewKind(id, LayoutViewKind.AnchorDetailSection))
+            {
+                throw new System.InvalidOperationException(
+                    $"Cannot classify unknown layout view {id} as {LayoutViewKind.AnchorDetailSection}.");
+            }
+
             group.Remove(v);
             set.SmallAnchorDriven.Add(v);
         }

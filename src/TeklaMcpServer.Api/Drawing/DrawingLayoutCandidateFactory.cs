@@ -26,6 +26,7 @@ internal static class DrawingLayoutCandidateFactory
                 Id = view.Id,
                 ViewType = view.ViewType,
                 SemanticKind = view.SemanticKind,
+                LayoutViewKind = view.LayoutViewKind,
                 Name = view.Name,
                 OriginX = view.OriginX,
                 OriginY = view.OriginY,

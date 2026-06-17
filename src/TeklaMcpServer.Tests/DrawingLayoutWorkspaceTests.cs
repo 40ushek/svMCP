@@ -90,6 +90,55 @@ public sealed class DrawingLayoutWorkspaceTests
         Assert.Equal(expected, workspace.GetProjectionStrength(10));
     }
 
+    [Theory]
+    [InlineData("BaseProjected", LayoutViewKind.MainProjected)]
+    [InlineData("Section", LayoutViewKind.StandardSection)]
+    [InlineData("Detail", LayoutViewKind.Detail)]
+    [InlineData("Model3D", LayoutViewKind.Model3D)]
+    [InlineData("Other", LayoutViewKind.Other)]
+    [InlineData("Unknown", LayoutViewKind.Other)]
+    internal void ViewItem_StoresDefaultLayoutViewKind(string semanticKind, LayoutViewKind expected)
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext(
+            views:
+            [
+                CreateView(10, "FrontView", semanticKind, 20, 100, 80, 50, 30)
+            ]));
+
+        var view = workspace.Views.Single();
+
+        Assert.Equal(expected, view.LayoutViewKind);
+        Assert.Equal(expected, workspace.GetLayoutViewKind(10));
+        Assert.Equal(LayoutViewKind.Other, workspace.GetLayoutViewKind(999));
+    }
+
+    [Fact]
+    public void SetLayoutViewKind_UpdatesViewAndLookup()
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext(
+            views:
+            [
+                CreateView(10, "SectionView", "Section", 20, 100, 80, 50, 30)
+            ]));
+
+        var updated = workspace.SetLayoutViewKind(10, LayoutViewKind.AnchorDetailSection);
+
+        Assert.True(updated);
+        Assert.Equal(LayoutViewKind.AnchorDetailSection, workspace.Views.Single().LayoutViewKind);
+        Assert.Equal(LayoutViewKind.AnchorDetailSection, workspace.GetLayoutViewKind(10));
+    }
+
+    [Fact]
+    public void SetLayoutViewKind_ReturnsFalseForUnknownView()
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext());
+
+        var updated = workspace.SetLayoutViewKind(999, LayoutViewKind.AnchorDetailSection);
+
+        Assert.False(updated);
+        Assert.Equal(LayoutViewKind.Other, workspace.GetLayoutViewKind(999));
+    }
+
     [Fact]
     public void Workspace_StoresMutablePlanningGeometry()
     {

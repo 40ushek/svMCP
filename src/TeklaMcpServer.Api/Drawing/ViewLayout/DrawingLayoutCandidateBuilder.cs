@@ -38,6 +38,7 @@ internal static class DrawingLayoutCandidateBuilder
                 Id = viewId,
                 ViewType = view.ViewType.ToString(),
                 SemanticKind = workspace.GetSemanticKind(viewId).ToString(),
+                LayoutViewKind = workspace.GetLayoutViewKind(viewId).ToString(),
                 Name = view.Name ?? string.Empty,
                 OriginX = view.Origin?.X ?? 0.0,
                 OriginY = view.Origin?.Y ?? 0.0,
@@ -117,13 +118,15 @@ internal static class DrawingLayoutCandidateBuilder
     {
         foreach (var view in plannedViews)
         {
-            if (!string.IsNullOrEmpty(view.ProjectionStrength))
-                continue;
-
             var kind = workspace.GetSemanticKind(view.Id);
-            view.ProjectionStrength = workspace.GetProjectionStrength(view.Id).ToString();
-            view.ScaleFlexibility = workspace.GetScaleFlexibility(view.Id).ToString();
-            view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide, view.ViewType);
+            if (string.IsNullOrEmpty(view.LayoutViewKind))
+                view.LayoutViewKind = workspace.GetLayoutViewKind(view.Id).ToString();
+            if (string.IsNullOrEmpty(view.ProjectionStrength))
+                view.ProjectionStrength = workspace.GetProjectionStrength(view.Id).ToString();
+            if (string.IsNullOrEmpty(view.ScaleFlexibility))
+                view.ScaleFlexibility = workspace.GetScaleFlexibility(view.Id).ToString();
+            if (string.IsNullOrEmpty(view.ProjectionRole))
+                view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide, view.ViewType);
         }
 
         return DrawingLayoutCandidateFactory.FromPlannedViews(
@@ -162,6 +165,7 @@ internal static class DrawingLayoutCandidateBuilder
                 Id = viewId,
                 ViewType = view.ViewType.ToString(),
                 SemanticKind = workspace.GetSemanticKind(viewId).ToString(),
+                LayoutViewKind = workspace.GetLayoutViewKind(viewId).ToString(),
                 Name = view.Name ?? string.Empty,
                 OriginX = originX,
                 OriginY = originY,

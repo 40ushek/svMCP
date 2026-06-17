@@ -618,11 +618,12 @@ public sealed partial class TeklaDrawingViewApi
         {
             DrawingProjectionAlignmentService.Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "  LAYOUT_VIEW candidate={0} id={1} viewType={2} kind={3} role={4} projection={5} scaleFlex={6} scale={7:0.###} side={8}",
+                "  LAYOUT_VIEW candidate={0} id={1} viewType={2} kind={3} layoutKind={4} role={5} projection={6} scaleFlex={7} scale={8:0.###} side={9}",
                 candidateName,
                 view.Id,
                 view.ViewType,
                 view.SemanticKind,
+                view.LayoutViewKind,
                 view.ProjectionRole,
                 view.ProjectionStrength,
                 view.ScaleFlexibility,
