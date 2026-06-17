@@ -194,20 +194,24 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<ReservedRect> reserved,
         bool applyChanges)
     {
-        var freeViews = new List<(View View, ReservedRect Rect, double Area)>();
+        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var freeViews = new List<(View View, ReservedRect Rect, double Area, bool AnchorDriven)>();
         foreach (var view in views)
         {
-            if (!IsFreePlacementKind(workspace.GetSemanticKind(view.GetIdentifier().ID)))
+            var id = view.GetIdentifier().ID;
+            var anchorDriven = IsAnchorDrivenFreeSection(workspace, arrangedById, id);
+            if (!IsFreePlacementKind(workspace.GetSemanticKind(id)) && !anchorDriven)
                 continue;
 
             if (!DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
                 continue;
 
-            freeViews.Add((view, rect, GetArea(rect)));
+            freeViews.Add((view, rect, GetArea(rect), anchorDriven));
         }
 
         freeViews = freeViews
-            .OrderByDescending(item => item.Area)
+            .OrderByDescending(item => item.AnchorDriven)
+            .ThenByDescending(item => item.Area)
             .ToList();
         if (freeViews.Count == 0)
             return arranged;
@@ -216,7 +220,7 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var view in views)
         {
             var id = view.GetIdentifier().ID;
-            if (IsFreePlacementKind(workspace.GetSemanticKind(id)))
+            if (IsFreePlacementKind(workspace.GetSemanticKind(id)) || IsAnchorDrivenFreeSection(workspace, arrangedById, id))
                 continue;
 
             if (DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
@@ -251,6 +255,11 @@ public sealed partial class TeklaDrawingViewApi
 
             var targetX = (usableMinX + usableMaxX) * 0.5;
             var targetY = (usableMinY + usableMaxY) * 0.5;
+            if (item.AnchorDriven && workspace.TryGetView(id) is { ParentAnchorX: { } anchorX, ParentAnchorY: { } anchorY })
+            {
+                targetX = anchorX;
+                targetY = anchorY;
+            }
             ReservedRect candidateRect;
             if (packer.TryInsertClosestToPoint(width + gap, height + gap, targetX - usableMinX, usableMaxY - targetY, out var placement))
             {
@@ -321,7 +330,7 @@ public sealed partial class TeklaDrawingViewApi
             blockersById[id] = candidateRect;
             arranged = UpdateArrangedOrigin(arranged, id, origin.X, origin.Y);
             DrawingProjectionAlignmentService.Log(
-                $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} dx={dx:F1} dy={dy:F1}");
+                $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(item.AnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
         }
 
         if (movedAny && applyChanges)
@@ -398,6 +407,22 @@ public sealed partial class TeklaDrawingViewApi
 
     private static bool IsFreePlacementKind(ViewSemanticKind kind)
         => kind == ViewSemanticKind.Other || kind == ViewSemanticKind.Model3D;
+
+    private static bool IsAnchorDrivenFreeSection(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        int viewId)
+    {
+        if (workspace.GetSemanticKind(viewId) != ViewSemanticKind.Section)
+            return false;
+
+        var item = workspace.TryGetView(viewId);
+        if (item?.ParentAnchorX == null || item.ParentAnchorY == null)
+            return false;
+
+        return !arrangedById.TryGetValue(viewId, out var arrangedView)
+               || string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide);
+    }
 
     private static double GetArea(ReservedRect rect)
         => System.Math.Max(0, rect.MaxX - rect.MinX) * System.Math.Max(0, rect.MaxY - rect.MinY);

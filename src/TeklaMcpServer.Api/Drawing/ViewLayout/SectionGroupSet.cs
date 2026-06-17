@@ -106,9 +106,7 @@ internal sealed class SectionGroupSet
             .Where(v =>
             {
                 var item = workspace.TryGetView(v.GetIdentifier().ID);
-                if (IsSectionOfSection(v, workspace, item))
-                    return true;
-                return SizeAlong(v) < threshold;
+                return HasParentAnchor(item) && SizeAlong(v) < threshold;
             })
             .ToList();
 
@@ -119,16 +117,8 @@ internal sealed class SectionGroupSet
         }
     }
 
-    private static bool IsSectionOfSection(View v, DrawingLayoutWorkspace workspace, DrawingLayoutViewItem? item)
-    {
-        if (item?.ParentViewId is not { } parentId)
-            return false;
-
-        if (item.ParentAnchorX == null || item.ParentAnchorY == null)
-            return false;
-
-        return workspace.TryGetRuntimeView(parentId) is { ViewType: View.ViewTypes.SectionView };
-    }
+    private static bool HasParentAnchor(DrawingLayoutViewItem? item)
+        => item?.ParentAnchorX != null && item.ParentAnchorY != null;
 
     private static double Median(IEnumerable<double> values)
     {
@@ -152,4 +142,3 @@ internal sealed class SectionGroupSet
         }
     }
 }
-
