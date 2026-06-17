@@ -251,31 +251,43 @@ public sealed partial class TeklaDrawingViewApi
 
             var targetX = (usableMinX + usableMaxX) * 0.5;
             var targetY = (usableMinY + usableMaxY) * 0.5;
-            if (!packer.TryInsertClosestToPoint(width + gap, height + gap, targetX - usableMinX, usableMaxY - targetY, out var placement))
+            ReservedRect candidateRect;
+            if (packer.TryInsertClosestToPoint(width + gap, height + gap, targetX - usableMinX, usableMaxY - targetY, out var placement))
             {
-                blockersById[id] = currentRect;
-                DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=no-space kind={workspace.GetSemanticKind(id)}");
-                continue;
+                candidateRect = new ReservedRect(
+                    usableMinX + placement.X,
+                    usableMaxY - placement.Y - height,
+                    usableMinX + placement.X + width,
+                    usableMaxY - placement.Y);
+                var validation = ViewPlacementValidator.Validate(
+                    candidateRect,
+                    usableMinX,
+                    usableMaxX,
+                    usableMinY,
+                    usableMaxY,
+                    reserved,
+                    blockersById);
+                if (!validation.Fits)
+                {
+                    blockersById[id] = currentRect;
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason={validation.Reason} kind={workspace.GetSemanticKind(id)}");
+                    continue;
+                }
             }
-
-            var candidateRect = new ReservedRect(
-                usableMinX + placement.X,
-                usableMaxY - placement.Y - height,
-                usableMinX + placement.X + width,
-                usableMaxY - placement.Y);
-            var validation = ViewPlacementValidator.Validate(
-                candidateRect,
-                usableMinX,
-                usableMaxX,
-                usableMinY,
-                usableMaxY,
-                reserved,
-                blockersById);
-            if (!validation.Fits)
+            else
             {
-                blockersById[id] = currentRect;
-                DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason={validation.Reason} kind={workspace.GetSemanticKind(id)}");
-                continue;
+                if (!TryFindBestEffortPosition(
+                        width, height,
+                        usableMinX, usableMaxX, usableMinY, usableMaxY,
+                        reserved, blockersById, currentRect,
+                        out candidateRect, out var bestOverlap, out var currentOverlap))
+                {
+                    blockersById[id] = currentRect;
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=no-space kind={workspace.GetSemanticKind(id)} currentOverlap={currentOverlap:F1} bestOverlap={bestOverlap:F1}");
+                    continue;
+                }
+
+                DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION best-effort kind={workspace.GetSemanticKind(id)} candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] bestOverlap={bestOverlap:F1} currentOverlap={currentOverlap:F1}");
             }
 
             var currentOrigin = view.Origin;
@@ -316,6 +328,72 @@ public sealed partial class TeklaDrawingViewApi
             activeDrawing.CommitChanges();
 
         return arranged;
+    }
+
+    private static bool TryFindBestEffortPosition(
+        double width,
+        double height,
+        double usableMinX,
+        double usableMaxX,
+        double usableMinY,
+        double usableMaxY,
+        IReadOnlyList<ReservedRect> reserved,
+        IReadOnlyDictionary<int, ReservedRect> blockersById,
+        ReservedRect currentRect,
+        out ReservedRect best,
+        out double bestOverlap,
+        out double currentOverlap)
+    {
+        var usableW = usableMaxX - usableMinX;
+        var usableH = usableMaxY - usableMinY;
+        var stepX = System.Math.Max(10.0, usableW / 12.0);
+        var stepY = System.Math.Max(10.0, usableH / 12.0);
+
+        var allBlockers = reserved.Concat(blockersById.Values).ToList();
+        currentOverlap = allBlockers.Sum(b => IntersectionArea(currentRect, b));
+
+        bestOverlap = double.MaxValue;
+        best = currentRect;
+        var found = false;
+
+        for (var x = usableMinX; x + width <= usableMaxX + 0.1; x += stepX)
+        {
+            for (var y = usableMinY; y + height <= usableMaxY + 0.1; y += stepY)
+            {
+                var cx = System.Math.Min(x, usableMaxX - width);
+                var cy = System.Math.Min(y, usableMaxY - height);
+                var candidate = new ReservedRect(cx, cy, cx + width, cy + height);
+
+                var overlap = 0.0;
+                foreach (var blocker in allBlockers)
+                    overlap += IntersectionArea(candidate, blocker);
+
+                if (overlap < bestOverlap)
+                {
+                    bestOverlap = overlap;
+                    best = candidate;
+                    found = true;
+                }
+
+                if (bestOverlap == 0.0)
+                    break;
+            }
+
+            if (bestOverlap == 0.0)
+                break;
+        }
+
+        if (!found)
+            return false;
+
+        return bestOverlap < currentOverlap;
+    }
+
+    private static double IntersectionArea(ReservedRect a, ReservedRect b)
+    {
+        var ox = System.Math.Min(a.MaxX, b.MaxX) - System.Math.Max(a.MinX, b.MinX);
+        var oy = System.Math.Min(a.MaxY, b.MaxY) - System.Math.Max(a.MinY, b.MinY);
+        return ox > 0 && oy > 0 ? ox * oy : 0.0;
     }
 
     private static bool IsFreePlacementKind(ViewSemanticKind kind)

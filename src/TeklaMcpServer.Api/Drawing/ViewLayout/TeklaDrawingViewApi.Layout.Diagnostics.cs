@@ -52,6 +52,7 @@ public sealed partial class TeklaDrawingViewApi
             var viewId = view.GetIdentifier().ID;
             var kind = workspace.GetSemanticKind(viewId);
             var projectionStrength = workspace.GetProjectionStrength(viewId);
+            var scaleFlexibility = workspace.GetScaleFlexibility(viewId);
             var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
             var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
             var frameWidth = frame.Width;
@@ -59,11 +60,12 @@ public sealed partial class TeklaDrawingViewApi
 
             sb.AppendFormat(
                 CultureInfo.InvariantCulture,
-                " | view={0}:{1}:{2}:projection={3}:scale={4:F2}:driver={5}:frame={6:F2}x{7:F2}:origin={8:F2},{9:F2}",
+                " | view={0}:{1}:{2}:projection={3}:scaleFlex={4}:scale={5:F2}:driver={6}:frame={7:F2}x{8:F2}:origin={9:F2},{10:F2}",
                 viewId,
                 view.ViewType,
                 kind,
                 projectionStrength,
+                scaleFlexibility,
                 view.Attributes.Scale,
                 isDriver,
                 frameWidth,
@@ -72,7 +74,9 @@ public sealed partial class TeklaDrawingViewApi
                 view.Origin?.Y ?? 0);
         }
 
-        PerfTrace.Write("api-view", "fit_scale_inputs", 0, sb.ToString());
+        var line = sb.ToString();
+        PerfTrace.Write("api-view", "fit_scale_inputs", 0, line);
+        DrawingProjectionAlignmentService.Log($"[fit_scale_inputs] {line}");
     }
 
     private static void TraceScaleCandidate(
