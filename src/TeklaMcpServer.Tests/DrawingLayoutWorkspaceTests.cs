@@ -41,8 +41,32 @@ public sealed class DrawingLayoutWorkspaceTests
         Assert.Equal(ViewSemanticKind.BaseProjected, workspace.GetSemanticKind(10));
         Assert.Equal(ViewSemanticKind.Section, workspace.GetSemanticKind(20));
         Assert.Equal(ViewSemanticKind.Other, workspace.GetSemanticKind(999));
+        Assert.Equal(ProjectionStrength.Strong, workspace.GetProjectionStrength(10));
+        Assert.Equal(ProjectionStrength.Relaxed, workspace.GetProjectionStrength(20));
+        Assert.Equal(ProjectionStrength.Off, workspace.GetProjectionStrength(999));
         Assert.Same(workspace.Views[1], workspace.TryGetView(20));
         Assert.Null(workspace.TryGetView(999));
+    }
+
+    [Theory]
+    [InlineData("BaseProjected", ProjectionStrength.Strong)]
+    [InlineData("Section", ProjectionStrength.Relaxed)]
+    [InlineData("Detail", ProjectionStrength.Weak)]
+    [InlineData("Model3D", ProjectionStrength.Off)]
+    [InlineData("Other", ProjectionStrength.Off)]
+    [InlineData("Unknown", ProjectionStrength.Off)]
+    internal void ViewItem_StoresDefaultProjectionStrength(string semanticKind, ProjectionStrength expected)
+    {
+        var workspace = DrawingLayoutWorkspace.From(CreateContext(
+            views:
+            [
+                CreateView(10, "FrontView", semanticKind, 20, 100, 80, 50, 30)
+            ]));
+
+        var view = workspace.Views.Single();
+
+        Assert.Equal(expected, view.ProjectionStrength);
+        Assert.Equal(expected, workspace.GetProjectionStrength(10));
     }
 
     [Fact]

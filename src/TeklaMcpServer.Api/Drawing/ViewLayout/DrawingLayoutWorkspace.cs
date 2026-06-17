@@ -21,6 +21,7 @@ internal sealed class DrawingLayoutWorkspace
         ViewsById = views.ToDictionary(static view => view.Id);
         RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
         SemanticKindsById = views.ToDictionary(static view => view.Id, static view => view.SemanticKindValue);
+        ProjectionStrengthsById = views.ToDictionary(static view => view.Id, static view => view.ProjectionStrength);
     }
 
     public DrawingContext Source { get; }
@@ -34,6 +35,8 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, View> RuntimeViewsById { get; private set; }
 
     public IReadOnlyDictionary<int, ViewSemanticKind> SemanticKindsById { get; }
+
+    public IReadOnlyDictionary<int, ProjectionStrength> ProjectionStrengthsById { get; }
 
     public IReadOnlyDictionary<int, double> OriginalScalesById { get; private set; } =
         new Dictionary<int, double>();
@@ -77,6 +80,9 @@ internal sealed class DrawingLayoutWorkspace
 
     public ViewSemanticKind GetSemanticKind(int viewId)
         => SemanticKindsById.TryGetValue(viewId, out var kind) ? kind : ViewSemanticKind.Other;
+
+    public ProjectionStrength GetProjectionStrength(int viewId)
+        => ProjectionStrengthsById.TryGetValue(viewId, out var strength) ? strength : ProjectionStrength.Off;
 
     public (double Width, double Height) GetSelectedFrameSize(int viewId, double fallbackWidth, double fallbackHeight)
         => SelectedFrameSizesById.TryGetValue(viewId, out var size) ? size : (fallbackWidth, fallbackHeight);
@@ -193,6 +199,7 @@ internal sealed class DrawingLayoutViewItem
         SemanticKindValue = Enum.TryParse<ViewSemanticKind>(semanticKind, ignoreCase: true, out var parsed)
             ? parsed
             : ViewSemanticKind.Other;
+        ProjectionStrength = ProjectionStrengthResolver.ResolveDefault(SemanticKindValue);
     }
 
     public int Id { get; }
@@ -202,6 +209,8 @@ internal sealed class DrawingLayoutViewItem
     public string SemanticKind { get; }
 
     public ViewSemanticKind SemanticKindValue { get; }
+
+    public ProjectionStrength ProjectionStrength { get; }
 
     public string Name { get; }
 
