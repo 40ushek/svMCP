@@ -423,11 +423,43 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static void TraceLayoutFill(DrawingLayoutCandidateEvaluation evaluation)
+    {
+        var candidate = evaluation.Candidate;
+        var breakdown = evaluation.Score.Breakdown;
+
+        var rects = candidate.Views
+            .Select(static v => v.LayoutRect)
+            .Where(static r => r != null)
+            .Select(static r => r!)
+            .ToList();
+
+        var bboxMinX = rects.Count > 0 ? rects.Min(static r => r.MinX) : 0.0;
+        var bboxMinY = rects.Count > 0 ? rects.Min(static r => r.MinY) : 0.0;
+        var bboxMaxX = rects.Count > 0 ? rects.Max(static r => r.MaxX) : 0.0;
+        var bboxMaxY = rects.Count > 0 ? rects.Max(static r => r.MaxY) : 0.0;
+        var bboxArea = System.Math.Max(0, bboxMaxX - bboxMinX) * System.Math.Max(0, bboxMaxY - bboxMinY);
+
+        var scale = candidate.Views.Select(static v => v.Scale).Where(static s => s > 0).DefaultIfEmpty(0).FirstOrDefault();
+
+        DrawingProjectionAlignmentService.Log(string.Format(
+            CultureInfo.InvariantCulture,
+            "LAYOUT_FILL candidate={0} scale={1:0.###} fill={2:0.###} union={3:0} available={4:0} bbox={5:0}",
+            string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+            scale,
+            breakdown.FillRatioRaw,
+            breakdown.TotalViewArea,
+            breakdown.AvailableSheetArea,
+            bboxArea));
+    }
+
     private static void TraceLayoutCandidateScore(DrawingLayoutCandidateEvaluation evaluation)
     {
         var candidate = evaluation.Candidate;
         var score = evaluation.Score;
         var validation = evaluation.Validation;
+
+        TraceLayoutFill(evaluation);
 
         PerfTrace.Write(
             "api-view",
