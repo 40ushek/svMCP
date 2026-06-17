@@ -158,6 +158,73 @@ public sealed class MaxRectsBinPacker
         }
     }
 
+    /// <summary>
+    /// Picks the placement closest to (targetCenterX, targetCenterY).
+    /// leftoverArea is used only as a tie-breaker when distances are equal.
+    /// </summary>
+    public bool TryInsertClosestToAnchor(
+        double width,
+        double height,
+        double targetCenterX,
+        double targetCenterY,
+        out PackedRectangle placement)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            placement = default;
+            return false;
+        }
+
+        var bestDistSq = double.MaxValue;
+        var bestLeftover = double.MaxValue;
+        var bestNode = default(PackedRectangle);
+
+        foreach (var free in _freeRectangles)
+        {
+            TryScoreAnchorCandidate(width, height, targetCenterX, targetCenterY, free, ref bestDistSq, ref bestLeftover, ref bestNode);
+            if (_allowRotation)
+                TryScoreAnchorCandidate(height, width, targetCenterX, targetCenterY, free, ref bestDistSq, ref bestLeftover, ref bestNode);
+        }
+
+        if (bestDistSq == double.MaxValue)
+        {
+            placement = default;
+            return false;
+        }
+
+        PlaceRectangle(bestNode);
+        placement = bestNode;
+        return true;
+    }
+
+    private static void TryScoreAnchorCandidate(
+        double width,
+        double height,
+        double targetCenterX,
+        double targetCenterY,
+        PackedRectangle free,
+        ref double bestDistSq,
+        ref double bestLeftover,
+        ref PackedRectangle bestNode)
+    {
+        if (free.Width < width || free.Height < height)
+            return;
+
+        var candidateX = Clamp(targetCenterX - (width / 2.0), free.X, free.X + free.Width - width);
+        var candidateY = Clamp(targetCenterY - (height / 2.0), free.Y, free.Y + free.Height - height);
+        var dx = candidateX + (width / 2.0) - targetCenterX;
+        var dy = candidateY + (height / 2.0) - targetCenterY;
+        var distSq = dx * dx + dy * dy;
+        var leftover = (free.Width - width) * (free.Height - height);
+
+        if (distSq < bestDistSq || (distSq == bestDistSq && leftover < bestLeftover))
+        {
+            bestDistSq = distSq;
+            bestLeftover = leftover;
+            bestNode = new PackedRectangle(candidateX, candidateY, width, height);
+        }
+    }
+
     private static void TryScoreClosestCandidate(
         double width,
         double height,

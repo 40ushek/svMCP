@@ -255,13 +255,20 @@ public sealed partial class TeklaDrawingViewApi
 
             var targetX = (usableMinX + usableMaxX) * 0.5;
             var targetY = (usableMinY + usableMaxY) * 0.5;
+            var isAnchorDriven = false;
             if (item.AnchorDriven && workspace.TryGetView(id) is { ParentAnchorX: { } anchorX, ParentAnchorY: { } anchorY })
             {
                 targetX = anchorX;
                 targetY = anchorY;
+                isAnchorDriven = true;
             }
             ReservedRect candidateRect;
-            if (packer.TryInsertClosestToPoint(width + gap, height + gap, targetX - usableMinX, usableMaxY - targetY, out var placement))
+            var packerTargetX = targetX - usableMinX;
+            var packerTargetY = usableMaxY - targetY;
+            var placed = isAnchorDriven
+                ? packer.TryInsertClosestToAnchor(width + gap, height + gap, packerTargetX, packerTargetY, out var placement)
+                : packer.TryInsertClosestToPoint(width + gap, height + gap, packerTargetX, packerTargetY, out placement);
+            if (placed)
             {
                 candidateRect = new ReservedRect(
                     usableMinX + placement.X,
@@ -279,12 +286,29 @@ public sealed partial class TeklaDrawingViewApi
                 if (!validation.Fits)
                 {
                     blockersById[id] = currentRect;
-                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason={validation.Reason} kind={workspace.GetSemanticKind(id)}");
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason={validation.Reason} kind={workspace.GetSemanticKind(id)} anchorDriven={(isAnchorDriven ? 1 : 0)}");
                     continue;
+                }
+
+                if (isAnchorDriven)
+                {
+                    var cx = (candidateRect.MinX + candidateRect.MaxX) * 0.5;
+                    var cy = (candidateRect.MinY + candidateRect.MaxY) * 0.5;
+                    var dist = System.Math.Sqrt((cx - targetX) * (cx - targetX) + (cy - targetY) * (cy - targetY));
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION anchor-placed id={id} anchor=({targetX:F1},{targetY:F1}) candidate=({cx:F1},{cy:F1}) dist={dist:F1}");
                 }
             }
             else
             {
+                // Anchor-driven sections must not use best-effort overlap fallback.
+                // If no non-overlapping placement exists, leave in place.
+                if (item.AnchorDriven)
+                {
+                    blockersById[id] = currentRect;
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=skip-anchor-no-space id={id} kind={workspace.GetSemanticKind(id)} anchor=({targetX:F1},{targetY:F1})");
+                    continue;
+                }
+
                 if (!TryFindBestEffortPosition(
                         width, height,
                         usableMinX, usableMaxX, usableMinY, usableMaxY,
