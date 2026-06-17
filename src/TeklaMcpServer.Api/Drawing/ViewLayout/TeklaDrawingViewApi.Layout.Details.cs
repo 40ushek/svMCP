@@ -302,7 +302,7 @@ public sealed partial class TeklaDrawingViewApi
             {
                 // Anchor-driven sections must not use best-effort overlap fallback.
                 // If no non-overlapping placement exists, leave in place.
-                if (item.AnchorDriven)
+                if (isAnchorDriven)
                 {
                     blockersById[id] = currentRect;
                     DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=skip-anchor-no-space id={id} kind={workspace.GetSemanticKind(id)} anchor=({targetX:F1},{targetY:F1})");
@@ -354,7 +354,7 @@ public sealed partial class TeklaDrawingViewApi
             blockersById[id] = candidateRect;
             arranged = UpdateArrangedOrigin(arranged, id, origin.X, origin.Y);
             DrawingProjectionAlignmentService.Log(
-                $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(item.AnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
+                $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(isAnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
         }
 
         if (movedAny && applyChanges)

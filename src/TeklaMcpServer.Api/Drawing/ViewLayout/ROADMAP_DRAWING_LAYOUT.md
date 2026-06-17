@@ -1362,8 +1362,33 @@ TODO перед реализацией `PreserveLargerIfFits`:
 ~101×85 мм при 1:10) попадает в Bottom-стопку рядом с BackView/BottomView
 (~700×160 мм) — занимает целую зону, выглядит потерянной.
 
+После первых правок стало видно более общее нарушение: маленькая секция
+правильно распознаётся как `SmallAnchorDriven`, но затем смешивается с
+обычными `secondaryViews` и попадает в общий fallback. В результате её
+`ActualPlacementSide` может стать `Right/Top/...` только потому, что fallback
+физически поставил её в эту область листа. Это не семантический тип вида.
+
+**Нужная модель.** Ввести явную классификацию видов для layout, например
+`LayoutViewKind`:
+
+- `MainProjected` — основные проекционные виды;
+- `StandardSection` — обычные сечения, участвуют в секционных стопках;
+- `AnchorDetailSection` — маленькое сечение/деталь от parent anchor;
+- `Detail` — detail views;
+- `Model3D` — 3D/isometric view;
+- `Other` — прочие виды.
+
+`AnchorDetailSection` не должен попадать в обычные секционные стопки и не
+должен терять статус при передаче в fallback/planner. Его правило размещения:
+держаться около `ParentAnchorX/Y`.
+
 **Критерий "маленькая".** Размер секции вдоль направления стопки < порог ×
 медиана того же размера по группе. Порог ~0.4 как стартовое значение.
+
+Для section-of-parent предпочтительный критерий — сравнение с parent view:
+если есть `ParentViewId`/`ParentAnchorX/Y` и длинная сторона секции сильно
+меньше длинной стороны parent view, классифицировать как `AnchorDetailSection`.
+Side/group-based критерий оставить как fallback.
 
 Направление стопки зависит от её ориентации (`stackOrientation`), которая
 должна быть вычислена до outlier-фильтра:
@@ -1376,21 +1401,26 @@ TODO перед реализацией `PreserveLargerIfFits`:
 **Решение.** Такие секции не ставить в свою стопку — размещать отдельно
 anchor-driven:
 
-1. В `SectionGroupSet.Build` после резолва side — определить `stackOrientation`
-   по side (Left/Right → vertical, Top/Bottom → horizontal), вычислить медиану
-   размера вдоль стека, отфильтровать аутлайеры. Аутлайеры переносить в
-   отдельный список `SmallAnchorDriven` (не в `Unknown`).
+1. Ввести `LayoutViewKind`/resolver и присваивать виду `AnchorDetailSection`
+   один раз при построении layout context/workspace. `SmallAnchorDriven`
+   оставить только как переходный implementation detail или удалить.
 
-2. `DrawingLayoutViewItem.ParentAnchorX/Y` уже заполнены через
+2. В `SectionGroupSet.Build` после резолва side — определить `stackOrientation`
+   по side (Left/Right → vertical, Top/Bottom → horizontal), вычислить медиану
+   размера вдоль стека, отфильтровать аутлайеры. Аутлайеры классифицировать как
+   `AnchorDetailSection`, а не переносить в обычный `Unknown`/`secondaryViews`.
+
+3. `DrawingLayoutViewItem.ParentAnchorX/Y` уже заполнены через
    `SetParentViewRelations()` — это точка на листе где стоит SectionMark в
    ownerView.
 
-3. В `BaseProjectedDrawingArrangeStrategy` после основного arrange —
-   отдельный проход для `SmallAnchorDriven`:
+4. В `BaseProjectedDrawingArrangeStrategy` после основного arrange —
+   отдельный проход для `AnchorDetailSection`:
    - найти ближайший свободный прямоугольник к anchor (nearest-free-rect);
-   - если рядом с anchor места нет — обычный fallback (свободный угол листа).
+   - если рядом с anchor места нет — явно логировать fallback decision;
+   - не смешивать эти виды с обычным `secondaryViews`.
 
-4. `_resultById[id]` для таких секций хранит resolved side (для
+5. `_resultById[id]` для таких секций хранит resolved side (для
    projection alignment), но в стопку они не попадают.
 
 **Данные уже готовы:**
