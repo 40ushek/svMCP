@@ -193,6 +193,65 @@ public sealed partial class TeklaDrawingViewApi
             views));
     }
 
+    private static void TraceSecondaryScaleDecision(
+        DrawingLayoutWorkspace workspace,
+        View view,
+        int id,
+        double originalScale,
+        double targetScale,
+        double mainScale)
+    {
+        var kind = workspace.GetSemanticKind(id);
+        if (kind != ViewSemanticKind.Section && kind != ViewSemanticKind.Detail)
+            return;
+
+        var scaleFlex = workspace.GetScaleFlexibility(id);
+        var viewItem = workspace.TryGetView(id);
+        var side = viewItem?.SectionPlacementSide is { } sp && sp != SectionPlacementSide.Unknown
+            ? sp.ToString()
+            : string.Empty;
+
+        string reason;
+        bool eligible;
+        if (scaleFlex == ScaleFlexibility.Fixed)
+        {
+            eligible = false;
+            reason = "fixed";
+        }
+        else if (scaleFlex == ScaleFlexibility.SameAsMain)
+        {
+            eligible = false;
+            reason = "same-as-main";
+        }
+        else
+        {
+            eligible = true;
+            // denominator comparison: larger denominator = smaller scale
+            var origDenom = originalScale;
+            var mainDenom = mainScale;
+            if (origDenom < mainDenom)
+                reason = "can-preserve-larger";      // original is larger than main (e.g. 1:5 vs 1:10)
+            else if (origDenom > mainDenom)
+                reason = "would-downgrade";          // original is smaller than main (e.g. 1:20 vs 1:10)
+            else
+                reason = "same-as-main";             // equal
+        }
+
+        DrawingProjectionAlignmentService.Log(string.Format(
+            CultureInfo.InvariantCulture,
+            "SECONDARY_SCALE id={0} viewType={1} kind={2} scaleFlex={3} side={4} originalScale=1:{5} mainScale=1:{6} currentScale=1:{7} eligible={8} reason={9}",
+            id,
+            view.ViewType,
+            kind,
+            scaleFlex,
+            string.IsNullOrEmpty(side) ? "none" : side,
+            originalScale.ToString("0.###", CultureInfo.InvariantCulture),
+            mainScale.ToString("0.###", CultureInfo.InvariantCulture),
+            targetScale.ToString("0.###", CultureInfo.InvariantCulture),
+            eligible ? 1 : 0,
+            reason));
+    }
+
     private static void TraceScaleCandidateReject(double candidateScale, string reason)
     {
         DrawingProjectionAlignmentService.Log(string.Format(

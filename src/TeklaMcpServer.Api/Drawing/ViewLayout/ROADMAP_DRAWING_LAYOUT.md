@@ -1298,16 +1298,19 @@ ScaleFlexibility = Fixed или SameAsMain игнорируют политику
 - `Detail` → `CanBeLarger`
 - `Other` / `Model3D` → `Fixed`
 
-Bootstrap для Section: текущий default `Section → SameAsMain` означает, что
-`SecondaryScalePolicy` не действует для сечений без дополнительных шагов.
-Чтобы политика заработала для `Section`, нужно одно из двух:
-- сменить default `Section → CanBeLarger` в `ScaleFlexibilityResolver` (меняет
-  поведение глобально, требует regression validation);
-- или сделать resolver context-aware: повышать `Section` до `CanBeLarger`
-  автоматически при `SecondaryScalePolicy != SameAsMain` (политика локально
-  активирует гибкость).
+Bootstrap для Section: **решено** — context-aware вариант.
+- `ScaleFlexibilityResolver.Resolve(kind, policy)` повышает `Section` до
+  `CanBeLarger` при `policy != SameAsMain`; глобальный default не изменён.
+- `DrawingLayoutWorkspace.GetScaleFlexibility(id, policy)` — policy-aware
+  перегрузка для вызовов внутри layout pipeline.
 
-Первый этап реализации: выбрать один из двух подходов и зафиксировать до кода.
+TODO перед wiring `SecondaryScalePolicy` в `fit_views_to_sheet`:
+1. ~~Логика promotion продублирована~~ — устранено: workspace-overload делегирует
+   в `ScaleFlexibilityResolver.Resolve`.
+2. **`TraceSecondaryScaleDecision`** сейчас вызывает `GetScaleFlexibility(id)`
+   без policy — trace показывает `SameAsMain` даже при активной policy. При
+   подключении policy передавать её в trace:
+   `workspace.GetScaleFlexibility(id, secondaryPolicy)`.
 
 Связь с существующим кодом:
 - `ScaleFlexibility` уже живёт в `DrawingLayoutWorkspace` и `DrawingLayoutViewItem`;

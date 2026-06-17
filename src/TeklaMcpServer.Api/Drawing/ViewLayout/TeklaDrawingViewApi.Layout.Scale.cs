@@ -393,6 +393,8 @@ public sealed partial class TeklaDrawingViewApi
                 : (view.Width, view.Height);
             var factor = targetScale > 0 ? originalScale / targetScale : 1.0;
             result[id] = (frame.Width * factor, frame.Height * factor);
+
+            TraceSecondaryScaleDecision(workspace, view, id, originalScale, targetScale, candidateScale);
         }
 
         return result;

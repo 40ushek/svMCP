@@ -90,6 +90,12 @@ internal sealed class DrawingLayoutWorkspace
     public ScaleFlexibility GetScaleFlexibility(int viewId)
         => ScaleFlexibilitiesById.TryGetValue(viewId, out var flexibility) ? flexibility : ScaleFlexibility.Fixed;
 
+    public ScaleFlexibility GetScaleFlexibility(int viewId, SecondaryScalePolicy secondaryPolicy)
+    {
+        var kind = TryGetView(viewId)?.SemanticKindValue ?? ViewSemanticKind.Other;
+        return ScaleFlexibilityResolver.Resolve(kind, secondaryPolicy);
+    }
+
     public (double Width, double Height) GetSelectedFrameSize(int viewId, double fallbackWidth, double fallbackHeight)
         => SelectedFrameSizesById.TryGetValue(viewId, out var size) ? size : (fallbackWidth, fallbackHeight);
 

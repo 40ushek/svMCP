@@ -8,6 +8,14 @@ internal enum ScaleFlexibility
     Independent
 }
 
+internal enum SecondaryScalePolicy
+{
+    SameAsMain,
+    PreserveIfNotSmaller,
+    PreserveLargerIfFits,
+    AllowLargerIfFits
+}
+
 internal static class ScaleFlexibilityResolver
 {
     public static ScaleFlexibility ResolveDefault(ViewSemanticKind semanticKind)
@@ -20,4 +28,18 @@ internal static class ScaleFlexibilityResolver
             ViewSemanticKind.Other => ScaleFlexibility.Fixed,
             _ => ScaleFlexibility.Fixed
         };
+
+    // When SecondaryScalePolicy is active, Section is promoted to CanBeLarger
+    // so the policy can take effect. Global default stays SameAsMain.
+    public static ScaleFlexibility Resolve(ViewSemanticKind semanticKind, SecondaryScalePolicy secondaryPolicy)
+    {
+        var flex = ResolveDefault(semanticKind);
+        if (flex == ScaleFlexibility.SameAsMain
+            && semanticKind == ViewSemanticKind.Section
+            && secondaryPolicy != SecondaryScalePolicy.SameAsMain)
+        {
+            return ScaleFlexibility.CanBeLarger;
+        }
+        return flex;
+    }
 }
