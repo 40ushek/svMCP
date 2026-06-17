@@ -639,7 +639,13 @@ public sealed partial class TeklaDrawingViewApi
 
         // Center the arranged group inside the usable area.
         var finalArrangedViews = postProjectionViews
-            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
+            .Where(v =>
+            {
+                var kind = layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID);
+                return kind != ViewSemanticKind.Detail
+                       && kind != ViewSemanticKind.Other
+                       && kind != ViewSemanticKind.Model3D;
+            })
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
             selectedLayoutMargin, sheetW - selectedLayoutMargin,
@@ -662,6 +668,26 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.ReservedAreas,
             offsetById,
             allowTeklaMutation);
+        finalViews = allowTeklaMutation
+            ? EnumerateViews(activeDrawing).ToList()
+            : finalViews;
+        layoutWorkspace.SetRuntimeViews(finalViews);
+        arranged = TryRepositionFreeViews(
+            activeDrawing,
+            layoutWorkspace,
+            finalViews,
+            arranged,
+            selectedLayoutMargin,
+            sheetW - selectedLayoutMargin,
+            selectedLayoutMargin,
+            sheetH - selectedLayoutMargin,
+            selectedLayoutGap,
+            layoutWorkspace.ReservedAreas,
+            allowTeklaMutation);
+        finalViews = allowTeklaMutation
+            ? EnumerateViews(activeDrawing).ToList()
+            : finalViews;
+        layoutWorkspace.SetRuntimeViews(finalViews);
 
         var finalActualRects = allowTeklaMutation
             ? DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing)

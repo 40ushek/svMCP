@@ -3,6 +3,7 @@ using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
+using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Diagnostics;
 using TeklaMcpServer.Api.Drawing;
 
@@ -176,6 +177,207 @@ public sealed partial class TeklaDrawingViewApi
 
         if (movedAny && applyChanges)
             activeDrawing.CommitChanges();
+
+        return arranged;
+    }
+
+    private List<ArrangedView> TryRepositionFreeViews(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        DrawingLayoutWorkspace workspace,
+        List<View> views,
+        List<ArrangedView> arranged,
+        double usableMinX,
+        double usableMaxX,
+        double usableMinY,
+        double usableMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> reserved,
+        bool applyChanges)
+    {
+        var freeViews = new List<(View View, ReservedRect Rect, double Area)>();
+        foreach (var view in views)
+        {
+            if (!IsFreePlacementKind(workspace.GetSemanticKind(view.GetIdentifier().ID)))
+                continue;
+
+            if (!DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
+                continue;
+
+            freeViews.Add((view, rect, GetArea(rect)));
+        }
+
+        freeViews = freeViews
+            .OrderByDescending(item => item.Area)
+            .ToList();
+        if (freeViews.Count == 0)
+            return arranged;
+
+        var blockersById = new Dictionary<int, ReservedRect>();
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            if (IsFreePlacementKind(workspace.GetSemanticKind(id)))
+                continue;
+
+            if (DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
+                blockersById[id] = rect;
+        }
+
+        var movedAny = false;
+        foreach (var item in freeViews)
+        {
+            var view = item.View;
+            var id = view.GetIdentifier().ID;
+            var currentRect = item.Rect;
+
+            var width = currentRect.MaxX - currentRect.MinX;
+            var height = currentRect.MaxY - currentRect.MinY;
+            if (width <= 0 || height <= 0)
+                continue;
+
+            var blocked = BuildFreeViewBlockedRectangles(
+                usableMinX,
+                usableMaxX,
+                usableMinY,
+                usableMaxY,
+                gap,
+                reserved,
+                blockersById.Values);
+            var packer = new MaxRectsBinPacker(
+                usableMaxX - usableMinX,
+                usableMaxY - usableMinY,
+                allowRotation: false,
+                blocked);
+
+            var targetX = (usableMinX + usableMaxX) * 0.5;
+            var targetY = (usableMinY + usableMaxY) * 0.5;
+            if (!packer.TryInsertClosestToPoint(width + gap, height + gap, targetX - usableMinX, usableMaxY - targetY, out var placement))
+            {
+                blockersById[id] = currentRect;
+                DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=no-space kind={workspace.GetSemanticKind(id)}");
+                continue;
+            }
+
+            var candidateRect = new ReservedRect(
+                usableMinX + placement.X,
+                usableMaxY - placement.Y - height,
+                usableMinX + placement.X + width,
+                usableMaxY - placement.Y);
+            var validation = ViewPlacementValidator.Validate(
+                candidateRect,
+                usableMinX,
+                usableMaxX,
+                usableMinY,
+                usableMaxY,
+                reserved,
+                blockersById);
+            if (!validation.Fits)
+            {
+                blockersById[id] = currentRect;
+                DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason={validation.Reason} kind={workspace.GetSemanticKind(id)}");
+                continue;
+            }
+
+            var currentOrigin = view.Origin;
+            if (currentOrigin == null)
+            {
+                blockersById[id] = currentRect;
+                continue;
+            }
+
+            var dx = CenterX(candidateRect) - CenterX(currentRect);
+            var dy = CenterY(candidateRect) - CenterY(currentRect);
+            if (System.Math.Abs(dx) < 0.5 && System.Math.Abs(dy) < 0.5)
+            {
+                blockersById[id] = currentRect;
+                continue;
+            }
+
+            var origin = new Point(currentOrigin.X + dx, currentOrigin.Y + dy, currentOrigin.Z);
+            if (applyChanges)
+            {
+                view.Origin = origin;
+                if (!view.Modify())
+                {
+                    blockersById[id] = currentRect;
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=modify-failed kind={workspace.GetSemanticKind(id)}");
+                    continue;
+                }
+            }
+
+            movedAny = true;
+            blockersById[id] = candidateRect;
+            arranged = UpdateArrangedOrigin(arranged, id, origin.X, origin.Y);
+            DrawingProjectionAlignmentService.Log(
+                $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} dx={dx:F1} dy={dy:F1}");
+        }
+
+        if (movedAny && applyChanges)
+            activeDrawing.CommitChanges();
+
+        return arranged;
+    }
+
+    private static bool IsFreePlacementKind(ViewSemanticKind kind)
+        => kind == ViewSemanticKind.Other || kind == ViewSemanticKind.Model3D;
+
+    private static double GetArea(ReservedRect rect)
+        => System.Math.Max(0, rect.MaxX - rect.MinX) * System.Math.Max(0, rect.MaxY - rect.MinY);
+
+    private static List<PackedRectangle> BuildFreeViewBlockedRectangles(
+        double usableMinX,
+        double usableMaxX,
+        double usableMinY,
+        double usableMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> reserved,
+        IEnumerable<ReservedRect> viewRects)
+    {
+        var result = new List<PackedRectangle>();
+        foreach (var rect in reserved.Concat(viewRects))
+        {
+            var minX = System.Math.Max(usableMinX, rect.MinX - gap);
+            var minY = System.Math.Max(usableMinY, rect.MinY - gap);
+            var maxX = System.Math.Min(usableMaxX, rect.MaxX + gap);
+            var maxY = System.Math.Min(usableMaxY, rect.MaxY + gap);
+            if (maxX <= minX || maxY <= minY)
+                continue;
+
+            var packed = new PackedRectangle(
+                minX - usableMinX,
+                usableMaxY - maxY,
+                maxX - minX,
+                maxY - minY);
+            if (packed.Width <= 0 || packed.Height <= 0)
+                continue;
+
+            result.Add(packed);
+        }
+
+        return result;
+    }
+
+    private static List<ArrangedView> UpdateArrangedOrigin(List<ArrangedView> arranged, int id, double originX, double originY)
+    {
+        for (var i = 0; i < arranged.Count; i++)
+        {
+            if (arranged[i].Id != id)
+                continue;
+
+            arranged[i] = new ArrangedView
+            {
+                Id = arranged[i].Id,
+                ViewType = arranged[i].ViewType,
+                OriginX = originX,
+                OriginY = originY,
+                PreferredPlacementSide = arranged[i].PreferredPlacementSide,
+                ActualPlacementSide = arranged[i].ActualPlacementSide,
+                PlacementFallbackUsed = arranged[i].PlacementFallbackUsed,
+                LayoutMargin = arranged[i].LayoutMargin,
+                LayoutGap = arranged[i].LayoutGap
+            };
+            return arranged;
+        }
 
         return arranged;
     }

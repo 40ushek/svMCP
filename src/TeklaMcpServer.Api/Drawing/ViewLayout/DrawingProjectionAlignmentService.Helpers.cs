@@ -12,7 +12,6 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 internal sealed partial class DrawingProjectionAlignmentService
 {
     private static readonly object ProjectionDebugLogSync = new();
-    private static readonly bool ProjectionDebugLogEnabled = IsProjectionDebugLogEnabled();
     private static readonly string ProjectionDebugLogPath = ResolveProjectionDebugLogPath();
 
     internal static ProjectionMoveRejectDecision CreateProjectionMoveRejectDecision(
@@ -75,9 +74,6 @@ internal sealed partial class DrawingProjectionAlignmentService
 
     internal static void Log(string message)
     {
-        if (!ProjectionDebugLogEnabled)
-            return;
-
         try
         {
             lock (ProjectionDebugLogSync)
@@ -93,18 +89,6 @@ internal sealed partial class DrawingProjectionAlignmentService
         {
             // Ignore diagnostic IO failures.
         }
-    }
-
-    private static bool IsProjectionDebugLogEnabled()
-    {
-        var raw = Environment.GetEnvironmentVariable("SVMCP_VIEW_LAYOUT_LOG");
-        if (string.IsNullOrWhiteSpace(raw))
-            return false;
-
-        return raw.Equals("1", StringComparison.OrdinalIgnoreCase)
-            || raw.Equals("true", StringComparison.OrdinalIgnoreCase)
-            || raw.Equals("on", StringComparison.OrdinalIgnoreCase)
-            || raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ResolveProjectionDebugLogPath()
