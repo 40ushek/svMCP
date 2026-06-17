@@ -145,11 +145,15 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             if (unplannedViews.Count == 0)
                 return true;
 
+            var smallAnchorDrivenIds = CollectSmallAnchorDrivenSectionIds(planningContext);
+
             // Check if unplanned views can fit in the space left around anchors.
             // Other-kind views (_3DView etc.) are excluded: they are always placed via MaxRects
             // fallback and must not block scale selection if they don't fit the estimate.
             var unplannedNonOther = unplannedViews
-                .Where(v => IsProjectedFitEstimateView(planningContext, v))
+                .Where(v =>
+                    IsProjectedFitEstimateView(planningContext, v)
+                    && !smallAnchorDrivenIds.Contains(v.GetIdentifier().ID))
                 .ToList();
 
             if (unplannedNonOther.Count > 0)
@@ -172,7 +176,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                     return false;
             }
 
-            var unplannedSectionIds = CollectUnplannedSemanticSectionIds(planningContext, plannedIds);
+            var unplannedSectionIds = CollectUnplannedSemanticSectionIds(planningContext, plannedIds, smallAnchorDrivenIds);
             if (unplannedSectionIds.Count > 0)
                 return false;
 
@@ -190,19 +194,42 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         return maxr || shelf;
     }
 
-    private static HashSet<int> CollectUnplannedSemanticSectionIds(
+    private HashSet<int> CollectUnplannedSemanticSectionIds(
         DrawingArrangeContext context,
-        HashSet<int> plannedIds)
+        HashSet<int> plannedIds,
+        HashSet<int>? smallAnchorDrivenIds = null)
     {
         var semanticViews = context.Topology.SemanticViews;
+        smallAnchorDrivenIds ??= CollectSmallAnchorDrivenSectionIds(context);
         return semanticViews.Sections
             .Select(view => view.GetIdentifier().ID)
-            .Where(id => !plannedIds.Contains(id))
+            .Where(id => !plannedIds.Contains(id) && !smallAnchorDrivenIds.Contains(id))
             .ToHashSet();
     }
 
-    private static HashSet<int> CollectSemanticSectionIds(DrawingArrangeContext context)
+    private HashSet<int> CollectSemanticSectionIds(DrawingArrangeContext context)
         => CollectUnplannedSemanticSectionIds(context, new HashSet<int>());
+
+    private HashSet<int> CollectSmallAnchorDrivenSectionIds(DrawingArrangeContext context)
+    {
+        var workspace = context.Workspace;
+        var baseView = context.Topology.BaseView;
+        if (workspace == null || baseView == null)
+            return new HashSet<int>();
+
+        var semanticViews = context.Topology.SemanticViews;
+        var sectionGroups = SectionGroupSet.Build(
+            semanticViews.Sections,
+            context.Drawing,
+            baseView,
+            _sectionPlacementSideResolver,
+            workspace,
+            semanticViews.BaseProjected);
+
+        return sectionGroups.SmallAnchorDriven
+            .Select(view => view.GetIdentifier().ID)
+            .ToHashSet();
+    }
 
     private static bool IsProjectedFitEstimateView(DrawingArrangeContext context, View view)
     {
@@ -444,7 +471,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             planningContext.Drawing,
             baseView,
             _sectionPlacementSideResolver,
-            planningContext.Workspace);
+            planningContext.Workspace,
+            topology.SemanticViews.BaseProjected);
 
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
@@ -1360,12 +1388,14 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             context.Drawing,
             baseView,
             _sectionPlacementSideResolver,
-            context.Workspace);
+            context.Workspace,
+            topology.SemanticViews.BaseProjected);
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
         var topSections = sectionGroups.Top;
         var bottomSections = sectionGroups.Bottom;
         var unknownSections = sectionGroups.Unknown;
+        var smallAnchorDrivenSections = sectionGroups.SmallAnchorDriven;
 
         // Residual BackView (lost Bottom role competition to BottomView) is treated as a bottom
         // section so all layout planners (Strict, Relaxed, ProjectedGroup) place it below BottomView.
@@ -1389,6 +1419,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var secondaryViews = nonDetailSecondaryViews
             .Concat(deferredSections)
             .Concat(model3DViews)
+            .Concat(smallAnchorDrivenSections)
             .ToList();
 
         PerfTrace.Write(
@@ -1408,7 +1439,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                 "api-view",
                 "section_placement_side_summary",
                 0,
-                $"sections={sections.Count} left={leftSections.Count} right={rightSections.Count} top={topSections.Count} bottom={bottomSections.Count} unknown={unknownSections.Count} deferred={deferredSections.Count}");
+                $"sections={sections.Count} left={leftSections.Count} right={rightSections.Count} top={topSections.Count} bottom={bottomSections.Count} unknown={unknownSections.Count} smallAnchor={smallAnchorDrivenSections.Count} deferred={deferredSections.Count}");
         }
 
         var scale = GetCurrentScale(context);
@@ -1508,12 +1539,14 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             context.Drawing,
             baseView,
             _sectionPlacementSideResolver,
-            context.Workspace);
+            context.Workspace,
+            topology.SemanticViews.BaseProjected);
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
         var topSections = sectionGroups.Top;
         var bottomSections = sectionGroups.Bottom;
         var unknownSections = sectionGroups.Unknown;
+        var smallAnchorDrivenSections = sectionGroups.SmallAnchorDriven;
 
         var residualBackViews = neighbors.ResidualProjected
             .Where(v => v.ViewType == View.ViewTypes.BackView)
@@ -1532,6 +1565,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             .Concat(topology.SemanticViews.Other)
             .Concat(deferredSections)
             .Concat(topology.SemanticViews.Model3D)
+            .Concat(smallAnchorDrivenSections)
             .ToList();
 
         if (frames.Count != context.Views.Count)
