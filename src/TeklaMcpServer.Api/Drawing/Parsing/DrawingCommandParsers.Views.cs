@@ -100,6 +100,14 @@ public static partial class DrawingCommandParsers
             if (string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;
+                continue;
+            }
+
+            if (Enum.TryParse<SecondaryScalePolicy>(args[i], ignoreCase: true, out var secondaryPolicy)
+                && Enum.IsDefined(typeof(SecondaryScalePolicy), secondaryPolicy))
+            {
+                request.SecondaryScalePolicy = secondaryPolicy;
+                continue;
             }
         }
 

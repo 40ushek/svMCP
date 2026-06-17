@@ -13,6 +13,7 @@ public interface IDrawingViewApi
         double gap,
         double titleBlockHeight,
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
-        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview);
+        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain);
 }
 

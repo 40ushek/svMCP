@@ -349,7 +349,8 @@ public static partial class ModelTools
         [Description("Gap between views in mm. Default: 4")] double gap = 4,
         [Description("Optional manual reserved height at the bottom of the sheet in mm. Default: 0")] double titleBlockHeight = 0,
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false,
-        [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false)
+        [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false,
+        [Description("Scale policy for secondary views (Section/Detail) relative to main scale. SameAsMain=default (no change), PreserveLargerIfFits=keep author scale if larger and fits, PreserveIfNotSmaller=keep if not smaller than main, AllowLargerIfFits=pick best larger scale.")] string secondaryScalePolicy = "SameAsMain")
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
@@ -357,6 +358,8 @@ public static partial class ModelTools
         var tokens            = new System.Collections.Generic.List<string> { "fit_views_to_sheet", marginStr, gapStr, titleBlockStr };
         if (keepScale) tokens.Add("preserveexistingscales");
         if (dryRun)    tokens.Add("debugpreview");
+        if (!string.Equals(secondaryScalePolicy, "SameAsMain", System.StringComparison.OrdinalIgnoreCase))
+            tokens.Add(secondaryScalePolicy);
         var json = RunBridge(tokens.ToArray());
         try
         {

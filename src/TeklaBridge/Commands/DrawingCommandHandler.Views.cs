@@ -241,7 +241,8 @@ internal sealed partial class DrawingCommandHandler
                 request.Gap,
                 request.TitleBlockHeight,
                 request.ScalePolicy,
-                request.ApplyMode);
+                request.ApplyMode,
+                request.SecondaryScalePolicy);
             WriteFitViewsToSheetResult(result, result.ReservedAreas);
         }
         catch (DrawingFitFailedException ex)

@@ -199,13 +199,14 @@ public sealed partial class TeklaDrawingViewApi
         int id,
         double originalScale,
         double targetScale,
-        double mainScale)
+        double mainScale,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var kind = workspace.GetSemanticKind(id);
         if (kind != ViewSemanticKind.Section && kind != ViewSemanticKind.Detail)
             return;
 
-        var scaleFlex = workspace.GetScaleFlexibility(id);
+        var scaleFlex = workspace.GetScaleFlexibility(id, secondaryScalePolicy);
         var viewItem = workspace.TryGetView(id);
         var side = viewItem?.SectionPlacementSide is { } sp && sp != SectionPlacementSide.Unknown
             ? sp.ToString()

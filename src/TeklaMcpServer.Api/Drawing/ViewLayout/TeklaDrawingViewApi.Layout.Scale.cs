@@ -280,7 +280,8 @@ public sealed partial class TeklaDrawingViewApi
         bool uniformAllNonDetail,
         bool applyProbe,
         double availW,
-        double availH)
+        double availH,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var probeSw = Stopwatch.StartNew();
         var estimatedSizes = EstimateCandidateFrameSizes(
@@ -288,7 +289,8 @@ public sealed partial class TeklaDrawingViewApi
             currentViews,
             originalFrameSizes,
             candidateScale,
-            uniformAllNonDetail);
+            uniformAllNonDetail,
+            secondaryScalePolicy);
 
         // Log estimate before any Modify() so it reflects pre-mutation state
         TraceScaleCandidateEstimate(candidateScale, workspace, currentViews, estimatedSizes, availW, availH);
@@ -373,7 +375,8 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<View> views,
         IReadOnlyDictionary<int, (double Width, double Height)> originalFrameSizes,
         double candidateScale,
-        bool uniformAllNonDetail)
+        bool uniformAllNonDetail,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var result = new Dictionary<int, (double Width, double Height)>(views.Count);
         foreach (var view in views)
@@ -394,7 +397,7 @@ public sealed partial class TeklaDrawingViewApi
             var factor = targetScale > 0 ? originalScale / targetScale : 1.0;
             result[id] = (frame.Width * factor, frame.Height * factor);
 
-            TraceSecondaryScaleDecision(workspace, view, id, originalScale, targetScale, candidateScale);
+            TraceSecondaryScaleDecision(workspace, view, id, originalScale, targetScale, candidateScale, secondaryScalePolicy);
         }
 
         return result;
@@ -405,7 +408,8 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<View> views,
         double selectedScale,
         bool uniformAllNonDetail,
-        bool preserveCurrentScales)
+        bool preserveCurrentScales,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var result = new Dictionary<int, double>(views.Count);
         foreach (var view in views)

@@ -402,6 +402,7 @@ public sealed class FitViewsToSheetRequest
     public double TitleBlockHeight { get; set; }
     public DrawingScalePolicy ScalePolicy { get; set; } = DrawingScalePolicy.UniformAllNonDetail;
     public DrawingLayoutApplyMode ApplyMode { get; set; } = DrawingLayoutApplyMode.DebugPreview;
+    public SecondaryScalePolicy SecondaryScalePolicy { get; set; } = SecondaryScalePolicy.SameAsMain;
 }
 
 public sealed class DeleteDimensionRequest

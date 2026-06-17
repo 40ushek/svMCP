@@ -1304,13 +1304,21 @@ Bootstrap для Section: **решено** — context-aware вариант.
 - `DrawingLayoutWorkspace.GetScaleFlexibility(id, policy)` — policy-aware
   перегрузка для вызовов внутри layout pipeline.
 
-TODO перед wiring `SecondaryScalePolicy` в `fit_views_to_sheet`:
-1. ~~Логика promotion продублирована~~ — устранено: workspace-overload делегирует
-   в `ScaleFlexibilityResolver.Resolve`.
-2. **`TraceSecondaryScaleDecision`** сейчас вызывает `GetScaleFlexibility(id)`
-   без policy — trace показывает `SameAsMain` даже при активной policy. При
-   подключении policy передавать её в trace:
-   `workspace.GetScaleFlexibility(id, secondaryPolicy)`.
+TODO выполнено: `SecondaryScalePolicy` wired в `fit_views_to_sheet`.
+- ~~Логика promotion продублирована~~ — устранено: workspace-overload делегирует
+  в `ScaleFlexibilityResolver.Resolve`.
+- ~~`TraceSecondaryScaleDecision` без policy~~ — устранено: policy передаётся
+  до trace, `scaleFlex` теперь отражает активную политику.
+
+TODO перед реализацией `PreserveLargerIfFits`:
+1. **`ResolveSelectedScales`** принимает `secondaryScalePolicy`, но пока не
+   использует его — нужно синхронизировать с логикой estimate/apply.
+2. **`ResolveTargetScale`** вызывается при реальном `Modify()` без policy —
+   estimate (с policy) и apply (без policy) разойдутся. Синхронизировать оба
+   пути перед включением реального поведения.
+3. **Группировка по стороне**: решение о сохранении originalScale принимать
+   для группы одной стороны (все Left-секции, все Right-секции), а не
+   per-view — иначе стек будет выглядеть несогласованно.
 
 Связь с существующим кодом:
 - `ScaleFlexibility` уже живёт в `DrawingLayoutWorkspace` и `DrawingLayoutViewItem`;

@@ -93,7 +93,8 @@ public sealed partial class TeklaDrawingViewApi
         double gap,
         double titleBlockHeight,
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
-        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview)
+        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var total = Stopwatch.StartNew();
         long initMs = 0;
@@ -300,7 +301,8 @@ public sealed partial class TeklaDrawingViewApi
                     uniformAllNonDetail,
                     allowTeklaMutation,
                     availW,
-                    availH);
+                    availH,
+                    secondaryScalePolicy);
                 probeMs += probe.ElapsedMilliseconds;
                 var candidateViews = probe.Views;
                 var actualFrames = probe.Frames;
@@ -457,7 +459,8 @@ public sealed partial class TeklaDrawingViewApi
             currentViews,
             optimalScale.Value,
             uniformAllNonDetail,
-            preserveExistingScales || keepCurrentScales));
+            preserveExistingScales || keepCurrentScales,
+            secondaryScalePolicy));
 
         actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         layoutWorkspace.SetActualViewRects(actualRects);

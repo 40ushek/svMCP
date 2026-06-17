@@ -8,7 +8,7 @@ internal enum ScaleFlexibility
     Independent
 }
 
-internal enum SecondaryScalePolicy
+public enum SecondaryScalePolicy
 {
     SameAsMain,
     PreserveIfNotSmaller,
