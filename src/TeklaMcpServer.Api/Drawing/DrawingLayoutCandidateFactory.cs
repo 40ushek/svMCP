@@ -39,7 +39,10 @@ internal static class DrawingLayoutCandidateFactory
                 LayoutRect = view.LayoutRect,
                 PreferredPlacementSide = view.PreferredPlacementSide,
                 ActualPlacementSide = view.ActualPlacementSide,
-                PlacementFallbackUsed = view.PlacementFallbackUsed
+                PlacementFallbackUsed = view.PlacementFallbackUsed,
+                ProjectionStrength = view.ProjectionStrength,
+                ScaleFlexibility = view.ScaleFlexibility,
+                ProjectionRole = view.ProjectionRole
             });
         }
 

@@ -30,4 +30,10 @@ internal sealed class DrawingLayoutPlannedView
     public string ActualPlacementSide { get; set; } = string.Empty;
 
     public bool PlacementFallbackUsed { get; set; }
+
+    public string ProjectionStrength { get; set; } = string.Empty;
+
+    public string ScaleFlexibility { get; set; } = string.Empty;
+
+    public string ProjectionRole { get; set; } = string.Empty;
 }

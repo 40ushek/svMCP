@@ -53,12 +53,34 @@ internal static class DrawingLayoutCandidateBuilder
                 LayoutRect = layoutRect,
                 PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
                 ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
-                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
+                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false,
+                ProjectionStrength = workspace.GetProjectionStrength(viewId).ToString(),
+                ScaleFlexibility = workspace.GetScaleFlexibility(viewId).ToString(),
+                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide)
             });
         }
 
         AttachFallbackStackOrderGroups(candidate, views);
         return candidate;
+    }
+
+    private static string ResolveProjectionRole(ViewSemanticKind kind, string? actualPlacementSide)
+    {
+        if (kind == ViewSemanticKind.Section)
+            return "section";
+        if (kind == ViewSemanticKind.Detail)
+            return "detail";
+        if (kind == ViewSemanticKind.Model3D || kind == ViewSemanticKind.Other)
+            return "other";
+
+        return actualPlacementSide switch
+        {
+            "Top" => "top",
+            "Bottom" => "bottom",
+            "Left" => "left",
+            "Right" => "right",
+            _ => "front"
+        };
     }
 
     public static DrawingLayoutCandidate FromPlannedLayout(
@@ -81,12 +103,25 @@ internal static class DrawingLayoutCandidateBuilder
         string name,
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<DrawingLayoutPlannedView> plannedViews)
-        => DrawingLayoutCandidateFactory.FromPlannedViews(
+    {
+        foreach (var view in plannedViews)
+        {
+            if (!string.IsNullOrEmpty(view.ProjectionStrength))
+                continue;
+
+            var kind = workspace.GetSemanticKind(view.Id);
+            view.ProjectionStrength = workspace.GetProjectionStrength(view.Id).ToString();
+            view.ScaleFlexibility = workspace.GetScaleFlexibility(view.Id).ToString();
+            view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide);
+        }
+
+        return DrawingLayoutCandidateFactory.FromPlannedViews(
             name,
             workspace.Source.Drawing,
             workspace.Source.Sheet,
             workspace.Source.ReservedLayout,
             plannedViews);
+    }
 
     public static List<DrawingLayoutPlannedView> ToPlannedViews(
         DrawingLayoutWorkspace workspace,
@@ -127,7 +162,10 @@ internal static class DrawingLayoutCandidateBuilder
                 LayoutRect = layoutRect,
                 PreferredPlacementSide = arrangedView?.PreferredPlacementSide ?? string.Empty,
                 ActualPlacementSide = arrangedView?.ActualPlacementSide ?? string.Empty,
-                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false
+                PlacementFallbackUsed = arrangedView?.PlacementFallbackUsed ?? false,
+                ProjectionStrength = workspace.GetProjectionStrength(viewId).ToString(),
+                ScaleFlexibility = workspace.GetScaleFlexibility(viewId).ToString(),
+                ProjectionRole = ResolveProjectionRole(workspace.GetSemanticKind(viewId), arrangedView?.ActualPlacementSide)
             });
             }
 

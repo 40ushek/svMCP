@@ -442,15 +442,33 @@ public sealed partial class TeklaDrawingViewApi
 
         var scale = candidate.Views.Select(static v => v.Scale).Where(static s => s > 0).DefaultIfEmpty(0).FirstOrDefault();
 
+        var candidateName = string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name;
+
         DrawingProjectionAlignmentService.Log(string.Format(
             CultureInfo.InvariantCulture,
             "LAYOUT_FILL candidate={0} scale={1:0.###} fill={2:0.###} union={3:0} available={4:0} bbox={5:0}",
-            string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
+            candidateName,
             scale,
             breakdown.FillRatioRaw,
             breakdown.TotalViewArea,
             breakdown.AvailableSheetArea,
             bboxArea));
+
+        foreach (var view in candidate.Views)
+        {
+            DrawingProjectionAlignmentService.Log(string.Format(
+                CultureInfo.InvariantCulture,
+                "  LAYOUT_VIEW candidate={0} id={1} viewType={2} kind={3} role={4} projection={5} scaleFlex={6} scale={7:0.###} side={8}",
+                candidateName,
+                view.Id,
+                view.ViewType,
+                view.SemanticKind,
+                view.ProjectionRole,
+                view.ProjectionStrength,
+                view.ScaleFlexibility,
+                view.Scale,
+                string.IsNullOrEmpty(view.ActualPlacementSide) ? "none" : view.ActualPlacementSide));
+        }
     }
 
     private static void TraceLayoutCandidateScore(DrawingLayoutCandidateEvaluation evaluation)
