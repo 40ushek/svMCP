@@ -185,7 +185,8 @@ public sealed partial class TeklaDrawingViewApi
             semanticViews.Sections,
             drawing,
             baseView,
-            new SectionPlacementSideResolver(new Model()));
+            new SectionPlacementSideResolver(new Model()),
+            workspace);
 
         var result = new HashSet<int>();
         CollectOversizedStandardSectionScaleDriverIds(workspace, result, sectionGroups.Top, SectionPlacementSide.Top, baseWidth, baseHeight, gap);

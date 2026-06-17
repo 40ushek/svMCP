@@ -148,6 +148,7 @@ public sealed partial class TeklaDrawingViewApi
         reservedMs = reservedRead.ElapsedMilliseconds;
         var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext, views);
         layoutWorkspace.SetActualViewRects(actualRects);
+        layoutWorkspace.SetParentViewRelations();
         var effectiveMargin = layoutWorkspace.Margin;
         var sheetW = layoutWorkspace.SheetWidth;
         var sheetH = layoutWorkspace.SheetHeight;

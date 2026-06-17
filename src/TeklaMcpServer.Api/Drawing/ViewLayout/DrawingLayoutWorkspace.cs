@@ -139,6 +139,37 @@ internal sealed class DrawingLayoutWorkspace
         GridAxesByViewId = gridAxesByViewId ?? throw new ArgumentNullException(nameof(gridAxesByViewId));
     }
 
+    public const string RelationKindSectionMark = "SectionMark";
+
+    public void SetParentViewRelations()
+    {
+        var allSectionItems = Views
+            .Where(static v => v.SemanticKindValue == ViewSemanticKind.Section)
+            .ToList();
+        if (allSectionItems.Count == 0)
+            return;
+
+        var sectionRuntimeViews = allSectionItems
+            .Select(item => RuntimeViewsById.TryGetValue(item.Id, out var rv) ? rv : null)
+            .Where(static rv => rv != null)
+            .Select(static rv => rv!)
+            .ToList();
+
+        var relations = DetailRelationResolver.BuildSectionMarkRelations(RuntimeViews, sectionRuntimeViews);
+        foreach (var relation in relations.All)
+        {
+            var id = relation.DetailView.GetIdentifier().ID;
+            var ownerId = relation.OwnerView.GetIdentifier().ID;
+            if (ViewsById.TryGetValue(id, out var item))
+            {
+                item.ParentViewId = ownerId;
+                item.ParentRelationKind = RelationKindSectionMark;
+                item.ParentAnchorX = relation.AnchorX;
+                item.ParentAnchorY = relation.AnchorY;
+            }
+        }
+    }
+
     public ViewTopologyGraph GetTopology(IReadOnlyList<View>? views = null)
     {
         var effectiveViews = views ?? RuntimeViews;
@@ -254,6 +285,12 @@ internal sealed class DrawingLayoutViewItem
     public bool IsBaseView { get; set; }
 
     public int? ParentViewId { get; set; }
+
+    public string? ParentRelationKind { get; set; }
+
+    public double? ParentAnchorX { get; set; }
+
+    public double? ParentAnchorY { get; set; }
 
     public List<string> Warnings { get; } = new();
 

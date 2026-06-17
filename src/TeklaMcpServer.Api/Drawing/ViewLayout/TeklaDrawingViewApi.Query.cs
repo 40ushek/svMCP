@@ -189,13 +189,25 @@ public sealed partial class TeklaDrawingViewApi
         if (baseView == null)
             return result;
 
+        // Build owner map: sectionId → ownerView (for sections cut from another section,
+        // not from the base view directly).
+        var sectionViews = views.Where(v => v.ViewType == View.ViewTypes.SectionView).ToList();
+        var sectionRelations = DetailRelationResolver.BuildSectionMarkRelations(views, sectionViews);
+
         var resolver = new SectionPlacementSideResolver(new Model());
-        foreach (var view in views.Where(v => v.ViewType == View.ViewTypes.SectionView))
+        foreach (var view in sectionViews)
         {
-            var placementSide = resolver.Resolve(drawing, baseView, view);
+            var id = view.GetIdentifier().ID;
+            // Use owner view as reference when this section was cut from another section.
+            var referenceView = sectionRelations.TryGet(id, out var rel)
+                && rel.OwnerView.ViewType == View.ViewTypes.SectionView
+                ? rel.OwnerView
+                : baseView;
+
+            var placementSide = resolver.Resolve(drawing, referenceView, view);
             var hasCoordinateSystems = resolver.TryGetDebugCoordinateSystems(
                 drawing,
-                baseView,
+                referenceView,
                 view,
                 out var referenceCoordinateSystem,
                 out var viewCoordinateSystem,

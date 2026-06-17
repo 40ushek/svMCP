@@ -443,7 +443,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             topology.SemanticViews.Sections,
             planningContext.Drawing,
             baseView,
-            _sectionPlacementSideResolver);
+            _sectionPlacementSideResolver,
+            planningContext.Workspace);
 
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
@@ -1358,7 +1359,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             sections,
             context.Drawing,
             baseView,
-            _sectionPlacementSideResolver);
+            _sectionPlacementSideResolver,
+            context.Workspace);
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
         var topSections = sectionGroups.Top;
@@ -1505,7 +1507,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             sections,
             context.Drawing,
             baseView,
-            _sectionPlacementSideResolver);
+            _sectionPlacementSideResolver,
+            context.Workspace);
         var leftSections = sectionGroups.Left;
         var rightSections = sectionGroups.Right;
         var topSections = sectionGroups.Top;
