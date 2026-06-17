@@ -1356,6 +1356,49 @@ TODO перед реализацией `PreserveLargerIfFits`:
 - `AllowLargerIfFits` не реализуется, пока три предыдущих варианта не
   проверены на нескольких реальных чертежах.
 
+#### 6.11 Anchor-driven размещение маленьких секций
+
+**Проблема.** Маленькая секция (например, G-G — горизонтальный разрез балки,
+~101×85 мм при 1:10) попадает в Bottom-стопку рядом с BackView/BottomView
+(~700×160 мм) — занимает целую зону, выглядит потерянной.
+
+**Критерий "маленькая".** Размер секции вдоль направления стопки < порог ×
+медиана того же размера по группе. Порог ~0.4 как стартовое значение.
+
+Направление стопки зависит от её ориентации (`stackOrientation`), которая
+должна быть вычислена до outlier-фильтра:
+- стопка вертикальная (Left/Right) → сравниваем `height`;
+- стопка горизонтальная (Top/Bottom) → сравниваем `width`.
+
+Это работает корректно для балок (длинная в X → маленький height в Left-стопке)
+и для колонн (длинная в Z → маленький width в Top-стопке).
+
+**Решение.** Такие секции не ставить в свою стопку — размещать отдельно
+anchor-driven:
+
+1. В `SectionGroupSet.Build` после резолва side — определить `stackOrientation`
+   по side (Left/Right → vertical, Top/Bottom → horizontal), вычислить медиану
+   размера вдоль стека, отфильтровать аутлайеры. Аутлайеры переносить в
+   отдельный список `SmallAnchorDriven` (не в `Unknown`).
+
+2. `DrawingLayoutViewItem.ParentAnchorX/Y` уже заполнены через
+   `SetParentViewRelations()` — это точка на листе где стоит SectionMark в
+   ownerView.
+
+3. В `BaseProjectedDrawingArrangeStrategy` после основного arrange —
+   отдельный проход для `SmallAnchorDriven`:
+   - найти ближайший свободный прямоугольник к anchor (nearest-free-rect);
+   - если рядом с anchor места нет — обычный fallback (свободный угол листа).
+
+4. `_resultById[id]` для таких секций хранит resolved side (для
+   projection alignment), но в стопку они не попадают.
+
+**Данные уже готовы:**
+- `ParentAnchorX/Y` → `DrawingLayoutViewItem` (заполняется `SetParentViewRelations`)
+- `ParentViewId`, `ParentRelationKind` → там же
+
+**Зависимости:** 6.10 (реализована), `SetParentViewRelations` (реализована).
+
 #### Будущее. Агентная компоновка видов
 
 В перспективе нужен отдельный инструмент для агентной компоновки видов.
