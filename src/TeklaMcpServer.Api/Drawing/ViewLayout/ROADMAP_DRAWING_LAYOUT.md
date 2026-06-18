@@ -1260,6 +1260,13 @@ snapshot не содержит все поздние шаги layout pipeline. �
 получает корректную позицию именно здесь, а более ранний candidate про неё ещё
 не знает.
 
+Virtual free-pass не должен читать live Tekla geometry как fallback. Он может
+использовать только `arrangedById`, selected frame sizes, сохранённые frame
+offsets / actual rect snapshot из workspace. Если нужного размера или frame
+data нет, helper должен вернуть decision `skip reason=no-size-or-frame`, а не
+вызывать `TryGetBoundingRect(view)`. Старый live `FinalOnly` path может
+временно сохранить Tekla fallback до полной замены.
+
 **Шаг 2 — projection alignment виртуальный.**
 Самый рискованный — `TryApplyProjectionAlignment` вызывает `view.Modify()`
 после сдвига origin. Изменить: убрать `Modify()`, сдвиг сохранять в
