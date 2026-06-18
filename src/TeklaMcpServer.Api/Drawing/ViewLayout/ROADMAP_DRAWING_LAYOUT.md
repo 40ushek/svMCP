@@ -1223,15 +1223,60 @@ Tekla.
 - scale changes разрешены apply safety policy только для scale-changing режима,
   а режимы сохранения текущего масштаба продолжают блокировать изменение scale.
 
+#### Модель: scale probe реальный, placement виртуальный
+
+Размер вида нелинейно зависит от масштаба — текст, размерные линии и марки
+имеют фиксированный бумажный размер, поэтому аналитически пересчитать
+`frame size` при смене scale невозможно. Реальный размер известен только после
+`view.Modify()`.
+
+Следствие: перебор масштабов дорогой, но честный — каждый кандидат требует
+реального `Modify()`. Перебор вариантов размещения после выбранного масштаба
+дешёвый — размеры зафиксированы, двигается только `origin`.
+
+**Граница:**
+- **До границы (реально):** scale probe → `view.SetScale()` → `Modify()` →
+  читаем реальные `view.Width/Height` / `frame sizes`
+- **После границы (виртуально):** arrange strategy, centering, free-reposition,
+  projection alignment — всё над `ArrangedView` / `ReservedRect`, без `Modify()`
+
+#### Поэтапный план реализации
+
+**Шаг 1 — centering виртуальный.**
+Сейчас `TryApplyCentering` двигает `view.Origin` и вызывает `Modify()`.
+Изменить: возвращать изменённый `ArrangedView` без `Modify()`.
+
+**Шаг 2 — free-reposition виртуальный.**
+`TryRepositionFreeViews` (3D-виды, details, AnchorDetailSection) работает
+напрямую через `view.Origin`. Изменить: работать по `arranged` dict,
+возвращать обновлённый `ArrangedView`.
+
+**Шаг 3 — projection alignment виртуальный.**
+Самый рискованный — `TryApplyProjectionAlignment` вызывает `view.Modify()`
+после сдвига origin. Изменить: убрать `Modify()`, сдвиг сохранять в
+`ArrangedView`. Делать последним.
+
+**Шаг 4 — генератор вариантов.**
+После шагов 1-3 каждый этап возвращает план без side effects.
+Варианты для перебора:
+- `arranged` — base после arrange strategy
+- `centered` — base + centering
+- `projection` — base + projection alignment
+- `free-reposition` — base + free-reposition
+- `combinations` — base + centering + projection + free-reposition
+- позже: `3d-top`, `3d-bottom`, другие section policies
+
+**Шаг 5 — SelectBest + один финальный apply.**
+`SelectBest(candidates)` → `DrawingLayoutCandidateTeklaApplyAdapter` для
+победителя → один `CommitChanges()`.
+
 Осталось:
-- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply`;
-- заставить `FinalOnly` строить несколько полных независимых виртуальных
-  candidates до любых изменений Tekla;
-- перенести projection alignment, centering, detail/free reposition и frame
-  offset correction в операции над виртуальным plan;
-- выбирать лучший feasible candidate по score до apply;
-- применять только выбранный candidate через apply adapter;
-- выполнять один финальный `CommitChanges()`;
+- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 5
+- **Шаг 1:** виртуализировать centering
+- **Шаг 2:** виртуализировать free-reposition
+- **Шаг 3:** виртуализировать projection alignment
+- **Шаг 4:** генератор вариантов поверх зафиксированных sizes
+- **Шаг 5:** SelectBest + один финальный apply + один CommitChanges()
 - проверить на реальных чертежах, что applied origins/scales совпадают с
   selected candidate;
 - добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает

@@ -751,6 +751,9 @@ public sealed partial class TeklaDrawingViewApi
         {
             var evaluation = item.Evaluation;
             var candidate = evaluation.Candidate;
+            var validation = evaluation.Validation;
+            var breakdown = evaluation.Score.Breakdown;
+            var candidateName = string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name;
             PerfTrace.Write(
                 "api-view",
                 "fit_layout_candidate_rank",
@@ -766,7 +769,42 @@ public sealed partial class TeklaDrawingViewApi
                     evaluation.IsFeasible ? 1 : 0,
                     evaluation.Score.TotalScore,
                     evaluation.Validation.Diagnostics.Count));
+
+            DrawingProjectionAlignmentService.Log(string.Format(
+                CultureInfo.InvariantCulture,
+                "LAYOUT_VALIDATE rank={0} selected={1} reason={2} candidate={3} feasible={4} score={5:0.###} fill={6:0.###} missingRects={7} viewOverlaps={8}:area={9:0.###} reservedOverlaps={10}:area={11:0.###} diagnostics={12}{13}",
+                item.Rank,
+                item.IsSelected ? 1 : 0,
+                DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(item.Reason),
+                candidateName,
+                evaluation.IsFeasible ? 1 : 0,
+                evaluation.Score.TotalScore,
+                breakdown.FillRatioRaw,
+                validation.MissingRectCount,
+                validation.ViewOverlapCount,
+                validation.ViewOverlapArea,
+                validation.ReservedOverlapCount,
+                validation.ReservedOverlapArea,
+                validation.Diagnostics.Count,
+                FormatLayoutValidationDiagnostics(validation.Diagnostics)));
         }
+    }
+
+    private static string FormatLayoutValidationDiagnostics(IReadOnlyList<string> diagnostics)
+    {
+        if (diagnostics.Count == 0)
+            return string.Empty;
+
+        var top = diagnostics
+            .Take(3)
+            .Select(static item => item.Replace(" ", "_"))
+            .ToList();
+
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            " firstDiagnostics=[{0}{1}]",
+            string.Join(";", top),
+            diagnostics.Count > top.Count ? ";..." : string.Empty);
     }
 
     private static void TraceLayoutPlannedVariant(
