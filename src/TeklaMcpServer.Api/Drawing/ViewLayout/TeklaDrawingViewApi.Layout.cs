@@ -677,10 +677,12 @@ public sealed partial class TeklaDrawingViewApi
         var finalArrangedViews = postProjectionViews
             .Where(v =>
             {
-                var kind = layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID);
+                var id = v.GetIdentifier().ID;
+                var kind = layoutWorkspace.GetSemanticKind(id);
                 return kind != ViewSemanticKind.Detail
                        && kind != ViewSemanticKind.Other
-                       && kind != ViewSemanticKind.Model3D;
+                       && kind != ViewSemanticKind.Model3D
+                       && layoutWorkspace.GetLayoutViewKind(id) != LayoutViewKind.AnchorDetailSection;
             })
             .ToList();
         arranged = TryCenterViewGroup(activeDrawing, layoutWorkspace, finalArrangedViews, arranged,
