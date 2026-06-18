@@ -1271,7 +1271,7 @@ Trace:
 
 #### 6.10 SecondaryScalePolicy — гибкое управление масштабом второстепенных видов
 
-Статус: design / future.
+Статус: частично реализовано. `SameAsMain`, `PreserveIfNotSmaller`, `PreserveLargerIfFits` работают и проверены на реальных чертежах. `AllowLargerIfFits` не реализован.
 
 Проблема: текущая `DrawingScalePolicy.UniformAllNonDetail` принудительно
 приводит все `Section` к одному общему масштабу. Если автор намеренно поставил
@@ -1310,15 +1310,12 @@ TODO выполнено: `SecondaryScalePolicy` wired в `fit_views_to_sheet`.
 - ~~`TraceSecondaryScaleDecision` без policy~~ — устранено: policy передаётся
   до trace, `scaleFlex` теперь отражает активную политику.
 
-TODO перед реализацией `PreserveLargerIfFits`:
-1. **`ResolveSelectedScales`** принимает `secondaryScalePolicy`, но пока не
-   использует его — нужно синхронизировать с логикой estimate/apply.
-2. **`ResolveTargetScale`** вызывается при реальном `Modify()` без policy —
-   estimate (с policy) и apply (без policy) разойдутся. Синхронизировать оба
-   пути перед включением реального поведения.
-3. **Группировка по стороне**: решение о сохранении originalScale принимать
-   для группы одной стороны (все Left-секции, все Right-секции), а не
-   per-view — иначе стек будет выглядеть несогласованно.
+TODO выполнено:
+1. ~~**`ResolveSelectedScales`** принимает `secondaryScalePolicy`, но пока не использует его~~ — передаёт в `ResolveTargetScale`, синхронизировано.
+2. ~~**`ResolveTargetScale`** вызывается при реальном `Modify()` без policy~~ — policy передаётся на всех путях estimate и apply.
+
+TODO остаётся:
+3. **Группировка по стороне**: решение о сохранении originalScale принимается per-view, а не для группы одной стороны (Left-стопка, Right-стопка). На практике секции одной стороны обычно имеют одинаковый originalScale, поэтому проблема редкая, но теоретически стек может получить смешанные масштабы.
 
 Связь с существующим кодом:
 - `ScaleFlexibility` уже живёт в `DrawingLayoutWorkspace` и `DrawingLayoutViewItem`;
@@ -1357,6 +1354,8 @@ TODO перед реализацией `PreserveLargerIfFits`:
   проверены на нескольких реальных чертежах.
 
 #### 6.11 Anchor-driven размещение маленьких секций
+
+Статус: реализовано и проверено на реальном чертеже.
 
 **Проблема.** Маленькая секция (например, G-G — горизонтальный разрез балки,
 ~101×85 мм при 1:10) попадает в Bottom-стопку рядом с BackView/BottomView
@@ -1398,36 +1397,53 @@ Side/group-based критерий оставить как fallback.
 Это работает корректно для балок (длинная в X → маленький height в Left-стопке)
 и для колонн (длинная в Z → маленький width в Top-стопке).
 
-**Решение.** Такие секции не ставить в свою стопку — размещать отдельно
-anchor-driven:
+**Реализованное решение.** Такие секции не ставятся в свою стопку и
+размещаются отдельно anchor-driven:
 
-1. Ввести `LayoutViewKind`/resolver и присваивать виду `AnchorDetailSection`
-   один раз при построении layout context/workspace. `SmallAnchorDriven`
-   оставить только как переходный implementation detail или удалить.
+1. `LayoutViewKind`/resolver добавлен. Маленькая секция получает
+   `AnchorDetailSection`, а обычные сечения остаются `StandardSection`.
 
-2. В `SectionGroupSet.Build` после резолва side — определить `stackOrientation`
-   по side (Left/Right → vertical, Top/Bottom → horizontal), вычислить медиану
-   размера вдоль стека, отфильтровать аутлайеры. Аутлайеры классифицировать как
-   `AnchorDetailSection`, а не переносить в обычный `Unknown`/`secondaryViews`.
+2. `SectionGroupSet.Build` фильтрует маленькие anchor-driven секции из обычной
+   секционной стопки и сохраняет классификацию в workspace.
 
 3. `DrawingLayoutViewItem.ParentAnchorX/Y` уже заполнены через
    `SetParentViewRelations()` — это точка на листе где стоит SectionMark в
    ownerView.
 
-4. В `BaseProjectedDrawingArrangeStrategy` после основного arrange —
-   отдельный проход для `AnchorDetailSection`:
-   - найти ближайший свободный прямоугольник к anchor (nearest-free-rect);
-   - если рядом с anchor места нет — явно логировать fallback decision;
-   - не смешивать эти виды с обычным `secondaryViews`.
+4. После основного arrange выполняется отдельный free-placement проход:
+   - free parent views размещаются раньше дочерних `AnchorDetailSection`;
+   - дочерняя секция размещается рядом с ближайшей к anchor границей parent;
+   - parent после размещения становится blocker и не может быть перекрыт child;
+   - anchor корректируется на фактическое перемещение parent через delta
+     `arranged origin - original origin`, без повторного чтения кешированного
+     `View.Origin`;
+   - frame rect строится из фактического размера и сохранённого frame offset,
+     поэтому асимметричная рамка не выходит за границы листа;
+   - `gap` учитывается один раз: расширением blockers, без дополнительного
+     увеличения размера размещаемого вида;
+   - при отсутствии свободного места секция остаётся на месте и пишет явный
+     trace, вместо overlap fallback.
 
 5. `_resultById[id]` для таких секций хранит resolved side (для
    projection alignment), но в стопку они не попадают.
+
+Trace:
+- `FREE_VIEW_REPOSITION frame`;
+- `FREE_VIEW_REPOSITION anchor-adjust`;
+- `FREE_VIEW_REPOSITION anchor-placed`;
+- `FREE_VIEW_REPOSITION result=skip-anchor-no-space`.
 
 **Данные уже готовы:**
 - `ParentAnchorX/Y` → `DrawingLayoutViewItem` (заполняется `SetParentViewRelations`)
 - `ParentViewId`, `ParentRelationKind` → там же
 
 **Зависимости:** 6.10 (реализована), `SetParentViewRelations` (реализована).
+
+Оставшиеся ограничения:
+- критерий `AnchorDetailSection` пока основан на фиксированном пороге размера;
+- наследование parent relation поддерживает один уровень;
+- placement использует прямоугольные frame bounds, а не фактический контур
+  содержимого вида.
 
 #### Будущее. Агентная компоновка видов
 
