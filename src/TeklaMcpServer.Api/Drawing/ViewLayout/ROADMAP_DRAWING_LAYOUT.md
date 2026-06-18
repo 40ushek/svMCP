@@ -1181,16 +1181,26 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: частично реализовано; `allowTeklaMutation` временно возвращён к
-`applyMode == FinalOnly` (коммит `1fe8677`) — технический долг, требует замены
-на раздельные флаги.
+Статус: частично реализовано. Виртуальные candidates, scoring, selector,
+apply-plan и apply adapter существуют, но реальный `FinalOnly` пока не управляется
+выбранным виртуальным candidate.
 
-⚠️ Текущее состояние (после `1fe8677`): `allowTeklaMutation = FinalOnly` снова
-разрешает ранние `Modify()`/`CommitChanges()` во всём старом pipeline (scale
-probe, arrange strategy, projection, centering, detail reposition). То есть
-`FinalOnly` применяет изменения дважды: сначала через старый pipeline, потом
-через selected-candidate apply adapter. Это работает корректно, но не
-соответствует цели 6.9.
+⚠️ Текущее состояние: `allowTeklaMutation = applyMode == FinalOnly` разрешает
+ранние `Modify()`/`CommitChanges()` во всём старом pipeline:
+- scale probe;
+- arrange strategy;
+- frame-offset correction;
+- projection alignment;
+- centering;
+- detail/free reposition.
+
+После этих реальных изменений строятся passive candidates
+(`planned-arranged`, `planned-centered`, `post-projection`, `final`), они
+сравниваются через scorer/selector и формируется apply plan. Но в `FinalOnly`
+selected-candidate apply adapter получает `DryRun`, потому что старый pipeline
+уже применил раскладку. Поэтому candidate selection сейчас в основном
+диагностирует уже выполненную раскладку, а не выбирает раскладку до изменения
+Tekla.
 
 Цель 6.9 остаётся: разделить `allowTeklaMutation` на два отдельных флага:
 - `allowVirtualPlan` — всегда `true`; весь pipeline работает виртуально;
@@ -1198,8 +1208,6 @@ probe, arrange strategy, projection, centering, detail reposition). То ест�
 
 Сделано:
 - `DebugPreview`/`DryRun` передает в arrange context `ApplyChanges=false`;
-- `FinalOnly` тоже строит layout виртуально и применяет выбранный план один раз
-  в конце через candidate apply adapter;
 - стратегии раскладки считают `ArrangedView`, но не вызывают `view.Modify()` при
   `ApplyChanges=false`;
 - scale probe в `DryRun` стал виртуальным: frame size оценивается от исходного
@@ -1209,17 +1217,23 @@ probe, arrange strategy, projection, centering, detail reposition). То ест�
   поэтому planned candidates несут целевой масштаб, даже если Tekla view еще не
   изменен;
 - projection alignment, group centering и detail reposition пропускают реальные
-  `Modify()`/`CommitChanges()`;
-- `fit_layout_apply_execution` стал единственным местом, где `FinalOnly`
-  вызывает `view.Modify()` для выбранного candidate;
+  `Modify()`/`CommitChanges()` в `DebugPreview`;
+- passive candidates, scorer, selector, apply plan, safety gate и Tekla apply
+  adapter реализованы;
 - scale changes разрешены apply safety policy только для scale-changing режима,
   а режимы сохранения текущего масштаба продолжают блокировать изменение scale.
 
 Осталось:
-- проверить на реальных чертежах, что `FinalOnly` применяет тот же candidate,
-  который виден в trace как selected;
-- вынести projection alignment в полноценную виртуальную операцию над plan, а не
-  только пропускать его в plan-only pipeline;
+- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply`;
+- заставить `FinalOnly` строить несколько полных независимых виртуальных
+  candidates до любых изменений Tekla;
+- перенести projection alignment, centering, detail/free reposition и frame
+  offset correction в операции над виртуальным plan;
+- выбирать лучший feasible candidate по score до apply;
+- применять только выбранный candidate через apply adapter;
+- выполнять один финальный `CommitChanges()`;
+- проверить на реальных чертежах, что applied origins/scales совпадают с
+  selected candidate;
 - добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает
   один commit выбранного plan.
 
