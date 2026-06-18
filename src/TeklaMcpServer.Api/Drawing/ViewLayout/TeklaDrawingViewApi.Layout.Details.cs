@@ -275,6 +275,19 @@ public sealed partial class TeklaDrawingViewApi
                 targetY = anchorY;
                 isAnchorDriven = true;
             }
+
+            if (IsModel3DView(workspace, view))
+            {
+                TraceFreeViewPackerSpace(
+                    id,
+                    width,
+                    height,
+                    usableMinX,
+                    usableMaxY,
+                    currentRect,
+                    packer.GetFreeRectanglesSnapshot());
+            }
+
             ReservedRect candidateRect;
             var packerTargetX = targetX - usableMinX;
             var packerTargetY = usableMaxY - targetY;
@@ -449,6 +462,48 @@ public sealed partial class TeklaDrawingViewApi
 
     private static bool IsFreePlacementKind(ViewSemanticKind kind)
         => kind == ViewSemanticKind.Other || kind == ViewSemanticKind.Model3D;
+
+    private static bool IsModel3DView(DrawingLayoutWorkspace workspace, View view)
+    {
+        var id = view.GetIdentifier().ID;
+        return workspace.GetSemanticKind(id) == ViewSemanticKind.Model3D
+               || workspace.GetLayoutViewKind(id) == LayoutViewKind.Model3D;
+    }
+
+    private static void TraceFreeViewPackerSpace(
+        int viewId,
+        double requiredWidth,
+        double requiredHeight,
+        double usableMinX,
+        double usableMaxY,
+        ReservedRect currentRect,
+        IReadOnlyList<PackedRectangle> freeRectangles)
+    {
+        var candidates = freeRectangles
+            .OrderBy(static rect => rect.Y)
+            .ThenByDescending(static rect => rect.Width * rect.Height)
+            .Take(8)
+            .Select(rect =>
+            {
+                var minX = usableMinX + rect.X;
+                var maxY = usableMaxY - rect.Y;
+                var maxX = minX + rect.Width;
+                var minY = maxY - rect.Height;
+                var fitsWidth = rect.Width + 0.01 >= requiredWidth;
+                var fitsHeight = rect.Height + 0.01 >= requiredHeight;
+                var reason = fitsWidth && fitsHeight
+                    ? "fits"
+                    : !fitsWidth && !fitsHeight
+                        ? "too-narrow+too-short"
+                        : !fitsWidth
+                            ? "too-narrow"
+                            : "too-short";
+                return $"[{minX:F1},{minY:F1},{maxX:F1},{maxY:F1}] size=({rect.Width:F1},{rect.Height:F1}) result={reason}";
+            });
+
+        DrawingProjectionAlignmentService.Log(
+            $"FREE_VIEW_REPOSITION model3d-space id={viewId} required=({requiredWidth:F1},{requiredHeight:F1}) current=[{currentRect.MinX:F1},{currentRect.MinY:F1},{currentRect.MaxX:F1},{currentRect.MaxY:F1}] freeCount={freeRectangles.Count} topCandidates={string.Join(";", candidates)}");
+    }
 
     private static bool IsAnchorDrivenFreeSection(
         DrawingLayoutWorkspace workspace,

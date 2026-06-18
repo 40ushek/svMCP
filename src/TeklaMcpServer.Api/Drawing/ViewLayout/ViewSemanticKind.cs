@@ -34,6 +34,7 @@ internal static class ViewSemanticClassifier
             View.ViewTypes.BottomView => ViewSemanticKind.BaseProjected,
             View.ViewTypes.EndView => ViewSemanticKind.BaseProjected,
             View.ViewTypes.ModelView => ViewSemanticKind.Model3D,
+            View.ViewTypes._3DView => ViewSemanticKind.Model3D,
             View.ViewTypes.SectionView => ViewSemanticKind.Section,
             View.ViewTypes.DetailView => ViewSemanticKind.Detail,
             _ => ViewSemanticKind.Other

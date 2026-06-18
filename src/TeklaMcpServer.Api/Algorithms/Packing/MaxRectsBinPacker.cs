@@ -28,6 +28,9 @@ public sealed class MaxRectsBinPacker
     private readonly bool _allowRotation;
     private readonly List<PackedRectangle> _freeRectangles = new();
 
+    internal IReadOnlyList<PackedRectangle> GetFreeRectanglesSnapshot()
+        => _freeRectangles.ToArray();
+
     public MaxRectsBinPacker(
         double binWidth,
         double binHeight,

@@ -38,4 +38,13 @@ public sealed class ViewSemanticClassifierTests
         Assert.Equal(ViewSemanticKind.Model3D, ViewSemanticClassifier.Classify(view));
         Assert.False(ViewSemanticClassifier.IsBaseProjected(View.ViewTypes.ModelView));
     }
+
+    [Fact]
+    public void Classify_Treats3DViewAsModel3D()
+    {
+        var view = ViewTestHelper.Create(View.ViewTypes._3DView, name: "_3DView");
+
+        Assert.Equal(ViewSemanticKind.Model3D, ViewSemanticClassifier.Classify(view));
+        Assert.False(ViewSemanticClassifier.IsBaseProjected(View.ViewTypes._3DView));
+    }
 }
