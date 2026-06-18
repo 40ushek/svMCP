@@ -683,7 +683,7 @@ public sealed partial class TeklaDrawingViewApi
                        && kind != ViewSemanticKind.Model3D;
             })
             .ToList();
-        arranged = TryCenterViewGroup(activeDrawing, finalArrangedViews, arranged,
+        arranged = TryCenterViewGroup(activeDrawing, layoutWorkspace, finalArrangedViews, arranged,
             selectedLayoutMargin, sheetW - selectedLayoutMargin,
             selectedLayoutMargin, sheetH - selectedLayoutMargin,
             layoutWorkspace.ReservedAreas,
@@ -952,14 +952,29 @@ public sealed partial class TeklaDrawingViewApi
             .DefaultIfEmpty(fallbackGap)
             .Max();
 
-    private static List<ReservedRect> GetViewRects(List<View> views)
+    private static List<ReservedRect> GetViewRects(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        List<View> views)
     {
         var rects = new List<ReservedRect>(views.Count);
         foreach (var v in views)
         {
-            if (!DrawingViewFrameGeometry.TryGetBoundingRect(v, out var rect))
+            var id = v.GetIdentifier().ID;
+            if (!arrangedById.TryGetValue(id, out var arranged))
                 return new List<ReservedRect>();
 
+            var size = workspace.GetSelectedFrameSize(id, v.Width, v.Height);
+            if (size.Width <= 0 || size.Height <= 0)
+                return new List<ReservedRect>();
+
+            var rect = ViewPlacementGeometryService.CreateRectFromOrigin(
+                workspace,
+                v,
+                arranged.OriginX,
+                arranged.OriginY,
+                size.Width,
+                size.Height);
             rects.Add(rect);
         }
 

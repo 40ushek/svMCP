@@ -762,6 +762,7 @@ public sealed partial class TeklaDrawingViewApi
     /// </summary>
     private static List<ArrangedView> TryCenterViewGroup(
         Tekla.Structures.Drawing.Drawing activeDrawing,
+        DrawingLayoutWorkspace workspace,
         List<View> views,
         List<ArrangedView> arranged,
         double usableMinX, double usableMaxX,
@@ -772,7 +773,8 @@ public sealed partial class TeklaDrawingViewApi
         if (views.Count == 0)
             return arranged;
 
-        var rects = GetViewRects(views);
+        var arrangedById = arranged.ToDictionary(static item => item.Id);
+        var rects = GetViewRects(workspace, arrangedById, views);
         if (rects.Count != views.Count)
             return arranged;
 
