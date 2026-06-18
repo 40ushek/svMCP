@@ -1202,6 +1202,15 @@ selected-candidate apply adapter получает `DryRun`, потому что 
 диагностирует уже выполненную раскладку, а не выбирает раскладку до изменения
 Tekla.
 
+Важный safety rule: selected-candidate `Apply` нельзя включать, пока candidate
+snapshot не содержит все поздние шаги layout pipeline. Сейчас
+`planned-centered` строится до `detail/free reposition`, включая
+`AnchorDetailSection`; если применить его через apply adapter, он может
+перетереть более позднюю правильную anchor-driven позицию. Поэтому
+`selectedCandidateApplyMode` должен оставаться `DryRun` в live `FinalOnly`,
+пока `free/anchor reposition`, projection alignment и centering не станут
+единым виртуальным plan.
+
 Цель 6.9 остаётся: разделить `allowTeklaMutation` на два отдельных флага:
 - `allowVirtualPlan` — всегда `true`; весь pipeline работает виртуально;
 - `allowApply` — `true` только для `FinalOnly`; единственное место `Modify()`.
@@ -1242,19 +1251,29 @@ Tekla.
 
 #### Поэтапный план реализации
 
-**Шаг 1 — centering виртуальный.**
-Сейчас `TryApplyCentering` двигает `view.Origin` и вызывает `Modify()`.
-Изменить: возвращать изменённый `ArrangedView` без `Modify()`.
-
-**Шаг 2 — free-reposition виртуальный.**
+**Шаг 1 — free/anchor reposition виртуальный.**
 `TryRepositionFreeViews` (3D-виды, details, AnchorDetailSection) работает
 напрямую через `view.Origin`. Изменить: работать по `arranged` dict,
 возвращать обновлённый `ArrangedView`.
 
-**Шаг 3 — projection alignment виртуальный.**
+Это первый блокер для selected-candidate `Apply`: `AnchorDetailSection`
+получает корректную позицию именно здесь, а более ранний candidate про неё ещё
+не знает.
+
+**Шаг 2 — projection alignment виртуальный.**
 Самый рискованный — `TryApplyProjectionAlignment` вызывает `view.Modify()`
 после сдвига origin. Изменить: убрать `Modify()`, сдвиг сохранять в
-`ArrangedView`. Делать последним.
+`ArrangedView`. Делать после free/anchor reposition, чтобы alignment работал
+поверх актуального виртуального положения свободных и anchor-driven видов.
+
+**Шаг 3 — centering виртуальный.**
+`TryCenterViewGroup` сейчас в `FinalOnly` остаётся реальным шагом:
+двигает `view.Origin` и вызывает `Modify()/CommitChanges()`. Попытка просто
+вернуть изменённый `ArrangedView` без виртуализации следующих шагов дала
+смешанное состояние: поздние real-шаги читали Tekla, но получали уже сдвинутый
+`arranged`. Поэтому centering можно переводить в virtual mode только вместе с
+остальной tail-цепочкой или за отдельным флагом, который не влияет на live
+`FinalOnly`.
 
 **Шаг 4 — генератор вариантов.**
 После шагов 1-3 каждый этап возвращает план без side effects.
@@ -1272,9 +1291,11 @@ Tekla.
 
 Осталось:
 - разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 5
-- **Шаг 1:** виртуализировать centering
-- **Шаг 2:** виртуализировать free-reposition
-- **Шаг 3:** виртуализировать projection alignment
+- держать selected-candidate `Apply` выключенным, пока candidate не включает
+  `free/anchor reposition`, projection alignment и centering;
+- **Шаг 1:** виртуализировать free/anchor reposition
+- **Шаг 2:** виртуализировать projection alignment
+- **Шаг 3:** виртуализировать centering без влияния на live `FinalOnly`
 - **Шаг 4:** генератор вариантов поверх зафиксированных sizes
 - **Шаг 5:** SelectBest + один финальный apply + один CommitChanges()
 - проверить на реальных чертежах, что applied origins/scales совпадают с

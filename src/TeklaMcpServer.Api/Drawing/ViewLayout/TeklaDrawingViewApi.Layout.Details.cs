@@ -814,17 +814,22 @@ public sealed partial class TeklaDrawingViewApi
         PerfTrace.Write("api-view", applyChanges ? "center_group" : "center_group_plan", 0,
             $"applied={(applyChanges ? 1 : 0)} dx={dx:F1} dy={dy:F1} usableX={usableMinX:F1}-{usableMaxX:F1} usableY={usableMinY:F1}-{usableMaxY:F1}");
 
-        return arranged.Select(a => new ArrangedView
+        var centeredIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
+        return arranged.Select(a =>
         {
-            Id       = a.Id,
-            ViewType = a.ViewType,
-            OriginX  = a.OriginX + dx,
-            OriginY  = a.OriginY + dy,
-            PreferredPlacementSide = a.PreferredPlacementSide,
-            ActualPlacementSide = a.ActualPlacementSide,
-            PlacementFallbackUsed = a.PlacementFallbackUsed,
-            LayoutMargin = a.LayoutMargin,
-            LayoutGap = a.LayoutGap
+            var shifted = centeredIds.Contains(a.Id);
+            return new ArrangedView
+            {
+                Id       = a.Id,
+                ViewType = a.ViewType,
+                OriginX  = shifted ? a.OriginX + dx : a.OriginX,
+                OriginY  = shifted ? a.OriginY + dy : a.OriginY,
+                PreferredPlacementSide = a.PreferredPlacementSide,
+                ActualPlacementSide = a.ActualPlacementSide,
+                PlacementFallbackUsed = a.PlacementFallbackUsed,
+                LayoutMargin = a.LayoutMargin,
+                LayoutGap = a.LayoutGap
+            };
         }).ToList();
     }
 
