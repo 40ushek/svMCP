@@ -199,18 +199,18 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var view in views)
         {
             var id = view.GetIdentifier().ID;
-            var anchorDriven = IsAnchorDrivenFreeSection(workspace, arrangedById, id);
+            var anchorDriven = IsAnchorDrivenFreeSection(workspace, id);
             if (!IsFreePlacementKind(workspace.GetSemanticKind(id)) && !anchorDriven)
                 continue;
 
-            if (!DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
+            if (!TryGetCurrentLayoutRect(workspace, arrangedById, view, out var rect))
                 continue;
 
             freeViews.Add((view, rect, GetArea(rect), anchorDriven));
         }
 
         freeViews = freeViews
-            .OrderByDescending(item => item.AnchorDriven)
+            .OrderBy(item => item.AnchorDriven)
             .ThenByDescending(item => item.Area)
             .ToList();
         if (freeViews.Count == 0)
@@ -220,10 +220,10 @@ public sealed partial class TeklaDrawingViewApi
         foreach (var view in views)
         {
             var id = view.GetIdentifier().ID;
-            if (IsFreePlacementKind(workspace.GetSemanticKind(id)) || IsAnchorDrivenFreeSection(workspace, arrangedById, id))
+            if (IsFreePlacementKind(workspace.GetSemanticKind(id)) || IsAnchorDrivenFreeSection(workspace, id))
                 continue;
 
-            if (DrawingViewFrameGeometry.TryGetBoundingRect(view, out var rect))
+            if (TryGetCurrentLayoutRect(workspace, arrangedById, view, out var rect))
                 blockersById[id] = rect;
         }
 
@@ -238,6 +238,12 @@ public sealed partial class TeklaDrawingViewApi
             var height = currentRect.MaxY - currentRect.MinY;
             if (width <= 0 || height <= 0)
                 continue;
+
+            if (item.AnchorDriven)
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_REPOSITION frame id={id} rect=[{currentRect.MinX:F1},{currentRect.MinY:F1},{currentRect.MaxX:F1},{currentRect.MaxY:F1}] size=({width:F1},{height:F1})");
+            }
 
             var blocked = BuildFreeViewBlockedRectangles(
                 usableMinX,
@@ -256,7 +262,14 @@ public sealed partial class TeklaDrawingViewApi
             var targetX = (usableMinX + usableMaxX) * 0.5;
             var targetY = (usableMinY + usableMaxY) * 0.5;
             var isAnchorDriven = false;
-            if (item.AnchorDriven && workspace.TryGetView(id) is { ParentAnchorX: { } anchorX, ParentAnchorY: { } anchorY })
+            if (item.AnchorDriven
+                && TryGetAdjustedParentAnchor(
+                    workspace,
+                    arrangedById,
+                    blockersById,
+                    id,
+                    out var anchorX,
+                    out var anchorY))
             {
                 targetX = anchorX;
                 targetY = anchorY;
@@ -295,7 +308,7 @@ public sealed partial class TeklaDrawingViewApi
                     var cx = (candidateRect.MinX + candidateRect.MaxX) * 0.5;
                     var cy = (candidateRect.MinY + candidateRect.MaxY) * 0.5;
                     var dist = System.Math.Sqrt((cx - targetX) * (cx - targetX) + (cy - targetY) * (cy - targetY));
-                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION anchor-placed id={id} anchor=({targetX:F1},{targetY:F1}) candidate=({cx:F1},{cy:F1}) dist={dist:F1}");
+                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION anchor-placed id={id} boundaryTarget=({targetX:F1},{targetY:F1}) candidate=({cx:F1},{cy:F1}) dist={dist:F1}");
                 }
             }
             else
@@ -323,8 +336,8 @@ public sealed partial class TeklaDrawingViewApi
                 DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION best-effort kind={workspace.GetSemanticKind(id)} candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] bestOverlap={bestOverlap:F1} currentOverlap={currentOverlap:F1}");
             }
 
-            var currentOrigin = view.Origin;
-            if (currentOrigin == null)
+            var runtimeOrigin = view.Origin;
+            if (runtimeOrigin == null)
             {
                 blockersById[id] = currentRect;
                 continue;
@@ -338,7 +351,11 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
-            var origin = new Point(currentOrigin.X + dx, currentOrigin.Y + dy, currentOrigin.Z);
+            var sourceOriginX = arrangedById.TryGetValue(id, out var currentArranged)
+                ? currentArranged.OriginX
+                : runtimeOrigin.X;
+            var sourceOriginY = currentArranged?.OriginY ?? runtimeOrigin.Y;
+            var origin = new Point(sourceOriginX + dx, sourceOriginY + dy, runtimeOrigin.Z);
             if (applyChanges)
             {
                 view.Origin = origin;
@@ -352,7 +369,8 @@ public sealed partial class TeklaDrawingViewApi
 
             movedAny = true;
             blockersById[id] = candidateRect;
-            arranged = UpdateArrangedOrigin(arranged, id, origin.X, origin.Y);
+            if (UpdateArrangedOrigin(arranged, id, origin.X, origin.Y) is { } updatedView)
+                arrangedById[id] = updatedView;
             DrawingProjectionAlignmentService.Log(
                 $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(isAnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
         }
@@ -434,18 +452,134 @@ public sealed partial class TeklaDrawingViewApi
 
     private static bool IsAnchorDrivenFreeSection(
         DrawingLayoutWorkspace workspace,
-        IReadOnlyDictionary<int, ArrangedView> arrangedById,
         int viewId)
+        => workspace.GetLayoutViewKind(viewId) == LayoutViewKind.AnchorDetailSection;
+
+    private static bool TryGetCurrentLayoutRect(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        View view,
+        out ReservedRect rect)
     {
-        if (workspace.GetSemanticKind(viewId) != ViewSemanticKind.Section)
-            return false;
+        var id = view.GetIdentifier().ID;
+        if (arrangedById.TryGetValue(id, out var arranged))
+        {
+            var size = workspace.GetSelectedFrameSize(id, view.Width, view.Height);
+            if (size.Width > 0 && size.Height > 0)
+            {
+                rect = ViewPlacementGeometryService.CreateRectFromOrigin(
+                    workspace,
+                    view,
+                    arranged.OriginX,
+                    arranged.OriginY,
+                    size.Width,
+                    size.Height);
+                return true;
+            }
+        }
 
-        var item = workspace.TryGetView(viewId);
-        if (item?.ParentAnchorX == null || item.ParentAnchorY == null)
-            return false;
+        return DrawingViewFrameGeometry.TryGetBoundingRect(
+            view,
+            workspace.ActualViewRectsById,
+            out rect);
+    }
 
-        return !arrangedById.TryGetValue(viewId, out var arrangedView)
-               || string.IsNullOrWhiteSpace(arrangedView.ActualPlacementSide);
+    private static bool TryGetAdjustedParentAnchor(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        IReadOnlyDictionary<int, ReservedRect> blockersById,
+        int viewId,
+        out double anchorX,
+        out double anchorY)
+    {
+        anchorX = 0;
+        anchorY = 0;
+
+        var view = workspace.TryGetView(viewId);
+        if (view?.ParentAnchorX is not { } storedAnchorX
+            || view.ParentAnchorY is not { } storedAnchorY)
+        {
+            return false;
+        }
+
+        anchorX = storedAnchorX;
+        anchorY = storedAnchorY;
+        if (view.ParentViewId is not { } parentId
+            || workspace.TryGetView(parentId) is not { } originalParent
+            || !arrangedById.TryGetValue(parentId, out var arrangedParent))
+        {
+            return true;
+        }
+
+        var deltaX = arrangedParent.OriginX - originalParent.OriginX;
+        var deltaY = arrangedParent.OriginY - originalParent.OriginY;
+        anchorX += deltaX;
+        anchorY += deltaY;
+
+        var adjustedAnchorX = anchorX;
+        var adjustedAnchorY = anchorY;
+        var boundarySide = "none";
+        if (blockersById.TryGetValue(parentId, out var parentRect))
+        {
+            ProjectAnchorToNearestParentBoundary(
+                parentRect,
+                adjustedAnchorX,
+                adjustedAnchorY,
+                out anchorX,
+                out anchorY,
+                out boundarySide);
+        }
+
+        DrawingProjectionAlignmentService.Log(
+            $"FREE_VIEW_REPOSITION anchor-adjust id={viewId} parent={parentId} raw=({storedAnchorX:F1},{storedAnchorY:F1}) delta=({deltaX:F1},{deltaY:F1}) adjusted=({adjustedAnchorX:F1},{adjustedAnchorY:F1}) boundary={boundarySide} target=({anchorX:F1},{anchorY:F1})");
+        return true;
+    }
+
+    private static void ProjectAnchorToNearestParentBoundary(
+        ReservedRect parentRect,
+        double anchorX,
+        double anchorY,
+        out double targetX,
+        out double targetY,
+        out string boundarySide)
+    {
+        targetX = System.Math.Max(parentRect.MinX, System.Math.Min(anchorX, parentRect.MaxX));
+        targetY = System.Math.Max(parentRect.MinY, System.Math.Min(anchorY, parentRect.MaxY));
+
+        var insideX = anchorX >= parentRect.MinX && anchorX <= parentRect.MaxX;
+        var insideY = anchorY >= parentRect.MinY && anchorY <= parentRect.MaxY;
+        if (!insideX || !insideY)
+        {
+            boundarySide = "nearest";
+            return;
+        }
+
+        var left = anchorX - parentRect.MinX;
+        var right = parentRect.MaxX - anchorX;
+        var bottom = anchorY - parentRect.MinY;
+        var top = parentRect.MaxY - anchorY;
+        var nearest = System.Math.Min(System.Math.Min(left, right), System.Math.Min(bottom, top));
+
+        if (nearest == left)
+        {
+            targetX = parentRect.MinX;
+            boundarySide = "left";
+        }
+        else if (nearest == right)
+        {
+            targetX = parentRect.MaxX;
+            boundarySide = "right";
+        }
+        else if (nearest == bottom)
+        {
+            targetY = parentRect.MinY;
+            boundarySide = "bottom";
+        }
+        else
+        {
+            targetY = parentRect.MaxY;
+            boundarySide = "top";
+        }
     }
 
     private static double GetArea(ReservedRect rect)
@@ -484,14 +618,18 @@ public sealed partial class TeklaDrawingViewApi
         return result;
     }
 
-    private static List<ArrangedView> UpdateArrangedOrigin(List<ArrangedView> arranged, int id, double originX, double originY)
+    private static ArrangedView? UpdateArrangedOrigin(
+        List<ArrangedView> arranged,
+        int id,
+        double originX,
+        double originY)
     {
         for (var i = 0; i < arranged.Count; i++)
         {
             if (arranged[i].Id != id)
                 continue;
 
-            arranged[i] = new ArrangedView
+            var updated = new ArrangedView
             {
                 Id = arranged[i].Id,
                 ViewType = arranged[i].ViewType,
@@ -503,10 +641,11 @@ public sealed partial class TeklaDrawingViewApi
                 LayoutMargin = arranged[i].LayoutMargin,
                 LayoutGap = arranged[i].LayoutGap
             };
-            return arranged;
+            arranged[i] = updated;
+            return updated;
         }
 
-        return arranged;
+        return null;
     }
 
     private static bool TryResolveDetailAnchorSheet(View ownerView, DetailMarkInfo detailMark, out double anchorX, out double anchorY)
