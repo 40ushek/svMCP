@@ -279,8 +279,8 @@ public sealed partial class TeklaDrawingViewApi
             var packerTargetX = targetX - usableMinX;
             var packerTargetY = usableMaxY - targetY;
             var placed = isAnchorDriven
-                ? packer.TryInsertClosestToAnchor(width + gap, height + gap, packerTargetX, packerTargetY, out var placement)
-                : packer.TryInsertClosestToPoint(width + gap, height + gap, packerTargetX, packerTargetY, out placement);
+                ? packer.TryInsertClosestToAnchor(width, height, packerTargetX, packerTargetY, out var placement)
+                : packer.TryInsertClosestToPoint(width, height, packerTargetX, packerTargetY, out placement);
             if (placed)
             {
                 candidateRect = new ReservedRect(
