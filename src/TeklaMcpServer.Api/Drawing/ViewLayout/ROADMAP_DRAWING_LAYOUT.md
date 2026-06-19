@@ -1308,7 +1308,7 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 
 Оставшееся в Шаге 1:
 - `Model3D` всё ещё идёт по старому live path (`Modify()` в loop) — 3D best-effort
-  policy запланирована отдельно (generator variants, Шаг 4).
+  policy запланирована отдельно (generator variants, Шаг 5).
 - `Other`/прочие free-view kinds пока не включены в apply-from-plan.
 - Дублирование логики между `BuildFreeViewRepositionPlan` и `TryRepositionFreeViews`
   не устранено — TODO зафиксирован в коде.
@@ -1323,23 +1323,42 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `TryGetVirtualLayoutRect`: если `SelectedFrameSizesById` есть но `arranged` нет —
   размер теряется и уходит в snapshot fallback. Не критично для текущего scope.
 
-**Шаг 2 — projection alignment виртуальный.**
-Самый рискованный — `TryApplyProjectionAlignment` вызывает `view.Modify()`
-после сдвига origin. Изменить: убрать `Modify()`, сдвиг сохранять в
-`ArrangedView`. Делать после free/anchor reposition, чтобы alignment работал
-поверх актуального виртуального положения свободных и anchor-driven видов.
+**Шаг 2 — подготовить единый финальный apply.**
+Нельзя просто убрать `Modify()` из `BaseProjectedDrawingArrangeStrategy.ApplyPlan`:
+сейчас в `FinalOnly` selected-candidate apply adapter остаётся в `DryRun`, а
+значит физический apply старого pipeline является единственным применением
+основных видов.
 
-**Шаг 3 — centering виртуальный.**
-`TryCenterViewGroup` сейчас в `FinalOnly` остаётся реальным шагом:
-двигает `view.Origin` и вызывает `Modify()/CommitChanges()`. Попытка просто
-вернуть изменённый `ArrangedView` без виртуализации следующих шагов дала
-смешанное состояние: поздние real-шаги читали Tekla, но получали уже сдвинутый
-`arranged`. Поэтому centering можно переводить в virtual mode только вместе с
-остальной tail-цепочкой или за отдельным флагом, который не влияет на live
-`FinalOnly`.
+Перед отключением live `Modify()` нужно:
+- сделать selected-candidate apply активным в `FinalOnly`, но только когда
+  candidate snapshot содержит все поздние виртуальные поправки;
+- перенести `offsetById` / frame-offset correction в финальный apply, иначе
+  виды будут применены без коррекции реальной рамки;
+- оставить safety gate: если candidate infeasible или неполный, apply остаётся
+  `DryRun`.
 
-**Шаг 4 — генератор вариантов.**
-После шагов 1-3 каждый этап возвращает план без side effects.
+**Шаг 3 — ApplyPlan и frame-offset correction виртуальные.**
+После Шага 2:
+- `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` больше не вызывает
+  `view.Modify()`;
+- frame-offset correction после arrange обновляет только `ArrangedView`;
+- реальные `Origin` меняются только финальным apply adapter.
+
+Это убирает первый видимый сдвиг главных видов:
+`arrange strategy -> frame-offset correction`.
+
+**Шаг 4 — projection alignment виртуальный.**
+Самый рискованный — `ProjectionAlignmentMoveHelper.TryApplyMove(...)` вызывает
+`view.Modify()` после сдвига origin. Изменить: убрать `Modify()`, сдвиг
+сохранять в `ArrangedView`. Делать после Шага 3, чтобы alignment работал поверх
+актуального виртуального положения основных видов и frame-offset correction.
+
+**Статус centering:** live `Modify()` / `CommitChanges()` из
+`TryCenterViewGroup` убран. Метод теперь только пересчитывает `arranged` и
+пишет `center_group_plan applied=0`.
+
+**Шаг 5 — генератор вариантов.**
+После шагов 1-4 каждый этап возвращает план без side effects.
 Варианты для перебора:
 - `arranged` — base после arrange strategy
 - `centered` — base + centering
@@ -1348,19 +1367,20 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `combinations` — base + centering + projection + free-reposition
 - позже: `3d-top`, `3d-bottom`, другие section policies
 
-**Шаг 5 — SelectBest + один финальный apply.**
+**Шаг 6 — SelectBest + один финальный apply.**
 `SelectBest(candidates)` → `DrawingLayoutCandidateTeklaApplyAdapter` для
 победителя → один `CommitChanges()`.
 
 Осталось:
-- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 5
+- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 6
 - держать selected-candidate `Apply` выключенным, пока candidate не включает
   `free/anchor reposition`, projection alignment и centering;
 - **Шаг 1:** виртуализировать free/anchor reposition
-- **Шаг 2:** виртуализировать projection alignment
-- **Шаг 3:** виртуализировать centering без влияния на live `FinalOnly`
-- **Шаг 4:** генератор вариантов поверх зафиксированных sizes
-- **Шаг 5:** SelectBest + один финальный apply + один CommitChanges()
+- **Шаг 2:** подготовить единый финальный apply и перенести frame-offset correction
+- **Шаг 3:** убрать live `Modify()` из `ApplyPlan` и frame-offset correction
+- **Шаг 4:** виртуализировать projection alignment
+- **Шаг 5:** генератор вариантов поверх зафиксированных sizes
+- **Шаг 6:** SelectBest + один финальный apply + один CommitChanges()
 - проверить на реальных чертежах, что applied origins/scales совпадают с
   selected candidate;
 - добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает
