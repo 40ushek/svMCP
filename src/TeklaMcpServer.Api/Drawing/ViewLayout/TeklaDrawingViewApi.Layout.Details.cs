@@ -183,7 +183,6 @@ public sealed partial class TeklaDrawingViewApi
     }
 
     private List<ArrangedView> TryRepositionFreeViews(
-        Tekla.Structures.Drawing.Drawing activeDrawing,
         DrawingLayoutWorkspace workspace,
         List<View> views,
         List<ArrangedView> arranged,
@@ -192,8 +191,7 @@ public sealed partial class TeklaDrawingViewApi
         double usableMinY,
         double usableMaxY,
         double gap,
-        IReadOnlyList<ReservedRect> reserved,
-        bool applyChanges)
+        IReadOnlyList<ReservedRect> reserved)
     {
         var arrangedById = arranged.ToDictionary(static view => view.Id);
         var freeViews = new List<(View View, ReservedRect Rect, double Area, bool AnchorDriven)>();
@@ -232,9 +230,6 @@ public sealed partial class TeklaDrawingViewApi
         var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
         var planDecisionById = prePlan.Decisions.ToDictionary(static d => d.ViewId);
 
-        var liveMovedAny = false;
-        var modifyFailedIds = new HashSet<int>();
-        var deferredMoves = new List<(View View, Point Origin, int Id, string Kind)>();
         foreach (var item in freeViews)
         {
             var view = item.View;
@@ -255,8 +250,7 @@ public sealed partial class TeklaDrawingViewApi
             // apply-from-plan for eligible free views
             // Only apply if source origin came from arranged (not snapshot fallback) —
             // snapshot-based plans have unreliable source origin relative to live arranged.
-            // Anchor-detail Modify() is deferred to end of loop. Model3D remains
-            // virtual until the selected-candidate final apply.
+            // Free-view reposition remains virtual until the selected-candidate final apply.
             var viewKind = workspace.GetLayoutViewKind(id);
             var eligibleForPlan = viewKind == LayoutViewKind.AnchorDetailSection
                 || viewKind == LayoutViewKind.Model3D;
@@ -274,13 +268,11 @@ public sealed partial class TeklaDrawingViewApi
                     var planDy = decision.PlannedOriginY.Value - (curArr?.OriginY ?? runtimeOriginPlan.Y);
                     var originPlan = new Point(decision.PlannedOriginX.Value, decision.PlannedOriginY.Value, runtimeOriginPlan.Z);
                     DrawingProjectionAlignmentService.Log(
-                        $"FREE_VIEW_APPLY_FROM_PLAN id={id} kind={workspace.GetSemanticKind(id)} live={(applyChanges && viewKind != LayoutViewKind.Model3D ? 1 : 0)} dx={planDx:F1} dy={planDy:F1}");
+                        $"FREE_VIEW_APPLY_FROM_PLAN id={id} kind={workspace.GetSemanticKind(id)} live=0 dx={planDx:F1} dy={planDy:F1}");
                     // Update virtual state immediately so subsequent views see correct blockers
                     blockersById[id] = decision.PlannedRect ?? currentRect;
                     if (UpdateArrangedOrigin(arranged, id, originPlan.X, originPlan.Y) is { } updPlan)
                         arrangedById[id] = updPlan;
-                    if (applyChanges && viewKind != LayoutViewKind.Model3D)
-                        deferredMoves.Add((view, originPlan, id, workspace.GetSemanticKind(id).ToString()));
                     continue;
                 }
             }
@@ -411,19 +403,6 @@ public sealed partial class TeklaDrawingViewApi
                 ? currentArranged.OriginY
                 : runtimeOrigin.Y;
             var origin = new Point(sourceOriginX + dx, sourceOriginY + dy, runtimeOrigin.Z);
-            var isModel3D = viewKind == LayoutViewKind.Model3D || IsModel3DView(workspace, view);
-            if (applyChanges && !isModel3D)
-            {
-                view.Origin = origin;
-                if (!view.Modify())
-                {
-                    modifyFailedIds.Add(id);
-                    blockersById[id] = currentRect;
-                    DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=modify-failed kind={workspace.GetSemanticKind(id)}");
-                    continue;
-                }
-                liveMovedAny = true;
-            }
 
             blockersById[id] = candidateRect;
             if (UpdateArrangedOrigin(arranged, id, origin.X, origin.Y) is { } updatedView)
@@ -432,32 +411,14 @@ public sealed partial class TeklaDrawingViewApi
                 $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(isAnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
         }
 
-        foreach (var (dView, dOrigin, dId, dKind) in deferredMoves)
-        {
-            dView.Origin = dOrigin;
-            if (!dView.Modify())
-            {
-                modifyFailedIds.Add(dId);
-                DrawingProjectionAlignmentService.Log($"FREE_VIEW_APPLY_FROM_PLAN result=modify-failed id={dId} kind={dKind}");
-            }
-            else
-            {
-                liveMovedAny = true;
-            }
-        }
-
-        if (liveMovedAny && applyChanges)
-            activeDrawing.CommitChanges();
-
-        TraceFreeViewRepositionPlan(prePlan, arranged, modifyFailedIds);
+        TraceFreeViewRepositionPlan(prePlan, arranged);
 
         return arranged;
     }
 
     private static void TraceFreeViewRepositionPlan(
         FreeViewRepositionPlan prePlan,
-        List<ArrangedView> arranged,
-        ISet<int> modifyFailedIds)
+        List<ArrangedView> arranged)
     {
         var arrangedById = arranged.ToDictionary(static v => v.Id);
         foreach (var d in prePlan.Decisions)
@@ -467,13 +428,6 @@ public sealed partial class TeklaDrawingViewApi
             {
                 DrawingProjectionAlignmentService.Log(
                     $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} reason={d.Reason} planned={planned} actual=MISSING");
-                continue;
-            }
-
-            if (modifyFailedIds.Contains(d.ViewId))
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=MODIFY_FAILED");
                 continue;
             }
 

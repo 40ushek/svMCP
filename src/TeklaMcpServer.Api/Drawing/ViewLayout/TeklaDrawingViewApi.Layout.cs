@@ -710,7 +710,6 @@ public sealed partial class TeklaDrawingViewApi
             : finalViews;
         layoutWorkspace.SetRuntimeViews(finalViews);
         arranged = TryRepositionFreeViews(
-            activeDrawing,
             layoutWorkspace,
             finalViews,
             arranged,
@@ -719,8 +718,7 @@ public sealed partial class TeklaDrawingViewApi
             selectedLayoutMargin,
             sheetH - selectedLayoutMargin,
             selectedLayoutGap,
-            layoutWorkspace.ReservedAreas,
-            allowTeklaMutation);
+            layoutWorkspace.ReservedAreas);
         finalViews = allowTeklaMutation
             ? EnumerateViews(activeDrawing).ToList()
             : finalViews;
