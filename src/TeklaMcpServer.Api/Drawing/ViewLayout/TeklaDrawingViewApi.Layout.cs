@@ -964,11 +964,19 @@ public sealed partial class TeklaDrawingViewApi
         {
             var id = v.GetIdentifier().ID;
             if (!arrangedById.TryGetValue(id, out var arranged))
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"CENTER_GROUP_SKIP reason=missing-arranged view={id}");
                 return new List<ReservedRect>();
+            }
 
             var size = workspace.GetSelectedFrameSize(id, v.Width, v.Height);
             if (size.Width <= 0 || size.Height <= 0)
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"CENTER_GROUP_SKIP reason=no-size-or-frame view={id} width={size.Width:F1} height={size.Height:F1}");
                 return new List<ReservedRect>();
+            }
 
             var rect = ViewPlacementGeometryService.CreateRectFromOrigin(
                 workspace,

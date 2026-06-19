@@ -227,7 +227,11 @@ public sealed partial class TeklaDrawingViewApi
                 blockersById[id] = rect;
         }
 
+        // Build virtual plan before live pass so trace can compare planned vs actual
+        var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
+
         var movedAny = false;
+        var modifyFailedIds = new HashSet<int>();
         foreach (var item in freeViews)
         {
             var view = item.View;
@@ -374,6 +378,7 @@ public sealed partial class TeklaDrawingViewApi
                 view.Origin = origin;
                 if (!view.Modify())
                 {
+                    modifyFailedIds.Add(id);
                     blockersById[id] = currentRect;
                     DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=modify-failed kind={workspace.GetSemanticKind(id)}");
                     continue;
@@ -391,7 +396,278 @@ public sealed partial class TeklaDrawingViewApi
         if (movedAny && applyChanges)
             activeDrawing.CommitChanges();
 
+        TraceFreeViewRepositionPlan(prePlan, arranged, modifyFailedIds);
+
         return arranged;
+    }
+
+    private static void TraceFreeViewRepositionPlan(
+        FreeViewRepositionPlan prePlan,
+        List<ArrangedView> arranged,
+        ISet<int> modifyFailedIds)
+    {
+        var arrangedById = arranged.ToDictionary(static v => v.Id);
+        foreach (var d in prePlan.Decisions)
+        {
+            var planned = FormatPlannedOrigin(d);
+            if (!arrangedById.TryGetValue(d.ViewId, out var actual))
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} reason={d.Reason} planned={planned} actual=MISSING");
+                continue;
+            }
+
+            if (modifyFailedIds.Contains(d.ViewId))
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=MODIFY_FAILED");
+                continue;
+            }
+
+            if (!d.PlannedOriginX.HasValue || !d.PlannedOriginY.HasValue)
+            {
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=({actual.OriginX:F1},{actual.OriginY:F1}) delta=MISSING");
+                continue;
+            }
+
+            var deltaX = actual.OriginX - d.PlannedOriginX.Value;
+            var deltaY = actual.OriginY - d.PlannedOriginY.Value;
+            DrawingProjectionAlignmentService.Log(
+                $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=({actual.OriginX:F1},{actual.OriginY:F1}) delta=({deltaX:F1},{deltaY:F1})");
+        }
+    }
+
+    private static string FormatPlannedOrigin(FreeViewRepositionDecision decision)
+    {
+        return decision.PlannedOriginX.HasValue && decision.PlannedOriginY.HasValue
+            ? $"({decision.PlannedOriginX.Value:F1},{decision.PlannedOriginY.Value:F1})"
+            : "MISSING";
+    }
+
+    // TODO (Roadmap Шаг 1): replace TryRepositionFreeViews with this plan + apply adapter; remove duplication
+    private FreeViewRepositionPlan BuildFreeViewRepositionPlan(
+        DrawingLayoutWorkspace workspace,
+        List<View> views,
+        List<ArrangedView> arranged,
+        double usableMinX,
+        double usableMaxX,
+        double usableMinY,
+        double usableMaxY,
+        double gap,
+        IReadOnlyList<ReservedRect> reserved)
+    {
+        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var freeViews = new List<(View View, ReservedRect Rect, double Area, bool AnchorDriven)>();
+        var decisions = new List<FreeViewRepositionDecision>();
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            var anchorDriven = IsAnchorDrivenFreeSection(workspace, id);
+            if (!IsFreePlacementKind(workspace.GetSemanticKind(id)) && !anchorDriven)
+                continue;
+
+            // Virtual: use workspace only, no live Tekla fallback
+            if (!TryGetVirtualLayoutRect(workspace, arrangedById, view, out var rect))
+            {
+                var kind = workspace.GetSemanticKind(id).ToString();
+                decisions.Add(new FreeViewRepositionDecision
+                {
+                    ViewId = id, ViewKind = kind, AnchorDriven = anchorDriven,
+                    PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                    PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                    PlannedRect = default, Reason = "skip reason=no-size-or-frame"
+                });
+                continue;
+            }
+
+            freeViews.Add((view, rect, GetArea(rect), anchorDriven));
+        }
+
+        freeViews = freeViews
+            .OrderBy(item => item.AnchorDriven)
+            .ThenByDescending(item => item.Area)
+            .ToList();
+        if (freeViews.Count == 0)
+            return new FreeViewRepositionPlan { Decisions = decisions };
+
+        var blockersById = new Dictionary<int, ReservedRect>();
+        foreach (var view in views)
+        {
+            var id = view.GetIdentifier().ID;
+            if (IsFreePlacementKind(workspace.GetSemanticKind(id)) || IsAnchorDrivenFreeSection(workspace, id))
+                continue;
+
+            if (TryGetVirtualLayoutRect(workspace, arrangedById, view, out var rect))
+                blockersById[id] = rect;
+        }
+
+        foreach (var item in freeViews)
+        {
+            var view = item.View;
+            var id = view.GetIdentifier().ID;
+            var currentRect = item.Rect;
+            var kind = workspace.GetSemanticKind(id).ToString();
+
+            var width = currentRect.MaxX - currentRect.MinX;
+            var height = currentRect.MaxY - currentRect.MinY;
+            if (width <= 0 || height <= 0)
+            {
+                decisions.Add(new FreeViewRepositionDecision
+                {
+                    ViewId = id, ViewKind = kind, AnchorDriven = item.AnchorDriven,
+                    PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                    PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                    PlannedRect = currentRect, Reason = "skip reason=no-size-or-frame"
+                });
+                continue;
+            }
+
+            var blocked = BuildFreeViewBlockedRectangles(
+                usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved, blockersById.Values);
+            var packer = new MaxRectsBinPacker(
+                usableMaxX - usableMinX, usableMaxY - usableMinY, allowRotation: false, blocked);
+
+            var targetX = (usableMinX + usableMaxX) * 0.5;
+            var targetY = (usableMinY + usableMaxY) * 0.5;
+            var isAnchorDriven = false;
+            if (item.AnchorDriven
+                && TryGetAdjustedParentAnchor(workspace, arrangedById, blockersById, id, out var anchorX, out var anchorY))
+            {
+                targetX = anchorX;
+                targetY = anchorY;
+                isAnchorDriven = true;
+            }
+
+            ReservedRect candidateRect;
+            var packerTargetX = targetX - usableMinX;
+            var packerTargetY = usableMaxY - targetY;
+            var placed = isAnchorDriven
+                ? packer.TryInsertClosestToAnchor(width, height, packerTargetX, packerTargetY, out var placement)
+                : packer.TryInsertClosestToPoint(width, height, packerTargetX, packerTargetY, out placement);
+
+            if (placed)
+            {
+                candidateRect = new ReservedRect(
+                    usableMinX + placement.X,
+                    usableMaxY - placement.Y - height,
+                    usableMinX + placement.X + width,
+                    usableMaxY - placement.Y);
+                var validation = ViewPlacementValidator.Validate(
+                    candidateRect, usableMinX, usableMaxX, usableMinY, usableMaxY, reserved, blockersById);
+                if (!validation.Fits)
+                {
+                    blockersById[id] = currentRect;
+                    decisions.Add(new FreeViewRepositionDecision
+                    {
+                        ViewId = id, ViewKind = kind, AnchorDriven = isAnchorDriven,
+                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                        PlannedRect = currentRect, Reason = $"reject reason={validation.Reason}"
+                    });
+                    continue;
+                }
+            }
+            else
+            {
+                if (isAnchorDriven)
+                {
+                    blockersById[id] = currentRect;
+                    decisions.Add(new FreeViewRepositionDecision
+                    {
+                        ViewId = id, ViewKind = kind, AnchorDriven = true,
+                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                        PlannedRect = currentRect, Reason = "skip-anchor-no-space"
+                    });
+                    continue;
+                }
+
+                if (!TryFindBestEffortPosition(width, height,
+                        usableMinX, usableMaxX, usableMinY, usableMaxY,
+                        reserved, blockersById, currentRect,
+                        out candidateRect, out _, out _))
+                {
+                    blockersById[id] = currentRect;
+                    decisions.Add(new FreeViewRepositionDecision
+                    {
+                        ViewId = id, ViewKind = kind, AnchorDriven = false,
+                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                        PlannedRect = currentRect, Reason = "reject reason=no-space"
+                    });
+                    continue;
+                }
+            }
+
+            var dx = CenterX(candidateRect) - CenterX(currentRect);
+            var dy = CenterY(candidateRect) - CenterY(currentRect);
+
+            if (!arrangedById.TryGetValue(id, out var cur))
+            {
+                blockersById[id] = currentRect;
+                decisions.Add(new FreeViewRepositionDecision
+                {
+                    ViewId = id,
+                    ViewKind = kind,
+                    AnchorDriven = isAnchorDriven,
+                    PlannedRect = currentRect,
+                    Reason = "skip reason=no-arranged"
+                });
+                continue;
+            }
+
+            var sourceOriginX = cur.OriginX;
+            var sourceOriginY = cur.OriginY;
+            var plannedOriginX = sourceOriginX + dx;
+            var plannedOriginY = sourceOriginY + dy;
+
+            blockersById[id] = candidateRect;
+            decisions.Add(new FreeViewRepositionDecision
+            {
+                ViewId = id, ViewKind = kind, AnchorDriven = isAnchorDriven,
+                PlannedOriginX = plannedOriginX,
+                PlannedOriginY = plannedOriginY,
+                PlannedRect = candidateRect,
+                Reason = "ok"
+            });
+        }
+
+        return new FreeViewRepositionPlan { Decisions = decisions };
+    }
+
+    private static double? TryGetPlannedOriginX(
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        int id)
+    {
+        return arrangedById.TryGetValue(id, out var arranged) ? arranged.OriginX : null;
+    }
+
+    private static double? TryGetPlannedOriginY(
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        int id)
+    {
+        return arrangedById.TryGetValue(id, out var arranged) ? arranged.OriginY : null;
+    }
+
+    private static bool TryGetVirtualLayoutRect(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyDictionary<int, ArrangedView> arrangedById,
+        View view,
+        out ReservedRect rect)
+    {
+        var id = view.GetIdentifier().ID;
+        if (!arrangedById.TryGetValue(id, out var arranged)
+            || !workspace.SelectedFrameSizesById.TryGetValue(id, out var size)
+            || size.Width <= 0 || size.Height <= 0)
+        {
+            rect = null!;
+            return false;
+        }
+
+        rect = ViewPlacementGeometryService.CreateRectFromOrigin(
+            workspace, view, arranged.OriginX, arranged.OriginY, size.Width, size.Height);
+        return true;
     }
 
     private static bool TryFindBestEffortPosition(
@@ -776,7 +1052,11 @@ public sealed partial class TeklaDrawingViewApi
         var arrangedById = arranged.ToDictionary(static item => item.Id);
         var rects = GetViewRects(workspace, arrangedById, views);
         if (rects.Count != views.Count)
+        {
+            DrawingProjectionAlignmentService.Log(
+                $"CENTER_GROUP_SKIP reason=rect-count-mismatch expected={views.Count} actual={rects.Count}");
             return arranged;
+        }
 
         var dx = 0.0;
         if (ViewGroupCenteringGeometry.TryFindCenteringDelta(rects, usableMinX, usableMaxX, reserved, horizontal: true, out var foundDx))
