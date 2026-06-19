@@ -1323,42 +1323,55 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `TryGetVirtualLayoutRect`: если `SelectedFrameSizesById` есть но `arranged` нет —
   размер теряется и уходит в snapshot fallback. Не критично для текущего scope.
 
-**Шаг 2 — подготовить единый финальный apply.**
-Нельзя просто убрать `Modify()` из `BaseProjectedDrawingArrangeStrategy.ApplyPlan`:
-сейчас в `FinalOnly` selected-candidate apply adapter остаётся в `DryRun`, а
-значит физический apply старого pipeline является единственным применением
-основных видов.
+**Шаг 2 — виртуализировать все фазы после Arrange().**
+Фактический порядок текущего pipeline:
+`Arrange -> frame-offset correction -> projection alignment -> centering
+-> detail reposition -> free/anchor reposition`.
 
-Перед отключением live `Modify()` нужно:
-- сделать selected-candidate apply активным в `FinalOnly`, но только когда
-  candidate snapshot содержит все поздние виртуальные поправки;
-- перенести `offsetById` / frame-offset correction в финальный apply, иначе
-  виды будут применены без коррекции реальной рамки;
-- оставить safety gate: если candidate infeasible или неполный, apply остаётся
-  `DryRun`.
-
-**Шаг 3 — ApplyPlan и frame-offset correction виртуальные.**
-После Шага 2:
+Сделано:
 - `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` больше не вызывает
   `view.Modify()`;
-- frame-offset correction после arrange обновляет только `ArrangedView`;
-- реальные `Origin` меняются только финальным apply adapter.
+- frame-offset correction обновляет только `ArrangedView`;
+- centering обновляет только `arranged` и пишет
+  `center_group_plan applied=0`.
 
-Это убирает первый видимый сдвиг главных видов:
-`arrange strategy -> frame-offset correction`.
+Осталось:
+- убрать ранний `ApplyArrangedOrigins`, который применяет arrangement до выбора
+  лучшего candidate;
+- виртуализировать `DrawingProjectionAlignmentService.Apply` /
+  `ProjectionAlignmentMoveHelper.TryApplyMove`;
+- завершить виртуализацию detail/free/anchor reposition, включая `Model3D`;
+- каждая фаза должна обновлять только `arranged`, без `Modify()` /
+  `CommitChanges()`.
 
-**Шаг 4 — projection alignment виртуальный.**
-Самый рискованный — `ProjectionAlignmentMoveHelper.TryApplyMove(...)` вызывает
-`view.Modify()` после сдвига origin. Изменить: убрать `Modify()`, сдвиг
-сохранять в `ArrangedView`. Делать после Шага 3, чтобы alignment работал поверх
-актуального виртуального положения основных видов и frame-offset correction.
+**Шаг 3 — единый финальный apply выбранного candidate.**
+После полной виртуализации поздних фаз:
+- selected-candidate apply становится активным в `FinalOnly`;
+- `passiveCandidate` / финальный baseline строится из виртуального
+  `arranged` после всех фаз — через `FromPlannedViews`, а не через
+  `FromRuntimeLayout` и повторное чтение текущих позиций Tekla;
+- `FromRuntimeLayout` используется только для исходного probe/planning
+  snapshot и не должен подменять виртуальные финальные позиции;
+- сравнение кандидатов (`planned-arranged`, `planned-centered`,
+  `post-projection`, `passiveCandidate`) сохраняется: SelectBest выбирает
+  лучший из всех; `passiveCandidate` не должен быть единственным —
+  конкуренция между вариантами остаётся;
+- apply plan обязан содержать frame-offset correction и все поздние поправки
+  выбранного варианта;
+- `DrawingLayoutCandidateTeklaApplyAdapter.Execute(applyPlan)` является
+  единственной точкой изменения `Origin` и `Scale`;
+- после него выполняется один `CommitChanges()`;
+- ранний `ApplyArrangedOrigins` убирается: применять до SelectBest нельзя,
+  т.к. centering/projection/reposition ещё не включены в план;
+- если candidate infeasible или неполный, safety gate оставляет apply в
+  `DryRun`.
 
 **Статус centering:** live `Modify()` / `CommitChanges()` из
 `TryCenterViewGroup` убран. Метод теперь только пересчитывает `arranged` и
 пишет `center_group_plan applied=0`.
 
 **Шаг 5 — генератор вариантов.**
-После шагов 1-4 каждый этап возвращает план без side effects.
+После шагов 1-3 каждый этап возвращает план без side effects.
 Варианты для перебора:
 - `arranged` — base после arrange strategy
 - `centered` — base + centering
@@ -1376,9 +1389,9 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - держать selected-candidate `Apply` выключенным, пока candidate не включает
   `free/anchor reposition`, projection alignment и centering;
 - **Шаг 1:** виртуализировать free/anchor reposition
-- **Шаг 2:** подготовить единый финальный apply и перенести frame-offset correction
-- **Шаг 3:** убрать live `Modify()` из `ApplyPlan` и frame-offset correction
-- **Шаг 4:** виртуализировать projection alignment
+- **Шаг 2:** виртуализировать все оставшиеся фазы после `Arrange()` и убрать
+  ранний `ApplyArrangedOrigins`
+- **Шаг 3:** включить selected-candidate apply как единственный финальный apply
 - **Шаг 5:** генератор вариантов поверх зафиксированных sizes
 - **Шаг 6:** SelectBest + один финальный apply + один CommitChanges()
 - проверить на реальных чертежах, что applied origins/scales совпадают с
