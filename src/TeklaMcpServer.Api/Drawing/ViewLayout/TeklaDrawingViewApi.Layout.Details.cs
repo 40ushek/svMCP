@@ -230,6 +230,9 @@ public sealed partial class TeklaDrawingViewApi
         // Build virtual plan before live pass so trace can compare planned vs actual
         var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
         var planDecisionById = prePlan.Decisions.ToDictionary(static d => d.ViewId);
+        // Snapshot of arranged keys at plan-build time — arrangedById mutates during loop,
+        // so apply-from-plan must only fire for views that existed in arranged when the plan was built.
+        var arrangedAtPlanBuild = new HashSet<int>(arranged.Select(static a => a.Id));
 
         var movedAny = false;
         var modifyFailedIds = new HashSet<int>();
@@ -252,11 +255,14 @@ public sealed partial class TeklaDrawingViewApi
             }
 
             // apply-from-plan: AnchorDetailSection only, not Model3D
+            // Only apply if source origin came from arranged (not snapshot fallback) —
+            // snapshot-based plans have unreliable source origin relative to live arranged.
             // Modify() is deferred to end of loop so anchor sections don't jump mid-pass
             if (!IsModel3DView(workspace, view)
                 && workspace.GetLayoutViewKind(id) == LayoutViewKind.AnchorDetailSection
                 && planDecisionById.TryGetValue(id, out var decision)
                 && decision.Reason == "ok"
+                && decision.SourceFromArranged
                 && decision.PlannedOriginX.HasValue
                 && decision.PlannedOriginY.HasValue)
             {
@@ -643,22 +649,31 @@ public sealed partial class TeklaDrawingViewApi
             var dx = CenterX(candidateRect) - CenterX(currentRect);
             var dy = CenterY(candidateRect) - CenterY(currentRect);
 
-            if (!arrangedById.TryGetValue(id, out var cur))
+            double sourceOriginX, sourceOriginY;
+            bool sourceFromArranged;
+            if (arrangedById.TryGetValue(id, out var cur))
+            {
+                sourceOriginX = cur.OriginX;
+                sourceOriginY = cur.OriginY;
+                sourceFromArranged = true;
+            }
+            else if (workspace.ActualViewRectsById.TryGetValue(id, out var snapshotRect))
+            {
+                // No arranged entry: derive source origin from snapshot rect min corner
+                sourceOriginX = snapshotRect.MinX;
+                sourceOriginY = snapshotRect.MinY;
+                sourceFromArranged = false;
+            }
+            else
             {
                 blockersById[id] = currentRect;
                 decisions.Add(new FreeViewRepositionDecision
                 {
-                    ViewId = id,
-                    ViewKind = kind,
-                    AnchorDriven = isAnchorDriven,
-                    PlannedRect = currentRect,
-                    Reason = "skip reason=no-arranged"
+                    ViewId = id, ViewKind = kind, AnchorDriven = isAnchorDriven,
+                    PlannedRect = currentRect, Reason = "skip reason=no-arranged"
                 });
                 continue;
             }
-
-            var sourceOriginX = cur.OriginX;
-            var sourceOriginY = cur.OriginY;
             var plannedOriginX = sourceOriginX + dx;
             var plannedOriginY = sourceOriginY + dy;
 
@@ -669,7 +684,8 @@ public sealed partial class TeklaDrawingViewApi
                 PlannedOriginX = plannedOriginX,
                 PlannedOriginY = plannedOriginY,
                 PlannedRect = candidateRect,
-                Reason = "ok"
+                Reason = "ok",
+                SourceFromArranged = sourceFromArranged
             });
         }
 
@@ -697,17 +713,40 @@ public sealed partial class TeklaDrawingViewApi
         out ReservedRect rect)
     {
         var id = view.GetIdentifier().ID;
-        if (!arrangedById.TryGetValue(id, out var arranged)
-            || !workspace.SelectedFrameSizesById.TryGetValue(id, out var size)
-            || size.Width <= 0 || size.Height <= 0)
+
+        if (workspace.SelectedFrameSizesById.TryGetValue(id, out var size) && size.Width > 0 && size.Height > 0)
         {
-            rect = null!;
-            return false;
+            if (arrangedById.TryGetValue(id, out var arranged))
+            {
+                rect = ViewPlacementGeometryService.CreateRectFromOrigin(
+                    workspace, view, arranged.OriginX, arranged.OriginY, size.Width, size.Height);
+                return true;
+            }
         }
 
-        rect = ViewPlacementGeometryService.CreateRectFromOrigin(
-            workspace, view, arranged.OriginX, arranged.OriginY, size.Width, size.Height);
-        return true;
+        // Fallback: use actual rect snapshot (captured before layout pass, not a live Tekla call)
+        if (workspace.ActualViewRectsById.TryGetValue(id, out var actualRect))
+        {
+            var w = actualRect.MaxX - actualRect.MinX;
+            var h = actualRect.MaxY - actualRect.MinY;
+            if (w > 0 && h > 0)
+            {
+                if (arrangedById.TryGetValue(id, out var arranged2))
+                {
+                    // Recompute rect from planned origin using snapshot size
+                    rect = ViewPlacementGeometryService.CreateRectFromOrigin(
+                        workspace, view, arranged2.OriginX, arranged2.OriginY, w, h);
+                }
+                else
+                {
+                    rect = actualRect;
+                }
+                return true;
+            }
+        }
+
+        rect = null!;
+        return false;
     }
 
     private static bool TryFindBestEffortPosition(

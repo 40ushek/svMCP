@@ -12,6 +12,8 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout
         public double? PlannedOriginY { get; set; }
         public ReservedRect? PlannedRect { get; set; }
         public string Reason { get; set; } = string.Empty;
+        // True only when source origin came from arrangedById (not snapshot fallback)
+        public bool SourceFromArranged { get; set; }
     }
 
     internal sealed class FreeViewRepositionPlan
