@@ -1340,7 +1340,44 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `projection` — base + projection alignment
 - `free-reposition` — base + free-reposition
 - `combinations` — base + centering + projection + free-reposition
-- позже: `3d-top`, `3d-bottom`, другие section policies
+- позже: 3D-corner reservation candidate, другие section policies
+
+**3D-corner reservation candidate.**
+
+Цель: 3D view должен оставлять как можно больше полезного места для основных
+видов, а не получать остаток после их размещения.
+
+Идея: добавить еще один полный layout candidate, где `Model3D` view
+размещается заранее как временная reserved area. Это не заменяет текущий
+free-view reposition, а конкурирует с ним в общем `SelectBest`. `Other` views
+на первом этапе остаются в текущем free-view path.
+
+Правила candidate:
+- взять существующие reserved areas чертежа;
+- построить 4 варианта временной 3D-зоны: left-top, right-top, left-bottom,
+  right-bottom;
+- временная 3D-зона допустима только если она внутри листа и не пересекается с
+  уже существующими reserved areas;
+- для выбора угла 3D-зона может примыкать к краю листа без layout margin, но
+  временная reserved area должна полностью блокировать frame 3D view; вопрос
+  дополнительного gap до других видов оставить политикой scorer/validator;
+- origin 3D view в угол не ставится напрямую: нужно вычислить origin так, чтобы
+  именно frame (с учётом frameOffset) влез в угол, а не origin;
+- для каждого допустимого угла добавить 3D-зону в список reserved areas и
+  посчитать обычную компоновку основных видов/сечений;
+- после layout добавить сам 3D view в эту зону;
+- передать получившийся полный candidate в общий scorer.
+
+Критерий выбора: scorer должен выбрать не просто угол для 3D, а полный layout,
+где основные виды получили максимум нормального места: без выхода за лист, без
+reserved overlaps, с минимальными view overlaps и приемлемым fill/compactness.
+
+Первый scope:
+- поддержать один `Model3D` view;
+- описывать его временную зону прямоугольником по selected frame size;
+- при нескольких 3D views оставить текущий free-view path или сложить их в
+  будущую отдельную стратегию;
+- `Other` views оставить в текущем free-view path до отдельного решения.
 
 **Шаг 5 — SelectBest + один финальный apply.**
 `SelectBest(candidates)` → `DrawingLayoutCandidateTeklaApplyAdapter` для
