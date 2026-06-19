@@ -515,235 +515,36 @@ public sealed partial class TeklaDrawingViewApi
             .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
         layoutWorkspace.SetGridAxes(preloadedAxes);
 
-        var arrangeSw = Stopwatch.StartNew();
-        PerfTrace.Write(
-            "api-view",
-            "layout_branch",
-            0,
-            $"branch=arrangement-selector action={(arrangedViews.Count == 0 ? "skip-no-views" : "run")} views={arrangedViews.Count}");
-        var arranged = arrangedViews.Count == 0
-            ? new List<ArrangedView>()
-            : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, applyChanges: false));
-        arrangeSw.Stop();
-        arrangeMs = arrangeSw.ElapsedMilliseconds;
-        PerfTrace.Write(
-            "api-view",
-            "layout_stage",
-            0,
-            $"stage=primary-arrangement result=ok arranged={arranged.Count} elapsedMs={arrangeMs}");
-
-        var detailScalesChanged = false;
-        if (!preserveExistingScales)
+        var sharedCtx = new SharedLayoutContext
         {
-            foreach (var detailView in currentViews.Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Detail))
-            {
-                if (!layoutWorkspace.OriginalScalesById.TryGetValue(detailView.GetIdentifier().ID, out var detailScale))
-                    continue;
+            Drawing              = activeDrawing,
+            Workspace            = layoutWorkspace,
+            CurrentViews         = currentViews,
+            ArrangedViews        = arrangedViews,
+            ActualRects          = actualRects,
+            OffsetById           = offsetById,
+            OptimalScale         = optimalScale.Value,
+            EffectiveMargin      = effectiveMargin,
+            Gap                  = gap,
+            PreserveExistingScales = preserveExistingScales,
+            KeepCurrentScales    = keepCurrentScales,
+            AllowTeklaMutation   = allowTeklaMutation,
+            InitMs               = initMs,
+            ReservedMs           = reservedMs,
+            CandidateFitMs       = candidateFitMs,
+            ProbeMs              = probeMs,
+            CandidateAttempts    = candidateAttempts,
+            ViewsCount           = viewsCount
+        };
 
-                if (detailScale <= 0 || System.Math.Abs(detailView.Attributes.Scale - detailScale) < 0.01)
-                    continue;
-
-                if (allowTeklaMutation)
-                {
-                    detailView.Attributes.Scale = detailScale;
-                    if (detailView.Modify())
-                        detailScalesChanged = true;
-                }
-            }
-        }
-
-        if (offsetById.Count > 0)
-        {
-            var adjustSw = Stopwatch.StartNew();
-
-            for (int i = 0; i < arranged.Count; i++)
-            {
-                if (!layoutWorkspace.RuntimeViewsById.TryGetValue(arranged[i].Id, out var v))
-                    continue;
-                if (!offsetById.TryGetValue(arranged[i].Id, out var off))
-                    continue;
-
-                var fallbackScale = v.Attributes.Scale > 0 ? v.Attributes.Scale : optimalScale.Value;
-                var correctionScale = layoutWorkspace.GetSelectedScale(arranged[i].Id, fallbackScale);
-                var corrX = off.X / correctionScale;
-                var corrY = off.Y / correctionScale;
-                var semanticKind = layoutWorkspace.GetSemanticKind(arranged[i].Id);
-                var selectedFrameSize = layoutWorkspace.GetSelectedFrameSize(arranged[i].Id, v.Width, v.Height);
-                var maxPlausibleCorrection = System.Math.Max(selectedFrameSize.Width, selectedFrameSize.Height) * 2.0;
-                // Skip only clearly broken offsets. Real Tekla view BBoxes can be
-                // asymmetric enough that the center offset is slightly larger than
-                // one frame dimension, especially for section/back views.
-                if (semanticKind != ViewSemanticKind.Detail
-                    && maxPlausibleCorrection > 0
-                    && (System.Math.Abs(corrX) > maxPlausibleCorrection || System.Math.Abs(corrY) > maxPlausibleCorrection))
-                {
-                    PerfTrace.Write(
-                        "api-view",
-                        "view_frame_offset_skip",
-                        0,
-                        $"view={arranged[i].Id} reason=implausible offset=({corrX:F2},{corrY:F2}) limit={maxPlausibleCorrection:F2}");
-                    continue;
-                }
-
-                var currentOrigin = v.Origin;
-                var o = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
-                o.X = arranged[i].OriginX - corrX;
-                o.Y = arranged[i].OriginY - corrY;
-                arranged[i] = new ArrangedView
-                {
-                    Id = arranged[i].Id,
-                    ViewType = arranged[i].ViewType,
-                    OriginX = o.X,
-                    OriginY = o.Y,
-                    PreferredPlacementSide = arranged[i].PreferredPlacementSide,
-                    ActualPlacementSide = arranged[i].ActualPlacementSide,
-                    PlacementFallbackUsed = arranged[i].PlacementFallbackUsed,
-                    LayoutMargin = arranged[i].LayoutMargin,
-                    LayoutGap = arranged[i].LayoutGap,
-                    IsSnapshotFallback = arranged[i].IsSnapshotFallback
-                };
-            }
-
-            adjustSw.Stop();
-            postAdjustMs = adjustSw.ElapsedMilliseconds;
-        }
-
-        var selectedLayoutMargin = ResolveSelectedLayoutMargin(effectiveMargin, arranged);
-        var selectedLayoutGap = ResolveSelectedLayoutGap(gap, arranged);
-        PerfTrace.Write(
-            "api-view",
-            "fit_layout_spacing",
-            0,
-            $"effectiveMargin={effectiveMargin:F1} effectiveGap={gap:F1} selectedMargin={selectedLayoutMargin:F1} selectedGap={selectedLayoutGap:F1}");
-
-        if (allowTeklaMutation)
-        {
-            TracePlannedVsActualParity(
-                "post-arrange-pre-projection",
-                layoutWorkspace,
-                arranged,
-                DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing));
-        }
-
-        var projectionSw = Stopwatch.StartNew();
-        var projectionScaleGuardViews = arrangedViews
-            .Where(v => IsUniformScaleDriverKind(layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID)))
-            .ToList();
-        if (ShouldSkipProjectionAlignment(optimalScale.Value, projectionScaleGuardViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
-        {
-            PerfTrace.Write(
-                "api-view",
-                "layout_branch",
-                0,
-                $"branch=projection action=skip mode={projectionSkipMode} reason={projectionSkipDiagnostic}");
-            projectionResult = new ProjectionAlignmentResult
-            {
-                Mode = projectionSkipMode,
-                SkippedMoves = 1
-            };
-            if (!string.IsNullOrWhiteSpace(projectionSkipDiagnostic))
-                projectionResult.Diagnostics.Add(projectionSkipDiagnostic);
-        }
-        else
-        {
-            PerfTrace.Write("api-view", "layout_branch", 0, "branch=projection action=run");
-            var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
-            projectionResult = projectionAlignmentService.Apply(
-                activeDrawing,
-                layoutWorkspace,
-                arrangedViews,
-                arranged);
-        }
-        projectionSw.Stop();
-        projectionMs = projectionSw.ElapsedMilliseconds;
-
-        var commitSw = Stopwatch.StartNew();
-        if (allowTeklaMutation && detailScalesChanged)
-            activeDrawing.CommitChanges();
-        commitSw.Stop();
-        finalCommitMs = allowTeklaMutation && detailScalesChanged ? commitSw.ElapsedMilliseconds : 0;
+        var variantResult = RunDefaultLayoutVariant(sharedCtx);
+        var arranged = variantResult.Arranged;
+        arrangeMs    = variantResult.ArrangeMs;
+        postAdjustMs = variantResult.PostAdjustMs;
+        projectionMs = variantResult.ProjectionMs;
+        projectionResult = variantResult.ProjectionResult;
+        finalCommitMs = variantResult.FinalCommitMs;
         selectedScale = optimalScale;
-
-        var postProjectionViews = allowTeklaMutation
-            ? EnumerateViews(activeDrawing).ToList()
-            : currentViews;
-        layoutWorkspace.SetRuntimeViews(postProjectionViews);
-        if (allowTeklaMutation && detailScalesChanged)
-        {
-            actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
-            layoutWorkspace.SetActualViewRects(actualRects);
-            var detailIds = postProjectionViews
-                .Where(view => layoutWorkspace.GetSemanticKind(view.GetIdentifier().ID) == ViewSemanticKind.Detail)
-                .Select(view => view.GetIdentifier().ID)
-                .ToHashSet();
-            var refreshedSizes = DrawingViewFrameGeometry.TryGetFrameSizes(postProjectionViews, actualRects);
-            var mergedSizes = layoutWorkspace.SelectedFrameSizesById.ToDictionary(static item => item.Key, static item => item.Value);
-            foreach (var item in refreshedSizes.Where(item => detailIds.Contains(item.Key)))
-                mergedSizes[item.Key] = item.Value;
-            layoutWorkspace.SetSelectedFrameSizes(mergedSizes);
-
-            var refreshedOffsets = DrawingViewFrameGeometry.TryGetFrameOffsets(postProjectionViews, actualRects);
-            var mergedOffsets = offsetById.ToDictionary(static item => item.Key, static item => item.Value);
-            foreach (var item in refreshedOffsets.Where(item => detailIds.Contains(item.Key)))
-                mergedOffsets[item.Key] = item.Value;
-            offsetById = mergedOffsets;
-            layoutWorkspace.SetFrameOffsets(offsetById);
-        }
-        // Center the arranged group inside the usable area.
-        var finalArrangedViews = postProjectionViews
-            .Where(v =>
-            {
-                var id = v.GetIdentifier().ID;
-                var kind = layoutWorkspace.GetSemanticKind(id);
-                return kind != ViewSemanticKind.Detail
-                       && kind != ViewSemanticKind.Other
-                       && kind != ViewSemanticKind.Model3D
-                       && layoutWorkspace.GetLayoutViewKind(id) != LayoutViewKind.AnchorDetailSection;
-            })
-            .ToList();
-        arranged = TryCenterViewGroup(activeDrawing, layoutWorkspace, finalArrangedViews, arranged,
-            selectedLayoutMargin, sheetW - selectedLayoutMargin,
-            selectedLayoutMargin, sheetH - selectedLayoutMargin,
-            layoutWorkspace.ReservedAreas,
-            allowTeklaMutation);
-        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=center-group result=done arranged={arranged.Count}");
-        var finalViews = allowTeklaMutation
-            ? EnumerateViews(activeDrawing).ToList()
-            : postProjectionViews;
-        layoutWorkspace.SetRuntimeViews(finalViews);
-        arranged = TryRepositionDetailViews(
-            layoutWorkspace,
-            finalViews,
-            arranged,
-            selectedLayoutMargin,
-            sheetW - selectedLayoutMargin,
-            selectedLayoutMargin,
-            sheetH - selectedLayoutMargin,
-            selectedLayoutGap,
-            layoutWorkspace.ReservedAreas,
-            offsetById);
-        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=detail-reposition result=done arranged={arranged.Count}");
-        finalViews = allowTeklaMutation
-            ? EnumerateViews(activeDrawing).ToList()
-            : finalViews;
-        layoutWorkspace.SetRuntimeViews(finalViews);
-        var arrangedBeforeFreeReposition = arranged.ToList();
-        arranged = TryRepositionFreeViews(
-            layoutWorkspace,
-            finalViews,
-            arranged,
-            selectedLayoutMargin,
-            sheetW - selectedLayoutMargin,
-            selectedLayoutMargin,
-            sheetH - selectedLayoutMargin,
-            selectedLayoutGap,
-            layoutWorkspace.ReservedAreas);
-        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=free-view-reposition result=done arranged={arranged.Count}");
-        finalViews = allowTeklaMutation
-            ? EnumerateViews(activeDrawing).ToList()
-            : finalViews;
-        layoutWorkspace.SetRuntimeViews(finalViews);
 
         var finalActualRects = allowTeklaMutation
             ? DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing)
@@ -754,25 +555,7 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.RuntimeViews,
             arranged,
             finalActualRects);
-        var beforeFreeCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
-            "fit_views_to_sheet:planned-before-free",
-            layoutWorkspace,
-            DrawingLayoutCandidateBuilder.ToPlannedViews(
-                layoutWorkspace,
-                layoutWorkspace.RuntimeViews,
-                arrangedBeforeFreeReposition));
-        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(
-            beforeFreeCandidate,
-            layoutWorkspace.RuntimeViews);
-        var passiveCandidate = DrawingLayoutCandidateBuilder.FromPlannedViews(
-            "fit_views_to_sheet:planned-final",
-            layoutWorkspace,
-            DrawingLayoutCandidateBuilder.ToPlannedViews(layoutWorkspace, layoutWorkspace.RuntimeViews, arranged));
-        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(
-            passiveCandidate,
-            layoutWorkspace.RuntimeViews);
-        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
-            new[] { beforeFreeCandidate, passiveCandidate });
+        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(variantResult.Candidates);
         PerfTrace.Write(
             "api-view",
             "layout_stage",
