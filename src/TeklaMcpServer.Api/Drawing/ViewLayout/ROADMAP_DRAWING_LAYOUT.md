@@ -1267,6 +1267,39 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 вызывать `TryGetBoundingRect(view)`. Старый live `FinalOnly` path может
 временно сохранить Tekla fallback до полной замены.
 
+**Статус Шага 1 (частично реализовано):**
+
+- `BuildFreeViewRepositionPlan` — виртуальный mirror `TryRepositionFreeViews`:
+  не вызывает `Modify()`, не читает live Tekla geometry.
+- Виртуальный план не использует `view.Width/Height` как fallback: только
+  `SelectedFrameSizesById`. При отсутствии размера — `skip reason=no-size-or-frame`.
+  Fallback на `ActualViewRectsById` snapshot разрешён (snapshot снят до layout pass,
+  не live Tekla call).
+- `FreeViewRepositionDecision.SourceFromArranged` помечает решения, где source origin
+  взят из `arrangedById` (надёжный), а не из snapshot rect (приближённый).
+- `apply-from-plan` для `AnchorDetailSection`: virtual state (`arranged`, `blockersById`)
+  обновляется сразу в loop; `view.Modify()` отложен до после loop (deferred moves).
+- Один `CommitChanges()` после всех deferred moves.
+- `apply-from-plan` срабатывает только если `decision.SourceFromArranged=true` —
+  snapshot-based план не применяется, т.к. source origin семантически другой.
+
+Оставшееся в Шаге 1:
+- `Model3D` всё ещё идёт по старому live path (`Modify()` в loop) — 3D best-effort
+  policy запланирована отдельно (generator variants, Шаг 4).
+- `Other`/прочие free-view kinds пока не включены в apply-from-plan.
+- Дублирование логики между `BuildFreeViewRepositionPlan` и `TryRepositionFreeViews`
+  не устранено — TODO зафиксирован в коде.
+
+Известные диагностические ограничения (не блокируют корректность):
+- `PlannedOriginX/Y` для `SourceFromArranged=false` — приближённые (от
+  `snapshotRect.MinX/MinY`, не от `ArrangedView.OriginX/Y`). Не применяются через
+  apply-from-plan, но trace может вводить в заблуждение. Будущий TODO: пометить
+  как `// approximate` или использовать отдельное поле.
+- `TraceFreeViewRepositionPlan` пишет `actual=MISSING` для видов которые live pass
+  не разместил (Model3D too-narrow). Это корректное поведение, не баг.
+- `TryGetVirtualLayoutRect`: если `SelectedFrameSizesById` есть но `arranged` нет —
+  размер теряется и уходит в snapshot fallback. Не критично для текущего scope.
+
 **Шаг 2 — projection alignment виртуальный.**
 Самый рискованный — `TryApplyProjectionAlignment` вызывает `view.Modify()`
 после сдвига origin. Изменить: убрать `Modify()`, сдвиг сохранять в
