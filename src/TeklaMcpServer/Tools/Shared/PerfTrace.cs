@@ -18,7 +18,7 @@ internal static class PerfTrace
     {
         return string.Format(
             CultureInfo.InvariantCulture,
-            "{0:O} pid={1} layer={2} op={3} elapsedMs={4} {5}",
+            "{0:yyyy-MM-dd HH:mm:ss.ff} pid={1} layer={2} op={3} elapsedMs={4} {5}",
             DateTimeOffset.Now,
             Process.GetCurrentProcess().Id,
             layer,
