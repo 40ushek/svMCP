@@ -1308,7 +1308,7 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 
 Оставшееся в Шаге 1:
 - `Model3D` всё ещё идёт по старому live path (`Modify()` в loop) — 3D best-effort
-  policy запланирована отдельно (generator variants, Шаг 5).
+  policy запланирована отдельно (generator variants, Шаг 4).
 - `Other`/прочие free-view kinds пока не включены в apply-from-plan.
 - Дублирование логики между `BuildFreeViewRepositionPlan` и `TryRepositionFreeViews`
   не устранено — TODO зафиксирован в коде.
@@ -1370,7 +1370,7 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 `TryCenterViewGroup` убран. Метод теперь только пересчитывает `arranged` и
 пишет `center_group_plan applied=0`.
 
-**Шаг 5 — генератор вариантов.**
+**Шаг 4 — генератор вариантов.**
 После шагов 1-3 каждый этап возвращает план без side effects.
 Варианты для перебора:
 - `arranged` — base после arrange strategy
@@ -1380,20 +1380,20 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `combinations` — base + centering + projection + free-reposition
 - позже: `3d-top`, `3d-bottom`, другие section policies
 
-**Шаг 6 — SelectBest + один финальный apply.**
+**Шаг 5 — SelectBest + один финальный apply.**
 `SelectBest(candidates)` → `DrawingLayoutCandidateTeklaApplyAdapter` для
 победителя → один `CommitChanges()`.
 
 Осталось:
-- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 6
+- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 5
 - держать selected-candidate `Apply` выключенным, пока candidate не включает
   `free/anchor reposition`, projection alignment и centering;
 - **Шаг 1:** виртуализировать free/anchor reposition
 - **Шаг 2:** виртуализировать все оставшиеся фазы после `Arrange()` и убрать
   ранний `ApplyArrangedOrigins`
 - **Шаг 3:** включить selected-candidate apply как единственный финальный apply
-- **Шаг 5:** генератор вариантов поверх зафиксированных sizes
-- **Шаг 6:** SelectBest + один финальный apply + один CommitChanges()
+- **Шаг 4:** генератор вариантов поверх зафиксированных sizes
+- **Шаг 5:** SelectBest + один финальный apply + один CommitChanges()
 - проверить на реальных чертежах, что applied origins/scales совпадают с
   selected candidate;
 - добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает
@@ -1402,16 +1402,22 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 Исходная проблема: текущий `applyMode=DryRun` защищал только поздний candidate apply
 (`fit_layout_apply_execution`), но не весь pipeline.
 
-Раньше часть старого pipeline применяла изменения раньше:
-- `_arrangementSelector.Arrange(...)` может вызывать `view.Modify()`;
-- frame offset correction после Arrange тоже меняет `Origin` и вызывает
-  `Modify()`;
-- projection/centering/detail reposition также могут менять views;
-- затем выполняется ранний `activeDrawing.CommitChanges()` до финального
-  candidate safety gate.
+Часть pipeline уже виртуализирована:
+- `_arrangementSelector.Arrange(...)` вызывается с `ApplyChanges=false`;
+- `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` не вызывает
+  `view.Modify()`;
+- frame-offset correction обновляет `ArrangedView`;
+- centering обновляет `arranged`.
+
+Оставшиеся ранние side effects:
+- `ApplyArrangedOrigins` применяет arrangement до выбора candidate;
+- projection alignment в live-режиме может вызывать `view.Modify()`;
+- detail/free/anchor reposition ещё содержит live apply paths;
+- `activeDrawing.CommitChanges()` выполняется до финального candidate apply.
 
 Следствие было такое: в trace могло быть `effectiveMode=DryRun` и `appliedMoves=0`, но
-чертеж уже мог измениться раньше через базовый Arrange/Commit.
+чертеж уже мог измениться раньше через `ApplyArrangedOrigins`, projection или
+reposition apply paths.
 
 Цель: разделить layout pipeline на два этапа:
 - `Plan` - только расчет позиций, масштабов, score и diagnostics;
