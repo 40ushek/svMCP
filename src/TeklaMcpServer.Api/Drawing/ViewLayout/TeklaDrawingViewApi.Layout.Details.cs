@@ -232,7 +232,7 @@ public sealed partial class TeklaDrawingViewApi
         var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
         var planDecisionById = prePlan.Decisions.ToDictionary(static d => d.ViewId);
 
-        var movedAny = false;
+        var liveMovedAny = false;
         var modifyFailedIds = new HashSet<int>();
         var deferredMoves = new List<(View View, Point Origin, int Id, string Kind)>();
         foreach (var item in freeViews)
@@ -255,7 +255,8 @@ public sealed partial class TeklaDrawingViewApi
             // apply-from-plan for eligible free views
             // Only apply if source origin came from arranged (not snapshot fallback) —
             // snapshot-based plans have unreliable source origin relative to live arranged.
-            // Modify() is deferred to end of loop to avoid mid-pass visual jumps.
+            // Anchor-detail Modify() is deferred to end of loop. Model3D remains
+            // virtual until the selected-candidate final apply.
             var viewKind = workspace.GetLayoutViewKind(id);
             var eligibleForPlan = viewKind == LayoutViewKind.AnchorDetailSection
                 || viewKind == LayoutViewKind.Model3D;
@@ -273,13 +274,12 @@ public sealed partial class TeklaDrawingViewApi
                     var planDy = decision.PlannedOriginY.Value - (curArr?.OriginY ?? runtimeOriginPlan.Y);
                     var originPlan = new Point(decision.PlannedOriginX.Value, decision.PlannedOriginY.Value, runtimeOriginPlan.Z);
                     DrawingProjectionAlignmentService.Log(
-                        $"FREE_VIEW_APPLY_FROM_PLAN id={id} kind={workspace.GetSemanticKind(id)} dx={planDx:F1} dy={planDy:F1}");
+                        $"FREE_VIEW_APPLY_FROM_PLAN id={id} kind={workspace.GetSemanticKind(id)} live={(applyChanges && viewKind != LayoutViewKind.Model3D ? 1 : 0)} dx={planDx:F1} dy={planDy:F1}");
                     // Update virtual state immediately so subsequent views see correct blockers
-                    movedAny = true;
                     blockersById[id] = decision.PlannedRect ?? currentRect;
                     if (UpdateArrangedOrigin(arranged, id, originPlan.X, originPlan.Y) is { } updPlan)
                         arrangedById[id] = updPlan;
-                    if (applyChanges)
+                    if (applyChanges && viewKind != LayoutViewKind.Model3D)
                         deferredMoves.Add((view, originPlan, id, workspace.GetSemanticKind(id).ToString()));
                     continue;
                 }
@@ -411,7 +411,8 @@ public sealed partial class TeklaDrawingViewApi
                 ? currentArranged.OriginY
                 : runtimeOrigin.Y;
             var origin = new Point(sourceOriginX + dx, sourceOriginY + dy, runtimeOrigin.Z);
-            if (applyChanges)
+            var isModel3D = viewKind == LayoutViewKind.Model3D || IsModel3DView(workspace, view);
+            if (applyChanges && !isModel3D)
             {
                 view.Origin = origin;
                 if (!view.Modify())
@@ -421,9 +422,9 @@ public sealed partial class TeklaDrawingViewApi
                     DrawingProjectionAlignmentService.Log($"FREE_VIEW_REPOSITION result=reject reason=modify-failed kind={workspace.GetSemanticKind(id)}");
                     continue;
                 }
+                liveMovedAny = true;
             }
 
-            movedAny = true;
             blockersById[id] = candidateRect;
             if (UpdateArrangedOrigin(arranged, id, origin.X, origin.Y) is { } updatedView)
                 arrangedById[id] = updatedView;
@@ -439,9 +440,13 @@ public sealed partial class TeklaDrawingViewApi
                 modifyFailedIds.Add(dId);
                 DrawingProjectionAlignmentService.Log($"FREE_VIEW_APPLY_FROM_PLAN result=modify-failed id={dId} kind={dKind}");
             }
+            else
+            {
+                liveMovedAny = true;
+            }
         }
 
-        if (movedAny && applyChanges)
+        if (liveMovedAny && applyChanges)
             activeDrawing.CommitChanges();
 
         TraceFreeViewRepositionPlan(prePlan, arranged, modifyFailedIds);
