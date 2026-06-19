@@ -230,9 +230,6 @@ public sealed partial class TeklaDrawingViewApi
         // Build virtual plan before live pass so trace can compare planned vs actual
         var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
         var planDecisionById = prePlan.Decisions.ToDictionary(static d => d.ViewId);
-        // Snapshot of arranged keys at plan-build time — arrangedById mutates during loop,
-        // so apply-from-plan must only fire for views that existed in arranged when the plan was built.
-        var arrangedAtPlanBuild = new HashSet<int>(arranged.Select(static a => a.Id));
 
         var movedAny = false;
         var modifyFailedIds = new HashSet<int>();
