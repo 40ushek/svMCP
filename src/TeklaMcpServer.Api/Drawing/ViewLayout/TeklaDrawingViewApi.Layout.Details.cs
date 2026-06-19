@@ -1154,27 +1154,8 @@ public sealed partial class TeklaDrawingViewApi
         if (System.Math.Abs(dx) < 1.0 && System.Math.Abs(dy) < 1.0)
             return arranged;
 
-        foreach (var v in views)
-        {
-            var currentOrigin = v.Origin;
-            if (currentOrigin == null)
-                continue;
-
-            var o = new Point(currentOrigin.X, currentOrigin.Y, currentOrigin.Z);
-            o.X += dx;
-            o.Y += dy;
-            if (applyChanges)
-            {
-                v.Origin = o;
-                v.Modify();
-            }
-        }
-
-        if (applyChanges)
-            activeDrawing.CommitChanges();
-
-        PerfTrace.Write("api-view", applyChanges ? "center_group" : "center_group_plan", 0,
-            $"applied={(applyChanges ? 1 : 0)} dx={dx:F1} dy={dy:F1} usableX={usableMinX:F1}-{usableMaxX:F1} usableY={usableMinY:F1}-{usableMaxY:F1}");
+        PerfTrace.Write("api-view", "center_group_plan", 0,
+            $"applied=0 dx={dx:F1} dy={dy:F1} usableX={usableMinX:F1}-{usableMaxX:F1} usableY={usableMinY:F1}-{usableMaxY:F1}");
 
         var centeredIds = views.Select(v => v.GetIdentifier().ID).ToHashSet();
         return arranged.Select(a =>
