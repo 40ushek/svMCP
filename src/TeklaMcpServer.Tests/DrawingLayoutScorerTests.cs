@@ -175,6 +175,42 @@ public sealed class DrawingLayoutScorerTests
     }
 
     [Fact]
+    public void Evaluate_Ignores_ViewOverlap_WhenModel3DIsInvolved()
+    {
+        var candidate = new DrawingLayoutCandidate
+        {
+            Sheet = new DrawingSheetContext
+            {
+                Width = 100,
+                Height = 100
+            },
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 1,
+                    SemanticKind = "BaseProjected",
+                    Scale = 10,
+                    LayoutRect = new ReservedRect(10, 10, 50, 50)
+                },
+                new DrawingLayoutCandidateView
+                {
+                    Id = 2,
+                    SemanticKind = "Model3D",
+                    Scale = 10,
+                    LayoutRect = new ReservedRect(30, 30, 70, 70)
+                }
+            ]
+        };
+
+        var evaluation = new DrawingLayoutScorer().Evaluate(candidate);
+
+        Assert.True(evaluation.IsFeasible);
+        Assert.Equal(0, evaluation.Validation.ViewOverlapCount);
+        Assert.Equal(0, evaluation.Validation.ViewOverlapArea);
+    }
+
+    [Fact]
     public void Score_PenalizesViewsTouchingUsableEdge()
     {
         var centered = CreateContext(

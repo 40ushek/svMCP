@@ -47,36 +47,35 @@ public sealed partial class TeklaDrawingViewApi
             minDenom,
             string.Join(",", candidates.Select(c => c.ToString("0.###", CultureInfo.InvariantCulture))));
 
-        foreach (var view in views)
+        if (PerfTrace.IsViewLayoutDetailedTraceActive)
         {
-            var viewId = view.GetIdentifier().ID;
-            var kind = workspace.GetSemanticKind(viewId);
-            var projectionStrength = workspace.GetProjectionStrength(viewId);
-            var scaleFlexibility = workspace.GetScaleFlexibility(viewId);
-            var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
-            var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
-            var frameWidth = frame.Width;
-            var frameHeight = frame.Height;
+            foreach (var view in views)
+            {
+                var viewId = view.GetIdentifier().ID;
+                var kind = workspace.GetSemanticKind(viewId);
+                var projectionStrength = workspace.GetProjectionStrength(viewId);
+                var scaleFlexibility = workspace.GetScaleFlexibility(viewId);
+                var isDriver = scaleDriverIds.Contains(viewId) ? 1 : 0;
+                var frame = workspace.GetSelectedFrameSize(viewId, view.Width, view.Height);
 
-            sb.AppendFormat(
-                CultureInfo.InvariantCulture,
-                " | view={0}:{1}:{2}:projection={3}:scaleFlex={4}:scale={5:F2}:driver={6}:frame={7:F2}x{8:F2}:origin={9:F2},{10:F2}",
-                viewId,
-                view.ViewType,
-                kind,
-                projectionStrength,
-                scaleFlexibility,
-                view.Attributes.Scale,
-                isDriver,
-                frameWidth,
-                frameHeight,
-                view.Origin?.X ?? 0,
-                view.Origin?.Y ?? 0);
+                sb.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    " | view={0}:{1}:{2}:projection={3}:scaleFlex={4}:scale={5:F2}:driver={6}:frame={7:F2}x{8:F2}:origin={9:F2},{10:F2}",
+                    viewId,
+                    view.ViewType,
+                    kind,
+                    projectionStrength,
+                    scaleFlexibility,
+                    view.Attributes.Scale,
+                    isDriver,
+                    frame.Width,
+                    frame.Height,
+                    view.Origin?.X ?? 0,
+                    view.Origin?.Y ?? 0);
+            }
         }
 
-        var line = sb.ToString();
-        PerfTrace.Write("api-view", "fit_scale_inputs", 0, line);
-        DrawingProjectionAlignmentService.Log($"[fit_scale_inputs] {line}");
+        PerfTrace.Write("api-view", "fit_scale_inputs", 0, sb.ToString());
     }
 
     private static void TraceScaleCandidate(
@@ -94,17 +93,20 @@ public sealed partial class TeklaDrawingViewApi
             fits ? 1 : 0,
             oversizeConflicts?.Count ?? 0);
 
-        for (int i = 0; i < views.Count && i < frames.Count; i++)
+        if (PerfTrace.IsViewLayoutDetailedTraceActive)
         {
-            var frame = frames[i];
-            sb.AppendFormat(
-                CultureInfo.InvariantCulture,
-                " | view={0}:{1}:frame={2:F2}x{3:F2}:scale={4:F2}",
-                views[i].GetIdentifier().ID,
-                views[i].ViewType,
-                frame.w,
-                frame.h,
-                views[i].Attributes.Scale);
+            for (int i = 0; i < views.Count && i < frames.Count; i++)
+            {
+                var frame = frames[i];
+                sb.AppendFormat(
+                    CultureInfo.InvariantCulture,
+                    " | view={0}:{1}:frame={2:F2}x{3:F2}:scale={4:F2}",
+                    views[i].GetIdentifier().ID,
+                    views[i].ViewType,
+                    frame.w,
+                    frame.h,
+                    views[i].Attributes.Scale);
+            }
         }
 
         PerfTrace.Write("api-view", "fit_scale_candidate", 0, sb.ToString());
@@ -118,6 +120,9 @@ public sealed partial class TeklaDrawingViewApi
         double availW,
         double availH)
     {
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
+            return;
+
         var sb = new StringBuilder();
         sb.AppendFormat(
             CultureInfo.InvariantCulture,
@@ -151,6 +156,9 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyDictionary<int, (double Width, double Height)> actualFrames,
         IReadOnlyDictionary<int, (double Width, double Height)> estimatedFrames)
     {
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
+            return;
+
         var sb = new StringBuilder();
         sb.AppendFormat(
             CultureInfo.InvariantCulture,
@@ -462,6 +470,9 @@ public sealed partial class TeklaDrawingViewApi
         IReadOnlyList<ArrangedView> arranged,
         IReadOnlyDictionary<int, ReservedRect> actualRects)
     {
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
+            return;
+
         foreach (var item in arranged)
         {
             if (!workspace.RuntimeViewsById.TryGetValue(item.Id, out var view))
@@ -614,21 +625,24 @@ public sealed partial class TeklaDrawingViewApi
             breakdown.AvailableSheetArea,
             bboxArea));
 
-        foreach (var view in candidate.Views)
+        if (PerfTrace.IsViewLayoutDetailedTraceActive)
         {
-            DrawingProjectionAlignmentService.Log(string.Format(
-                CultureInfo.InvariantCulture,
-                "  LAYOUT_VIEW candidate={0} id={1} viewType={2} kind={3} layoutKind={4} role={5} projection={6} scaleFlex={7} scale={8:0.###} side={9}",
-                candidateName,
-                view.Id,
-                view.ViewType,
-                view.SemanticKind,
-                view.LayoutViewKind,
-                view.ProjectionRole,
-                view.ProjectionStrength,
-                view.ScaleFlexibility,
-                view.Scale,
-                string.IsNullOrEmpty(view.ActualPlacementSide) ? "none" : view.ActualPlacementSide));
+            foreach (var view in candidate.Views)
+            {
+                DrawingProjectionAlignmentService.Log(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "  LAYOUT_VIEW candidate={0} id={1} viewType={2} kind={3} layoutKind={4} role={5} projection={6} scaleFlex={7} scale={8:0.###} side={9}",
+                    candidateName,
+                    view.Id,
+                    view.ViewType,
+                    view.SemanticKind,
+                    view.LayoutViewKind,
+                    view.ProjectionRole,
+                    view.ProjectionStrength,
+                    view.ScaleFlexibility,
+                    view.Scale,
+                    string.IsNullOrEmpty(view.ActualPlacementSide) ? "none" : view.ActualPlacementSide));
+            }
         }
     }
 
@@ -867,6 +881,9 @@ public sealed partial class TeklaDrawingViewApi
                 DrawingLayoutCandidateApplyPlanReasonFormatter.ToTraceString(plan.Reason),
                 plan.Moves.Count));
 
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
+            return;
+
         foreach (var move in plan.Moves)
         {
             PerfTrace.Write(
@@ -963,8 +980,11 @@ public sealed partial class TeklaDrawingViewApi
                 DrawingLayoutCandidateApplyTolerances.Movement,
                 DrawingLayoutCandidateApplyTolerances.Scale));
 
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
+            return;
+
         foreach (var delta in summary.Deltas.Where(static delta =>
-            delta.MissingBaseline || delta.Moved || delta.ScaleChanged))
+                     delta.MissingBaseline || delta.Moved || delta.ScaleChanged))
         {
             PerfTrace.Write(
                 "api-view",

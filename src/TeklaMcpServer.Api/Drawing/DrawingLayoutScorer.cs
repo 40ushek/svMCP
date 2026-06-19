@@ -128,6 +128,9 @@ internal sealed class DrawingLayoutScorer
         for (var i = 0; i < scoredViews.Count; i++)
         for (var j = i + 1; j < scoredViews.Count; j++)
         {
+            if (scoredViews[i].IsModel3D || scoredViews[j].IsModel3D)
+                continue;
+
             var overlapArea = TryGetOverlapArea(scoredViews[i].Rect, scoredViews[j].Rect, out var area)
                 ? area
                 : 0.0;
@@ -647,5 +650,7 @@ internal sealed class DrawingLayoutScorer
         public string RectSource { get; }
 
         public bool IsDetail => string.Equals(SemanticKind, "Detail", StringComparison.OrdinalIgnoreCase);
+
+        public bool IsModel3D => string.Equals(SemanticKind, "Model3D", StringComparison.OrdinalIgnoreCase);
     }
 }

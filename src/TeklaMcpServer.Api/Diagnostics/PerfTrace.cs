@@ -9,7 +9,7 @@ internal static class PerfTrace
     private static readonly SvMcpLogRouter LogRouter = new();
     [ThreadStatic] private static ViewLayoutTraceContext? _viewLayoutTrace;
 
-    internal static bool IsViewLayoutDetailedTraceActive => true;
+    internal static bool IsViewLayoutDetailedTraceActive => false;
 
     internal static bool IsDetailedTraceActive => false;
 
