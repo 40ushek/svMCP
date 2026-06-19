@@ -1342,6 +1342,37 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - `combinations` — base + centering + projection + free-reposition
 - позже: 3D-corner reservation candidate, другие section policies
 
+Этот шаг должен быть отдельным слоем генерации layout variants, а не набором
+параллельных алгоритмов. Дорогая подготовка остается общей: чтение views,
+semantic/topology workspace, reserved areas, scale probe, selected frame sizes
+и frame offsets выполняются один раз. Fan-out вариантов начинается только после
+того, как размеры зафиксированы.
+
+Общая схема:
+`shared scale/frame preparation -> variants[] -> arrange/post-process per variant -> build candidates -> score/select -> apply selected`.
+
+Различаться должны только входные условия variant:
+- базовый вариант: 3D не участвует в основной группе, затем идет обычный
+  free-view reposition;
+- 3D-corner reservation: `Model3D` заранее превращается во временную reserved
+  area, потом используется тот же arrange/post-process/scorer;
+- 3D-as-secondary: `Model3D` добавляется как secondary/free-placement item в
+  общий layout pass, но не становится scale driver и не задает projection
+  relations;
+- будущие section policies меняют только входной grouping/priority, а не
+  scoring/apply path.
+
+Требование: новые варианты не должны дублировать apply, scorer, frameOffset
+correction, detail/free reposition и validation. Они должны переиспользовать
+общие DTO (`ArrangedView`, `DrawingLayoutCandidateView`, `ReservedRect`) и
+общий `DrawingLayoutCandidateSelector`.
+
+Ограничение по стоимости: variant generator не должен повторять scale probe и
+повторное чтение геометрии Tekla для каждого варианта. Допустимо повторять
+только виртуальные placement-фазы с уже известными frame sizes. Если вариант
+требует нового scale probe, это отдельная policy и она должна быть явно
+заложена в бюджет времени/логирование.
+
 **3D-corner reservation candidate.**
 
 Цель: 3D view должен оставлять как можно больше полезного места для основных
