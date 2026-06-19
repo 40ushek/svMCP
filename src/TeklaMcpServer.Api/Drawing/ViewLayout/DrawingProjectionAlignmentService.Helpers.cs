@@ -11,9 +11,6 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 internal sealed partial class DrawingProjectionAlignmentService
 {
-    private static readonly object ProjectionDebugLogSync = new();
-    private static readonly string ProjectionDebugLogPath = ResolveProjectionDebugLogPath();
-
     internal static ProjectionMoveRejectDecision CreateProjectionMoveRejectDecision(
         string stage,
         int viewId,
@@ -73,32 +70,7 @@ internal sealed partial class DrawingProjectionAlignmentService
     }
 
     internal static void Log(string message)
-    {
-        try
-        {
-            lock (ProjectionDebugLogSync)
-            {
-                var directory = System.IO.Path.GetDirectoryName(ProjectionDebugLogPath);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    System.IO.Directory.CreateDirectory(directory);
-
-                System.IO.File.AppendAllText(ProjectionDebugLogPath, message + Environment.NewLine, System.Text.Encoding.UTF8);
-            }
-        }
-        catch
-        {
-            // Ignore diagnostic IO failures.
-        }
-    }
-
-    private static string ResolveProjectionDebugLogPath()
-    {
-        var fromEnv = Environment.GetEnvironmentVariable("SVMCP_VIEW_LAYOUT_LOG_PATH");
-        if (!string.IsNullOrWhiteSpace(fromEnv))
-            return fromEnv;
-
-        return @"C:\temp\view_layout.txt";
-    }
+        => PerfTrace.Write("api-view", "layout_internal", 0, message);
 
     private static void TraceProjectionMoveReject(
         ProjectionAlignmentResult? result,

@@ -190,7 +190,7 @@ internal static class DrawingViewFrameGeometry
             var viewId = view.GetIdentifier().ID;
             offsets[viewId] = (offsetStoredX, offsetStoredY);
 
-            if (PerfTrace.IsDetailedTraceActive && actualRects.TryGetValue(viewId, out var rect))
+            if (PerfTrace.IsViewLayoutDetailedTraceActive && actualRects.TryGetValue(viewId, out var rect))
             {
                 PerfTrace.Write(
                     "api-view",

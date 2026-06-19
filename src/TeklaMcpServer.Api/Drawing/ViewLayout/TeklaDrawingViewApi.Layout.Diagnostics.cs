@@ -275,7 +275,7 @@ public sealed partial class TeklaDrawingViewApi
         DrawingArrangeContext context,
         IReadOnlyList<(double w, double h)> frames)
     {
-        if (!PerfTrace.IsDetailedTraceActive)
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
             return;
 
         var result = DrawingPackingEstimator.CheckRelaxedMaxRectsFit(

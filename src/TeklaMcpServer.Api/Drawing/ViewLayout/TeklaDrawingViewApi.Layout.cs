@@ -97,6 +97,9 @@ public sealed partial class TeklaDrawingViewApi
         SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
     {
         var total = Stopwatch.StartNew();
+        using var layoutTrace = PerfTrace.BeginViewLayoutRun(
+            "fit_views_to_sheet",
+            $"margin={(margin.HasValue ? margin.Value.ToString("0.###", CultureInfo.InvariantCulture) : "auto")} gap={gap:0.###} titleBlockHeight={titleBlockHeight:0.###} scalePolicy={scalePolicy} applyMode={applyMode} secondaryScalePolicy={secondaryScalePolicy}");
         long initMs = 0;
         long reservedMs = 0;
         long candidateFitMs = 0;
@@ -124,6 +127,7 @@ public sealed partial class TeklaDrawingViewApi
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
+        PerfTrace.Write("api-view", "layout_stage", 0, "stage=input-validated result=ok");
 
         var init = Stopwatch.StartNew();
 
@@ -131,6 +135,7 @@ public sealed partial class TeklaDrawingViewApi
         viewsCount = views.Count;
         if (views.Count == 0)
             throw new System.InvalidOperationException("No views found in active drawing.");
+        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=views-loaded result=ok views={viewsCount}");
         var actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
         var viewsResult = BuildViewsResult(activeDrawing, views, actualRects);
         List<View> scaleDriverViews;
@@ -152,6 +157,11 @@ public sealed partial class TeklaDrawingViewApi
         var effectiveMargin = layoutWorkspace.Margin;
         var sheetW = layoutWorkspace.SheetWidth;
         var sheetH = layoutWorkspace.SheetHeight;
+        PerfTrace.Write(
+            "api-view",
+            "layout_stage",
+            0,
+            $"stage=context-built result=ok sheet={sheetW:0.###}x{sheetH:0.###} margin={effectiveMargin:0.###} reserved={layoutWorkspace.ReservedAreas.Count}");
 
         if (sheetW <= 0 || sheetH <= 0)
             throw new System.InvalidOperationException("Unable to read drawing sheet size.");
@@ -234,6 +244,7 @@ public sealed partial class TeklaDrawingViewApi
 
         if (preserveExistingScales)
         {
+            PerfTrace.Write("api-view", "layout_branch", 0, "branch=scale-selection action=preserve-existing");
             PerfTrace.Write(
                 "api-view",
                 "fit_scale_preserve_existing",
@@ -266,6 +277,7 @@ public sealed partial class TeklaDrawingViewApi
         }
         else if (keepCurrentScales)
         {
+            PerfTrace.Write("api-view", "layout_branch", 0, "branch=scale-selection action=keep-current");
             var keepResult = ValidateCurrentScaleFit(
                 activeDrawing,
                 layoutWorkspace,
@@ -287,6 +299,11 @@ public sealed partial class TeklaDrawingViewApi
         }
         else
         {
+            PerfTrace.Write(
+                "api-view",
+                "layout_branch",
+                0,
+                $"branch=scale-selection action=probe-candidates candidates={candidates.Count}");
             List<DrawingFitConflict>? lastOversizeConflicts = null;
             EstimateFitFailureDecision? lastDiagnosedDecision = null;
             foreach (var s in candidates)
@@ -353,7 +370,7 @@ public sealed partial class TeklaDrawingViewApi
 
                 var fits = _arrangementSelector.EstimateFit(ctx, actualFrames);
                 TraceScaleCandidate(s, candidateViews, actualFrames, fits);
-                if (!fits && PerfTrace.IsDetailedTraceActive)
+                if (!fits && PerfTrace.IsViewLayoutDetailedTraceActive)
                 {
                     var conflicts = _arrangementSelector.DiagnoseFitConflicts(ctx, actualFrames);
                     lastDiagnosedDecision = new EstimateFitFailureDecision(
@@ -422,7 +439,7 @@ public sealed partial class TeklaDrawingViewApi
                 if (lastOversizeConflicts is { Count: > 0 })
                     throw new DrawingFitFailedException("One or more views are larger than the usable sheet area for every available standard scale.", lastOversizeConflicts);
 
-                if (PerfTrace.IsDetailedTraceActive && lastDiagnosedDecision.HasValue)
+                if (PerfTrace.IsViewLayoutDetailedTraceActive && lastDiagnosedDecision.HasValue)
                 {
                     TraceEstimateFailureDecision(new EstimateFitFailureDecision(
                         stage: "candidate-final-reject",
@@ -448,6 +465,11 @@ public sealed partial class TeklaDrawingViewApi
             optimalScale,
             rejectedScaleDecisions,
             scaleDecisionLayer);
+        PerfTrace.Write(
+            "api-view",
+            "layout_stage",
+            0,
+            $"stage=scale-selected result=ok scale=1:{optimalScale.Value:0.###} attempts={candidateAttempts}");
 
         PerfTrace.Write(
             "api-view",
@@ -494,12 +516,22 @@ public sealed partial class TeklaDrawingViewApi
         layoutWorkspace.SetGridAxes(preloadedAxes);
 
         var arrangeSw = Stopwatch.StartNew();
+        PerfTrace.Write(
+            "api-view",
+            "layout_branch",
+            0,
+            $"branch=arrangement-selector action={(arrangedViews.Count == 0 ? "skip-no-views" : "run")} views={arrangedViews.Count}");
         var arranged = arrangedViews.Count == 0
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
                 new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, applyChanges: false));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
+        PerfTrace.Write(
+            "api-view",
+            "layout_stage",
+            0,
+            $"stage=primary-arrangement result=ok arranged={arranged.Count} elapsedMs={arrangeMs}");
 
         var detailScalesChanged = false;
         if (!preserveExistingScales)
@@ -600,6 +632,11 @@ public sealed partial class TeklaDrawingViewApi
             .ToList();
         if (ShouldSkipProjectionAlignment(optimalScale.Value, projectionScaleGuardViews, out var projectionSkipMode, out var projectionSkipDiagnostic))
         {
+            PerfTrace.Write(
+                "api-view",
+                "layout_branch",
+                0,
+                $"branch=projection action=skip mode={projectionSkipMode} reason={projectionSkipDiagnostic}");
             projectionResult = new ProjectionAlignmentResult
             {
                 Mode = projectionSkipMode,
@@ -610,6 +647,7 @@ public sealed partial class TeklaDrawingViewApi
         }
         else
         {
+            PerfTrace.Write("api-view", "layout_branch", 0, "branch=projection action=run");
             var projectionAlignmentService = new DrawingProjectionAlignmentService(new Model());
             projectionResult = projectionAlignmentService.Apply(
                 activeDrawing,
@@ -669,6 +707,7 @@ public sealed partial class TeklaDrawingViewApi
             selectedLayoutMargin, sheetH - selectedLayoutMargin,
             layoutWorkspace.ReservedAreas,
             allowTeklaMutation);
+        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=center-group result=done arranged={arranged.Count}");
         var finalViews = allowTeklaMutation
             ? EnumerateViews(activeDrawing).ToList()
             : postProjectionViews;
@@ -684,6 +723,7 @@ public sealed partial class TeklaDrawingViewApi
             selectedLayoutGap,
             layoutWorkspace.ReservedAreas,
             offsetById);
+        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=detail-reposition result=done arranged={arranged.Count}");
         finalViews = allowTeklaMutation
             ? EnumerateViews(activeDrawing).ToList()
             : finalViews;
@@ -699,6 +739,7 @@ public sealed partial class TeklaDrawingViewApi
             sheetH - selectedLayoutMargin,
             selectedLayoutGap,
             layoutWorkspace.ReservedAreas);
+        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=free-view-reposition result=done arranged={arranged.Count}");
         finalViews = allowTeklaMutation
             ? EnumerateViews(activeDrawing).ToList()
             : finalViews;
@@ -732,6 +773,11 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.RuntimeViews);
         var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(
             new[] { beforeFreeCandidate, passiveCandidate });
+        PerfTrace.Write(
+            "api-view",
+            "layout_stage",
+            0,
+            $"stage=candidate-selection result=done candidates=2 selected={passiveSelection.Selected?.Candidate.Name ?? "none"} feasible={(passiveSelection.Selected?.IsFeasible == true ? 1 : 0)}");
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
@@ -754,6 +800,11 @@ public sealed partial class TeklaDrawingViewApi
             && allowTeklaMutation
             ? DrawingLayoutCandidateApplyExecutionMode.Apply
             : DrawingLayoutCandidateApplyExecutionMode.DryRun;
+        PerfTrace.Write(
+            "api-view",
+            "layout_branch",
+            0,
+            $"branch=apply-mode action={selectedCandidateApplyMode} requested={applyMode} feasible={(selectedCandidateFeasible ? 1 : 0)} mutationAllowed={(allowTeklaMutation ? 1 : 0)}");
         var selectedCandidateApplyPolicy = new DrawingLayoutCandidateApplySafetyPolicy
         {
             AllowScaleChanges = !preserveExistingScales && !keepCurrentScales
@@ -780,11 +831,17 @@ public sealed partial class TeklaDrawingViewApi
             layoutWorkspace.RuntimeViewsById,
             selectedCandidateApplySafety.EffectiveMode,
             activeDrawing);
+        PerfTrace.Write(
+            "api-view",
+            "layout_stage",
+            0,
+            $"stage=apply result={DrawingLayoutCandidateApplyExecutionReasonFormatter.ToTraceString(selectedCandidateApplyExecution.Reason)} mode={selectedCandidateApplySafety.EffectiveMode} requestedMoves={selectedCandidateApplyExecution.RequestedMoveCount} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount}");
         TraceLayoutCandidateApplyExecution(selectedCandidateApplyExecution);
         if (selectedCandidateApplySafety.EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply
             && selectedCandidateApplyExecution.Success
             && selectedCandidateApplyExecution.AppliedMoveCount > 0)
         {
+            PerfTrace.Write("api-view", "layout_branch", 0, "branch=apply-commit action=run");
             var selectedApplyCommitSw = Stopwatch.StartNew();
             activeDrawing.CommitChanges();
             selectedApplyCommitSw.Stop();
@@ -830,6 +887,14 @@ public sealed partial class TeklaDrawingViewApi
                     selectedCandidateApplyExecution.AppliedMoveCount,
                     selectedCandidateViews.Count,
                     finalActualRects.Count));
+        }
+        else
+        {
+            PerfTrace.Write(
+                "api-view",
+                "layout_branch",
+                0,
+                $"branch=apply-commit action=skip mode={selectedCandidateApplySafety.EffectiveMode} success={(selectedCandidateApplyExecution.Success ? 1 : 0)} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount}");
         }
 
         // Build reserved-areas output using already-read layoutTables (no extra editor open)
@@ -883,6 +948,8 @@ public sealed partial class TeklaDrawingViewApi
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
             $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+        PerfTrace.CompleteViewLayoutRun(
+            $"views={viewsCount} arranged={arranged.Count} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount} feasible={(selectedCandidateFeasible ? 1 : 0)} totalMs={total.ElapsedMilliseconds}");
         return result;
     }
 

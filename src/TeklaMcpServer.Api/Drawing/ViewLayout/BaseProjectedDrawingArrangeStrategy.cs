@@ -1375,7 +1375,10 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         var topology = context.Topology;
         var baseView = topology.BaseView;
         if (baseView == null)
+        {
+            PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=custom result=failed reason=no-base-view");
             return false;
+        }
         var neighbors = topology.Neighbors!;
         var sections = topology.SemanticViews.Sections;
         var detailViews = topology.SemanticViews.Details;
@@ -1445,12 +1448,22 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         if (!ShouldPreferRelaxedLayout(scale))
         {
             if (TryPlanStrictLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned))
+            {
+                PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict result=ok planned={planned.Count}");
                 return true;
+            }
             PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=strict result=failed");
+        }
+        else
+        {
+            PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=strict result=skipped reason=prefer-relaxed scale={scale:0.###}");
         }
 
         if (TryPlanRelaxedLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned))
+        {
+            PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=relaxed result=ok planned={planned.Count}");
             return true;
+        }
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=relaxed result=failed");
         TraceProjectedGroupPlannerIfFeasible(
             context,
@@ -1462,7 +1475,10 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             secondaryViews);
 
         if (TryPlanProjectedGroupLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, secondaryViews, out planned))
+        {
+            PerfTrace.Write("api-view", "front_arrange_try", 0, $"mode=projected-group result=ok planned={planned.Count}");
             return true;
+        }
         PerfTrace.Write("api-view", "front_arrange_try", 0, "mode=projected-group result=failed");
 
         var strictRetry = TryPlanStrictLayout(context, neighbors, leftSections, rightSections, topSections, bottomSections, detailRelations, secondaryViews, out planned);
@@ -1600,7 +1616,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             bottomSections,
             secondaryViews,
             relaxedPacking,
-            trace: PerfTrace.IsDetailedTraceActive);
+            trace: PerfTrace.IsViewLayoutDetailedTraceActive);
     }
 
     private static void TraceProjectedGroupPlannerIfFeasible(
@@ -1612,7 +1628,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         IReadOnlyList<View> bottomSections,
         IReadOnlyList<View> secondaryViews)
     {
-        if (!PerfTrace.IsDetailedTraceActive)
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
             return;
 
         var frames = context.Views

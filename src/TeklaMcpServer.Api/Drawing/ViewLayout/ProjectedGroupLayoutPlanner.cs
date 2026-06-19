@@ -242,7 +242,7 @@ internal static class ProjectedGroupLayoutPlanner
         IReadOnlyList<View> secondaryViews,
         DrawingPackingEstimator.RelaxedPackingResult relaxedPacking)
     {
-        if (!PerfTrace.IsDetailedTraceActive)
+        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
             return;
 
         Fits(
