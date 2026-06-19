@@ -497,7 +497,7 @@ public sealed partial class TeklaDrawingViewApi
         var arranged = arrangedViews.Count == 0
             ? new List<ArrangedView>()
             : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, applyChanges: allowTeklaMutation));
+                new DrawingArrangeContext(activeDrawing, layoutWorkspace, arrangedViews, gap, applyChanges: false));
         arrangeSw.Stop();
         arrangeMs = arrangeSw.ElapsedMilliseconds;
 
@@ -556,11 +556,6 @@ public sealed partial class TeklaDrawingViewApi
                 var o = new Point(currentOrigin?.X ?? 0, currentOrigin?.Y ?? 0, currentOrigin?.Z ?? 0);
                 o.X = arranged[i].OriginX - corrX;
                 o.Y = arranged[i].OriginY - corrY;
-                if (allowTeklaMutation)
-                {
-                    v.Origin = o;
-                    v.Modify();
-                }
                 arranged[i] = new ArrangedView
                 {
                     Id = arranged[i].Id,
@@ -571,13 +566,17 @@ public sealed partial class TeklaDrawingViewApi
                     ActualPlacementSide = arranged[i].ActualPlacementSide,
                     PlacementFallbackUsed = arranged[i].PlacementFallbackUsed,
                     LayoutMargin = arranged[i].LayoutMargin,
-                    LayoutGap = arranged[i].LayoutGap
+                    LayoutGap = arranged[i].LayoutGap,
+                    IsSnapshotFallback = arranged[i].IsSnapshotFallback
                 };
             }
 
             adjustSw.Stop();
             postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
+
+        if (allowTeklaMutation)
+            ApplyArrangedOrigins(layoutWorkspace, arranged);
 
         var selectedLayoutMargin = ResolveSelectedLayoutMargin(effectiveMargin, arranged);
         var selectedLayoutGap = ResolveSelectedLayoutGap(gap, arranged);
@@ -910,6 +909,39 @@ public sealed partial class TeklaDrawingViewApi
             total.ElapsedMilliseconds,
             $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         return result;
+    }
+
+    private static void ApplyArrangedOrigins(
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<ArrangedView> arranged)
+    {
+        var applied = 0;
+        var failed = 0;
+        foreach (var item in arranged)
+        {
+            if (item.IsSnapshotFallback
+                || !workspace.RuntimeViewsById.TryGetValue(item.Id, out var view))
+            {
+                continue;
+            }
+
+            var currentOrigin = view.Origin;
+            var origin = new Point(
+                item.OriginX,
+                item.OriginY,
+                currentOrigin?.Z ?? 0);
+            view.Origin = origin;
+            if (view.Modify())
+                applied++;
+            else
+                failed++;
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "fit_layout_arranged_apply",
+            0,
+            $"requested={arranged.Count} applied={applied} failed={failed}");
     }
 
     private static List<ArrangedView> BuildArrangedFromApplyPlan(

@@ -1337,18 +1337,13 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             var frameOffset = ViewPlacementGeometryService.GetFrameOffsetSheet(context, item.View);
             origin.X = item.FrameCenterX - frameOffset.X;
             origin.Y = item.FrameCenterY - frameOffset.Y;
-            if (context.ApplyChanges && !item.IsSnapshotFallback)
-            {
-                item.View.Origin = origin;
-                item.View.Modify();
-            }
             if (System.Math.Abs(frameOffset.X) > 0.01 || System.Math.Abs(frameOffset.Y) > 0.01)
             {
                 PerfTrace.Write(
                     "api-view",
-                    context.ApplyChanges ? "view_frame_offset_apply" : "view_frame_offset_plan",
+                    "view_frame_offset_plan",
                     0,
-                    $"view={item.View.GetIdentifier().ID} applied={(context.ApplyChanges ? 1 : 0)} frameCenter=({item.FrameCenterX:F2},{item.FrameCenterY:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
+                    $"view={item.View.GetIdentifier().ID} applied=0 frameCenter=({item.FrameCenterX:F2},{item.FrameCenterY:F2}) offset=({frameOffset.X:F2},{frameOffset.Y:F2}) origin=({origin.X:F2},{origin.Y:F2})");
             }
 
             arranged.Add(new ArrangedView
