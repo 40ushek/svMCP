@@ -64,9 +64,10 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         // ── Frame-offset correction ───────────────────────────────────────────
-        var adjustSw = Stopwatch.StartNew();
+        var postAdjustMs = 0L;
         if (offsetById.Count > 0)
         {
+            var adjustSw = Stopwatch.StartNew();
             for (int i = 0; i < arranged.Count; i++)
             {
                 if (!workspace.RuntimeViewsById.TryGetValue(arranged[i].Id, out var v))
@@ -111,9 +112,10 @@ public sealed partial class TeklaDrawingViewApi
                     IsSnapshotFallback    = arranged[i].IsSnapshotFallback
                 };
             }
+
+            adjustSw.Stop();
+            postAdjustMs = adjustSw.ElapsedMilliseconds;
         }
-        adjustSw.Stop();
-        var postAdjustMs = adjustSw.ElapsedMilliseconds;
 
         var selectedLayoutMargin = ResolveSelectedLayoutMargin(effectiveMargin, arranged);
         var selectedLayoutGap    = ResolveSelectedLayoutGap(gap, arranged);
@@ -258,8 +260,6 @@ public sealed partial class TeklaDrawingViewApi
             ArrangeMs          = arrangeMs,
             PostAdjustMs       = postAdjustMs,
             ProjectionMs       = projectionMs,
-            DetailScalesChanged = detailScalesChanged,
-            OffsetById         = offsetById,
             FinalCommitMs      = finalCommitMs
         };
     }

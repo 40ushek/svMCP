@@ -41,5 +41,8 @@ dim/
 # Claude Code settings
 .claude/
 
+# Codex build artifacts
+.codex-build/
+
 # Local reference project
 markAligner/

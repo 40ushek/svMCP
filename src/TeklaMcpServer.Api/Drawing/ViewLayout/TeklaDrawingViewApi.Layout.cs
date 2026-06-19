@@ -528,13 +528,7 @@ public sealed partial class TeklaDrawingViewApi
             Gap                  = gap,
             PreserveExistingScales = preserveExistingScales,
             KeepCurrentScales    = keepCurrentScales,
-            AllowTeklaMutation   = allowTeklaMutation,
-            InitMs               = initMs,
-            ReservedMs           = reservedMs,
-            CandidateFitMs       = candidateFitMs,
-            ProbeMs              = probeMs,
-            CandidateAttempts    = candidateAttempts,
-            ViewsCount           = viewsCount
+            AllowTeklaMutation   = allowTeklaMutation
         };
 
         var variantResult = RunDefaultLayoutVariant(sharedCtx);
