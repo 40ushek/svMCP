@@ -251,12 +251,14 @@ public sealed partial class TeklaDrawingViewApi
                     $"FREE_VIEW_REPOSITION frame id={id} rect=[{currentRect.MinX:F1},{currentRect.MinY:F1},{currentRect.MaxX:F1},{currentRect.MaxY:F1}] size=({width:F1},{height:F1})");
             }
 
-            // apply-from-plan: AnchorDetailSection only, not Model3D
+            // apply-from-plan for eligible free views
             // Only apply if source origin came from arranged (not snapshot fallback) —
             // snapshot-based plans have unreliable source origin relative to live arranged.
-            // Modify() is deferred to end of loop so anchor sections don't jump mid-pass
-            if (!IsModel3DView(workspace, view)
-                && workspace.GetLayoutViewKind(id) == LayoutViewKind.AnchorDetailSection
+            // Modify() is deferred to end of loop to avoid mid-pass visual jumps.
+            var viewKind = workspace.GetLayoutViewKind(id);
+            var eligibleForPlan = viewKind == LayoutViewKind.AnchorDetailSection
+                || viewKind == LayoutViewKind.Model3D;
+            if (eligibleForPlan
                 && planDecisionById.TryGetValue(id, out var decision)
                 && decision.Reason == "ok"
                 && decision.SourceFromArranged
