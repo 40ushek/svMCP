@@ -1337,7 +1337,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             var frameOffset = ViewPlacementGeometryService.GetFrameOffsetSheet(context, item.View);
             origin.X = item.FrameCenterX - frameOffset.X;
             origin.Y = item.FrameCenterY - frameOffset.Y;
-            if (context.ApplyChanges)
+            if (context.ApplyChanges && !item.IsSnapshotFallback)
             {
                 item.View.Origin = origin;
                 item.View.Modify();

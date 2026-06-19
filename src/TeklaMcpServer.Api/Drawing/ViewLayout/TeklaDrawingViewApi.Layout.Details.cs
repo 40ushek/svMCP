@@ -169,7 +169,8 @@ public sealed partial class TeklaDrawingViewApi
                     ActualPlacementSide = arranged[ai].ActualPlacementSide,
                     PlacementFallbackUsed = arranged[ai].PlacementFallbackUsed,
                     LayoutMargin = arranged[ai].LayoutMargin,
-                    LayoutGap = arranged[ai].LayoutGap
+                    LayoutGap = arranged[ai].LayoutGap,
+                    IsSnapshotFallback = arranged[ai].IsSnapshotFallback
                 };
                 break;
             }
@@ -403,10 +404,12 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
-            var sourceOriginX = arrangedById.TryGetValue(id, out var currentArranged)
+            var sourceOriginX = arrangedById.TryGetValue(id, out var currentArranged) && !currentArranged.IsSnapshotFallback
                 ? currentArranged.OriginX
                 : runtimeOrigin.X;
-            var sourceOriginY = currentArranged?.OriginY ?? runtimeOrigin.Y;
+            var sourceOriginY = currentArranged != null && !currentArranged.IsSnapshotFallback
+                ? currentArranged.OriginY
+                : runtimeOrigin.Y;
             var origin = new Point(sourceOriginX + dx, sourceOriginY + dy, runtimeOrigin.Z);
             if (applyChanges)
             {
@@ -1048,7 +1051,8 @@ public sealed partial class TeklaDrawingViewApi
                 ActualPlacementSide = arranged[i].ActualPlacementSide,
                 PlacementFallbackUsed = arranged[i].PlacementFallbackUsed,
                 LayoutMargin = arranged[i].LayoutMargin,
-                LayoutGap = arranged[i].LayoutGap
+                LayoutGap = arranged[i].LayoutGap,
+                IsSnapshotFallback = arranged[i].IsSnapshotFallback
             };
             arranged[i] = updated;
             return updated;
@@ -1186,7 +1190,8 @@ public sealed partial class TeklaDrawingViewApi
                 ActualPlacementSide = a.ActualPlacementSide,
                 PlacementFallbackUsed = a.PlacementFallbackUsed,
                 LayoutMargin = a.LayoutMargin,
-                LayoutGap = a.LayoutGap
+                LayoutGap = a.LayoutGap,
+                IsSnapshotFallback = a.IsSnapshotFallback
             };
         }).ToList();
     }
