@@ -650,7 +650,7 @@ public sealed partial class TeklaDrawingViewApi
 
             double sourceOriginX, sourceOriginY;
             bool sourceFromArranged;
-            if (arrangedById.TryGetValue(id, out var cur))
+            if (arrangedById.TryGetValue(id, out var cur) && !cur.IsSnapshotFallback)
             {
                 sourceOriginX = cur.OriginX;
                 sourceOriginY = cur.OriginY;
@@ -658,7 +658,7 @@ public sealed partial class TeklaDrawingViewApi
             }
             else if (workspace.ActualViewRectsById.TryGetValue(id, out var snapshotRect))
             {
-                // No arranged entry: derive source origin from snapshot rect min corner
+                // No arranged entry or snapshot-fallback: derive source origin from snapshot rect min corner
                 sourceOriginX = snapshotRect.MinX;
                 sourceOriginY = snapshotRect.MinY;
                 sourceFromArranged = false;

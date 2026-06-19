@@ -62,6 +62,9 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         public SectionPlacementSide? ActualPlacementSide { get; }
         public double LayoutMargin { get; }
         public double LayoutGap { get; }
+        // True for no-op placements added by AppendUnplannedViewsAsCurrentPlacements.
+        // These carry snapshot positions, not planned positions — must not trigger apply-from-plan.
+        public bool IsSnapshotFallback { get; set; }
     }
 
     private readonly struct ViewPlacementSearchArea
@@ -1362,7 +1365,8 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
                     && item.ActualPlacementSide.HasValue
                     && item.PreferredPlacementSide.Value != item.ActualPlacementSide.Value,
                 LayoutMargin = item.LayoutMargin,
-                LayoutGap = item.LayoutGap
+                LayoutGap = item.LayoutGap,
+                IsSnapshotFallback = item.IsSnapshotFallback
             });
         }
 
@@ -1922,6 +1926,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             occupied,
             planned);
 
+        AppendUnplannedViewsAsCurrentPlacements(context, planned, secondaryViews);
         return true;
     }
 
@@ -2184,6 +2189,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             occupied,
             planned);
 
+        AppendUnplannedViewsAsCurrentPlacements(context, planned, secondaryViews);
         return true;
     }
 
@@ -2395,6 +2401,38 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         SectionPlacementSide? actualPlacementSide = null)
     {
         planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect), preferredPlacementSide, actualPlacementSide));
+    }
+
+    // Adds no-op placements for secondary views that were not placed by the layout algorithm.
+    // They appear in arranged[] so TryRepositionFreeViews sees their blockers correctly.
+    // Marked IsSnapshotFallback=true so BuildFreeViewRepositionPlan sets SourceFromArranged=false
+    // and does not trigger apply-from-plan for these views.
+    private static void AppendUnplannedViewsAsCurrentPlacements(
+        DrawingArrangeContext context,
+        List<PlannedPlacement> planned,
+        IReadOnlyList<View> secondaryViews)
+    {
+        if (context.Workspace == null) return;
+        var plannedIds = new HashSet<int>(planned.Select(p => p.View.GetIdentifier().ID));
+        foreach (var view in secondaryViews)
+        {
+            var id = view.GetIdentifier().ID;
+            if (plannedIds.Contains(id)) continue;
+            if (!context.Workspace.ActualViewRectsById.TryGetValue(id, out var rect))
+            {
+                PerfTrace.Write("api-view", "append_unplanned_noop", 0, $"id={id} skip=no-snapshot-rect");
+                continue;
+            }
+            var w = rect.MaxX - rect.MinX;
+            var h = rect.MaxY - rect.MinY;
+            if (w <= 0 || h <= 0)
+            {
+                PerfTrace.Write("api-view", "append_unplanned_noop", 0, $"id={id} skip=zero-size w={w:F1} h={h:F1}");
+                continue;
+            }
+            PerfTrace.Write("api-view", "append_unplanned_noop", 0, $"id={id} center=({CenterX(rect):F1},{CenterY(rect):F1})");
+            planned.Add(new PlannedPlacement(view, CenterX(rect), CenterY(rect)) { IsSnapshotFallback = true });
+        }
     }
 
     private static void AddPlannedAndOccupiedRect(
