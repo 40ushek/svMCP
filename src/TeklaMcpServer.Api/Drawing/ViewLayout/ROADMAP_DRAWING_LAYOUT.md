@@ -1380,6 +1380,41 @@ correction, detail/free reposition и validation. Они должны переи
 frame sizes, frame offsets, grid axes и `arrangedViews`. Варианты начинают
 отличаться только с вызова arrange strategy.
 
+**План рефакторинга перед реализацией вариантов.**
+
+Правило: поведение не меняется одновременно с рефакторингом. Сначала вынести
+текущий вариант без новой логики, потом добавлять новые candidates.
+
+Шаг 4.1 — ввести `SharedLayoutContext`.
+Объединить всё до fan-out boundary в один DTO:
+drawing, workspace, selected scale, actual rects, selected frame sizes,
+frame offsets, grid axes, arrangedViews, sheet/margin/gap, current views,
+base reserved areas.
+`actualRects` и `selectedFrameSizesById` включены явно: они нужны для
+candidate baseline и diagnostics.
+
+Шаг 4.2 — ввести `DrawingLayoutVariantResult`.
+DTO результата одного варианта:
+`IReadOnlyList<DrawingLayoutCandidate> Candidates`, arranged,
+arrangedBeforeFree, projectionResult, arrangeMs, postAdjustMs, projectionMs.
+`Candidates` — список, а не один candidate: default variant возвращает оба
+текущих кандидата (`planned-before-free` и `planned-final`), чтобы не потерять
+текущую модель сравнения.
+Workspace не мутировать для derived reserved areas: передавать их отдельным
+параметром в arrange context.
+
+Шаг 4.3 — вынести текущий путь как `RunDefaultLayoutVariant(sharedContext)`.
+Поведение не меняется. Проверить, что лог/result идентичен текущему.
+
+Шаг 4.4 — подключить `SelectBest` к списку variant results.
+Пока список из одного default variant. Проверить, что результат тот же.
+
+Шаг 4.5 — добавить 3D-corner reservation variant.
+4 угла, derived reserved areas, тот же pipeline. Описание ниже.
+
+Шаг 4.6 — добавить 3D-as-secondary variant.
+Отдельным шагом после corner reservation.
+
 **3D-corner reservation candidate.**
 
 Цель: 3D view должен оставлять как можно больше полезного места для основных
