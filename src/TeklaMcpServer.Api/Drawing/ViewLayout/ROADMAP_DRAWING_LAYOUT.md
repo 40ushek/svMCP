@@ -1344,9 +1344,10 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 
 Этот шаг должен быть отдельным слоем генерации layout variants, а не набором
 параллельных алгоритмов. Дорогая подготовка остается общей: чтение views,
-semantic/topology workspace, reserved areas, scale probe, selected frame sizes
-и frame offsets выполняются один раз. Fan-out вариантов начинается только после
-того, как размеры зафиксированы.
+semantic/topology workspace, base reserved areas, scale probe, selected frame
+sizes и frame offsets выполняются один раз. Fan-out вариантов начинается только
+после того, как размеры зафиксированы. Variant может строить derived reserved
+areas, например добавлять временную 3D-зону, но без нового чтения Tekla.
 
 Общая схема:
 `shared scale/frame preparation -> variants[] -> arrange/post-process per variant -> build candidates -> score/select -> apply selected`.
@@ -1372,6 +1373,12 @@ correction, detail/free reposition и validation. Они должны переи
 только виртуальные placement-фазы с уже известными frame sizes. Если вариант
 требует нового scale probe, это отдельная policy и она должна быть явно
 заложена в бюджет времени/логирование.
+
+Точка fan-out в коде: `TeklaDrawingViewApi.Layout.cs`, после
+`layoutWorkspace.SetGridAxes(preloadedAxes)`, перед `arrangeSw.StartNew()`.
+К этому моменту уже зафиксированы: выбранный scale, actual rects, selected
+frame sizes, frame offsets, grid axes и `arrangedViews`. Варианты начинают
+отличаться только с вызова arrange strategy.
 
 **3D-corner reservation candidate.**
 
