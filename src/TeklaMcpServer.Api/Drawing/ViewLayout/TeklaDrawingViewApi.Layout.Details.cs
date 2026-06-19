@@ -229,9 +229,11 @@ public sealed partial class TeklaDrawingViewApi
 
         // Build virtual plan before live pass so trace can compare planned vs actual
         var prePlan = BuildFreeViewRepositionPlan(workspace, views, arranged, usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved);
+        var planDecisionById = prePlan.Decisions.ToDictionary(static d => d.ViewId);
 
         var movedAny = false;
         var modifyFailedIds = new HashSet<int>();
+        var deferredMoves = new List<(View View, Point Origin, int Id, string Kind)>();
         foreach (var item in freeViews)
         {
             var view = item.View;
@@ -247,6 +249,34 @@ public sealed partial class TeklaDrawingViewApi
             {
                 DrawingProjectionAlignmentService.Log(
                     $"FREE_VIEW_REPOSITION frame id={id} rect=[{currentRect.MinX:F1},{currentRect.MinY:F1},{currentRect.MaxX:F1},{currentRect.MaxY:F1}] size=({width:F1},{height:F1})");
+            }
+
+            // apply-from-plan: AnchorDetailSection only, not Model3D
+            // Modify() is deferred to end of loop so anchor sections don't jump mid-pass
+            if (!IsModel3DView(workspace, view)
+                && workspace.GetLayoutViewKind(id) == LayoutViewKind.AnchorDetailSection
+                && planDecisionById.TryGetValue(id, out var decision)
+                && decision.Reason == "ok"
+                && decision.PlannedOriginX.HasValue
+                && decision.PlannedOriginY.HasValue)
+            {
+                var runtimeOriginPlan = view.Origin;
+                if (runtimeOriginPlan != null)
+                {
+                    var planDx = decision.PlannedOriginX.Value - (arrangedById.TryGetValue(id, out var curArr) ? curArr.OriginX : runtimeOriginPlan.X);
+                    var planDy = decision.PlannedOriginY.Value - (curArr?.OriginY ?? runtimeOriginPlan.Y);
+                    var originPlan = new Point(decision.PlannedOriginX.Value, decision.PlannedOriginY.Value, runtimeOriginPlan.Z);
+                    DrawingProjectionAlignmentService.Log(
+                        $"FREE_VIEW_APPLY_FROM_PLAN id={id} kind={workspace.GetSemanticKind(id)} dx={planDx:F1} dy={planDy:F1}");
+                    // Update virtual state immediately so subsequent views see correct blockers
+                    movedAny = true;
+                    blockersById[id] = decision.PlannedRect ?? currentRect;
+                    if (UpdateArrangedOrigin(arranged, id, originPlan.X, originPlan.Y) is { } updPlan)
+                        arrangedById[id] = updPlan;
+                    if (applyChanges)
+                        deferredMoves.Add((view, originPlan, id, workspace.GetSemanticKind(id).ToString()));
+                    continue;
+                }
             }
 
             var blocked = BuildFreeViewBlockedRectangles(
@@ -391,6 +421,16 @@ public sealed partial class TeklaDrawingViewApi
                 arrangedById[id] = updatedView;
             DrawingProjectionAlignmentService.Log(
                 $"FREE_VIEW_REPOSITION result=ok kind={workspace.GetSemanticKind(id)} anchorDriven={(isAnchorDriven ? 1 : 0)} dx={dx:F1} dy={dy:F1}");
+        }
+
+        foreach (var (dView, dOrigin, dId, dKind) in deferredMoves)
+        {
+            dView.Origin = dOrigin;
+            if (!dView.Modify())
+            {
+                modifyFailedIds.Add(dId);
+                DrawingProjectionAlignmentService.Log($"FREE_VIEW_APPLY_FROM_PLAN result=modify-failed id={dId} kind={dKind}");
+            }
         }
 
         if (movedAny && applyChanges)
