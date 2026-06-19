@@ -8,6 +8,71 @@ namespace TeklaMcpServer.Tests;
 public sealed class DrawingProjectionAlignmentTests
 {
     [Fact]
+    public void TryTranslateArrangedView_UpdatesVirtualOriginAndPreservesMetadata()
+    {
+        var arranged = new List<ArrangedView>
+        {
+            new()
+            {
+                Id = 7,
+                ViewType = "SectionView",
+                OriginX = 100,
+                OriginY = 200,
+                PreferredPlacementSide = "Left",
+                ActualPlacementSide = "Right",
+                PlacementFallbackUsed = true,
+                LayoutMargin = 10,
+                LayoutGap = 6,
+                IsSnapshotFallback = true
+            }
+        };
+
+        var moved = ProjectionAlignmentMoveHelper.TryTranslateArrangedView(
+            arranged,
+            viewId: 7,
+            dx: 25,
+            dy: -15);
+
+        Assert.True(moved);
+        Assert.Equal(125, arranged[0].OriginX, 6);
+        Assert.Equal(185, arranged[0].OriginY, 6);
+        Assert.Equal("Left", arranged[0].PreferredPlacementSide);
+        Assert.Equal("Right", arranged[0].ActualPlacementSide);
+        Assert.True(arranged[0].PlacementFallbackUsed);
+        Assert.True(arranged[0].IsSnapshotFallback);
+    }
+
+    [Fact]
+    public void TryTranslateArrangedView_ReturnsFalseForUnknownView()
+    {
+        var arranged = new List<ArrangedView>();
+
+        var moved = ProjectionAlignmentMoveHelper.TryTranslateArrangedView(
+            arranged,
+            viewId: 999,
+            dx: 10,
+            dy: 10);
+
+        Assert.False(moved);
+    }
+
+    [Fact]
+    public void IsSnapshotFallback_ReturnsTrueForSnapshotView()
+    {
+        var arranged = new List<ArrangedView>
+        {
+            new()
+            {
+                Id = 8,
+                IsSnapshotFallback = true
+            }
+        };
+
+        Assert.True(ProjectionAlignmentMoveHelper.IsSnapshotFallback(arranged, 8));
+        Assert.False(ProjectionAlignmentMoveHelper.IsSnapshotFallback(arranged, 999));
+    }
+
+    [Fact]
     public void LocalToSheet_UsesViewOriginAndScale()
     {
         var view = new ProjectionViewState(

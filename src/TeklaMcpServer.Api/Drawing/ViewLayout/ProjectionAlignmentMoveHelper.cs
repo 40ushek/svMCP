@@ -149,25 +149,60 @@ internal static class ProjectionAlignmentMoveHelper
 
     public static bool TryApplyMove(DrawingView view, double dx, double dy, IList<ArrangedView>? arrangedViews, out string reason)
     {
-        var origin = view.Origin;
-        if (origin == null)
+        var viewId = view.GetIdentifier().ID;
+        if (IsSnapshotFallback(arrangedViews, viewId))
         {
-            reason = $"projection-skip:view-origin-missing:view={view.GetIdentifier().ID}";
+            reason = $"projection-skip:snapshot-fallback:view={viewId}";
             return false;
         }
 
-        origin.X += dx;
-        origin.Y += dy;
-        view.Origin = origin;
-        if (!view.Modify())
+        if (!TryTranslateArrangedView(arrangedViews, viewId, dx, dy))
         {
-            reason = $"projection-skip:modify-failed:view={view.GetIdentifier().ID}";
+            reason = $"projection-skip:arranged-view-missing:view={viewId}";
             return false;
         }
 
-        UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, origin.X, origin.Y);
         reason = string.Empty;
         return true;
+    }
+
+    internal static bool IsSnapshotFallback(IList<ArrangedView>? arrangedViews, int viewId)
+    {
+        if (arrangedViews == null)
+            return false;
+
+        for (var i = 0; i < arrangedViews.Count; i++)
+        {
+            if (arrangedViews[i].Id == viewId)
+                return arrangedViews[i].IsSnapshotFallback;
+        }
+
+        return false;
+    }
+
+    internal static bool TryTranslateArrangedView(
+        IList<ArrangedView>? arrangedViews,
+        int viewId,
+        double dx,
+        double dy)
+    {
+        if (arrangedViews == null)
+            return false;
+
+        for (var i = 0; i < arrangedViews.Count; i++)
+        {
+            if (arrangedViews[i].Id != viewId)
+                continue;
+
+            UpdateArrangedView(
+                arrangedViews,
+                viewId,
+                arrangedViews[i].OriginX + dx,
+                arrangedViews[i].OriginY + dy);
+            return true;
+        }
+
+        return false;
     }
 
     public static void UpdateArrangedView(IList<ArrangedView>? arrangedViews, int viewId, double originX, double originY)
@@ -190,7 +225,8 @@ internal static class ProjectionAlignmentMoveHelper
                 ActualPlacementSide = arrangedViews[i].ActualPlacementSide,
                 PlacementFallbackUsed = arrangedViews[i].PlacementFallbackUsed,
                 LayoutMargin = arrangedViews[i].LayoutMargin,
-                LayoutGap = arrangedViews[i].LayoutGap
+                LayoutGap = arrangedViews[i].LayoutGap,
+                IsSnapshotFallback = arrangedViews[i].IsSnapshotFallback
             };
             return;
         }
@@ -198,14 +234,6 @@ internal static class ProjectionAlignmentMoveHelper
 
     public static void RestoreViewOrigin(DrawingView view, double originX, double originY, IList<ArrangedView>? arrangedViews)
     {
-        var origin = view.Origin;
-        if (origin == null)
-            return;
-
-        origin.X = originX;
-        origin.Y = originY;
-        view.Origin = origin;
-        if (view.Modify())
-            UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, originX, originY);
+        UpdateArrangedView(arrangedViews, view.GetIdentifier().ID, originX, originY);
     }
 }
