@@ -332,7 +332,7 @@ internal static class DimensionTextBoxContextLoader
 
     private static void WriteTrace(View view, string details)
     {
-        if (!PerfTrace.IsActive)
+        if (!PerfTrace.IsDetailedTraceActive)
             return;
 
         PerfTrace.Write(

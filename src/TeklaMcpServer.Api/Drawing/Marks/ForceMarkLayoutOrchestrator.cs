@@ -58,7 +58,7 @@ internal sealed class ForceMarkLayoutOrchestrator
 
             var normalizedScale = viewContext.ViewScale > 0.0 ? viewContext.ViewScale : 1.0;
             var leaderTextThreshold = 0.5 * normalizedScale;
-            var leaderTextInitial = PerfTrace.IsActive
+            var leaderTextInitial = PerfTrace.IsDetailedTraceActive
                 ? LeaderTextOverlapAnalyzer.Analyze(BuildLeaderTextOverlapMarks(markEntries), leaderTextThreshold)
                 : new LeaderTextOverlapSummary();
             WriteLeaderTextOverlapTrace(view.GetIdentifier().ID, "initial", leaderTextInitial);
@@ -104,7 +104,7 @@ internal sealed class ForceMarkLayoutOrchestrator
             var equilibriumResult = force.Relax(forceItems.Values.ToList(), partBboxes, equilibriumOptions,
                 debugSink: debug =>
                 {
-                    if (!PerfTrace.IsActive) return;
+                    if (!PerfTrace.IsDetailedTraceActive) return;
                     PerfTrace.Write("api-mark", "arrange_marks_force_equilibrium_mark", 0,
                         $"viewId={view.GetIdentifier().ID} iter={debug.Iteration} markId={debug.MarkId} " +
                         $"attract=({debug.AttractFx:F3},{debug.AttractFy:F3}) " +
@@ -127,7 +127,7 @@ internal sealed class ForceMarkLayoutOrchestrator
                 maxStep: 0.5 * normalizedScale,
                 trace: details =>
                 {
-                    if (!PerfTrace.IsActive)
+                    if (!PerfTrace.IsDetailedTraceActive)
                         return;
 
                     PerfTrace.Write(
@@ -152,7 +152,7 @@ internal sealed class ForceMarkLayoutOrchestrator
                 maxStep: 0.5 * normalizedScale,
                 trace: details =>
                 {
-                    if (!PerfTrace.IsActive)
+                    if (!PerfTrace.IsDetailedTraceActive)
                         return;
 
                     PerfTrace.Write(
@@ -186,7 +186,7 @@ internal sealed class ForceMarkLayoutOrchestrator
                     movableIds: collidingIds,
                     debugSink: debug =>
                     {
-                        if (!PerfTrace.IsActive)
+                        if (!PerfTrace.IsDetailedTraceActive)
                             return;
 
                         PerfTrace.Write(
@@ -230,7 +230,7 @@ internal sealed class ForceMarkLayoutOrchestrator
                     maxStep: 0.5 * normalizedScale,
                     trace: details =>
                     {
-                        if (!PerfTrace.IsActive)
+                        if (!PerfTrace.IsDetailedTraceActive)
                             return;
 
                         PerfTrace.Write(
@@ -246,7 +246,7 @@ internal sealed class ForceMarkLayoutOrchestrator
             var foreignFinal = ForeignPartOverlapAnalyzer.Analyze(forceItems.Values.ToList(), partBboxes, foreignPartThreshold);
             WriteForeignPartOverlapTrace(view.GetIdentifier().ID, "final", foreignFinal);
 
-            if (PerfTrace.IsActive)
+            if (PerfTrace.IsDetailedTraceActive)
             {
                 foreach (var item in forceItems.Values)
                 {
@@ -299,12 +299,12 @@ internal sealed class ForceMarkLayoutOrchestrator
             var postCleanupEntries = TeklaDrawingMarkLayoutAdapter.CollectEntries(view, postCleanupViewContext, viewContext);
             var postCleanupLeaderTextMarks = BuildLeaderTextOverlapMarks(postCleanupEntries);
 
-            var leaderTextFinal = PerfTrace.IsActive
+            var leaderTextFinal = PerfTrace.IsDetailedTraceActive
                 ? LeaderTextOverlapAnalyzer.Analyze(postCleanupLeaderTextMarks, leaderTextThreshold)
                 : new LeaderTextOverlapSummary();
             WriteLeaderTextOverlapTrace(view.GetIdentifier().ID, "final", leaderTextFinal);
 
-            if (PerfTrace.IsActive)
+            if (PerfTrace.IsDetailedTraceActive)
             {
                 PerfTrace.Write("api-mark", "leader_text_cleanup_dry_run_summary", 0,
                     $"viewId={view.GetIdentifier().ID} conflictingMarks={leaderTextDryRun.ConflictingMarks} improvableMarks={leaderTextDryRun.ImprovableMarks} totalCurrentSeverity={leaderTextDryRun.TotalCurrentSeverity:F3} totalBestCaseSeverity={leaderTextDryRun.TotalBestCaseSeverity:F3} accepted={leaderTextCleanupResult.AcceptedIds.Count} rejected={leaderTextCleanupResult.RejectedIds.Count} cleanupMs={leaderTextCleanup.ElapsedMilliseconds}");
@@ -363,7 +363,7 @@ internal sealed class ForceMarkLayoutOrchestrator
         int totalObstacles,
         string shorteningMode)
     {
-        if (!PerfTrace.IsActive)
+        if (!PerfTrace.IsDetailedTraceActive)
             return;
 
         PerfTrace.Write(
@@ -378,7 +378,7 @@ internal sealed class ForceMarkLayoutOrchestrator
         string stage,
         ForeignPartOverlapSummary summary)
     {
-        if (!PerfTrace.IsActive)
+        if (!PerfTrace.IsDetailedTraceActive)
             return;
 
         foreach (var overlap in summary.Overlaps)
@@ -396,7 +396,7 @@ internal sealed class ForceMarkLayoutOrchestrator
         string stage,
         LeaderTextOverlapSummary summary)
     {
-        if (!PerfTrace.IsActive)
+        if (!PerfTrace.IsDetailedTraceActive)
             return;
 
         foreach (var conflict in summary.Conflicts)

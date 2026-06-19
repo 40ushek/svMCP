@@ -8,6 +8,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<!-- MCP SDK — requires net8+ for tool registration -->
 		<PackageReference Include="ModelContextProtocol" Version="1.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />

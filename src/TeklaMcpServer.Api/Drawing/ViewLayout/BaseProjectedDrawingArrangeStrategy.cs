@@ -1600,7 +1600,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
             bottomSections,
             secondaryViews,
             relaxedPacking,
-            trace: PerfTrace.IsActive);
+            trace: PerfTrace.IsDetailedTraceActive);
     }
 
     private static void TraceProjectedGroupPlannerIfFeasible(
@@ -1612,7 +1612,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
         IReadOnlyList<View> bottomSections,
         IReadOnlyList<View> secondaryViews)
     {
-        if (!PerfTrace.IsActive)
+        if (!PerfTrace.IsDetailedTraceActive)
             return;
 
         var frames = context.Views

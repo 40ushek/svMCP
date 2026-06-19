@@ -353,7 +353,7 @@ public sealed partial class TeklaDrawingViewApi
 
                 var fits = _arrangementSelector.EstimateFit(ctx, actualFrames);
                 TraceScaleCandidate(s, candidateViews, actualFrames, fits);
-                if (!fits && PerfTrace.IsActive)
+                if (!fits && PerfTrace.IsDetailedTraceActive)
                 {
                     var conflicts = _arrangementSelector.DiagnoseFitConflicts(ctx, actualFrames);
                     lastDiagnosedDecision = new EstimateFitFailureDecision(
@@ -422,7 +422,7 @@ public sealed partial class TeklaDrawingViewApi
                 if (lastOversizeConflicts is { Count: > 0 })
                     throw new DrawingFitFailedException("One or more views are larger than the usable sheet area for every available standard scale.", lastOversizeConflicts);
 
-                if (PerfTrace.IsActive && lastDiagnosedDecision.HasValue)
+                if (PerfTrace.IsDetailedTraceActive && lastDiagnosedDecision.HasValue)
                 {
                     TraceEstimateFailureDecision(new EstimateFitFailureDecision(
                         stage: "candidate-final-reject",

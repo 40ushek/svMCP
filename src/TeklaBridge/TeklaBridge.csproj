@@ -10,6 +10,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
 	</ItemGroup>
 
