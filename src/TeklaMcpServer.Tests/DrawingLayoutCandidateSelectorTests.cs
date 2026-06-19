@@ -59,7 +59,7 @@ public sealed class DrawingLayoutCandidateSelectorTests
             "fit_views_to_sheet:planned-centered",
             new ReservedRect(0, 0, 20, 20));
         var final = CreateCandidate(
-            "fit_views_to_sheet:final",
+            "fit_views_to_sheet:planned-final",
             new ReservedRect(0, 0, 20, 20));
 
         var selection = new DrawingLayoutCandidateSelector().SelectBest(

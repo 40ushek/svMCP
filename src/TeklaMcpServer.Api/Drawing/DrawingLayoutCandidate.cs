@@ -3,9 +3,17 @@ using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaMcpServer.Api.Drawing;
 
+internal enum DrawingLayoutCandidateSource
+{
+    Runtime,
+    Planned
+}
+
 internal sealed class DrawingLayoutCandidate
 {
     public string Name { get; set; } = string.Empty;
+
+    public DrawingLayoutCandidateSource Source { get; set; }
 
     public DrawingInfo Drawing { get; set; } = new();
 
@@ -58,6 +66,8 @@ internal sealed class DrawingLayoutCandidateValidation
 {
     public int MissingRectCount { get; set; }
 
+    public int OutOfBoundsCount { get; set; }
+
     public int ViewOverlapCount { get; set; }
 
     public double ViewOverlapArea { get; set; }
@@ -70,6 +80,7 @@ internal sealed class DrawingLayoutCandidateValidation
 
     public bool IsFeasible =>
         MissingRectCount == 0 &&
+        OutOfBoundsCount == 0 &&
         ViewOverlapCount == 0 &&
         ReservedOverlapCount == 0;
 }

@@ -137,7 +137,6 @@ public sealed class ArrangedView
     internal double LayoutMargin { get; set; }
     internal double LayoutGap { get; set; }
     // True for views added as snapshot fallback (not placed by planner).
-    // BuildFreeViewRepositionPlan must treat these as SourceFromArranged=false.
     internal bool IsSnapshotFallback { get; set; }
 }
 

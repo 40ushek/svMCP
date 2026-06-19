@@ -2400,8 +2400,7 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy : IDrawingViewAr
 
     // Adds no-op placements for secondary views that were not placed by the layout algorithm.
     // They appear in arranged[] so TryRepositionFreeViews sees their blockers correctly.
-    // Marked IsSnapshotFallback=true so BuildFreeViewRepositionPlan sets SourceFromArranged=false
-    // and does not trigger apply-from-plan for these views.
+    // Marked IsSnapshotFallback=true so diagnostics can distinguish no-op placements.
     private static void AppendUnplannedViewsAsCurrentPlacements(
         DrawingArrangeContext context,
         List<PlannedPlacement> planned,

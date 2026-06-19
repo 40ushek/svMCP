@@ -40,6 +40,7 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
     {
         var evaluation = CreateEvaluation(
             "fit_views_to_sheet:final",
+            DrawingLayoutCandidateSource.Runtime,
             new DrawingLayoutCandidateView
             {
                 Id = 7,
@@ -389,11 +390,18 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
     private static DrawingLayoutCandidateEvaluation CreateEvaluation(
         string candidateName,
         params DrawingLayoutCandidateView[] views)
+        => CreateEvaluation(candidateName, DrawingLayoutCandidateSource.Planned, views);
+
+    private static DrawingLayoutCandidateEvaluation CreateEvaluation(
+        string candidateName,
+        DrawingLayoutCandidateSource source,
+        params DrawingLayoutCandidateView[] views)
         => new()
         {
             Candidate = new DrawingLayoutCandidate
             {
                 Name = candidateName,
+                Source = source,
                 Views = views.ToList()
             }
         };
@@ -404,6 +412,7 @@ public sealed class DrawingLayoutCandidateApplyPlanTests
         => new()
         {
             Name = candidateName,
+            Source = DrawingLayoutCandidateSource.Runtime,
             Views = views.ToList()
         };
 

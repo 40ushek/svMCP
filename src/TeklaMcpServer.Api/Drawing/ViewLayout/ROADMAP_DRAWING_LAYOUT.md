@@ -259,8 +259,9 @@ workspace.
 
 #### 5.3 Оценка нескольких candidates
 
-Статус: реализовано для текущих passive candidates; дальнейшее расширение
-набора candidates остается future work.
+Статус: selector/scorer реализованы. В production selection участвуют два
+полных виртуальных candidates: `planned-before-free` и `planned-final`.
+Дальнейшее расширение набора полных вариантов остается future work.
 
 Цель: генерировать и сравнивать несколько виртуальных layout-вариантов из
 одного workspace.
@@ -272,8 +273,12 @@ workspace.
   overlaps и `edgePenalty`;
 - `fit_views_to_sheet` пишет selection trace: index, rank, selected flag,
   rejection/selection reason;
-- появились passive candidates: `planned-arranged`, `planned-centered`,
-  `post-projection`, `final`;
+- частичные snapshots (`planned-arranged`, `planned-centered`,
+  `post-projection`) больше не участвуют в production selection: они не содержат
+  все поздние фазы и поэтому не могут безопасно применяться;
+- `planned-before-free` строится после projection, centering и detail
+  reposition, сохраняя исходное размещение free views;
+- `planned-final` дополнительно включает free/anchor reposition;
 - planned candidate construction вынесен в DTO/factory path:
   `DrawingLayoutPlannedView` + `DrawingLayoutCandidateFactory.FromPlannedViews`;
 - `DrawingLayoutCandidateBuilder.ToPlannedViews` отделяет adapter boundary от
@@ -284,12 +289,13 @@ workspace.
 - `fit_layout_planned_variant` trace показывает moved view count, max/avg
   delta, group bbox before/after и reserved overlap before/after;
 - summary generation изолирован в `DrawingLayoutPlannedVariantDiagnostics`.
-- На live trace `planned-centered` может победить `planned-arranged`, если у
-  него меньше `edgePenalty`.
+- Следующее расширение должно сравнивать только варианты, каждый из которых
+  прошел полный виртуальный pipeline.
 
 #### 5.4 Применение выбранного candidate
 
-Статус: реализовано, real apply выключен по умолчанию.
+Статус: единый apply полного `planned-final` включен в `FinalOnly` и защищен
+feasibility/safety checks.
 
 Цель: подготовить safe apply выбранного candidate, но не включать реальное
 применение до live validation.
@@ -303,10 +309,11 @@ workspace.
   view ids и поддерживает `DryRun` / `Apply`;
 - `DrawingLayoutCandidateTeklaApplyAdapter` является Tekla-facing boundary:
   умеет set origin/scale и `Modify()`, но сам не вызывает `CommitChanges()`;
-- `DrawingLayoutCandidateApplyGate` по умолчанию переводит все запросы в
-  `DryRun`;
-- guarded selected-candidate apply branch существует, но с default gate не
-  выполняется;
+- planned/runtime происхождение candidate хранится явно в
+  `DrawingLayoutCandidate.Source`; применимость больше не определяется по имени;
+- `DebugPreview` оставляет apply в `DryRun`;
+- `FinalOnly` применяет feasible `planned-final`, если safety policy разрешает
+  его deltas;
 - `DrawingLayoutCandidateApplyDeltaBuilder` сравнивает baseline final candidate
   с selected apply plan;
 - `DrawingLayoutCandidateApplySafetyPolicy` блокирует real apply при missing
@@ -1204,35 +1211,9 @@ origin, а реальный frame rect с offset от origin.
 
 #### 6.9 Настоящий DryRun для layout pipeline
 
-Статус: частично реализовано. Виртуальные candidates, scoring, selector,
-apply-plan и apply adapter существуют, но реальный `FinalOnly` пока не управляется
-выбранным виртуальным candidate.
-
-⚠️ Текущее состояние: `allowTeklaMutation = applyMode == FinalOnly` разрешает
-ранние `Modify()`/`CommitChanges()` во всём старом pipeline:
-- scale probe;
-- arrange strategy;
-- frame-offset correction;
-- projection alignment;
-- centering;
-- detail/free reposition.
-
-После этих реальных изменений строятся passive candidates
-(`planned-arranged`, `planned-centered`, `post-projection`, `final`), они
-сравниваются через scorer/selector и формируется apply plan. Но в `FinalOnly`
-selected-candidate apply adapter получает `DryRun`, потому что старый pipeline
-уже применил раскладку. Поэтому candidate selection сейчас в основном
-диагностирует уже выполненную раскладку, а не выбирает раскладку до изменения
-Tekla.
-
-Важный safety rule: selected-candidate `Apply` нельзя включать, пока candidate
-snapshot не содержит все поздние шаги layout pipeline. Сейчас
-`planned-centered` строится до `detail/free reposition`, включая
-`AnchorDetailSection`; если применить его через apply adapter, он может
-перетереть более позднюю правильную anchor-driven позицию. Поэтому
-`selectedCandidateApplyMode` должен оставаться `DryRun` в live `FinalOnly`,
-пока `free/anchor reposition`, projection alignment и centering не станут
-единым виртуальным plan.
+Статус: placement pipeline виртуализирован. Реальным остается scale probe,
+потому что фактический размер Tekla view после смены масштаба нельзя надежно
+получить аналитически.
 
 Цель 6.9 остаётся: разделить `allowTeklaMutation` на два отдельных флага:
 - `allowVirtualPlan` — всегда `true`; весь pipeline работает виртуально;
@@ -1290,43 +1271,26 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 вызывать `TryGetBoundingRect(view)`. Старый live `FinalOnly` path может
 временно сохранить Tekla fallback до полной замены.
 
-**Статус Шага 1 (частично реализовано):**
+**Статус Шага 1: выполнено.**
 
-- `BuildFreeViewRepositionPlan` — виртуальный mirror `TryRepositionFreeViews`:
-  не вызывает `Modify()`, не читает live Tekla geometry.
+- `BuildFreeViewRepositionPlan` является единственным placement-pass для free
+  views: не вызывает `Modify()`, не читает live Tekla geometry;
 - Виртуальный план не использует `view.Width/Height` как fallback: только
   `SelectedFrameSizesById`. При отсутствии размера — `skip reason=no-size-or-frame`.
   Fallback на `ActualViewRectsById` snapshot разрешён (snapshot снят до layout pass,
   не live Tekla call).
-- `FreeViewRepositionDecision.SourceFromArranged` помечает решения, где source origin
-  взят из `arrangedById` (надёжный), а не из snapshot rect (приближённый).
-- `apply-from-plan` для `AnchorDetailSection`: virtual state (`arranged`, `blockersById`)
-  обновляется сразу в loop; `view.Modify()` отложен до после loop (deferred moves).
-- Один `CommitChanges()` после всех deferred moves.
-- `apply-from-plan` срабатывает только если `decision.SourceFromArranged=true` —
-  snapshot-based план не применяется, т.к. source origin семантически другой.
-
-Оставшееся в Шаге 1:
-- `Model3D` всё ещё идёт по старому live path (`Modify()` в loop) — 3D best-effort
-  policy запланирована отдельно (generator variants, Шаг 4).
-- `Other`/прочие free-view kinds пока не включены в apply-from-plan.
-- Дублирование логики между `BuildFreeViewRepositionPlan` и `TryRepositionFreeViews`
-  не устранено — TODO зафиксирован в коде.
-
-Известные диагностические ограничения (не блокируют корректность):
-- `PlannedOriginX/Y` для `SourceFromArranged=false` — приближённые (от
-  `snapshotRect.MinX/MinY`, не от `ArrangedView.OriginX/Y`). Не применяются через
-  apply-from-plan, но trace может вводить в заблуждение. Будущий TODO: пометить
-  как `// approximate` или использовать отдельное поле.
-- `TraceFreeViewRepositionPlan` пишет `actual=MISSING` для видов которые live pass
-  не разместил (Model3D too-narrow). Это корректное поведение, не баг.
-- `TryGetVirtualLayoutRect`: если `SelectedFrameSizesById` есть но `arranged` нет —
-  размер теряется и уходит в snapshot fallback. Не критично для текущего scope.
+- `ApplyFreeViewRepositionPlan` переносит решения в `arranged`;
+- planner обновляет локальный `arrangedById` после каждого решения, поэтому
+  дочерние anchor views видят уже перемещенного родителя;
+- `Model3D`, `Other` и `AnchorDetailSection` используют тот же виртуальный pass;
+- старый повторный planning+apply loop удален.
 
 **Шаг 2 — виртуализировать все фазы после Arrange().**
 Фактический порядок текущего pipeline:
 `Arrange -> frame-offset correction -> projection alignment -> centering
 -> detail reposition -> free/anchor reposition`.
+
+**Статус Шага 2: выполнено.**
 
 Сделано:
 - `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` больше не вызывает
@@ -1335,16 +1299,15 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 - centering обновляет только `arranged` и пишет
   `center_group_plan applied=0`.
 
-Осталось:
-- убрать ранний `ApplyArrangedOrigins`, который применяет arrangement до выбора
-  лучшего candidate;
-- виртуализировать `DrawingProjectionAlignmentService.Apply` /
-  `ProjectionAlignmentMoveHelper.TryApplyMove`;
-- завершить виртуализацию detail/free/anchor reposition, включая `Model3D`;
-- каждая фаза должна обновлять только `arranged`, без `Modify()` /
-  `CommitChanges()`.
+- ранний `ApplyArrangedOrigins` удален;
+- projection alignment обновляет `arranged` через
+  `ProjectionAlignmentMoveHelper`;
+- detail/free/anchor reposition обновляют только `arranged`;
+- placement-фазы после scale probe не вызывают `Modify()` / `CommitChanges()`.
 
 **Шаг 3 — единый финальный apply выбранного candidate.**
+**Статус Шага 3: реализовано, требуется live regression validation.**
+
 После полной виртуализации поздних фаз:
 - selected-candidate apply становится активным в `FinalOnly`;
 - `passiveCandidate` / финальный baseline строится из виртуального
@@ -1352,17 +1315,16 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
   `FromRuntimeLayout` и повторное чтение текущих позиций Tekla;
 - `FromRuntimeLayout` используется только для исходного probe/planning
   snapshot и не должен подменять виртуальные финальные позиции;
-- сравнение кандидатов (`planned-arranged`, `planned-centered`,
-  `post-projection`, `passiveCandidate`) сохраняется: SelectBest выбирает
-  лучший из всех; `passiveCandidate` не должен быть единственным —
-  конкуренция между вариантами остаётся;
+- production selection получает только полные `planned-before-free` и
+  `planned-final`;
+- частичные snapshots нельзя возвращать в selection; будущие конкурирующие
+  candidates обязаны пройти весь виртуальный pipeline;
 - apply plan обязан содержать frame-offset correction и все поздние поправки
   выбранного варианта;
 - `DrawingLayoutCandidateTeklaApplyAdapter.Execute(applyPlan)` является
-  единственной точкой изменения `Origin` и `Scale`;
-- после него выполняется один `CommitChanges()`;
-- ранний `ApplyArrangedOrigins` убирается: применять до SelectBest нельзя,
-  т.к. centering/projection/reposition ещё не включены в план;
+  единственной точкой изменения `Origin` после planning pipeline;
+- после него выполняется один placement `CommitChanges()`;
+- ранний `ApplyArrangedOrigins` удален: применять до SelectBest нельзя;
 - если candidate infeasible или неполный, safety gate оставляет apply в
   `DryRun`.
 
@@ -1382,42 +1344,25 @@ data нет, helper должен вернуть decision `skip reason=no-size-or
 
 **Шаг 5 — SelectBest + один финальный apply.**
 `SelectBest(candidates)` → `DrawingLayoutCandidateTeklaApplyAdapter` для
-победителя → один `CommitChanges()`.
+победителя → один финальный placement `CommitChanges()`.
 
 Осталось:
-- разделить `allowTeklaMutation` на `allowVirtualPlan` и `allowApply` на шаге 5
-- держать selected-candidate `Apply` выключенным, пока candidate не включает
-  `free/anchor reposition`, projection alignment и centering;
-- **Шаг 1:** виртуализировать free/anchor reposition
-- **Шаг 2:** виртуализировать все оставшиеся фазы после `Arrange()` и убрать
-  ранний `ApplyArrangedOrigins`
-- **Шаг 3:** включить selected-candidate apply как единственный финальный apply
-- **Шаг 4:** генератор вариантов поверх зафиксированных sizes
-- **Шаг 5:** SelectBest + один финальный apply + один CommitChanges()
+- **Шаг 4:** генератор нескольких полных вариантов поверх зафиксированных sizes;
+- **Шаг 5:** SelectBest среди полных вариантов + один финальный apply;
 - проверить на реальных чертежах, что applied origins/scales совпадают с
   selected candidate;
 - добавить regression-тест: `DebugPreview` не меняет drawing, `FinalOnly` делает
   один commit выбранного plan.
 
-Исходная проблема: текущий `applyMode=DryRun` защищал только поздний candidate apply
-(`fit_layout_apply_execution`), но не весь pipeline.
-
-Часть pipeline уже виртуализирована:
+Исходная проблема была в том, что `applyMode=DryRun` защищал только поздний
+candidate apply, но не весь pipeline. Текущее состояние:
 - `_arrangementSelector.Arrange(...)` вызывается с `ApplyChanges=false`;
 - `BaseProjectedDrawingArrangeStrategy.ApplyPlan(...)` не вызывает
   `view.Modify()`;
 - frame-offset correction обновляет `ArrangedView`;
-- centering обновляет `arranged`.
-
-Оставшиеся ранние side effects:
-- `ApplyArrangedOrigins` применяет arrangement до выбора candidate;
-- projection alignment в live-режиме может вызывать `view.Modify()`;
-- detail/free/anchor reposition ещё содержит live apply paths;
-- `activeDrawing.CommitChanges()` выполняется до финального candidate apply.
-
-Следствие было такое: в trace могло быть `effectiveMode=DryRun` и `appliedMoves=0`, но
-чертеж уже мог измениться раньше через `ApplyArrangedOrigins`, projection или
-reposition apply paths.
+- projection, centering, detail/free/anchor reposition обновляют `arranged`;
+- `planned-final` строится из итогового виртуального `arranged`;
+- origin changes выполняются только selected-candidate apply adapter.
 
 Цель: разделить layout pipeline на два этапа:
 - `Plan` - только расчет позиций, масштабов, score и diagnostics;
@@ -1431,7 +1376,8 @@ reposition apply paths.
   менять drawing;
 - `DebugPreview` может возвращать plan/diagnostics без изменения чертежа;
 - `FinalOnly`/apply mode применяет уже выбранный plan один раз в самом конце;
-- scale probing остается виртуальным для plan-only pipeline.
+- scale probing остается отдельной реальной фазой, потому что фактический frame
+  size зависит от Tekla annotations и не вычисляется линейно.
 
 Trace:
 - отдельно логировать `plan`, `probe`, `preview`, `apply`;

@@ -52,6 +52,7 @@ public sealed class DrawingLayoutCandidateFactoryTests
 
         var view = Assert.Single(candidate.Views);
         Assert.Equal("planned", candidate.Name);
+        Assert.Equal(DrawingLayoutCandidateSource.Planned, candidate.Source);
         Assert.Equal(drawing, candidate.Drawing);
         Assert.Equal(sheet, candidate.Sheet);
         Assert.Equal(reservedLayout, candidate.ReservedLayout);

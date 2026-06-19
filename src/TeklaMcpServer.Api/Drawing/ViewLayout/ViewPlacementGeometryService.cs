@@ -50,6 +50,13 @@ internal static class ViewPlacementGeometryService
         double height)
         => CreateCenteredRect(frameCenterX, frameCenterY, width, height);
 
+    public static (double X, double Y) ResolveOriginFromFrameCenter(
+        double frameCenterX,
+        double frameCenterY,
+        double frameOffsetX,
+        double frameOffsetY)
+        => (frameCenterX - frameOffsetX, frameCenterY - frameOffsetY);
+
     public static (double X, double Y) GetFrameOffsetSheet(DrawingArrangeContext context, View view)
     {
         var id = view.GetIdentifier().ID;

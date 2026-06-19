@@ -646,12 +646,13 @@ public sealed partial class TeklaDrawingViewApi
             0,
             string.Format(
                 CultureInfo.InvariantCulture,
-                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} nonDetail={5} fill={6:0.###} uniformScale={7:0.###} edgePenalty={8:0.###} preferredSidePenalty={9:0.###} compactnessPenalty={10:0.###} stackOrderPenalty={11:0.###} projectedAxisPenalty={12:0.###} viewOverlaps={13}:area={14:0.###}:penalty={15:0.###} reservedOverlaps={16}:area={17:0.###}:penalty={18:0.###} diagnostics={19}",
+                "candidate={0} total={1:0.###} feasible={2} views={3} missingRects={4} outOfBounds={5} nonDetail={6} fill={7:0.###} uniformScale={8:0.###} edgePenalty={9:0.###} preferredSidePenalty={10:0.###} compactnessPenalty={11:0.###} stackOrderPenalty={12:0.###} projectedAxisPenalty={13:0.###} viewOverlaps={14}:area={15:0.###}:penalty={16:0.###} reservedOverlaps={17}:area={18:0.###}:penalty={19:0.###} diagnostics={20}",
                 string.IsNullOrWhiteSpace(candidate.Name) ? "unnamed" : candidate.Name,
                 score.TotalScore,
                 evaluation.IsFeasible ? 1 : 0,
                 score.Breakdown.ScoredViewCount,
                 validation.MissingRectCount,
+                validation.OutOfBoundsCount,
                 score.Breakdown.NonDetailViewCount,
                 score.Breakdown.FillRatioScore,
                 score.Breakdown.UniformScaleScore,
@@ -772,7 +773,7 @@ public sealed partial class TeklaDrawingViewApi
 
             DrawingProjectionAlignmentService.Log(string.Format(
                 CultureInfo.InvariantCulture,
-                "LAYOUT_VALIDATE rank={0} selected={1} reason={2} candidate={3} feasible={4} score={5:0.###} fill={6:0.###} missingRects={7} viewOverlaps={8}:area={9:0.###} reservedOverlaps={10}:area={11:0.###} diagnostics={12}{13}",
+                "LAYOUT_VALIDATE rank={0} selected={1} reason={2} candidate={3} feasible={4} score={5:0.###} fill={6:0.###} missingRects={7} outOfBounds={8} viewOverlaps={9}:area={10:0.###} reservedOverlaps={11}:area={12:0.###} diagnostics={13}{14}",
                 item.Rank,
                 item.IsSelected ? 1 : 0,
                 DrawingLayoutCandidateSelectionReasonFormatter.ToTraceString(item.Reason),
@@ -781,6 +782,7 @@ public sealed partial class TeklaDrawingViewApi
                 evaluation.Score.TotalScore,
                 breakdown.FillRatioRaw,
                 validation.MissingRectCount,
+                validation.OutOfBoundsCount,
                 validation.ViewOverlapCount,
                 validation.ViewOverlapArea,
                 validation.ReservedOverlapCount,

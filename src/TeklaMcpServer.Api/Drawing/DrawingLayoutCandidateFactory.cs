@@ -14,6 +14,7 @@ internal static class DrawingLayoutCandidateFactory
         var candidate = new DrawingLayoutCandidate
         {
             Name = name,
+            Source = DrawingLayoutCandidateSource.Planned,
             Drawing = drawing,
             Sheet = sheet,
             ReservedLayout = reservedLayout

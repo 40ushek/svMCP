@@ -19,6 +19,7 @@ internal static class DrawingLayoutCandidateBuilder
         var candidate = new DrawingLayoutCandidate
         {
             Name = name,
+            Source = DrawingLayoutCandidateSource.Runtime,
             Drawing = workspace.Source.Drawing,
             Sheet = workspace.Source.Sheet,
             ReservedLayout = workspace.Source.ReservedLayout

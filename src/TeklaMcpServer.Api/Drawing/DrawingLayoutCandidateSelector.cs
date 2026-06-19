@@ -130,7 +130,7 @@ internal sealed class DrawingLayoutCandidateSelector
         => (long)Math.Round(score / ScoreTieEpsilon, MidpointRounding.AwayFromZero);
 
     private static int GetCandidateTiePriority(DrawingLayoutCandidate candidate)
-        => string.Equals(candidate.Name, "fit_views_to_sheet:final", StringComparison.Ordinal)
+        => string.Equals(candidate.Name, "fit_views_to_sheet:planned-final", StringComparison.Ordinal)
             ? 1
             : 0;
 

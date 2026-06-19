@@ -43,9 +43,11 @@ internal sealed class DrawingLayoutScorer
             throw new ArgumentNullException(nameof(candidate));
 
         var score = Score(candidate, weights);
+        var outOfBoundsCount = CountOutOfBoundsViews(candidate, score.Diagnostics);
         var validation = new DrawingLayoutCandidateValidation
         {
             MissingRectCount = Math.Max(candidate.Views.Count - score.Breakdown.ScoredViewCount, 0),
+            OutOfBoundsCount = outOfBoundsCount,
             ViewOverlapCount = score.Breakdown.ViewOverlapCount,
             ViewOverlapArea = score.Breakdown.ViewOverlapArea,
             ReservedOverlapCount = score.Breakdown.ReservedOverlapCount,
@@ -61,6 +63,39 @@ internal sealed class DrawingLayoutScorer
             Score = score,
             Validation = validation
         };
+    }
+
+    private static int CountOutOfBoundsViews(
+        DrawingLayoutCandidate candidate,
+        ICollection<string> diagnostics)
+    {
+        var margin = Math.Max(candidate.ReservedLayout.Margin, 0.0);
+        var minX = margin;
+        var minY = margin;
+        var maxX = candidate.Sheet.Width - margin;
+        var maxY = candidate.Sheet.Height - margin;
+        var count = 0;
+
+        foreach (var view in candidate.Views)
+        {
+            var rect = view.LayoutRect;
+            if (rect == null)
+                continue;
+
+            if (rect.MinX >= minX - Epsilon
+                && rect.MinY >= minY - Epsilon
+                && rect.MaxX <= maxX + Epsilon
+                && rect.MaxY <= maxY + Epsilon)
+            {
+                continue;
+            }
+
+            count++;
+            diagnostics.Add(
+                $"score:view-out-of-bounds:view={view.Id}:rect={FormatRect(rect)}:bounds={FormatRect(new ReservedRect(minX, minY, maxX, maxY))}");
+        }
+
+        return count;
     }
 
     public DrawingLayoutScore Score(

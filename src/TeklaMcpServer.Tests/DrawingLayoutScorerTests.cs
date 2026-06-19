@@ -7,6 +7,35 @@ namespace TeklaMcpServer.Tests;
 public sealed class DrawingLayoutScorerTests
 {
     [Fact]
+    public void Evaluate_RejectsViewOutsideUsableSheetBounds()
+    {
+        var candidate = new DrawingLayoutCandidate
+        {
+            Sheet = new DrawingSheetContext { Width = 100, Height = 100 },
+            ReservedLayout = new DrawingReservedLayoutContext { Margin = 10 },
+            Views =
+            [
+                new DrawingLayoutCandidateView
+                {
+                    Id = 7,
+                    ViewType = "DetailView",
+                    SemanticKind = "Detail",
+                    Scale = 10,
+                    Width = 20,
+                    Height = 20,
+                    LayoutRect = new ReservedRect(95, 40, 115, 60)
+                }
+            ]
+        };
+
+        var evaluation = new DrawingLayoutScorer().Evaluate(candidate);
+
+        Assert.False(evaluation.IsFeasible);
+        Assert.Equal(1, evaluation.Validation.OutOfBoundsCount);
+        Assert.Contains(evaluation.Validation.Diagnostics, item => item.Contains("score:view-out-of-bounds:view=7"));
+    }
+
+    [Fact]
     public void Score_UsesBoundingBox_WhenAvailable()
     {
         var context = CreateContext(

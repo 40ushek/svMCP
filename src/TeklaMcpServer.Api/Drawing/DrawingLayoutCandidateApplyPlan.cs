@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -49,8 +48,6 @@ internal static class DrawingLayoutCandidateApplyPlanReasonFormatter
 
 internal static class DrawingLayoutCandidateApplyPlanBuilder
 {
-    private const string PlannedCandidatePrefix = "fit_views_to_sheet:planned-";
-
     public static DrawingLayoutCandidateApplyPlan FromEvaluation(
         DrawingLayoutCandidateEvaluation? evaluation)
     {
@@ -63,7 +60,7 @@ internal static class DrawingLayoutCandidateApplyPlanBuilder
         }
 
         var candidate = evaluation.Candidate;
-        var canApply = IsPlannedCandidate(candidate);
+        var canApply = candidate.Source == DrawingLayoutCandidateSource.Planned;
         var plan = new DrawingLayoutCandidateApplyPlan
         {
             CandidateName = candidate.Name,
@@ -89,7 +86,4 @@ internal static class DrawingLayoutCandidateApplyPlanBuilder
 
         return plan;
     }
-
-    private static bool IsPlannedCandidate(DrawingLayoutCandidate candidate)
-        => candidate.Name.StartsWith(PlannedCandidatePrefix, StringComparison.Ordinal);
 }
