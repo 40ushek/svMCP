@@ -82,8 +82,8 @@ public sealed class ViewPlacementServiceTests
 
         // --- new service path ---
         var frame = new PlacementFrame(usableMinX, usableMinY, usableMaxX, usableMaxY);
-        var svc = new ViewPlacementService();
-        Assert.True(svc.TryPlaceNearPoint(frame, w, h, targetX, targetY,
+
+        Assert.True(ViewPlacementService.TryPlaceNearPoint(frame, w, h, targetX, targetY,
             Array.Empty<ReservedRect>(), gap: 0, out var newRect));
 
         Assert.Equal(oldRect.MinX, newRect.MinX, 6);
@@ -96,9 +96,7 @@ public sealed class ViewPlacementServiceTests
     public void TryPlaceNearPoint_ResultStaysInsideFrame()
     {
         var frame = new PlacementFrame(0, 0, 200, 100);
-        var svc = new ViewPlacementService();
-
-        Assert.True(svc.TryPlaceNearPoint(frame, 50, 40, 1000, 1000,
+        Assert.True(ViewPlacementService.TryPlaceNearPoint(frame, 50, 40, 1000, 1000,
             Array.Empty<ReservedRect>(), gap: 0, out var rect));
 
         Assert.True(rect.MinX >= -Eps);
@@ -111,12 +109,12 @@ public sealed class ViewPlacementServiceTests
     public void TryPlaceNearPoint_AvoidsGapExpandedBlocker()
     {
         var frame = new PlacementFrame(0, 0, 200, 100);
-        var svc = new ViewPlacementService();
+
         var blocked = new[] { new ReservedRect(0, 0, 100, 100) };
 
         // Without gap a 50×50 view could sit at x≈100. With gap=10 the blocker
         // is expanded to x≤110, so the placed rect must start at x ≥ 110.
-        Assert.True(svc.TryPlaceNearPoint(frame, 50, 50, 0, 50, blocked, gap: 10, out var rect));
+        Assert.True(ViewPlacementService.TryPlaceNearPoint(frame, 50, 50, 0, 50, blocked, gap: 10, out var rect));
         Assert.True(rect.MinX >= 110 - Eps,
             $"expected MinX >= 110 with gap-expanded blocker, got {rect.MinX}");
     }
@@ -125,10 +123,8 @@ public sealed class ViewPlacementServiceTests
     public void TryPlaceNearAnchor_PlacesAtAnchorWhenFree()
     {
         var frame = new PlacementFrame(0, 0, 400, 400);
-        var svc = new ViewPlacementService();
-
         // Anchor well inside an empty frame → view centered on the anchor.
-        Assert.True(svc.TryPlaceNearAnchor(frame, 40, 30, 200, 200,
+        Assert.True(ViewPlacementService.TryPlaceNearAnchor(frame, 40, 30, 200, 200,
             Array.Empty<ReservedRect>(), gap: 0, out var rect));
 
         var cx = (rect.MinX + rect.MaxX) / 2.0;
@@ -141,19 +137,19 @@ public sealed class ViewPlacementServiceTests
     public void CanFit_TrueWhenItemsFit_FalseWhenOversized()
     {
         var frame = new PlacementFrame(0, 0, 100, 100);
-        var svc = new ViewPlacementService();
+
         var noBlock = Array.Empty<ReservedRect>();
 
-        Assert.True(svc.CanFit(frame, new[] { (40.0, 40.0), (40.0, 40.0) }, noBlock, gap: 0));
-        Assert.False(svc.CanFit(frame, new[] { (120.0, 40.0) }, noBlock, gap: 0));
+        Assert.True(ViewPlacementService.CanFit(frame, new[] { (40.0, 40.0), (40.0, 40.0) }, noBlock, gap: 0));
+        Assert.False(ViewPlacementService.CanFit(frame, new[] { (120.0, 40.0) }, noBlock, gap: 0));
     }
 
     [Fact]
     public void TryPlaceNearPoint_FailsOnDegenerateFrame()
     {
         var frame = new PlacementFrame(0, 0, 0, 0);
-        var svc = new ViewPlacementService();
-        Assert.False(svc.TryPlaceNearPoint(frame, 10, 10, 0, 0,
+
+        Assert.False(ViewPlacementService.TryPlaceNearPoint(frame, 10, 10, 0, 0,
             Array.Empty<ReservedRect>(), gap: 0, out _));
     }
 }

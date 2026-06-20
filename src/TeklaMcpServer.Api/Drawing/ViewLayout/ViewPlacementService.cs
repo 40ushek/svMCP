@@ -15,13 +15,13 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 /// historically inflated the bin or the item size are migrated to this model
 /// (preserving their effective spacing — see roadmap for the 2*gap cases).
 /// </summary>
-internal sealed class ViewPlacementService
+internal static class ViewPlacementService
 {
     /// <summary>
     /// Place a w×h view as close as possible to a sheet target point.
     /// Replaces hand-rolled <c>TryInsertClosestToPoint</c> + manual flip.
     /// </summary>
-    public bool TryPlaceNearPoint(
+    public static bool TryPlaceNearPoint(
         PlacementFrame frame,
         double width,
         double height,
@@ -52,7 +52,7 @@ internal sealed class ViewPlacementService
     /// Place a w×h view as close as possible to a sheet anchor point.
     /// Replaces hand-rolled <c>TryInsertClosestToAnchor</c> + manual flip.
     /// </summary>
-    public bool TryPlaceNearAnchor(
+    public static bool TryPlaceNearAnchor(
         PlacementFrame frame,
         double width,
         double height,
@@ -84,7 +84,7 @@ internal sealed class ViewPlacementService
     /// overlapping each other or the (gap-expanded) blocked rectangles?
     /// No sheet rects are produced. Replaces ad-hoc estimator packers.
     /// </summary>
-    public bool CanFit(
+    public static bool CanFit(
         PlacementFrame frame,
         IReadOnlyList<(double W, double H)> items,
         IReadOnlyList<ReservedRect> blocked,

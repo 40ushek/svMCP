@@ -199,9 +199,9 @@ public sealed partial class TeklaDrawingViewApi
             }
 
             var placed = isAnchorDriven
-                ? _viewPlacementService.TryPlaceNearAnchor(
+                ? ViewPlacementService.TryPlaceNearAnchor(
                     placementFrame, width, height, targetX, targetY, placementBlocked, gap, out var candidateRect)
-                : _viewPlacementService.TryPlaceNearPoint(
+                : ViewPlacementService.TryPlaceNearPoint(
                     placementFrame, width, height, targetX, targetY, placementBlocked, gap, out candidateRect);
 
             if (placed)

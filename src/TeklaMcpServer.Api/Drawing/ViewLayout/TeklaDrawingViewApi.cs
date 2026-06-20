@@ -10,7 +10,6 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 public sealed partial class TeklaDrawingViewApi : IDrawingViewApi
 {
     private readonly DrawingViewArrangementSelector _arrangementSelector;
-    private static readonly ViewPlacementService _viewPlacementService = new();
 
     public TeklaDrawingViewApi(DrawingViewArrangementSelector? arrangementSelector = null)
     {
