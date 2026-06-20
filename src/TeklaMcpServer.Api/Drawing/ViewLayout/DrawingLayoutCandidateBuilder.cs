@@ -112,8 +112,7 @@ internal static class DrawingLayoutCandidateBuilder
         return candidate;
     }
 
-    public static DrawingLayoutCandidate FromPlannedViews(
-        string name,
+    public static void AnnotatePlannedViews(
         DrawingLayoutWorkspace workspace,
         IReadOnlyList<DrawingLayoutPlannedView> plannedViews)
     {
@@ -129,6 +128,14 @@ internal static class DrawingLayoutCandidateBuilder
             if (string.IsNullOrEmpty(view.ProjectionRole))
                 view.ProjectionRole = ResolveProjectionRole(kind, view.ActualPlacementSide, view.ViewType);
         }
+    }
+
+    public static DrawingLayoutCandidate FromPlannedViews(
+        string name,
+        DrawingLayoutWorkspace workspace,
+        IReadOnlyList<DrawingLayoutPlannedView> plannedViews)
+    {
+        AnnotatePlannedViews(workspace, plannedViews);
 
         return DrawingLayoutCandidateFactory.FromPlannedViews(
             name,

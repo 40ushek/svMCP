@@ -23,7 +23,9 @@ public sealed partial class TeklaDrawingViewApi
         var effectiveMargin    = ctx.EffectiveMargin;
         var allowTeklaMutation = ctx.AllowTeklaMutation;
         var preserveExistingScales = ctx.PreserveExistingScales;
-        var reserved           = workspace.ReservedAreas;
+        var reserved           = ctx.ExtraReservedAreas.Count == 0
+            ? workspace.ReservedAreas
+            : (IReadOnlyList<ReservedRect>)workspace.ReservedAreas.Concat(ctx.ExtraReservedAreas).ToList();
 
         // ── Arrange ──────────────────────────────────────────────────────────
         var arrangeSw = Stopwatch.StartNew();
@@ -32,10 +34,13 @@ public sealed partial class TeklaDrawingViewApi
             "layout_branch",
             0,
             $"branch=arrangement-selector action={(ctx.ArrangedViews.Count == 0 ? "skip-no-views" : "run")} views={ctx.ArrangedViews.Count}");
+        var baseArrangeCtx = new DrawingArrangeContext(drawing, workspace, ctx.ArrangedViews, gap, applyChanges: false);
+        var arrangeCtx = ctx.ExtraReservedAreas.Count == 0
+            ? baseArrangeCtx
+            : baseArrangeCtx.With(reservedAreas: reserved);
         var arranged = ctx.ArrangedViews.Count == 0
             ? new List<ArrangedView>()
-            : _arrangementSelector.Arrange(
-                new DrawingArrangeContext(drawing, workspace, ctx.ArrangedViews, gap, applyChanges: false));
+            : _arrangementSelector.Arrange(arrangeCtx);
         arrangeSw.Stop();
         var arrangeMs = arrangeSw.ElapsedMilliseconds;
         PerfTrace.Write(
@@ -260,7 +265,141 @@ public sealed partial class TeklaDrawingViewApi
             ArrangeMs          = arrangeMs,
             PostAdjustMs       = postAdjustMs,
             ProjectionMs       = projectionMs,
-            FinalCommitMs      = finalCommitMs
+            FinalCommitMs      = finalCommitMs,
+            FinalRuntimeViews  = finalViews
         };
+    }
+
+    // ── 3D-corner reservation variant ────────────────────────────────────────
+    // Corner: 0=LeftBottom, 1=RightBottom, 2=LeftTop, 3=RightTop
+    private DrawingLayoutVariantResult? TryRun3DCornerLayoutVariant(SharedLayoutContext ctx, View model3DView, int corner)
+    {
+        var workspace = ctx.Workspace;
+        var id        = model3DView.GetIdentifier().ID;
+
+        if (!workspace.SelectedFrameSizesById.TryGetValue(id, out var frameSize) || frameSize.Width <= 0 || frameSize.Height <= 0)
+            return null;
+
+        var w      = frameSize.Width;
+        var h      = frameSize.Height;
+        var sheetW = workspace.SheetWidth;
+        var sheetH = workspace.SheetHeight;
+
+        var fallbackScale = workspace.GetSelectedScale(id, 1.0);
+        var (offX, offY) = workspace.FrameOffsetsById.TryGetValue(id, out var rawOff)
+            ? (rawOff.X / fallbackScale, rawOff.Y / fallbackScale)
+            : (0.0, 0.0);
+
+        // Place 3D frame in the requested corner, respecting the layout margin so the
+        // scorer's outOfBounds check (usable = [margin..sheet-margin]) passes.
+        var margin = ctx.EffectiveMargin;
+        double frameMinX, frameMinY;
+        switch (corner)
+        {
+            case 0: frameMinX = margin;          frameMinY = margin;          break; // LeftBottom
+            case 1: frameMinX = sheetW - w - margin; frameMinY = margin;      break; // RightBottom
+            case 2: frameMinX = margin;          frameMinY = sheetH - h - margin; break; // LeftTop
+            default: frameMinX = sheetW - w - margin; frameMinY = sheetH - h - margin; break; // RightTop
+        }
+        var frameMaxX = frameMinX + w;
+        var frameMaxY = frameMinY + h;
+
+        // Reject if the frame doesn't fit inside the usable sheet area
+        if (frameMinX < margin || frameMinY < margin
+            || frameMaxX > sheetW - margin || frameMaxY > sheetH - margin)
+            return null;
+
+        // Reject if corner rect overlaps any existing reserved area
+        var cornerRect = new ReservedRect(frameMinX, frameMinY, frameMaxX, frameMaxY);
+        foreach (var area in workspace.ReservedAreas)
+        {
+            var ox = System.Math.Min(cornerRect.MaxX, area.MaxX) - System.Math.Max(cornerRect.MinX, area.MinX);
+            var oy = System.Math.Min(cornerRect.MaxY, area.MaxY) - System.Math.Max(cornerRect.MinY, area.MinY);
+            if (ox > 0 && oy > 0)
+                return null;
+        }
+
+        var frameCenterX = (frameMinX + frameMaxX) * 0.5;
+        var frameCenterY = (frameMinY + frameMaxY) * 0.5;
+        var originX      = frameCenterX - offX;
+        var originY      = frameCenterY - offY;
+
+        var cornerNames = new[] { "left-bottom", "right-bottom", "left-top", "right-top" };
+        PerfTrace.Write("api-view", "layout_branch", 0,
+            $"branch=3d-corner-variant corner={cornerNames[corner]} id={id} frame=[{frameMinX:F1},{frameMinY:F1},{frameMaxX:F1},{frameMaxY:F1}] origin=({originX:F1},{originY:F1})");
+
+        // Derived context: 3D excluded from both ArrangedViews AND CurrentViews so
+        // RunDefaultLayoutVariant cannot re-add it through free-view reposition.
+        // ExtraReservedAreas carries the corner rect so arrange/centering/detail/free
+        // see it as blocked space.
+        var derivedCtx = new SharedLayoutContext
+        {
+            Drawing              = ctx.Drawing,
+            Workspace            = ctx.Workspace,
+            CurrentViews         = ctx.CurrentViews.Where(v => v.GetIdentifier().ID != id).ToList(),
+            ArrangedViews        = ctx.ArrangedViews.Where(v => v.GetIdentifier().ID != id).ToList(),
+            ActualRects          = ctx.ActualRects,
+            OffsetById           = ctx.OffsetById,
+            OptimalScale         = ctx.OptimalScale,
+            EffectiveMargin      = ctx.EffectiveMargin,
+            Gap                  = ctx.Gap,
+            PreserveExistingScales = ctx.PreserveExistingScales,
+            KeepCurrentScales    = ctx.KeepCurrentScales,
+            AllowTeklaMutation   = ctx.AllowTeklaMutation,
+            ExtraReservedAreas   = new[] { cornerRect }
+        };
+
+        var result = RunDefaultLayoutVariant(derivedCtx);
+
+        // free-view reposition inside RunDefaultLayoutVariant uses EnumerateViews(drawing)
+        // which still contains the 3D view — remove any entry it may have added so the
+        // explicit cornerView below is the only one with this id.
+        result.Arranged.RemoveAll(v => v.Id == id);
+        result.ArrangedBeforeFree.RemoveAll(v => v.Id == id);
+
+        // Inject 3D view at the fixed corner position — not via free-view reposition
+        var cornerView = new ArrangedView
+        {
+            Id                     = id,
+            ViewType               = model3DView.ViewType.ToString(),
+            OriginX                = originX,
+            OriginY                = originY,
+            PreferredPlacementSide = "",
+            ActualPlacementSide    = cornerNames[corner],
+            PlacementFallbackUsed  = false,
+            LayoutMargin           = 0,
+            LayoutGap              = ctx.Gap
+        };
+        result.Arranged.Add(cornerView);
+        result.ArrangedBeforeFree.Add(cornerView);
+
+        // Use the original ReservedLayout for scoring — cornerRect is NOT added here.
+        // The 3D view is already included as a planned view in the candidate, so the
+        // scorer accounts for it via scoredViews. Adding cornerRect would cause a
+        // self-overlap: the 3D view rect overlaps its own reserved area.
+        var source = workspace.Source;
+        var cornerReservedLayout = source.ReservedLayout;
+
+        // Rebuild candidates with the standard ReservedLayout and a name suffix
+        var suffix = $":3d-corner-{cornerNames[corner]}";
+        var beforeFreePlanned = DrawingLayoutCandidateBuilder.ToPlannedViews(
+            workspace, result.FinalRuntimeViews, result.ArrangedBeforeFree);
+        var finalPlanned = DrawingLayoutCandidateBuilder.ToPlannedViews(
+            workspace, result.FinalRuntimeViews, result.Arranged);
+        DrawingLayoutCandidateBuilder.AnnotatePlannedViews(workspace, beforeFreePlanned);
+        DrawingLayoutCandidateBuilder.AnnotatePlannedViews(workspace, finalPlanned);
+
+        var beforeFree = DrawingLayoutCandidateFactory.FromPlannedViews(
+            $"fit_views_to_sheet:planned-before-free{suffix}",
+            source.Drawing, source.Sheet, cornerReservedLayout, beforeFreePlanned);
+        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(beforeFree, result.FinalRuntimeViews);
+
+        var final = DrawingLayoutCandidateFactory.FromPlannedViews(
+            $"fit_views_to_sheet:planned-final{suffix}",
+            source.Drawing, source.Sheet, cornerReservedLayout, finalPlanned);
+        DrawingLayoutCandidateBuilder.AttachFallbackStackOrderGroups(final, result.FinalRuntimeViews);
+
+        result.Candidates = new[] { beforeFree, final };
+        return result;
     }
 }

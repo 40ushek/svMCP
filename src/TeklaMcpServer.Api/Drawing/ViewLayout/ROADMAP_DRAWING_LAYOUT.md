@@ -1408,9 +1408,16 @@ Workspace не мутировать для derived reserved areas: переда�
 
 Шаг 4.4 — подключить `SelectBest` к списку variant results.
 Пока список из одного default variant. Проверить, что результат тот же.
+Candidates для `SelectBest` материализовать (`ToArray()`/`ToList()`), а не
+передавать ленивый `SelectMany`.
 
 Шаг 4.5 — добавить 3D-corner reservation variant.
 4 угла, derived reserved areas, тот же pipeline. Описание ниже.
+Перед добавлением нескольких variants исправить apply baseline: текущий
+`runtime-before-final-apply` строится из `layoutWorkspace.RuntimeViews` и
+`arranged` после единственного default variant. Когда variants станет несколько,
+baseline должен строиться от того variant result, чей candidate выбран
+`SelectBest`, а не от последнего выполненного variant side effect.
 
 Шаг 4.6 — добавить 3D-as-secondary variant.
 Отдельным шагом после corner reservation.

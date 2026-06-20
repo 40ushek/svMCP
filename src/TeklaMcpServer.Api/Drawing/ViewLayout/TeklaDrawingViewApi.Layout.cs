@@ -531,7 +531,32 @@ public sealed partial class TeklaDrawingViewApi
             AllowTeklaMutation   = allowTeklaMutation
         };
 
-        var variantResult = RunDefaultLayoutVariant(sharedCtx);
+        var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
+        var variantList = new List<DrawingLayoutVariantResult> { defaultVariant };
+
+        // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
+        var model3DViews = arrangedViews
+            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
+            .ToList();
+        if (model3DViews.Count == 1)
+        {
+            for (var corner = 0; corner < 4; corner++)
+            {
+                var cornerVariant = TryRun3DCornerLayoutVariant(sharedCtx, model3DViews[0], corner);
+                if (cornerVariant != null)
+                    variantList.Add(cornerVariant);
+            }
+        }
+
+        var allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
+        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
+
+        // Baseline from the winning variant, not from the last-executed variant's side effects
+        var winningCandidateName = passiveSelection.Selected?.Candidate.Name ?? "";
+        var winningVariant = variantList.FirstOrDefault(v =>
+            v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
+
+        var variantResult = winningVariant;
         var arranged = variantResult.Arranged;
         arrangeMs    = variantResult.ArrangeMs;
         postAdjustMs = variantResult.PostAdjustMs;
@@ -546,15 +571,14 @@ public sealed partial class TeklaDrawingViewApi
         var runtimeBaselineCandidate = DrawingLayoutCandidateBuilder.FromRuntimeLayout(
             "fit_views_to_sheet:runtime-before-final-apply",
             layoutWorkspace,
-            layoutWorkspace.RuntimeViews,
+            variantResult.FinalRuntimeViews.Count > 0 ? variantResult.FinalRuntimeViews : layoutWorkspace.RuntimeViews,
             arranged,
             finalActualRects);
-        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(variantResult.Candidates);
         PerfTrace.Write(
             "api-view",
             "layout_stage",
             0,
-            $"stage=candidate-selection result=done candidates=2 selected={passiveSelection.Selected?.Candidate.Name ?? "none"} feasible={(passiveSelection.Selected?.IsFeasible == true ? 1 : 0)}");
+            $"stage=candidate-selection result=done candidates={allCandidates.Length} selected={passiveSelection.Selected?.Candidate.Name ?? "none"} feasible={(passiveSelection.Selected?.IsFeasible == true ? 1 : 0)}");
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
@@ -724,7 +748,7 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "fit_views_to_sheet",
             total.ElapsedMilliseconds,
-            $"views={viewsCount} candidates={candidateAttempts} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
+            $"views={viewsCount} candidates={candidateAttempts} layoutCandidates={allCandidates.Length} selectedScale={(selectedScale.HasValue ? selectedScale.Value.ToString(CultureInfo.InvariantCulture) : "n/a")} scalePolicy={scalePolicy} applyMode={applyMode} initMs={initMs} reservedMs={reservedMs} candidateFitMs={candidateFitMs} probeMs={probeMs} arrangeMs={arrangeMs} postAdjustMs={postAdjustMs} projectionMs={projectionMs} projectionMode={(projectionResult?.Mode ?? "none")} projectionApplied={(projectionResult?.AppliedMoves ?? 0)} projectionSkipped={(projectionResult?.SkippedMoves ?? 0)} finalCommitMs={finalCommitMs}");
         PerfTrace.CompleteViewLayoutRun(
             $"views={viewsCount} arranged={arranged.Count} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount} feasible={(selectedCandidateFeasible ? 1 : 0)} totalMs={total.ElapsedMilliseconds}");
         return result;

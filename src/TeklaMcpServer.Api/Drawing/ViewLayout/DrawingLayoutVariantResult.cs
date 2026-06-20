@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -13,4 +14,7 @@ internal sealed class DrawingLayoutVariantResult
     public long PostAdjustMs { get; set; }
     public long ProjectionMs { get; set; }
     public long FinalCommitMs { get; set; }
+    // Final runtime views after all variant phases — used to build the apply baseline
+    // from the winning variant, not from the last-executed variant's side effects.
+    public List<View> FinalRuntimeViews { get; set; } = new();
 }

@@ -18,4 +18,5 @@ internal sealed class SharedLayoutContext
     public bool PreserveExistingScales { get; set; }
     public bool KeepCurrentScales { get; set; }
     public bool AllowTeklaMutation { get; set; }
+    public IReadOnlyList<ReservedRect> ExtraReservedAreas { get; set; } = System.Array.Empty<ReservedRect>();
 }

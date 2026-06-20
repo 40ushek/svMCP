@@ -260,38 +260,61 @@ public sealed partial class TeklaDrawingViewApi
         var arrangedById = arranged.ToDictionary(static view => view.Id);
         foreach (var decision in plan.Decisions)
         {
-            if (!string.Equals(decision.Reason, "ok", System.StringComparison.Ordinal)
-                || !decision.PlannedOriginX.HasValue
-                || !decision.PlannedOriginY.HasValue)
-            {
-                continue;
-            }
+            var ok = string.Equals(decision.Reason, "ok", System.StringComparison.Ordinal)
+                     && decision.PlannedOriginX.HasValue
+                     && decision.PlannedOriginY.HasValue;
 
-            if (UpdateArrangedOrigin(
-                    arranged,
-                    decision.ViewId,
-                    decision.PlannedOriginX.Value,
-                    decision.PlannedOriginY.Value) is { } updated)
+            if (ok)
             {
-                arrangedById[decision.ViewId] = updated;
+                if (UpdateArrangedOrigin(
+                        arranged,
+                        decision.ViewId,
+                        decision.PlannedOriginX.Value,
+                        decision.PlannedOriginY.Value) is { } updated)
+                {
+                    arrangedById[decision.ViewId] = updated;
+                }
+                else if (viewsById.TryGetValue(decision.ViewId, out var view))
+                {
+                    var added = new ArrangedView
+                    {
+                        Id = decision.ViewId,
+                        ViewType = view.ViewType.ToString(),
+                        OriginX = decision.PlannedOriginX.Value,
+                        OriginY = decision.PlannedOriginY.Value,
+                        LayoutMargin = layoutMargin,
+                        LayoutGap = layoutGap
+                    };
+                    arranged.Add(added);
+                    arrangedById[decision.ViewId] = added;
+                }
+
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_PLAN_APPLY id={decision.ViewId} kind={decision.ViewKind} live=0 origin=({decision.PlannedOriginX.Value:F1},{decision.PlannedOriginY.Value:F1})");
             }
-            else if (viewsById.TryGetValue(decision.ViewId, out var view))
+            else if (decision.Reason.StartsWith("reject", System.StringComparison.Ordinal)
+                     && !arrangedById.ContainsKey(decision.ViewId)
+                     && viewsById.TryGetValue(decision.ViewId, out var fallbackView)
+                     && fallbackView.Origin != null)
             {
-                var added = new ArrangedView
+                // Free-view reposition found no valid position — add the view at its
+                // current drawing origin so the scorer sees the real overlap and can
+                // penalise this candidate vs. alternatives that place it properly.
+                var fallback = new ArrangedView
                 {
                     Id = decision.ViewId,
-                    ViewType = view.ViewType.ToString(),
-                    OriginX = decision.PlannedOriginX.Value,
-                    OriginY = decision.PlannedOriginY.Value,
+                    ViewType = fallbackView.ViewType.ToString(),
+                    OriginX = fallbackView.Origin.X,
+                    OriginY = fallbackView.Origin.Y,
                     LayoutMargin = layoutMargin,
                     LayoutGap = layoutGap
                 };
-                arranged.Add(added);
-                arrangedById[decision.ViewId] = added;
-            }
+                arranged.Add(fallback);
+                arrangedById[decision.ViewId] = fallback;
 
-            DrawingProjectionAlignmentService.Log(
-                $"FREE_VIEW_PLAN_APPLY id={decision.ViewId} kind={decision.ViewKind} live=0 origin=({decision.PlannedOriginX.Value:F1},{decision.PlannedOriginY.Value:F1})");
+                DrawingProjectionAlignmentService.Log(
+                    $"FREE_VIEW_PLAN_FALLBACK id={decision.ViewId} kind={decision.ViewKind} reason={decision.Reason} origin=({fallbackView.Origin.X:F1},{fallbackView.Origin.Y:F1})");
+            }
         }
     }
 
