@@ -811,10 +811,25 @@ sealed class ViewPlacementService
   предсуществующее свойство, не следствие миграции). Эквивалентность placement
   гарантирована unit-тестом `TryPlaceNearPoint_MatchesOldFlipFormula` (байт-в-байт
   со старой формулой). Недетерминизм candidate-selection — отдельный вопрос (6.6).
-- 7.3 — мигрировать остальные по одному в порядке простоты:
-  #9 Ga → #3 BaseRect → #4 Relative → #1,#2 `BaseProjectedDrawingArrangeStrategy.cs`
-  → #5,#6,#7 `ProjectedGroupLayoutPlanner` (последними — сложнее всех). Каждый со
-  сверкой origins. Для #1 (строка 292) bin/режим/gap уточнить по коду при заходе.
+- 7.3a — ✅ ВЫПОЛНЕН. #3 `BaseRect.cs:583` (base-view placement) переведён на
+  `ViewPlacementService.TryPlaceNearPoint`. Gap уже в `inset` searchWindow →
+  blockers raw, item raw, `gap:0`. Helpers `ToBlockedRectangle` /
+  `FromPackedRectangle` / `TryClipToWindow` пока оставлены: их ещё используют
+  #1/#2/#4 в том же partial. Проверено live на M.49: FrontView (base) на
+  `(249.66, 471.13)` — та же позиция, что до миграции; раскладка валидна.
+
+- **7.3b — ВАЖНЫЙ CAVEAT (блокер для остальных мест).** Оставшиеся site'ы НЕ
+  используют closest-to-point/anchor — они на `TryInsert(BestAreaFit)`
+  (area-packing, без target): #9 Ga, #4 Relative, #1/#2 BaseProjected.cs, и
+  частично Planner. Текущий `ViewPlacementService` таких методов НЕ имеет.
+  Кроме того у #1,2,4,6,7 gap-модель «gap в bin + gap к item» = двойной запас
+  (~2*gap), у #9 — gap в bin. Поэтому перед их миграцией нужно:
+  1. добавить в сервис `TryInsertBestArea(frame, w, h, blocked, gap, out rect)`
+     (area-fit режим, тот же flip);
+  2. для мест с двойным gap решить: передавать `2*gap` (сохранить зазор) ИЛИ
+     зафиксировать смену зазора как намеренную (origins НЕ совпадут — отметить);
+  3. мигрировать по одному: #9 Ga → #4 Relative → #1,#2 → #5,#6,#7 Planner.
+  До добавления area-fit режима эти места не трогать.
 - 7.4 — #10,#11 `DrawingPackingEstimator` перевести на `CanFit` (тонкий пробник,
   без своего packer).
 - 7.5 — добавить anchor-zone reservation ОДИН раз в сервисе

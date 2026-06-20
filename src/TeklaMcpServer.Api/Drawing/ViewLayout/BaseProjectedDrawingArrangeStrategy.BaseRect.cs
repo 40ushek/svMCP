@@ -571,30 +571,20 @@ public sealed partial class BaseProjectedDrawingArrangeStrategy
             return false;
         }
 
-        var blockedRectangles = new List<PackedRectangle>();
-        foreach (var rect in blocked)
-        {
-            if (!TryClipToWindow(rect, searchWindow, out var clipped))
-                continue;
-
-            blockedRectangles.Add(ToBlockedRectangle(searchWindow.MinX, searchWindow.MaxY, clipped));
-        }
-
-        var packer = new MaxRectsBinPacker(
-            searchWindow.MaxX - searchWindow.MinX,
-            searchWindow.MaxY - searchWindow.MinY,
-            allowRotation: false,
-            blockedRectangles);
-
-        var targetCenterX = (searchWindow.MaxX - searchWindow.MinX) / 2.0;
-        var targetCenterY = (searchWindow.MaxY - searchWindow.MinY) / 2.0;
-        if (!packer.TryInsertClosestToPoint(baseWidth, baseHeight, targetCenterX, targetCenterY, out var placement))
+        // Phase 7.3: placement via ViewPlacementService. gap is already applied
+        // via the searchWindow inset above, so blockers are passed raw (gap=0)
+        // and the item size raw — behavior-preserving vs the old hand-rolled flip.
+        var frame = new PlacementFrame(
+            searchWindow.MinX, searchWindow.MinY, searchWindow.MaxX, searchWindow.MaxY);
+        var targetCenterX = (searchWindow.MinX + searchWindow.MaxX) / 2.0;
+        var targetCenterY = (searchWindow.MinY + searchWindow.MaxY) / 2.0;
+        if (!ViewPlacementService.TryPlaceNearPoint(
+                frame, baseWidth, baseHeight, targetCenterX, targetCenterY, blocked, gap: 0, out baseRect))
         {
             baseRect = new ReservedRect(0, 0, 0, 0);
             return false;
         }
 
-        baseRect = FromPackedRectangle(searchWindow.MinX, searchWindow.MaxY, placement);
         return true;
     }
 }
