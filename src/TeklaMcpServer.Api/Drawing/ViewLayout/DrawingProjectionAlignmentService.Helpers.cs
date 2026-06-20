@@ -84,7 +84,6 @@ internal sealed partial class DrawingProjectionAlignmentService
             return;
 
         result.RecordValidatorReject(decision.Reason);
-        Log($"REJECT view={decision.ViewId} reason={decision.Reason} delta=({decision.Dx:F2},{decision.Dy:F2}) candidate=[{decision.CandidateRect.MinX:F1},{decision.CandidateRect.MinY:F1},{decision.CandidateRect.MaxX:F1},{decision.CandidateRect.MaxY:F1}] blockers={string.Join(";", decision.Blockers.Select(b => $"view={b.ViewId}:[{b.Rect.MinX:F1},{b.Rect.MinY:F1},{b.Rect.MaxX:F1},{b.Rect.MaxY:F1}]"))}");
         PerfTrace.Write("api-view", "projection_move_reject", 0, FormatProjectionMoveRejectDecision(decision));
         TraceSkip(result, FormatProjectionSkipReason(decision, sheetWidth, sheetHeight, margin, state));
     }
