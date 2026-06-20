@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Diagnostics;
 using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
@@ -15,7 +16,13 @@ internal static class DrawingLayoutCandidateBuilder
         IReadOnlyList<ArrangedView> arranged,
         IReadOnlyDictionary<int, ReservedRect> actualRects)
     {
-        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var arrangedById = new Dictionary<int, ArrangedView>(arranged.Count);
+        foreach (var av in arranged)
+        {
+            if (arrangedById.ContainsKey(av.Id))
+                PerfTrace.Write("api-view", "layout_internal", 0, $"arranged-duplicate id={av.Id}");
+            arrangedById[av.Id] = av;
+        }
         var candidate = new DrawingLayoutCandidate
         {
             Name = name,
@@ -150,7 +157,13 @@ internal static class DrawingLayoutCandidateBuilder
         IReadOnlyList<View> views,
         IReadOnlyList<ArrangedView> arranged)
     {
-        var arrangedById = arranged.ToDictionary(static view => view.Id);
+        var arrangedById = new Dictionary<int, ArrangedView>(arranged.Count);
+        foreach (var av in arranged)
+        {
+            if (arrangedById.ContainsKey(av.Id))
+                PerfTrace.Write("api-view", "layout_internal", 0, $"arranged-duplicate id={av.Id}");
+            arrangedById[av.Id] = av;
+        }
         var plannedViews = new List<DrawingLayoutPlannedView>(views.Count);
 
         foreach (var view in views)

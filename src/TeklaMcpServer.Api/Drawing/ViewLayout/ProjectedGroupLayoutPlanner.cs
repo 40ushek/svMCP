@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
@@ -232,31 +233,6 @@ internal static class ProjectedGroupLayoutPlanner
             => new(rect.MinX + dx, rect.MinY + dy, rect.MaxX + dx, rect.MaxY + dy);
     }
 
-    public static void Trace(
-        DrawingArrangeContext context,
-        NeighborSet neighbors,
-        IReadOnlyList<View> leftSections,
-        IReadOnlyList<View> rightSections,
-        IReadOnlyList<View> topSections,
-        IReadOnlyList<View> bottomSections,
-        IReadOnlyList<View> secondaryViews,
-        DrawingPackingEstimator.RelaxedPackingResult relaxedPacking)
-    {
-        if (!PerfTrace.IsViewLayoutDetailedTraceActive)
-            return;
-
-        Fits(
-            context,
-            neighbors,
-            leftSections,
-            rightSections,
-            topSections,
-            bottomSections,
-            secondaryViews,
-            relaxedPacking,
-            trace: true);
-    }
-
     public static bool Fits(
         DrawingArrangeContext context,
         NeighborSet neighbors,
@@ -355,11 +331,13 @@ internal static class ProjectedGroupLayoutPlanner
         IReadOnlyList<View> secondaryViews,
         DrawingPackingEstimator.RelaxedPackingResult relaxedPacking)
     {
+        var planSw = Stopwatch.StartNew();
         var items = BuildItems(context, neighbors, leftSections, rightSections, topSections, bottomSections, secondaryViews);
         if (items.Projected.Count == 0)
             return null;
 
         var results = new List<ScenarioResult>();
+        var scenarioIndex = 0;
         foreach (var spacing in CreateSpacingCandidates(context))
         {
             var candidateContext = context.With(margin: spacing.Margin, gap: spacing.Gap);
@@ -369,6 +347,7 @@ internal static class ProjectedGroupLayoutPlanner
             foreach (var baseCandidate in baseCandidates)
             foreach (var scenario in scenarios)
             {
+                scenarioIndex++;
                 var result = RunScenario(
                     candidateContext,
                     items.BaseItem,
@@ -393,7 +372,14 @@ internal static class ProjectedGroupLayoutPlanner
             .FirstOrDefault();
 
         if (best?.FinalState == null)
+        {
+            PerfTrace.Write(
+                "api-view",
+                "projected_group_plan_result",
+                planSw.ElapsedMilliseconds,
+                $"result=reject scenarios={scenarioIndex} rejected={results.Count} reason=no-valid-scenario");
             return null;
+        }
 
         var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
         foreach (var vp in best.FinalState.Placements.Values)
@@ -434,8 +420,8 @@ internal static class ProjectedGroupLayoutPlanner
         PerfTrace.Write(
             "api-view",
             "projected_group_plan_result",
-            0,
-            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} edgePenalty={best.EdgeMarginPenalty:F4} views={planned.Count}");
+            planSw.ElapsedMilliseconds,
+            $"result=ok selectedBase={best.BaseCandidate} selected={best.Scenario} margin={best.Margin:F1} gap={best.Gap:F1} scenarios={scenarioIndex} added={best.AddedCount} deferred={best.DeferredCount} fallbackPlaced={best.FallbackPlacedCount} score={best.Score:F4} compactness={best.CompactnessRatio:F4} baseCenterDistance={best.BaseCenterDistanceRatio:F4} sidePenalty={best.PlacementSidePenalty:F4} edgePenalty={best.EdgeMarginPenalty:F4} views={planned.Count}");
 
         return planned;
     }
@@ -642,7 +628,15 @@ internal static class ProjectedGroupLayoutPlanner
 
         var scoredFallbackRects = collectPlacements ? result.FallbackPlacements : new List<(PlannerItem Item, ReservedRect Rect)>();
         var fallbackRects = scoredFallbackRects;
-        if (!TryPlaceFallbackViews(context, scenarioName, state, deferred, trace, out var fallbackPlaced, out var fallbackReject, fallbackRects))
+        if (!TryPlaceFallbackViews(
+                context,
+                scenarioName,
+                state,
+                deferred,
+                trace,
+                out var fallbackPlaced,
+                out var fallbackReject,
+                fallbackRects))
         {
             result.RejectReason = $"fallback:{fallbackReject}";
             result.FallbackPlacedCount = fallbackPlaced;

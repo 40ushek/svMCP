@@ -238,6 +238,7 @@ public sealed partial class TeklaDrawingViewApi
             applyMode);
 
         double? optimalScale = null;
+        var optimalScaleIndex = -1;
         var rejectedScaleDecisions = new List<EstimateFitFailureDecision>();
         var scaleDecisionLayer = "not-evaluated";
         var currentViews = views;
@@ -394,6 +395,7 @@ public sealed partial class TeklaDrawingViewApi
                 {
                     TraceScaleCandidateAccept(s);
                     optimalScale = s;
+                    optimalScaleIndex = candidates.TakeWhile(c => c != s).Count();
                     currentViews = candidateViews;
                     layoutWorkspace.SetRuntimeViews(currentViews);
                     var selectedFrameSizesById = candidateViews
@@ -477,93 +479,162 @@ public sealed partial class TeklaDrawingViewApi
             0,
             $"selectedScale=1:{optimalScale.Value.ToString("0.###", CultureInfo.InvariantCulture)} attempts={candidateAttempts} policy={scalePolicy} applyMode={applyMode}");
 
-        layoutWorkspace.SetSelectedScales(ResolveSelectedScales(
-            layoutWorkspace,
-            currentViews,
-            optimalScale.Value,
-            uniformAllNonDetail,
-            preserveExistingScales || keepCurrentScales,
-            secondaryScalePolicy));
-
-        actualRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
-        layoutWorkspace.SetActualViewRects(actualRects);
-
-        // Refresh SelectedFrameSizes from actual post-scale bbox. The virtual probe estimates
-        // sizes by proportional scaling, which underestimates section views that have
-        // scale-invariant components (marks, labels) in their bbox.
-        if (allowTeklaMutation && actualRects.Count > 0)
+        // Build the list of scale attempts: start with optimalScale, fall back to larger denominators
+        // if all variants at the current scale are infeasible (EstimateFit was too optimistic).
+        selectedScale = optimalScale.Value;
+        var scalesToTry = new System.Collections.Generic.List<double> { optimalScale.Value };
+        if (optimalScaleIndex >= 0)
         {
-            var refreshedSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
-            if (refreshedSizes.Count > 0)
-                layoutWorkspace.SetSelectedFrameSizes(refreshedSizes);
+            for (var si = optimalScaleIndex + 1; si < candidates.Count; si++)
+                scalesToTry.Add(candidates[si]);
         }
 
-        var offsetById = DrawingViewFrameGeometry.TryGetFrameOffsets(currentViews, actualRects);
-        layoutWorkspace.SetFrameOffsets(offsetById);
-        // Read offsets from actual sheet geometry after the final scale state is already applied.
-        // Keep-scale mode still needs real frame offsets; otherwise projection-pass collision checks
-        // degrade to origin-centered boxes and may allow one view to move inside another.
+        DrawingLayoutVariantResult? variantResult = null;
+        DrawingLayoutCandidateSelection? passiveSelection = null;
+        var allCandidates = System.Array.Empty<DrawingLayoutCandidate>();
+        var scaleAttemptViews = currentViews;
+        var scaleAttemptRects = actualRects;
 
-        var arrangedViews = currentViews
-            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
-            .ToList();
-
-        var gridApi = new TeklaDrawingGridApi();
-        var preloadedAxes = arrangedViews
-            .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
-            .Where(x => x.Result.Success)
-            .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
-        layoutWorkspace.SetGridAxes(preloadedAxes);
-
-        var sharedCtx = new SharedLayoutContext
+        foreach (var attemptScale in scalesToTry)
         {
-            Drawing              = activeDrawing,
-            Workspace            = layoutWorkspace,
-            CurrentViews         = currentViews,
-            ArrangedViews        = arrangedViews,
-            ActualRects          = actualRects,
-            OffsetById           = offsetById,
-            OptimalScale         = optimalScale.Value,
-            EffectiveMargin      = effectiveMargin,
-            Gap                  = gap,
-            PreserveExistingScales = preserveExistingScales,
-            KeepCurrentScales    = keepCurrentScales,
-            AllowTeklaMutation   = allowTeklaMutation
-        };
-
-        var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
-        var variantList = new List<DrawingLayoutVariantResult> { defaultVariant };
-
-        // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
-        var model3DViews = arrangedViews
-            .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
-            .ToList();
-        if (model3DViews.Count == 1)
-        {
-            for (var corner = 0; corner < 4; corner++)
+            // For the first attempt use the state already set by probe.
+            // For subsequent attempts, apply the new scale virtually (no Tekla mutation).
+            if (attemptScale != optimalScale.Value)
             {
-                var cornerVariant = TryRun3DCornerLayoutVariant(sharedCtx, model3DViews[0], corner);
-                if (cornerVariant != null)
-                    variantList.Add(cornerVariant);
+                var fallbackProbe = ProbeCandidateScale(
+                    activeDrawing,
+                    layoutWorkspace,
+                    currentViews,
+                    originalFrameSizes,
+                    attemptScale,
+                    uniformAllNonDetail,
+                    applyProbe: allowTeklaMutation,
+                    availW,
+                    availH,
+                    secondaryScalePolicy);
+                probeMs += fallbackProbe.ElapsedMilliseconds;
+                if (fallbackProbe.PreRejectedByEstimate)
+                {
+                    PerfTrace.Write("api-view", "layout_internal", 0,
+                        $"scale_variant_result scale=1:{attemptScale:0.###} action=pre-rejected-by-estimate");
+                    break;
+                }
+                scaleAttemptViews = fallbackProbe.Views;
+                layoutWorkspace.SetRuntimeViews(scaleAttemptViews);
+                layoutWorkspace.SetSelectedFrameSizes(
+                    scaleAttemptViews
+                        .Select((v, i) => new { Id = v.GetIdentifier().ID, Frame = fallbackProbe.Frames[i] })
+                        .ToDictionary(x => x.Id, x => (x.Frame.w, x.Frame.h)));
             }
+
+            layoutWorkspace.SetSelectedScales(ResolveSelectedScales(
+                layoutWorkspace,
+                scaleAttemptViews,
+                attemptScale,
+                uniformAllNonDetail,
+                preserveExistingScales || keepCurrentScales,
+                secondaryScalePolicy));
+
+            // Read actual Tekla geometry (post-mutation) for both primary and fallback scale attempts.
+            // Virtual probe estimates underestimate section views with scale-invariant components.
+            if (allowTeklaMutation)
+            {
+                scaleAttemptRects = DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing);
+                layoutWorkspace.SetActualViewRects(scaleAttemptRects);
+
+                var refreshedSizes = DrawingViewFrameGeometry.TryGetFrameSizes(scaleAttemptViews, scaleAttemptRects);
+                if (refreshedSizes.Count > 0)
+                    layoutWorkspace.SetSelectedFrameSizes(refreshedSizes);
+            }
+
+            var offsetById = DrawingViewFrameGeometry.TryGetFrameOffsets(scaleAttemptViews, scaleAttemptRects);
+            layoutWorkspace.SetFrameOffsets(offsetById);
+            // Read offsets from actual sheet geometry after the final scale state is already applied.
+            // Keep-scale mode still needs real frame offsets; otherwise projection-pass collision checks
+            // degrade to origin-centered boxes and may allow one view to move inside another.
+
+            var arrangedViews = scaleAttemptViews
+                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
+                .ToList();
+
+            var gridApi = new TeklaDrawingGridApi();
+            var preloadedAxes = arrangedViews
+                .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
+                .Where(x => x.Result.Success)
+                .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
+            layoutWorkspace.SetGridAxes(preloadedAxes);
+
+            var sharedCtx = new SharedLayoutContext
+            {
+                Drawing              = activeDrawing,
+                Workspace            = layoutWorkspace,
+                CurrentViews         = scaleAttemptViews,
+                ArrangedViews        = arrangedViews,
+                ActualRects          = scaleAttemptRects,
+                OffsetById           = offsetById,
+                OptimalScale         = attemptScale,
+                EffectiveMargin      = effectiveMargin,
+                Gap                  = gap,
+                PreserveExistingScales = preserveExistingScales,
+                KeepCurrentScales    = keepCurrentScales,
+                AllowTeklaMutation   = allowTeklaMutation
+            };
+
+            var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
+            var variantList = new System.Collections.Generic.List<DrawingLayoutVariantResult> { defaultVariant };
+
+            // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
+            var model3DViews = arrangedViews
+                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
+                .ToList();
+            if (model3DViews.Count == 1)
+            {
+                for (var corner = 0; corner < 4; corner++)
+                {
+                    var cornerVariant = TryRun3DCornerLayoutVariant(sharedCtx, model3DViews[0], corner);
+                    if (cornerVariant != null)
+                        variantList.Add(cornerVariant);
+                }
+            }
+
+            allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
+            passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
+            var anyFeasible = passiveSelection.Selected?.IsFeasible == true;
+
+            PerfTrace.Write("api-view", "layout_internal", 0,
+                $"scale_variant_result scale=1:{attemptScale:0.###} candidates={allCandidates.Length} feasible={(anyFeasible ? passiveSelection.Evaluations.Count(e => e.IsFeasible) : 0)} action={(anyFeasible ? "select" : "try-next-scale")}");
+
+            // Baseline from the winning variant, not from the last-executed variant's side effects
+            var winningCandidateName = passiveSelection.Selected?.Candidate.Name ?? "";
+            var winningVariant = variantList.FirstOrDefault(v =>
+                v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
+            variantResult = winningVariant;
+
+            if (anyFeasible)
+            {
+                selectedScale = attemptScale;
+                break;
+            }
+
+            // All variants infeasible at this scale — keep variantResult for apply (best-effort)
+            // and try the next scale. selectedScale stays at optimalScale for reporting.
         }
 
-        var allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
-        var passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
-
-        // Baseline from the winning variant, not from the last-executed variant's side effects
-        var winningCandidateName = passiveSelection.Selected?.Candidate.Name ?? "";
-        var winningVariant = variantList.FirstOrDefault(v =>
-            v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
-
-        var variantResult = winningVariant;
-        var arranged = variantResult.Arranged;
+        // variantResult is guaranteed non-null: the loop always runs at least once (scalesToTry[0] = optimalScale)
+        var arranged = variantResult!.Arranged;
         arrangeMs    = variantResult.ArrangeMs;
         postAdjustMs = variantResult.PostAdjustMs;
         projectionMs = variantResult.ProjectionMs;
         projectionResult = variantResult.ProjectionResult;
         finalCommitMs = variantResult.FinalCommitMs;
-        selectedScale = optimalScale;
+        actualRects = scaleAttemptRects;
+
+        // Restore RuntimeViews to include all views from the winning variant (e.g. 3D view
+        // excluded from virtual probe but present in FinalRuntimeViews via corner variant).
+        // The apply adapter looks up views by ID in RuntimeViewsById — missing entries cause
+        // missing-runtime-view failures.
+        if (variantResult.FinalRuntimeViews.Count > 0)
+            layoutWorkspace.SetRuntimeViews(variantResult.FinalRuntimeViews);
 
         var finalActualRects = allowTeklaMutation
             ? DrawingViewFrameGeometry.BuildActualViewRects(activeDrawing)
@@ -618,7 +689,7 @@ public sealed partial class TeklaDrawingViewApi
             selectedCandidateApplyPolicy,
             selectedCandidateApplySafety);
         TraceLayoutDecision(
-            optimalScale.Value,
+            selectedScale ?? optimalScale.Value,
             passiveSelection,
             applyPlan,
             selectedCandidateApplySafety);

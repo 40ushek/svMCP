@@ -137,7 +137,10 @@ internal sealed class DrawingLayoutScorer
             viewOverlapCount++;
             viewOverlapArea += overlapArea;
             diagnostics.Add(
-                $"score:view-overlap:first={scoredViews[i].ViewId}:second={scoredViews[j].ViewId}:area={overlapArea:0.###}:firstRect={FormatRect(scoredViews[i].Rect)}:secondRect={FormatRect(scoredViews[j].Rect)}");
+                $"score:view-overlap:" +
+                $"first={scoredViews[i].ViewId}:firstType={scoredViews[i].ViewType}:firstKind={scoredViews[i].SemanticKind}:firstLayoutKind={scoredViews[i].LayoutViewKind}:" +
+                $"second={scoredViews[j].ViewId}:secondType={scoredViews[j].ViewType}:secondKind={scoredViews[j].SemanticKind}:secondLayoutKind={scoredViews[j].LayoutViewKind}:" +
+                $"area={overlapArea:0.###}:firstRect={FormatRect(scoredViews[i].Rect)}:secondRect={FormatRect(scoredViews[j].Rect)}");
         }
 
         var reservedOverlapCount = 0;
@@ -450,7 +453,9 @@ internal sealed class DrawingLayoutScorer
 
             result.Add(new ScoredViewRect(
                 view.Id,
+                view.ViewType,
                 view.SemanticKind,
+                view.LayoutViewKind.ToString(),
                 view.Scale,
                 view.LayoutRect,
                 view.LayoutRectSource));
@@ -624,13 +629,17 @@ internal sealed class DrawingLayoutScorer
     {
         public ScoredViewRect(
             int viewId,
+            string viewType,
             string semanticKind,
+            string layoutViewKind,
             double scale,
             ReservedRect rect,
             string rectSource)
         {
             ViewId = viewId;
+            ViewType = viewType;
             SemanticKind = semanticKind;
+            LayoutViewKind = layoutViewKind;
             Scale = scale;
             Rect = rect;
             RectSource = rectSource;
@@ -638,7 +647,11 @@ internal sealed class DrawingLayoutScorer
 
         public int ViewId { get; }
 
+        public string ViewType { get; }
+
         public string SemanticKind { get; }
+
+        public string LayoutViewKind { get; }
 
         public double Scale { get; }
 

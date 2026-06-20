@@ -38,6 +38,32 @@ public sealed class MaxRectsBinPackerTests
         Assert.False(inserted);
     }
 
+    [Fact]
+    public void Constructor_HandlesOverlappingBlockedRectanglesWithoutFragmentExplosion()
+    {
+        var blocked = Enumerable.Range(0, 14)
+            .Select(index => new PackedRectangle(
+                10 + (index * 4),
+                10 + ((index % 4) * 12),
+                55,
+                48))
+            .ToArray();
+
+        var packer = new MaxRectsBinPacker(
+            120,
+            90,
+            allowRotation: false,
+            blockedRectangles: blocked);
+
+        var freeRectangles = packer.GetFreeRectanglesSnapshot();
+        Assert.All(freeRectangles, free =>
+        {
+            Assert.True(free.Width > 0);
+            Assert.True(free.Height > 0);
+            Assert.DoesNotContain(blocked, blockedRect => Intersects(free, blockedRect));
+        });
+    }
+
     private static bool Intersects(PackedRectangle left, PackedRectangle right)
     {
         return !(left.X + left.Width <= right.X

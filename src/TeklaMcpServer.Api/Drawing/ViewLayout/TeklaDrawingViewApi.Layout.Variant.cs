@@ -27,6 +27,14 @@ public sealed partial class TeklaDrawingViewApi
             ? workspace.ReservedAreas
             : (IReadOnlyList<ReservedRect>)workspace.ReservedAreas.Concat(ctx.ExtraReservedAreas).ToList();
 
+        // ── View map (diagnostic) ─────────────────────────────────────────────
+        if (ctx.ExtraReservedAreas.Count == 0)
+        {
+            foreach (var v in workspace.Views)
+                DrawingProjectionAlignmentService.Log(
+                    $"layout_view_map id={v.Id} viewType={v.ViewType} semantic={v.SemanticKind} layoutKind={v.LayoutViewKind} scale={v.Scale:0.##} frame=[{v.Width:0.##}x{v.Height:0.##}]");
+        }
+
         // ── Arrange ──────────────────────────────────────────────────────────
         var arrangeSw = Stopwatch.StartNew();
         PerfTrace.Write(
@@ -356,6 +364,12 @@ public sealed partial class TeklaDrawingViewApi
         // explicit cornerView below is the only one with this id.
         result.Arranged.RemoveAll(v => v.Id == id);
         result.ArrangedBeforeFree.RemoveAll(v => v.Id == id);
+
+        // Ensure model3DView is present in FinalRuntimeViews so the apply baseline includes it.
+        // derivedCtx excluded the 3D view from CurrentViews, so RunDefaultLayoutVariant never
+        // added it to FinalRuntimeViews. Without it the apply delta misses the 3D view entirely.
+        if (result.FinalRuntimeViews.Count > 0 && result.FinalRuntimeViews.All(v => v.GetIdentifier().ID != id))
+            result.FinalRuntimeViews.Add(model3DView);
 
         // Inject 3D view at the fixed corner position — not via free-view reposition
         var cornerView = new ArrangedView
