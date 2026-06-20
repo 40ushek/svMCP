@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using TeklaMcpServer.Api.Algorithms.Packing;
+using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
@@ -41,10 +43,12 @@ internal static class ViewPlacementService
         if (!packer.TryInsertClosestToPoint(width, height, px, py, out var placement))
         {
             sheetRect = null!;
+            Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, null);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
+        Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, sheetRect);
         return true;
     }
 
@@ -72,17 +76,21 @@ internal static class ViewPlacementService
         if (!packer.TryInsertClosestToAnchor(width, height, px, py, out var placement))
         {
             sheetRect = null!;
+            Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, null);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
+        Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, sheetRect);
         return true;
     }
 
     /// <summary>
-    /// Place a w×h view using best-area-fit (no target point). Replaces
-    /// hand-rolled <c>TryInsert(BestAreaFit)</c> + manual flip in the
-    /// area-packing strategies (Ga / Relative / base projected).
+    /// Place a w×h view using best-area-fit (no target point). Intended to
+    /// replace the hand-rolled <c>TryInsert(BestAreaFit)</c> + manual flip in the
+    /// area-packing strategies (Ga / Relative / base projected) — not yet wired:
+    /// those sites await a live GA/area-fit drawing for origin verification
+    /// (roadmap 7.3b blocker).
     /// </summary>
     public static bool TryInsertBestArea(
         PlacementFrame frame,
@@ -101,10 +109,12 @@ internal static class ViewPlacementService
         if (!packer.TryInsert(width, height, MaxRectsHeuristic.BestAreaFit, out var placement))
         {
             sheetRect = null!;
+            Trace("best-area", frame, width, height, null, null, blocked.Count, gap, null);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
+        Trace("best-area", frame, width, height, null, null, blocked.Count, gap, sheetRect);
         return true;
     }
 
@@ -181,5 +191,36 @@ internal static class ViewPlacementService
             var (packerX, packerY) = frame.ToPacker(minX, maxY);
             yield return new PackedRectangle(packerX, packerY, maxX - minX, maxY - minY);
         }
+    }
+
+    /// <summary>
+    /// Trace one placement attempt to the shared view-layout log
+    /// (C:\temp\svmcp-view-layout.log), same channel as the rest of layout.
+    /// target is null for best-area mode; result is null on failure.
+    /// </summary>
+    private static void Trace(
+        string mode,
+        PlacementFrame frame,
+        double width,
+        double height,
+        double? targetX,
+        double? targetY,
+        int blockedCount,
+        double gap,
+        ReservedRect? result)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var target = targetX.HasValue && targetY.HasValue
+            ? string.Format(inv, "({0:F1},{1:F1})", targetX.Value, targetY.Value)
+            : "none";
+        var res = result != null
+            ? string.Format(inv, "[{0:F1},{1:F1},{2:F1},{3:F1}]",
+                result.MinX, result.MinY, result.MaxX, result.MaxY)
+            : "fail";
+        PerfTrace.Write("api-view", "view_placement", 0, string.Format(
+            inv,
+            "mode={0} frame=[{1:F1},{2:F1},{3:F1},{4:F1}] size=({5:F1}x{6:F1}) target={7} blockers={8} gap={9:F1} result={10}",
+            mode, frame.MinX, frame.MinY, frame.MaxX, frame.MaxY,
+            width, height, target, blockedCount, gap, res));
     }
 }

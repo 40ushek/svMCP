@@ -157,6 +157,21 @@ public sealed class ViewPlacementServiceTests
     }
 
     [Fact]
+    public void TryInsertBestArea_AvoidsGapExpandedBlocker()
+    {
+        // Single horizontal strip frame so the only free span is to the right of
+        // the blocker. Blocker covers x<=100; with gap=10 it expands to x<=110,
+        // so a 50-wide view must start at x >= 110 (no room to its left/above).
+        var frame = new PlacementFrame(0, 0, 200, 60);
+        var blocked = new[] { new ReservedRect(0, 0, 100, 60) };
+
+        Assert.True(ViewPlacementService.TryInsertBestArea(
+            frame, 50, 50, blocked, gap: 10, out var rect));
+        Assert.True(rect.MinX >= 110 - Eps,
+            $"expected MinX >= 110 with gap-expanded blocker, got {rect.MinX}");
+    }
+
+    [Fact]
     public void CanFit_TrueWhenItemsFit_FalseWhenOversized()
     {
         var frame = new PlacementFrame(0, 0, 100, 100);
