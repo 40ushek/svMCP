@@ -11,241 +11,6 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi
 {
-    private List<ArrangedView> TryRepositionDetailViews(
-        DrawingLayoutWorkspace workspace,
-        List<View> views,
-        List<ArrangedView> arranged,
-        double usableMinX,
-        double usableMaxX,
-        double usableMinY,
-        double usableMaxY,
-        double gap,
-        IReadOnlyList<ReservedRect> reserved,
-        IReadOnlyDictionary<int, (double X, double Y)> preMovedFrameOffsets)
-    {
-        var topology = ViewTopologyGraph.Build(views);
-        var detailViews = topology.SemanticViews.Details.ToList();
-        if (detailViews.Count == 0)
-            return arranged;
-
-        var relations = topology.DetailRelations;
-        var arrangedById = arranged.ToDictionary(static view => view.Id);
-        var arrangedIds = new HashSet<int>(arranged.Select(static view => view.Id));
-        foreach (var detailView in detailViews)
-        {
-            var detailId = detailView.GetIdentifier().ID;
-            var detailOrigin = detailView.Origin;
-            if (arrangedIds.Contains(detailId) || detailOrigin == null)
-                continue;
-
-            arranged.Add(new ArrangedView
-            {
-                Id = detailId,
-                ViewType = detailView.ViewType.ToString(),
-                OriginX = detailOrigin.X,
-                OriginY = detailOrigin.Y,
-                LayoutMargin = usableMinX,
-                LayoutGap = gap,
-                IsSnapshotFallback = true
-            });
-            arrangedById[detailId] = arranged[arranged.Count - 1];
-            arrangedIds.Add(detailId);
-        }
-
-        if (relations.Count == 0)
-            return arranged;
-
-        var viewById = views.ToDictionary(v => v.GetIdentifier().ID);
-        var blocked = new List<ReservedRect>(reserved);
-        foreach (var view in views.Where(v => topology.SemanticViews.GetKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail))
-        {
-            if (TryGetVirtualLayoutRect(workspace, arrangedById, view, out var rect))
-                blocked.Add(rect);
-        }
-
-        for (var i = 0; i < detailViews.Count; i++)
-        {
-            var detailView = detailViews[i];
-            var detailId = detailView.GetIdentifier().ID;
-            if (!relations.TryGet(detailId, out var relation))
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"DETAIL_VIEW_REPOSITION id={detailId} result=skip reason=no-relation");
-                if (TryGetVirtualLayoutRect(workspace, arrangedById, detailView, out var currentRect))
-                    blocked.Add(currentRect);
-                continue;
-            }
-
-            var ownerView = relation.OwnerView;
-            if (!viewById.ContainsKey(ownerView.GetIdentifier().ID))
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"DETAIL_VIEW_REPOSITION id={detailId} result=skip reason=owner-missing");
-                if (TryGetVirtualLayoutRect(workspace, arrangedById, detailView, out var currentRect))
-                    blocked.Add(currentRect);
-                continue;
-            }
-
-            if (!TryGetVirtualLayoutRect(workspace, arrangedById, ownerView, out var ownerRect)
-                || !TryGetVirtualLayoutRect(workspace, arrangedById, detailView, out var detailRect))
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"DETAIL_VIEW_REPOSITION id={detailId} result=skip reason=no-size-or-frame");
-                continue;
-            }
-
-            var detailWidth = detailRect.MaxX - detailRect.MinX;
-            var detailHeight = detailRect.MaxY - detailRect.MinY;
-            if (detailWidth <= 0 || detailHeight <= 0)
-            {
-                blocked.Add(detailRect);
-                continue;
-            }
-
-            var rawAnchorX = relation.AnchorX;
-            var rawAnchorY = relation.AnchorY;
-            var anchorX = CenterX(ownerRect);
-            var anchorY = CenterY(ownerRect);
-            if (relation.AnchorX.HasValue)
-                anchorX = relation.AnchorX.Value;
-            if (relation.AnchorY.HasValue)
-                anchorY = relation.AnchorY.Value;
-            var ownerId = ownerView.GetIdentifier().ID;
-            var ownerDeltaX = 0.0;
-            var ownerDeltaY = 0.0;
-            if (arrangedById.TryGetValue(ownerId, out var arrangedOwner)
-                && workspace.TryGetView(ownerId) is { } originalOwner)
-            {
-                ownerDeltaX = arrangedOwner.OriginX - originalOwner.OriginX;
-                ownerDeltaY = arrangedOwner.OriginY - originalOwner.OriginY;
-                anchorX += ownerDeltaX;
-                anchorY += ownerDeltaY;
-            }
-
-            DrawingProjectionAlignmentService.Log(
-                $"DETAIL_PROBE_INPUT id={detailId} owner={ownerId} "
-                + $"rawAnchor=({(rawAnchorX.HasValue ? rawAnchorX.Value.ToString("F1") : "none")},{(rawAnchorY.HasValue ? rawAnchorY.Value.ToString("F1") : "none")}) "
-                + $"ownerDelta=({ownerDeltaX:F1},{ownerDeltaY:F1}) anchor=({anchorX:F1},{anchorY:F1}) "
-                + $"ownerRect=[{ownerRect.MinX:F1},{ownerRect.MinY:F1},{ownerRect.MaxX:F1},{ownerRect.MaxY:F1}] "
-                + $"detail={detailWidth:F1}x{detailHeight:F1} usable=[{usableMinX:F1},{usableMinY:F1},{usableMaxX:F1},{usableMaxY:F1}] "
-                + $"gap2={gap * 2.0:F1} blockers={blocked.Count}");
-
-            var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
-                ownerRect,
-                detailWidth,
-                detailHeight,
-                gap * 2.0,
-                usableMinX,
-                usableMaxX,
-                usableMinY,
-                usableMaxY,
-                blocked,
-                anchorX,
-                anchorY);
-
-            DrawingProjectionAlignmentService.Log(
-                decision.Success
-                    ? $"DETAIL_PROBE_RESULT id={detailId} success=1 "
-                      + $"candidate=[{decision.Rect.MinX:F1},{decision.Rect.MinY:F1},{decision.Rect.MaxX:F1},{decision.Rect.MaxY:F1}] "
-                      + $"candidateCenter=({CenterX(decision.Rect):F1},{CenterY(decision.Rect):F1}) "
-                      + $"anchorDistance={decision.AnchorDistance:F1} preferredBand={decision.PreferredBand} reason={decision.DegradedReason}"
-                    : $"DETAIL_PROBE_RESULT id={detailId} success=0 reason=no-valid-candidate "
-                      + $"anchor=({anchorX:F1},{anchorY:F1}) blockers={blocked.Count}");
-
-            if (!decision.Success)
-            {
-                blocked.Add(detailRect);
-                continue;
-            }
-
-            var candidateRect = decision.Rect;
-
-            var targetCenterX = (candidateRect.MinX + candidateRect.MaxX) * 0.5;
-            var targetCenterY = (candidateRect.MinY + candidateRect.MaxY) * 0.5;
-            var currentCenterX = (detailRect.MinX + detailRect.MaxX) * 0.5;
-            var currentCenterY = (detailRect.MinY + detailRect.MaxY) * 0.5;
-            if (System.Math.Abs(currentCenterX - targetCenterX) < 0.5
-                && System.Math.Abs(currentCenterY - targetCenterY) < 0.5)
-            {
-                blocked.Add(detailRect);
-                continue;
-            }
-
-            var currentOrigin = detailView.Origin;
-            if (currentOrigin == null)
-            {
-                blocked.Add(detailRect);
-                continue;
-            }
-            var origin = new Point(currentOrigin.X, currentOrigin.Y, currentOrigin.Z);
-
-            // Use the frame offset captured BEFORE any moves in this fit cycle.
-            // Re-reading the bbox here would return a stale value (center == origin, offset = 0)
-            // because Tekla doesn't update the bbox immediately after Modify/CommitChanges.
-            // offsetById stores (center - origin) * scale, so sheet-space offset = stored / scale.
-            var detailScale = detailView.Attributes.Scale > 0 ? detailView.Attributes.Scale : 1.0;
-            if (preMovedFrameOffsets.TryGetValue(detailId, out var preOffset))
-            {
-                origin.X = targetCenterX - preOffset.X / detailScale;
-                origin.Y = targetCenterY - preOffset.Y / detailScale;
-            }
-            else if (DrawingViewFrameGeometry.TryGetCenterOffsetFromOrigin(detailView, out var offsetX, out var offsetY))
-            {
-                origin.X = targetCenterX - offsetX;
-                origin.Y = targetCenterY - offsetY;
-            }
-            else
-            {
-                origin.X = targetCenterX;
-                origin.Y = targetCenterY;
-            }
-
-            DrawingProjectionAlignmentService.Log(
-                $"DETAIL_VIEW_REPOSITION id={detailId} live=0 dx={origin.X - currentOrigin.X:F1} dy={origin.Y - currentOrigin.Y:F1}");
-            blocked.Add(candidateRect);
-            var updated = false;
-            for (var ai = 0; ai < arranged.Count; ai++)
-            {
-                if (arranged[ai].Id != detailId)
-                    continue;
-
-                arranged[ai] = new ArrangedView
-                {
-                    Id = arranged[ai].Id,
-                    ViewType = arranged[ai].ViewType,
-                    OriginX = origin.X,
-                    OriginY = origin.Y,
-                    PreferredPlacementSide = arranged[ai].PreferredPlacementSide,
-                    ActualPlacementSide = arranged[ai].ActualPlacementSide,
-                    PlacementFallbackUsed = arranged[ai].PlacementFallbackUsed,
-                    LayoutMargin = arranged[ai].LayoutMargin,
-                    LayoutGap = arranged[ai].LayoutGap,
-                    IsSnapshotFallback = false
-                };
-                arrangedById[detailId] = arranged[ai];
-                updated = true;
-                break;
-            }
-
-            if (!updated)
-            {
-                var added = new ArrangedView
-                {
-                    Id = detailId,
-                    ViewType = detailView.ViewType.ToString(),
-                    OriginX = origin.X,
-                    OriginY = origin.Y,
-                    LayoutMargin = usableMinX,
-                    LayoutGap = gap
-                };
-                arranged.Add(added);
-                arrangedById[detailId] = added;
-            }
-        }
-
-        return arranged;
-    }
-
     private List<ArrangedView> TryRepositionFreeViews(
         DrawingLayoutWorkspace workspace,
         List<View> views,
@@ -652,7 +417,21 @@ public sealed partial class TeklaDrawingViewApi
     private static bool IsAnchorDrivenFreeSection(
         DrawingLayoutWorkspace workspace,
         int viewId)
-        => workspace.GetLayoutViewKind(viewId) == LayoutViewKind.AnchorDetailSection;
+    {
+        var kind = workspace.GetLayoutViewKind(viewId);
+        if (kind == LayoutViewKind.AnchorDetailSection)
+            return true;
+
+        // Detail views join the same anchor pipeline when their detail-mark
+        // anchor is known (set by DrawingLayoutWorkspace.SetParentViewRelations).
+        if (kind == LayoutViewKind.Detail)
+        {
+            var view = workspace.TryGetView(viewId);
+            return view?.ParentAnchorX is not null && view.ParentAnchorY is not null;
+        }
+
+        return false;
+    }
 
     private static bool TryGetAdjustedParentAnchor(
         DrawingLayoutWorkspace workspace,

@@ -220,18 +220,9 @@ public sealed partial class TeklaDrawingViewApi
         var finalViews = allowTeklaMutation ? EnumerateViews(drawing).ToList() : postProjectionViews;
         workspace.SetRuntimeViews(finalViews);
 
-        // ── Detail reposition ─────────────────────────────────────────────────
-        arranged = TryRepositionDetailViews(
-            workspace, finalViews, arranged,
-            selectedLayoutMargin, sheetW - selectedLayoutMargin,
-            selectedLayoutMargin, sheetH - selectedLayoutMargin,
-            selectedLayoutGap, reserved, offsetById);
-        PerfTrace.Write("api-view", "layout_stage", 0, $"stage=detail-reposition result=done arranged={arranged.Count}");
-
-        finalViews = allowTeklaMutation ? EnumerateViews(drawing).ToList() : finalViews;
-        workspace.SetRuntimeViews(finalViews);
-
-        // ── Free-view reposition ──────────────────────────────────────────────
+        // ── Free-view reposition (incl. anchor-driven details/sections) ───────
+        // Detail views are placed here via the unified anchor pipeline; the old
+        // standalone TryRepositionDetailViews/ProbeDetailPlacement was removed.
         var arrangedBeforeFree = arranged.ToList();
         arranged = TryRepositionFreeViews(
             workspace, finalViews, arranged,

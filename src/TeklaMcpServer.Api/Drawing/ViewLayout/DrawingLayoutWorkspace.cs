@@ -159,8 +159,15 @@ internal sealed class DrawingLayoutWorkspace
     }
 
     public const string RelationKindSectionMark = "SectionMark";
+    public const string RelationKindDetailMark = "DetailMark";
 
     public void SetParentViewRelations()
+    {
+        SetSectionMarkRelations();
+        SetDetailMarkRelations();
+    }
+
+    private void SetSectionMarkRelations()
     {
         var allSectionItems = Views
             .Where(static v => v.SemanticKindValue == ViewSemanticKind.Section)
@@ -183,6 +190,32 @@ internal sealed class DrawingLayoutWorkspace
             {
                 item.ParentViewId = ownerId;
                 item.ParentRelationKind = RelationKindSectionMark;
+                item.ParentAnchorX = relation.AnchorX;
+                item.ParentAnchorY = relation.AnchorY;
+            }
+        }
+    }
+
+    private void SetDetailMarkRelations()
+    {
+        var detailRuntimeViews = Views
+            .Where(static v => v.SemanticKindValue == ViewSemanticKind.Detail)
+            .Select(item => RuntimeViewsById.TryGetValue(item.Id, out var rv) ? rv : null)
+            .Where(static rv => rv != null)
+            .Select(static rv => rv!)
+            .ToList();
+        if (detailRuntimeViews.Count == 0)
+            return;
+
+        var relations = DetailRelationResolver.Build(RuntimeViews, detailRuntimeViews);
+        foreach (var relation in relations.All)
+        {
+            var id = relation.DetailView.GetIdentifier().ID;
+            var ownerId = relation.OwnerView.GetIdentifier().ID;
+            if (ViewsById.TryGetValue(id, out var item))
+            {
+                item.ParentViewId = ownerId;
+                item.ParentRelationKind = RelationKindDetailMark;
                 item.ParentAnchorX = relation.AnchorX;
                 item.ParentAnchorY = relation.AnchorY;
             }

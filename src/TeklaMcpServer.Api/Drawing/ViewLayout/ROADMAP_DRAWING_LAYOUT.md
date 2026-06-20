@@ -1435,53 +1435,49 @@ candidate, а не от последнего выполненного variant. F
 item наравне с другими видами — scorer сам выбирает лучшую позицию.
 Детализация отложена до завершения Step 4.7 (dependency zones).
 
-Шаг 4.7 — переключить detail view fallback на anchor pipeline. 🔨 В РАБОТЕ
+Шаг 4.7 — переключить detail view fallback на anchor pipeline. ✅ ОБЪЕДИНЕНИЕ ВЫПОЛНЕНО (есть открытый gap-баг)
 
-**Суть.** Anchor-driven sections и detail views в fallback решают одну задачу:
-найти ближайшее свободное место к точке притяжения (parent/anchor). Это один
-алгоритм с разным scope поиска — не два разных подхода.
-
-Anchor pipeline: MaxRects + перебор позиций вдоль границ занятых прямоугольников,
-отсортированных по близости к anchor. Правильно и эффективно.
-
-Detail fallback (`TryFindBestEffortPosition`): сетка 12×12 по всему листу,
-метрика — минимальный суммарный overlap. Устаревший подход: шаг ~1/12 usable area
-пропускает зазоры между блокерами, детали могут улетать в противоположный угол
-листа без учёта расстояния до parent.
-
-**Что сделать:**
-- В `BuildFreeViewRepositionPlan` заменить вызов `TryFindBestEffortPosition`
-  на `MaxRectsBinPacker.TryInsertClosestToAnchor` с anchor = позиция parent view.
-- Убрать `TryFindBestEffortPosition` и `IntersectionArea` — они больше не нужны.
-- Scope поиска для detail остаётся весь лист (в отличие от section, который
-  ищет только на preferred/opposite side) — это единственная policy-разница.
-
-**Результат:** один алгоритм вместо двух, меньше кода, детали остаются ближе
-к parent. Для anchor-driven pipeline поведение не меняется.
-Scoring и выбор 3D-corner не трогать в этом шаге.
-
-**Цель явно:** обычные `Detail` views должны размещаться тем же anchor-пайплайном
+**Цель.** Обычные `Detail` views должны размещаться тем же anchor-пайплайном
 (`BuildFreeViewRepositionPlan` → `TryInsertClosestToAnchor`), что и
-`AnchorDetailSection`. Старый отдельный detail-пайплайн
-(`TryRepositionDetailViews` + `ProbeDetailPlacement`) — это и есть «второй
-алгоритм», который убирается. Итог: один алгоритм вместо двух.
+`AnchorDetailSection`. Старый отдельный detail-пайплайн репозиции
+(`TryRepositionDetailViews`) — это и есть «второй алгоритм», который убирается.
+Итог: один алгоритм вместо двух.
 
-**Текущее состояние (частично сделано):**
-- Удалены `TryFindBestEffortPosition` (сетка 12×12) и `IntersectionArea`.
-- Ветка `else` для неразмещённого free-view даёт чистый `reject reason=no-space`.
+**Суть.** Anchor pipeline: MaxRects + перебор позиций вдоль границ занятых
+прямоугольников, отсортированных по близости к anchor. Старый detail-путь
+(`TryFindBestEffortPosition`, сетка 12×12, метрика min-overlap) был устаревшим:
+шаг ~1/12 usable area пропускал зазоры между блокерами.
+
+**Сделано:**
+- Удалён `TryFindBestEffortPosition` (сетка 12×12) и `IntersectionArea`.
+- Удалён метод `TryRepositionDetailViews` (старый detail-пайплайн репозиции,
+  ~235 строк) и его вызов из `Layout.Variant.cs`.
+- `DrawingLayoutWorkspace.SetParentViewRelations()` расширен:
+  `SetDetailMarkRelations()` заполняет `ParentAnchorX/Y` + `ParentViewId` для
+  `Detail` через `DetailRelationResolver.Build` (`RelationKindDetailMark`).
+- `IsAnchorDrivenFreeSection` теперь возвращает true и для `Detail`, у которого
+  заполнен parent-anchor → деталь входит в `BuildFreeViewRepositionPlan` как
+  anchor-driven, anchor = detail-callout, scope = весь лист.
 - `Other` / `Model3D` при неудаче packer'а отклоняются (`no-space`) вместо
-  overlap-fallback — это часть anchor-пайплайна и сохраняется.
+  overlap-fallback — часть anchor-пайплайна, сохраняется.
+- Проверено live (M.48, 2 детали): обе идут через
+  `FREE_VIEW_REPOSITION anchor-adjust`, старый `DETAIL_PROBE` путь исчез.
 
-**Осталось (ядро 4.7):**
-- Сейчас обычные `Detail` всё ещё идут отдельным `TryRepositionDetailViews`
-  (свой `MaxRectsBinPacker` + `ProbeDetailPlacement` + `topology.DetailRelations`)
-  — это нарушает цель «один пайплайн».
-- Нужно: `Detail` классифицировать так, чтобы он попадал в
-  `BuildFreeViewRepositionPlan` как anchor-driven (anchor = detail-callout на
-  owner-виде, scope = весь лист), и удалить `TryRepositionDetailViews` /
-  `ProbeDetailPlacement` после переноса.
-- Это попутно чинит исходную проблему «деталь не у анкера»: единый anchor-пайплайн
-  сортирует кандидаты MaxRects по близости к anchor.
+**ВАЖНО — что НЕ удалено:** `ProbeDetailPlacement` и файл
+`BaseProjectedDrawingArrangeStrategy.Details.cs` оставлены. `ProbeDetailPlacement`
+общий: используется первичной arrange-стратегией (`TryPlaceDetailViews`) и тремя
+unit-тестами, не только удалённым методом репозиции. Исходная формулировка
+«удалить ProbeDetailPlacement» была неточностью.
+
+**Открытый баг (детали ещё не встают у анкера на листе):**
+- Anchor-проекция ставит деталь впритык к границе owner-вида без `gap`
+  (`ProjectAnchorToNearestParentBoundary`): напр. деталь 17934 `MinY=726.8` vs
+  owner TopView `MaxY=734.7` → наложение ~8 мм → кандидат `feasible=0`.
+- Из-за этого кандидат с деталью-у-анкера проигрывает feasible-кандидату со
+  старым расположением, и на листе детали не двигаются.
+- Нужно: при проекции anchor на границу owner отступать на `gap` наружу, чтобы
+  деталь не перекрывала owner и кандидат становился feasible.
+- Отдельно: 3D-view даёт большие overlaps в части кандидатов — это вне 4.7.
 
 Диагностика (`DETAIL_PROBE_INPUT/RESULT`) была добавлена в старый
 `TryRepositionDetailViews` для разбора проблемы — её нужно перенести или заменить
