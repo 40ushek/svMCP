@@ -792,10 +792,14 @@ sealed class ViewPlacementService
 Выход — в sheet-координатах через `ViewPlacementGeometryService`.
 
 **План (behavior-preserving, по одному месту за раз):**
-- 7.1 — ввести `PlacementFrame` + `ViewPlacementService`. Unit-тесты: round-trip
-  `toSheet(toPacker(p)) == p`, явная проверка направления Y (точка у `MaxY` →
-  packer Y=0), эквивалентность старой формуле на фиксированных входах. Сервис
-  ещё никем не вызывается — поведение не меняется.
+- 7.1 — ✅ ВЫПОЛНЕН. Введены `PlacementFrame` (flip-контракт) и
+  `ViewPlacementService` (`TryPlaceNearPoint` / `TryPlaceNearAnchor` / `CanFit`)
+  поверх `MaxRectsBinPacker`; gap входит только через расширение blockers, item
+  raw. `ViewPlacementServiceTests` (9 тестов, зелёные): round-trip
+  `toSheet(toPacker(p))==p`, направление Y (точка у `MaxY` → packer Y=0),
+  байт-в-байт эквивалентность старой формуле Details.cs, gap-expanded blocker,
+  anchor-at-point, `CanFit`, degenerate frame. Сервис ещё никем не вызывается —
+  поведение чертежей не изменено.
 - 7.2 — мигрировать #8 `Layout.Details.cs:185` первым: и anchor-, и point-режим
   в одном месте, тут же отложенный 4.7. Сверить origins на M.48/M.49.
 - 7.3 — мигрировать остальные по одному в порядке простоты:
