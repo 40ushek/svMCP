@@ -800,8 +800,17 @@ sealed class ViewPlacementService
   байт-в-байт эквивалентность старой формуле Details.cs, gap-expanded blocker,
   anchor-at-point, `CanFit`, degenerate frame. Сервис ещё никем не вызывается —
   поведение чертежей не изменено.
-- 7.2 — мигрировать #8 `Layout.Details.cs:185` первым: и anchor-, и point-режим
-  в одном месте, тут же отложенный 4.7. Сверить origins на M.48/M.49.
+- 7.2 — ✅ ВЫПОЛНЕН. `Layout.Details.cs` free-view/anchor pass переведён на
+  `_viewPlacementService.TryPlaceNearAnchor` / `TryPlaceNearPoint`; удалён ручной
+  packer+flip и `BuildFreeViewBlockedRectangles` (его gap-модель «blockers+gap,
+  item raw» совпадала с контрактом сервиса). Проверено live на M.49: детали
+  по-прежнему идут через `FREE_VIEW_REPOSITION anchor-adjust`, anchor target
+  тот же (`530.0,70.5`), раскладка `feasible=1`.
+  **Замечание по сверке:** чистую origins-parity на M.49 снять нельзя — раскладка
+  недетерминирована между прогонами (score-tie 3D-corner вариантов,
+  предсуществующее свойство, не следствие миграции). Эквивалентность placement
+  гарантирована unit-тестом `TryPlaceNearPoint_MatchesOldFlipFormula` (байт-в-байт
+  со старой формулой). Недетерминизм candidate-selection — отдельный вопрос (6.6).
 - 7.3 — мигрировать остальные по одному в порядке простоты:
   #9 Ga → #3 BaseRect → #4 Relative → #1,#2 `BaseProjectedDrawingArrangeStrategy.cs`
   → #5,#6,#7 `ProjectedGroupLayoutPlanner` (последними — сложнее всех). Каждый со

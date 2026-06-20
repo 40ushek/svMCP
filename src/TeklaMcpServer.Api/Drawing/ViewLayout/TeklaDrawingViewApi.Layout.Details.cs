@@ -180,10 +180,12 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
-            var blocked = BuildFreeViewBlockedRectangles(
-                usableMinX, usableMaxX, usableMinY, usableMaxY, gap, reserved, blockersById.Values);
-            var packer = new MaxRectsBinPacker(
-                usableMaxX - usableMinX, usableMaxY - usableMinY, allowRotation: false, blocked);
+            // Phase 7.2: placement via ViewPlacementService (single flip/gap owner).
+            // gap-model here is "blockers expanded by gap, item raw" — exactly the
+            // service contract, so this is behavior-preserving.
+            var placementFrame = new PlacementFrame(usableMinX, usableMinY, usableMaxX, usableMaxY);
+            var placementBlocked = new List<ReservedRect>(reserved);
+            placementBlocked.AddRange(blockersById.Values);
 
             var targetX = (usableMinX + usableMaxX) * 0.5;
             var targetY = (usableMinY + usableMaxY) * 0.5;
@@ -196,20 +198,14 @@ public sealed partial class TeklaDrawingViewApi
                 isAnchorDriven = true;
             }
 
-            ReservedRect candidateRect;
-            var packerTargetX = targetX - usableMinX;
-            var packerTargetY = usableMaxY - targetY;
             var placed = isAnchorDriven
-                ? packer.TryInsertClosestToAnchor(width, height, packerTargetX, packerTargetY, out var placement)
-                : packer.TryInsertClosestToPoint(width, height, packerTargetX, packerTargetY, out placement);
+                ? _viewPlacementService.TryPlaceNearAnchor(
+                    placementFrame, width, height, targetX, targetY, placementBlocked, gap, out var candidateRect)
+                : _viewPlacementService.TryPlaceNearPoint(
+                    placementFrame, width, height, targetX, targetY, placementBlocked, gap, out candidateRect);
 
             if (placed)
             {
-                candidateRect = new ReservedRect(
-                    usableMinX + placement.X,
-                    usableMaxY - placement.Y - height,
-                    usableMinX + placement.X + width,
-                    usableMaxY - placement.Y);
                 var validation = ViewPlacementValidator.Validate(
                     candidateRect, usableMinX, usableMaxX, usableMinY, usableMaxY, reserved, blockersById);
                 if (!validation.Fits)
@@ -534,38 +530,6 @@ public sealed partial class TeklaDrawingViewApi
     private static double GetArea(ReservedRect rect)
         => System.Math.Max(0, rect.MaxX - rect.MinX) * System.Math.Max(0, rect.MaxY - rect.MinY);
 
-    private static List<PackedRectangle> BuildFreeViewBlockedRectangles(
-        double usableMinX,
-        double usableMaxX,
-        double usableMinY,
-        double usableMaxY,
-        double gap,
-        IReadOnlyList<ReservedRect> reserved,
-        IEnumerable<ReservedRect> viewRects)
-    {
-        var result = new List<PackedRectangle>();
-        foreach (var rect in reserved.Concat(viewRects))
-        {
-            var minX = System.Math.Max(usableMinX, rect.MinX - gap);
-            var minY = System.Math.Max(usableMinY, rect.MinY - gap);
-            var maxX = System.Math.Min(usableMaxX, rect.MaxX + gap);
-            var maxY = System.Math.Min(usableMaxY, rect.MaxY + gap);
-            if (maxX <= minX || maxY <= minY)
-                continue;
-
-            var packed = new PackedRectangle(
-                minX - usableMinX,
-                usableMaxY - maxY,
-                maxX - minX,
-                maxY - minY);
-            if (packed.Width <= 0 || packed.Height <= 0)
-                continue;
-
-            result.Add(packed);
-        }
-
-        return result;
-    }
 
     private static ArrangedView? UpdateArrangedOrigin(
         List<ArrangedView> arranged,
