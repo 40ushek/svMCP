@@ -1790,6 +1790,58 @@ Trace:
 выбран этот вариант, какие constraints сохранены, какие projection связи
 ослаблены.
 
+### Фаза 7. Единый placement-сервис (архитектурный долг)
+
+Статус: предложено, не начато.
+
+**Проблема (по факту кода).** Размещение через `MaxRectsBinPacker` создаётся в
+7 местах: `BaseProjectedDrawingArrangeStrategy.cs`, `.BaseRect.cs`, `.Relative.cs`,
+`ProjectedGroupLayoutPlanner.cs` (×3), `TeklaDrawingViewApi.Layout.Details.cs`,
+`GaDrawingMaxRectsArrangeStrategy.cs`, `DrawingPackingEstimator.cs`. Каждое место
+вручную делает один и тот же boilerplate вокруг packer:
+- координатный flip sheet↔packer (`(SheetHeight - Margin) - target.Y` туда и
+  `SheetHeight - Margin - placement.Y - height*0.5` обратно) — паттерн
+  повторяется ~74 раза в 11 файлах;
+- свой clamp, свой gap, своя конвертация `placement → frameCenter → ReservedRect`.
+
+**Почему это долг.** Один неверный знак во flip = вид «уезжает». Любое новое
+правило размещения (например anchor-zone reservation из отложенного 4.7) надо
+добавлять в каждое из 7 мест, а не в одно. Это прямой источник «уезжаний» и
+тормоз для 4.6/4.7.
+
+**Что есть сейчас.** `ViewPlacementGeometryService` (104 строки) уже существует и
+частично используется (`CreateRectFromFrameCenter`, `ResolveOriginFromFrameCenter`).
+То есть слой-приёмник уже есть — его нужно дорастить, а не создавать с нуля.
+
+**Цель.** Один `ViewPlacementService` поверх `MaxRectsBinPacker`, который
+инкапсулирует: bin из usable-области, blocked-набор, flip sheet↔packer, clamp,
+gap и выдачу результата сразу в sheet-координатах (`ReservedRect` / frameCenter).
+Вход и выход — только в paper/sheet-координатах; packer-координаты наружу не
+торчат. Anchor-режим (`TryInsertClosestToAnchor`) и point-режим — два метода
+одного сервиса.
+
+**План (behavior-preserving, по одному месту за раз):**
+- 7.1 — спроектировать API сервиса от 2-3 реальных call sites (Details.cs как
+  anchor-кейс, ProjectedGroupLayoutPlanner base-candidate как point-кейс,
+  GaDrawingMaxRects как простой кейс). Не ломать публичный contract.
+- 7.2 — мигрировать первое место (Details.cs / free-view pass), сверить trace и
+  результат на M.48/M.49 — должны совпасть байт-в-байт по origins.
+- 7.3 — мигрировать остальные 6 мест по одному, каждое со сверкой.
+- 7.4 — после миграции добавить anchor-zone reservation ОДИН раз в сервисе —
+  это закрывает отложенный остаток 4.7.
+
+**Не входит в Фазу 7.** Распухший `BaseProjectedDrawingArrangeStrategy`
+(2906 строк, 86 методов) и сосуществование strict-пути с
+`ProjectedGroupLayoutPlanner` — отдельный долг. Не трогать, пока planner (6.2) не
+станет основным путём: риск высокий, выгода косвенная.
+
+**Критерии приёмки.**
+- `new MaxRectsBinPacker` остаётся только внутри `ViewPlacementService`
+  (+ возможно `DrawingPackingEstimator` как чистый feasibility-пробник).
+- Ручной flip `SheetHeight - ... - placement.Y` исчезает из call sites.
+- На M.48/M.49 origins/scale после миграции совпадают с до-миграционными.
+- Публичный JSON contract `fit_views_to_sheet` / `get_drawing_views` не меняется.
+
 ## Не цели
 
 - Не переписывать layout policy во время context migration.
