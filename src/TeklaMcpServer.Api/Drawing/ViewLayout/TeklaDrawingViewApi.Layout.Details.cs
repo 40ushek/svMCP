@@ -102,6 +102,8 @@ public sealed partial class TeklaDrawingViewApi
                 continue;
             }
 
+            var rawAnchorX = relation.AnchorX;
+            var rawAnchorY = relation.AnchorY;
             var anchorX = CenterX(ownerRect);
             var anchorY = CenterY(ownerRect);
             if (relation.AnchorX.HasValue)
@@ -109,12 +111,24 @@ public sealed partial class TeklaDrawingViewApi
             if (relation.AnchorY.HasValue)
                 anchorY = relation.AnchorY.Value;
             var ownerId = ownerView.GetIdentifier().ID;
+            var ownerDeltaX = 0.0;
+            var ownerDeltaY = 0.0;
             if (arrangedById.TryGetValue(ownerId, out var arrangedOwner)
                 && workspace.TryGetView(ownerId) is { } originalOwner)
             {
-                anchorX += arrangedOwner.OriginX - originalOwner.OriginX;
-                anchorY += arrangedOwner.OriginY - originalOwner.OriginY;
+                ownerDeltaX = arrangedOwner.OriginX - originalOwner.OriginX;
+                ownerDeltaY = arrangedOwner.OriginY - originalOwner.OriginY;
+                anchorX += ownerDeltaX;
+                anchorY += ownerDeltaY;
             }
+
+            DrawingProjectionAlignmentService.Log(
+                $"DETAIL_PROBE_INPUT id={detailId} owner={ownerId} "
+                + $"rawAnchor=({(rawAnchorX.HasValue ? rawAnchorX.Value.ToString("F1") : "none")},{(rawAnchorY.HasValue ? rawAnchorY.Value.ToString("F1") : "none")}) "
+                + $"ownerDelta=({ownerDeltaX:F1},{ownerDeltaY:F1}) anchor=({anchorX:F1},{anchorY:F1}) "
+                + $"ownerRect=[{ownerRect.MinX:F1},{ownerRect.MinY:F1},{ownerRect.MaxX:F1},{ownerRect.MaxY:F1}] "
+                + $"detail={detailWidth:F1}x{detailHeight:F1} usable=[{usableMinX:F1},{usableMinY:F1},{usableMaxX:F1},{usableMaxY:F1}] "
+                + $"gap2={gap * 2.0:F1} blockers={blocked.Count}");
 
             var decision = BaseProjectedDrawingArrangeStrategy.ProbeDetailPlacement(
                 ownerRect,
@@ -128,6 +142,16 @@ public sealed partial class TeklaDrawingViewApi
                 blocked,
                 anchorX,
                 anchorY);
+
+            DrawingProjectionAlignmentService.Log(
+                decision.Success
+                    ? $"DETAIL_PROBE_RESULT id={detailId} success=1 "
+                      + $"candidate=[{decision.Rect.MinX:F1},{decision.Rect.MinY:F1},{decision.Rect.MaxX:F1},{decision.Rect.MaxY:F1}] "
+                      + $"candidateCenter=({CenterX(decision.Rect):F1},{CenterY(decision.Rect):F1}) "
+                      + $"anchorDistance={decision.AnchorDistance:F1} preferredBand={decision.PreferredBand} reason={decision.DegradedReason}"
+                    : $"DETAIL_PROBE_RESULT id={detailId} success=0 reason=no-valid-candidate "
+                      + $"anchor=({anchorX:F1},{anchorY:F1}) blockers={blocked.Count}");
+
             if (!decision.Success)
             {
                 blocked.Add(detailRect);
@@ -440,51 +464,15 @@ public sealed partial class TeklaDrawingViewApi
             }
             else
             {
-                if (isAnchorDriven)
+                blockersById[id] = currentRect;
+                decisions.Add(new FreeViewRepositionDecision
                 {
-                    blockersById[id] = currentRect;
-                    decisions.Add(new FreeViewRepositionDecision
-                    {
-                        ViewId = id, ViewKind = kind, AnchorDriven = true,
-                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
-                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
-                        PlannedRect = currentRect, Reason = "skip-anchor-no-space"
-                    });
-                    continue;
-                }
-
-                if (!TryFindBestEffortPosition(width, height,
-                        usableMinX, usableMaxX, usableMinY, usableMaxY,
-                        reserved, blockersById, currentRect,
-                        out candidateRect, out _, out _))
-                {
-                    blockersById[id] = currentRect;
-                    decisions.Add(new FreeViewRepositionDecision
-                    {
-                        ViewId = id, ViewKind = kind, AnchorDriven = false,
-                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
-                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
-                        PlannedRect = currentRect, Reason = "reject reason=no-space"
-                    });
-                    continue;
-                }
-
-                var validation = ViewPlacementValidator.Validate(
-                    candidateRect, usableMinX, usableMaxX, usableMinY, usableMaxY, reserved, blockersById);
-                if (!validation.Fits)
-                {
-                    DrawingProjectionAlignmentService.Log(
-                        $"FREE_VIEW_REJECT id={id} kind={kind} mode=best-effort candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] reason={validation.Reason} blockers={FormatFreeViewBlockers(blockersById)}");
-                    blockersById[id] = currentRect;
-                    decisions.Add(new FreeViewRepositionDecision
-                    {
-                        ViewId = id, ViewKind = kind, AnchorDriven = false,
-                        PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
-                        PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
-                        PlannedRect = currentRect, Reason = $"reject reason={validation.Reason}"
-                    });
-                    continue;
-                }
+                    ViewId = id, ViewKind = kind, AnchorDriven = isAnchorDriven,
+                    PlannedOriginX = TryGetPlannedOriginX(arrangedById, id),
+                    PlannedOriginY = TryGetPlannedOriginY(arrangedById, id),
+                    PlannedRect = currentRect, Reason = "reject reason=no-space"
+                });
+                continue;
             }
 
             if (!arrangedById.ContainsKey(id)
@@ -614,72 +602,6 @@ public sealed partial class TeklaDrawingViewApi
 
         rect = null!;
         return false;
-    }
-
-    private static bool TryFindBestEffortPosition(
-        double width,
-        double height,
-        double usableMinX,
-        double usableMaxX,
-        double usableMinY,
-        double usableMaxY,
-        IReadOnlyList<ReservedRect> reserved,
-        IReadOnlyDictionary<int, ReservedRect> blockersById,
-        ReservedRect currentRect,
-        out ReservedRect best,
-        out double bestOverlap,
-        out double currentOverlap)
-    {
-        var usableW = usableMaxX - usableMinX;
-        var usableH = usableMaxY - usableMinY;
-        var stepX = System.Math.Max(10.0, usableW / 12.0);
-        var stepY = System.Math.Max(10.0, usableH / 12.0);
-
-        var allBlockers = reserved.Concat(blockersById.Values).ToList();
-        currentOverlap = allBlockers.Sum(b => IntersectionArea(currentRect, b));
-
-        bestOverlap = double.MaxValue;
-        best = currentRect;
-        var found = false;
-
-        for (var x = usableMinX; x + width <= usableMaxX + 0.1; x += stepX)
-        {
-            for (var y = usableMinY; y + height <= usableMaxY + 0.1; y += stepY)
-            {
-                var cx = System.Math.Min(x, usableMaxX - width);
-                var cy = System.Math.Min(y, usableMaxY - height);
-                var candidate = new ReservedRect(cx, cy, cx + width, cy + height);
-
-                var overlap = 0.0;
-                foreach (var blocker in allBlockers)
-                    overlap += IntersectionArea(candidate, blocker);
-
-                if (overlap < bestOverlap)
-                {
-                    bestOverlap = overlap;
-                    best = candidate;
-                    found = true;
-                }
-
-                if (bestOverlap == 0.0)
-                    break;
-            }
-
-            if (bestOverlap == 0.0)
-                break;
-        }
-
-        if (!found)
-            return false;
-
-        return bestOverlap < currentOverlap;
-    }
-
-    private static double IntersectionArea(ReservedRect a, ReservedRect b)
-    {
-        var ox = System.Math.Min(a.MaxX, b.MaxX) - System.Math.Max(a.MinX, b.MinX);
-        var oy = System.Math.Min(a.MaxY, b.MaxY) - System.Math.Max(a.MinY, b.MinY);
-        return ox > 0 && oy > 0 ? ox * oy : 0.0;
     }
 
     private static bool IsFreePlacementKind(ViewSemanticKind kind)

@@ -370,6 +370,10 @@ internal sealed partial class DrawingCommandHandler
                 viewType = v.ViewType,
                 originX = v.OriginX,
                 originY = v.OriginY,
+                frameMinX = v.FrameRect?.MinX,
+                frameMinY = v.FrameRect?.MinY,
+                frameMaxX = v.FrameRect?.MaxX,
+                frameMaxY = v.FrameRect?.MaxY,
                 preferredPlacementSide = v.PreferredPlacementSide,
                 actualPlacementSide = v.ActualPlacementSide,
                 placementFallbackUsed = v.PlacementFallbackUsed

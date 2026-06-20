@@ -136,8 +136,9 @@ public sealed class ArrangedView
     public bool   PlacementFallbackUsed  { get; set; }
     internal double LayoutMargin { get; set; }
     internal double LayoutGap { get; set; }
-    // True for views added as snapshot fallback (not placed by planner).
     internal bool IsSnapshotFallback { get; set; }
+    // Frame rect on sheet (sheet coordinates), null if not computable.
+    public ReservedRect? FrameRect { get; set; }
 }
 
 public sealed class DrawingReservedAreasResult

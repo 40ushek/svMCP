@@ -800,6 +800,33 @@ public sealed partial class TeklaDrawingViewApi
             }
         };
 
+        foreach (var v in arranged)
+        {
+            if (layoutWorkspace.SelectedFrameSizesById.TryGetValue(v.Id, out var fs) && fs.Width > 0 && fs.Height > 0)
+            {
+                var (foX, foY) = layoutWorkspace.FrameOffsetsById.TryGetValue(v.Id, out var fo)
+                    ? (fo.X, fo.Y) : (0.0, 0.0);
+                var scale = layoutWorkspace.GetSelectedScale(v.Id, 1.0);
+                var cx = v.OriginX + foX / scale;
+                var cy = v.OriginY + foY / scale;
+                v.FrameRect = new ReservedRect(cx - fs.Width * 0.5, cy - fs.Height * 0.5, cx + fs.Width * 0.5, cy + fs.Height * 0.5);
+            }
+            else if (layoutWorkspace.ActualViewRectsById.TryGetValue(v.Id, out var actualRect))
+            {
+                var w = actualRect.MaxX - actualRect.MinX;
+                var h = actualRect.MaxY - actualRect.MinY;
+                if (w > 0 && h > 0)
+                {
+                    var (foX, foY) = layoutWorkspace.FrameOffsetsById.TryGetValue(v.Id, out var fo)
+                        ? (fo.X, fo.Y) : (0.0, 0.0);
+                    var scale = layoutWorkspace.GetSelectedScale(v.Id, 1.0);
+                    var cx = v.OriginX + foX / scale;
+                    var cy = v.OriginY + foY / scale;
+                    v.FrameRect = new ReservedRect(cx - w * 0.5, cy - h * 0.5, cx + w * 0.5, cy + h * 0.5);
+                }
+            }
+        }
+
         total.Stop();
         result.TotalMs = total.ElapsedMilliseconds;
         result.PhaseMs = new System.Collections.Generic.Dictionary<string, long>

@@ -1033,6 +1033,19 @@ origin, а реальный frame rect с offset от origin.
 - после применения placement проверять parity по реальному BBox, а не только по
   расчетному centered rect, во всех fallback paths.
 
+**Публичный frame rect в `get_drawing_views` (контракт-расширение):**
+- `ArrangedView.FrameRect` (`ReservedRect?`, sheet coordinates) вычисляется в
+  `TeklaDrawingViewApi.Layout.cs` после arrange: из `SelectedFrameSizesById` +
+  `FrameOffsetsById` (с учётом `scale`), иначе из `ActualViewRectsById`,
+  иначе `null`.
+- `DrawingCommandHandler.Views.cs` отдаёт его в `get_drawing_views` как
+  nullable `frameMinX/frameMinY/frameMaxX/frameMaxY`.
+- Это **аддитивное** расширение публичного JSON `get_drawing_views`: новые поля
+  nullable, существующие поля не меняются. Контракт `fit_views_to_sheet` не
+  затронут (запрет из раздела «Не цели» относится к нему).
+- Назначение: дать клиенту/диагностике реальный frame rect для проверки
+  margin-критериев 6.5 без отдельного geometry-запроса.
+
 Критерии приемки:
 - при margin `5 мм` ни один final view не имеет `BBox.MinX < 5`,
   `BBox.MinY < 5`, `BBox.MaxX > sheetWidth - 5`,
@@ -1422,7 +1435,7 @@ candidate, а не от последнего выполненного variant. F
 item наравне с другими видами — scorer сам выбирает лучшую позицию.
 Детализация отложена до завершения Step 4.7 (dependency zones).
 
-Шаг 4.7 — переключить detail view fallback на anchor pipeline.
+Шаг 4.7 — переключить detail view fallback на anchor pipeline. 🔨 В РАБОТЕ
 
 **Суть.** Anchor-driven sections и detail views в fallback решают одну задачу:
 найти ближайшее свободное место к точке притяжения (parent/anchor). Это один
@@ -1447,8 +1460,32 @@ Detail fallback (`TryFindBestEffortPosition`): сетка 12×12 по всему
 к parent. Для anchor-driven pipeline поведение не меняется.
 Scoring и выбор 3D-corner не трогать в этом шаге.
 
-3D scoring — следующий шаг: он сможет использовать dependency zones,
-полученные из общего placement layer, но 3D не является dependent view.
+**Цель явно:** обычные `Detail` views должны размещаться тем же anchor-пайплайном
+(`BuildFreeViewRepositionPlan` → `TryInsertClosestToAnchor`), что и
+`AnchorDetailSection`. Старый отдельный detail-пайплайн
+(`TryRepositionDetailViews` + `ProbeDetailPlacement`) — это и есть «второй
+алгоритм», который убирается. Итог: один алгоритм вместо двух.
+
+**Текущее состояние (частично сделано):**
+- Удалены `TryFindBestEffortPosition` (сетка 12×12) и `IntersectionArea`.
+- Ветка `else` для неразмещённого free-view даёт чистый `reject reason=no-space`.
+- `Other` / `Model3D` при неудаче packer'а отклоняются (`no-space`) вместо
+  overlap-fallback — это часть anchor-пайплайна и сохраняется.
+
+**Осталось (ядро 4.7):**
+- Сейчас обычные `Detail` всё ещё идут отдельным `TryRepositionDetailViews`
+  (свой `MaxRectsBinPacker` + `ProbeDetailPlacement` + `topology.DetailRelations`)
+  — это нарушает цель «один пайплайн».
+- Нужно: `Detail` классифицировать так, чтобы он попадал в
+  `BuildFreeViewRepositionPlan` как anchor-driven (anchor = detail-callout на
+  owner-виде, scope = весь лист), и удалить `TryRepositionDetailViews` /
+  `ProbeDetailPlacement` после переноса.
+- Это попутно чинит исходную проблему «деталь не у анкера»: единый anchor-пайплайн
+  сортирует кандидаты MaxRects по близости к anchor.
+
+Диагностика (`DETAIL_PROBE_INPUT/RESULT`) была добавлена в старый
+`TryRepositionDetailViews` для разбора проблемы — её нужно перенести или заменить
+на anchor-пайплайн trace при объединении.
 
 **3D-corner reservation candidate.**
 
