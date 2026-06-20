@@ -1422,17 +1422,30 @@ candidate, а не от последнего выполненного variant. F
 item наравне с другими видами — scorer сам выбирает лучшую позицию.
 Детализация отложена до завершения Step 4.7 (dependency zones).
 
-Шаг 4.7 — объединить похожую логику detail/anchor-dependent views.
+Шаг 4.7 — переключить detail view fallback на anchor pipeline.
 
-Цель: уменьшить дублирование между detail view placement и anchor-driven
-section/detail placement. Эти виды имеют похожий lifecycle: parent/anchor →
-preferred position → collision validation → fallback → diagnostics.
+**Суть.** Anchor-driven sections и detail views в fallback решают одну задачу:
+найти ближайшее свободное место к точке притяжения (parent/anchor). Это один
+алгоритм с разным scope поиска — не два разных подхода.
 
-Первый этап должен быть behavior-preserving:
-- найти общие части текущих pipelines;
-- вынести общий placement helper/service;
-- оставить различия в policy, а не смешивать все типы в один жёсткий алгоритм;
-- не менять scoring и выбор 3D-corner в этом шаге.
+Anchor pipeline: MaxRects + перебор позиций вдоль границ занятых прямоугольников,
+отсортированных по близости к anchor. Правильно и эффективно.
+
+Detail fallback (`TryFindBestEffortPosition`): сетка 12×12 по всему листу,
+метрика — минимальный суммарный overlap. Устаревший подход: шаг ~1/12 usable area
+пропускает зазоры между блокерами, детали могут улетать в противоположный угол
+листа без учёта расстояния до parent.
+
+**Что сделать:**
+- В `BuildFreeViewRepositionPlan` заменить вызов `TryFindBestEffortPosition`
+  на `MaxRectsBinPacker.TryInsertClosestToAnchor` с anchor = позиция parent view.
+- Убрать `TryFindBestEffortPosition` и `IntersectionArea` — они больше не нужны.
+- Scope поиска для detail остаётся весь лист (в отличие от section, который
+  ищет только на preferred/opposite side) — это единственная policy-разница.
+
+**Результат:** один алгоритм вместо двух, меньше кода, детали остаются ближе
+к parent. Для anchor-driven pipeline поведение не меняется.
+Scoring и выбор 3D-corner не трогать в этом шаге.
 
 3D scoring — следующий шаг: он сможет использовать dependency zones,
 полученные из общего placement layer, но 3D не является dependent view.
