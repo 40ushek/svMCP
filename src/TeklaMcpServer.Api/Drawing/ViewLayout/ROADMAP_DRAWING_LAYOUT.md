@@ -1411,16 +1411,16 @@ Workspace не мутировать для derived reserved areas: переда�
 Candidates для `SelectBest` материализовать (`ToArray()`/`ToList()`), а не
 передавать ленивый `SelectMany`.
 
-Шаг 4.5 — добавить 3D-corner reservation variant.
-4 угла, derived reserved areas, тот же pipeline. Описание ниже.
-Перед добавлением нескольких variants исправить apply baseline: текущий
-`runtime-before-final-apply` строится из `layoutWorkspace.RuntimeViews` и
-`arranged` после единственного default variant. Когда variants станет несколько,
-baseline должен строиться от того variant result, чей candidate выбран
-`SelectBest`, а не от последнего выполненного variant side effect.
+Шаг 4.5 — добавить 3D-corner reservation variant. ✅ ВЫПОЛНЕН
+4 угла (left-bottom, right-bottom, left-top, right-top), derived reserved areas,
+тот же pipeline. Apply baseline исправлен: строится от variant result победившего
+candidate, а не от последнего выполненного variant. FinalRuntimeViews включает
+3D view. Проверено на реальных чертежах (M.45, M.83, M.84, M.85, M.47 и др.).
 
-Шаг 4.6 — добавить 3D-as-secondary variant.
-Отдельным шагом после corner reservation.
+Шаг 4.6 — добавить 3D-as-secondary variant. (не начат, детализация отложена)
+Идея: размещать Model3D не в фиксированный угол, а как secondary/free-placement
+item наравне с другими видами — scorer сам выбирает лучшую позицию.
+Детализация отложена до завершения Step 4.7 (dependency zones).
 
 Шаг 4.7 — объединить похожую логику detail/anchor-dependent views.
 
