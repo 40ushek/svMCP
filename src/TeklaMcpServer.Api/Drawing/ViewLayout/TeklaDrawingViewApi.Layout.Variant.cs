@@ -27,14 +27,6 @@ public sealed partial class TeklaDrawingViewApi
             ? workspace.ReservedAreas
             : (IReadOnlyList<ReservedRect>)workspace.ReservedAreas.Concat(ctx.ExtraReservedAreas).ToList();
 
-        // ── View map (diagnostic) ─────────────────────────────────────────────
-        if (ctx.ExtraReservedAreas.Count == 0)
-        {
-            foreach (var v in workspace.Views)
-                DrawingProjectionAlignmentService.Log(
-                    $"layout_view_map id={v.Id} viewType={v.ViewType} semantic={v.SemanticKind} layoutKind={v.LayoutViewKind} scale={v.Scale:0.##} frame=[{v.Width:0.##}x{v.Height:0.##}]");
-        }
-
         // ── Arrange ──────────────────────────────────────────────────────────
         var arrangeSw = Stopwatch.StartNew();
         PerfTrace.Write(

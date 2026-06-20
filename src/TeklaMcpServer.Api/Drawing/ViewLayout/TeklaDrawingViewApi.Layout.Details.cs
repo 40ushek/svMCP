@@ -244,7 +244,6 @@ public sealed partial class TeklaDrawingViewApi
             gap,
             reserved);
         ApplyFreeViewRepositionPlan(arranged, views, plan, usableMinX, gap);
-        TraceFreeViewRepositionPlan(plan, arranged);
 
         return arranged;
     }
@@ -288,9 +287,6 @@ public sealed partial class TeklaDrawingViewApi
                     arranged.Add(added);
                     arrangedById[decision.ViewId] = added;
                 }
-
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_PLAN_APPLY id={decision.ViewId} kind={decision.ViewKind} live=0 origin=({decision.PlannedOriginX.Value:F1},{decision.PlannedOriginY.Value:F1})");
             }
             else if (decision.Reason.StartsWith("reject", System.StringComparison.Ordinal)
                      && !arrangedById.ContainsKey(decision.ViewId)
@@ -316,42 +312,6 @@ public sealed partial class TeklaDrawingViewApi
                     $"FREE_VIEW_PLAN_FALLBACK id={decision.ViewId} kind={decision.ViewKind} reason={decision.Reason} origin=({fallbackView.Origin.X:F1},{fallbackView.Origin.Y:F1})");
             }
         }
-    }
-
-    private static void TraceFreeViewRepositionPlan(
-        FreeViewRepositionPlan prePlan,
-        List<ArrangedView> arranged)
-    {
-        var arrangedById = arranged.ToDictionary(static v => v.Id);
-        foreach (var d in prePlan.Decisions)
-        {
-            var planned = FormatPlannedOrigin(d);
-            if (!arrangedById.TryGetValue(d.ViewId, out var actual))
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} reason={d.Reason} planned={planned} actual=MISSING");
-                continue;
-            }
-
-            if (!d.PlannedOriginX.HasValue || !d.PlannedOriginY.HasValue)
-            {
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=({actual.OriginX:F1},{actual.OriginY:F1}) delta=MISSING");
-                continue;
-            }
-
-            var deltaX = actual.OriginX - d.PlannedOriginX.Value;
-            var deltaY = actual.OriginY - d.PlannedOriginY.Value;
-            DrawingProjectionAlignmentService.Log(
-                $"FREE_VIEW_PLAN_TRACE id={d.ViewId} kind={d.ViewKind} anchorDriven={(d.AnchorDriven ? 1 : 0)} reason={d.Reason} planned={planned} actual=({actual.OriginX:F1},{actual.OriginY:F1}) delta=({deltaX:F1},{deltaY:F1})");
-        }
-    }
-
-    private static string FormatPlannedOrigin(FreeViewRepositionDecision decision)
-    {
-        return decision.PlannedOriginX.HasValue && decision.PlannedOriginY.HasValue
-            ? $"({decision.PlannedOriginX.Value:F1},{decision.PlannedOriginY.Value:F1})"
-            : "MISSING";
     }
 
     private FreeViewRepositionPlan BuildFreeViewRepositionPlan(
@@ -463,10 +423,10 @@ public sealed partial class TeklaDrawingViewApi
                     usableMaxY - placement.Y);
                 var validation = ViewPlacementValidator.Validate(
                     candidateRect, usableMinX, usableMaxX, usableMinY, usableMaxY, reserved, blockersById);
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_VALIDATE id={id} kind={kind} candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] fits={(validation.Fits ? 1 : 0)} reason={validation.Reason} blockers={FormatFreeViewBlockers(blockersById)}");
                 if (!validation.Fits)
                 {
+                    DrawingProjectionAlignmentService.Log(
+                        $"FREE_VIEW_REJECT id={id} kind={kind} candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] reason={validation.Reason} blockers={FormatFreeViewBlockers(blockersById)}");
                     blockersById[id] = currentRect;
                     decisions.Add(new FreeViewRepositionDecision
                     {
@@ -511,10 +471,10 @@ public sealed partial class TeklaDrawingViewApi
 
                 var validation = ViewPlacementValidator.Validate(
                     candidateRect, usableMinX, usableMaxX, usableMinY, usableMaxY, reserved, blockersById);
-                DrawingProjectionAlignmentService.Log(
-                    $"FREE_VIEW_VALIDATE id={id} kind={kind} mode=best-effort candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] fits={(validation.Fits ? 1 : 0)} reason={validation.Reason} blockers={FormatFreeViewBlockers(blockersById)}");
                 if (!validation.Fits)
                 {
+                    DrawingProjectionAlignmentService.Log(
+                        $"FREE_VIEW_REJECT id={id} kind={kind} mode=best-effort candidate=[{candidateRect.MinX:F1},{candidateRect.MinY:F1},{candidateRect.MaxX:F1},{candidateRect.MaxY:F1}] reason={validation.Reason} blockers={FormatFreeViewBlockers(blockersById)}");
                     blockersById[id] = currentRect;
                     decisions.Add(new FreeViewRepositionDecision
                     {
