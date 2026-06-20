@@ -134,6 +134,29 @@ public sealed class ViewPlacementServiceTests
     }
 
     [Fact]
+    public void TryInsertBestArea_FlipMatchesManualFormula()
+    {
+        // Verify TryInsertBestArea uses the same flip as the hand-rolled
+        // BestAreaFit sites: bin origin at frame.Min, packer Y down from MaxY.
+        double minX = 10, minY = 10, maxX = 414, maxY = 291;
+        double w = 100, h = 80;
+
+        var packer = new MaxRectsBinPacker(maxX - minX, maxY - minY, allowRotation: false);
+        Assert.True(packer.TryInsert(w, h, MaxRectsHeuristic.BestAreaFit, out var p));
+        var manual = new ReservedRect(
+            minX + p.X, maxY - p.Y - h, minX + p.X + w, maxY - p.Y);
+
+        var frame = new PlacementFrame(minX, minY, maxX, maxY);
+        Assert.True(ViewPlacementService.TryInsertBestArea(
+            frame, w, h, Array.Empty<ReservedRect>(), gap: 0, out var rect));
+
+        Assert.Equal(manual.MinX, rect.MinX, 6);
+        Assert.Equal(manual.MinY, rect.MinY, 6);
+        Assert.Equal(manual.MaxX, rect.MaxX, 6);
+        Assert.Equal(manual.MaxY, rect.MaxY, 6);
+    }
+
+    [Fact]
     public void CanFit_TrueWhenItemsFit_FalseWhenOversized()
     {
         var frame = new PlacementFrame(0, 0, 100, 100);

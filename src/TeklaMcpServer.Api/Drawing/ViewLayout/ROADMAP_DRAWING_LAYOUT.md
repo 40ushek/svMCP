@@ -824,12 +824,21 @@ sealed class ViewPlacementService
   частично Planner. Текущий `ViewPlacementService` таких методов НЕ имеет.
   Кроме того у #1,2,4,6,7 gap-модель «gap в bin + gap к item» = двойной запас
   (~2*gap), у #9 — gap в bin. Поэтому перед их миграцией нужно:
-  1. добавить в сервис `TryInsertBestArea(frame, w, h, blocked, gap, out rect)`
-     (area-fit режим, тот же flip);
+  1. ✅ добавлен `ViewPlacementService.TryInsertBestArea(frame, w, h, blocked,
+     gap, out rect)` (area-fit режим, тот же flip; unit-тест
+     `TryInsertBestArea_FlipMatchesManualFormula` — байт-в-байт).
   2. для мест с двойным gap решить: передавать `2*gap` (сохранить зазор) ИЛИ
      зафиксировать смену зазора как намеренную (origins НЕ совпадут — отметить);
   3. мигрировать по одному: #9 Ga → #4 Relative → #1,#2 → #5,#6,#7 Planner.
-  До добавления area-fit режима эти места не трогать.
+
+  **БЛОКЕР на саму миграцию area-fit мест (зафиксирован).** #9 Ga переплетает
+  item-inflation (`w+gap`) с origin от ВЕРХНЕГО-ЛЕВОГО угла ячейки
+  (`margin + rect.X + w/2`, не центр ячейки). Чистый перенос требует пересчёта
+  origin из rect ячейки, а проверить его можно только на живом GA-чертеже —
+  сейчас открыты только AssemblyDrawing (M.48/M.49), которые идут через
+  `BaseProjectedDrawingArrangeStrategy`, НЕ через Ga. Миграция area-fit мест
+  вслепую нарушила бы критерий приёмки «сверка origins», поэтому отложена до
+  сессии с GA/area-fit чертежом. `TryInsertBestArea` готов и ждёт.
 - 7.4 — #10,#11 `DrawingPackingEstimator` перевести на `CanFit` (тонкий пробник,
   без своего packer).
 - 7.5 — добавить anchor-zone reservation ОДИН раз в сервисе

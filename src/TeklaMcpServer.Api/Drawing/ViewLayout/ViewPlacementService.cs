@@ -80,6 +80,35 @@ internal static class ViewPlacementService
     }
 
     /// <summary>
+    /// Place a w×h view using best-area-fit (no target point). Replaces
+    /// hand-rolled <c>TryInsert(BestAreaFit)</c> + manual flip in the
+    /// area-packing strategies (Ga / Relative / base projected).
+    /// </summary>
+    public static bool TryInsertBestArea(
+        PlacementFrame frame,
+        double width,
+        double height,
+        IReadOnlyList<ReservedRect> blocked,
+        double gap,
+        out ReservedRect sheetRect)
+    {
+        if (!TryCreatePacker(frame, width, height, blocked, gap, out var packer))
+        {
+            sheetRect = null!;
+            return false;
+        }
+
+        if (!packer.TryInsert(width, height, MaxRectsHeuristic.BestAreaFit, out var placement))
+        {
+            sheetRect = null!;
+            return false;
+        }
+
+        sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
+        return true;
+    }
+
+    /// <summary>
     /// Pure feasibility probe: can every item be packed into the frame without
     /// overlapping each other or the (gap-expanded) blocked rectangles?
     /// No sheet rects are produced. Replaces ad-hoc estimator packers.
