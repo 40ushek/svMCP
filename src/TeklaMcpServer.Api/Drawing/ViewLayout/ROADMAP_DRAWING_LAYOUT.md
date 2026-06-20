@@ -1422,6 +1422,21 @@ baseline должен строиться от того variant result, чей ca
 Шаг 4.6 — добавить 3D-as-secondary variant.
 Отдельным шагом после corner reservation.
 
+Шаг 4.7 — объединить похожую логику detail/anchor-dependent views.
+
+Цель: уменьшить дублирование между detail view placement и anchor-driven
+section/detail placement. Эти виды имеют похожий lifecycle: parent/anchor →
+preferred position → collision validation → fallback → diagnostics.
+
+Первый этап должен быть behavior-preserving:
+- найти общие части текущих pipelines;
+- вынести общий placement helper/service;
+- оставить различия в policy, а не смешивать все типы в один жёсткий алгоритм;
+- не менять scoring и выбор 3D-corner в этом шаге.
+
+3D scoring — следующий шаг: он сможет использовать dependency zones,
+полученные из общего placement layer, но 3D не является dependent view.
+
 **3D-corner reservation candidate.**
 
 Цель: 3D view должен оставлять как можно больше полезного места для основных
