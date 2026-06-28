@@ -890,27 +890,125 @@ sealed class ViewPlacementService
 
   **Группа B — best-area-fit, #1/#2/#4 (ВТОРОЙ ПРИОРИТЕТ, после живого чертежа)**
 
+  **7.3b-B.0 — Добавить `TryInsertBestAreaItemInflated` в сервис (prerequisite)**
+
+  Новый метод по образцу `TryPlaceNearPointItemInflated`, без target-point:
+  ```csharp
+  public static bool TryInsertBestAreaItemInflated(
+      PlacementFrame frame, double width, double height,
+      IReadOnlyList<ReservedRect> blocked, double gap,
+      out ReservedRect sheetRect, string? tag = null)
+  ```
+  Механика: bin = `frame.Width+gap × frame.Height+gap`; blockers = `ToPackerBlockedClampedToFrame`;
+  insert = `TryInsert(w+gap, h+gap, BestAreaFit)`; result = `PackerRectToSheet(placement.X, placement.Y, width, height)` (raw w×h).
+
+  Unit-тесты (добавить к `ViewPlacementServiceTests`):
+  - `TryInsertBestAreaItemInflated_PlacesInEmptyFrame` — result raw w×h (не w+gap), origin в sheet-координатах.
+  - `TryInsertBestAreaItemInflated_ReturnsFalse_WhenNoSpace` — вид не помещается → false.
+  - `TryInsertBestAreaItemInflated_BlockerExpandedByGap` — blocker вплотную к краю, gap=6 → вид не пересекает blocker.
+  - `TryInsertBestAreaItemInflated_BlockerAtFrameEdge_NotSpillingIntoGapStrip` — blocker у MaxX/MaxY frame не потребляет +gap-полосу (критично: отличает `ToPackerBlockedClampedToFrame` от `ToPackerBlocked`).
+  - `TryInsertBestAreaItemInflated_MatchesOldBinPlusGapFormula` — байт-в-байт с ручным `new MaxRectsBinPacker(w+gap, h+gap) + TryInsert(w+gap, h+gap) + flip(freeMinX, freeMaxY)`.
+
   *#1 — `TryEstimateResidualPlacements` (`BaseProjectedDrawingArrangeStrategy.cs:292`)*
-  - Bin: `availableW + gap`, `availableH + gap`; Item: `width + gap`, `height + gap`
-  - Gap-модель: та же асимметричная bin+gap/item+gap что у #6/#7.
-    `2*gap` в `TryInsertBestArea` НЕ воспроизводит это — нужен отдельный
-    `TryInsertBestAreaItemInflated` по образцу `TryPlaceNearPointItemInflated`.
-  - Frame: `PlacementFrame(margin, margin, sheetWidth−margin, sheetHeight−margin)`
-  - Result: `frameCenterX/Y` из sheetRect → `ViewPlacementGeometryService.CreateRectFromFrameCenter`
+
+  Текущая механика (verified):
+  - Frame: `(margin, margin, sheetWidth−margin, sheetHeight−margin)`
+  - Bin: `availableW+gap × availableH+gap`
+  - Blockers: `ToMaxRectsBlockedRectangles` — расширяет на gap, клэмпит к margin, делает flip `(sheetHeight−margin)−maxY`
+  - Item: `view.Width+gap × view.Height+gap`
+  - Result flip: `margin + placement.X + w/2`, `sheetHeight−margin − placement.Y − h/2` → `frameCenterX/Y`
+
+  Gap-модель: та же асимметричная bin+gap/item+gap что у #6/#7. `2*gap` в `TryInsertBestArea` НЕ воспроизводит — нужен `TryInsertBestAreaItemInflated`.
+
+  После замены:
+  ```csharp
+  var frame = new PlacementFrame(
+      context.Margin, context.Margin,
+      context.SheetWidth - context.Margin, context.SheetHeight - context.Margin);
+  // foreach view (ordered by area desc):
+  if (!ViewPlacementService.TryInsertBestAreaItemInflated(
+          frame, view.Width, view.Height,
+          context.ReservedAreas, context.Gap, out var sheetRect,
+          tag: $"strict-residual:view={view.GetIdentifier().ID}"))
+      return false;
+  var frameCenterX = (sheetRect.MinX + sheetRect.MaxX) / 2.0;
+  var frameCenterY = (sheetRect.MinY + sheetRect.MaxY) / 2.0;
+  residualRectsById[view.GetIdentifier().ID] =
+      ViewPlacementGeometryService.CreateRectFromFrameCenter(frameCenterX, frameCenterY, width, height);
+  ```
+  `ToMaxRectsBlockedRectangles` клэмпит к `(margin, sheetWidth−margin)` — точно соответствует
+  `ToPackerBlockedClampedToFrame` при frame=(margin..sheetWidth−margin). Поведение-preserving.
+  После миграции — проверить grep, удалить `ToMaxRectsBlockedRectangles` если больше не используется.
 
   *#2 — `TryPackSupplementalViews` (`BaseProjectedDrawingArrangeStrategy.cs:585`)*
-  - Bin: `(freeMaxX−freeMinX)+gap`, `(freeMaxY−freeMinY)+gap`; Item: `+gap`
-  - Gap-модель: аналогично #1 — нужен `TryInsertBestAreaItemInflated`, не `2*gap`.
-  - Frame: `PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY)`
-  - Result: возвращает `(centerX, centerY)` — вычислить из `sheetRect`
+
+  Текущая механика (verified):
+  - Frame: `(freeMinX, freeMinY, freeMaxX, freeMaxY)` через `ComputeFreeArea`
+  - Bin: `availableW+gap × availableH+gap`
+  - Blockers: один `blockedRect`, клэмпится вручную к `(freeMinX..freeMaxX, freeMinY..freeMaxY)` + flip
+  - Item: `width+gap × height+gap`
+  - Result: `freeMinX + placement.X + w/2`, `freeMaxY − placement.Y − h/2`
+
+  После замены:
+  ```csharp
+  var frame = new PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY);
+  var blockedList = new List<ReservedRect> { blockedRect };
+  // foreach item (ordered by area desc):
+  if (!ViewPlacementService.TryInsertBestAreaItemInflated(
+          frame, item.width, item.height,
+          blockedList, gap, out var sheetRect,
+          tag: $"strict-supplemental:view={item.index}"))
+      return false;
+  resolved[item.index] = (
+      (sheetRect.MinX + sheetRect.MaxX) / 2.0,
+      (sheetRect.MinY + sheetRect.MaxY) / 2.0);
+  ```
+  Старый код клэмпит один blocker к `(freeMinX..freeMaxX)` вручную — `ToPackerBlockedClampedToFrame`
+  делает то же через `Math.Max(frame.MinX, b.MinX-g)` / `Math.Min(frame.MaxX, b.MaxX+g)`. Поведение-preserving при одном blocker.
 
   *#4 — `PackSecondaryViewsPartial` (`BaseProjectedDrawingArrangeStrategy.Relative.cs:74`)*
-  - Аналогично #2; Frame по `freeMin/Max`; возвращает `(View, X, Y)`
 
-  **Блокер группы B (два уровня):**
-  1. Gap-механика: нужен `TryInsertBestAreaItemInflated` (ещё не реализован).
-  2. Live acceptance: нет чертежа, где эти пути реально выигрывают.
-  Отложена до сессии с живым чертежом, где один из этих путей применяется.
+  Текущая механика (verified):
+  - Frame: `(freeMinX, freeMinY, freeMaxX, freeMaxY)` через `ComputeFreeArea`
+  - Bin: `availableW+gap × availableH+gap`
+  - Blockers: `occupied.Select(rect => ToBlockedRectangle(freeMinX, freeMaxY, rect))` — **только flip, gap НЕ добавляется**
+  - Item: `width+gap × height+gap`
+  - Result: `freeMinX + placement.X + w/2`, `freeMaxY − placement.Y − h/2`
+
+  **Важное отличие от #1/#2:** `ToBlockedRectangle` делает только координатный flip, gap не добавляет.
+  Фактический gap-контракт у #4: gap только в bin+item, blockers **raw**.
+  `TryInsertBestAreaItemInflated` расширяет blockers на gap — это уже не refactor, а изменение поведения.
+  Поскольку путь не active в текущем наборе чертежей, доказать безопасность изменения невозможно.
+
+  **#4 заблокирован отдельно** до решения по контракту:
+  - Вариант A: ввести параметр `blockerGap` отдельно от `itemGap` в сервисе — точное воспроизведение,
+    но усложняет сигнатуру.
+  - Вариант B: зафиксировать как intentional behavior change + отдельная live-проверка на чертеже,
+    где #4 реально выигрывает. Нельзя принять без живого чертежа даже если "выглядит как недосмотр".
+  Решение откладывается до появления живого чертежа с активным путём #4.
+
+  **Блокер группы B:**
+  1. Сервис: нужен `TryInsertBestAreaItemInflated` (шаг B.0, ещё не реализован).
+  2. Live acceptance для #1/#2: нет чертежа где strict-путь выигрывает.
+     Как найти: в логах должны присутствовать одновременно:
+     ```
+     front_arrange_try mode=strict result=ok
+     selectedCandidate=fit_views_to_sheet:planned-final...
+     view_placement mode=best-area-inflated tag=strict-residual:* / tag=strict-supplemental:*
+     ```
+     Если не встречается — открывать чертёж с большим числом видов или нестандартными пропорциями листа,
+     где Planner не справляется.
+  3. Live acceptance для #4: дополнительно требует решения по gap-контракту (см. выше).
+
+  **Acceptance #1/#2:** в trace одновременно `front_arrange_try mode=strict result=ok`,
+  `selectedCandidate=fit_views_to_sheet:planned-final` (или `planned-before-free` / `3d-corner-*`)
+  и `view_placement mode=best-area-inflated tag=strict-residual:*` (#1) / `tag=strict-supplemental:*` (#2).
+  Origins-parity: если есть pre-migrate baseline активного strict-пути — parity обязательна;
+  если baseline нет (путь ранее не активировался) — достаточно live smoke: feasibility и scale decision не регрессируют.
+
+  **Acceptance #4:** отдельная сессия после решения по контракту; живой чертёж обязателен.
+
+  **Порядок внутри группы B:** B.0 (сервис) → #1 → #2 (оба после живого чертежа) → #4 (отдельный блокер). Каждый — отдельный коммит.
 
   ---
 
