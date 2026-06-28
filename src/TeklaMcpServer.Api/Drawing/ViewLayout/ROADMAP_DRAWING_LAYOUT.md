@@ -706,7 +706,7 @@ TODO остаётся:
 
 ### Фаза 7. Единый placement-сервис (архитектурный долг)
 
-Статус: предложено, не начато.
+Статус: **частично реализовано / active technical debt** (5 из 11 мест code migrated; 3 live accepted; #3/#5 acceptance pending; остальные заблокированы/отложены — см. таблицу статусов в конце секции).
 
 **Проблема (по факту кода).** `new MaxRectsBinPacker` создаётся в **11 call
 sites** (проверено `rg`). Каждое место вручную делает boilerplate вокруг packer:
@@ -968,7 +968,7 @@ rect.
 Текущий статус мест:
 - #8 Details — `code migrated` + `live accepted` (M.48/M.49).
 - #3 BaseRect — `code migrated`, `acceptance pending` (strict проигрывает Planner).
-- Группа A: #5,6,7 (Planner closest-to-point) — `code migrated` + `live accepted` (M.49: #6/#7 активны, теги planner-fallback-* в trace, candidate winner 3d-corner-right-top score=0.49). #5 `planner-base-candidate` на M.49 не активируется — strict-кандидат проигрывает Planner mode=custom, аналогично #3.
+- Группа A: #5,6,7 (Planner closest-to-point) — `code migrated`; #6/#7 `live accepted` (M.49: #6/#7 активны, теги planner-fallback-* в trace, candidate winner 3d-corner-right-top score=0.49). #5 `planner-base-candidate` на M.49 не активируется — strict-кандидат проигрывает Planner mode=custom, аналогично #3; статус #5: `acceptance pending`.
 - Группа B: #1,2,4 (BaseProjected/Relative best-area-fit) — не мигрированы. Блокер: нет живого чертежа.
 - Группа C: #9 (Ga) — не мигрирован. Блокер: нет живого GA-чертежа.
 - Группа D: #10,11 (Estimator) — не мигрированы. Блокер: нужна multi-heuristic перегрузка CanFit.
