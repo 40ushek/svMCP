@@ -798,8 +798,9 @@ sealed class ViewPlacementService
   raw. `ViewPlacementServiceTests` (9 тестов, зелёные): round-trip
   `toSheet(toPacker(p))==p`, направление Y (точка у `MaxY` → packer Y=0),
   байт-в-байт эквивалентность старой формуле Details.cs, gap-expanded blocker,
-  anchor-at-point, `CanFit`, degenerate frame. Сервис ещё никем не вызывается —
-  поведение чертежей не изменено.
+  anchor-at-point, `CanFit`, degenerate frame. На момент 7.1 сервис ещё никем не
+  вызывался — поведение чертежей не менялось; последующие шаги подключают
+  отдельные call sites.
 - 7.2 — ✅ ВЫПОЛНЕН. `Layout.Details.cs` free-view/anchor pass переведён на
   `_viewPlacementService.TryPlaceNearAnchor` / `TryPlaceNearPoint`; удалён ручной
   packer+flip и `BuildFreeViewBlockedRectangles` (его gap-модель «blockers+gap,
@@ -811,25 +812,36 @@ sealed class ViewPlacementService
   предсуществующее свойство, не следствие миграции). Эквивалентность placement
   гарантирована unit-тестом `TryPlaceNearPoint_MatchesOldFlipFormula` (байт-в-байт
   со старой формулой). Недетерминизм candidate-selection — отдельный вопрос (6.6).
-- 7.3a — ✅ ВЫПОЛНЕН. #3 `BaseRect.cs:583` (base-view placement) переведён на
-  `ViewPlacementService.TryPlaceNearPoint`. Gap уже в `inset` searchWindow →
-  blockers raw, item raw, `gap:0`. Helpers `ToBlockedRectangle` /
-  `FromPackedRectangle` / `TryClipToWindow` пока оставлены: их ещё используют
-  #1/#2/#4 в том же partial. Проверено live на M.49: FrontView (base) на
-  `(249.66, 471.13)` — та же позиция, что до миграции; раскладка валидна.
+- 7.3a — код мигрирован, НО live НЕ доказан. #3 `BaseRect.cs:583` переведён на
+  `ViewPlacementService.TryPlaceNearPoint`. ВАЖНО: на M.48/M.49 финал строит
+  custom-план `ProjectedGroupLayoutPlanner` (`front_arrange_plan mode=custom`,
+  старые packer #5/#6/#7), а strict base-rect #3 как кандидат НЕ выигрывает.
+  Совпадение позиции FrontView НЕ доказывает, что её поставил #3 — это была
+  ошибочная проверка. На M.48/M.49 наблюдался реально применённым только #8
+  (детали, near-anchor); #3 мигрирован в коде, но его runtime-path/live-эффект
+  НЕ доказан, т.к. strict-кандидат проигрывает Planner. На другом drawing, где
+  strict-путь выиграет, #3 может применяться — это надо проверять отдельно.
+  Статус #3: **code migrated, acceptance pending** (не «выполнен»).
 
-- **7.3b — ВАЖНЫЙ CAVEAT (блокер для остальных мест).** Оставшиеся site'ы НЕ
-  используют closest-to-point/anchor — они на `TryInsert(BestAreaFit)`
-  (area-packing, без target): #9 Ga, #4 Relative, #1/#2 BaseProjected.cs, и
-  частично Planner. Текущий `ViewPlacementService` таких методов НЕ имеет.
-  Кроме того у #1,2,4,6,7 gap-модель «gap в bin + gap к item» = двойной запас
-  (~2*gap), у #9 — gap в bin. Поэтому перед их миграцией нужно:
-  1. ✅ добавлен `ViewPlacementService.TryInsertBestArea(frame, w, h, blocked,
-     gap, out rect)` (area-fit режим, тот же flip; unit-тест
-     `TryInsertBestArea_FlipMatchesManualFormula` — байт-в-байт).
-  2. для мест с двойным gap решить: передавать `2*gap` (сохранить зазор) ИЛИ
-     зафиксировать смену зазора как намеренную (origins НЕ совпадут — отметить);
-  3. мигрировать по одному: #9 Ga → #4 Relative → #1,#2 → #5,#6,#7 Planner.
+- **7.3b — оставшиеся 9 мест (режимы verified по коду).**
+  - **closest-to-point (сервис УЖЕ умеет — `TryPlaceNearPoint`):**
+    Planner #5 `684`, #6 `832`, #7 `974`. Это путь, который реально строит
+    раскладку основных видов на M.48/M.49 (`front_arrange_plan mode=custom`).
+    gap: #5 raw, #6/#7 «gap в bin + gap к item» (~2*gap — сохранить зазор).
+  - **best-area-fit (сервис умеет — `TryInsertBestArea`):**
+    #1 `BaseProjected.cs:292`, #2 `:585`, #4 `Relative.cs:74`.
+    gap: #1/#2/#4 «gap в bin + gap к item».
+  - **Ga #9 `:131`** — своя обёртка вставки + item-inflation с origin от угла
+    ячейки (см. блокер ниже).
+  - **feasibility (сервис умеет — `CanFit`):**
+    #10/#11 `DrawingPackingEstimator` — не placement-output site, а чистый
+    пробник вместимости; мигрировать через `CanFit`, не через `TryInsertBestArea`.
+  Перед миграцией для мест с двойным gap решить: передавать `2*gap` ИЛИ
+  зафиксировать смену зазора как намеренную (origins НЕ совпадут — отметить).
+  **Пересмотр приоритета:** Planner #5–7 важнее всех — он определяет видимую
+  раскладку. Мигрировать его ПЕРВЫМ (не Ga), и сверять не позицию-совпадение, а
+  факт что `view_placement` от сервиса = applied-результат; совпадение origins
+  само по себе не доказывает, что мигрированный path реально выиграл.
 
   **БЛОКЕР на саму миграцию area-fit мест (зафиксирован).** #9 Ga переплетает
   item-inflation (`w+gap`) с origin от ВЕРХНЕГО-ЛЕВОГО угла ячейки
@@ -844,25 +856,42 @@ sealed class ViewPlacementService
 - 7.5 — добавить anchor-zone reservation ОДИН раз в сервисе
   (`ReserveAnchorZone` перед раскладкой секций) — закрывает остаток 4.7.
 
-**Порядок и риск.** #8 (Details) — высокая ценность, средний риск. `Planner`
-(#5–7) и `BaseProjectedDrawingArrangeStrategy.cs` (#1,2) — высший риск, поэтому
-последними и по одному. Каждый шаг = отдельный коммит со сверкой origins.
+**Порядок и риск.** #8 (Details) уже принят. Дальше первым мигрировать `Planner`
+(#5–7), потому что он реально определяет видимую раскладку основных видов на
+M.48/M.49. #1/#2/#4 мигрировать после решения по effective gap. #9 Ga — только
+когда есть живой GA drawing для проверки. Каждый шаг = отдельный коммит со
+сверкой code/live acceptance.
 
 **Не входит в Фазу 7.** Распухший `BaseProjectedDrawingArrangeStrategy`
 (2906 строк, 86 методов) как декомпозиция — отдельный долг. НО его 2 packer call
 sites (#1,#2) В scope Фазы 7: критерий «`new MaxRectsBinPacker` только внутри
 сервиса» относится ко всем 11, включая эти два.
 
-**Критерии приёмки.**
-- `new MaxRectsBinPacker` остаётся только внутри `ViewPlacementService` — для
-  ВСЕХ 11 call sites, включая `BaseProjectedDrawingArrangeStrategy.cs:292/585`.
-- Ручной flip (`SheetHeight - ... - placement.Y`, `band.MaxY - placement.Y`,
-  `usableMaxY - placement.Y`) исчезает из всех call sites.
-- Все места используют единый gap-контракт (blockers+gap, item raw).
-- На M.48/M.49 origins/scale после каждой миграции совпадают с
-  до-миграционными (сверка по `get_drawing_views`).
-- Публичный JSON contract `fit_views_to_sheet` / `get_drawing_views` не меняется.
-- Есть unit-тест round-trip flip и эквивалентности старой формуле.
+**Критерии приёмки — два РАЗДЕЛЬНЫХ статуса на каждое место:**
+
+`code migrated` (код переведён на сервис):
+- ручной `new MaxRectsBinPacker` и ручной flip удалены из call site;
+- единый gap-контракт (или явно зафиксированное отклонение);
+- unit-тест эквивалентности flip.
+
+`live accepted` (доказано в проде):
+- `view_placement` от сервиса реально исполнился И его результат применён
+  (этот candidate выиграл — сверка по `fit_layout_decision` / `mode`, не по
+  совпадению позиции). Совпадение origins само по себе НЕ доказательство;
+- публичный JSON contract `fit_views_to_sheet` / `get_drawing_views` не меняется.
+
+Для feasibility-only #10/#11 `live accepted` означает другое: old/new
+feasibility result совпадает на regression/live inputs или live trace показывает,
+что scale/layout decision не изменился. У них нет применённого `view_placement`
+rect.
+
+Текущий статус мест:
+- #8 детали — `code migrated` + `live accepted` (M.48/M.49).
+- #3 base-rect — `code migrated`, `acceptance pending` (strict проигрывает Planner).
+- #1,2,4,5,6,7,9,10,11 — не мигрированы.
+
+Финальный критерий Фазы 7: `new MaxRectsBinPacker` только внутри
+`ViewPlacementService` для всех 11 мест, И каждое место `live accepted`.
 
 ## Не цели
 
