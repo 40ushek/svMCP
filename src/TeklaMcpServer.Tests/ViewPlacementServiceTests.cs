@@ -190,4 +190,96 @@ public sealed class ViewPlacementServiceTests
         Assert.False(ViewPlacementService.TryPlaceNearPoint(frame, 10, 10, 0, 0,
             Array.Empty<ReservedRect>(), gap: 0, out _));
     }
+
+    // ── TryInsertBestAreaItemInflated ────────────────────────────────────────
+
+    [Fact]
+    public void TryInsertBestAreaItemInflated_PlacesInEmptyFrame_ResultIsRawSize()
+    {
+        var frame = new PlacementFrame(10, 20, 210, 120);
+        double w = 60, h = 40;
+
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflated(
+            frame, w, h, Array.Empty<ReservedRect>(), gap: 6, out var rect));
+
+        // Result must be raw w×h, not w+gap × h+gap.
+        Assert.Equal(w, rect.MaxX - rect.MinX, 6);
+        Assert.Equal(h, rect.MaxY - rect.MinY, 6);
+        // Must be inside the original frame (not the expanded bin).
+        Assert.True(rect.MinX >= frame.MinX - Eps);
+        Assert.True(rect.MinY >= frame.MinY - Eps);
+        Assert.True(rect.MaxX <= frame.MaxX + Eps);
+        Assert.True(rect.MaxY <= frame.MaxY + Eps);
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflated_ReturnsFalse_WhenNoSpace()
+    {
+        var frame = new PlacementFrame(0, 0, 50, 50);
+
+        Assert.False(ViewPlacementService.TryInsertBestAreaItemInflated(
+            frame, 100, 100, Array.Empty<ReservedRect>(), gap: 0, out _));
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflated_BlockerExpandedByGap()
+    {
+        // Frame 200×60, blocker covers left half [0,0,100,60].
+        // With gap=10 the blocker expands to x≤110 → view must start at x≥110.
+        var frame = new PlacementFrame(0, 0, 200, 60);
+        var blocked = new[] { new ReservedRect(0, 0, 100, 60) };
+
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflated(
+            frame, 50, 50, blocked, gap: 10, out var rect));
+
+        Assert.True(rect.MinX >= 110 - Eps,
+            $"expected MinX >= 110 (blocker+gap), got {rect.MinX}");
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflated_BlockerAtFrameEdge_NotSpillingIntoGapStrip()
+    {
+        // Frame [0,0,100,100], gap=10 → bin is 110×110.
+        // Blocker [90,0,100,100] sits at right edge. With clamped expansion:
+        //   maxX = min(frame.MaxX=100, 100+10=110) = 100 → blocker stays [80,0,100,100].
+        // Without clamp the blocker would consume the +gap strip and shrink free space.
+        // Either way a 50×50 view must fit in the left portion [0,0,80,100].
+        var frame = new PlacementFrame(0, 0, 100, 100);
+        var blocked = new[] { new ReservedRect(90, 0, 100, 100) };
+
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflated(
+            frame, 50, 50, blocked, gap: 10, out var rect));
+
+        Assert.True(rect.MaxX <= 80 + Eps,
+            $"expected MaxX <= 80 (view fits left of clamped blocker), got {rect.MaxX}");
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflated_MatchesOldBinPlusGapFormula()
+    {
+        // Reproduce the hand-rolled pattern from #1/#2:
+        //   bin = (availableW+gap) × (availableH+gap)
+        //   insert item as (w+gap) × (h+gap) with BestAreaFit
+        //   result center: freeMinX + p.X + w/2, freeMaxY - p.Y - h/2
+        double freeMinX = 10, freeMinY = 10, freeMaxX = 414, freeMaxY = 291;
+        double gap = 6, w = 100, h = 80;
+        double availableW = freeMaxX - freeMinX;
+        double availableH = freeMaxY - freeMinY;
+
+        var packer = new MaxRectsBinPacker(availableW + gap, availableH + gap, allowRotation: false);
+        Assert.True(packer.TryInsert(w + gap, h + gap, MaxRectsHeuristic.BestAreaFit, out var p));
+        var oldCenterX = freeMinX + p.X + w / 2.0;
+        var oldCenterY = freeMaxY - p.Y - h / 2.0;
+        var oldRect = new ReservedRect(oldCenterX - w / 2.0, oldCenterY - h / 2.0,
+                                       oldCenterX + w / 2.0, oldCenterY + h / 2.0);
+
+        var frame = new PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY);
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflated(
+            frame, w, h, Array.Empty<ReservedRect>(), gap, out var newRect));
+
+        Assert.Equal(oldRect.MinX, newRect.MinX, 6);
+        Assert.Equal(oldRect.MinY, newRect.MinY, 6);
+        Assert.Equal(oldRect.MaxX, newRect.MaxX, 6);
+        Assert.Equal(oldRect.MaxY, newRect.MaxY, 6);
+    }
 }

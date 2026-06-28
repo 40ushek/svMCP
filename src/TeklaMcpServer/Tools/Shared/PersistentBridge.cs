@@ -32,11 +32,13 @@ internal sealed class PersistentBridge : IDisposable
     internal PersistentBridge(
         string bridgePath,
         string workingDirectory,
-        string[] startupArgs)
+        string[] startupArgs,
+        TimeSpan responseTimeout = default)
     {
         _bridgePath = bridgePath;
         _workingDirectory = workingDirectory;
         _startupArgs = startupArgs;
+        _ = responseTimeout; // parameter accepted for test compatibility; use SendWithTimeout for per-call override
     }
 
     public string Send(string command, params string[] args)

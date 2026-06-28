@@ -141,6 +141,50 @@ internal static class ViewPlacementService
     }
 
     /// <summary>
+    /// Compatibility variant for call sites that historically used the
+    /// "bin+gap / item+gap" pattern with BestAreaFit (#1/#2 BaseProjected).
+    /// Exactly reproduces:
+    ///   bin = frame.Width+gap × frame.Height+gap
+    ///   item inserted as w+gap × h+gap
+    ///   blockers expanded by gap but clamped to the original frame bounds
+    ///   result rect returned at raw w×h
+    /// Same clamp rationale as <see cref="TryPlaceNearPointItemInflated"/>.
+    /// Use only for behavior-preserving migration of those sites.
+    /// </summary>
+    public static bool TryInsertBestAreaItemInflated(
+        PlacementFrame frame,
+        double width,
+        double height,
+        IReadOnlyList<ReservedRect> blocked,
+        double gap,
+        out ReservedRect sheetRect,
+        string? tag = null)
+    {
+        if (frame.Width <= 0 || frame.Height <= 0 || width <= 0 || height <= 0)
+        {
+            sheetRect = null!;
+            return false;
+        }
+
+        var packer = new MaxRectsBinPacker(
+            frame.Width + gap,
+            frame.Height + gap,
+            allowRotation: false,
+            blockedRectangles: ToPackerBlockedClampedToFrame(frame, blocked, gap));
+
+        if (!packer.TryInsert(width + gap, height + gap, MaxRectsHeuristic.BestAreaFit, out var placement))
+        {
+            sheetRect = null!;
+            Trace("best-area-inflated", frame, width, height, null, null, blocked.Count, gap, null, tag);
+            return false;
+        }
+
+        sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, width, height);
+        Trace("best-area-inflated", frame, width, height, null, null, blocked.Count, gap, sheetRect, tag);
+        return true;
+    }
+
+    /// <summary>
     /// Place a w×h view using best-area-fit (no target point). Intended to
     /// replace the hand-rolled <c>TryInsert(BestAreaFit)</c> + manual flip in the
     /// area-packing strategies (Ga / Relative / base projected) — not yet wired:
