@@ -13,9 +13,10 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 /// Coordinate flip is owned by <see cref="PlacementFrame"/>.
 ///
 /// Gap contract (roadmap Phase 7): gap is applied ONE way only — blocked
-/// rectangles are expanded by gap, the view size is passed raw. Call sites that
-/// historically inflated the bin or the item size are migrated to this model
-/// (preserving their effective spacing — see roadmap for the 2*gap cases).
+/// rectangles are expanded by gap, the view size is passed raw. Exception:
+/// <see cref="TryPlaceNearPointItemInflated"/> is a compatibility shim for
+/// call sites that historically used bin+gap/item+gap; it intentionally
+/// deviates from this contract to preserve the old asymmetric clearance.
 /// </summary>
 internal static class ViewPlacementService
 {
@@ -31,7 +32,8 @@ internal static class ViewPlacementService
         double sheetTargetY,
         IReadOnlyList<ReservedRect> blocked,
         double gap,
-        out ReservedRect sheetRect)
+        out ReservedRect sheetRect,
+        string? tag = null)
     {
         if (!TryCreatePacker(frame, width, height, blocked, gap, out var packer))
         {
@@ -43,12 +45,64 @@ internal static class ViewPlacementService
         if (!packer.TryInsertClosestToPoint(width, height, px, py, out var placement))
         {
             sheetRect = null!;
-            Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, null);
+            Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, null, tag);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
-        Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, sheetRect);
+        Trace("near-point", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, sheetRect, tag);
+        return true;
+    }
+
+    /// <summary>
+    /// Compatibility variant for call sites that historically used the
+    /// "bin+gap / item+gap" pattern (Planner #6/#7). Exactly reproduces:
+    ///   bin = frame.Width+gap × frame.Height+gap
+    ///   item inserted as w+gap × h+gap
+    ///   blockers expanded by gap but clamped to the original frame bounds
+    ///   result rect returned at raw w×h
+    /// The clamp is critical: old <c>ToBlockedRectangles/InBand</c> clamped
+    /// expanded blockers to the usable frame/band before converting to packer
+    /// space, so a blocker at the frame edge never consumed the +gap bin strip.
+    /// <see cref="ToPackerBlocked"/> does not clamp, which would let an expanded
+    /// blocker spill into that strip and shrink free space differently.
+    /// Use only for behavior-preserving migration of those sites.
+    /// </summary>
+    public static bool TryPlaceNearPointItemInflated(
+        PlacementFrame frame,
+        double width,
+        double height,
+        double sheetTargetX,
+        double sheetTargetY,
+        IReadOnlyList<ReservedRect> blocked,
+        double gap,
+        out ReservedRect sheetRect,
+        string? tag = null)
+    {
+        if (frame.Width <= 0 || frame.Height <= 0 || width <= 0 || height <= 0)
+        {
+            sheetRect = null!;
+            return false;
+        }
+
+        // Bin expanded by gap so an inflated item can sit flush at the frame edge.
+        var packer = new MaxRectsBinPacker(
+            frame.Width + gap,
+            frame.Height + gap,
+            allowRotation: false,
+            blockedRectangles: ToPackerBlockedClampedToFrame(frame, blocked, gap));
+
+        var (px, py) = frame.ToPacker(sheetTargetX, sheetTargetY);
+        if (!packer.TryInsertClosestToPoint(width + gap, height + gap, px, py, out var placement))
+        {
+            sheetRect = null!;
+            Trace("near-point-inflated", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, null, tag);
+            return false;
+        }
+
+        // Raw w×h rect — mirrors old `new ReservedRect(origin+x, maxY-y-h, ..., maxY-y)`.
+        sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, width, height);
+        Trace("near-point-inflated", frame, width, height, sheetTargetX, sheetTargetY, blocked.Count, gap, sheetRect, tag);
         return true;
     }
 
@@ -64,7 +118,8 @@ internal static class ViewPlacementService
         double sheetAnchorY,
         IReadOnlyList<ReservedRect> blocked,
         double gap,
-        out ReservedRect sheetRect)
+        out ReservedRect sheetRect,
+        string? tag = null)
     {
         if (!TryCreatePacker(frame, width, height, blocked, gap, out var packer))
         {
@@ -76,12 +131,12 @@ internal static class ViewPlacementService
         if (!packer.TryInsertClosestToAnchor(width, height, px, py, out var placement))
         {
             sheetRect = null!;
-            Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, null);
+            Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, null, tag);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
-        Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, sheetRect);
+        Trace("near-anchor", frame, width, height, sheetAnchorX, sheetAnchorY, blocked.Count, gap, sheetRect, tag);
         return true;
     }
 
@@ -98,7 +153,8 @@ internal static class ViewPlacementService
         double height,
         IReadOnlyList<ReservedRect> blocked,
         double gap,
-        out ReservedRect sheetRect)
+        out ReservedRect sheetRect,
+        string? tag = null)
     {
         if (!TryCreatePacker(frame, width, height, blocked, gap, out var packer))
         {
@@ -109,12 +165,12 @@ internal static class ViewPlacementService
         if (!packer.TryInsert(width, height, MaxRectsHeuristic.BestAreaFit, out var placement))
         {
             sheetRect = null!;
-            Trace("best-area", frame, width, height, null, null, blocked.Count, gap, null);
+            Trace("best-area", frame, width, height, null, null, blocked.Count, gap, null, tag);
             return false;
         }
 
         sheetRect = frame.PackerRectToSheet(placement.X, placement.Y, placement.Width, placement.Height);
-        Trace("best-area", frame, width, height, null, null, blocked.Count, gap, sheetRect);
+        Trace("best-area", frame, width, height, null, null, blocked.Count, gap, sheetRect, tag);
         return true;
     }
 
@@ -170,6 +226,34 @@ internal static class ViewPlacementService
     }
 
     /// <summary>
+    /// Like <see cref="ToPackerBlocked"/> but clamps the expanded blocker to the
+    /// original frame bounds before converting to packer space. Used by
+    /// <see cref="TryPlaceNearPointItemInflated"/> to match the old
+    /// <c>ToBlockedRectangles/InBand</c> behavior: blockers at the frame edge are
+    /// not allowed to spill into the +gap bin strip that the inflated item needs.
+    /// </summary>
+    private static IEnumerable<PackedRectangle> ToPackerBlockedClampedToFrame(
+        PlacementFrame frame,
+        IReadOnlyList<ReservedRect> blocked,
+        double gap)
+    {
+        var g = Math.Max(gap, 0.0);
+        foreach (var b in blocked)
+        {
+            var minX = Math.Max(frame.MinX, b.MinX - g);
+            var maxX = Math.Min(frame.MaxX, b.MaxX + g);
+            var minY = Math.Max(frame.MinY, b.MinY - g);
+            var maxY = Math.Min(frame.MaxY, b.MaxY + g);
+
+            if (maxX <= minX || maxY <= minY)
+                continue;
+
+            var (packerX, packerY) = frame.ToPacker(minX, maxY);
+            yield return new PackedRectangle(packerX, packerY, maxX - minX, maxY - minY);
+        }
+    }
+
+    /// <summary>
     /// Convert sheet-space blocked rects into packer-space rectangles, expanded
     /// by gap on every side. Expansion is the single place gap enters the model.
     /// </summary>
@@ -197,6 +281,7 @@ internal static class ViewPlacementService
     /// Trace one placement attempt to the shared view-layout log
     /// (C:\temp\svmcp-view-layout.log), same channel as the rest of layout.
     /// target is null for best-area mode; result is null on failure.
+    /// tag is an optional caller-supplied context string for live acceptance.
     /// </summary>
     private static void Trace(
         string mode,
@@ -207,7 +292,8 @@ internal static class ViewPlacementService
         double? targetY,
         int blockedCount,
         double gap,
-        ReservedRect? result)
+        ReservedRect? result,
+        string? tag)
     {
         var inv = CultureInfo.InvariantCulture;
         var target = targetX.HasValue && targetY.HasValue
@@ -217,10 +303,11 @@ internal static class ViewPlacementService
             ? string.Format(inv, "[{0:F1},{1:F1},{2:F1},{3:F1}]",
                 result.MinX, result.MinY, result.MaxX, result.MaxY)
             : "fail";
+        var tagPart = tag != null ? $" tag={tag}" : string.Empty;
         PerfTrace.Write("api-view", "view_placement", 0, string.Format(
             inv,
-            "mode={0} frame=[{1:F1},{2:F1},{3:F1},{4:F1}] size=({5:F1}x{6:F1}) target={7} blockers={8} gap={9:F1} result={10}",
+            "mode={0} frame=[{1:F1},{2:F1},{3:F1},{4:F1}] size=({5:F1}x{6:F1}) target={7} blockers={8} gap={9:F1} result={10}{11}",
             mode, frame.MinX, frame.MinY, frame.MaxX, frame.MaxY,
-            width, height, target, blockedCount, gap, res));
+            width, height, target, blockedCount, gap, res, tagPart));
     }
 }

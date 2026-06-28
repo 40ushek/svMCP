@@ -5,7 +5,6 @@ using System.Linq;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
-using TeklaMcpServer.Api.Algorithms.Packing;
 using TeklaMcpServer.Api.Diagnostics;
 using TeklaMcpServer.Api.Drawing;
 
@@ -677,22 +676,20 @@ internal static class ProjectedGroupLayoutPlanner
             (Name: "BottomRight", X: minX + availableWidth * 0.75, Y: minY + availableHeight * 0.25)
         };
 
+        var frame = new PlacementFrame(minX, minY, maxX, maxY);
         var result = new List<BaseRectCandidate>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var target in targets)
         {
-            var packer = new MaxRectsBinPacker(
-                availableWidth,
-                availableHeight,
-                allowRotation: false,
-                context.ReservedAreas.SelectMany(rect => ToBlockedRectangles(context, rect)));
-
-            if (!packer.TryInsertClosestToPoint(width, height, target.X - minX, (context.SheetHeight - context.Margin) - target.Y, out var placement))
+            if (!ViewPlacementService.TryPlaceNearPoint(
+                    frame, width, height,
+                    target.X, target.Y,
+                    context.ReservedAreas, context.Gap,
+                    out var sheetRect,
+                    tag: $"planner-base-candidate:{target.Name}"))
                 continue;
 
-            var frameCenterX = minX + placement.X + (width * 0.5);
-            var frameCenterY = context.SheetHeight - context.Margin - placement.Y - (height * 0.5);
-            var rect = ViewPlacementGeometryService.CreateRectFromFrameCenter(frameCenterX, frameCenterY, width, height);
+            var rect = sheetRect;
             if (!IsInsideSheetMargins(context, rect))
                 continue;
 
@@ -827,17 +824,17 @@ internal static class ProjectedGroupLayoutPlanner
             var blocked = context.ReservedAreas
                 .Concat(state.Placements.Values.Select(placement => placement.Rect))
                 .Concat(placedFallbacks.Select(placement => placement.Rect))
-                .SelectMany(rect => ToBlockedRectangles(context, rect))
                 .ToList();
-            var packer = new MaxRectsBinPacker(availableWidth + context.Gap, availableHeight + context.Gap, allowRotation: false, blocked);
-
+            var fallbackFrame = new PlacementFrame(context.Margin, context.Margin,
+                context.SheetWidth - context.Margin, context.SheetHeight - context.Margin);
             var target = GetPackedFallbackTargetPoint(context, state.BaseRect, item.PreferredSide);
-            if (!packer.TryInsertClosestToPoint(
-                    width + context.Gap,
-                    height + context.Gap,
-                    target.X - context.Margin,
-                    (context.SheetHeight - context.Margin) - target.Y,
-                    out var placement))
+            // Old model: bin+gap, item+gap, blockers+gap — use inflated variant to preserve asymmetric clearance.
+            if (!ViewPlacementService.TryPlaceNearPointItemInflated(
+                    fallbackFrame, width, height,
+                    target.X, target.Y,
+                    blocked, context.Gap,
+                    out var rect,
+                    tag: $"planner-fallback-packed:view={item.Id}:preferred={item.PreferredSide}"))
             {
                 rejectReason = $"no-fallback-space:view={item.Id}";
                 if (trace)
@@ -850,12 +847,6 @@ internal static class ProjectedGroupLayoutPlanner
                 }
                 return false;
             }
-
-            var rect = new ReservedRect(
-                context.Margin + placement.X,
-                context.SheetHeight - context.Margin - placement.Y - height,
-                context.Margin + placement.X + width,
-                context.SheetHeight - context.Margin - placement.Y);
 
             if (!ValidateFallbackRect(context, state, placedFallbacks, item, rect))
             {
@@ -968,19 +959,18 @@ internal static class ProjectedGroupLayoutPlanner
         var blocked = context.ReservedAreas
             .Concat(state.Placements.Values.Select(placement => placement.Rect))
             .Concat(placedFallbacks.Select(placement => placement.Rect))
-            .SelectMany(blockedRect => ToBlockedRectanglesInBand(context, band, blockedRect))
             .ToList();
 
-        var packer = new MaxRectsBinPacker(band.Width + context.Gap, band.Height + context.Gap, allowRotation: false, blocked);
+        var bandFrame = new PlacementFrame(band.MinX, band.MinY, band.MaxX, band.MaxY);
         var (targetX, targetY) = GetPreferredFallbackTargetPoint(state.BaseRect, band, item.PreferredSide);
-        if (!packer.TryInsertClosestToPoint(width + context.Gap, height + context.Gap, targetX - band.MinX, band.MaxY - targetY, out var placement))
+        // Old model: bin+gap, item+gap, blockers+gap — use inflated variant to preserve asymmetric clearance.
+        if (!ViewPlacementService.TryPlaceNearPointItemInflated(
+                bandFrame, width, height,
+                targetX, targetY,
+                blocked, context.Gap,
+                out rect,
+                tag: $"planner-fallback-preferred:view={item.Id}:preferred={item.PreferredSide}"))
             return false;
-
-        rect = new ReservedRect(
-            band.MinX + placement.X,
-            band.MaxY - placement.Y - height,
-            band.MinX + placement.X + width,
-            band.MaxY - placement.Y);
 
         return ValidateFallbackRect(context, state, placedFallbacks, item, rect);
     }
@@ -1088,43 +1078,6 @@ internal static class ProjectedGroupLayoutPlanner
             bestGap = gap;
             side = candidate;
         }
-    }
-
-    private static IEnumerable<PackedRectangle> ToBlockedRectangles(DrawingArrangeContext context, ReservedRect area)
-    {
-        var minX = Math.Max(context.Margin, area.MinX - context.Gap);
-        var maxX = Math.Min(context.SheetWidth - context.Margin, area.MaxX + context.Gap);
-        var minY = Math.Max(context.Margin, area.MinY - context.Gap);
-        var maxY = Math.Min(context.SheetHeight - context.Margin, area.MaxY + context.Gap);
-
-        if (maxX <= minX || maxY <= minY)
-            yield break;
-
-        yield return new PackedRectangle(
-            minX - context.Margin,
-            (context.SheetHeight - context.Margin) - maxY,
-            maxX - minX,
-            maxY - minY);
-    }
-
-    private static IEnumerable<PackedRectangle> ToBlockedRectanglesInBand(
-        DrawingArrangeContext context,
-        ReservedRect band,
-        ReservedRect area)
-    {
-        var minX = Math.Max(band.MinX, area.MinX - context.Gap);
-        var maxX = Math.Min(band.MaxX, area.MaxX + context.Gap);
-        var minY = Math.Max(band.MinY, area.MinY - context.Gap);
-        var maxY = Math.Min(band.MaxY, area.MaxY + context.Gap);
-
-        if (maxX <= minX || maxY <= minY)
-            yield break;
-
-        yield return new PackedRectangle(
-            minX - band.MinX,
-            band.MaxY - maxY,
-            maxX - minX,
-            maxY - minY);
     }
 
     private static ReservedRect GetBounds(IEnumerable<ReservedRect> rects)

@@ -824,43 +824,123 @@ sealed class ViewPlacementService
   Статус #3: **code migrated, acceptance pending** (не «выполнен»).
 
 - **7.3b — оставшиеся 9 мест (режимы verified по коду).**
-  - **closest-to-point (сервис УЖЕ умеет — `TryPlaceNearPoint`):**
-    Planner #5 `684`, #6 `832`, #7 `974`. Это путь, который реально строит
-    раскладку основных видов на M.48/M.49 (`front_arrange_plan mode=custom`).
-    gap: #5 raw, #6/#7 «gap в bin + gap к item» (~2*gap — сохранить зазор).
-  - **best-area-fit (сервис умеет — `TryInsertBestArea`):**
-    #1 `BaseProjected.cs:292`, #2 `:585`, #4 `Relative.cs:74`.
-    gap: #1/#2/#4 «gap в bin + gap к item».
-  - **Ga #9 `:131`** — своя обёртка вставки + item-inflation с origin от угла
-    ячейки (см. блокер ниже).
-  - **feasibility (сервис умеет — `CanFit`):**
-    #10/#11 `DrawingPackingEstimator` — не placement-output site, а чистый
-    пробник вместимости; мигрировать через `CanFit`, не через `TryInsertBestArea`.
-  Перед миграцией для мест с двойным gap решить: передавать `2*gap` ИЛИ
-  зафиксировать смену зазора как намеренную (origins НЕ совпадут — отметить).
-  **Пересмотр приоритета:** Planner #5–7 важнее всех — он определяет видимую
-  раскладку. Мигрировать его ПЕРВЫМ (не Ga), и сверять не позицию-совпадение, а
-  факт что `view_placement` от сервиса = applied-результат; совпадение origins
-  само по себе не доказывает, что мигрированный path реально выиграл.
 
-  **БЛОКЕР на саму миграцию area-fit мест (зафиксирован).** #9 Ga переплетает
-  item-inflation (`w+gap`) с origin от ВЕРХНЕГО-ЛЕВОГО угла ячейки
-  (`margin + rect.X + w/2`, не центр ячейки). Чистый перенос требует пересчёта
-  origin из rect ячейки, а проверить его можно только на живом GA-чертеже —
-  сейчас открыты только AssemblyDrawing (M.48/M.49), которые идут через
-  `BaseProjectedDrawingArrangeStrategy`, НЕ через Ga. Миграция area-fit мест
-  вслепую нарушила бы критерий приёмки «сверка origins», поэтому отложена до
-  сессии с GA/area-fit чертежом. `TryInsertBestArea` готов и ждёт.
+  Разбивка по группам:
+
+  **Группа A — closest-to-point, Planner #5/#6/#7 (ПЕРВЫЙ ПРИОРИТЕТ)**
+
+  Это реальный runtime-путь на M.48/M.49 (`front_arrange_plan mode=custom`).
+  Мигрировать первыми; после каждого шага — live acceptance через trace.
+
+  *#5 — `CreateBaseRectCandidates` (`ProjectedGroupLayoutPlanner.cs:684`)*
+  - Метод: `CreateBaseRectCandidates`
+  - Bin: `availableWidth` (raw), `availableHeight` (raw) — **без +gap**
+  - Item: raw
+  - Blocked: `context.ReservedAreas.SelectMany(ToBlockedRectangles)` — расширяет
+    каждый reserved area на ±gap, делает flip `(sheetHeight−margin)−maxY`
+  - Flip в result: `minX + x + w/2`, `sheetHeight − margin − y − h/2`
+  - **Gap-модель идентична сервису** (blockers+gap, item raw, bin raw).
+  - Frame: `PlacementFrame(margin, margin, sheetWidth−margin, sheetHeight−margin)`
+  - Замена: каждый из 9 target-loop'ов →
+    `TryPlaceNearPoint(frame, width, height, target.X, target.Y, context.ReservedAreas, context.Gap, out sheetRect)`
+  - После: `rect = sheetRect; frameCenterX/Y` вычислять из `sheetRect`
+    через `ViewPlacementGeometryService.GetFrameCenter(sheetRect)` или inline.
+  - `ToBlockedRectangles` при #5 остаётся нужным для #6/#7; удалять только когда
+    все три мигрированы.
+  - Acceptance: в trace `view_placement mode=near-point` должно появляться при
+    `CreateBaseRectCandidates`; убедиться, что candidate count и deduplicate-set
+    совпадают с текущим поведением.
+
+  *#6 — `TryPlaceFallbackViews` (`ProjectedGroupLayoutPlanner.cs:832`)*
+  - Метод: `TryPlaceFallbackViews` (ветка когда `TryPlacePreferredSideFallbackView` не сработал)
+  - Bin: `availableWidth + gap`, `availableHeight + gap` — **bin+gap**
+  - Item: `width + gap`, `height + gap` — **item+gap**
+  - Blocked: `context.ReservedAreas + state.Placements + placedFallbacks`
+    → `SelectMany(ToBlockedRectangles)` (blockers+gap)
+  - Flip в result: `margin + x`, `sheetHeight − margin − y − h` (raw height)
+  - Gap-модель: асимметричная — gap от блокеров через blocker expansion,
+    gap от свободного края через inflated item, raw rect на выходе.
+    Это НЕ симметричное 2×gap: `2*gap` в blockers дало бы другое поведение.
+  - Решение: `ViewPlacementService.TryPlaceNearPointItemInflated` — инкапсулирует
+    старую механику (bin+gap, item w+gap/h+gap, blockers+gap, rect raw w/h).
+  - Frame: `PlacementFrame(margin, margin, sheetWidth−margin, sheetHeight−margin)`
+  - Target: `GetPackedFallbackTargetPoint(...)` → `sheetTargetX/Y`
+  - Blocked-список: сырой `IReadOnlyList<ReservedRect>`, сервис расширяет на gap.
+  - `ToBlockedRectangles` удалён вместе с #7.
+  - Acceptance: `projected_group_fallback_result mode=packed-targeted` показывает
+    тот же `rect`; на M.48/M.49 fallback-placed views не сместились.
+
+  *#7 — `TryPlacePreferredSideFallbackView` (`ProjectedGroupLayoutPlanner.cs:974`)*
+  - Метод: `TryPlacePreferredSideFallbackView`
+  - Bin: `band.Width + gap`, `band.Height + gap` — **bin+gap**
+  - Item: `width + gap`, `height + gap` — **item+gap**
+  - Blocked: clamped к band через `ToBlockedRectanglesInBand`
+  - Flip в result: `band.MinX + x`, `band.MaxY − y − h` (raw height)
+  - Gap-модель: аналогично #6, та же асимметричная механика.
+  - Решение: `TryPlaceNearPointItemInflated` с `PlacementFrame(band)`.
+    Clamp к band автоматически: packer-пространство ограничено frame=band.
+  - `ToBlockedRectanglesInBand` удалён после миграции.
+  - Acceptance: preferred-side fallback rect совпадает;
+    `ValidateFallbackRect` получает тот же прямоугольник.
+
+  **Порядок внутри группы A:** #5 → #6 → #7. Каждый — отдельный коммит.
+  После #7 удалить `ToBlockedRectangles` и `ToBlockedRectanglesInBand`.
+
+  ---
+
+  **Группа B — best-area-fit, #1/#2/#4 (ВТОРОЙ ПРИОРИТЕТ, после живого чертежа)**
+
+  *#1 — `TryEstimateResidualPlacements` (`BaseProjectedDrawingArrangeStrategy.cs:292`)*
+  - Bin: `availableW + gap`, `availableH + gap`; Item: `width + gap`, `height + gap`
+  - Gap-модель: та же асимметричная bin+gap/item+gap что у #6/#7.
+    `2*gap` в `TryInsertBestArea` НЕ воспроизводит это — нужен отдельный
+    `TryInsertBestAreaItemInflated` по образцу `TryPlaceNearPointItemInflated`.
+  - Frame: `PlacementFrame(margin, margin, sheetWidth−margin, sheetHeight−margin)`
+  - Result: `frameCenterX/Y` из sheetRect → `ViewPlacementGeometryService.CreateRectFromFrameCenter`
+
+  *#2 — `TryPackSupplementalViews` (`BaseProjectedDrawingArrangeStrategy.cs:585`)*
+  - Bin: `(freeMaxX−freeMinX)+gap`, `(freeMaxY−freeMinY)+gap`; Item: `+gap`
+  - Gap-модель: аналогично #1 — нужен `TryInsertBestAreaItemInflated`, не `2*gap`.
+  - Frame: `PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY)`
+  - Result: возвращает `(centerX, centerY)` — вычислить из `sheetRect`
+
+  *#4 — `PackSecondaryViewsPartial` (`BaseProjectedDrawingArrangeStrategy.Relative.cs:74`)*
+  - Аналогично #2; Frame по `freeMin/Max`; возвращает `(View, X, Y)`
+
+  **Блокер группы B (два уровня):**
+  1. Gap-механика: нужен `TryInsertBestAreaItemInflated` (ещё не реализован).
+  2. Live acceptance: нет чертежа, где эти пути реально выигрывают.
+  Отложена до сессии с живым чертежом, где один из этих путей применяется.
+
+  ---
+
+  **Группа C — Ga #9 (`GaDrawingMaxRectsArrangeStrategy.cs:131`) (БЛОКЕР)**
+
+  Переплетает item-inflation (`w+gap`) с origin от верхнего-левого угла ячейки
+  (`margin + rect.X + w/2`, не центр ячейки). Требует пересчёта origin из
+  packer-rect, проверить только на живом GA-чертеже. Отложена.
+
+  ---
+
+  **Группа D — feasibility #10/#11 (`DrawingPackingEstimator`) (НИЗКИЙ ПРИОРИТЕТ)**
+
+  `FitsMaxRects` (#10) и `FitsMaxRectsOrdered` (#11) — чистые bool-пробники.
+  `ViewPlacementService.CanFit` сейчас: только `BestAreaFit`, один порядок.
+  `CheckRelaxedMaxRectsFit` перебирает 3 heuristic × 4 order = 12 попыток.
+  Для полной замены нужна расширенная перегрузка `CanFit(heuristic, items)` или
+  отдельный helper. Текущий `CanFit` не покрывает этот use-case — расширять
+  сервис перед пониманием, нужен ли multi-heuristic в сервисе вообще, не стоит.
+  Статус: отложено, не мигрировать до группы A.
+
 - 7.4 — #10,#11 `DrawingPackingEstimator` перевести на `CanFit` (тонкий пробник,
-  без своего packer).
+  без своего packer). Требует решения по multi-heuristic перегрузке.
 - 7.5 — добавить anchor-zone reservation ОДИН раз в сервисе
   (`ReserveAnchorZone` перед раскладкой секций) — закрывает остаток 4.7.
 
-**Порядок и риск.** #8 (Details) уже принят. Дальше первым мигрировать `Planner`
-(#5–7), потому что он реально определяет видимую раскладку основных видов на
-M.48/M.49. #1/#2/#4 мигрировать после решения по effective gap. #9 Ga — только
-когда есть живой GA drawing для проверки. Каждый шаг = отдельный коммит со
-сверкой code/live acceptance.
+**Порядок и риск.** #8 (Details) уже принят. Дальше: группа A (#5→#6→#7)
+по одному коммиту. Группы B и C — только когда есть живой чертёж, где
+соответствующий path реально выигрывает. Группа D — после группы A.
+Каждый шаг = отдельный коммит со сверкой code/live acceptance.
 
 **Не входит в Фазу 7.** Распухший `BaseProjectedDrawingArrangeStrategy`
 (2906 строк, 86 методов) как декомпозиция — отдельный долг. НО его 2 packer call
@@ -886,9 +966,12 @@ feasibility result совпадает на regression/live inputs или live tr
 rect.
 
 Текущий статус мест:
-- #8 детали — `code migrated` + `live accepted` (M.48/M.49).
-- #3 base-rect — `code migrated`, `acceptance pending` (strict проигрывает Planner).
-- #1,2,4,5,6,7,9,10,11 — не мигрированы.
+- #8 Details — `code migrated` + `live accepted` (M.48/M.49).
+- #3 BaseRect — `code migrated`, `acceptance pending` (strict проигрывает Planner).
+- Группа A: #5,6,7 (Planner closest-to-point) — `code migrated` + `live accepted` (M.49: #6/#7 активны, теги planner-fallback-* в trace, candidate winner 3d-corner-right-top score=0.49). #5 `planner-base-candidate` на M.49 не активируется — strict-кандидат проигрывает Planner mode=custom, аналогично #3.
+- Группа B: #1,2,4 (BaseProjected/Relative best-area-fit) — не мигрированы. Блокер: нет живого чертежа.
+- Группа C: #9 (Ga) — не мигрирован. Блокер: нет живого GA-чертежа.
+- Группа D: #10,11 (Estimator) — не мигрированы. Блокер: нужна multi-heuristic перегрузка CanFit.
 
 Финальный критерий Фазы 7: `new MaxRectsBinPacker` только внутри
 `ViewPlacementService` для всех 11 мест, И каждое место `live accepted`.
