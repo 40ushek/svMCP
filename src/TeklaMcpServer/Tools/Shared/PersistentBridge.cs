@@ -20,6 +20,7 @@ internal sealed class PersistentBridge : IDisposable
     private readonly string _bridgePath;
     private readonly string _workingDirectory;
     private readonly string[] _startupArgs;
+    private readonly TimeSpan _defaultResponseTimeout;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private Process? _process;
@@ -38,7 +39,7 @@ internal sealed class PersistentBridge : IDisposable
         _bridgePath = bridgePath;
         _workingDirectory = workingDirectory;
         _startupArgs = startupArgs;
-        _ = responseTimeout; // parameter accepted for test compatibility; use SendWithTimeout for per-call override
+        _defaultResponseTimeout = responseTimeout == default ? DefaultResponseTimeout : responseTimeout;
     }
 
     public string Send(string command, params string[] args)
@@ -50,7 +51,7 @@ internal sealed class PersistentBridge : IDisposable
     private string SendCore(string command, string[] args, TimeSpan? responseTimeout)
     {
         var total = Stopwatch.StartNew();
-        var effectiveResponseTimeout = responseTimeout ?? DefaultResponseTimeout;
+        var effectiveResponseTimeout = responseTimeout ?? _defaultResponseTimeout;
         var wait = Stopwatch.StartNew();
         _lock.Wait();
         wait.Stop();

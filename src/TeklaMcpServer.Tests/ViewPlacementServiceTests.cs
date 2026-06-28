@@ -237,21 +237,53 @@ public sealed class ViewPlacementServiceTests
     }
 
     [Fact]
-    public void TryInsertBestAreaItemInflated_BlockerAtFrameEdge_NotSpillingIntoGapStrip()
+    public void TryInsertBestAreaItemInflated_BlockerAtFrameEdge_ClampedMatchesOldFormula()
     {
-        // Frame [0,0,100,100], gap=10 → bin is 110×110.
-        // Blocker [90,0,100,100] sits at right edge. With clamped expansion:
-        //   maxX = min(frame.MaxX=100, 100+10=110) = 100 → blocker stays [80,0,100,100].
-        // Without clamp the blocker would consume the +gap strip and shrink free space.
-        // Either way a 50×50 view must fit in the left portion [0,0,80,100].
-        var frame = new PlacementFrame(0, 0, 100, 100);
-        var blocked = new[] { new ReservedRect(90, 0, 100, 100) };
+        // The old hand-rolled code in #1 (TryEstimateResidualPlacements) clamped
+        // the expanded blocker to the usable frame before converting to packer space:
+        //   blockedMaxX = Math.Min(freeMaxX, blocker.MaxX + gap)
+        // This prevents a blocker at frame.MaxX from spilling into the +gap bin strip.
+        // TryInsertBestAreaItemInflated must reproduce this via ToPackerBlockedClampedToFrame.
+        //
+        // Setup: frame [0,0,100,60], blocker at right edge [90,0,100,60], gap=10, item 40×50.
+        // Clamped:   blockedMaxX = min(100, 100+10) = 100 → packer blocker width = 10+10 = 20
+        //            (expanded left by gap=10, right clamped to frame.MaxX=100)
+        // Unclamped: blockedMaxX = 100+10 = 110 → packer blocker width = 10+10+10 = 30 (leaks into +gap strip)
+        // The two give different free rectangles — placement differs.
 
+        double freeMinX = 0, freeMinY = 0, freeMaxX = 100, freeMaxY = 60;
+        double gap = 10, w = 40, h = 50;
+        var blocker = new ReservedRect(90, 0, 100, 60); // at right edge
+
+        // --- old hand-rolled path (clamped, as in TryEstimateResidualPlacements) ---
+        var blockedMinX = Math.Max(freeMinX, blocker.MinX - gap); // = 80
+        var blockedMaxX = Math.Min(freeMaxX, blocker.MaxX + gap); // = 100 (clamped)
+        var blockedMinY = Math.Max(freeMinY, blocker.MinY - gap); // = 0
+        var blockedMaxY = Math.Min(freeMaxY, blocker.MaxY + gap); // = 60 (clamped)
+        var oldBlocked = new PackedRectangle(
+            blockedMinX - freeMinX,
+            freeMaxY - blockedMaxY,
+            blockedMaxX - blockedMinX,
+            blockedMaxY - blockedMinY);
+        var oldPacker = new MaxRectsBinPacker(
+            (freeMaxX - freeMinX) + gap,
+            (freeMaxY - freeMinY) + gap,
+            allowRotation: false,
+            blockedRectangles: new[] { oldBlocked });
+        Assert.True(oldPacker.TryInsert(w + gap, h + gap, MaxRectsHeuristic.BestAreaFit, out var oldP));
+        var oldRect = new ReservedRect(
+            freeMinX + oldP.X, freeMaxY - oldP.Y - h,
+            freeMinX + oldP.X + w, freeMaxY - oldP.Y);
+
+        // --- new service path ---
+        var frame = new PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY);
         Assert.True(ViewPlacementService.TryInsertBestAreaItemInflated(
-            frame, 50, 50, blocked, gap: 10, out var rect));
+            frame, w, h, new[] { blocker }, gap, out var newRect));
 
-        Assert.True(rect.MaxX <= 80 + Eps,
-            $"expected MaxX <= 80 (view fits left of clamped blocker), got {rect.MaxX}");
+        Assert.Equal(oldRect.MinX, newRect.MinX, 6);
+        Assert.Equal(oldRect.MinY, newRect.MinY, 6);
+        Assert.Equal(oldRect.MaxX, newRect.MaxX, 6);
+        Assert.Equal(oldRect.MaxY, newRect.MaxY, 6);
     }
 
     [Fact]
