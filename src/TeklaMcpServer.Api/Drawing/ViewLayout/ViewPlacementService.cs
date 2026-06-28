@@ -185,6 +185,60 @@ internal static class ViewPlacementService
     }
 
     /// <summary>
+    /// Batch variant of <see cref="TryInsertBestAreaItemInflated"/> for call sites
+    /// (#1/#2 BaseProjected) that pack multiple items into a single packer so each
+    /// already-placed item becomes occupied space for the next.
+    /// Creates one packer, inserts items in the given order (caller is responsible
+    /// for sorting), returns order-preserving sheetRects[i] for items[i].
+    /// On failure returns false and Array.Empty — no partial results.
+    /// </summary>
+    public static bool TryInsertBestAreaItemInflatedBatch(
+        PlacementFrame frame,
+        IReadOnlyList<(double Width, double Height, string? Tag)> items,
+        IReadOnlyList<ReservedRect> blocked,
+        double gap,
+        out IReadOnlyList<ReservedRect> sheetRects)
+    {
+        if (frame.Width <= 0 || frame.Height <= 0 || items.Count == 0)
+        {
+            sheetRects = Array.Empty<ReservedRect>();
+            return items.Count == 0;
+        }
+
+        var packer = new MaxRectsBinPacker(
+            frame.Width + gap,
+            frame.Height + gap,
+            allowRotation: false,
+            blockedRectangles: ToPackerBlockedClampedToFrame(frame, blocked, gap));
+
+        // Accumulate traces; write to log only after full success to avoid
+        // misleading "success" entries in the log when a later item fails.
+        var results = new ReservedRect[items.Count];
+        var pendingTraces = new List<(double W, double H, string? Tag, ReservedRect? Rect)>(items.Count);
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var (w, h, tag) = items[i];
+            if (w <= 0 || h <= 0 || !packer.TryInsert(w + gap, h + gap, MaxRectsHeuristic.BestAreaFit, out var placement))
+            {
+                Trace("best-area-inflated-batch", frame, w, h, null, null, blocked.Count, gap, null, tag);
+                sheetRects = Array.Empty<ReservedRect>();
+                return false;
+            }
+
+            var rect = frame.PackerRectToSheet(placement.X, placement.Y, w, h);
+            pendingTraces.Add((w, h, tag, rect));
+            results[i] = rect;
+        }
+
+        foreach (var (w, h, tag, rect) in pendingTraces)
+            Trace("best-area-inflated-batch", frame, w, h, null, null, blocked.Count, gap, rect, tag);
+
+        sheetRects = results;
+        return true;
+    }
+
+    /// <summary>
     /// Place a w×h view using best-area-fit (no target point). Intended to
     /// replace the hand-rolled <c>TryInsert(BestAreaFit)</c> + manual flip in the
     /// area-packing strategies (Ga / Relative / base projected) — not yet wired:

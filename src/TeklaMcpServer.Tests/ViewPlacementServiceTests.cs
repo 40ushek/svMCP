@@ -286,6 +286,105 @@ public sealed class ViewPlacementServiceTests
         Assert.Equal(oldRect.MaxY, newRect.MaxY, 6);
     }
 
+    // ── TryInsertBestAreaItemInflatedBatch ───────────────────────────────────
+
+    [Fact]
+    public void TryInsertBestAreaItemInflatedBatch_TwoItems_DoNotOverlap()
+    {
+        var frame = new PlacementFrame(0, 0, 200, 100);
+        var items = new[]
+        {
+            (80.0, 80.0, (string?)"tag-a"),
+            (80.0, 80.0, (string?)"tag-b"),
+        };
+
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflatedBatch(
+            frame, items, Array.Empty<ReservedRect>(), gap: 6, out var rects));
+        Assert.Equal(2, rects.Count);
+
+        var a = rects[0]; var b = rects[1];
+        var overlapX = Math.Min(a.MaxX, b.MaxX) - Math.Max(a.MinX, b.MinX);
+        var overlapY = Math.Min(a.MaxY, b.MaxY) - Math.Max(a.MinY, b.MinY);
+        Assert.True(overlapX <= Eps || overlapY <= Eps,
+            $"rects overlap: A=[{a.MinX:F1},{a.MinY:F1},{a.MaxX:F1},{a.MaxY:F1}] B=[{b.MinX:F1},{b.MinY:F1},{b.MaxX:F1},{b.MaxY:F1}]");
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflatedBatch_OrderPreserved()
+    {
+        // Items have different sizes; sheetRects[i] must have same dimensions as items[i].
+        var frame = new PlacementFrame(0, 0, 300, 200);
+        var items = new[]
+        {
+            (100.0, 80.0, (string?)"first"),
+            (50.0,  40.0, (string?)"second"),
+        };
+
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflatedBatch(
+            frame, items, Array.Empty<ReservedRect>(), gap: 0, out var rects));
+
+        Assert.Equal(2, rects.Count);
+        Assert.Equal(100.0, rects[0].MaxX - rects[0].MinX, 6);
+        Assert.Equal(80.0,  rects[0].MaxY - rects[0].MinY, 6);
+        Assert.Equal(50.0,  rects[1].MaxX - rects[1].MinX, 6);
+        Assert.Equal(40.0,  rects[1].MaxY - rects[1].MinY, 6);
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflatedBatch_ReturnsFalseAndEmpty_WhenSecondItemNoSpace()
+    {
+        // Frame fits only one 90×90 item with gap=6 (bin=106×106, item=96×96 fits, leaves no room for second).
+        var frame = new PlacementFrame(0, 0, 100, 100);
+        var items = new[]
+        {
+            (90.0, 90.0, (string?)"first"),
+            (90.0, 90.0, (string?)"second"),
+        };
+
+        Assert.False(ViewPlacementService.TryInsertBestAreaItemInflatedBatch(
+            frame, items, Array.Empty<ReservedRect>(), gap: 6, out var rects));
+        Assert.Empty(rects);
+    }
+
+    [Fact]
+    public void TryInsertBestAreaItemInflatedBatch_MatchesOldSinglePackerLoop()
+    {
+        // Reproduces the exact hand-rolled single-packer loop from TryEstimateResidualPlacements:
+        //   packer = new MaxRectsBinPacker(availableW+gap, availableH+gap, blockers)
+        //   foreach view: TryInsert(w+gap, h+gap, BestAreaFit) → center = (margin+p.X+w/2, H-margin-p.Y-h/2)
+        double margin = 10, sheetW = 400, sheetH = 300, gap = 6;
+        double freeMinX = margin, freeMinY = margin;
+        double freeMaxX = sheetW - margin, freeMaxY = sheetH - margin;
+        var viewSizes = new[] { (120.0, 80.0), (60.0, 50.0), (40.0, 70.0) };
+
+        // --- old hand-rolled path ---
+        var oldPacker = new MaxRectsBinPacker(
+            (freeMaxX - freeMinX) + gap, (freeMaxY - freeMinY) + gap, allowRotation: false);
+        var oldRects = new List<ReservedRect>();
+        foreach (var (w, h) in viewSizes)
+        {
+            Assert.True(oldPacker.TryInsert(w + gap, h + gap, MaxRectsHeuristic.BestAreaFit, out var p));
+            oldRects.Add(new ReservedRect(
+                freeMinX + p.X, freeMaxY - p.Y - h,
+                freeMinX + p.X + w, freeMaxY - p.Y));
+        }
+
+        // --- new batch path ---
+        var frame = new PlacementFrame(freeMinX, freeMinY, freeMaxX, freeMaxY);
+        var items = viewSizes.Select((s, i) => (s.Item1, s.Item2, (string?)null)).ToList();
+        Assert.True(ViewPlacementService.TryInsertBestAreaItemInflatedBatch(
+            frame, items, Array.Empty<ReservedRect>(), gap, out var newRects));
+
+        Assert.Equal(oldRects.Count, newRects.Count);
+        for (var i = 0; i < oldRects.Count; i++)
+        {
+            Assert.Equal(oldRects[i].MinX, newRects[i].MinX, 6);
+            Assert.Equal(oldRects[i].MinY, newRects[i].MinY, 6);
+            Assert.Equal(oldRects[i].MaxX, newRects[i].MaxX, 6);
+            Assert.Equal(oldRects[i].MaxY, newRects[i].MaxY, 6);
+        }
+    }
+
     [Fact]
     public void TryInsertBestAreaItemInflated_MatchesOldBinPlusGapFormula()
     {
