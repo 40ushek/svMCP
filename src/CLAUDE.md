@@ -18,7 +18,11 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 
 - Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2025 (Windows only)
 - The server communicates via **stdio** — launched by an MCP client, not run interactively
-- **Claude Desktop is NOT used** — TeklaMcpServer.exe is never locked. Rebuild and redeploy at any time without closing anything.
+- **Claude Desktop is NOT used** — but TeklaMcpServer.exe can still be locked: an MCP client (VS Code extension, Claude Code) keeps the server process alive while a session is open, so `dotnet build`/`dotnet test` may fail with MSB3021/MSB3027 on `TeklaMcpServer.exe` or `TeklaMcpServer.dll`.
+  - TeklaBridge.exe is not affected — it is launched per call and released, so a bridge-only rebuild always works.
+  - To build or test without stopping the session, redirect output:
+    `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<name>/`
+    (use forward slashes — backslashes get mangled and MSBuild creates junk directories)
 - Both TeklaBridge.exe and TeklaMcpServer.exe deploy automatically to `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` on build (MSBuild target in Host .csproj)
 
 ## Architecture

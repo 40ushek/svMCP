@@ -9,10 +9,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
-	</ItemGroup>
-
+	<!-- Shared logging comes from TeklaMcpServer.Api (internals are visible to this project).
+	     Do not link BoundedFileLogWriter.cs here again: a second copy causes CS0436 type conflicts. -->
 	<ItemGroup>
 		<ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
 	</ItemGroup>
