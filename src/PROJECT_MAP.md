@@ -112,14 +112,29 @@ Handlers:
   - стратегии: `BaseProjectedDrawingArrangeStrategy`, `GaDrawingMaxRectsArrangeStrategy`, `ShelfPackingDrawingArrangeStrategy`
 - `Drawing/Dimensions`
   - line-first dimension model и операции
-  - split на `Grouping / Arrangement / Placement`
+  - split на `Grouping / Arrangement / Placement / Context / Orchestration`
   - ключевые сущности: `DimensionItem`, `DimensionGroup`, `DimensionOperations`
+  - `Context` — read-model для внешнего рассуждения о размерах:
+    `DimensionContext`, `DimensionDecisionContext`, `DimensionContextRole`
+  - `Context/Associations` — привязка точек размера к объектам:
+    `DimensionPointObjectMapper`, `DimensionSourceAssociationResolver`
+  - `Orchestration` — `DimensionOrchestrationEngine`,
+    `DimensionAiAssistedOrchestrator`
 - `Drawing/Marks`
   - чтение марок, layout, overlap resolution
 - `Drawing/Geometry`
   - part geometry, grid axes, reserved areas
 - `Drawing/Parts`
   - DTO и API по деталям чертежа
+- `Drawing/TableLayout`
+  - `DrawingReservedAreaReader` — границы layout-таблиц из presentation model
+- `Drawing/DrawingGeneration`
+  - `DrawingBuilder`, request/result контракты генерации чертежей
+- `Drawing/*Definitions`
+  - декларативные наборы правил: `DimensionDefinitions`, `MarkDefinitions`,
+    `SectionDefinitions`, `ViewDefinitions`
+  - у каждого набора один шаблон: `*Definition`, `*DefinitionSet`,
+    `*DefinitionScope`, `*Policy`, `*Preset`, `*ScenarioKind`
 - `Drawing/DebugOverlay`
   - отрисовка временного overlay в drawing runtime
 - `Drawing/Parsing`
@@ -132,6 +147,74 @@ Handlers:
   - `ConvexHull`, `FarthestPointPair`
 - `Diagnostics`
   - perf tracing
+
+### 6. Context / read-model слой
+
+Отдельное семейство builder'ов, которое собирает срез состояния чертежа
+в сериализуемые DTO. Это транспорт наружу — для MCP-инструментов
+`get_*_context` и для файловых кейсов.
+
+| Builder | Контекст | Что собирает |
+|---|---|---|
+| `DrawingContextBuilder` | `DrawingContext` | чертёж целиком |
+| `DrawingLayoutContextBuilder` | — | лист, виды, reserved areas |
+| `DrawingViewContextBuilder` | `DrawingViewContext` | один вид |
+| `MarksViewContextBuilder` | `MarksViewContext` | марки вида |
+| `DimensionContextBuilder` | `DimensionContext` | размеры вида |
+| `DimensionGeometryContextBuilder` | `DimensionGeometryContext` | annotation geometry |
+
+Инвариант: builder'ы не меняют состояние Tekla, только читают.
+
+### 7. Оценка компоновки
+
+- `DrawingLayoutScorer` / `DrawingLayoutScore`
+  - численная оценка компоновки: `fillRatio`, `uniformScaleScore`,
+    `viewOverlapPenalty`, `reservedAreaOverlapPenalty`
+- `DrawingLayoutStabilityAnalyzer`
+  - устойчивость результата между прогонами
+- `DrawingLayoutCandidateFactory` / `DrawingLayoutCandidateSelector` /
+  `DrawingLayoutCandidateApplyService`
+  - генерация вариантов компоновки, выбор лучшего, применение дельты
+
+## Кейсы: захват, сравнение, регрессия
+
+Инфраструктура для сохранения состояний чертежа в файлы и сравнения прогонов.
+
+### Компоненты
+
+- `DrawingCaseCaptureService`
+  - `CaptureDrawingContext()` — снять текущее состояние
+  - `SaveCase(before, after, root, category, operation, ...)` — общий метод,
+    операция передаётся строкой
+  - `SaveLayoutCase(...)` — специализация под `fit_views_to_sheet`
+  - валидирует, что `before` и `after` относятся к одному `drawing_guid`
+- `DrawingCaseSnapshotWriter` / `DrawingCaseSnapshotReader`
+- `DrawingCaseLayoutDiagnosticsFactory`
+- `DrawingLayoutRegressionCaseEvaluator`
+  - сравнивает сохранённые кейсы между собой
+
+### Формат на диске
+
+```text
+cases/<category>/<drawing_guid>/
+    before.json    ← DrawingContext до операции
+    after.json     ← DrawingContext после
+    meta.json      ← guid, тип, имя, operation, note, scoreBefore, scoreAfter
+```
+
+Корень по умолчанию — `cases/` в корне репозитория. Категория — тип чертежа
+(`assembly`, ...).
+
+### Текущий статус
+
+- код написан и покрыт тестами
+  (`DrawingCaseCaptureServiceTests`, `DrawingCaseSnapshotWriterTests`,
+  `DrawingCaseSnapshotReaderTests`, `DrawingLayoutRegressionCaseEvaluatorTests`)
+- **но нигде не вызывается в продакшене** — ни из `TeklaBridge/Commands`,
+  ни из `TeklaMcpServer/Tools`
+- на диске лежит один кейс, снятый вручную, операция `fit_views_to_sheet`
+- `SaveCase` уже принимает произвольную `operation`, но скоринг жёстко
+  завязан на `DrawingLayoutScorer` — для других операций нужен свой scorer
 
 ## Точки входа
 
@@ -177,12 +260,28 @@ Handlers:
   - возможная будущая runtime boundary между planner/server/local host
 - `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`
   - перевод dimensions на каноническую `dim` domain model
+- `TeklaMcpServer.Api/Drawing/Dimensions/README.md`
+  - operational-заметки по текущему состоянию модуля
+- `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_PRESENTATION_TEXT_BOXES.md`
+  - text bounds размеров из presentation model
+- `TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`
+  - общий roadmap drawing-модуля
+- `TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING_AUTOMATION.md`
+  - массовые сценарии: background open, timeout hardening, warm cache
+- `TeklaMcpServer.Api/Drawing/ROADMAP_REFACTOR_LARGE_FILES.md`
+  - разбиение крупных файлов
+- `TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`
+  - roadmap модуля марок
+- `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`
+  - генерация чертежей
 
 По состоянию кода:
 
 - `ViewLayout` это активный planner-блок по компоновке листа
 - `Dimensions` уже переведены на line-first model, но redesign еще продолжается
 - `Marks` уже имеют отдельный layout engine и overlap resolver
+- `Context`-слой и кейсовая инфраструктура написаны, но кейсы пока снимаются
+  только для компоновки; для размеров кейсов нет
 
 ## Инварианты проекта
 
@@ -221,3 +320,10 @@ Handlers:
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_VIEWS.md`
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_RUNTIME.md`
 - `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`
+- `TeklaMcpServer.Api/Drawing/Dimensions/README.md`
+- `TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_PRESENTATION_TEXT_BOXES.md`
+- `TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`
+- `TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING_AUTOMATION.md`
+- `TeklaMcpServer.Api/Drawing/ROADMAP_REFACTOR_LARGE_FILES.md`
+- `TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`
+- `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`
