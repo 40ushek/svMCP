@@ -227,6 +227,11 @@ Rules:
 - DTO shape must not dictate internal architecture
 - debug payloads must not become hidden domain substitutes
 
+During the bridge serialization migration, `TeklaBridge` may temporarily access
+internal API types through `InternalsVisibleTo("TeklaBridge")`. Remove that
+friend assembly once bridge serialization consumes public read-model DTOs such
+as `DimensionContext` and no longer depends on internal implementation types.
+
 ## Canonical Domain Semantics To Preserve
 
 The following semantics are the main migration target from `dim` and should be
