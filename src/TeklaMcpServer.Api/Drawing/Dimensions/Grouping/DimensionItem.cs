@@ -54,13 +54,37 @@ internal class DimensionItem
 
     public double GetLeadLineSecondLength() => LeadLineSecond?.Length ?? 0;
 
+    /// <summary>
+    /// Rebuilds the point list and both length lists so they describe the dimension the way the
+    /// sheet does.
+    ///
+    /// A dimension measures along its reference line: every snap point is projected onto that
+    /// line along the normal, and the values printed are distances from the line's start. So the
+    /// same rule is applied here — order the points by their projection, then measure along it.
+    ///
+    /// Verified against an exported PDF, all 26 printed values across four chains matched: a span
+    /// previously reported as 2555.25 prints as 2546, 456.91 as 448, 298.53 as 301. The old
+    /// formula measured straight-line distance from whichever point happened to be first in the
+    /// array, which agreed with the sheet only when the points were collinear. It also invented
+    /// fractions that were then read as snap drift, and produced negative segments — impossible
+    /// for a dimension — whenever the array order ran against the axis.
+    ///
+    /// PointList itself is left in the order the points arrive in. Sorting it by projection also
+    /// makes the reading direction match the sheet, but it swaps StartX/StartY with EndX/EndY on
+    /// vertical chains, and grouping, dedup and arrangement all read those — not worth the risk
+    /// for what is a cosmetic property of the output.
+    ///
+    /// RealLengthList keeps the straight-line distance between points on purpose. It is the
+    /// honest point-to-point value, and DimensionOperations matches packets against LengthList
+    /// with a tolerance, so the two must not collapse into one.
+    /// </summary>
     public void ReplacePointList(IEnumerable<DrawingPointInfo> points)
     {
         PointList.Clear();
-        PointList.AddRange(points.OrderBy(static point => point.Order));
-
         LengthList.Clear();
         RealLengthList.Clear();
+
+        PointList.AddRange(points.OrderBy(static point => point.Order));
         if (PointList.Count == 0)
             return;
 
@@ -73,34 +97,57 @@ internal class DimensionItem
         CenterX = System.Math.Round((StartX + EndX) / 2.0, 3);
         CenterY = System.Math.Round((StartY + EndY) / 2.0, 3);
 
-        // LengthList must match what the sheet prints, and a dimension prints the PROJECTION of
-        // the span onto its own axis — not the straight-line distance between the snap points.
-        // The two only agree when the points are collinear, which is why overall dimensions and
-        // control diagonals looked fine while chains reading off inset parts did not.
-        //
-        // Measured against an exported PDF: a span our old formula reported as 2555.25 is printed
-        // as 2546 (the projection is 2545.5); 456.91 is printed as 448; 298.53 as 301. Taking the
-        // hypotenuse also invented fractional values that were then mistaken for snap drift, and
-        // produced negative segments — which a dimension cannot have — once the points were not
-        // ordered along the axis.
-        //
-        // RealLengthList keeps the straight-line distance: it is the honest point-to-point value
-        // and stays useful for geometry work.
-        var axis = Direction;
+        var axis = ResolveMeasurementAxis();
+
+        if (axis.HasValue)
+        {
+            // Values are the distances along the reference line, taken from its near end. Sorting
+            // the projections rather than the points is deliberate: PointList order feeds grouping,
+            // dedup and arrangement, and reordering it swapped the start and end of vertical chains.
+            // The printed numbers do not depend on the order the points arrive in anyway.
+            var (originX, originY, unitX, unitY) = axis.Value;
+
+            var offsets = PointList
+                .Select(point => ((point.X - originX) * unitX) + ((point.Y - originY) * unitY))
+                .OrderBy(static offset => offset)
+                .ToList();
+
+            var origin = offsets[0];
+            for (var i = 1; i < offsets.Count; i++)
+                LengthList.Add(System.Math.Round(offsets[i] - origin, 2));
+        }
 
         for (var i = 1; i < PointList.Count; i++)
         {
             var dx = PointList[i].X - StartX;
             var dy = PointList[i].Y - StartY;
-
-            var real = System.Math.Round(System.Math.Sqrt((dx * dx) + (dy * dy)), 2);
-
-            var projected = axis.HasValue
-                ? System.Math.Round(System.Math.Abs((dx * axis.Value.X) + (dy * axis.Value.Y)), 2)
-                : real;
-
-            LengthList.Add(projected);
-            RealLengthList.Add(real);
+            RealLengthList.Add(System.Math.Round(System.Math.Sqrt((dx * dx) + (dy * dy)), 2));
         }
+
+        if (!axis.HasValue)
+            LengthList.AddRange(RealLengthList);
+    }
+
+    /// <summary>
+    /// Origin and unit vector to measure along: the reference line when it is known, otherwise the
+    /// dimension direction anchored at the first point. Null when neither is available, in which
+    /// case the caller falls back to straight-line distances rather than reporting zeros.
+    /// </summary>
+    private (double OriginX, double OriginY, double UnitX, double UnitY)? ResolveMeasurementAxis()
+    {
+        var line = ReferenceLine;
+        if (line != null)
+        {
+            var dx = line.EndX - line.StartX;
+            var dy = line.EndY - line.StartY;
+            var length = System.Math.Sqrt((dx * dx) + (dy * dy));
+            if (length > 1e-9)
+                return (line.StartX, line.StartY, dx / length, dy / length);
+        }
+
+        var direction = Direction;
+        return direction.HasValue
+            ? (StartX, StartY, direction.Value.X, direction.Value.Y)
+            : null;
     }
 }

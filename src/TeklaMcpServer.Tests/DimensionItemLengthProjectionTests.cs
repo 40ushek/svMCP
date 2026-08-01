@@ -60,27 +60,31 @@ public class DimensionItemLengthProjectionTests
     [Fact]
     public void InclinedAxis_ProjectsOntoItsOwnDirection()
     {
-        // 3-4-5 triangle: along (0.6, 0.8) the point (30, 40) is exactly 50 away, while a point
-        // pushed off that line must still report its projection.
+        // 3-4-5 triangle. Along (0.6, 0.8) the point (30, 40) sits 50 away; (-40, 30) is
+        // perpendicular to the axis, so it shares the origin's position along it.
         var item = BuildItem(0.6, 0.8, (0, 0), (30, 40), (-40, 30));
 
-        Assert.Equal(50d, item.LengthList[0], 6);
-        Assert.Equal(50d, item.RealLengthList[0], 6);
+        // Two points project to 0 and one to 50, measured from the near end of the span.
+        Assert.Equal(new[] { 0d, 50d }, item.LengthList);
 
-        // (-40, 30) is perpendicular to the axis: zero along it, 50 away in space.
-        Assert.Equal(0d, item.LengthList[1], 6);
+        // In space both are 50 away from the first point.
+        Assert.Equal(50d, item.RealLengthList[0], 6);
         Assert.Equal(50d, item.RealLengthList[1], 6);
     }
 
     [Fact]
     public void PointsOrderedAgainstTheAxis_StayPositive()
     {
-        // Descending X on a horizontal chain. Projections are absolute values, so no segment can
-        // come out negative — the old formula produced negatives here once differences were taken.
+        // Descending X on a horizontal chain. Values are measured from the near end of the span,
+        // so they rise regardless of the order the points arrive in — the old formula produced
+        // negatives here once differences between them were taken.
         var item = BuildItem(1, 0, (1443, 0), (1338, 0), (163, 0), (0, 0));
 
         Assert.All(item.LengthList, length => Assert.True(length >= 0, $"negative length {length}"));
-        Assert.Equal(new[] { 105d, 1280d, 1443d }, item.LengthList);
+        Assert.Equal(new[] { 163d, 1338d, 1443d }, item.LengthList);
+
+        // Straight-line distances still run from the first point of the array.
+        Assert.Equal(new[] { 105d, 1280d, 1443d }, item.RealLengthList);
 
         var steps = new List<double>();
         for (var i = 1; i < item.LengthList.Count; i++)
