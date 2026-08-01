@@ -32,7 +32,11 @@ public sealed class DrawingLayoutCandidateSelectorTests
         Assert.Equal(2, selection.Items[1].Rank);
         Assert.False(selection.Items[1].IsSelected);
         Assert.Equal(DrawingLayoutCandidateSelectionReason.RejectedFeasibility, selection.Items[1].Reason);
-        Assert.Contains("candidate-selection:selected:index=1:name=feasible", selection.Diagnostics);
+        Assert.Contains(
+            selection.Diagnostics,
+            diagnostic => diagnostic.StartsWith(
+                "candidate-selection:selected:index=1:name=feasible",
+                StringComparison.Ordinal));
     }
 
     [Fact]

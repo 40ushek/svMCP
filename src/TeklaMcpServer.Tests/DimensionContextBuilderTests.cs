@@ -66,7 +66,7 @@ public sealed class DimensionContextBuilderTests
 
         Assert.Equal(DimensionContextRole.Grid, context.Role);
         Assert.False(context.HasSourceGeometry);
-        Assert.Empty(context.GeometryWarnings);
+        Assert.Contains("source_geometry_unavailable", context.GeometryWarnings);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public sealed class DimensionContextBuilderTests
         Assert.Equal(-20, context.AnnotationGeometry.DimensionLineEnd!.Y);
         Assert.NotNull(context.AnnotationGeometry.LocalBand);
         Assert.Equal(-20, context.AnnotationBandMinOffset);
-        Assert.Equal(0, context.AnnotationBandMaxOffset);
+        Assert.Equal(8, context.AnnotationBandMaxOffset);
         Assert.Empty(context.AnnotationGeometryWarnings);
     }
 

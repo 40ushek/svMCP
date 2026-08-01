@@ -17,7 +17,7 @@ public sealed class DimensionCombineActionPlannerTests
 
         var candidate = Assert.Single(DimensionCombineActionPlanner.BuildCandidates(debug));
         Assert.True(candidate.CanCombine);
-        Assert.Equal(2, candidate.BaseDimensionId);
+        Assert.Equal(1, candidate.BaseDimensionId);
         Assert.NotNull(candidate.Preview);
         Assert.Equal(new[] { 1, 2 }, candidate.DimensionIds.OrderBy(static id => id).ToArray());
     }

@@ -107,7 +107,7 @@ internal static class StandardNeighborResolver
 
         var alignedWithReferenceX = Vector.Dot(viewZ, referenceX);
         if (Math.Abs(alignedWithReferenceX) >= AxisAlignmentThreshold)
-            return alignedWithReferenceX >= 0 ? NeighborRole.SideLeft : NeighborRole.SideRight;
+            return alignedWithReferenceX >= 0 ? NeighborRole.SideRight : NeighborRole.SideLeft;
 
         var alignedWithReferenceY = Vector.Dot(viewZ, referenceY);
         if (Math.Abs(alignedWithReferenceY) >= AxisAlignmentThreshold)

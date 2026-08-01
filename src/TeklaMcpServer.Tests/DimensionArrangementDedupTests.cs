@@ -59,8 +59,9 @@ public sealed class DimensionArrangementDedupTests
     {
         var groups = DimensionArrangementDedup.Reduce(
         [
-            CreateGroup(CreateSimpleItem(1, DimensionSourceKind.Part, yOffset: 40, distance: 8)),
-            CreateGroup(CreateSimpleItem(2, DimensionSourceKind.Part, yOffset: 40, distance: 8)),
+            CreateGroup(
+                CreateSimpleItem(1, DimensionSourceKind.Part, yOffset: 40, distance: 8),
+                CreateSimpleItem(2, DimensionSourceKind.Part, yOffset: 40, distance: 8)),
             CreateGroup(CreateSimpleItem(3, DimensionSourceKind.Part, yOffset: 60, distance: 8))
         ]);
 

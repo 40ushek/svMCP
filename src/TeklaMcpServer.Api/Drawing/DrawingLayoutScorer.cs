@@ -128,6 +128,9 @@ internal sealed class DrawingLayoutScorer
         for (var i = 0; i < scoredViews.Count; i++)
         for (var j = i + 1; j < scoredViews.Count; j++)
         {
+            if (scoredViews[i].IsModel3D || scoredViews[j].IsModel3D)
+                continue;
+
             var overlapArea = TryGetOverlapArea(scoredViews[i].Rect, scoredViews[j].Rect, out var area)
                 ? area
                 : 0.0;

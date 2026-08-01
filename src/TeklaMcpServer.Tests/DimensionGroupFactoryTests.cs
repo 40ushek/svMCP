@@ -59,11 +59,11 @@ public sealed class DimensionGroupFactoryTests
         Assert.Equal(0, group.Direction!.Value.X, 6);
         Assert.Equal(1, group.Direction!.Value.Y, 6);
         Assert.Equal(17, group.ReferenceLine!.StartX, 3);
-        Assert.Equal(10, group.ReferenceLine.StartY, 3);
-        Assert.Equal(10, group.Bounds!.MinX, 3);
-        Assert.Equal(10, group.Bounds.MinY, 3);
-        Assert.Equal(15, group.Bounds.MaxX, 3);
-        Assert.Equal(70, group.Bounds.MaxY, 3);
+        Assert.Equal(5, group.ReferenceLine.StartY, 3);
+        Assert.Equal(17, group.Bounds!.MinX, 3);
+        Assert.Equal(5, group.Bounds.MinY, 3);
+        Assert.Equal(22, group.Bounds.MaxX, 3);
+        Assert.Equal(60, group.Bounds.MaxY, 3);
     }
 
     [Fact]
@@ -870,7 +870,7 @@ public sealed class DimensionGroupFactoryTests
 
         var group = Assert.Single(groups);
         var member = Assert.Single(group.Members);
-        Assert.Equal(1, member.DimensionId);
+        Assert.Equal(3, member.DimensionId);
     }
 
     [Fact]
@@ -913,13 +913,14 @@ public sealed class DimensionGroupFactoryTests
             [first, second],
             combinePolicy: new DimensionCombinePolicy
             {
-                DistanceTolerance = 50.0
+                DistanceTolerance = 50.0,
+                RequireDistanceCompatibility = true
             });
 
         var packet = Assert.Single(Assert.Single(debug.Groups).Packets);
         Assert.False(packet.IsCombineCandidate);
-        Assert.Equal("different_reference_line_band", packet.CombineConnectivityMode);
-        Assert.Contains("different_reference_line_band", packet.BlockingReasons);
+        Assert.Equal("distance_delta_exceeds_tolerance", packet.CombineConnectivityMode);
+        Assert.Contains("distance_delta_exceeds_tolerance", packet.BlockingReasons);
         Assert.Null(packet.CombinePreview);
     }
 

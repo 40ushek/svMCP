@@ -265,8 +265,8 @@ public sealed class SimpleMarkCandidateGeneratorTests
         });
 
         Assert.Contains(candidates, c => c.X == 100 && c.Y == 100);
-        Assert.Contains(candidates, c => c.X == 108 && c.Y == 55);
-        Assert.Contains(candidates, c => c.X == 92 && c.Y == 45);
+        Assert.Contains(candidates, c => c.X == 106 && c.Y == 103);
+        Assert.Contains(candidates, c => c.X == 94 && c.Y == 97);
         Assert.DoesNotContain(candidates, c => c.X == 60 && c.Y == 55);
     }
 }

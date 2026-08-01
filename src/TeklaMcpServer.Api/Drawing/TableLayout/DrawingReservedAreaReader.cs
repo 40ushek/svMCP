@@ -340,7 +340,7 @@ internal static class DrawingReservedAreaReader
         // inside PrimitiveGroups. Excluding text gives correct frame extents.
         var lineAcc = new BoundsAccumulator();
         AccumulateLinePrimitiveBounds(segment, ref lineAcc);
-        if (lineAcc.HasValue)
+        if (lineAcc.HasValue && !ContainsNonLineGeometry(segment))
         {
             bounds = new ReservedRect(lineAcc.MinX, lineAcc.MinY, lineAcc.MaxX, lineAcc.MaxY);
             return true;
@@ -352,6 +352,27 @@ internal static class DrawingReservedAreaReader
         if (!acc.HasValue) { bounds = new ReservedRect(0, 0, 0, 0); return false; }
         bounds = new ReservedRect(acc.MinX, acc.MinY, acc.MaxX, acc.MaxY);
         return true;
+    }
+
+    private static bool ContainsNonLineGeometry(PrimitiveBase primitive)
+    {
+        switch (primitive)
+        {
+            case Segment seg:
+                return seg.Primitives.Any(ContainsNonLineGeometry);
+            case PrimitiveGroup grp:
+                return grp.Primitives.Any(ContainsNonLineGeometry);
+            case LinePrimitive:
+                return false;
+            case PathPrimitive:
+            case LoopPrimitive:
+            case PolygonPrimitive:
+            case ArcPrimitive:
+            case CirclePrimitive:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static void AccumulateLinePrimitiveBounds(PrimitiveBase primitive, ref BoundsAccumulator acc)

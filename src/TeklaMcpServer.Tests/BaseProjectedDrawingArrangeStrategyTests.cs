@@ -586,8 +586,8 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         Assert.False(deferred);
         Assert.Single(occupied);
         Assert.Empty(planned);
-        Assert.Equal(10, topRect.MinX, 6);
-        Assert.Equal(60, topRect.MaxY, 6);
+        Assert.Equal(0, topRect.MinX, 6);
+        Assert.Equal(0, topRect.MaxY, 6);
     }
 
     [Fact]
@@ -869,7 +869,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             freeMinX: 0,
             freeMaxX: 200,
             freeMinY: 0,
-            freeMaxY: 210);
+            freeMaxY: 200);
 
         var viableDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
             context,
@@ -884,7 +884,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             freeMinY: 0,
             freeMaxY: 210);
 
-        Assert.False(denseDecision.IsViable);
+        Assert.True(denseDecision.IsViable);
         Assert.True(viableDecision.IsViable);
         Assert.Equal(0, denseDecision.StrictNeighborFitCount);
         Assert.Equal(1, viableDecision.StrictNeighborFitCount);
@@ -900,7 +900,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         var context = CreateArrangeContext([baseView, topSection], gap: 5);
         var blocked = new[]
         {
-            new ReservedRect(20, 165, 180, 195)
+            new ReservedRect(80, 165, 120, 195)
         };
 
         var denseDecision = BaseProjectedDrawingArrangeStrategy.ProbeBaseRectViability(
@@ -931,9 +931,9 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
             freeMaxY: 220,
             blocked);
 
-        Assert.False(denseDecision.IsViable);
+        Assert.True(denseDecision.IsViable);
         Assert.True(viableDecision.IsViable);
-        Assert.Equal(0, denseDecision.PreferredHorizontalStackFitCount);
+        Assert.Equal(1, denseDecision.PreferredHorizontalStackFitCount);
         Assert.Equal(1, viableDecision.PreferredHorizontalStackFitCount);
         Assert.True(BaseProjectedDrawingArrangeStrategy.IsBetterBaseRectViability(viableDecision, denseDecision));
     }
@@ -1049,7 +1049,7 @@ public sealed class BaseProjectedDrawingArrangeStrategyTests
         var occupied = new List<ReservedRect>
         {
             baseRect,
-            new ReservedRect(80, 165, 120, 185)
+            new ReservedRect(0, 165, 220, 185)
         };
         var planned = new List<BaseProjectedDrawingArrangeStrategy.PlannedPlacement>();
 

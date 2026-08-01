@@ -49,10 +49,10 @@ public sealed class BaseViewSelectionTests
     public void Select_ReturnsRankedFallbackWhenNoFrontViewExists()
     {
         var largerCentralTop = CreateView(View.ViewTypes.TopView, width: 200, height: 120, originX: 100, originY: 100);
-        var smallerOffsetModel = CreateView(View.ViewTypes.ModelView, width: 80, height: 60, originX: 220, originY: 60);
+        var smallerOffsetBottom = CreateView(View.ViewTypes.BottomView, width: 80, height: 60, originX: 220, originY: 60);
         var views = new List<View>
         {
-            smallerOffsetModel,
+            smallerOffsetBottom,
             largerCentralTop
         };
 

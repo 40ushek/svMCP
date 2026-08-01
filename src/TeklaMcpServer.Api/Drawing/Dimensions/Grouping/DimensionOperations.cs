@@ -324,6 +324,14 @@ internal static class DimensionOperations
                 return analysis;
             }
 
+            if (combinePolicy.RequireDistanceCompatibility &&
+                System.Math.Abs(current.Distance - first.Distance) > combinePolicy.DistanceTolerance)
+            {
+                analysis.ConnectivityMode = "distance_delta_exceeds_tolerance";
+                analysis.BlockingReasons.Add("distance_delta_exceeds_tolerance");
+                return analysis;
+            }
+
             if (!HaveSharedPointForCombine(first, current, policy))
                 usedAdjacentFallback |= HaveAdjacentMeasuredPointOrders(first, current);
         }
@@ -357,15 +365,36 @@ internal static class DimensionOperations
             if (!split.ShouldSplit)
                 continue;
 
-            selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy, packetIndex, debugByItem));
+            if (HasSingleDimensionId(items, packetStart, i - 1))
+                selected.AddRange(items.Skip(packetStart).Take(i - packetStart));
+            else
+                selected.Add(SelectRepresentative(group, items, packetStart, i - 1, policy, packetIndex, debugByItem));
             packetDebug.Add(CreatePacketDebug(group, items, packetStart, i - 1, packetIndex, policy, combinePolicy, split));
             packetStart = i;
             packetIndex++;
         }
 
-        selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy, packetIndex, debugByItem));
+        if (HasSingleDimensionId(items, packetStart, items.Count - 1))
+            selected.AddRange(items.Skip(packetStart).Take(items.Count - packetStart));
+        else
+            selected.Add(SelectRepresentative(group, items, packetStart, items.Count - 1, policy, packetIndex, debugByItem));
         packetDebug.Add(CreatePacketDebug(group, items, packetStart, items.Count - 1, packetIndex, policy, combinePolicy, splitInfo: null));
         return selected;
+    }
+
+    private static bool HasSingleDimensionId(
+        IReadOnlyList<DimensionItem> items,
+        int startIndex,
+        int endIndex)
+    {
+        var dimensionId = items[startIndex].DimensionId;
+        for (var i = startIndex + 1; i <= endIndex; i++)
+        {
+            if (items[i].DimensionId != dimensionId)
+                return false;
+        }
+
+        return endIndex > startIndex;
     }
 
     private static RepresentativePacketSplitInfo EvaluateRepresentativePacketSplit(
@@ -374,6 +403,15 @@ internal static class DimensionOperations
         double maximumDistance,
         DimensionReductionPolicy policy)
     {
+        if (policy.UseGeometryAwareRepresentativeSelection)
+        {
+            return new RepresentativePacketSplitInfo
+            {
+                ShouldSplit = false,
+                Threshold = maximumDistance * policy.RepresentativePacketGapFactor
+            };
+        }
+
         if (previous.LeadLineMain == null || current.LeadLineMain == null)
         {
             return new RepresentativePacketSplitInfo
@@ -394,15 +432,40 @@ internal static class DimensionOperations
             current.LeadLineMain.EndX,
             current.LeadLineMain.EndY);
 
+        if (HaveSharedMeasuredPoint(previous, current, policy))
+        {
+            return new RepresentativePacketSplitInfo
+            {
+                ShouldSplit = ShouldSplitForMeasuredLength(previous, current, policy),
+                PreviousEndToCurrentStart = previousEndToCurrentStart,
+                PreviousStartToCurrentEnd = previousStartToCurrentEnd,
+                Threshold = maximumDistance * policy.RepresentativePacketGapFactor
+            };
+        }
+
         var threshold = maximumDistance * policy.RepresentativePacketGapFactor;
         return new RepresentativePacketSplitInfo
         {
-            ShouldSplit = previousEndToCurrentStart > threshold &&
-                          previousStartToCurrentEnd > threshold,
+            ShouldSplit = ShouldSplitForMeasuredLength(previous, current, policy) ||
+                          (previousEndToCurrentStart > threshold &&
+                           previousStartToCurrentEnd > threshold),
             PreviousEndToCurrentStart = previousEndToCurrentStart,
             PreviousStartToCurrentEnd = previousStartToCurrentEnd,
             Threshold = threshold
         };
+    }
+
+    private static bool ShouldSplitForMeasuredLength(
+        DimensionItem previous,
+        DimensionItem current,
+        DimensionReductionPolicy policy)
+    {
+        if (policy.UseGeometryAwareRepresentativeSelection ||
+            previous.LengthList.Count == 0 ||
+            current.LengthList.Count == 0)
+            return false;
+
+        return System.Math.Abs(previous.LengthList[0] - current.LengthList[0]) > policy.LengthTolerance;
     }
 
     private static DimensionItem SelectRepresentative(

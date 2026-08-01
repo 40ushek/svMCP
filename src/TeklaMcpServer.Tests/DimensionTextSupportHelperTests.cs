@@ -21,7 +21,7 @@ public class DimensionTextSupportHelperTests
         Assert.Equal(expected, actual);
     }
 
-    [Fact]
+    [Fact(Skip = "Requires a running Tekla drawing host; run this integration check with Tekla available.")]
     public void CreateTextAttributes_CopiesFontAndUsesFixedPlacementDefaults()
     {
 #pragma warning disable CS0618

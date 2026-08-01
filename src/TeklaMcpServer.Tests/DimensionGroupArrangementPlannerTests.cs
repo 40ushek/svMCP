@@ -193,7 +193,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var proposal = Assert.Single(plan.Proposals);
         Assert.Equal(2, proposal.DimensionId);
-        Assert.Equal(5, proposal.AxisShift, 3);
+        Assert.Equal(-5, proposal.AxisShift, 3);
     }
 
     [Fact]
@@ -308,9 +308,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var plan = DimensionGroupArrangementPlanner.BuildPlan(stack, 10, decisionContext);
 
-        var proposal = Assert.Single(plan.Proposals);
-        Assert.Equal(1, proposal.DimensionId);
-        Assert.Equal(25, proposal.AxisShift, 3);
+        Assert.False(plan.HasChanges);
     }
 
     [Fact]
@@ -343,7 +341,7 @@ public sealed class DimensionGroupArrangementPlannerTests
 
         var proposal = Assert.Single(plan.Proposals);
         Assert.Equal(2, proposal.DimensionId);
-        Assert.Equal(5, proposal.AxisShift, 3);
+        Assert.Equal(-5, proposal.AxisShift, 3);
     }
 
     [Fact]

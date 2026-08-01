@@ -445,6 +445,9 @@ internal static class DimensionGroupFactory
         if (sharedMeasuredPoint && HaveCompatibleChainTransition(left, right, leftDirection ?? rightDirection, groupingPolicy))
             return true;
 
+        if (left.DimensionId == right.DimensionId)
+            return false;
+
         if (HaveCompatibleSameLineChain(left, right, leftDirection ?? rightDirection, groupingPolicy))
             return true;
 
@@ -489,16 +492,13 @@ internal static class DimensionGroupFactory
         if (!leftOffset.HasValue || !rightOffset.HasValue)
             return false;
 
-        if (System.Math.Abs(leftOffset.Value - rightOffset.Value) > groupingPolicy.ChainBandTolerance)
+        var offsetDelta = System.Math.Abs(leftOffset.Value - rightOffset.Value);
+        if (offsetDelta > groupingPolicy.SameLineChainTolerance &&
+            (offsetDelta > groupingPolicy.ChainBandTolerance ||
+             !HaveCompatibleLeadLines(left, right, groupingPolicy)))
             return false;
 
-        var leftExtent = TryGetExtent([left.ReferenceLine, left.LeadLineMain, left.LeadLineSecond], direction.Value);
-        var rightExtent = TryGetExtent([right.ReferenceLine, right.LeadLineMain, right.LeadLineSecond], direction.Value);
-        if (!leftExtent.HasValue || !rightExtent.HasValue)
-            return false;
-
-        return leftExtent.Value.Min <= rightExtent.Value.Max + groupingPolicy.ChainExtentGapTolerance &&
-               rightExtent.Value.Min <= leftExtent.Value.Max + groupingPolicy.ChainExtentGapTolerance;
+        return true;
     }
 
     private static bool HaveCompatibleLineBand(
@@ -749,6 +749,7 @@ internal static class DimensionGroupFactory
     {
         return geometryKind switch
         {
+            _ when sourceKind == DimensionSourceKind.Unknown => DimensionType.Unknown,
             DimensionGeometryKind.Horizontal => DimensionType.Horizontal,
             DimensionGeometryKind.Vertical => DimensionType.Vertical,
             DimensionGeometryKind.Free => DimensionType.Free,
@@ -890,8 +891,8 @@ internal static class DimensionGroupFactory
         var endOrder = FindMeasuredPointOrder(dimension.MeasuredPoints, segment.EndX, segment.EndY);
         var pointList = new List<DrawingPointInfo>
         {
-            new() { X = segment.StartX, Y = segment.StartY, Order = startOrder >= 0 ? startOrder : 0 },
-            new() { X = segment.EndX, Y = segment.EndY, Order = endOrder >= 0 ? endOrder : 1 }
+            new() { X = segment.StartX, Y = segment.StartY, Order = startOrder },
+            new() { X = segment.EndX, Y = segment.EndY, Order = endOrder }
         };
 
         item.ReplacePointList(pointList);
@@ -928,8 +929,8 @@ internal static class DimensionGroupFactory
         var endOrder = FindMeasuredPointOrder(dimension.MeasuredPoints, segment.EndX, segment.EndY);
         var pointList = new List<DrawingPointInfo>
         {
-            new() { X = segment.StartX, Y = segment.StartY, Order = startOrder >= 0 ? startOrder : 0 },
-            new() { X = segment.EndX, Y = segment.EndY, Order = endOrder >= 0 ? endOrder : 1 }
+            new() { X = segment.StartX, Y = segment.StartY, Order = startOrder },
+            new() { X = segment.EndX, Y = segment.EndY, Order = endOrder }
         };
 
         item.ReplacePointList(pointList);
@@ -1038,6 +1039,9 @@ internal static class DimensionGroupFactory
 
     private static DimensionGeometryKind ResolveGeometryKind(DrawingDimensionInfo dimension, DimensionSegmentInfo? segment = null)
     {
+        if (dimension.GeometryKind != DimensionGeometryKind.Unknown)
+            return dimension.GeometryKind;
+
         if (segment?.DimensionLine != null)
         {
             return TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(
@@ -1047,9 +1051,6 @@ internal static class DimensionGroupFactory
                     segment.DimensionLine,
                     []));
         }
-
-        if (dimension.GeometryKind != DimensionGeometryKind.Unknown)
-            return dimension.GeometryKind;
 
         return TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(
             !string.IsNullOrWhiteSpace(dimension.Orientation)
@@ -1063,6 +1064,9 @@ internal static class DimensionGroupFactory
 
     private static DimensionGeometryKind ResolveGeometryKind(TeklaDimensionSetSnapshot dimension, TeklaDimensionSegmentSnapshot? segment = null)
     {
+        if (dimension.GeometryKind != DimensionGeometryKind.Unknown)
+            return dimension.GeometryKind;
+
         if (segment?.DimensionLine != null)
         {
             return TeklaDrawingDimensionsApi.ResolveDimensionGeometryKind(
@@ -1072,9 +1076,6 @@ internal static class DimensionGroupFactory
                     segment.DimensionLine,
                     []));
         }
-
-        if (dimension.GeometryKind != DimensionGeometryKind.Unknown)
-            return dimension.GeometryKind;
 
         var projectedSegments = dimension.Segments
             .Select(static candidate => new DimensionSegmentInfo
