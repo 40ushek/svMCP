@@ -4,7 +4,7 @@ using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
-public sealed class DimensionAiAssistedOrchestratorTests
+public sealed class DimensionActionPlanBuilderTests
 {
     [Fact]
     public void Build_EmitsCombineThenArrangeStepsForInformationPreservingMerge()
@@ -16,12 +16,12 @@ public sealed class DimensionAiAssistedOrchestratorTests
         group.CombineCandidates.Add(CreateCombineCandidate(new[] { 1001, 1002 }, "shared_point_neighbor_set", 1001));
         debug.Groups.Add(group);
 
-        var result = new DimensionAiAssistedOrchestrator().Build(debug, 10);
+        var result = new DimensionActionPlanBuilder().Build(debug, 10);
 
         Assert.Equal(2, result.Steps.Count);
 
         var combine = result.Steps[0];
-        Assert.Equal(DimensionAiAssistedAction.Combine, combine.Action);
+        Assert.Equal(DimensionPlanAction.Combine, combine.Action);
         Assert.Equal(1, combine.StepOrder);
         Assert.Equal("combine_dimensions", combine.ToolName);
         Assert.True(combine.PreviewOnly);
@@ -32,13 +32,34 @@ public sealed class DimensionAiAssistedOrchestratorTests
         Assert.False(combine.ApplyToolArguments!.PreviewOnly);
 
         var arrange = result.Steps[1];
-        Assert.Equal(DimensionAiAssistedAction.Arrange, arrange.Action);
+        Assert.Equal(DimensionPlanAction.Arrange, arrange.Action);
         Assert.Equal(2, arrange.StepOrder);
         Assert.Equal("arrange_dimensions", arrange.ToolName);
         Assert.False(arrange.PreviewOnly);
         Assert.NotNull(arrange.ToolArguments);
         Assert.Equal(10, arrange.ToolArguments!.ViewId);
         Assert.Equal(TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper, arrange.ToolArguments.TargetGap);
+    }
+
+    [Fact]
+    public void Build_AttributesSynthesizedStepsToTheBuilderRatherThanAModel()
+    {
+        // The arrange follow-up is the one step with no packet behind it, so the builder has to
+        // name its own provenance. It said "ai_orchestrator" — no model is involved anywhere in
+        // this class, and a consumer reading the payload would conclude otherwise.
+        var debug = new DimensionReductionDebugResult();
+        var group = CreateGroup(10, DimensionType.Horizontal);
+        group.Items.Add(CreateItem(1001, "kept", "kept", DimensionLayoutPolicyStatus.Preferred, "covers_poorer_chain", DimensionRecommendedAction.PreferCombine, DimensionCombineClassification.InformationPreservingMerge));
+        group.Items.Add(CreateItem(1002, "kept", "kept", DimensionLayoutPolicyStatus.LessPreferred, "subchain_of_richer_dimension", DimensionRecommendedAction.PreferCombine, DimensionCombineClassification.InformationPreservingMerge));
+        group.CombineCandidates.Add(CreateCombineCandidate(new[] { 1001, 1002 }, "shared_point_neighbor_set", 1001));
+        debug.Groups.Add(group);
+
+        var result = new DimensionActionPlanBuilder().Build(debug, 10);
+
+        var arrange = Assert.Single(result.Steps, step => step.Action == DimensionPlanAction.Arrange);
+        Assert.Equal(DimensionActionPlanBuilder.BuilderSource, arrange.Source);
+        Assert.Equal("action_plan_builder", arrange.Source);
+        Assert.DoesNotContain(result.Steps, static step => step.Source == "ai_orchestrator");
     }
 
     [Fact]
@@ -51,10 +72,10 @@ public sealed class DimensionAiAssistedOrchestratorTests
         group.CombineCandidates.Add(CreateCombineCandidate(new[] { 1001, 1002 }, "shared_point_neighbor_set", 1001));
         debug.Groups.Add(group);
 
-        var result = new DimensionAiAssistedOrchestrator().Build(debug, 10);
+        var result = new DimensionActionPlanBuilder().Build(debug, 10);
 
         var review = Assert.Single(result.Steps);
-        Assert.Equal(DimensionAiAssistedAction.ReviewOnly, review.Action);
+        Assert.Equal(DimensionPlanAction.ReviewOnly, review.Action);
         Assert.Equal("equivalent_measured_geometry", review.Reason);
         Assert.Equal(string.Empty, review.ToolName);
     }
@@ -68,10 +89,10 @@ public sealed class DimensionAiAssistedOrchestratorTests
         group.Items.Add(CreateItem(1002, "kept", "kept", DimensionLayoutPolicyStatus.Neutral, "neutral", DimensionRecommendedAction.Keep, DimensionCombineClassification.None));
         debug.Groups.Add(group);
 
-        var result = new DimensionAiAssistedOrchestrator().Build(debug, 10);
+        var result = new DimensionActionPlanBuilder().Build(debug, 10);
 
         var review = Assert.Single(result.Steps);
-        Assert.Equal(DimensionAiAssistedAction.ReviewOnly, review.Action);
+        Assert.Equal(DimensionPlanAction.ReviewOnly, review.Action);
         Assert.Equal("covered", review.Reason);
         Assert.Equal("reduction", review.Source);
     }
@@ -86,7 +107,7 @@ public sealed class DimensionAiAssistedOrchestratorTests
         group.CombineCandidates.Add(CreateCombineCandidate(new[] { 2001, 2002 }, "shared_point_neighbor_set", 2001));
         debug.Groups.Add(group);
 
-        var result = new DimensionAiAssistedOrchestrator().Build(debug, 10);
+        var result = new DimensionActionPlanBuilder().Build(debug, 10);
 
         var evidence = result.Steps[0].Evidence;
         Assert.NotNull(evidence.LineDirection);
@@ -118,7 +139,7 @@ public sealed class DimensionAiAssistedOrchestratorTests
             MaxY = 100
         };
 
-        var result = new DimensionAiAssistedOrchestrator().Build(debug, viewId: null);
+        var result = new DimensionActionPlanBuilder().Build(debug, viewId: null);
 
         Assert.Equal(10, result.ViewId);
         Assert.Contains("single_view_required", result.Warnings);

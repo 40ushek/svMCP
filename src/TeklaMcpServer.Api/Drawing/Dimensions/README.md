@@ -196,14 +196,14 @@ Available in `TeklaBridge`, but not currently surfaced as public MCP tools:
 - `get_dimension_source_debug`
 - `get_dimension_groups_debug`
 - `get_dimension_orchestration_debug`
-- `get_dimension_ai_orchestration_plan`
+- `get_dimension_action_plan` (alias: `get_dimension_ai_orchestration_plan`)
 - `get_dimension_arrangement_debug`
 
 Arrangement apply logic is publicly surfaced as `arrange_dimensions`, and
 controlled dimension merging is publicly surfaced as `combine_dimensions`,
 while arrangement debug remains bridge/internal only.
 
-`get_dimension_ai_orchestration_plan` should be read narrowly:
+`get_dimension_action_plan` should be read narrowly:
 
 - it is implemented today
 - it is bridge/internal only
@@ -220,7 +220,7 @@ No additional runtime orchestration is part of the current phase:
 
 - `RecommendedAction` stays debug-only
 - orchestration packets stay debug-only
-- AI-assisted orchestration plan stays debug-only
+- the deterministic action plan stays debug-only
 - there is no auto-apply based on policy recommendations
 
 ## Validated Findings

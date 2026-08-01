@@ -119,7 +119,7 @@ Handlers:
   - `Context/Associations` — привязка точек размера к объектам:
     `DimensionPointObjectMapper`, `DimensionSourceAssociationResolver`
   - `Orchestration` — `DimensionOrchestrationEngine`,
-    `DimensionAiAssistedOrchestrator`
+    `DimensionActionPlanBuilder`
 - `Drawing/Marks`
   - чтение марок, layout, overlap resolution
 - `Drawing/Geometry`

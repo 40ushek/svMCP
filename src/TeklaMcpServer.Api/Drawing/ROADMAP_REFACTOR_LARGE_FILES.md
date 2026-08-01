@@ -222,14 +222,14 @@ DrawingCommandHandler.Dimensions.Debug.cs
   HandleGetDimensionSourceDebug
   HandleGetDimensionGroupsDebug
   HandleGetDimensionOrchestrationDebug
-  HandleGetDimensionAiOrchestrationPlan
+  HandleGetDimensionActionPlan
   HandleGetDimensionArrangementDebug
   SerializeRepresentativePackets
   SerializeCombineCandidates
   SerializeCombinePreview
   SerializePoint
-  SerializeAiOrchestrationPlanSteps
-  SerializeAiToolArguments
+  SerializeActionPlanSteps
+  SerializeActionPlanToolArguments
   SerializeOrchestrationPackets
   WriteDimensionArrangementDebugResult
   SerializeDirection

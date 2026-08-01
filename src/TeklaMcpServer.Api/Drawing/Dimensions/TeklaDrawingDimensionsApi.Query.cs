@@ -70,7 +70,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         return new DimensionOrchestrationEngine().BuildDebug(debug, viewId);
     }
 
-    internal DimensionAiOrchestrationPlanResult GetDimensionAiOrchestrationPlan(int? viewId)
+    internal DimensionActionPlanResult GetDimensionActionPlan(int? viewId)
     {
         var debug = GetDimensionGroupReductionDebug(viewId);
         return new DimensionOrchestrationEngine().BuildPlan(debug, viewId);

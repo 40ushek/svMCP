@@ -301,7 +301,7 @@ The current baseline already includes:
 - `DisplayCoordinateSystem` is rejected for this path because it risks mixing
   coordinate spaces between part geometry, dimensions, and debug overlays
 - internal/debug-first action-plan generation surface currently exposed through
-  the bridge helper named `get_dimension_ai_orchestration_plan`
+  the bridge helper named `get_dimension_action_plan`
 
 Current `DrawingViewContext` baseline should be interpreted carefully:
 
@@ -568,20 +568,27 @@ Two things deliberately left out:
 Done when a saved observation can answer "which model object does this segment
 measure against" without re-reading the drawing.
 
-### 1. Clarify orchestration naming
+### 1. Clarify orchestration naming — done
 
-Current naming still overstates or obscures the deterministic baseline.
+`DimensionAiAssistedOrchestrator` was named for something it never did: it uses
+no model and executes nothing. Renamed to `DimensionActionPlanBuilder`, with
+`DimensionActionPlanResult`, `DimensionActionPlanStep`, `DimensionPlanAction`
+and `DimensionActionPlanEvidence` alongside it. Behaviour is unchanged.
 
-Main candidates:
+The command is now `get_dimension_action_plan`. The old
+`get_dimension_ai_orchestration_plan` stays as an alias so existing callers keep
+working.
 
-- `DimensionAiAssistedOrchestrator*`
-- `get_dimension_ai_orchestration_plan`
+The boundary this fixes in the naming:
 
-Target result:
+```text
+observation -> DimensionActionPlanBuilder -> plan
+            -> an LLM or a person decides whether to apply it
+            -> existing combine / move / arrange / recreate
+```
 
-- names reflect plan projection/recommendation behavior accurately
-- deterministic orchestration remains clearly separate from any future
-  agent-facing execution path
+A future model consumes the same observation and either emits a plan of this
+shape or selects steps from one. It does not go inside the builder.
 
 ### 2. Strengthen `DimensionGeometryContext`
 

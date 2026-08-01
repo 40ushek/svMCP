@@ -7,8 +7,8 @@ internal sealed class DimensionOrchestrationEngine
         return DimensionOrchestrationDebugBuilder.Build(debug, viewId);
     }
 
-    public DimensionAiOrchestrationPlanResult BuildPlan(DimensionReductionDebugResult debug, int? viewId)
+    public DimensionActionPlanResult BuildPlan(DimensionReductionDebugResult debug, int? viewId)
     {
-        return new DimensionAiAssistedOrchestrator().Build(debug, viewId);
+        return new DimensionActionPlanBuilder().Build(debug, viewId);
     }
 }

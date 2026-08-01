@@ -3,12 +3,26 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal sealed class DimensionAiAssistedOrchestrator
+/// <summary>
+/// Turns reduction debug data into an ordered plan of proposed edits. Deterministic, and it
+/// applies nothing: every step is a description of a call someone else may choose to make.
+///
+/// The boundary is deliberate — observation feeds the builder, the builder emits a plan, and an
+/// LLM or a person decides whether to run it through the existing combine/move/arrange/recreate
+/// commands. A future model works on the same observation and either produces a plan of this
+/// shape or picks steps out of one; it does not belong inside this class.
+/// </summary>
+internal sealed class DimensionActionPlanBuilder
 {
-    public DimensionAiOrchestrationPlanResult Build(DimensionReductionDebugResult debug, int? viewId)
+    /// <summary>
+    /// Provenance for steps the builder synthesizes itself rather than projecting from a packet.
+    /// </summary>
+    internal const string BuilderSource = "action_plan_builder";
+
+    public DimensionActionPlanResult Build(DimensionReductionDebugResult debug, int? viewId)
     {
         var effectiveViewId = viewId ?? debug.DecisionContext.View.ViewId;
-        var result = new DimensionAiOrchestrationPlanResult
+        var result = new DimensionActionPlanResult
         {
             ViewId = effectiveViewId
         };
@@ -44,22 +58,22 @@ internal sealed class DimensionAiAssistedOrchestrator
         return result;
     }
 
-    private static DimensionAiOrchestrationPlanStep CreateCombineStep(
+    private static DimensionActionPlanStep CreateCombineStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
         DrawingViewContext viewContext,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.Combine);
+        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionPlanAction.Combine);
         step.ToolName = "combine_dimensions";
         step.PreviewOnly = true;
-        step.ToolArguments = new DimensionAiOrchestrationToolArguments
+        step.ToolArguments = new DimensionActionPlanToolArguments
         {
             ViewId = packet.ViewId,
             PreviewOnly = true
         };
-        step.ApplyToolArguments = new DimensionAiOrchestrationToolArguments
+        step.ApplyToolArguments = new DimensionActionPlanToolArguments
         {
             ViewId = packet.ViewId,
             PreviewOnly = false
@@ -69,19 +83,22 @@ internal sealed class DimensionAiAssistedOrchestrator
         return step;
     }
 
-    private static DimensionAiOrchestrationPlanStep CreateArrangeFollowUpStep(
+    private static DimensionActionPlanStep CreateArrangeFollowUpStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
         DrawingViewContext viewContext,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.Arrange);
+        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionPlanAction.Arrange);
         step.Reason = "post_combine_arrange_followup";
-        step.Source = "ai_orchestrator";
+        // Every other step inherits its packet's provenance; this one has no packet behind it —
+        // the builder invents it to follow a combine. It names the producer, and the producer is
+        // deterministic code, not a model.
+        step.Source = BuilderSource;
         step.ToolName = "arrange_dimensions";
         step.PreviewOnly = false;
-        step.ToolArguments = new DimensionAiOrchestrationToolArguments
+        step.ToolArguments = new DimensionActionPlanToolArguments
         {
             ViewId = packet.ViewId,
             TargetGap = TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper
@@ -93,29 +110,29 @@ internal sealed class DimensionAiAssistedOrchestrator
         return step;
     }
 
-    private static DimensionAiOrchestrationPlanStep CreateReviewStep(
+    private static DimensionActionPlanStep CreateReviewStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
         DrawingViewContext viewContext,
         int stepOrder)
     {
-        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionAiAssistedAction.ReviewOnly);
+        var step = CreateBaseStep(packet, itemsById, contextsById, viewContext, stepOrder, DimensionPlanAction.ReviewOnly);
         step.PreviewOnly = true;
         return step;
     }
 
-    private static DimensionAiOrchestrationPlanStep CreateBaseStep(
+    private static DimensionActionPlanStep CreateBaseStep(
         DimensionOrchestrationActionPacket packet,
         IReadOnlyDictionary<int, DimensionReductionItemDebugInfo> itemsById,
         IReadOnlyDictionary<int, DimensionContext> contextsById,
         DrawingViewContext viewContext,
         int stepOrder,
-        DimensionAiAssistedAction action)
+        DimensionPlanAction action)
     {
         itemsById.TryGetValue(packet.PrimaryDimensionId, out var primaryItem);
         contextsById.TryGetValue(packet.PrimaryDimensionId, out var primaryContext);
-        var step = new DimensionAiOrchestrationPlanStep
+        var step = new DimensionActionPlanStep
         {
             StepOrder = stepOrder,
             Action = action,
@@ -132,14 +149,14 @@ internal sealed class DimensionAiAssistedOrchestrator
         return step;
     }
 
-    private static DimensionAiOrchestrationEvidence CreateEvidence(
+    private static DimensionActionPlanEvidence CreateEvidence(
         DimensionOrchestrationEvidence evidence,
         DimensionContext? context,
         DrawingViewContext viewContext)
     {
         var viewPlacement = DimensionViewPlacementInfoBuilder.Build(context, viewContext);
         var partsBoundsGap = DimensionPartsBoundsGapPolicy.Evaluate(viewPlacement);
-        return new DimensionAiOrchestrationEvidence
+        return new DimensionActionPlanEvidence
         {
             LayoutPolicyStatus = evidence.LayoutPolicyStatus,
             LayoutRecommendedAction = evidence.LayoutRecommendedAction,

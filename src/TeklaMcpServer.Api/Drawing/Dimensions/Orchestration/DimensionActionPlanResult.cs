@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-internal enum DimensionAiAssistedAction
+internal enum DimensionPlanAction
 {
     Combine = 0,
     Arrange,
@@ -10,7 +10,7 @@ internal enum DimensionAiAssistedAction
     Keep
 }
 
-internal sealed class DimensionAiOrchestrationToolArguments
+internal sealed class DimensionActionPlanToolArguments
 {
     public int? ViewId { get; set; }
     public List<int> DimensionIds { get; } = [];
@@ -18,7 +18,7 @@ internal sealed class DimensionAiOrchestrationToolArguments
     public bool? PreviewOnly { get; set; }
 }
 
-internal sealed class DimensionAiOrchestrationEvidence
+internal sealed class DimensionActionPlanEvidence
 {
     public string LayoutPolicyStatus { get; set; } = string.Empty;
     public string LayoutRecommendedAction { get; set; } = string.Empty;
@@ -52,10 +52,10 @@ internal sealed class DimensionAiOrchestrationEvidence
     public double SuggestedOutwardDeltaFromPartsBounds { get; set; }
 }
 
-internal sealed class DimensionAiOrchestrationPlanStep
+internal sealed class DimensionActionPlanStep
 {
     public int StepOrder { get; set; }
-    public DimensionAiAssistedAction Action { get; set; }
+    public DimensionPlanAction Action { get; set; }
     public List<int> DimensionIds { get; } = [];
     public int PrimaryDimensionId { get; set; }
     public List<int> RelatedDimensionIds { get; } = [];
@@ -63,16 +63,16 @@ internal sealed class DimensionAiOrchestrationPlanStep
     public string DimensionType { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public string Source { get; set; } = string.Empty;
-    public DimensionAiOrchestrationEvidence Evidence { get; set; } = new();
+    public DimensionActionPlanEvidence Evidence { get; set; } = new();
     public string ToolName { get; set; } = string.Empty;
-    public DimensionAiOrchestrationToolArguments? ToolArguments { get; set; }
-    public DimensionAiOrchestrationToolArguments? ApplyToolArguments { get; set; }
+    public DimensionActionPlanToolArguments? ToolArguments { get; set; }
+    public DimensionActionPlanToolArguments? ApplyToolArguments { get; set; }
     public bool PreviewOnly { get; set; }
 }
 
-internal sealed class DimensionAiOrchestrationPlanResult
+internal sealed class DimensionActionPlanResult
 {
     public int? ViewId { get; set; }
-    public List<DimensionAiOrchestrationPlanStep> Steps { get; } = [];
+    public List<DimensionActionPlanStep> Steps { get; } = [];
     public List<string> Warnings { get; } = [];
 }

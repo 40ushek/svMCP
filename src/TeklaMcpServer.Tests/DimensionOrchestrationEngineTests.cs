@@ -37,8 +37,8 @@ public sealed class DimensionOrchestrationEngineTests
 
         Assert.Contains(debugResult.Packets, static packet => packet.Action == DimensionOrchestrationAction.Combine);
         Assert.Equal(2, planResult.Steps.Count);
-        Assert.Equal(DimensionAiAssistedAction.Combine, planResult.Steps[0].Action);
-        Assert.Equal(DimensionAiAssistedAction.Arrange, planResult.Steps[1].Action);
+        Assert.Equal(DimensionPlanAction.Combine, planResult.Steps[0].Action);
+        Assert.Equal(DimensionPlanAction.Arrange, planResult.Steps[1].Action);
     }
 
     private static DimensionReductionItemDebugInfo CreateItem(int dimensionId, DimensionLayoutPolicyStatus status)

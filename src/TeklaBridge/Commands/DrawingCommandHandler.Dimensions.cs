@@ -44,8 +44,10 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_orchestration_debug":
                 return HandleGetDimensionOrchestrationDebug(api, args);
 
+            // The second name is the old one, kept as an alias for existing callers.
+            case "get_dimension_action_plan":
             case "get_dimension_ai_orchestration_plan":
-                return HandleGetDimensionAiOrchestrationPlan(api, args);
+                return HandleGetDimensionActionPlan(api, args);
 
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
@@ -443,13 +445,13 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private bool HandleGetDimensionAiOrchestrationPlan(TeklaDrawingDimensionsApi api, string[] args)
+    private bool HandleGetDimensionActionPlan(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionAiOrchestrationPlan", BindingFlags.Instance | BindingFlags.NonPublic);
+        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionActionPlan", BindingFlags.Instance | BindingFlags.NonPublic);
         if (method == null)
         {
-            WriteError("Internal GetDimensionAiOrchestrationPlan() was not found.");
+            WriteError("Internal GetDimensionActionPlan() was not found.");
             return true;
         }
 
@@ -471,7 +473,7 @@ internal sealed partial class DrawingCommandHandler
 
         if (result == null)
         {
-            WriteError("Internal GetDimensionAiOrchestrationPlan() returned null.");
+            WriteError("Internal GetDimensionActionPlan() returned null.");
             return true;
         }
 
@@ -479,7 +481,7 @@ internal sealed partial class DrawingCommandHandler
         var steps = resultType.GetProperty("Steps")?.GetValue(result) as System.Collections.IEnumerable;
         if (steps == null)
         {
-            WriteError("AI orchestration plan steps were not found.");
+            WriteError("Action plan steps were not found.");
             return true;
         }
 
@@ -487,7 +489,7 @@ internal sealed partial class DrawingCommandHandler
         {
             viewId = resultType.GetProperty("ViewId")?.GetValue(result),
             stepCount = steps.Cast<object>().Count(),
-            steps = SerializeAiOrchestrationPlanSteps(steps)
+            steps = SerializeActionPlanSteps(steps)
         });
         return true;
     }
@@ -1061,7 +1063,7 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
-    private static IEnumerable<object> SerializeAiOrchestrationPlanSteps(System.Collections.IEnumerable? steps)
+    private static IEnumerable<object> SerializeActionPlanSteps(System.Collections.IEnumerable? steps)
     {
         if (steps == null)
             return [];
@@ -1082,8 +1084,8 @@ internal sealed partial class DrawingCommandHandler
                 reason = type.GetProperty("Reason")?.GetValue(step),
                 source = type.GetProperty("Source")?.GetValue(step),
                 toolName = type.GetProperty("ToolName")?.GetValue(step),
-                toolArguments = SerializeAiToolArguments(type.GetProperty("ToolArguments")?.GetValue(step)),
-                applyToolArguments = SerializeAiToolArguments(type.GetProperty("ApplyToolArguments")?.GetValue(step)),
+                toolArguments = SerializeActionPlanToolArguments(type.GetProperty("ToolArguments")?.GetValue(step)),
+                applyToolArguments = SerializeActionPlanToolArguments(type.GetProperty("ApplyToolArguments")?.GetValue(step)),
                 previewOnly = type.GetProperty("PreviewOnly")?.GetValue(step),
                 evidence = evidence == null
                     ? null
@@ -1113,7 +1115,7 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
-    private static object? SerializeAiToolArguments(object? arguments)
+    private static object? SerializeActionPlanToolArguments(object? arguments)
     {
         if (arguments == null)
             return null;
