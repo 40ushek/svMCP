@@ -22,8 +22,14 @@ internal static class DimensionCreatePlacementHelper
     /// that did not survive. A negative distance also makes Distance report values unrelated to
     /// the requested offset.
     ///
-    /// The vector does not affect the reading order: Tekla normalizes the point list by view
-    /// coordinates, so a chain may run top-to-bottom or right-to-left whatever order was passed.
+    /// The vector does not affect the reading order — the ORDER THE POINTS ARE PASSED IN does.
+    /// The first point becomes the chain's start point, the zero its absolute run counts from, so
+    /// pass them bottom-to-top and left-to-right to get a chain that reads that way.
+    ///
+    /// Do not judge this by reading the dimension back: Tekla normalizes the returned point list
+    /// to top-to-bottom / right-to-left no matter how the chain was created, so the read order
+    /// never shows what the sheet does. Verified on a live drawing — points passed bottom-first
+    /// come back top-first while the sheet counts from the bottom.
     /// </summary>
     internal static Vector ResolveDirection(string? direction)
         => TryResolveDirection(direction)

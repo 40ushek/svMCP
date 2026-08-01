@@ -385,7 +385,6 @@ public sealed class DimensionLayoutPolicyEvaluatorTests
         {
             context.Association.PointAssociations.Add(new DimensionContextPointAssociation
             {
-                Order = point.Order,
                 Status = DimensionPointObjectMappingStatus.Matched,
                 MatchedModelId = sourceId,
                 MatchedSourceKind = DimensionSourceKind.Part.ToString()

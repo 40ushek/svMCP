@@ -99,6 +99,88 @@ public sealed class DimensionContextBuilderTests
     }
 
     [Fact]
+    public void Build_PreservesLiveAssociationEvidenceAndPointDetails()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+        var association = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.LiveRelatedObjectsGeometryInference
+        };
+        association.MeasuredPoints.Add(new DrawingPointInfo { X = 0, Y = 0, Order = 0 });
+        association.Candidates.Add(new DimensionSourceCandidateInfo
+        {
+            Owner = "segment:1",
+            DrawingObjectId = 5001,
+            ModelId = 101,
+            Type = "Part",
+            SourceKind = "Part",
+            HasGeometry = true
+        });
+        association.PointMappings.Add(new DimensionPointObjectMapping
+        {
+            Point = new DrawingPointInfo { X = 0, Y = 0, Order = 0 },
+            Status = DimensionPointObjectMappingStatus.Matched,
+            MatchedCandidate = association.Candidates[0],
+            DistanceToGeometry = 0.125,
+            NearestGeometryPoint = new DrawingPointInfo { X = 0, Y = 0, Order = 7 },
+            CandidateCount = 1,
+            Warning = "point_warning"
+        });
+
+        var context = Assert.Single(builder.Build(
+            [item],
+            new Dictionary<int, DimensionSourceAssociationResult> { [item.DimensionId] = association })
+            .Contexts);
+
+        Assert.Equal(DimensionAssociationSource.LiveRelatedObjectsGeometryInference, context.Association.AssociationSource);
+        var pointAssociation = Assert.Single(context.PointAssociations);
+        Assert.Equal(0, pointAssociation.Point.X);
+        Assert.Equal(0, pointAssociation.Point.Y);
+        Assert.Equal(0.125, pointAssociation.DistanceToGeometry);
+        Assert.Equal(7, pointAssociation.NearestGeometryPoint!.Order);
+        Assert.Equal(1, pointAssociation.CandidateCount);
+        Assert.Equal(5001, pointAssociation.MatchedDrawingObjectId);
+        Assert.Equal("point_warning", pointAssociation.Warning);
+        Assert.DoesNotContain("point_warning", context.AssociationWarnings);
+    }
+
+    [Fact]
+    public void Build_ReportsMissingLiveAssociationAndUsesSnapshotSource()
+    {
+        var builder = CreateBuilder(new FakePartPointApi([]));
+        var item = CreatePartItem(1, referenceY: -20);
+
+        var result = builder.Build(
+            [item],
+            new Dictionary<int, DimensionSourceAssociationResult>());
+
+        var context = Assert.Single(result.Contexts);
+        Assert.Equal(DimensionAssociationSource.SnapshotSourceReferences, context.Association.AssociationSource);
+        Assert.Contains("live_association_missing", context.AssociationWarnings);
+        Assert.Contains("live_association_missing", result.Warnings);
+    }
+
+    [Fact]
+    public void ResolveLiveAssociation_FallsBackWithExceptionDetails()
+    {
+        var snapshot = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.SnapshotSourceReferences
+        };
+
+        var result = TeklaDrawingDimensionsApi.ResolveDimensionContextAssociation(
+            () => throw new InvalidOperationException("AutoFetch state is invalid"),
+            () => snapshot);
+
+        Assert.Same(snapshot, result);
+        Assert.Equal(DimensionAssociationSource.SnapshotSourceReferences, result.AssociationSource);
+        var warning = Assert.Single(result.Warnings);
+        Assert.Contains("InvalidOperationException", warning);
+        Assert.Contains("AutoFetch state is invalid", warning);
+    }
+
+    [Fact]
     public void Build_DoesNotInferModelIdentityFromSnapshotDrawingObjectId()
     {
         var builder = CreateBuilder(new FakePartPointApi([]));

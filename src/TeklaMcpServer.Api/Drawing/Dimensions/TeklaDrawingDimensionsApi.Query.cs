@@ -21,17 +21,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
-            DrawingObjectEnumerator dimObjects;
-            if (viewId.HasValue)
-            {
-                var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
-                    ?? throw new ViewNotFoundException(viewId.Value);
-                dimObjects = view.GetAllObjects(typeof(StraightDimensionSet));
-            }
-            else
-            {
-                dimObjects = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
-            }
+            var dimObjects = GetDimensionSetEnumerator(activeDrawing, viewId);
 
             var dimensions = new List<TeklaDimensionSetSnapshot>();
             while (dimObjects.MoveNext())
@@ -48,6 +38,20 @@ public sealed partial class TeklaDrawingDimensionsApi
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
+    }
+
+    private DrawingObjectEnumerator GetDimensionSetEnumerator(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        int? viewId)
+    {
+        if (viewId.HasValue)
+        {
+            var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId.Value)
+                ?? throw new ViewNotFoundException(viewId.Value);
+            return view.GetAllObjects(typeof(StraightDimensionSet));
+        }
+
+        return activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
     }
 
     internal List<DimensionGroup> GetDimensionGroups(int? viewId)
@@ -81,7 +85,8 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     public GetDimensionContextsResult GetDimensionContexts(int viewId)
     {
-        var items = GetDimensionGroups(viewId)
+        var snapshots = GetDimensionSnapshots(viewId);
+        var items = DimensionGroupFactory.BuildGroups(snapshots)
             .SelectMany(static group => group.DimensionList)
             .Distinct()
             .OrderBy(static item => item.DimensionId)
@@ -89,8 +94,74 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (items.Count == 0)
             return new GetDimensionContextsResult { ViewId = viewId };
 
-        var contexts = BuildDimensionContexts(items, out var warnings);
+        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
+        var liveAssociations = ReadLiveDimensionAssociations(
+            viewId,
+            snapshots.ToDictionary(static snapshot => snapshot.Id),
+            associationResolver);
+        var contexts = BuildDimensionContexts(items, liveAssociations, out var warnings);
         return DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+    }
+
+    private Dictionary<int, DimensionSourceAssociationResult> ReadLiveDimensionAssociations(
+        int viewId,
+        IReadOnlyDictionary<int, TeklaDimensionSetSnapshot> snapshotsById,
+        DimensionSourceAssociationResolver resolver)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var result = new Dictionary<int, DimensionSourceAssociationResult>();
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            var dimObjects = GetDimensionSetEnumerator(activeDrawing, viewId);
+            while (dimObjects.MoveNext())
+            {
+                if (dimObjects.Current is not StraightDimensionSet dimSet ||
+                    !snapshotsById.TryGetValue(dimSet.GetIdentifier().ID, out var snapshot))
+                {
+                    continue;
+                }
+
+                // The live Tekla handle is valid only during this read. Store only
+                // the resolved association result; never let the handle escape.
+                result[snapshot.Id] = ResolveDimensionContextAssociation(resolver, dimSet, snapshot);
+            }
+
+            return result;
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
+    }
+
+    private static DimensionSourceAssociationResult ResolveDimensionContextAssociation(
+        DimensionSourceAssociationResolver resolver,
+        StraightDimensionSet dimensionSet,
+        TeklaDimensionSetSnapshot snapshot)
+        => ResolveDimensionContextAssociation(
+            () => resolver.Resolve(dimensionSet, snapshot),
+            () => resolver.Resolve(ProjectDimensionSnapshotToReadModel(snapshot)));
+
+    internal static DimensionSourceAssociationResult ResolveDimensionContextAssociation(
+        Func<DimensionSourceAssociationResult> resolveLive,
+        Func<DimensionSourceAssociationResult> resolveSnapshot)
+    {
+        try
+        {
+            return resolveLive();
+        }
+        catch (Exception ex)
+        {
+            var fallback = resolveSnapshot();
+            fallback.Warnings.Add(
+                $"live_related_objects_unavailable:{ex.GetType().Name}:{ex.Message}");
+            return fallback;
+        }
     }
 
     private static GetDimensionsResult BuildGetDimensionsResult(
@@ -673,6 +744,12 @@ public sealed partial class TeklaDrawingDimensionsApi
     private IReadOnlyList<DimensionContext> BuildDimensionContexts(
         IReadOnlyList<DimensionItem> items,
         out IReadOnlyList<string> warnings)
+        => BuildDimensionContexts(items, null, out warnings);
+
+    private IReadOnlyList<DimensionContext> BuildDimensionContexts(
+        IReadOnlyList<DimensionItem> items,
+        IReadOnlyDictionary<int, DimensionSourceAssociationResult>? associationsByDimensionId,
+        out IReadOnlyList<string> warnings)
     {
         if (items.Count == 0)
         {
@@ -682,7 +759,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
         var builder = new DimensionContextBuilder(associationResolver);
-        var result = builder.Build(items);
+        var result = builder.Build(items, associationsByDimensionId);
         warnings = result.Warnings;
         return result.Contexts
             .OrderBy(static context => context.ViewId)

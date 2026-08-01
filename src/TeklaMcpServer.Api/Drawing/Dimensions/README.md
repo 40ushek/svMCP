@@ -253,6 +253,24 @@ working constraints rather than open questions.
   future policy/layout work
 - line-based grouping and spacing foundation already exists
 
+## Coordinate-space contract
+
+The source geometry reader in
+[`TeklaDrawingPartGeometryApi.cs`](../Geometry/Parts/TeklaDrawingPartGeometryApi.cs)
+sets the model work plane to the owning view's `ViewCoordinateSystem` before
+reading the model solid. Therefore
+`SolidVertices`, `BboxMin`, `BboxMax`, and the points exposed through
+[`TeklaDrawingPartPointApi.cs`](../Geometry/Parts/TeklaDrawingPartPointApi.cs) are
+already view-coordinate data. Dimension/source
+matching must consume that path directly and must not apply a second
+world-to-view transform.
+
+The conversion from view-local coordinates to sheet coordinates is a separate
+presentation operation (`view.Origin + local / scale`). It belongs to sheet
+overlays and layout, not to associativity matching. Persisted dimension cases
+must record the coordinate space and its source so that coordinates from
+different spaces are never compared silently.
+
 ## Observed Constraint: Native Dimension Text Position
 
 The following limitation is already confirmed on the validated Tekla API

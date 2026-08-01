@@ -5,8 +5,26 @@ using Tekla.Structures.Model;
 
 namespace TeklaMcpServer.Api.Drawing;
 
+internal enum DimensionAssociationSource
+{
+    Unknown,
+    LiveRelatedObjectsGeometryInference,
+    SnapshotSourceReferences
+}
+
+internal static class DimensionAssociationSourceFormatter
+{
+    public static string ToContractValue(DimensionAssociationSource source) => source switch
+    {
+        DimensionAssociationSource.LiveRelatedObjectsGeometryInference => "live_related_objects_geometry_inference",
+        DimensionAssociationSource.SnapshotSourceReferences => "snapshot_source_references",
+        _ => "unknown"
+    };
+}
+
 internal sealed class DimensionSourceAssociationResult
 {
+    public DimensionAssociationSource AssociationSource { get; set; }
     public List<DrawingPointInfo> MeasuredPoints { get; } = [];
     public List<DimensionSourceCandidateInfo> Candidates { get; } = [];
     public List<DimensionPointObjectMapping> PointMappings { get; } = [];
@@ -27,7 +45,10 @@ internal sealed class DimensionSourceAssociationResolver
 
     public DimensionSourceAssociationResult Resolve(StraightDimensionSet dimSet, DrawingDimensionInfo dimensionInfo)
     {
-        var result = new DimensionSourceAssociationResult();
+        var result = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.LiveRelatedObjectsGeometryInference
+        };
         result.MeasuredPoints.AddRange(dimensionInfo.MeasuredPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,
@@ -55,7 +76,10 @@ internal sealed class DimensionSourceAssociationResolver
 
     public DimensionSourceAssociationResult Resolve(StraightDimensionSet dimSet, TeklaDimensionSetSnapshot dimensionSnapshot)
     {
-        var result = new DimensionSourceAssociationResult();
+        var result = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.LiveRelatedObjectsGeometryInference
+        };
         result.MeasuredPoints.AddRange(dimensionSnapshot.MeasuredPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,
@@ -83,7 +107,10 @@ internal sealed class DimensionSourceAssociationResolver
 
     public DimensionSourceAssociationResult Resolve(DrawingDimensionInfo dimensionInfo)
     {
-        var result = new DimensionSourceAssociationResult();
+        var result = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.SnapshotSourceReferences
+        };
         result.MeasuredPoints.AddRange(dimensionInfo.MeasuredPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,
@@ -101,7 +128,10 @@ internal sealed class DimensionSourceAssociationResolver
 
     public DimensionSourceAssociationResult Resolve(DimensionItem item)
     {
-        var result = new DimensionSourceAssociationResult();
+        var result = new DimensionSourceAssociationResult
+        {
+            AssociationSource = DimensionAssociationSource.SnapshotSourceReferences
+        };
         result.MeasuredPoints.AddRange(item.MeasuredPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,

@@ -184,6 +184,15 @@ This layer should continue to grow around:
 The context layer exists so future layout decisions are explainable instead of
 hard-coded special cases.
 
+The proposed persisted context contract for LLM-assisted dimension creation and
+repair is described in [`DIMENSION_CONTEXT_SCHEMA.md`](DIMENSION_CONTEXT_SCHEMA.md).
+It is not yet the active runtime or case-storage contract. The canonical
+semantic unit is `dimension point -> association -> source object -> anchor
+kind`; coordinates and derived geometry are evidence, not a replacement for
+that association. Runtime DTOs remain implementation-facing projections, while
+future migrated cases may use the versioned
+observation/decision/action/verification contract from the schema document.
+
 ### 4. Arrangement Layer
 
 Purpose:
@@ -351,6 +360,40 @@ The current internal action-plan helper is important to interpret correctly:
 
 The following findings are worth preserving because they are already confirmed
 on the current implementation and should constrain future work.
+
+### Coordinate contract for source geometry and dimension associations
+
+The existing part-geometry path establishes the model work plane from the
+owning drawing view. The assignment is implemented in
+[`TeklaDrawingPartGeometryApi.cs`](../Geometry/Parts/TeklaDrawingPartGeometryApi.cs):
+
+```text
+model work plane = new TransformationPlane(view.ViewCoordinateSystem)
+```
+
+`GetAllPartsGeometryInView` and `GetPartGeometryInView` then extract solids,
+bounds, and vertices in that view coordinate system. The point reader
+([`TeklaDrawingPartPointApi.cs`](../Geometry/Parts/TeklaDrawingPartPointApi.cs))
+is a wrapper over the same path. This is the canonical source for
+dimension/source-geometry comparisons.
+
+Rules for the next association step:
+
+- do not add an ad-hoc world-to-view conversion after this geometry has been
+  read;
+- do not use `DisplayCoordinateSystem` for this comparison;
+- use sheet projection (`view.Origin` and `view.Attributes.Scale`) only for
+  sheet overlays or layout, not for associativity matching;
+- persist coordinate-space provenance for every geometry payload in saved
+  observations;
+- revalidate point-to-source mapping in a live drawing after both dimension
+  points and source geometry are explicitly labelled with their coordinate
+  space.
+
+The current `get_dimension_contexts` output records that its per-point
+selection is inferred. Until the coordinate-space audit is complete,
+`DistanceToGeometry` and `MatchedModelId` must not be treated as proof of the
+native Tekla associativity rule.
 
 - `viewScale` is read correctly from the owning view
 - paper-gap semantics are valid:
@@ -522,6 +565,61 @@ The following are intentionally not part of the current baseline.
 - letting AI bypass the deterministic baseline and operate on raw Tekla DTOs
 - re-centering the module around DTOs, bounds or orientation summaries
 - transactional unification of combine commit and arrange handoff in the current phase
+
+## Known Gap: `LengthList` Does Not Reproduce the Printed Run
+
+Recorded 2026-08-01. Deliberately left as is; do not fix in passing.
+
+### What a dimension prints
+
+Every snap point is projected onto the reference line along the normal, and the
+printed values are distances from the START of that line. Confirmed by exporting a
+drawing to PDF and comparing: all 26 printed values across four chains matched
+this rule, including two horizontal chains counting from the left edge and two
+vertical ones counting from the bottom.
+
+### What `LengthList` reports
+
+`DimensionItem.ReplacePointList` projects onto the reference line — that part is
+correct and fixed the old straight-line measurement, which invented fractional
+values (2555.25 against a printed 2546, 456.91 against 448) that were then read as
+snap drift, and produced negative segments once the array ran against the axis.
+
+But it still measures **from `PointList[0]`, not from the near end of the line**.
+For a chain whose points arrive in the opposite order to the line, the values come
+out correct in magnitude but in reverse: a chain printed as `60 · 1764 · 4309` is
+reported as `2545.5 · 4249.1 · 4309.1`.
+
+### Why it was not carried through
+
+Both length lists must stay index-aligned with `PointList`: `DimensionOperations`
+turns a length index into a point index by adding one
+(`GetLengthMatchedPointIndices`) and takes `LengthList[0]` as the first span.
+Ordering the values by position along the line breaks that pairing and matches a
+length against the wrong point during packet reduction — a real defect that was
+introduced once and caught in review.
+
+Sorting `PointList` itself instead is not free either: it swaps `StartX`/`StartY`
+with `EndX`/`EndY` on vertical chains, which grouping, dedup and arrangement all
+read. `BuildGroups_MergesNearbySegmentsOnSameLineBandWithinSameDimension` fails on
+exactly that.
+
+### What closing it would take
+
+Either a separate list of printed values with its own `length -> point index`
+mapping, leaving `LengthList` alone, or changing the downstream contract so a
+length and its point travel together as a pair rather than by parallel index.
+
+### Consequence to keep in mind meanwhile
+
+`LengthList` is safe for spans and for anything comparing chains against each
+other. It is **not** the absolute run shown on the sheet, so do not diagnose a
+drawing by reading it as one — that mistake cost a full session, chasing snap
+drift that the drawings did not have.
+
+Test coverage is partial: `ReferenceLineSuppliesTheAxisWhenPresent` proves the
+line wins over the direction field, but nothing yet covers the near end or a line
+running the other way.
 
 ## Tekla API Limitation: AngleAtVertex Movement
 

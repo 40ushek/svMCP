@@ -65,6 +65,7 @@ internal sealed class DimensionContextSourceSummary
 
 internal sealed class DimensionContextSourceAssociation
 {
+    public DimensionAssociationSource AssociationSource { get; set; }
     public List<DrawingPointInfo> MeasuredPoints { get; } = [];
     public List<DimensionContextRelatedSource> RelatedSources { get; } = [];
     public List<DimensionContextPointAssociation> PointAssociations { get; } = [];
@@ -84,7 +85,7 @@ internal sealed class DimensionContextRelatedSource
 
 internal sealed class DimensionContextPointAssociation
 {
-    public int Order { get; set; }
+    public DrawingPointInfo Point { get; set; } = new();
     public DimensionPointObjectMappingStatus Status { get; set; }
     public string MatchedOwner { get; set; } = string.Empty;
     public int? MatchedDrawingObjectId { get; set; }
@@ -92,6 +93,9 @@ internal sealed class DimensionContextPointAssociation
     public string MatchedType { get; set; } = string.Empty;
     public string MatchedSourceKind { get; set; } = string.Empty;
     public double? DistanceToGeometry { get; set; }
+    public DrawingPointInfo? NearestGeometryPoint { get; set; }
+    public int CandidateCount { get; set; }
+    public string Warning { get; set; } = string.Empty;
 }
 
 internal sealed class DimensionContextGeometry

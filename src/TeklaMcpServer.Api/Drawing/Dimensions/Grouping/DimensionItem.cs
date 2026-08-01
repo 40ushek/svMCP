@@ -55,24 +55,26 @@ internal class DimensionItem
     public double GetLeadLineSecondLength() => LeadLineSecond?.Length ?? 0;
 
     /// <summary>
-    /// Rebuilds the point list and both length lists so they describe the dimension the way the
-    /// sheet does.
+    /// Rebuilds the point list and both length lists so they describe the projected dimension
+    /// geometry used by grouping and reduction.
     ///
     /// A dimension measures along its reference line: every snap point is projected onto that
-    /// line along the normal, and the values printed are distances from the line's start. So the
-    /// same rule is applied here — order the points by their projection, then measure along it.
+    /// line along the normal. Projecting is what these lists now do too.
     ///
     /// Verified against an exported PDF, all 26 printed values across four chains matched: a span
     /// previously reported as 2555.25 prints as 2546, 456.91 as 448, 298.53 as 301. The old
     /// formula measured straight-line distance from whichever point happened to be first in the
     /// array, which agreed with the sheet only when the points were collinear. It also invented
-    /// fractions that were then read as snap drift, and produced negative segments — impossible
-    /// for a dimension — whenever the array order ran against the axis.
+    /// fractions that were then read as snap drift. Point order and printed-run order are separate
+    /// concepts; this method does not claim that Tekla's incoming order is geometric order.
     ///
-    /// PointList itself is left in the order the points arrive in. Sorting it by projection also
-    /// makes the reading direction match the sheet, but it swaps StartX/StartY with EndX/EndY on
-    /// vertical chains, and grouping, dedup and arrangement all read those — not worth the risk
-    /// for what is a cosmetic property of the output.
+    /// Measurement runs from PointList[0], NOT from the near end of the reference line, even
+    /// though the sheet prints the latter. Both lists have to stay index-aligned with PointList,
+    /// and taking the values in position order breaks that: DimensionOperations pairs
+    /// LengthList[i] with PointList[i + 1] and would then match a length against the wrong point
+    /// while reducing packets. The printed absolute run needs its own field, not this one.
+    /// Point.Order is preserved as the supplied point/mapping identity; it is not reinterpreted as
+    /// a projection sort key here.
     ///
     /// RealLengthList keeps the straight-line distance between points on purpose. It is the
     /// honest point-to-point value, and DimensionOperations matches packets against LengthList
@@ -97,43 +99,34 @@ internal class DimensionItem
         CenterX = System.Math.Round((StartX + EndX) / 2.0, 3);
         CenterY = System.Math.Round((StartY + EndY) / 2.0, 3);
 
-        var axis = ResolveMeasurementAxis();
-
-        if (axis.HasValue)
-        {
-            // Values are the distances along the reference line, taken from its near end. Sorting
-            // the projections rather than the points is deliberate: PointList order feeds grouping,
-            // dedup and arrangement, and reordering it swapped the start and end of vertical chains.
-            // The printed numbers do not depend on the order the points arrive in anyway.
-            var (originX, originY, unitX, unitY) = axis.Value;
-
-            var offsets = PointList
-                .Select(point => ((point.X - originX) * unitX) + ((point.Y - originY) * unitY))
-                .OrderBy(static offset => offset)
-                .ToList();
-
-            var origin = offsets[0];
-            for (var i = 1; i < offsets.Count; i++)
-                LengthList.Add(System.Math.Round(offsets[i] - origin, 2));
-        }
+        // Both lists stay index-aligned with PointList: entry i describes PointList[i + 1].
+        // DimensionOperations relies on that — GetLengthMatchedPointIndices turns a length index
+        // into a point index by adding one, and takes LengthList[0] as the first span. Sorting the
+        // values by position along the line breaks the pairing and mismatches lengths to points
+        // during packet reduction, so measurement runs from PointList[0] in point order.
+        var axis = ResolveProjectionAxis();
 
         for (var i = 1; i < PointList.Count; i++)
         {
             var dx = PointList[i].X - StartX;
             var dy = PointList[i].Y - StartY;
-            RealLengthList.Add(System.Math.Round(System.Math.Sqrt((dx * dx) + (dy * dy)), 2));
-        }
 
-        if (!axis.HasValue)
-            LengthList.AddRange(RealLengthList);
+            var real = System.Math.Round(System.Math.Sqrt((dx * dx) + (dy * dy)), 2);
+
+            LengthList.Add(axis.HasValue
+                ? System.Math.Round(System.Math.Abs((dx * axis.Value.X) + (dy * axis.Value.Y)), 2)
+                : real);
+            RealLengthList.Add(real);
+        }
     }
 
     /// <summary>
-    /// Origin and unit vector to measure along: the reference line when it is known, otherwise the
-    /// dimension direction anchored at the first point. Null when neither is available, in which
-    /// case the caller falls back to straight-line distances rather than reporting zeros.
+    /// Unit vector to project onto: taken from the reference line when it is known, since that is
+    /// the line the dimension actually measures along, and from the dimension direction otherwise.
+    /// Null when neither is available, in which case the caller keeps straight-line distances
+    /// rather than reporting zeros.
     /// </summary>
-    private (double OriginX, double OriginY, double UnitX, double UnitY)? ResolveMeasurementAxis()
+    private (double X, double Y)? ResolveProjectionAxis()
     {
         var line = ReferenceLine;
         if (line != null)
@@ -142,12 +135,9 @@ internal class DimensionItem
             var dy = line.EndY - line.StartY;
             var length = System.Math.Sqrt((dx * dx) + (dy * dy));
             if (length > 1e-9)
-                return (line.StartX, line.StartY, dx / length, dy / length);
+                return (dx / length, dy / length);
         }
 
-        var direction = Direction;
-        return direction.HasValue
-            ? (StartX, StartY, direction.Value.X, direction.Value.Y)
-            : null;
+        return Direction;
     }
 }

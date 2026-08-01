@@ -15,11 +15,32 @@ internal sealed class DimensionContextBuilder
     }
 
     public DimensionContextBuildResult Build(IEnumerable<DimensionItem> items)
+        => Build(items, null);
+
+    public DimensionContextBuildResult Build(
+        IEnumerable<DimensionItem> items,
+        IReadOnlyDictionary<int, DimensionSourceAssociationResult>? associationsByDimensionId)
     {
         var result = new DimensionContextBuildResult();
         foreach (var item in items.Where(static item => item != null).Distinct())
         {
-            result.Contexts.Add(Build(item));
+            if (associationsByDimensionId == null)
+            {
+                result.Contexts.Add(Build(item));
+                continue;
+            }
+
+            if (associationsByDimensionId.TryGetValue(item.DimensionId, out var association))
+            {
+                result.Contexts.Add(Build(item, association));
+            }
+            else
+            {
+                var fallback = _associationResolver.Resolve(item);
+                fallback.Warnings.Add("live_association_missing");
+                result.Contexts.Add(Build(item, fallback));
+                result.Warnings.Add("live_association_missing");
+            }
         }
 
         return result;
@@ -28,6 +49,11 @@ internal sealed class DimensionContextBuilder
     public DimensionContext Build(DimensionItem item)
     {
         var association = _associationResolver.Resolve(item);
+        return Build(item, association);
+    }
+
+    private DimensionContext Build(DimensionItem item, DimensionSourceAssociationResult association)
+    {
         var context = new DimensionContext
         {
             DimensionId = item.DimensionId,
@@ -116,7 +142,10 @@ internal sealed class DimensionContextBuilder
 
     private static DimensionContextSourceAssociation BuildAssociation(DimensionSourceAssociationResult association)
     {
-        var result = new DimensionContextSourceAssociation();
+        var result = new DimensionContextSourceAssociation
+        {
+            AssociationSource = association.AssociationSource
+        };
         result.MeasuredPoints.AddRange(association.MeasuredPoints.Select(static point => new DrawingPointInfo
         {
             X = point.X,
@@ -141,14 +170,29 @@ internal sealed class DimensionContextBuilder
         }));
         result.PointAssociations.AddRange(association.PointMappings.Select(static mapping => new DimensionContextPointAssociation
         {
-            Order = mapping.Point.Order,
+            Point = new DrawingPointInfo
+            {
+                X = mapping.Point.X,
+                Y = mapping.Point.Y,
+                Order = mapping.Point.Order
+            },
             Status = mapping.Status,
             MatchedOwner = mapping.MatchedCandidate?.Owner ?? string.Empty,
             MatchedDrawingObjectId = mapping.MatchedCandidate?.DrawingObjectId,
             MatchedModelId = mapping.MatchedCandidate?.ModelId,
             MatchedType = mapping.MatchedCandidate?.Type ?? string.Empty,
             MatchedSourceKind = mapping.MatchedCandidate?.SourceKind ?? string.Empty,
-            DistanceToGeometry = mapping.DistanceToGeometry
+            DistanceToGeometry = mapping.DistanceToGeometry,
+            NearestGeometryPoint = mapping.NearestGeometryPoint == null
+                ? null
+                : new DrawingPointInfo
+                {
+                    X = mapping.NearestGeometryPoint.X,
+                    Y = mapping.NearestGeometryPoint.Y,
+                    Order = mapping.NearestGeometryPoint.Order
+                },
+            CandidateCount = mapping.CandidateCount,
+            Warning = mapping.Warning
         }));
 
         foreach (var warning in association.Warnings.Distinct())

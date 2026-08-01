@@ -24,7 +24,7 @@ public sealed class DimensionContextRelatedSourceInfo
 
 public sealed class DimensionContextPointAssociationInfo
 {
-    public int Order { get; set; }
+    public DrawingPointInfo Point { get; set; } = new();
     public string Status { get; set; } = string.Empty;
     public string MatchedOwner { get; set; } = string.Empty;
     public int? MatchedDrawingObjectId { get; set; }
@@ -32,6 +32,9 @@ public sealed class DimensionContextPointAssociationInfo
     public string MatchedType { get; set; } = string.Empty;
     public string MatchedSourceKind { get; set; } = string.Empty;
     public double? DistanceToGeometry { get; set; }
+    public DrawingPointInfo? NearestGeometryPoint { get; set; }
+    public int CandidateCount { get; set; }
+    public string Warning { get; set; } = string.Empty;
 }
 
 public sealed class DimensionContextInfo
@@ -70,6 +73,7 @@ public sealed class DimensionContextInfo
     public DrawingBoundsInfo? AnnotationTextBounds { get; set; }
     public List<string> AnnotationGeometryWarnings { get; set; } = new();
     public List<DrawingPointInfo> MeasuredPoints { get; set; } = new();
+    public string AssociationSource { get; set; } = string.Empty;
     public List<DimensionContextRelatedSourceInfo> RelatedSources { get; set; } = new();
     public List<DimensionContextPointAssociationInfo> PointAssociations { get; set; } = new();
     public List<string> AssociationWarnings { get; set; } = new();
@@ -150,6 +154,7 @@ internal static class DimensionContextReadModelMapper
             AnnotationTextBounds = CopyBounds(context.AnnotationTextBounds),
             AnnotationGeometryWarnings = context.AnnotationGeometryWarnings.ToList(),
             MeasuredPoints = context.MeasuredPoints.Select(CopyPoint).ToList(),
+            AssociationSource = DimensionAssociationSourceFormatter.ToContractValue(context.Association.AssociationSource),
             RelatedSources = context.RelatedSources.Select(relatedSource => new DimensionContextRelatedSourceInfo
             {
                 Owner = relatedSource.Owner,
@@ -162,14 +167,19 @@ internal static class DimensionContextReadModelMapper
             }).ToList(),
             PointAssociations = context.PointAssociations.Select(pointAssociation => new DimensionContextPointAssociationInfo
             {
-                Order = pointAssociation.Order,
+                Point = CopyPoint(pointAssociation.Point),
                 Status = pointAssociation.Status.ToString(),
                 MatchedOwner = pointAssociation.MatchedOwner,
                 MatchedDrawingObjectId = pointAssociation.MatchedDrawingObjectId,
                 MatchedModelId = pointAssociation.MatchedModelId,
                 MatchedType = pointAssociation.MatchedType,
                 MatchedSourceKind = pointAssociation.MatchedSourceKind,
-                DistanceToGeometry = pointAssociation.DistanceToGeometry
+                DistanceToGeometry = pointAssociation.DistanceToGeometry,
+                NearestGeometryPoint = pointAssociation.NearestGeometryPoint == null
+                    ? null
+                    : CopyPoint(pointAssociation.NearestGeometryPoint),
+                CandidateCount = pointAssociation.CandidateCount,
+                Warning = pointAssociation.Warning
             }).ToList(),
             AssociationWarnings = context.AssociationWarnings.ToList(),
             RelatedSourceCount = context.RelatedSourceCount,
