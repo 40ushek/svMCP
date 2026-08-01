@@ -453,6 +453,103 @@ of the new baseline.
 
 Priority order:
 
+### 0. Capture observations in one call
+
+Agreed 2026-08-01. Comes first because everything else in this phase is easier
+to judge once examples can be collected without friction, and it is small.
+
+Today an example takes three calls stitched together by hand — view context,
+dimension contexts, and drawing identity from a third place. Nothing ties them
+to the same moment, so a drawing edited between two of them yields an
+observation that is silently a mix of two states. At fifty drawings this also
+guarantees examples captured in inconsistent shapes.
+
+Scope, deliberately minimal:
+
+- add **view type** to `DrawingViewContext`. It carries the view id and scale but
+  not whether it is a front view, a top view or a section, and the rules differ:
+  a section is dimensioned unlike a front view;
+- add one command that composes an observation — a header plus the two existing
+  context payloads **passed through unchanged**;
+- header: drawing type, assembly mark and prefix, units, Tekla version, capture
+  time, and a hash of the parts payload.
+
+Explicitly not in scope:
+
+- **no new context type.** Three already exist in the codebase — view, dimensions
+  and marks. A fourth overlapping them would have to be kept in sync with the
+  others, and this module has just spent a session on exactly that kind of
+  divergence. The contexts stay the single source; the observation only binds
+  them and attests the moment;
+- **marks are NOT part of the v1 observation.** It composes exactly two payloads,
+  view and dimensions. Marks have their own context and would widen the contract
+  before the first one is proven against a real drawing. When they are needed
+  they join as a third payload — not as a new schema;
+- no sheet position of the view. It changes with layout while dimensions live in
+  view coordinates, so including it would make two observations of an unchanged
+  drawing differ and complicate comparison. Layout has its own command;
+- no coordinate-space field. All working coordinates are in the view coordinate
+  system by invariant, not by choice, so recording it per payload adds nothing.
+  The obligation it implies is the reverse: anything working in sheet
+  coordinates converts at the boundary and never mixes both into one payload;
+- no writing to disk — that belongs to the case service; no reduced context, no
+  fingerprints.
+
+The shared parts payload must carry a version or content hash, and the
+referencing observation must record it — see `DIMENSION_CONTEXT_SCHEMA.md`.
+Sharing is only sound while the geometry is genuinely identical, and a hash is
+what makes a mismatch detectable rather than invisible.
+
+Done when an observation of a real drawing agrees with the drawing on every
+field, and the existing corpus can be recaptured through it as generation 1. The
+six generation-0 cases stay as they are.
+
+### 0b. Keep the relation graph instead of flattening it
+
+Agreed 2026-08-01, straight after the observation command. More valuable than
+adding further geometric fields: coordinates describe where a dimension is, the
+graph describes what it means.
+
+Target structure:
+
+```text
+drawing
+ └── view
+      └── dimension set
+           ├── segment
+           │    └── related drawing object
+           │         └── model object
+           └── DimensionLink → another set
+```
+
+**Segment membership is already kept**, as `Owner = "segment:N"` on each candidate
+and exposed publicly through `RelatedSources`. What is missing is the **nesting**
+and `DimensionLink`: the candidates are flattened into one list per chain, so
+walking from a segment to its own related objects means filtering that list by an
+owner string rather than following a structure. The data is read; the shape is
+lost.
+
+Also missing, and confirmed present in the installed 2025 assembly:
+
+- `DimensionLink` with `GetDimension1()` / `GetDimension2()`, both returning
+  `StraightDimensionSet` — the link between two chains is readable and is not
+  used anywhere in the project;
+- `GetView()`, `GetDrawing()` and `GetRelatedObjects()` on `DrawingObject`, so
+  they are available on the set and on each segment alike.
+
+Two things deliberately left out:
+
+- **`GetDimensionSet()` on a segment returns a live `DimensionSetBase`**, not an
+  identifier. A live handle must not enter an observation — record the id only.
+  Segment-to-chain membership is known anyway, since the traversal goes from the
+  set downwards;
+- **`GetDrawing()` per object is redundant.** The drawing is one for the whole
+  observation and already sits in the header. Reading it per segment is calls
+  spent on a constant — the same mistake as reading the assembly mark per part.
+
+Done when a saved observation can answer "which model object does this segment
+measure against" without re-reading the drawing.
+
 ### 1. Clarify orchestration naming
 
 Current naming still overstates or obscures the deterministic baseline.

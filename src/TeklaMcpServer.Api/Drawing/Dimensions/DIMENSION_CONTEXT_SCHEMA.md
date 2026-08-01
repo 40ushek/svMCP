@@ -51,6 +51,101 @@ they are not a substitute for the association. A future LLM workflow should
 select source objects and anchors first and let the executor resolve current
 geometry from them.
 
+## Agreed v1 scope
+
+Agreed 2026-08-01. This is the minimum an observation must carry to be usable,
+and the boundary of what is being built now. A separate model, retrieval and
+stable fingerprints are deliberately out of scope until the context itself
+agrees with the drawing.
+
+### Drawing identity
+
+- drawing type — **gates everything else.** The thinning rules apply to assembly
+  drawings only; on a single-part drawing they would remove exactly the
+  dimensions that drawing exists to show, and a GA drawing has a different
+  subject again. An observation without this field cannot be interpreted;
+- assembly mark and prefix (`RE`, `EW`) — read once per drawing, not per part:
+  every part returns the same value and each read costs a `Select()`. This is
+  how a comparable example is retrieved;
+- units and Tekla version — without them an observation stops being readable
+  once either changes.
+
+### View context
+
+- view id, type, scale;
+- view bounds;
+- parts with model ids;
+- part geometry in the view coordinate system;
+- extreme points of each part: top, bottom, left, right;
+- part type, profile, material, **`partPrefix` and `materialType`**.
+
+`partPrefix` and `materialType` are not decoration: candidate filtering runs on
+them — `T` timber is structural, `M` fittings and `R` insulation are not.
+Material as a string is project-specific naming; the prefix and the numeric type
+are not.
+
+Extreme points are the bounding box, and for an inclined part the box is not the
+part: a raked top plate measures 383 mm tall by its box while the member itself
+is 45 mm. Anything reasoning about faces must use the axis or the solid, not the
+extremes.
+
+### Dimension context
+
+- every dimension set and segment, carrying every field of the agreed v1
+  contract. Not everything Tekla holds: the printed run is absent, as are the
+  full dimension attributes;
+- points, direction, lengths, offset;
+- related objects per point;
+- dimension type and role;
+- occupied zones and neighbouring dimensions.
+
+Two fields need naming discipline rather than a single word:
+
+**Lengths.** Three different quantities exist and have already been confused for
+each other. `LengthList` is the cumulative span projected onto the dimension
+axis, index-aligned with the point list. `RealLengthList` is the straight-line
+distance between points. The absolute run actually printed on the sheet is
+**not present in the context at all** — see the known gap in
+`ROADMAP_DIMENSIONS.md`. An observation must not imply it has the printed values.
+
+**Role.** `external` / `internal` / `control` is the intent, but the current
+classifier does not deliver it: everything except the control diagonal comes back
+`External`, so an overall dimension and an internal chain are indistinguishable.
+Until that is fixed the field must be recorded as unreliable, or consumers will
+build on it.
+
+**Occupied zones** stays OPTIONAL until its semantics are pinned down — occupied
+relative to what, and in which space. A required field with an undefined meaning
+gets filled anyway, each producer in its own way, and the disagreement is
+invisible afterwards. Omit it rather than guess.
+
+### Coordinates
+
+- all working coordinates are in the view coordinate system;
+- sheet coordinates are for layout only;
+- one saved observation covers both the view context and the dimensions;
+- a reduced context may be derived for a model, but the raw data is kept.
+
+### Storage note
+
+Part geometry does not change between dimension edits — verified byte-for-byte
+across four states of one view. A before/after pair therefore carries the same
+tens of kilobytes twice. An observation should be allowed to reference a shared
+parts payload rather than embedding its own copy.
+
+A shared payload must carry a **version or content hash**, and the referencing
+observation must record it.
+
+Hash the **stored bytes**, not the object: SHA-256 over the parts payload exactly
+as it is serialized and written. That removes the canonicalization question
+entirely — no property ordering, whitespace or number formatting rule has to be
+agreed, because the artifact being hashed is the one being referenced. A payload
+re-serialized with different settings is a different artifact and correctly gets
+a different hash. Sharing is only sound while the geometry really is
+identical; the model can be edited between two reads, and a reference without a
+hash would then silently pair dimensions with parts they were never read
+against. The hash makes that mismatch detectable instead of invisible.
+
 ## Two persisted payloads
 
 ### Observation
@@ -58,7 +153,10 @@ geometry from them.
 An observation records what was read from Tekla at a particular moment:
 
 - drawing identity, Tekla version, units, and schema version;
-- sheet and view geometry, scale, origin, and view relationships;
+- view geometry, scale and view relationships. **View geometry is in; sheet
+  placement is not** — where a view sits on the sheet changes with layout while
+  dimensions live in view coordinates, so including it would make two
+  observations of an unchanged drawing differ;
 - existing dimension sets and segments;
 - measured points, reference/lead lines, text bounds, and warnings;
 - source objects and per-point associations.
