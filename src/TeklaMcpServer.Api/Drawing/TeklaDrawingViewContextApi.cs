@@ -45,7 +45,7 @@ public sealed class TeklaDrawingViewContextApi
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
-        var context = builder.Build(viewId, viewScale);
+        var context = builder.Build(viewId, viewScale, view.ViewType);
         return DrawingViewContextMapper.ToResult(context);
     }
 }

@@ -241,7 +241,7 @@ public sealed partial class TeklaDrawingMarkApi
         using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
         DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(dimensionContext, view, presentationConnection);
 
-        var context = builder.Build(viewId, viewScale);
+        var context = builder.Build(viewId, viewScale, view.ViewType.ToString());
         context.DimensionTextBoxes.AddRange(dimensionContext.DimensionTextBoxes);
         context.AppliedDimensionTextBoxShorteningMode = dimensionContext.AppliedDimensionTextBoxShorteningMode;
         return context;

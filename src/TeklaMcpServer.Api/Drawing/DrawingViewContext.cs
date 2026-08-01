@@ -5,6 +5,12 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class DrawingViewContext
 {
     public int? ViewId { get; set; }
+
+    /// <summary>
+    /// Front view, top view, section and so on. Carried because the rules differ by view type —
+    /// a section is dimensioned unlike a front view — and id plus scale do not say which it is.
+    /// </summary>
+    public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
     public List<PartGeometryInViewResult> Parts { get; } = [];
     public DrawingBoundsInfo? PartsBounds { get; set; }

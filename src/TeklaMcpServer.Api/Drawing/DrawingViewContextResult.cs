@@ -7,6 +7,7 @@ public sealed class GetDrawingViewContextResult
 {
     public bool Success { get; set; }
     public int ViewId { get; set; }
+    public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
     public DrawingBoundsInfo? PartsBounds { get; set; }
     public List<DrawingPointInfo> PartsHull { get; set; } = new();
@@ -29,6 +30,7 @@ internal static class DrawingViewContextMapper
         {
             Success = true,
             ViewId = context.ViewId ?? 0,
+            ViewType = context.ViewType,
             ViewScale = context.ViewScale,
             PartsBounds = context.PartsBounds == null
                 ? null

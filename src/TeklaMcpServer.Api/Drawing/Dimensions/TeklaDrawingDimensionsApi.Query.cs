@@ -802,11 +802,38 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (viewScales.Count > 1)
             warnings.Add("view_scale_inconsistent");
 
+        var viewType = ResolveContextViewType(
+            items.Where(item => item.ViewId == effectiveViewId).Select(static item => item.ViewType),
+            warnings);
+
         var builder = new DrawingViewContextBuilder(
             new TeklaDrawingPartGeometryApi(_model),
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
-        return builder.Build(effectiveViewId.Value, viewScale);
+        return builder.Build(effectiveViewId.Value, viewScale, viewType);
+    }
+
+    /// <summary>
+    /// View type for a whole context, taken from the items rather than re-read from Tekla — it
+    /// already travels with each of them.
+    ///
+    /// When the items disagree the answer is EMPTY, not the first value. Picking one would let a
+    /// stale item decide the type of the entire context, and consumers branch on this: the rules
+    /// for a section differ from those for a front view. An empty value is honestly unknown, a
+    /// wrong one is acted upon. Either way a warning says which case occurred.
+    /// </summary>
+    internal static string ResolveContextViewType(IEnumerable<string> itemViewTypes, ICollection<string> warnings)
+    {
+        var distinct = itemViewTypes
+            .Where(static type => !string.IsNullOrWhiteSpace(type))
+            .Distinct()
+            .ToList();
+
+        if (distinct.Count == 1)
+            return distinct[0];
+
+        warnings.Add(distinct.Count == 0 ? "view_type_unavailable" : "view_type_inconsistent");
+        return string.Empty;
     }
 
     private static void AttachLayoutPolicyDecisions(

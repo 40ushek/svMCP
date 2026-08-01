@@ -21,11 +21,12 @@ internal sealed class DrawingViewContextBuilder
         _gridApi = gridApi;
     }
 
-    public DrawingViewContext Build(int viewId, double viewScale)
+    public DrawingViewContext Build(int viewId, double viewScale, string viewType)
     {
         var context = new DrawingViewContext
         {
             ViewId = viewId,
+            ViewType = viewType ?? string.Empty,
             ViewScale = viewScale
         };
 

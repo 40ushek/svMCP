@@ -80,9 +80,12 @@ public sealed class DrawingViewContextBuilderTests
                 ]
             }));
 
-        var context = builder.Build(10, 20);
+        var context = builder.Build(10, 20, "FrontView");
 
         Assert.Equal(10, context.ViewId);
+        // Rules differ by view type — a section is dimensioned unlike a front view — and neither
+        // the id nor the scale says which one this is.
+        Assert.Equal("FrontView", context.ViewType);
         Assert.Equal(20, context.ViewScale);
         Assert.Equal([101, 102], context.Parts.ConvertAll(static part => part.ModelId));
         Assert.NotNull(context.PartsBounds);
@@ -123,7 +126,7 @@ public sealed class DrawingViewContextBuilderTests
                 Error = "grid_missing"
             }));
 
-        var context = builder.Build(10, 15);
+        var context = builder.Build(10, 15, "FrontView");
 
         Assert.Single(context.Parts);
         Assert.Empty(context.Bolts);
@@ -149,7 +152,7 @@ public sealed class DrawingViewContextBuilderTests
                 ]
             }));
 
-        var context = builder.Build(10, 1);
+        var context = builder.Build(10, 1, "FrontView");
 
         Assert.Equal(["1", "A"], context.GridIds);
         Assert.False(context.IsEmpty);
@@ -206,4 +209,5 @@ public sealed class DrawingViewContextBuilderTests
     {
         public GetGridAxesResult GetGridAxes(int viewId) => result;
     }
+
 }
