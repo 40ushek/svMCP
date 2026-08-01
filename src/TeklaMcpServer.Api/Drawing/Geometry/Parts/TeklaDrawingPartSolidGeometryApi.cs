@@ -61,6 +61,8 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
                 Success = true,
                 ViewId = viewId,
                 ModelId = modelId,
+                StartPoint = part is Beam beam ? ToArray(beam.StartPoint) : [],
+                EndPoint = part is Beam endPointBeam ? ToArray(endPointBeam.EndPoint) : [],
                 Solid = BuildSolidGeometry(solid)
             };
         }

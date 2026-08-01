@@ -367,6 +367,39 @@ Done when:
 - derived points are computed from already extracted geometry
 - downstream consumers no longer need ad hoc hull/extreme calculations
 
+#### Candidate anchors for dimensions (2a)
+
+The bridge-only command `get_part_candidate_points_in_view <viewId> <modelId>`
+builds a separate candidate layer from the one strict topology read. It does not
+create or choose dimensions.
+
+- every non-degenerate face edge yields a midpoint candidate. Its anchor includes
+  face, loop and the two canonical vertex indexes, so it identifies the actual
+  point rather than only the face. A polygon centroid is intentionally not used:
+  it can land in a hole or a concavity and would not prove that the point is on
+  the part;
+- solid vertices and axis ends are separate alternatives, with their own anchors;
+- `inPlaneNormal` is the normalized XY projection of a face normal. It is null
+  for front/back faces and for sources with no normal, so a placement rule cannot
+  mistake an out-of-plane normal for a left/right side;
+- hull and bbox candidates remain explicitly lower-confidence. The placement
+  builder must gate them by source rather than by a duplicated boolean;
+- every candidate carries `modelObjectId + anchor kind + anchor id` and a
+  structured reason. Face and vertex index reproducibility must still be checked
+  against two reads of the same unchanged drawing before using the strong
+  comparison form in a placement plan. Malformed DTOs with duplicate vertex
+  indexes omit ambiguous vertex/face-edge candidates rather than throwing.
+
+Live validation 2026-08-01 confirmed three identical reads of a stud and two of
+a raked member, including a read after other bridge commands. Face-edge and
+vertex indexes remained stable both within one view and across a top-view read:
+their keys identify model topology, not its projection. Hull-vertex keys are
+different by design across views because their ids contain view-local XY
+coordinates; a cross-view consumer must not report that as an anchor mismatch.
+
+The validation covered simple eight-vertex solids only. Cut-outs, holes,
+post-restart reads and reads after an edited model remain unverified.
+
 ### Phase 5: Outline And Contour Geometry
 
 Status: deferred for now.

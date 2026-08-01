@@ -19,6 +19,9 @@ internal sealed partial class DrawingCommandHandler
         TeklaDrawingPartSolidGeometryApi? partSolidGeometryApi = null;
         TeklaDrawingPartSolidGeometryApi GetPartSolidGeometryApi() =>
             partSolidGeometryApi ??= new TeklaDrawingPartSolidGeometryApi(_model);
+        TeklaDrawingPartCandidatePointApi? partCandidatePointApi = null;
+        TeklaDrawingPartCandidatePointApi GetPartCandidatePointApi() =>
+            partCandidatePointApi ??= new TeklaDrawingPartCandidatePointApi(_model);
         TeklaDrawingPartPointApi? partPointApi = null;
         TeklaDrawingPartPointApi GetPartPointApi() => partPointApi ??= new TeklaDrawingPartPointApi(_model, GetPartGeometryApi());
         TeklaDrawingGridApi? gridApi = null;
@@ -42,6 +45,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_part_solid_geometry_in_view":
                 return HandleGetPartSolidGeometryInView(GetPartSolidGeometryApi(), args);
+
+            case "get_part_candidate_points_in_view":
+                return HandleGetPartCandidatePointsInView(GetPartCandidatePointApi(), args);
 
             case "get_part_points_in_view":
                 return HandleGetPartPointsInView(GetPartPointApi(), args);
@@ -129,6 +135,20 @@ internal sealed partial class DrawingCommandHandler
         }
 
         WritePartSolidGeometryInViewResult(api.GetPartSolidGeometryInView(viewId, modelId));
+        return true;
+    }
+
+    private bool HandleGetPartCandidatePointsInView(TeklaDrawingPartCandidatePointApi api, string[] args)
+    {
+        if (args.Length < 3
+            || !int.TryParse(args[1], out var viewId)
+            || !int.TryParse(args[2], out var modelId))
+        {
+            WriteError("get_part_candidate_points_in_view requires viewId and modelId arguments");
+            return true;
+        }
+
+        WritePartCandidatePointsInViewResult(api.GetPartCandidatePointsInView(viewId, modelId));
         return true;
     }
 
@@ -672,6 +692,8 @@ internal sealed partial class DrawingCommandHandler
             success = result.Success,
             viewId = result.ViewId,
             modelId = result.ModelId,
+            startPoint = result.StartPoint,
+            endPoint = result.EndPoint,
             solid = new
             {
                 bboxMin = solid.BboxMin,
@@ -694,6 +716,40 @@ internal sealed partial class DrawingCommandHandler
                 viewHull = solid.ViewHull,
                 solidGeometryComplete = solid.SolidGeometryComplete
             },
+            error = result.Error
+        });
+    }
+
+    private void WritePartCandidatePointsInViewResult(GetPartCandidatePointsResult result)
+    {
+        WriteJson(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            modelId = result.ModelId,
+            solidGeometryComplete = result.SolidGeometryComplete,
+            candidates = result.Candidates.Select(candidate => new
+            {
+                modelObjectId = candidate.ModelObjectId,
+                point = candidate.Point,
+                source = candidate.Source.ToString(),
+                normal = candidate.Normal,
+                inPlaneNormal = candidate.InPlaneNormal,
+                confidence = candidate.Confidence.ToString(),
+                anchor = new
+                {
+                    modelObjectId = candidate.Anchor.ModelObjectId,
+                    kind = candidate.Anchor.Kind.ToString(),
+                    id = candidate.Anchor.Id,
+                    key = candidate.Anchor.Key
+                },
+                reason = new
+                {
+                    code = candidate.Reason.Code,
+                    modelObjectIds = candidate.Reason.ModelObjectIds,
+                    values = candidate.Reason.Values
+                }
+            }),
             error = result.Error
         });
     }

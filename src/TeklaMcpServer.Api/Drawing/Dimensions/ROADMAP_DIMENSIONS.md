@@ -730,6 +730,22 @@ Done when every candidate states where it came from and how far it can be
 trusted, and a box-derived fallback is distinguishable from a face-derived point
 without re-reading the model.
 
+Implementation 2026-08-01: `get_part_candidate_points_in_view` now exposes the
+read-only candidate list through the bridge. Every non-degenerate face edge
+contributes its midpoint, with a key containing face, loop and vertex indexes;
+a face centroid is not used because it may fall into a hole or concavity. Live
+validation remains: read the same unchanged part twice and compare every emitted
+face-edge and vertex anchor key.
+
+Live validation 2026-08-01 confirmed stable face-edge and vertex keys across
+repeated reads and across two drawing views. Hull keys are intentionally
+view-local and must not be compared across views. The observed 42 candidates for
+one part occupied only 10–12 distinct XY positions: `2b` must first collapse
+candidates by position, record the members of every cluster, and only then rank
+the alternatives. Otherwise the same projected point competes with itself and a
+tie is resolved by incidental traversal order. This validation covers simple
+solids; holes, cut-outs, post-restart reads and model edits remain open cases.
+
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
 
 Agreed 2026-08-01. The first component that decides where dimensions *should*
