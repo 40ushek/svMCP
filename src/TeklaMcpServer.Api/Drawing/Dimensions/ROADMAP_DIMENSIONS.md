@@ -514,6 +514,10 @@ Agreed 2026-08-01, straight after the observation command. More valuable than
 adding further geometric fields: coordinates describe where a dimension is, the
 graph describes what it means.
 
+Implemented 2026-08-01: `get_dimension_contexts` and the observation payload now
+retain per-segment related sources and expose readable `DimensionLink` endpoint
+IDs. The legacy flat `RelatedSources` list remains for compatibility.
+
 Target structure:
 
 ```text
@@ -536,8 +540,18 @@ lost.
 Also missing, and confirmed present in the installed 2025 assembly:
 
 - `DimensionLink` with `GetDimension1()` / `GetDimension2()`, both returning
-  `StraightDimensionSet` — the link between two chains is readable and is not
-  used anywhere in the project;
+  `StraightDimensionSet` — readable, and not used anywhere in the project.
+
+  It is specifically a link between two **perpendicular** dimension lines, joined
+  so the lines meet and the sheet reads more cleanly — typical on embeds in a cast
+  unit, floor beams on a plan, or anchor bolts. It is created **by hand** in the
+  drawing (select both with Ctrl, then Link dimensions), never by automatic
+  dimensioning.
+
+  That is why every drawing looked at so far reports `dimensionLinks: 0`, and why
+  the read path is still unverified: there is nothing to read until someone links
+  two lines. Not worth manufacturing an example for — it will appear on a drawing
+  that actually uses them;
 - `GetView()`, `GetDrawing()` and `GetRelatedObjects()` on `DrawingObject`, so
   they are available on the set and on each segment alike.
 

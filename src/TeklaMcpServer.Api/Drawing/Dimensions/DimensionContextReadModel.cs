@@ -22,6 +22,19 @@ public sealed class DimensionContextRelatedSourceInfo
     public DrawingBoundsInfo? GeometryBounds { get; set; }
 }
 
+public sealed class DimensionContextSegmentInfo
+{
+    public int SegmentId { get; set; }
+    public DimensionSegmentInfo Geometry { get; set; } = new();
+    public List<DimensionContextRelatedSourceInfo> RelatedSources { get; set; } = new();
+}
+
+public sealed class DimensionLinkInfo
+{
+    public int Dimension1Id { get; set; }
+    public int Dimension2Id { get; set; }
+}
+
 public sealed class DimensionContextPointAssociationInfo
 {
     public DrawingPointInfo Point { get; set; } = new();
@@ -41,6 +54,7 @@ public sealed class DimensionContextInfo
 {
     public int DimensionId { get; set; }
     public List<int> SegmentIds { get; set; } = new();
+    public List<DimensionContextSegmentInfo> SegmentContexts { get; set; } = new();
     public int? ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
@@ -90,6 +104,7 @@ public sealed class GetDimensionContextsResult
     public int Total { get; set; }
     public List<string> Warnings { get; set; } = new();
     public List<DimensionContextInfo> Dimensions { get; set; } = new();
+    public List<DimensionLinkInfo> DimensionLinks { get; set; } = new();
 }
 
 internal static class DimensionContextReadModelMapper
@@ -114,6 +129,15 @@ internal static class DimensionContextReadModelMapper
         {
             DimensionId = context.DimensionId,
             SegmentIds = context.Item.SegmentIds.ToList(),
+            SegmentContexts = context.Item.Segments.Select(segment => new DimensionContextSegmentInfo
+            {
+                SegmentId = segment.Id,
+                Geometry = CopySegment(segment),
+                RelatedSources = context.RelatedSources
+                    .Where(relatedSource => IsSegmentOwner(relatedSource.Owner, segment.Id))
+                    .Select(CopyRelatedSource)
+                    .ToList()
+            }).ToList(),
             ViewId = context.ViewId,
             ViewType = context.ViewType,
             ViewScale = context.ViewScale,
@@ -155,16 +179,7 @@ internal static class DimensionContextReadModelMapper
             AnnotationGeometryWarnings = context.AnnotationGeometryWarnings.ToList(),
             MeasuredPoints = context.MeasuredPoints.Select(CopyPoint).ToList(),
             AssociationSource = DimensionAssociationSourceFormatter.ToContractValue(context.Association.AssociationSource),
-            RelatedSources = context.RelatedSources.Select(relatedSource => new DimensionContextRelatedSourceInfo
-            {
-                Owner = relatedSource.Owner,
-                DrawingObjectId = relatedSource.DrawingObjectId,
-                ModelId = relatedSource.ModelId,
-                Type = relatedSource.Type,
-                SourceKind = relatedSource.SourceKind,
-                HasGeometry = relatedSource.HasGeometry,
-                GeometryBounds = CopyBounds(relatedSource.GeometryBounds)
-            }).ToList(),
+            RelatedSources = context.RelatedSources.Select(CopyRelatedSource).ToList(),
             PointAssociations = context.PointAssociations.Select(pointAssociation => new DimensionContextPointAssociationInfo
             {
                 Point = CopyPoint(pointAssociation.Point),
@@ -189,6 +204,38 @@ internal static class DimensionContextReadModelMapper
             AssociationNoCandidatesCount = context.AssociationNoCandidatesCount
         };
     }
+
+    private static bool IsSegmentOwner(string owner, int segmentId) =>
+        string.Equals(owner, $"segment:{segmentId}", System.StringComparison.Ordinal);
+
+    private static DimensionContextRelatedSourceInfo CopyRelatedSource(DimensionContextRelatedSource source) => new()
+    {
+        Owner = source.Owner,
+        DrawingObjectId = source.DrawingObjectId,
+        ModelId = source.ModelId,
+        Type = source.Type,
+        SourceKind = source.SourceKind,
+        HasGeometry = source.HasGeometry,
+        GeometryBounds = CopyBounds(source.GeometryBounds)
+    };
+
+    private static DimensionSegmentInfo CopySegment(DimensionSegmentInfo segment) => new()
+    {
+        Id = segment.Id,
+        StartX = segment.StartX,
+        StartY = segment.StartY,
+        EndX = segment.EndX,
+        EndY = segment.EndY,
+        Distance = segment.Distance,
+        DirectionX = segment.DirectionX,
+        DirectionY = segment.DirectionY,
+        TopDirection = segment.TopDirection,
+        Bounds = CopyBounds(segment.Bounds),
+        TextBounds = CopyBounds(segment.TextBounds),
+        DimensionLine = CopyLine(segment.DimensionLine),
+        LeadLineMain = CopyLine(segment.LeadLineMain),
+        LeadLineSecond = CopyLine(segment.LeadLineSecond)
+    };
 
     private static DrawingPointInfo CopyPoint(DrawingPointInfo point) => new()
     {

@@ -100,7 +100,67 @@ public sealed partial class TeklaDrawingDimensionsApi
             snapshots.ToDictionary(static snapshot => snapshot.Id),
             associationResolver);
         var contexts = BuildDimensionContexts(items, liveAssociations, out var warnings);
-        return DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+        var result = DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+        result.DimensionLinks.AddRange(ReadDimensionLinks(
+            result.Dimensions.Select(static dimension => dimension.DimensionId).ToHashSet(),
+            result.Warnings));
+        return result;
+    }
+
+    private static List<DimensionLinkInfo> ReadDimensionLinks(
+        IReadOnlyCollection<int> dimensionIds,
+        ICollection<string> warnings)
+    {
+        var result = new List<DimensionLinkInfo>();
+        if (dimensionIds.Count == 0)
+            return result;
+
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            return result;
+
+        var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = false;
+        try
+        {
+            var links = activeDrawing.GetSheet().GetAllObjects(typeof(DimensionLink));
+            var seen = new HashSet<(int Dimension1Id, int Dimension2Id)>();
+            while (links.MoveNext())
+            {
+                if (links.Current is not DimensionLink link)
+                    continue;
+
+                var dimension1 = link.GetDimension1();
+                var dimension2 = link.GetDimension2();
+                var dimension1Id = dimension1?.GetIdentifier().ID ?? 0;
+                var dimension2Id = dimension2?.GetIdentifier().ID ?? 0;
+                if (dimension1Id <= 0 || dimension2Id <= 0)
+                    continue;
+
+                if (!dimensionIds.Contains(dimension1Id) && !dimensionIds.Contains(dimension2Id))
+                    continue;
+
+                if (seen.Add((dimension1Id, dimension2Id)))
+                {
+                    result.Add(new DimensionLinkInfo
+                    {
+                        Dimension1Id = dimension1Id,
+                        Dimension2Id = dimension2Id
+                    });
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            warnings.Add($"dimension_links_unavailable:{ex.GetType().Name}:{ex.Message}");
+            return result;
+        }
+        finally
+        {
+            DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
+        }
     }
 
     private Dictionary<int, DimensionSourceAssociationResult> ReadLiveDimensionAssociations(
