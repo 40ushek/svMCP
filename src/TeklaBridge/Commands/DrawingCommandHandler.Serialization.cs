@@ -1,6 +1,8 @@
 using System;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TeklaMcpServer.Api.Drawing;
 
 namespace TeklaBridge.Commands;
 
@@ -8,6 +10,12 @@ internal sealed partial class DrawingCommandHandler
 {
     private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
     {
+        Converters = { new CompactDoubleConverter() }
+    };
+
+    private static readonly JsonSerializerOptions _observationJsonOptions = new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new CompactDoubleConverter() }
     };
 
@@ -19,6 +27,18 @@ internal sealed partial class DrawingCommandHandler
     private void WriteJson<T>(T payload)
     {
         _output.WriteLine(JsonSerializer.Serialize(payload, _jsonOptions));
+    }
+
+    private void WriteDimensionObservationJson(DimensionObservationResult payload)
+    {
+        var partsBytes = JsonSerializer.SerializeToUtf8Bytes(payload.ViewContext.Parts, _observationJsonOptions);
+        using var sha256 = SHA256.Create();
+        var hash = BitConverter.ToString(sha256.ComputeHash(partsBytes))
+            .Replace("-", string.Empty)
+            .ToLowerInvariant();
+        payload.Header.PartsPayloadHash = $"sha256:{hash}";
+        payload.Header.PartsPayloadEncoding = "json-utf8";
+        _output.WriteLine(JsonSerializer.Serialize(payload, _observationJsonOptions));
     }
 
     private void WriteRawJson(string json)

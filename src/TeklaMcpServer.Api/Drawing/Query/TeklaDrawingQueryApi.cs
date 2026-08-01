@@ -20,6 +20,13 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
 
     internal static void InvalidateDrawingCache() => _drawingsByGuid = null;
 
+    /// <summary>Returns metadata for the currently active drawing without changing it.</summary>
+    public DrawingInfo? GetActiveDrawingInfo()
+    {
+        var drawing = new DrawingHandler().GetActiveDrawing();
+        return drawing == null ? null : ToDrawingInfo(drawing);
+    }
+
     private static Dictionary<Guid, Tekla.Structures.Drawing.Drawing> GetDrawingsByGuid(DrawingHandler drawingHandler)
     {
         if (_drawingsByGuid != null)

@@ -466,6 +466,10 @@ guarantees examples captured in inconsistent shapes.
 
 Scope, deliberately minimal:
 
+Implemented 2026-08-01 as `capture_dimension_observation` / `CaptureDimensionObservation`:
+the command is read-only, returns the header plus the unchanged view and dimension
+payloads, and does not persist files.
+
 - add **view type** to `DrawingViewContext`. It carries the view id and scale but
   not whether it is a front view, a top view or a section, and the rules differ:
   a section is dimensioned unlike a front view;

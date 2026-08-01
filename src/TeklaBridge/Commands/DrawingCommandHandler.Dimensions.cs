@@ -10,6 +10,7 @@ internal sealed partial class DrawingCommandHandler
     private bool TryHandleDimensionCommands(string command, string[] args)
     {
         var api = new TeklaDrawingDimensionsApi();
+        var observationApi = new TeklaDrawingDimensionObservationApi(_model);
 
         switch (command)
         {
@@ -18,6 +19,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_dimension_contexts":
                 return HandleGetDimensionContexts(api, args);
+
+            case "capture_dimension_observation":
+                return HandleCaptureDimensionObservation(observationApi, args);
 
             case "draw_dimension_text_boxes":
                 return HandleDrawDimensionTextBoxes(api, args);
@@ -103,6 +107,19 @@ internal sealed partial class DrawingCommandHandler
 
         var result = api.GetDimensionContexts(parseResult.Request.ViewId);
         WriteJson(result);
+        return true;
+    }
+
+    private bool HandleCaptureDimensionObservation(TeklaDrawingDimensionObservationApi api, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var viewId))
+        {
+            WriteError("capture_dimension_observation requires viewId argument");
+            return true;
+        }
+
+        var result = api.Capture(viewId);
+        WriteDimensionObservationJson(result);
         return true;
     }
 

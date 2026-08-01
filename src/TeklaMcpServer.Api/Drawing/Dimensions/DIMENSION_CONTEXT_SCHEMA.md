@@ -136,6 +136,12 @@ parts payload rather than embedding its own copy.
 A shared payload must carry a **version or content hash**, and the referencing
 observation must record it.
 
+Compare observations by `viewContext`, `dimensionContext` and `partsPayloadHash`
+— **not by the whole header.** The drawing identity carries issue status and
+dates (`isIssuedButModified`, `modificationDate`, `issuingDate`) that change from
+handling the drawing at all, so two observations of untouched dimensions still
+differ in the header. Diffing it whole reports noise as change.
+
 Hash the **stored bytes**, not the object: SHA-256 over the parts payload exactly
 as it is serialized and written. That removes the canonicalization question
 entirely — no property ordering, whitespace or number formatting rule has to be

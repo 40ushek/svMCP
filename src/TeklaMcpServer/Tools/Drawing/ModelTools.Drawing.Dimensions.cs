@@ -8,6 +8,28 @@ namespace TeklaMcpServer.Tools;
 public static partial class ModelTools
 {
     [McpServerTool, Description(
+        "Capture one read-only dimension observation for a drawing view. " +
+        "Combines drawing identity, view context and dimension contexts in one payload; " +
+        "all geometry is in the view coordinate system. Does not modify the drawing or write files.")]
+    public static string CaptureDimensionObservation(
+        [Description("View ID to capture (from get_drawing_views)." )] int viewId)
+    {
+        var json = RunBridge("capture_dimension_observation", viewId.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
         "Get dimension contexts for one drawing view. " +
         "Returns reduced dimension-item contexts with geometry, role classification, source associations and annotation geometry. " +
         "Use together with get_drawing_view_context for external reasoning about dimensions.")]
