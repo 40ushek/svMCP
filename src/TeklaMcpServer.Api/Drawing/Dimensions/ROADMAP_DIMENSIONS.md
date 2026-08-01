@@ -746,6 +746,95 @@ the alternatives. Otherwise the same projected point competes with itself and a
 tie is resolved by incidental traversal order. This validation covers simple
 solids; holes, cut-outs, post-restart reads and model edits remain open cases.
 
+### 2a.1. Coverage of a corrected chain — done
+
+Agreed and run 2026-08-01. Before writing the planner, check whether the candidate
+layer already contains the points a person actually used, and **save the answer**.
+An acceptance criterion that lives in someone's head is not one.
+
+`get_dimension_chain_coverage <viewId> <dimensionId> [toleranceMm]` joins one chain
+to the candidates of every part in its view, point by point. It records the
+dimension and segment ids, the coordinate, the associated model id, every anchor
+key within tolerance, the distance, and a status.
+
+It **never picks a winner** among several matches. Which of them a plan should
+prefer is the rule `2b` has to derive, and pre-selecting here would destroy the
+evidence for it.
+
+Two radii, deliberately not one:
+
+- the **search tolerance** says how far from the dimension point to look;
+- **position coincidence** is a separate, tight epsilon. A face edge shared by two
+  faces yields the identical midpoint and a hull vertex is built from a solid
+  vertex, so genuine coincidence is exact. Using the search radius for both would
+  report a real choice between two places as settled.
+
+`matched` therefore means one *place*, which normally carries three to six anchor
+keys; `ambiguous` is reserved for matches at genuinely different places.
+
+#### First run: `IW.1 - 1`, view 1214 — a tool test, not a reference
+
+This drawing was the one open at the time. It has no recorded human pass, no
+before/after pair, and it is an interior wall, while every corpus drawing with a
+human pass is a roof panel. Treat the run as evidence that the command works, not
+as evidence about correct dimensioning.
+
+All eight chains in the view, 27 points: every one `matched`, on the part the
+dimension was already associated with, none missing, none ambiguous. Twenty-five
+matched a face edge, a solid vertex and a hull vertex at the same place within
+0.05 mm — so the candidate layer does contain the points these chains use.
+
+**Three of the 27 points are claimed by two parts each**, all of them junctions:
+a stud standing on the plate below it, and a raked plate resting on a stud. The
+status stays `matched` — one position, not a choice of positions — but eleven or
+twelve keys arrive from two parts. `2b` needs a rule for this: "the point sits on
+the part being located" does not say which of two parts meeting at one place is
+the one being located, and on a wall almost every level is such a junction.
+
+**Two points reach only a bounding-box corner, and they turned out to be a drawing
+error.** Chains 1622 and 1686 both anchor at `(1833.5, 1691.1)`, where the sole
+candidate is the box corner of the raked top plate. That corner is not on the
+plate: its real vertices at that end are at y=1284.6 and y=1223.1, and it reaches
+y=1691.1 only at the opposite end — where a genuine vertex exists. The dimension
+was set against an imagined assembly box; the fix is to extend the point to the
+part or drop it.
+
+So this is **not** a missing source in `2a` — the anchor exists on the same part.
+`fallbackOnly` now marks the condition: matched, but only by a hull vertex or a
+box corner.
+
+The flag **requires adjudication and is not proof of an error**. Two different
+situations raise it. The point may genuinely sit in empty space, as here. Or the
+part's solid could not be traversed — and then the candidate layer offers nothing
+but the axis and the box, so a perfectly good point simply has no better evidence
+available. Check `SolidGeometryComplete` for the parts involved before reading the
+flag as a defect.
+
+#### Consequence: which chains may serve as reference, and only after screening
+
+Two separate points, and the first was got wrong on the first attempt.
+
+**Not every captured drawing is reference material.** Of the six in the corpus,
+three carry a recorded human pass: `RE.6` (four hand-edited states, `after` being
+the corrected one), `RE.1` (`auto` from Tekla beside a `manual` correction) and
+`RE.2` (machine cleanup by the derived rules, confirmed by a person). The other
+three are single as-found snapshots and claim nothing. A drawing that merely
+happens to be open is not a reference, however convenient.
+
+**Even a corrected chain must be screened.** A human pass reduces mistakes; it
+does not certify their absence. Grading a planner on reproducing a chain point
+for point would grade it on reproducing whatever survived. Any point that is
+`missing`, `ambiguous`, or `fallbackOnly` is a candidate defect and has to be
+adjudicated — extended to the real anchor, deleted, or confirmed as intended.
+Unclear cases are discussed, not decided by the tool.
+
+Coverage screens **anchoring, not selection**. A chain carrying a redundant point
+— two parts sharing one grid position, the 15–60 mm junk segment this whole line
+of work started from — passes cleanly, since every point does sit on its own
+part. That class needs its own check before a chain is called screened.
+
+Fixture: `cases/dimension_cases/assembly/d2742f2f-…/coverage/` (gitignored).
+
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
 
 Agreed 2026-08-01. The first component that decides where dimensions *should*
@@ -883,9 +972,16 @@ context, point order normalizes on read, and text bounds are empty — so the
 result cannot be read back and compared with the decision.
 
 The first version must therefore **reproduce a chain a person already corrected
-by hand** in the captured corpus. The answer is known and the drawings are
-already collected. A builder that cannot reproduce a known-good chain has nothing
-to be judged against on a new view.
+by hand** in the captured corpus. The drawings are already collected.
+
+But the answer is known only after screening. A corrected chain is not
+unconditional ground truth — `2a.1` found a point anchored to an imagined
+assembly box on the first drawing it was run against, reused by two chains. Run
+coverage over the reference chain first and adjudicate every `missing`,
+`ambiguous` or `fallbackOnly` point; only the screened chain is the target.
+
+A builder that cannot reproduce a screened chain has nothing to be judged against
+on a new view.
 
 "Point for point" needs a definition, or the comparison is either vacuous or
 impossible — exact coordinate equality will never hold. A planned point matches a

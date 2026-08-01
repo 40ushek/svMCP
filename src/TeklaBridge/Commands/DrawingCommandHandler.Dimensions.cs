@@ -49,6 +49,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_dimension_ai_orchestration_plan":
                 return HandleGetDimensionActionPlan(api, args);
 
+            case "get_dimension_chain_coverage":
+                return HandleGetDimensionChainCoverage(args);
+
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
 
@@ -441,6 +444,62 @@ internal sealed partial class DrawingCommandHandler
             viewId = resultType.GetProperty("ViewId")?.GetValue(result),
             packetCount = packets.Cast<object>().Count(),
             packets = SerializeOrchestrationPackets(packets)
+        });
+        return true;
+    }
+
+    private bool HandleGetDimensionChainCoverage(string[] args)
+    {
+        if (args.Length < 3
+            || !int.TryParse(args[1], out var viewId)
+            || !int.TryParse(args[2], out var dimensionId))
+        {
+            WriteError("get_dimension_chain_coverage requires viewId and dimensionId arguments");
+            return true;
+        }
+
+        var tolerance = TeklaDimensionChainCoverageApi.DefaultToleranceMm;
+        if (args.Length > 3
+            && !double.TryParse(args[3], NumberStyles.Float, CultureInfo.InvariantCulture, out tolerance))
+        {
+            WriteError("get_dimension_chain_coverage tolerance must be a number in view units");
+            return true;
+        }
+
+        var result = new TeklaDimensionChainCoverageApi(_model).GetDimensionChainCoverage(viewId, dimensionId, tolerance);
+        WriteJson(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            dimensionId = result.DimensionId,
+            tolerance = result.Tolerance,
+            searchedModelIds = result.SearchedModelIds,
+            warnings = result.Warnings,
+            points = result.Points.Select(point => new
+            {
+                dimensionId = point.DimensionId,
+                segmentIds = point.SegmentIds,
+                pointOrder = point.PointOrder,
+                point = point.Point,
+                associatedModelId = point.AssociatedModelId,
+                associationStatus = point.AssociationStatus,
+                stage = point.Stage.ToString(),
+                status = point.Status.ToString(),
+                fallbackOnly = point.FallbackOnly,
+                bestConfidence = point.BestConfidence,
+                matchCount = point.Matches.Count,
+                matches = point.Matches.Select(match => new
+                {
+                    modelObjectId = match.ModelObjectId,
+                    anchorKey = match.AnchorKey,
+                    source = match.Source,
+                    confidence = match.Confidence,
+                    point = match.Point,
+                    inPlaneNormal = match.InPlaneNormal,
+                    distance = match.Distance
+                })
+            }),
+            error = result.Error
         });
         return true;
     }
