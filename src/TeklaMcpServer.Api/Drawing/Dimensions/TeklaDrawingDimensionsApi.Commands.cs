@@ -164,13 +164,20 @@ public sealed partial class TeklaDrawingDimensionsApi
     /// so the sheet is not rebuilt. This is the cheap, safe way to extend a chain.
     ///
     /// Mechanics: Tekla has no "add point" call, so a throwaway set is built from the supplied
-    /// points and handed to <c>DimensionSetBase.AddToDimensionSet</c>.
+    /// points and handed to <c>DimensionSetBase.AddToDimensionSet</c>, which is documented as
+    /// "adds a dimension set to the current dimension set" — it takes a whole set, never a single
+    /// point, and does not expose the point list.
     ///
-    /// KNOWN NOT TO WORK on TS2025: that call returns true but does not merge the points — the
-    /// target keeps its original count and the throwaway set survives as a separate dimension on
-    /// the sheet. The method detects this, removes the throwaway set and reports an error rather
-    /// than a false success, so the drawing is left unchanged. Kept in the tree while the correct
-    /// use of AddToDimensionSet is being researched; until then adding a point requires
+    /// KNOWN NOT TO WORK on TS2025.0. The call is accepted (returns true) but the target keeps
+    /// its original point count. Verified with the sequence recommended on the Tekla forum thread
+    /// "Add dimension points by API" — Select() on the target, then AddToDimensionSet, then
+    /// Modify(), then CommitChanges — and the count still does not change. Looks like a 2025.0
+    /// limitation or regression rather than misuse.
+    ///
+    /// Note the return value only means the call was accepted; it promises neither a changed
+    /// point count nor deletion of the source set. So success is judged by re-reading the target's
+    /// point count, and the throwaway set is removed either way. On failure nothing is left behind
+    /// and the drawing is unchanged. Until this is resolved, adding a point requires
     /// <see cref="RecreateDimension"/>.
     ///
     /// Because a dimension set cannot exist with fewer than two points, at least two points
@@ -216,6 +223,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                     Error = $"DimensionSet {dimensionId} has no owning view"
                 };
 
+            var pointCountBefore = CountPoints(target);
+
             var pointList = ToPointList(points);
             var addition = new StraightDimensionSetHandler().CreateDimensionSet(
                 view, pointList, DimensionCreatePlacementHelper.ResolveDirection(direction),
@@ -228,10 +237,15 @@ public sealed partial class TeklaDrawingDimensionsApi
                     Error = "CreateDimensionSet returned null while building the points to merge"
                 };
 
-            bool merged;
+            bool accepted;
             try
             {
-                merged = target.AddToDimensionSet(addition);
+                // Select() then Modify() around the merge, per the Tekla forum thread
+                // "Add dimension points by API": the target has to be the selected object for the
+                // change to be applied to it, and Modify() is what writes it back.
+                target.Select();
+                accepted = target.AddToDimensionSet(addition);
+                target.Modify();
             }
             catch
             {
@@ -239,40 +253,29 @@ public sealed partial class TeklaDrawingDimensionsApi
                 throw;
             }
 
-            if (!merged)
-            {
-                // The throwaway set is a real object on the sheet. If the merge did not consume it,
-                // leaving it behind adds a stray dimension the caller never asked for.
-                DiscardAddition(activeDrawing, addition);
-                return new AddDimensionPointsResult
-                {
-                    DimensionId = dimensionId,
-                    AddedPointCount = pointList.Count,
-                    Error = "AddToDimensionSet returned false; the temporary set was removed"
-                };
-            }
-
             activeDrawing.CommitChanges("(MCP) AddDimensionPoints");
 
-            var after = FindDimensionSet(activeDrawing, dimensionId);
-            var pointCountAfter = after == null ? 0 : CountPoints(after);
+            // The source set is a throwaway either way: AddToDimensionSet is documented as adding
+            // a dimension SET to the current one and makes no promise to delete the source, so its
+            // survival proves nothing. Remove it and judge the outcome by the target instead.
+            DiscardAddition(activeDrawing, addition);
 
-            // Measured on TS2025: AddToDimensionSet reports success but does NOT merge the points —
-            // the target keeps its count and the throwaway set survives as a separate dimension.
-            // Detect that instead of reporting a success that did not happen.
-            var strayAddition = FindDimensionSet(activeDrawing, addition.GetIdentifier().ID);
-            if (strayAddition != null)
-            {
-                DiscardAddition(activeDrawing, strayAddition);
+            var after = FindDimensionSet(activeDrawing, dimensionId);
+            var pointCountAfter = after == null ? pointCountBefore : CountPoints(after);
+
+            // The return value only means the call was accepted, not that points were merged, so
+            // the point count is the only honest evidence.
+            if (pointCountAfter <= pointCountBefore)
                 return new AddDimensionPointsResult
                 {
                     DimensionId = dimensionId,
                     AddedPointCount = pointList.Count,
                     PointCountAfter = pointCountAfter,
-                    Error = "AddToDimensionSet reported success but did not merge the points; " +
-                            "the temporary set was removed and the target is unchanged"
+                    Error = accepted
+                        ? $"AddToDimensionSet was accepted but the target still has {pointCountAfter} points; " +
+                          "the temporary set was removed and the drawing is unchanged"
+                        : "AddToDimensionSet returned false; the temporary set was removed"
                 };
-            }
 
             return new AddDimensionPointsResult
             {
@@ -307,6 +310,16 @@ public sealed partial class TeklaDrawingDimensionsApi
     /// old and the new set. Tekla offers no transaction around this, so the caller should
     /// re-read the view after an error and remove whichever set is left over.
     /// </summary>
+    /// <param name="direction">
+    /// Sets the axis AND the side the dimension line sits on: <c>(0,1,0)</c> / <c>(0,-1,0)</c> for a
+    /// horizontal dimension, <c>(1,0,0)</c> / <c>(-1,0,0)</c> for a vertical one.
+    ///
+    /// It does NOT set the reading order. Tekla normalizes the point list by view coordinates, so
+    /// a chain can end up running top-to-bottom or right-to-left no matter how the points were
+    /// ordered in the call — reversing the input has no effect. To force an order, create the
+    /// dimensions pairwise (points[i] to points[i+1]) or sort the points along the dimension axis
+    /// beforehand.
+    /// </param>
     /// <param name="distance">
     /// Signed offset from the points to the dimension line. Pass <c>null</c> to reuse the
     /// original set's <c>Distance</c> — but note that Tekla stores it WITHOUT a sign, and the
