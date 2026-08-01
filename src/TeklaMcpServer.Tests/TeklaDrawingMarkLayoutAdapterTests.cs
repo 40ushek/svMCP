@@ -86,6 +86,7 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
         {
             Success = true,
             ModelId = 42,
+            SolidGeometryComplete = true,
             SolidVertices = [new[] { 120.0, 220.0 }, new[] { 140.0, 220.0 }, new[] { 140.0, 240.0 }, new[] { 120.0, 240.0 }],
             BboxMin = [120.0, 220.0],
             BboxMax = [140.0, 240.0]

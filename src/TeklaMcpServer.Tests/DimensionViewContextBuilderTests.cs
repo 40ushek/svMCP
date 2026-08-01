@@ -19,6 +19,7 @@ public sealed class DrawingViewContextBuilderTests
                     ModelId = 101,
                     BboxMin = [0, 0, 0],
                     BboxMax = [10, 5, 0],
+                    SolidGeometryComplete = true,
                     SolidVertices =
                     [
                         [0d, 0d, 0d],
@@ -34,6 +35,7 @@ public sealed class DrawingViewContextBuilderTests
                     ModelId = 102,
                     BboxMin = [20, 0, 0],
                     BboxMax = [30, 10, 0],
+                    SolidGeometryComplete = true,
                     SolidVertices =
                     [
                         [20d, 0d, 0d],
@@ -132,6 +134,37 @@ public sealed class DrawingViewContextBuilderTests
         Assert.Empty(context.Bolts);
         Assert.Contains("bolt-part:101:missing", context.Warnings);
         Assert.Contains("grid:grid_missing", context.Warnings);
+    }
+
+    [Fact]
+    public void Build_UsesBoundingBoxWhenSolidGeometryIsIncomplete()
+    {
+        var builder = new DrawingViewContextBuilder(
+            new FakePartGeometryApi(
+            [
+                new PartGeometryInViewResult
+                {
+                    Success = true,
+                    ViewId = 10,
+                    ModelId = 101,
+                    SolidGeometryComplete = false,
+                    SolidVertices =
+                    [
+                        [100d, 100d, 0d],
+                        [110d, 100d, 0d],
+                        [100d, 110d, 0d]
+                    ],
+                    BboxMin = [0d, 0d, 0d],
+                    BboxMax = [10d, 5d, 0d]
+                }
+            ]),
+            new FakeBoltGeometryApi(new Dictionary<int, PartBoltGeometryInViewResult>()),
+            new FakeGridApi(new GetGridAxesResult { Success = true, ViewId = 10 }));
+
+        var context = builder.Build(10, 1, "FrontView");
+
+        Assert.Contains(context.PartsHull, point => point.X == 0d && point.Y == 0d);
+        Assert.DoesNotContain(context.PartsHull, point => point.X >= 100d || point.Y >= 100d);
     }
 
     [Fact]

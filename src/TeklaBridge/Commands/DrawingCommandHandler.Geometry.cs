@@ -103,6 +103,8 @@ internal sealed partial class DrawingCommandHandler
                 bboxMin    = r.BboxMin,
                 bboxMax    = r.BboxMax,
                 solidVertices = r.SolidVertices,
+                viewHull   = r.ViewHull,
+                solidGeometryComplete = r.SolidGeometryComplete,
                 materialType = r.MaterialType,
                 partPrefix   = r.PartPrefix
             })
@@ -636,6 +638,8 @@ internal sealed partial class DrawingCommandHandler
             bboxMin = result.BboxMin,
             bboxMax = result.BboxMax,
             solidVertices = result.SolidVertices,
+            viewHull = result.ViewHull,
+            solidGeometryComplete = result.SolidGeometryComplete,
             error = result.Error
         });
     }

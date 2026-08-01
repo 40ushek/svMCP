@@ -36,6 +36,7 @@ public sealed class MarkSourceResolverTests
             {
                 Success = true,
                 ModelId = 42,
+                SolidGeometryComplete = true,
                 SolidVertices =
                 {
                     new[] { 10.0, 20.0 },
@@ -128,6 +129,7 @@ public sealed class MarkSourceResolverTests
             {
                 Success = true,
                 ModelId = 42,
+                SolidGeometryComplete = true,
                 SolidVertices =
                 {
                     new[] { 0.0, 0.0 },
@@ -163,5 +165,33 @@ public sealed class MarkSourceResolverTests
 
         Assert.True(resolved);
         Assert.Equal(4, polygon.Count);
+    }
+
+    [Fact]
+    public void TryResolvePartPolygon_DoesNotUsePartialSolidSnapshot()
+    {
+        var parts = new List<PartGeometryInViewResult>
+        {
+            new()
+            {
+                Success = true,
+                ModelId = 42,
+                SolidGeometryComplete = false,
+                SolidVertices =
+                {
+                    new[] { 100.0, 100.0 },
+                    new[] { 110.0, 100.0 },
+                    new[] { 100.0, 110.0 }
+                },
+                BboxMin = [0.0, 0.0],
+                BboxMax = [10.0, 10.0]
+            }
+        };
+
+        var resolved = MarkSourceResolver.TryResolvePartPolygon(parts, 42, out var polygon);
+
+        Assert.True(resolved);
+        Assert.Contains(polygon, point => point[0] == 0.0 && point[1] == 0.0);
+        Assert.DoesNotContain(polygon, point => point[0] >= 100.0 || point[1] >= 100.0);
     }
 }

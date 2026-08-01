@@ -129,14 +129,25 @@ internal sealed class DrawingViewContextBuilder
 
     private static void AddPartHullSourcePoints(List<Point> points, PartGeometryInViewResult part)
     {
-        var addedSolidVertices = false;
-        foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
+        if (part.SolidGeometryComplete && part.ViewHull.Count > 0)
         {
-            points.Add(new Point(
-                vertex[0],
-                vertex[1],
-                vertex.Length > 2 ? vertex[2] : 0.0));
-            addedSolidVertices = true;
+            foreach (var vertex in part.ViewHull.Where(static vertex => vertex.Length >= 2))
+                points.Add(new Point(vertex[0], vertex[1], 0.0));
+
+            return;
+        }
+
+        var addedSolidVertices = false;
+        if (part.SolidGeometryComplete)
+        {
+            foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
+            {
+                points.Add(new Point(
+                    vertex[0],
+                    vertex[1],
+                    vertex.Length > 2 ? vertex[2] : 0.0));
+                addedSolidVertices = true;
+            }
         }
 
         if (addedSolidVertices || !HasBbox(part))

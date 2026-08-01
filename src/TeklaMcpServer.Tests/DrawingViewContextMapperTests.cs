@@ -47,7 +47,10 @@ public sealed class DrawingViewContextMapperTests
             Profile = "60X240",
             Material = "C24",
             MaterialType = 5,
-            PartPrefix = "T"
+            PartPrefix = "T",
+            SolidGeometryComplete = true,
+            SolidVertices = [[0d, 0d, 0d], [10d, 0d, 0d]],
+            ViewHull = [[0d, 0d], [10d, 0d]]
         });
 
         var part = Assert.Single(DrawingViewContextMapper.ToResult(context).Parts);
@@ -58,6 +61,8 @@ public sealed class DrawingViewContextMapperTests
         Assert.Equal("C24", part.Material);
         Assert.Equal(5, part.MaterialType);
         Assert.Equal("T", part.PartPrefix);
+        Assert.Equal([[0d, 0d], [10d, 0d]], part.ViewHull);
+        Assert.True(part.SolidGeometryComplete);
     }
 
     [Fact]

@@ -1,12 +1,38 @@
 using System.Linq;
 using Tekla.Structures.Geometry3d;
 using TeklaMcpServer.Api.Algorithms.Geometry;
+using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
 public sealed class GeometryAlgorithmsTests
 {
+    [Fact]
+    public void PartViewGeometryBuilder_BuildsTwoDimensionalHull()
+    {
+        var hull = PartViewGeometryBuilder.BuildHull(
+        [
+            [0d, 0d, 0d],
+            [10d, 0d, 100d],
+            [10d, 5d, -20d],
+            [0d, 5d, 30d],
+            [5d, 2d, 999d]
+        ]);
+
+        Assert.Equal(4, hull.Count);
+        Assert.Equal([[0d, 0d], [10d, 0d], [10d, 5d], [0d, 5d]], hull);
+    }
+
+    [Fact]
+    public void PartViewGeometryBuilder_PreservesDegenerateHullCases()
+    {
+        Assert.Empty(PartViewGeometryBuilder.BuildHull(Array.Empty<double[]>()));
+        Assert.Equal([[4d, 2d]], PartViewGeometryBuilder.BuildHull([[4d, 2d, 0d]]));
+        Assert.Equal([[0d, 0d], [10d, 0d]], PartViewGeometryBuilder.BuildHull(
+            [[0d, 0d, 0d], [5d, 0d, 0d], [10d, 0d, 0d]]));
+    }
+
     [Fact]
     public void ConvexHull_RemovesDuplicatesAndInteriorPoints()
     {

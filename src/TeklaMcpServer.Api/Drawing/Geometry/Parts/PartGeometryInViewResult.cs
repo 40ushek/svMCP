@@ -30,8 +30,28 @@ public sealed class PartGeometryInViewResult
     /// <summary>Solid bounding box maximum corner in view coordinate system (mm).</summary>
     public double[] BboxMax { get; set; } = [];
 
-    /// <summary>Unique solid vertices in view coordinate system (mm).</summary>
+    /// <summary>
+    /// Unique solid vertices in view coordinate system (mm), rounded to five decimals.
+    /// Empty when SolidGeometryComplete is false. ViewHull is projected from this same
+    /// canonical snapshot.
+    /// </summary>
     public List<double[]> SolidVertices { get; set; } = new();
+
+    /// <summary>
+    /// True only when the complete solid vertex/face traversal succeeded. False means
+    /// the solid was unavailable or the tolerant traversal returned a partial snapshot.
+    /// </summary>
+    public bool SolidGeometryComplete { get; set; }
+
+    /// <summary>
+    /// Two-dimensional convex hull of the part projected to the XY plane of the view
+    /// coordinate system. It is derived from the same canonical, rounded snapshot as
+    /// SolidVertices, so every hull vertex corresponds to a source vertex by its [x,y]
+    /// coordinates. Each point contains [x, y] in millimeters. For three or more points,
+    /// the list is an open counter-clockwise traversal and does not repeat the first point.
+    /// One- and two-point hulls are valid degenerate results.
+    /// </summary>
+    public List<double[]> ViewHull { get; set; } = new();
 
     // Fields populated by GetAllPartsGeometryInView (not set by single-part call)
     public string? Type         { get; set; }

@@ -86,7 +86,8 @@ internal static class MarkSourceResolver
         if (TryResolveBoundsCenter(part.BboxMin, part.BboxMax, out centerX, out centerY))
             return true;
 
-        return TryResolveVertexBoundsCenter(part.SolidVertices, out centerX, out centerY);
+        return part.SolidGeometryComplete
+            && TryResolveVertexBoundsCenter(part.SolidVertices, out centerX, out centerY);
     }
 
     internal static bool TryResolvePartPolygon(
@@ -185,9 +186,20 @@ internal static class MarkSourceResolver
 
     private static IReadOnlyList<Point> BuildPartHull(PartGeometryInViewResult part)
     {
+        if (part.SolidGeometryComplete && part.ViewHull.Count > 0)
+        {
+            return part.ViewHull
+                .Where(static vertex => vertex.Length >= 2)
+                .Select(static vertex => new Point(vertex[0], vertex[1], 0.0))
+                .ToList();
+        }
+
         var sourcePoints = new List<Point>();
-        foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
-            sourcePoints.Add(new Point(vertex[0], vertex[1], vertex.Length > 2 ? vertex[2] : 0.0));
+        if (part.SolidGeometryComplete)
+        {
+            foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
+                sourcePoints.Add(new Point(vertex[0], vertex[1], vertex.Length > 2 ? vertex[2] : 0.0));
+        }
 
         if (sourcePoints.Count == 0 && part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
         {

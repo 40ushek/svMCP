@@ -690,9 +690,20 @@ Several candidates per part is the expected output, not a failure. Narrowing to
 one point per grid position is `2b`'s job, and it needs alternatives to choose
 between. Ranking here, deciding there.
 
-Confidence must degrade honestly. A point taken from a solid face is not the same
-evidence as a point taken from the bounding box because nothing better was found,
-and the difference has to survive into the plan rather than being averaged away.
+Confidence must degrade honestly. The geometry evidence has three levels, in this
+order:
+
+```text
+face / exact contour > convex hull (ViewHull) > bounding box
+```
+
+`ViewHull` is a useful coarse projection, but it can bridge a concavity, a cut-out,
+or an L-shaped re-entrant edge. A point derived from it is therefore not proof that
+the point lies on the part. It has no stable native face/vertex anchor either. Hull-
+derived candidates must remain distinguishable and must not silently become
+`Create` points; they require a later exact-contour check or an explicit degraded
+decision. The difference between a face-derived point, a hull-derived point, and a
+box fallback must survive into the plan rather than being averaged away.
 
 #### Box-derived points are not usable for `Create`
 

@@ -88,28 +88,38 @@ Current implemented state in the wider geometry stack:
 
 ## Canonical Domain Direction
 
-The target model should represent a part in two explicit layers:
+The target model should represent a part in three explicit layers:
 
-### Layer 1: Raw Geometry
+### Layer 1: Bounds
 
-The raw geometry layer should expose:
+The lightweight layer should expose:
 
 - part axis / coordinate system
 - solid bbox
+
+### Layer 2: View Geometry
+
+The view-local derived layer should expose:
+
+- canonical solid vertices in the view coordinate system
+- `ViewHull` as a coarse 2D projection
+- semantic and characteristic points derived from that snapshot
+
+`ViewHull` is not an exact outline. It may bridge concavities and cut-outs, so
+it is weaker evidence than a face/contour candidate and must not create a native
+face or vertex anchor.
+
+### Layer 3: Solid Topology
+
+The topology layer should expose:
+
 - solid vertices
 - face list
 - loop list inside each face
 - stable vertex indexing for topology traversal
 
-### Layer 2: Derived Geometry
-
-The derived layer should expose:
-
-- semantic points
-- hull / outline candidates
-- exact projected outline later
-- extreme points
-- later contact-related or connection-related geometry
+Exact projected outlines, holes, and contact geometry are derived from this
+topology layer later.
 
 The point layer should not be limited to one geometry origin. It should still
 be able to represent several source families used by drawing workflows:
@@ -301,6 +311,7 @@ Minimum output:
 - `BboxMin`
 - `BboxMax`
 - `SolidVertices`
+- `ViewHull` as a coarse derived projection, not an exact outline
 
 Done when:
 
@@ -362,6 +373,8 @@ Important rule:
 
 - `convex hull` is acceptable as a coarse helper or fallback
 - `convex hull` is not the target implementation for exact part contour
+- a hull-derived point is lower-confidence than a face-derived point and must not
+  be silently treated as a face/vertex anchor
 
 Done when:
 

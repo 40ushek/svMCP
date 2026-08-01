@@ -45,6 +45,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 ? parts
                 : parts.Where(p => System.Array.IndexOf(includeMaterialTypes, p.MaterialType) >= 0).ToList();
             var sourcePoints = filteredParts
+                .Where(p => p.SolidGeometryComplete)
                 .SelectMany(p => p.SolidVertices)
                 .Where(v => v.Length >= 2)
                 .Select(v => new Point(v[0], v[1], v.Length > 2 ? v[2] : 0.0))

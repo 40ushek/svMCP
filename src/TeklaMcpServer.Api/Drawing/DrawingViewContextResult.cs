@@ -76,6 +76,8 @@ internal static class DrawingViewContextMapper
             BboxMin = part.BboxMin.ToArray(),
             BboxMax = part.BboxMax.ToArray(),
             SolidVertices = part.SolidVertices.Select(static vertex => vertex.ToArray()).ToList(),
+            ViewHull = part.ViewHull.Select(static vertex => vertex.ToArray()).ToList(),
+            SolidGeometryComplete = part.SolidGeometryComplete,
             Type = part.Type,
             Name = part.Name,
             PartPos = part.PartPos,

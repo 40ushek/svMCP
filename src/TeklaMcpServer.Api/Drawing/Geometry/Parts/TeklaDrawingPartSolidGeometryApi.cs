@@ -4,7 +4,7 @@ using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using ModelPart = Tekla.Structures.Model.Part;
-using SolidTypes = Tekla.Structures.Solid;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -40,7 +40,8 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
 
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.DisplayCoordinateSystem));
+        // Solid geometry is consumed as 2D geometry in the drawing view, so read it in the view CS.
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.ViewCoordinateSystem));
 
         try
         {
@@ -75,84 +76,50 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
 
     private static PartSolidGeometry BuildSolidGeometry(Solid solid)
     {
+        // One canonical traversal supplies vertices, loop indexes and the hull.
+        var snapshot = SolidViewVertexCollector.CollectGeometry(
+            solid,
+            tolerateTraversalErrors: false);
+
         var result = new PartSolidGeometry
         {
             BboxMin = ToArray(solid.MinimumPoint),
-            BboxMax = ToArray(solid.MaximumPoint)
+            BboxMax = ToArray(solid.MaximumPoint),
+            SolidGeometryComplete = true,
+            Vertices = snapshot.Vertices
+                .Select(static (point, index) => new PartVertexGeometry
+                {
+                    Index = index,
+                    Point = [point[0], point[1], point[2]]
+                })
+                .ToList()
         };
 
-        var faceEnumerator = solid.GetFaceEnumerator();
-        var faceIndex = 0;
-        while (faceEnumerator.MoveNext())
+        for (var faceIndex = 0; faceIndex < snapshot.Faces.Count; faceIndex++)
         {
-            if (faceEnumerator.Current is not SolidTypes.Face face)
-                continue;
-
+            var face = snapshot.Faces[faceIndex];
             var faceGeometry = new PartFaceGeometry
             {
-                Index = faceIndex++,
-                Normal = ToArray(face.Normal)
+                Index = faceIndex,
+                Normal = face.Normal is null ? null : face.Normal.ToArray()
             };
 
-            var loopEnumerator = face.GetLoopEnumerator();
-            var loopIndex = 0;
-            while (loopEnumerator.MoveNext())
+            for (var loopIndex = 0; loopIndex < face.Loops.Count; loopIndex++)
             {
-                if (loopEnumerator.Current is not SolidTypes.Loop loop)
-                    continue;
-
                 var loopGeometry = new PartLoopGeometry
                 {
-                    Index = loopIndex++
+                    Index = loopIndex
                 };
-
-                if (loop.GetVertexEnumerator() is SolidTypes.VertexEnumerator vertexEnumerator)
-                {
-                    while (vertexEnumerator.MoveNext())
-                    {
-                        if (vertexEnumerator.Current is not Point vertex)
-                            continue;
-
-                        var vertexIndex = GetOrAddVertex(result.Vertices, vertex);
-                        loopGeometry.VertexIndexes.Add(vertexIndex);
-                    }
-                }
-
+                loopGeometry.VertexIndexes.AddRange(face.Loops[loopIndex]);
                 faceGeometry.Loops.Add(loopGeometry);
             }
 
             result.Faces.Add(faceGeometry);
         }
 
+        result.ViewHull = PartViewGeometryBuilder.BuildHull(snapshot.Vertices);
+
         return result;
-    }
-
-    private static int GetOrAddVertex(List<PartVertexGeometry> vertices, Point point)
-    {
-        for (var i = 0; i < vertices.Count; i++)
-        {
-            if (SamePoint(vertices[i].Point, point))
-                return vertices[i].Index;
-        }
-
-        var index = vertices.Count;
-        vertices.Add(new PartVertexGeometry
-        {
-            Index = index,
-            Point = [point.X, point.Y, point.Z]
-        });
-        return index;
-    }
-
-    private static bool SamePoint(double[] point, Point candidate)
-    {
-        const double epsilon = 0.0001;
-        if (point.Length < 3)
-            return false;
-
-        return System.Math.Abs(point[0] - candidate.X) <= epsilon
-            && System.Math.Abs(point[1] - candidate.Y) <= epsilon
-            && System.Math.Abs(point[2] - candidate.Z) <= epsilon;
     }
 
     private static PartSolidGeometryInViewResult Fail(int viewId, int modelId, string error) =>
@@ -165,5 +132,4 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         };
 
     private static double[] ToArray(Point? point) => point == null ? [] : [point.X, point.Y, point.Z];
-    private static double[] ToArray(Vector? vector) => vector == null ? [] : [vector.X, vector.Y, vector.Z];
 }

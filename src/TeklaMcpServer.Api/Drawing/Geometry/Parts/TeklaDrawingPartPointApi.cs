@@ -46,7 +46,7 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
         return results;
     }
 
-    private static GetPartPointsResult BuildResult(PartGeometryInViewResult geometry)
+    internal static GetPartPointsResult BuildResult(PartGeometryInViewResult geometry)
     {
         var result = new GetPartPointsResult
         {
@@ -82,7 +82,8 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
         }
 
         AddDirectionalPoints(result.Points, geometry.BboxMin, geometry.BboxMax);
-        AddSolidDerivedPoints(result.Points, geometry.SolidVertices);
+        if (geometry.SolidGeometryComplete)
+            AddSolidDerivedPoints(result.Points, geometry.SolidVertices);
         return result;
     }
 
