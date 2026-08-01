@@ -31,12 +31,17 @@ read model:
 - the `invalid` and `unassociated` status values;
 - the versioned observation/decision/action/verification storage layout.
 
-The local `cases/dimension_cases` corpus predates this schema and is ignored by
-the repository. Treat it as generation 0: raw evidence for discussion and
-manual review, not as schema-valid training or retrieval data. Its
-`dimensionId` values are transient diagnostics only. A migration must add a
-schema version, stable fingerprints, and verification before the corpus can be
-used as contract data.
+The local `cases/dimension_cases` corpus was deleted on 2026-08-01 and the folder
+is empty. It predated this schema — no anchors, no candidate points, no segment
+relations, and lengths computed by a formula that has since been corrected — so
+re-capturing in the current format was judged cheaper than migrating it.
+
+Two of its lessons should survive into whatever replaces it. Record explicitly
+whether a human passed over the chains, and what they changed: a drawing that
+merely happened to be open is not reference material. And capture the `before`
+state first and confirm it is on disk, because three of the six previous cases
+had `before` states that existed nowhere else after the drawing was edited and
+saved.
 
 ## Core decision
 

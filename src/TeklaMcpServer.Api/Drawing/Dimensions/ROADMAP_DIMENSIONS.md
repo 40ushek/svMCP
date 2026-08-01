@@ -814,12 +814,11 @@ flag as a defect.
 
 Two separate points, and the first was got wrong on the first attempt.
 
-**Not every captured drawing is reference material.** Of the six in the corpus,
-three carry a recorded human pass: `RE.6` (four hand-edited states, `after` being
-the corrected one), `RE.1` (`auto` from Tekla beside a `manual` correction) and
-`RE.2` (machine cleanup by the derived rules, confirmed by a person). The other
-three are single as-found snapshots and claim nothing. A drawing that merely
-happens to be open is not a reference, however convenient.
+**Not every captured drawing is reference material.** Of the six cases that
+existed, only three carried a recorded human pass; the rest were single as-found
+snapshots claiming nothing. A drawing that merely happens to be open is not a
+reference, however convenient — that mistake was made here first, on the drawing
+this section reports.
 
 **Even a corrected chain must be screened.** A human pass reduces mistakes; it
 does not certify their absence. Grading a planner on reproducing a chain point
@@ -833,7 +832,14 @@ Coverage screens **anchoring, not selection**. A chain carrying a redundant poin
 of work started from — passes cleanly, since every point does sit on its own
 part. That class needs its own check before a chain is called screened.
 
-Fixture: `cases/dimension_cases/assembly/d2742f2f-…/coverage/` (gitignored).
+The whole `cases/` corpus, including this run's fixture, was deleted on
+2026-08-01: it predated anchors, candidate points and segment relations, and its
+lengths came from a formula since corrected, so re-capturing beat migrating. The
+numbers above are reproducible — the drawing is unmodified and the commands are
+in the skill file.
+
+**`2b` has no acceptance material until a new before/after pair is captured.**
+That capture is the prerequisite, not the planner.
 
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
 
