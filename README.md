@@ -36,15 +36,31 @@ dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 ### 3. Деплой после изменений
 
 ```bash
-# 1. Закрыть Claude Desktop
+# 1. Закрыть MCP-клиент (или см. обход ниже)
 # 2. Собрать
 dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
-# 3. Открыть Claude Desktop
+# 3. Открыть клиент заново
 ```
 
-> **Важно:** TeklaMcpServer.exe заблокирован пока Claude Desktop открыт.
-> Если менялся только TeklaBridge — его можно пересобрать без закрытия Claude Desktop,
-> результат копируется в `bridge/` автоматически через цель `BuildAndCopyTeklaBridge`.
+> **Важно:** `TeklaMcpServer.exe` заблокирован, пока открыта сессия любого MCP-клиента —
+> Claude Desktop, расширения VS Code или Claude Code. Сборка падает с `MSB3021` / `MSB3027`
+> на `TeklaMcpServer.exe` или `TeklaMcpServer.dll`.
+>
+> **Обход без закрытия сессии** — перенаправить вывод сборки:
+> ```bash
+> dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release \
+>   -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<имя>/
+> ```
+> Только прямые слэши: с обратными MSBuild создаёт мусорные папки прямо в `src`.
+>
+> **TeklaBridge пересобирается горячо, но не потому, что он короткоживущий.**
+> `PersistentBridge` запускает `TeklaBridge.exe --loop` и держит процесс всю сессию.
+> Сборка проходит потому, что для TS2025 работает копия из папки расширений Tekla,
+> а `dotnet build` пишет в `src/TeklaBridge/bin/`; результат копируется в `bridge/`
+> целью `BuildAndCopyTeklaBridge`.
+>
+> А вот **разворачивание в папку расширений упрётся в блокировку файла** — процесс моста
+> надо сначала остановить. См. следующий раздел.
 
 ### Дополнительно для Tekla Structures 2025
 
@@ -56,8 +72,11 @@ TeklaBridge должен запускаться из папки расширен
 
 **Деплой TeklaBridge для TS2025:**
 
-```bash
-# Сборка TeklaBridge (без закрытия Claude Desktop)
+```powershell
+# Сборка TeklaBridge — сессию MCP-клиента закрывать не нужно.
+# Но перед копированием остановить работающий мост, иначе файлы заблокированы:
+#   Stop-Process -Name TeklaBridge -Force
+# PersistentBridge поднимет его заново при следующем вызове.
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 
 # Скопировать TeklaBridge.exe и TeklaMcpServer.Api.dll в папку расширений
@@ -68,6 +87,20 @@ Copy-Item "$src\TeklaBridge.exe" $dst
 Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
 # Также скопировать сторонние зависимости (System.Text.Json, Newtonsoft.Json и т.д.)
 ```
+
+Тот же шаг в bash:
+
+```bash
+dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
+EXT="C:/TeklaStructures/2025.0/Environments/common/extensions/svMCP"
+cp src/TeklaBridge/bin/Release/net48/TeklaBridge.exe \
+   src/TeklaBridge/bin/Release/net48/TeklaMcpServer.Api.dll "$EXT/"
+```
+
+> **Копировать обязательно оба файла.** Если изменить что-то в `TeklaMcpServer.Api`
+> и обновить только `TeklaBridge.exe`, мост продолжит отвечать из старой `TeklaMcpServer.Api.dll` —
+> без ошибки, просто без новых данных. Цель `DeployToExtensions` в `Host.csproj` копирует
+> `@(HostOutput)` и `TeklaBridge.exe` туда не включает, поэтому шаг ручной.
 
 **exe.config:** создаётся вручную один раз и хранится в extensions-папке.
 Содержит `<bindingRedirect>` + `<codeBase>` для всех Tekla DLL, указывающие на `C:\TeklaStructures\2025.0\bin\`.
@@ -510,15 +543,21 @@ var diag = teklaLog.ToString().Trim();
 
 ### Этап 6. Проблемы с деплоем
 
-#### EXE заблокирован Claude Desktop
+#### EXE заблокирован MCP-клиентом
 
-Claude Desktop держит `TeklaMcpServer.exe` открытым всё время работы. При попытке пересобрать:
+Клиент держит `TeklaMcpServer.exe` открытым всё время сессии. Изначально это был Claude Desktop,
+сейчас так же ведут себя расширение VS Code и Claude Code. При попытке пересобрать:
 
 ```
 error MSB3021: Unable to copy file ... Access to the path is denied.
 ```
 
-**Решение**: всегда закрывать Claude Desktop перед `dotnet build`. Если менялся только TeklaBridge — его можно пересобирать горячо, потому что `bridge/TeklaBridge.exe` не заблокирован.
+**Решение**: закрыть сессию клиента перед `dotnet build`, либо перенаправить вывод через
+`-p:BaseOutputPath=` — см. [«Деплой после изменений»](#3-деплой-после-изменений).
+Если менялся только TeklaBridge — его можно **пересобирать** горячо: сборка пишет в
+`src/TeklaBridge/bin/`, а работает копия из папки расширений. Но **разворачивание**
+в папку расширений упрётся в блокировку — `PersistentBridge` держит `--loop` процесс
+всю сессию, его надо сначала остановить.
 
 #### NuGet restore после git rollback
 

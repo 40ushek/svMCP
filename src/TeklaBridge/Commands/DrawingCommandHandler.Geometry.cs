@@ -103,7 +103,8 @@ internal sealed partial class DrawingCommandHandler
                 bboxMin    = r.BboxMin,
                 bboxMax    = r.BboxMax,
                 solidVertices = r.SolidVertices,
-                materialType = r.MaterialType
+                materialType = r.MaterialType,
+                partPrefix   = r.PartPrefix
             })
         });
         return true;

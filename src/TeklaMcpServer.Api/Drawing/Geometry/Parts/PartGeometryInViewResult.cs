@@ -41,4 +41,16 @@ public sealed class PartGeometryInViewResult
     public string? Material     { get; set; }
     /// <summary>Tekla MATERIAL_TYPE: 1=Steel, 2=Concrete, 5=Timber, 6=Misc. -1 if unavailable.</summary>
     public int     MaterialType { get; set; } = -1;
+    /// <summary>
+    /// Part mark prefix, e.g. "T" in "T-368". Report property PART_PREFIX.
+    /// Classifies the part: T=timber, M=metal fitting, R=insulation in this model's numbering.
+    ///
+    /// Like the fields above, this is filled by GetAllPartsGeometryInView only. The single-part
+    /// call (get_part_geometry_in_view) leaves it null and does not serialize it.
+    ///
+    /// Assembly-level properties (ASSEMBLY_POS / ASSEMBLY_PREFIX) are deliberately NOT read here:
+    /// every part of an assembly drawing returns the same value, and each read costs a Select().
+    /// Use get_drawing_parts for those.
+    /// </summary>
+    public string? PartPrefix     { get; set; }
 }

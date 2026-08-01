@@ -213,6 +213,76 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description(
+        "ADD points to an existing dimension chain without rebuilding it, keeping its id and style. " +
+        "KNOWN NOT TO WORK on Tekla 2025: the underlying AddToDimensionSet call reports success but does " +
+        "not merge the points. The command detects that, cleans up after itself and returns an error, so " +
+        "the drawing is left unchanged — use recreate_dimension to add points until this is resolved. " +
+        "At least 2 points must be supplied; to add a single point, pass it together with a point the chain already has.")]
+    public static string AddDimensionPoints(
+        [Description("ID of the dimension set to extend (from get_drawing_dimensions or get_dimension_contexts). Stays valid after the call.")] int dimensionId,
+        [Description("Flat JSON array of model-space coordinates to merge in: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
+        [Description("REQUIRED, no default — a wrong value builds the points along a different axis than the target chain. 'horizontal' (offset along Y), 'vertical' (offset along X), or a 'dx,dy,dz' vector for inclined chains. Read dimensionType from get_dimension_contexts for the chain being extended.")] string direction)
+    {
+        var json = RunBridge("add_dimension_points",
+            dimensionId.ToString(CultureInfo.InvariantCulture),
+            points,
+            direction);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            var added = doc.RootElement.TryGetProperty("added", out var a) && a.GetBoolean();
+            var after = doc.RootElement.TryGetProperty("pointCountAfter", out var p) ? p.GetInt32() : 0;
+            return added
+                ? $"Added points to dimension {dimensionId}; it now has {after} points. Id unchanged.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
+                : $"Failed to add points.\n{json}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
+    [McpServerTool, Description(
+        "REBUILD a dimension chain from a new point list, carrying over its style and offset. " +
+        "Use this only when points must be REMOVED: Tekla Open API cannot drop a point from an existing " +
+        "chain, so the chain is deleted and recreated. IMPORTANT — the id CHANGES, and the old id stops " +
+        "working; use newDimensionId from the response afterwards. Not atomic: the replacement is created " +
+        "before the original is deleted, so an error at the very end can leave both on the sheet — on failure, " +
+        "re-read the view and drop whichever is left over. To add points, use add_dimension_points instead.")]
+    public static string RecreateDimension(
+        [Description("ID of the dimension set to rebuild. This id is DEAD after the call.")] int dimensionId,
+        [Description("Flat JSON array of model-space coordinates for the new chain: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
+        [Description("REQUIRED, no default — passing the wrong one rebuilds a vertical chain as horizontal. 'horizontal' (offset along Y), 'vertical' (offset along X), or a custom 'dx,dy,dz' vector for inclined chains. Read dimensionType from get_dimension_contexts for the chain being rebuilt.")] string direction,
+        [Description("Signed offset from the points to the dimension line, mm. Omit to reuse the original set's Distance — but Tekla stores it unsigned, so the line can end up on the opposite side. Note the offset is NOT auto-corrected: check the result and nudge with move_dimension if needed.")] double? distance = null)
+    {
+        var json = RunBridge("recreate_dimension",
+            dimensionId.ToString(CultureInfo.InvariantCulture),
+            points,
+            direction,
+            distance?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+
+            var ok = doc.RootElement.TryGetProperty("recreated", out var r) && r.GetBoolean();
+            var newId = doc.RootElement.TryGetProperty("newDimensionId", out var n) ? n.GetInt32() : 0;
+            var kept = doc.RootElement.TryGetProperty("attributesKept", out var k) && k.GetBoolean();
+            return ok
+                ? $"Recreated dimension {dimensionId} as {newId} (style {(kept ? "preserved" : "DEFAULTED")}). Use {newId} from now on.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
+                : $"Failed to recreate dimension.\n{json}";
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

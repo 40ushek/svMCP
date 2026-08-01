@@ -19,11 +19,15 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 - Requires .NET 8 SDK, .NET Framework 4.8, and Tekla Structures 2025 (Windows only)
 - The server communicates via **stdio** — launched by an MCP client, not run interactively
 - **Claude Desktop is NOT used** — but TeklaMcpServer.exe can still be locked: an MCP client (VS Code extension, Claude Code) keeps the server process alive while a session is open, so `dotnet build`/`dotnet test` may fail with MSB3021/MSB3027 on `TeklaMcpServer.exe` or `TeklaMcpServer.dll`.
-  - TeklaBridge.exe is not affected — it is launched per call and released, so a bridge-only rebuild always works.
+  - A bridge-only rebuild still works while a session is open — but **not** because the bridge is short-lived. `PersistentBridge` starts `TeklaBridge.exe --loop` and keeps it alive for the whole session. It works because the running bridge for TS2025 is the copy in the Tekla extensions folder, while `dotnet build` writes to `src/TeklaBridge/bin/`. Deploying over the extensions copy **does** fail with a file lock — stop the bridge process first.
   - To build or test without stopping the session, redirect output:
     `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<name>/`
     (use forward slashes — backslashes get mangled and MSBuild creates junk directories)
-- Both TeklaBridge.exe and TeklaMcpServer.exe deploy automatically to `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` on build (MSBuild target in Host .csproj)
+- Deployment to `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` is **not** fully automatic:
+  - the `DeployToExtensions` target in Host .csproj copies `@(HostOutput)` — this covers `TeklaMcpServer.Api.dll` but **not** `TeklaBridge.exe`
+  - `TeklaBridge.exe` must be copied by hand after a bridge rebuild — see [README.md](../README.md) "Деплой TeklaBridge для TS2025"
+  - the manual step is deliberate: `TeklaBridge.exe.config` (with `<codeBase>` entries) lives in that folder and is created once by hand
+  - after changing anything in `TeklaMcpServer.Api` that the bridge returns, copy **both** `TeklaBridge.exe` and `TeklaMcpServer.Api.dll`, or the bridge keeps answering from the stale DLL with no error
 
 ## Architecture
 

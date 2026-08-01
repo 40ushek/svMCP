@@ -118,6 +118,9 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 if (materialType == -1)
                     materialType = InferMaterialType(material);
 
+                string partPrefix = string.Empty;
+                modelPart.GetReportProperty("PART_PREFIX", ref partPrefix);
+
                 results.Add(new PartGeometryInViewResult
                 {
                     Success = true,
@@ -136,7 +139,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     PartPos = partPos,
                     Profile = profile,
                     Material = material,
-                    MaterialType = materialType
+                    MaterialType = materialType,
+                    PartPrefix = partPrefix
                 });
             }
         }

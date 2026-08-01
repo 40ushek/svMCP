@@ -79,7 +79,8 @@ internal static class DrawingViewContextMapper
             PartPos = part.PartPos,
             Profile = part.Profile,
             Material = part.Material,
-            MaterialType = part.MaterialType
+            MaterialType = part.MaterialType,
+            PartPrefix = part.PartPrefix
         };
     }
 

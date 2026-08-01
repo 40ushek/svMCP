@@ -61,6 +61,12 @@ internal sealed partial class DrawingCommandHandler
             case "create_dimension":
                 return HandleCreateDimension(api, args);
 
+            case "add_dimension_points":
+                return HandleAddDimensionPoints(api, args);
+
+            case "recreate_dimension":
+                return HandleRecreateDimension(api, args);
+
             case "delete_dimension":
                 return HandleDeleteDimension(api, args);
 
@@ -676,6 +682,112 @@ internal sealed partial class DrawingCommandHandler
             parseResult.Request.Distance,
             parseResult.Request.AttributesFile);
         WriteCreateDimensionResult(result);
+        return true;
+    }
+
+    private static double[]? ParseFlatPointArray(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            var values = System.Text.Json.JsonSerializer.Deserialize<double[]>(json);
+            return values is { Length: > 0 } ? values : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Merges points into an existing set. Set id, style and offset survive.
+    private bool HandleAddDimensionPoints(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            WriteError("add_dimension_points requires dimensionId and points arguments");
+            return true;
+        }
+
+        if (!int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dimensionId))
+        {
+            WriteError("dimensionId must be an integer");
+            return true;
+        }
+
+        var points = ParseFlatPointArray(args[2]);
+        if (points == null)
+        {
+            WriteError("points must be a flat JSON array [x0,y0,z0, x1,y1,z1, ...]");
+            return true;
+        }
+
+        // No default: guessing the axis silently builds the points along the wrong one.
+        if (args.Length < 4 || string.IsNullOrWhiteSpace(args[3]))
+        {
+            WriteError("add_dimension_points requires a direction ('horizontal', 'vertical' or 'dx,dy,dz')");
+            return true;
+        }
+
+        var result = api.AddDimensionPoints(dimensionId, points, args[3]);
+        WriteJson(new
+        {
+            added = result.Added,
+            dimensionId = result.DimensionId,
+            addedPointCount = result.AddedPointCount,
+            pointCountAfter = result.PointCountAfter,
+            error = result.Error
+        });
+        return true;
+    }
+
+    // Deletes the set and builds a new one from the given points. The id CHANGES.
+    private bool HandleRecreateDimension(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            WriteError("recreate_dimension requires dimensionId and points arguments");
+            return true;
+        }
+
+        if (!int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dimensionId))
+        {
+            WriteError("dimensionId must be an integer");
+            return true;
+        }
+
+        var points = ParseFlatPointArray(args[2]);
+        if (points == null)
+        {
+            WriteError("points must be a flat JSON array [x0,y0,z0, x1,y1,z1, ...]");
+            return true;
+        }
+
+        // No default: guessing the axis silently rebuilds a vertical chain as horizontal.
+        if (args.Length < 4 || string.IsNullOrWhiteSpace(args[3]))
+        {
+            WriteError("recreate_dimension requires a direction ('horizontal', 'vertical' or 'dx,dy,dz')");
+            return true;
+        }
+
+        var direction = args[3];
+
+        var distance = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance) ? (double?)parsedDistance : null;
+        var result = api.RecreateDimension(dimensionId, points, direction, distance);
+        WriteJson(new
+        {
+            recreated = result.Recreated,
+            oldDimensionId = result.OldDimensionId,
+            newDimensionId = result.NewDimensionId,
+            viewId = result.ViewId,
+            pointCount = result.PointCount,
+            attributesKept = result.AttributesKept,
+            distance = result.Distance,
+            requestedDistance = result.RequestedDistance,
+            distanceCorrection = result.DistanceCorrection,
+            error = result.Error
+        });
         return true;
     }
 
