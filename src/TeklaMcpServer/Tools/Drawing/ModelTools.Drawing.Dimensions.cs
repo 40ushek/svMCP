@@ -214,13 +214,13 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
-        "ADD points to an existing dimension chain without rebuilding it, keeping its id and style. " +
-        "KNOWN NOT TO WORK on Tekla 2025: the underlying AddToDimensionSet call reports success but does " +
-        "not merge the points. The command detects that, cleans up after itself and returns an error, so " +
-        "the drawing is left unchanged — use recreate_dimension to add points until this is resolved. " +
+        "ADD points to an existing dimension chain without rebuilding it. Style and offset carry over, so " +
+        "this is cheaper and safer than recreate_dimension when points are only being added. " +
+        "IMPORTANT — Tekla RENUMBERS the merged chain: the id passed in stops resolving and the new one comes " +
+        "back as mergedDimensionId; use that from then on. " +
         "At least 2 points must be supplied; to add a single point, pass it together with a point the chain already has.")]
     public static string AddDimensionPoints(
-        [Description("ID of the dimension set to extend (from get_drawing_dimensions or get_dimension_contexts). Stays valid after the call.")] int dimensionId,
+        [Description("ID of the dimension set to extend (from get_drawing_dimensions or get_dimension_contexts). STALE after a successful call — the merged chain is renumbered, so switch to mergedDimensionId.")] int dimensionId,
         [Description("Flat JSON array of model-space coordinates to merge in: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
         [Description("REQUIRED, no default — a wrong value builds the points along a different axis than the target chain. 'horizontal' (offset along Y), 'vertical' (offset along X), or a 'dx,dy,dz' vector for inclined chains. Read dimensionType from get_dimension_contexts for the chain being extended.")] string direction)
     {
@@ -236,8 +236,9 @@ public static partial class ModelTools
 
             var added = doc.RootElement.TryGetProperty("added", out var a) && a.GetBoolean();
             var after = doc.RootElement.TryGetProperty("pointCountAfter", out var p) ? p.GetInt32() : 0;
+            var mergedId = doc.RootElement.TryGetProperty("mergedDimensionId", out var m) ? m.GetInt32() : 0;
             return added
-                ? $"Added points to dimension {dimensionId}; it now has {after} points. Id unchanged.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
+                ? $"Merged points into dimension {dimensionId}; it now has {after} points and was renumbered to {mergedId} — use {mergedId} from now on.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
                 : $"Failed to add points.\n{json}";
         }
         catch

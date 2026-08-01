@@ -160,25 +160,29 @@ public sealed partial class TeklaDrawingDimensionsApi
     /// <summary>
     /// Merges extra points into an existing straight dimension set.
     ///
-    /// Nothing is destroyed: the target set keeps its id, its style attributes and its offset,
-    /// so the sheet is not rebuilt. This is the cheap, safe way to extend a chain.
+    /// Nothing is destroyed: the style attributes and offset carry over and the sheet is not
+    /// rebuilt. This is the cheap way to extend a chain. The set is RENUMBERED though — see below.
     ///
     /// Mechanics: Tekla has no "add point" call, so a throwaway set is built from the supplied
     /// points and handed to <c>DimensionSetBase.AddToDimensionSet</c>, which is documented as
     /// "adds a dimension set to the current dimension set" — it takes a whole set, never a single
     /// point, and does not expose the point list.
     ///
-    /// KNOWN NOT TO WORK on TS2025.0. The call is accepted (returns true) but the target keeps
-    /// its original point count. Verified with the sequence recommended on the Tekla forum thread
-    /// "Add dimension points by API" — Select() on the target, then AddToDimensionSet, then
-    /// Modify(), then CommitChanges — and the count still does not change. Looks like a 2025.0
-    /// limitation or regression rather than misuse.
+    /// The sequence is the one recommended on the Tekla forum thread "Add dimension points by
+    /// API": Select() on the target, then AddToDimensionSet, then Modify(), then CommitChanges.
     ///
-    /// Note the return value only means the call was accepted; it promises neither a changed
-    /// point count nor deletion of the source set. So success is judged by re-reading the target's
-    /// point count, and the throwaway set is removed either way. On failure nothing is left behind
-    /// and the drawing is unchanged. Until this is resolved, adding a point requires
-    /// <see cref="RecreateDimension"/>.
+    /// The result is RENUMBERED — the merged set appears under a new identifier and the id passed
+    /// in stops resolving. That is what makes a working merge look broken: reading the result back
+    /// by the original id finds nothing. The merged set is therefore located by geometry, as the
+    /// one carrying every point the target had before, and its new id comes back in
+    /// MergedDimensionId. Success is judged by the point count growing, never by the return value,
+    /// which only means the call was accepted.
+    ///
+    /// The source set is a throwaway and is removed if it survives the merge; the method makes no
+    /// assumption either way, since AddToDimensionSet does not promise to consume it. When nothing
+    /// is gained the throwaway is dropped — but the merge call itself was already committed by
+    /// then, and Tekla offers no transaction to undo it, so the caller should re-read the view
+    /// rather than assume the drawing is untouched.
     ///
     /// Because a dimension set cannot exist with fewer than two points, at least two points
     /// must be supplied. To add a single new point, pass it together with a point the target
@@ -223,7 +227,12 @@ public sealed partial class TeklaDrawingDimensionsApi
                     Error = $"DimensionSet {dimensionId} has no owning view"
                 };
 
-            var pointCountBefore = CountPoints(target);
+            var viewId = view.GetIdentifier().ID;
+
+            // Snapshot the target's geometry: after the merge it is renumbered, and these points
+            // are the only way left to recognise it.
+            var pointsBefore = CollectSetPoints(target);
+            var pointCountBefore = pointsBefore.Count;
 
             var pointList = ToPointList(points);
             var addition = new StraightDimensionSetHandler().CreateDimensionSet(
@@ -236,6 +245,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                     DimensionId = dimensionId,
                     Error = "CreateDimensionSet returned null while building the points to merge"
                 };
+
+            var additionId = addition.GetIdentifier().ID;
 
             bool accepted;
             try
@@ -255,32 +266,57 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             activeDrawing.CommitChanges("(MCP) AddDimensionPoints");
 
-            // The source set is a throwaway either way: AddToDimensionSet is documented as adding
-            // a dimension SET to the current one and makes no promise to delete the source, so its
-            // survival proves nothing. Remove it and judge the outcome by the target instead.
-            DiscardAddition(activeDrawing, addition);
+            // The merged set carries a NEW id, so it has to be found by geometry — the one holding
+            // both the target's original points and the ones just added. Looking it up by
+            // dimensionId finds nothing and makes a successful merge look like a failure.
+            var addedPoints = new List<(double X, double Y)>();
+            for (var i = 0; i + 2 < points.Length; i += 3)
+                addedPoints.Add((points[i], points[i + 1]));
 
-            var after = FindDimensionSet(activeDrawing, dimensionId);
-            var pointCountAfter = after == null ? pointCountBefore : CountPoints(after);
+            var (merged, matchCount) = FindMergedSet(activeDrawing, viewId, pointsBefore, addedPoints, additionId);
+            var pointCountAfter = merged == null ? pointCountBefore : CountPoints(merged);
 
-            // The return value only means the call was accepted, not that points were merged, so
-            // the point count is the only honest evidence.
-            if (pointCountAfter <= pointCountBefore)
+            if (merged == null || pointCountAfter <= pointCountBefore)
+            {
+                // Nothing was gained: drop the throwaway set so the drawing is left as it was.
+                var stray = FindDimensionSet(activeDrawing, additionId);
+                if (stray != null)
+                    DiscardAddition(activeDrawing, stray);
+
                 return new AddDimensionPointsResult
                 {
                     DimensionId = dimensionId,
                     AddedPointCount = pointList.Count,
                     PointCountAfter = pointCountAfter,
-                    Error = accepted
-                        ? $"AddToDimensionSet was accepted but the target still has {pointCountAfter} points; " +
-                          "the temporary set was removed and the drawing is unchanged"
-                        : "AddToDimensionSet returned false; the temporary set was removed"
+                    // Deliberately not claiming the drawing is untouched: the merge was already
+                    // committed by this point and Tekla offers no transaction to undo it. All that
+                    // is certain is that no set carrying both the old and the new points was found
+                    // and that the temporary set is gone. Re-read the view before continuing.
+                    Error = (matchCount > 1
+                        ? $"{matchCount} sets in the view carry both the original and the new points, so the merged one cannot be identified; "
+                        : accepted
+                            ? $"AddToDimensionSet was accepted but no set carries both the original and the new points (count {pointCountAfter}); "
+                            : "AddToDimensionSet returned false; ") +
+                        "the temporary set was removed, but the merge was already committed — re-read the view to confirm its state"
                 };
+            }
+
+            var mergedId = merged.GetIdentifier().ID;
+
+            // If the source survived the merge as a separate object, it is now a duplicate of
+            // points that already live in the merged set.
+            if (mergedId != additionId)
+            {
+                var leftover = FindDimensionSet(activeDrawing, additionId);
+                if (leftover != null)
+                    DiscardAddition(activeDrawing, leftover);
+            }
 
             return new AddDimensionPointsResult
             {
                 Added = true,
                 DimensionId = dimensionId,
+                MergedDimensionId = mergedId,
                 AddedPointCount = pointList.Count,
                 PointCountAfter = pointCountAfter
             };
@@ -298,11 +334,21 @@ public sealed partial class TeklaDrawingDimensionsApi
     /// from <c>OldDimensionId</c> — any id held by the caller becomes stale. Style attributes
     /// and the offset are copied over, so the drawing keeps its look.
     ///
-    /// This exists because Tekla Open API cannot remove a point from a set:
+    /// This exists because Tekla Open API cannot CHANGE THE NUMBER of points in a set:
     /// <c>StraightDimensionSet</c> exposes only Attributes, Distance and the tag line offsets,
-    /// with no point collection. Deleting and rebuilding is the only way to drop points.
-    /// When points are only being ADDED, prefer <see cref="AddDimensionPoints"/> — it keeps
-    /// the id and touches nothing else.
+    /// with no point collection, so dropping a point means rebuilding.
+    ///
+    /// Repositioning MAY not need this method. The child <c>StraightDimension</c> segments —
+    /// reached with <c>set.GetObjects(new[] { typeof(StraightDimension) })</c> — declare writable
+    /// <c>StartPoint</c>, <c>EndPoint</c>, <c>Distance</c> and <c>UpDirection</c>; the setters are
+    /// there in the installed 2025 assembly and the approach is suggested on the Tekla forum.
+    ///
+    /// NOT VERIFIED on a real drawing. A setter existing proves nothing about the effect —
+    /// AddToDimensionSet also returns true while appearing to do nothing. Until someone assigns a
+    /// StartPoint on a live drawing and re-reads it, rebuilding through this method is the only
+    /// way to change points that is actually known to work.
+    /// When points are only being ADDED, prefer <see cref="AddDimensionPoints"/> — it does not
+    /// tear the chain down, though it renumbers it just the same.
     ///
     /// NOT ATOMIC once the replacement exists. The order is deliberate — create, then delete —
     /// so a failure while building the new set leaves the original intact. But if
@@ -469,6 +515,86 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         // A set of N points renders as N-1 segments.
         return count == 0 ? 0 : count + 1;
+    }
+
+    private const double PointMatchTolerance = 0.5;
+
+    /// <summary>Distinct snap points of a set, read off its segment endpoints.</summary>
+    private static List<(double X, double Y)> CollectSetPoints(StraightDimensionSet set)
+    {
+        var points = new List<(double X, double Y)>();
+        var objects = set.GetObjects();
+        while (objects.MoveNext())
+        {
+            if (objects.Current is not StraightDimension segment)
+                continue;
+
+            foreach (var candidate in new[]
+                     {
+                         (segment.StartPoint.X, segment.StartPoint.Y),
+                         (segment.EndPoint.X, segment.EndPoint.Y)
+                     })
+            {
+                if (!points.Any(p => Near(p, candidate)))
+                    points.Add(candidate);
+            }
+        }
+
+        return points;
+    }
+
+    private static bool Near((double X, double Y) a, (double X, double Y) b)
+        => System.Math.Abs(a.X - b.X) <= PointMatchTolerance
+        && System.Math.Abs(a.Y - b.Y) <= PointMatchTolerance;
+
+    /// <summary>
+    /// Finds the merged set: the one in the same view that carries BOTH every point the target
+    /// had and every point that was added.
+    ///
+    /// Needed because merging renumbers the target — the combined set appears under a new
+    /// identifier, so looking it up by the id passed in finds nothing and a working merge looks
+    /// like a failure. Matching on geometry survives the renumbering.
+    ///
+    /// Requiring the added points as well as the old ones is what keeps this honest: matching on
+    /// the old points alone would happily return an untouched duplicate chain that overlaps the
+    /// target, and report someone else's id as the result. The view is checked too, since two
+    /// views of the same part carry the same coordinates.
+    ///
+    /// If more than one set still qualifies, the answer is refused rather than guessed. Picking
+    /// the richest candidate would hand back an id the caller then edits or deletes, and on a busy
+    /// sheet with overlapping chains that is a silent way to damage the wrong dimension.
+    /// </summary>
+    private static (StraightDimensionSet? Set, int MatchCount) FindMergedSet(
+        Tekla.Structures.Drawing.Drawing activeDrawing,
+        int viewId,
+        IReadOnlyList<(double X, double Y)> pointsBefore,
+        IReadOnlyList<(double X, double Y)> pointsAdded,
+        int excludeId)
+    {
+        StraightDimensionSet? found = null;
+        var matches = 0;
+
+        var all = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
+        while (all.MoveNext())
+        {
+            if (all.Current is not StraightDimensionSet candidate)
+                continue;
+            if (candidate.GetIdentifier().ID == excludeId)
+                continue;
+            if (candidate.GetView() is not ViewBase candidateView || candidateView.GetIdentifier().ID != viewId)
+                continue;
+
+            var candidatePoints = CollectSetPoints(candidate);
+            if (!pointsBefore.All(point => candidatePoints.Any(p => Near(p, point))))
+                continue;
+            if (!pointsAdded.All(point => candidatePoints.Any(p => Near(p, point))))
+                continue;
+
+            matches++;
+            found ??= candidate;
+        }
+
+        return matches == 1 ? (found, 1) : (null, matches);
     }
 
     private static bool TryDeleteById(Tekla.Structures.Drawing.Drawing activeDrawing, Type objectType, int dimensionId)

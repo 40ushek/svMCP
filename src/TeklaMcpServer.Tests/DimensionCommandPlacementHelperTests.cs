@@ -11,7 +11,11 @@ public class DimensionCommandPlacementHelperTests
     [InlineData("h", 0, 1, 0)]
     [InlineData("vertical", 1, 0, 0)]
     [InlineData("v", 1, 0, 0)]
-    [InlineData("bad", 0, 1, 0)]
+    [InlineData("vertical-left", -1, 0, 0)]
+    [InlineData("v-", -1, 0, 0)]
+    [InlineData("horizontal-down", 0, -1, 0)]
+    [InlineData("h-", 0, -1, 0)]
+    [InlineData("0.6,-0.8,0", 0.6, -0.8, 0)]
     public void ResolveDirection_UsesExpectedDefaults(
         string direction,
         double expectedX,
@@ -86,5 +90,30 @@ public class DimensionCommandPlacementHelperTests
 
         Assert.Equal(0, pair.Start.Y, 6);
         Assert.Equal(10, pair.End.Y, 6);
+    }
+
+    [Theory]
+    [InlineData("bad")]
+    [InlineData("")]
+    [InlineData(null)]
+    [InlineData("1,2")]
+    [InlineData("1;2;3")]
+    public void ResolveDirection_RejectsUnknownInput(string? direction)
+    {
+        // Guessing horizontal used to hide typos, and a wrong axis silently rebuilds a vertical
+        // chain as a horizontal one — loud failure is the only safe answer.
+        Assert.Throws<System.ArgumentException>(() => DimensionCreatePlacementHelper.ResolveDirection(direction));
+        Assert.Null(DimensionCreatePlacementHelper.TryResolveDirection(direction));
+    }
+
+    [Fact]
+    public void TryParseVector_UsesInvariantDecimalSeparator()
+    {
+        // The value arrives as a command-line argument and must not depend on machine culture.
+        var parsed = DimensionCreatePlacementHelper.TryParseVector("0.5,-0.5,0");
+
+        Assert.NotNull(parsed);
+        Assert.Equal(0.5, parsed!.X, 6);
+        Assert.Equal(-0.5, parsed.Y, 6);
     }
 }

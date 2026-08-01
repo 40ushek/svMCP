@@ -3,15 +3,23 @@ namespace TeklaMcpServer.Api.Drawing;
 /// <summary>
 /// Result of <c>add_dimension_points</c>.
 ///
-/// The command MERGES extra points into an existing dimension set. The set itself survives:
-/// its id, style attributes and offset are untouched, so nothing on the sheet is rebuilt.
-/// Use this whenever points only need to be ADDED.
+/// The command MERGES extra points into an existing dimension set, keeping its style and offset.
+/// Use it whenever points only need to be ADDED — it is cheaper and safer than rebuilding.
+///
+/// Note the merged set is RENUMBERED by Tekla: read <see cref="MergedDimensionId"/> afterwards,
+/// because <see cref="DimensionId"/> no longer addresses anything.
 /// </summary>
 public sealed class AddDimensionPointsResult
 {
     public bool    Added           { get; set; }
-    /// <summary>Id of the set the points were merged into. Unchanged by the operation.</summary>
+    /// <summary>Id the caller passed in. Stale once the merge succeeds.</summary>
     public int     DimensionId     { get; set; }
+    /// <summary>
+    /// Id of the merged set — this is what later calls must use. Differs from
+    /// <see cref="DimensionId"/> because Tekla renumbers the set when it absorbs another one.
+    /// Zero when nothing was merged.
+    /// </summary>
+    public int     MergedDimensionId { get; set; }
     /// <summary>How many points were passed in for merging.</summary>
     public int     AddedPointCount { get; set; }
     /// <summary>Point count of the target set after the merge, re-read from Tekla.</summary>

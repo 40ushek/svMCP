@@ -701,7 +701,8 @@ internal sealed partial class DrawingCommandHandler
         }
     }
 
-    // Merges points into an existing set. Set id, style and offset survive.
+    // Merges points into an existing set. Style and offset survive, but Tekla renumbers the
+    // merged set — the new id comes back as mergedDimensionId.
     private bool HandleAddDimensionPoints(TeklaDrawingDimensionsApi api, string[] args)
     {
         if (args.Length < 3)
@@ -734,6 +735,7 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             added = result.Added,
+            mergedDimensionId = result.MergedDimensionId,
             dimensionId = result.DimensionId,
             addedPointCount = result.AddedPointCount,
             pointCountAfter = result.PointCountAfter,

@@ -73,15 +73,34 @@ internal class DimensionItem
         CenterX = System.Math.Round((StartX + EndX) / 2.0, 3);
         CenterY = System.Math.Round((StartY + EndY) / 2.0, 3);
 
+        // LengthList must match what the sheet prints, and a dimension prints the PROJECTION of
+        // the span onto its own axis — not the straight-line distance between the snap points.
+        // The two only agree when the points are collinear, which is why overall dimensions and
+        // control diagonals looked fine while chains reading off inset parts did not.
+        //
+        // Measured against an exported PDF: a span our old formula reported as 2555.25 is printed
+        // as 2546 (the projection is 2545.5); 456.91 is printed as 448; 298.53 as 301. Taking the
+        // hypotenuse also invented fractional values that were then mistaken for snap drift, and
+        // produced negative segments — which a dimension cannot have — once the points were not
+        // ordered along the axis.
+        //
+        // RealLengthList keeps the straight-line distance: it is the honest point-to-point value
+        // and stays useful for geometry work.
+        var axis = Direction;
+
         for (var i = 1; i < PointList.Count; i++)
         {
-            var length = System.Math.Round(
-                System.Math.Sqrt(
-                    System.Math.Pow(PointList[i].X - StartX, 2) +
-                    System.Math.Pow(PointList[i].Y - StartY, 2)),
-                2);
-            LengthList.Add(length);
-            RealLengthList.Add(length);
+            var dx = PointList[i].X - StartX;
+            var dy = PointList[i].Y - StartY;
+
+            var real = System.Math.Round(System.Math.Sqrt((dx * dx) + (dy * dy)), 2);
+
+            var projected = axis.HasValue
+                ? System.Math.Round(System.Math.Abs((dx * axis.Value.X) + (dy * axis.Value.Y)), 2)
+                : real;
+
+            LengthList.Add(projected);
+            RealLengthList.Add(real);
         }
     }
 }

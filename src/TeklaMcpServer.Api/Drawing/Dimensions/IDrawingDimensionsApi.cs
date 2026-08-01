@@ -17,8 +17,9 @@ public interface IDrawingDimensionsApi
     DeleteDimensionResult  DeleteDimension(int dimensionId);
 
     /// <summary>
-    /// Merges extra points into an existing dimension set. Non-destructive: the set keeps its
-    /// id, style and offset. Needs at least two points because a set cannot be built from one.
+    /// Merges extra points into an existing dimension set. Style and offset carry over and the
+    /// chain is not torn down, but Tekla RENUMBERS it — read MergedDimensionId, because the id
+    /// passed in stops resolving. Needs at least two points: a set cannot be built from one.
     /// </summary>
     AddDimensionPointsResult AddDimensionPoints(int dimensionId, double[] points, string direction);
 
@@ -26,7 +27,8 @@ public interface IDrawingDimensionsApi
     /// Rebuilds a dimension set from a new point list, carrying over style and offset.
     /// The set is deleted and recreated, so the id CHANGES — the caller must switch to
     /// NewDimensionId. Needed only when points must be REMOVED; Tekla Open API offers no way
-    /// to drop a point from an existing set. To add points, use AddDimensionPoints instead.
+    /// to drop a point from an existing set. To add points, use AddDimensionPoints instead —
+    /// it renumbers the chain too, but does not rebuild it.
     /// </summary>
     RecreateDimensionResult RecreateDimension(int dimensionId, double[] points, string direction, double? distance = null);
     CombineDimensionsResult CombineDimensions(int? viewId, IReadOnlyList<int>? dimensionIds, bool previewOnly);
