@@ -46,3 +46,6 @@ dim/
 
 # Local reference project
 markAligner/
+
+# Drawing/dimension cases: снимки реальных чертежей, вне репозитория
+cases/

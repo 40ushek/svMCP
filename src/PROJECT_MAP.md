@@ -205,14 +205,25 @@ cases/<category>/<drawing_guid>/
 Корень по умолчанию — `cases/` в корне репозитория. Категория — тип чертежа
 (`assembly`, ...).
 
+### Кейсы не хранятся в репозитории
+
+`cases/` целиком в `.gitignore`. Это снимки реальных производственных чертежей,
+снятые вручную; тесты их не используют — они работают во временных папках.
+
+Практические следствия:
+
+- снятый кейс git не увидит, это ожидаемо;
+- поделиться кейсом можно только вне репозитория;
+- регрессионных фикстур на диске нет, и `DrawingLayoutRegressionCaseEvaluator`
+  сравнивает только то, что снято локально.
+
 ### Текущий статус
 
 - код написан и покрыт тестами
   (`DrawingCaseCaptureServiceTests`, `DrawingCaseSnapshotWriterTests`,
   `DrawingCaseSnapshotReaderTests`, `DrawingLayoutRegressionCaseEvaluatorTests`)
 - **но нигде не вызывается в продакшене** — ни из `TeklaBridge/Commands`,
-  ни из `TeklaMcpServer/Tools`
-- на диске лежит один кейс, снятый вручную, операция `fit_views_to_sheet`
+  ни из `TeklaMcpServer/Tools`; кейсы снимаются вручную вызовами `TeklaBridge.exe`
 - `SaveCase` уже принимает произвольную `operation`, но скоринг жёстко
   завязан на `DrawingLayoutScorer` — для других операций нужен свой scorer
 
