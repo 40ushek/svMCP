@@ -601,6 +601,286 @@ The next useful capabilities are:
 - better support for collision reasoning
 - future candidate placement generation
 
+Checked 2026-08-01: line direction, normal, band and measured points **already
+exist** here, as do the reference line, dimension-line ends, distance and segment
+geometry. Point-to-object association exists too, in `Association`. There is no
+missing field on that list.
+
+What this context has instead is duplication. One `DimensionContext` carries
+three point collections — `Geometry.PointList`, `Association.MeasuredPoints` and
+`AnnotationGeometry.MeasuredPoints` — and the last silently falls back to
+`item.PointList` when `item.MeasuredPoints` is empty, so its source is not
+visible from the value. Consolidating those, or at least making the fallback
+explicit, is worth more than any new field.
+
+Note also what this context is *for*: it describes an **existing annotation**.
+Placing new dimensions (`2b`) barely needs it. That work needs part geometry —
+which face of which part a point should sit on — and that lives in
+`DrawingViewContext.Parts`, where the real gap is: bounding box, solid vertices
+and axis are available, but no notion of a face. The rule being implemented is
+"the point sits on the part being located", and a raked member already showed
+that the box is not the part.
+
+### 2a. Candidate points on parts
+
+Agreed 2026-08-01. Prerequisite for `2b`, and separate from it because it is a
+different question: `2b` decides which parts to dimension and in what order,
+while this decides *where on a part* a dimension point may legitimately sit.
+
+The rule being served is "the point sits on the part being located". Today that
+cannot be answered reliably. `DrawingViewContext.Parts` carries a bounding box,
+solid vertices and the part axis — and no face. The box is not the part: a raked
+top plate measures 383 mm by its box against a 45 mm member, so the box corner is
+nowhere on the part.
+
+#### Minimum result
+
+Per part, a list of candidate points. Each candidate carries:
+
+- the **point** in view coordinates;
+- the **source** it was derived from — axis end, solid vertex, face midpoint,
+  box corner — so a consumer can tell a real geometric feature from a fallback;
+- the **normal / side** it faces, which is what makes a candidate "the left face"
+  rather than just a coordinate. **Nullable** — see below;
+- a **confidence** value;
+- a **structured reason** for the choice;
+- a **stable anchor key**, so a point can be compared without coordinates.
+
+#### The normal is often genuinely unknown
+
+A face has a normal. A solid vertex does not — several faces meet there — and the
+end of an axis has a direction but no side. Those cases must be representable as
+`unknown` / null, never as an invented normal: a fabricated side reads exactly
+like a measured one and there is nothing downstream that could tell them apart.
+
+The consequence is worth stating, because it is not a mere annotation: a
+candidate without a normal can still fix a **position along the chain**, but it
+cannot satisfy a rule phrased as "the left face of the studs". `2b` must be able
+to see that difference and either pick another candidate or say it could not.
+
+#### Anchor identity
+
+"The same object and the same anchor" needs a formal key, or the strong form of
+the acceptance comparison in `2b` cannot be implemented:
+
+```text
+modelObjectId + anchorKind + anchorId
+```
+
+- `modelObjectId` — the durable part. Drawing object ids are transient and must
+  not carry identity;
+- `anchorKind` — face, vertex, axis end, box corner. Already the vocabulary used
+  in `DIMENSION_CONTEXT_SCHEMA.md`;
+- `anchorId` — which face or which vertex, when the kind alone is ambiguous.
+
+The key has to be reproducible across two reads of an unedited model, and that
+needs verifying rather than assuming — Tekla's own ordering of solid faces and
+vertices is not documented as stable. If it turns out not to be, the key must be
+derived from geometry (for example a face's own normal and its position on the
+part) instead of from an index, and the strong comparison form depends on getting
+ this right.
+
+The `2a` acceptance check is explicit: read the same unchanged model twice,
+produce the candidate list twice, and compare every key for the same
+`modelObjectId`. The check passes only when the keys are identical across both
+reads. If a face or vertex key changes, that anchor kind is not eligible for the
+strong comparison form until a stable geometry-derived key replaces it.
+
+Several candidates per part is the expected output, not a failure. Narrowing to
+one point per grid position is `2b`'s job, and it needs alternatives to choose
+between. Ranking here, deciding there.
+
+Confidence must degrade honestly. A point taken from a solid face is not the same
+evidence as a point taken from the bounding box because nothing better was found,
+and the difference has to survive into the plan rather than being averaged away.
+
+#### Box-derived points are not usable for `Create`
+
+Producing a box corner as a last resort is fine; letting it become a dimension
+point is not. On a raked member the box corner is provably **not on the part** —
+that is the failure the whole rule exists to prevent, so a plan that quietly used
+one would be wrong in exactly the way it was built to avoid.
+
+The rule for `2b`:
+
+- a box-derived candidate **must not** silently become a `Create` point;
+- if no better candidate exists for a part, the default is to **omit the part**
+  and record why — a missing dimension is recoverable, a dimension pointing at
+  nothing is not;
+- if such a point is used deliberately anyway, the step is marked **degraded**,
+  names the parts concerned, and requires confirmation. When applying arrives, a
+  degraded step must never auto-apply.
+
+Confidence alone is not enough here. A threshold on a number invites tuning until
+the plan looks complete; the source of the point is categorical and should be
+treated as such.
+
+Done when every candidate states where it came from and how far it can be
+trusted, and a box-derived fallback is distinguishable from a face-derived point
+without re-reading the model.
+
+### 2b. Read-only `DimensionPlacementPlanBuilder`
+
+Agreed 2026-08-01. The first component that decides where dimensions *should*
+go, as opposed to reducing the ones already there. It changes nothing: it reads
+one view and emits a plan.
+
+Depends on `2a` for candidate points.
+
+Scope of the first version:
+
+- one `FrontView` on an assembly drawing;
+- select the parts to locate, and one point per part;
+- decide the chain axis, the side, and the point order;
+- emit `create_dimension` arguments;
+- apply nothing.
+
+#### Reuse the existing plan contract
+
+`DimensionActionPlanStep` already describes "a call someone may choose to make",
+with action, tool name, arguments, `previewOnly` and evidence. Placement must
+extend `DimensionPlanAction` with `Create` and widen
+`DimensionActionPlanToolArguments`, **not** introduce a second plan shape. Two
+plan contracts means every consumer — a person or a model — has to learn both.
+
+The builder is separate; the contract is shared.
+
+#### Arguments the plan must actually carry
+
+`CreateDimension(viewId, points, direction, distance, attributesFile)`. All five,
+including the two that are easy to forget:
+
+- **`distance` is a target, not an outcome.** Attributes carry their own offset
+  which Tekla adds on top, so the created line can land elsewhere than asked. The
+  plan must say so and expect `move_dimension` to settle it;
+- **`attributesFile`** decides that offset, so it is part of the decision, not a
+  detail of the call.
+
+All five are **required for `Create`**, and required for nothing else —
+`viewId` included. It is easy to overlook because it already exists in the
+contract, but a `Create` step without it is as incomplete as one without points.
+
+`viewId` currently sits in **three** places, all optional: on the plan result, on
+the step, and in the tool arguments. Pick one authority rather than adding a
+fourth reading of it:
+
+- `ToolArguments.ViewId` is what the call actually carries, so it is the
+  authoritative value for `Create`;
+- the copies on the step and the result are context for a reader;
+- they must **agree**, and disagreement is a validation error, not a preference
+  to resolve silently. Three optional copies of one number is exactly how a plan
+  ends up describing one view and executing on another.
+
+`DimensionActionPlanToolArguments` is currently all-optional, which suits
+`Combine` and `Arrange`; adding four more optional fields would turn it into a
+bag in which no shape is ever wrong and an incomplete `Create` step serializes
+happily.
+
+So validation belongs **per action, not per field**: each action declares the
+arguments it requires, and a step is checked against its own action. Widening the
+existing actions to demand placement fields they have no use for would be the
+opposite mistake.
+
+#### Direction is three decisions, not one
+
+All three must be stated explicitly, because two of them cannot be recovered
+afterwards:
+
+- the **axis** of the chain;
+- the **side**, given as a vector — never as the sign of `distance`;
+- the **point order**, which sets the zero the printed run counts from. Read-back
+  is always normalized, so the order is invisible once created.
+
+#### Candidates in, one point per position out
+
+Two separate steps, and conflating them is what produces junk segments:
+
+- **candidates** come from `2a` — several per part is normal;
+- **the plan** carries one point per grid position, not per part and not per
+  candidate.
+
+Two constraints carry over from `2a` and bind here: a box-derived candidate may
+not become a `Create` point without marking the step degraded, and a candidate
+with no normal can fix a position but cannot satisfy a face-specific rule.
+
+#### What "grid position" means
+
+The term has to be pinned down before it can be implemented, or each producer
+will group differently and the disagreement will be invisible afterwards:
+
+- position is measured **along the chain axis only** — the projection onto that
+  axis. Two points differing solely across the axis are the same position;
+- points within a **tolerance in millimetres, in view coordinates**, are one
+  position. The tolerance is a policy value, stated in the plan, not a constant
+  buried in the grouping code. It has to be larger than snap noise and smaller
+  than the shortest real spacing that must survive — the observed junk segments
+  were 15–60 mm, so the working range starts there and needs confirming against
+  the corpus rather than guessing;
+- **coincident and near-coincident points collapse to one position**, and the
+  plan records which candidates were collapsed and which one it kept. A cluster
+  silently reduced to its first member is the same failure as no grouping at all;
+- collapsing must not cross a real gap: if a cluster spans more than the
+  tolerance end to end, it is more than one position, however close consecutive
+  members are.
+
+Filtering parts by prefix and material type is reliable and stays as it is.
+
+#### The plan's value is its justification
+
+Coordinates cannot be checked by reading them. For every point the plan must say
+which part it sits on and why that face; for every part not dimensioned, why it
+was left out. That is the only review possible before anything is applied.
+
+Those reasons must be **structured, not a `Reason` string**. A sentence is
+readable once and aggregable never: it cannot be counted across a corpus,
+filtered on, or compared between two runs, so a rule that starts misfiring stays
+invisible. At minimum a reason needs a stable code, the objects it refers to, and
+the values it was decided on — with free text as an addition to those, not as a
+substitute. `Reason` stays for the existing actions; it is not enough for this
+one.
+
+#### Gating
+
+- **drawing type gates everything.** The rules are for assembly drawings. Refuse
+  on single-part and GA drawings rather than adapting by analogy;
+- refuse explicitly on view types outside the supported set instead of silently
+  producing a plan for them;
+- **do not consume `Role`.** Everything except the control diagonal currently
+  comes back `External`, so an overall dimension and an internal chain are
+  indistinguishable. Either fix the classifier first or plan without it.
+
+#### Acceptance
+
+Verifying a proposal on a fresh view is weak: the printed run is not in the
+context, point order normalizes on read, and text bounds are empty — so the
+result cannot be read back and compared with the decision.
+
+The first version must therefore **reproduce a chain a person already corrected
+by hand** in the captured corpus. The answer is known and the drawings are
+already collected. A builder that cannot reproduce a known-good chain has nothing
+to be judged against on a new view.
+
+"Point for point" needs a definition, or the comparison is either vacuous or
+impossible — exact coordinate equality will never hold. A planned point matches a
+reference point when **either**:
+
+- it resolves to the **same model object and the same anchor** on it — the
+  strong form, and the one to prefer, since it survives the model being edited
+  and does not depend on any tolerance; **or**
+- it lands **within a stated tolerance in view coordinates**, when the reference
+  point carries no usable association. This is the weaker form and must be
+  reported as such, not silently counted as a match.
+
+State both the tolerance and which form each match used. A run where most points
+matched only geometrically is a different result from one where they matched by
+object, and a summary that hides the difference is misleading.
+
+Done when a plan for a captured view matches the hand-corrected chain on that
+view under that definition, with a structured reason for every point and every
+omission.
+
+Applying the plan is deliberately out of scope until that holds.
+
 ### 3. Add GA-safe `DrawingViewContext` selection strategy
 
 Current `DrawingViewContext` construction is intentionally simple:
