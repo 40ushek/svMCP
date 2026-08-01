@@ -337,6 +337,17 @@ Done when:
 - faces and loops can be traversed without new transport concerns
 - topology is stable enough for later outline/hull/contact logic
 
+Transport boundary:
+
+- `PartSolidGeometry` is exposed through the bridge-only command
+  `get_part_solid_geometry_in_view <viewId> <modelId>`; it intentionally has no
+  MCP wrapper because 2a reads the heavy topology outside the MCP timeout path.
+- The command returns `solidGeometryComplete` from the DTO. It is authoritative
+  only when the top-level `success` is `true`; on a failed call the empty solid
+  block and `false` flag are a failure result, not a partial topology snapshot.
+- `PartFaceGeometry.Normal` is nullable and is serialized as JSON `null` when
+  Tekla does not provide a face normal.
+
 ### Phase 4: Derived Point Layer
 
 Status: done in first form.

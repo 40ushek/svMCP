@@ -16,6 +16,9 @@ internal sealed partial class DrawingCommandHandler
     {
         TeklaDrawingPartGeometryApi? partGeometryApi = null;
         TeklaDrawingPartGeometryApi GetPartGeometryApi() => partGeometryApi ??= new TeklaDrawingPartGeometryApi(_model);
+        TeklaDrawingPartSolidGeometryApi? partSolidGeometryApi = null;
+        TeklaDrawingPartSolidGeometryApi GetPartSolidGeometryApi() =>
+            partSolidGeometryApi ??= new TeklaDrawingPartSolidGeometryApi(_model);
         TeklaDrawingPartPointApi? partPointApi = null;
         TeklaDrawingPartPointApi GetPartPointApi() => partPointApi ??= new TeklaDrawingPartPointApi(_model, GetPartGeometryApi());
         TeklaDrawingGridApi? gridApi = null;
@@ -36,6 +39,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_all_parts_geometry_in_view":
                 return HandleGetAllPartsGeometryInView(GetPartGeometryApi(), args);
+
+            case "get_part_solid_geometry_in_view":
+                return HandleGetPartSolidGeometryInView(GetPartSolidGeometryApi(), args);
 
             case "get_part_points_in_view":
                 return HandleGetPartPointsInView(GetPartPointApi(), args);
@@ -109,6 +115,20 @@ internal sealed partial class DrawingCommandHandler
                 partPrefix   = r.PartPrefix
             })
         });
+        return true;
+    }
+
+    private bool HandleGetPartSolidGeometryInView(TeklaDrawingPartSolidGeometryApi api, string[] args)
+    {
+        if (args.Length < 3
+            || !int.TryParse(args[1], out var viewId)
+            || !int.TryParse(args[2], out var modelId))
+        {
+            WriteError("get_part_solid_geometry_in_view requires viewId and modelId arguments");
+            return true;
+        }
+
+        WritePartSolidGeometryInViewResult(api.GetPartSolidGeometryInView(viewId, modelId));
         return true;
     }
 
@@ -640,6 +660,40 @@ internal sealed partial class DrawingCommandHandler
             solidVertices = result.SolidVertices,
             viewHull = result.ViewHull,
             solidGeometryComplete = result.SolidGeometryComplete,
+            error = result.Error
+        });
+    }
+
+    private void WritePartSolidGeometryInViewResult(PartSolidGeometryInViewResult result)
+    {
+        var solid = result.Solid;
+        WriteJson(new
+        {
+            success = result.Success,
+            viewId = result.ViewId,
+            modelId = result.ModelId,
+            solid = new
+            {
+                bboxMin = solid.BboxMin,
+                bboxMax = solid.BboxMax,
+                vertices = solid.Vertices.Select(vertex => new
+                {
+                    index = vertex.Index,
+                    point = vertex.Point
+                }),
+                faces = solid.Faces.Select(face => new
+                {
+                    index = face.Index,
+                    normal = face.Normal,
+                    loops = face.Loops.Select(loop => new
+                    {
+                        index = loop.Index,
+                        vertexIndexes = loop.VertexIndexes
+                    })
+                }),
+                viewHull = solid.ViewHull,
+                solidGeometryComplete = solid.SolidGeometryComplete
+            },
             error = result.Error
         });
     }
