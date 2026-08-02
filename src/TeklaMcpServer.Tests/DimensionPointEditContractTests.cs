@@ -88,5 +88,12 @@ public class DimensionPointEditContractTests
         Assert.False(result.AttributesKept);
         Assert.Equal(0, result.NewDimensionId);
         Assert.Equal(0d, result.DistanceCorrection);
+
+        // A failed offset correction is reported separately from a failed recreate. Sharing one
+        // field would make "the set exists but its line is misplaced" indistinguishable from
+        // "nothing was created", and the caller's next move differs: nudge with move_dimension,
+        // or retry the whole recreate.
+        Assert.Null(result.DistanceCorrectionError);
+        Assert.Null(result.Error);
     }
 }

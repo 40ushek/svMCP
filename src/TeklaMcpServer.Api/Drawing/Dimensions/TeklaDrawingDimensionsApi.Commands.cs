@@ -438,33 +438,63 @@ public sealed partial class TeklaDrawingDimensionsApi
             original.Delete();
             activeDrawing.CommitChanges("(MCP) RecreateDimension");
 
-            // The offset is deliberately NOT corrected here. Measured behaviour, TS2025:
-            //   * attributes copied from the original carry their own offset, which Tekla adds on
-            //     top of the distance passed in — identical points and distance -200 put the line
-            //     at X=-200 with "standard" attributes but at X=-604 with copied ones;
-            //   * Distance is measured from the EXTREME point along the offset direction, and
-            //     flipping its sign switches which extreme is used;
-            //   * that direction is X for vertical dimensions, Y for horizontal ones and the
-            //     perpendicular to the chain axis for inclined ones.
-            // Forcing Distance to the requested value therefore moves the line somewhere else
-            // again (verified: setting -200 landed the line at X=23, because the extreme point
-            // sat at X=223). Until that convention is pinned down, the honest contract is to pass
-            // the caller's distance through, report what Tekla actually applied, and let the
-            // caller nudge the line with move_dimension, which changes Distance in place and is
-            // exact.
-            var appliedDistance = created.Distance;
+            // Creation does not honour the requested offset: attributes copied from the original
+            // carry their own, which Tekla adds on top — the same points and distance land the
+            // line in different places with "standard" attributes and with copied ones. Passing a
+            // corrected value into CreateDimensionSet does not help either, because Distance is
+            // measured from the extreme point along the offset direction and the sign of that
+            // direction decides which extreme.
+            //
+            // Assigning Distance on the already-created set instead is exact. This is NOT what
+            // move_dimension does: that one shifts Distance by a delta, this sets it to a value.
+            // Correcting by hand after every recreate landed the line correctly every time over a
+            // day of use, so do it here instead of making every caller repeat it.
+            var createdDistance = created.Distance;
+            var newDimensionId = created.GetIdentifier().ID;
+            var appliedDistance = createdDistance;
+            string? correctionError = null;
+
+            if (System.Math.Abs(createdDistance - effectiveDistance) > 1e-6)
+            {
+                try
+                {
+                    created.Distance = effectiveDistance;
+                    created.Modify();
+                    activeDrawing.CommitChanges("(MCP) RecreateDimension offset");
+
+                    // Read the offset back off a freshly fetched set rather than off `created`.
+                    // That instance holds the value just assigned to it whether or not Tekla
+                    // accepted it, so reporting from it would claim a correction the sheet does
+                    // not show.
+                    var reread = FindDimensionSet(activeDrawing, newDimensionId);
+                    if (reread != null)
+                        appliedDistance = reread.Distance;
+                    else
+                        correctionError =
+                            $"offset correction was committed but set {newDimensionId} could not be found to verify it";
+                }
+                catch (System.Exception ex)
+                {
+                    // The recreate itself succeeded and must stand — only the line sits at the
+                    // wrong offset. Report that precisely instead of failing the whole call, and
+                    // leave appliedDistance at the pre-correction value so the result cannot
+                    // claim a move that did not happen.
+                    correctionError = $"offset correction failed: {ex.Message}";
+                }
+            }
 
             return new RecreateDimensionResult
             {
                 Recreated = true,
                 OldDimensionId = dimensionId,
-                NewDimensionId = created.GetIdentifier().ID,
+                NewDimensionId = newDimensionId,
                 ViewId = viewId,
                 PointCount = pointList.Count,
                 AttributesKept = attributes != null,
                 Distance = appliedDistance,
                 RequestedDistance = effectiveDistance,
-                DistanceCorrection = appliedDistance - effectiveDistance
+                DistanceCorrection = appliedDistance - createdDistance,
+                DistanceCorrectionError = correctionError
             };
         }
         finally

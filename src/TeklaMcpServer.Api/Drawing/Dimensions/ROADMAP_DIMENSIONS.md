@@ -361,6 +361,39 @@ The current internal action-plan helper is important to interpret correctly:
 The following findings are worth preserving because they are already confirmed
 on the current implementation and should constrain future work.
 
+### The coordinate contract does not always hold — verified failure
+
+Found 2026-08-01 on drawing `IW.10`, view 1218, after nine drawings where it did
+hold. The part-geometry read returned **model** coordinates while the dimension
+read returned view coordinates, so the two could not be matched at all.
+
+Measured across all thirteen parts: X spanned 1363, Y spanned 100, Z spanned
+3738.2. The chains in the same view measured 1363 wide and 3738.2 tall. So the
+wall's height sat in the parts' Z and the dimensions' Y; the parts' Y held the
+wall thickness. `axisY` on every part was `[0, 0, 1000]` — world Z — where a
+correct read points it up the wall.
+
+Not transient: repeating the read reproduces it, reading dimensions in between
+changes nothing, and the top view returns a third orientation
+(`axisY = [0, -1000, 0]`).
+
+**This invalidates the assumption the association layer rests on.** Everything
+downstream — candidate points, chain coverage, the placement rules — works by
+matching a dimension point to a part face. Without a shared space none of it is
+meaningful, and a planner that proceeded anyway would produce confident nonsense.
+
+Two things follow:
+
+- **the read must report which space it is in**, not leave callers to infer it
+  from the numbers. A `coordinateSpace` on the geometry result, checked by
+  `get_dimension_chain_coverage` before joining, would turn a silent mismatch
+  into a refusal;
+- **the cause needs finding.** The hypothesis is that this wall sits in the model
+  in an orientation where `TransformationPlane(view.ViewCoordinateSystem)` does
+  not flatten it into the view plane. Unverified. Evidence is kept in
+  `cases/dimension_cases/assembly/965a95fe-…/before/` — the mismatch reproduces
+  from the saved files without Tekla.
+
 ### Coordinate contract for source geometry and dimension associations
 
 The existing part-geometry path establishes the model work plane from the
@@ -620,6 +653,64 @@ which face of which part a point should sit on — and that lives in
 and axis are available, but no notion of a face. The rule being implemented is
 "the point sits on the part being located", and a raked member already showed
 that the box is not the part.
+
+### 1a. Report what the sheet actually prints
+
+Found 2026-08-01, after two wrong conclusions in one day about what a chain reads.
+
+Nothing here is genuinely unknowable. Tekla holds the point order, the type decides
+which rows are drawn, and the sheet shows definite numbers. The read model simply
+does not carry any of it, so every consumer reconstructs it — and can get it wrong,
+as the assistant did twice, once by differencing adjacent points and once by
+exporting a PDF and seeing only one of the two rows.
+
+Worse, one piece is destroyed on the way out: **the point order is normalised on
+read**, top-to-bottom and right-to-left. The order that fixes the zero of the
+absolute row is not recoverable from the read model at all.
+
+The dimension context should report:
+
+- **which point is first** — the zero the absolute row counts from. This has to be
+  captured before normalisation, or it is gone;
+- **which rows are printed**, from `TeklaDimensionType`. Already available, just not
+  interpreted anywhere;
+- **both printed rows, computed here**: the relative values between adjacent points
+  and the absolute running totals from the start. Consumers should read them, not
+  derive them.
+
+`LengthList` is not this. It is computed from the normalised point order, so it
+answers neither row reliably — see the known gap below.
+
+Done when a caller can tell what a drawing prints without opening the drawing.
+
+### 1b. Set a chain's start point as an operation
+
+Requested 2026-08-01: changing where an absolute chain counts from is a task that
+comes up regularly, not a one-off.
+
+Absolute dimensions print the running total from the chain's start, and the start
+is fixed by the order the points were passed at creation. Read-back normalises the
+order, so the current start is not visible in the read model at all — only on the
+sheet. The usual correction, on a layer laid over a finished frame, is to move the
+zero onto the frame.
+
+Today this is done by hand with `recreate_dimension` and a reordered point list.
+That works, and it has three side effects the caller has to clean up every time:
+
+- the set is renumbered, so any id held elsewhere goes stale;
+- the offset drifts, because copied attributes carry their own, and has to be
+  restored with `move_dimension` — which moves by a delta, not to a value;
+- creating or recreating reflows neighbouring chains, so their offsets need
+  re-reading afterwards.
+
+A `set_dimension_start_point <dimensionId> <x> <y>` would read the chain, rotate
+its point order so the point nearest the given anchor comes first, recreate with
+the same attributes, and restore the offset. Verified on `EW.3-6`: reordering
+changes only the absolute row — the relative segments are between geometrically
+adjacent points and are unaffected — so the operation is safe in that respect.
+
+Two things it should report, because neither can be checked afterwards from the
+read model: which point ended up first, and what the absolute row now reads.
 
 ### 2a. Candidate points on parts
 
@@ -977,8 +1068,34 @@ Verifying a proposal on a fresh view is weak: the printed run is not in the
 context, point order normalizes on read, and text bounds are empty — so the
 result cannot be read back and compared with the decision.
 
-The first version must therefore **reproduce a chain a person already corrected
-by hand** in the captured corpus. The drawings are already collected.
+**Part of the answer is not derivable at all.** Stated by the user 2026-08-01:
+some dimensioning choices differ because of the plant's habit or the production
+technology. Those are properties of the factory, not of the drawing, so no corpus
+will yield them. The rules therefore split in two, and `2b` must keep them apart:
+
+- **derivable** — a span that restates a part's own size is redundant, a point sits
+  on the face bounding an opening, a wall reads from the bottom, a chain prints a
+  running total;
+- **convention** — how many chains, which carries what, where each sits. This must
+  be *configuration the planner is given*, never something it infers. Captured
+  examples are local to one plant and their layout conventions do not transfer.
+
+A layout question with no geometric answer is a question to ask, not to guess.
+
+**Exact reproduction is the wrong criterion.** Established 2026-08-01: the user
+produced two different acceptable dimensionings of the same wall and stated that
+neither is the only correct one. They agreed on which points are redundant, which
+face each point sits on, and what the sheet must show; they differed in how the
+work was split between chains. A planner that emits the second variant is not
+wrong, and a criterion that fails it is measuring the wrong thing.
+
+So acceptance must check the plan against the rules and against what the sheet is
+required to show — the opening's position, the reading direction, the absence of
+spans that merely restate a part's own size — and treat an exact match with a
+reference as sufficient evidence, never necessary.
+
+With that understood, the first version should still be measured against **a
+chain a person corrected by hand**. The drawings are already collected.
 
 But the answer is known only after screening. A corrected chain is not
 unconditional ground truth — `2a.1` found a point anchored to an imagined
@@ -1009,6 +1126,83 @@ view under that definition, with a structured reason for every point and every
 omission.
 
 Applying the plan is deliberately out of scope until that holds.
+
+### 2c. Defect detection for batch processing
+
+The goal behind this whole line of work is to process drawings in batches. `EW.4-6`
+(2026-08-02) is the first drawing where the full check list was run *before*
+proposing anything, and it produced a number worth building on:
+
+**The checks found all four defects. Three of the four were then left in place by the
+assistant, and the person removed them.** The fourth was acted on, incorrectly.
+
+So detection is not the bottleneck. The bottleneck is that a found defect gets talked
+out of — and it gets talked out of precisely where the rules contain the word
+*exception*. Each excuse sounded reasonable on the drawing: "exception for an overlay
+layer", "the panel is wide, the batten tops must show somewhere", "the chain prints x,
+so the number is honest". All three were wrong.
+
+Two consequences that must not be conflated:
+
+- **Speed.** Moving the checks into the bridge is a clear win and is not in dispute.
+  `get_dimension_contexts` returned 119,921 characters on a six-chain drawing and did
+  not fit the tool limit. A command that returns findings instead of the read model
+  costs hundreds of bytes and stops scaling with part count.
+- **Correctness.** A detector does not help here at all — it would report exactly what
+  was already visible. What helps is making *removal* the default and forcing an
+  exception to name a checkable condition instead of telling a story.
+
+There is a second, independent argument for putting the checks in code: on `EW.4-6`
+the ad-hoc script and `get_dimension_chain_coverage` caught **different** things. The
+script tested points against part bounding boxes, reported the width overall's two
+points as "on nothing", and the assistant dismissed them; coverage returned `Missing`
+— no candidate at all, not even a box corner — a class the bbox test cannot express.
+Two implementations of "the same" check will keep diverging as long as one of them is
+rewritten from scratch on every drawing.
+
+#### Step 1 — grade the checks offline, against the corpus
+
+Write the checks as a pure function over captured JSON: `dimension_contexts.json`,
+`parts_geometry.json`, `candidates_*.json`, `coverage_*.json` in, findings out. No
+Tekla, no drawing touched.
+
+`cases/dimension_cases/assembly/` already holds five drawings with a human-edited
+state (`004604c1`, `5cf600c9`, `8a856c51`, `c5018fe1`, `c5109755`) plus four with an
+accepted `after`. Run the function over all of them and compare each finding against
+what the person actually changed.
+
+This is the only honest way to decide which defect classes are safe to fix
+automatically — instead of deciding it by opinion. **If a check fires on a point the
+person deliberately kept, that class is not safe.** The corpus is on disk, so this
+costs nothing and risks nothing.
+
+#### Step 2 — move the same code into the bridge
+
+`get_dimension_defects viewId`. Logic already graded in step 1; only the data source
+changes. Returns findings, never the read model.
+
+#### Step 3 — auto-apply only the classes that passed step 1
+
+The score on `EW.4-6` argues for acting rather than reporting: found 4, broke 0,
+wrongly left 3. Mechanical removal beat the assistant's judgement. But *which* classes
+is decided by step 1, not by this paragraph.
+
+Provisional split, to be confirmed or refuted by the corpus run:
+
+| likely automatic | likely reported to a person |
+|---|---|
+| phantom anchor (`fallbackOnly` / `Missing`) re-anchored to the nearest real vertex | anything concerning an overall dimension |
+| span equal to the part's own extent along the chain | the start point of an absolute chain |
+| point far across from its own chain's line | any drawing where the coordinate-space check failed |
+| chain whose printed values are contained in another's | a raked top beyond the one worked case |
+
+#### Start points are out of scope for batch
+
+A chain's start point is not recoverable by reading it back — the point order is
+normalised. Mass re-creation of absolute chains with the zero on the frame would
+therefore be invisibly wrong until something is printed. Report only, until **1a**
+lands and the printed rows can be read directly. There is no middle option here: the
+choice is "report" or "rebuild them all blind".
 
 ### 3. Add GA-safe `DrawingViewContext` selection strategy
 

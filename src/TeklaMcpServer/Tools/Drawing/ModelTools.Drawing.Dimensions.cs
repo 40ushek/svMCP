@@ -280,7 +280,7 @@ public static partial class ModelTools
         [Description("ID of the dimension set to rebuild. This id is DEAD after the call.")] int dimensionId,
         [Description("Flat JSON array of model-space coordinates for the new chain: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
         [Description("REQUIRED, no default — passing the wrong one rebuilds a vertical chain as horizontal. 'horizontal' (offset along Y), 'vertical' (offset along X), or a custom 'dx,dy,dz' vector for inclined chains. Read dimensionType from get_dimension_contexts for the chain being rebuilt.")] string direction,
-        [Description("Signed offset from the points to the dimension line, mm. Omit to reuse the original set's Distance — but Tekla stores it unsigned, so the line can end up on the opposite side. Note the offset is NOT auto-corrected: check the result and nudge with move_dimension if needed.")] double? distance = null)
+        [Description("Signed offset from the points to the dimension line, mm. Omit to reuse the original set's Distance — but Tekla stores it unsigned, so the line can end up on the opposite side. The offset IS auto-corrected: creation does not honour it, so the command assigns Distance afterwards and re-reads it. distance is what the sheet shows; a non-zero distanceCorrection is normal. If distanceCorrectionError is set, the recreate succeeded but the line stayed at the created offset — nudge it with move_dimension.")] double? distance = null)
     {
         var json = RunBridge("recreate_dimension",
             dimensionId.ToString(CultureInfo.InvariantCulture),

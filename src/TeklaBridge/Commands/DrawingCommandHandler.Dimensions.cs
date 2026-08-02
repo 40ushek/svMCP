@@ -866,6 +866,7 @@ internal sealed partial class DrawingCommandHandler
             distance = result.Distance,
             requestedDistance = result.RequestedDistance,
             distanceCorrection = result.DistanceCorrection,
+            distanceCorrectionError = result.DistanceCorrectionError,
             error = result.Error
         });
         return true;

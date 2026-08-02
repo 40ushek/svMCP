@@ -49,20 +49,32 @@ public sealed class RecreateDimensionResult
     public int     PointCount      { get; set; }
     /// <summary>False when the original attributes could not be read and defaults were used.</summary>
     public bool    AttributesKept  { get; set; }
-    /// <summary>Offset the new set actually ended up with, re-read from Tekla after correction.</summary>
+    /// <summary>
+    /// Offset the new set actually ended up with, re-read from a freshly fetched set after the
+    /// correction was committed. When the correction failed this is the pre-correction value —
+    /// it never reports an offset the sheet does not show.
+    /// </summary>
     public double  Distance          { get; set; }
     /// <summary>Offset that was asked for — either the caller's value or the original's.</summary>
     public double  RequestedDistance { get; set; }
     /// <summary>
-    /// <see cref="Distance"/> minus <see cref="RequestedDistance"/>, in mm. Non-zero means Tekla
-    /// placed the dimension line somewhere other than asked, because attributes copied from the
-    /// original carry their own offset that gets added on top.
+    /// How much the command had to shift the line after creating it, in mm. Creation does not
+    /// honour the requested offset — attributes copied from the original carry their own, which
+    /// Tekla adds on top — so the command assigns `Distance` on the created set afterwards, which
+    /// is exact. That is NOT what `move_dimension` does: that one shifts `Distance` by a delta,
+    /// this sets it to a value.
     ///
-    /// The command does NOT correct this — the relation between Distance and the actual line
-    /// position depends on the dimension direction and on which extreme point Tekla measures
-    /// from, and that convention is not pinned down yet. Check this value and nudge the line with
-    /// move_dimension, which changes Distance in place and is exact.
+    /// A non-zero value is therefore normal and means the correction was applied. Compare
+    /// <see cref="Distance"/> with <see cref="RequestedDistance"/> to see whether it succeeded: if
+    /// they still differ, the correction did not take and the line needs attention.
     /// </summary>
     public double  DistanceCorrection { get; set; }
+    /// <summary>
+    /// Set when the offset correction failed, while the recreate itself succeeded. The new set
+    /// exists and is addressable through <see cref="NewDimensionId"/>; only its line sits at the
+    /// wrong offset and can be nudged with `move_dimension`. Distinct from <see cref="Error"/>,
+    /// which means the recreate did not happen at all.
+    /// </summary>
+    public string? DistanceCorrectionError { get; set; }
     public string? Error             { get; set; }
 }
