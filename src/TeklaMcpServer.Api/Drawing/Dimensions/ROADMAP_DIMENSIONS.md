@@ -1202,35 +1202,6 @@ Provisional split, to be confirmed or refuted by the run over the cases:
 | point far across from its own chain's line | any drawing where the coordinate-space check failed |
 | chain whose printed values are contained in another's | a raked top beyond the one worked case |
 
-#### Performance and safe batch repair — agreed 2026-08-02
-
-The next optimization is not caching. The expensive part of the current read is
-that it traverses solids for every detail even though only a small number of
-points usually remain in dispute. On `EW.4-6`, roughly 22 of 24 solid reads would
-have been unnecessary after the cheap checks.
-
-Implement the work as **one bridge round-trip with two internal passes**:
-
-1. A cheap pass over dimension contexts, associations and available bounds
-   classifies points that are already decisive and builds the list of parts that
-   need exact evidence.
-2. A targeted pass reads solid candidates only for unresolved points and their
-   relevant parts. The cheap pass must not silently accept a point when it cannot
-   prove it; unresolved means exact geometry is required.
-
-The following step is a **batch repair command**. It must apply a prepared repair
-plan, handle dimension renumbering by geometry rather than stale ids, then
-re-read the view and run defect detection again before returning. A successful
-command means both that the edits completed and that the post-edit read passed;
-an edit response without this verification is insufficient. On a failed edit the
-command stops and reports the state instead of continuing with stale ids.
-
-Only after those two steps show a repeated-read need should candidate data be
-cached. The cache key must include the drawing, view and a model-geometry
-snapshot identity, and it must be invalidated when the model or drawing changes.
-Caching is a follow-up for repeated analysis of the same unchanged view, not the
-first remedy for unnecessary solid reads.
-
 #### Start points are out of scope for batch
 
 A chain's start point is not recoverable by reading it back — the point order is
