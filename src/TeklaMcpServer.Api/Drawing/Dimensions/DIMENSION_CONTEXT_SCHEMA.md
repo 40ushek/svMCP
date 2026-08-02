@@ -31,7 +31,7 @@ read model:
 - the `invalid` and `unassociated` status values;
 - the versioned observation/decision/action/verification storage layout.
 
-The local `cases/dimension_cases` corpus was deleted on 2026-08-01 and the folder
+The local `cases/dimension_cases` set was deleted on 2026-08-01 and the folder
 is empty. It predated this schema — no anchors, no candidate points, no segment
 relations, and lengths computed by a formula that has since been corrected — so
 re-capturing in the current format was judged cheaper than migrating it.

@@ -538,7 +538,7 @@ Sharing is only sound while the geometry is genuinely identical, and a hash is
 what makes a mismatch detectable rather than invisible.
 
 Done when an observation of a real drawing agrees with the drawing on every
-field, and the existing corpus can be recaptured through it as generation 1. The
+field, and the existing cases can be recaptured through it as generation 1. The
 six generation-0 cases stay as they are.
 
 ### 0b. Keep the relation graph instead of flattening it
@@ -866,7 +866,7 @@ keys; `ambiguous` is reserved for matches at genuinely different places.
 #### First run: `IW.1 - 1`, view 1214 — a tool test, not a reference
 
 This drawing was the one open at the time. It has no recorded human pass, no
-before/after pair, and it is an interior wall, while every corpus drawing with a
+before/after pair, and it is an interior wall, while every captured drawing with a
 human pass is a roof panel. Treat the run as evidence that the command works, not
 as evidence about correct dimensioning.
 
@@ -923,7 +923,7 @@ Coverage screens **anchoring, not selection**. A chain carrying a redundant poin
 of work started from — passes cleanly, since every point does sit on its own
 part. That class needs its own check before a chain is called screened.
 
-The whole `cases/` corpus, including this run's fixture, was deleted on
+Every case under `cases/`, including this run's fixture, was deleted on
 2026-08-01: it predated anchors, candidate points and segment relations, and its
 lengths came from a formula since corrected, so re-capturing beat migrating. The
 numbers above are reproducible — the drawing is unmodified and the commands are
@@ -1028,7 +1028,7 @@ will group differently and the disagreement will be invisible afterwards:
   buried in the grouping code. It has to be larger than snap noise and smaller
   than the shortest real spacing that must survive — the observed junk segments
   were 15–60 mm, so the working range starts there and needs confirming against
-  the corpus rather than guessing;
+  the cases rather than guessing;
 - **coincident and near-coincident points collapse to one position**, and the
   plan records which candidates were collapsed and which one it kept. A cluster
   silently reduced to its first member is the same failure as no grouping at all;
@@ -1045,7 +1045,7 @@ which part it sits on and why that face; for every part not dimensioned, why it
 was left out. That is the only review possible before anything is applied.
 
 Those reasons must be **structured, not a `Reason` string**. A sentence is
-readable once and aggregable never: it cannot be counted across a corpus,
+readable once and aggregable never: it cannot be counted across the cases,
 filtered on, or compared between two runs, so a rule that starts misfiring stays
 invisible. At minimum a reason needs a stable code, the objects it refers to, and
 the values it was decided on — with free text as an addition to those, not as a
@@ -1070,8 +1070,8 @@ result cannot be read back and compared with the decision.
 
 **Part of the answer is not derivable at all.** Stated by the user 2026-08-01:
 some dimensioning choices differ because of the plant's habit or the production
-technology. Those are properties of the factory, not of the drawing, so no corpus
-will yield them. The rules therefore split in two, and `2b` must keep them apart:
+technology. Those are properties of the factory, not of the drawing, so no number
+of captured cases will yield them. The rules therefore split in two, and `2b` must keep them apart:
 
 - **derivable** — a span that restates a part's own size is redundant, a point sits
   on the face bounding an opening, a wall reads from the bottom, a chain prints a
@@ -1160,7 +1160,7 @@ points as "on nothing", and the assistant dismissed them; coverage returned `Mis
 Two implementations of "the same" check will keep diverging as long as one of them is
 rewritten from scratch on every drawing.
 
-#### Step 1 — grade the checks offline, against the corpus
+#### Step 1 — grade the checks offline, against the captured cases
 
 Write the checks as a pure function over captured JSON: `dimension_contexts.json`,
 `parts_geometry.json`, `candidates_*.json`, `coverage_*.json` in, findings out. No
@@ -1173,7 +1173,7 @@ what the person actually changed.
 
 This is the only honest way to decide which defect classes are safe to fix
 automatically — instead of deciding it by opinion. **If a check fires on a point the
-person deliberately kept, that class is not safe.** The corpus is on disk, so this
+person deliberately kept, that class is not safe.** The cases are on disk, so this
 costs nothing and risks nothing.
 
 #### Step 2 — move the same code into the bridge
@@ -1187,7 +1187,7 @@ The score on `EW.4-6` argues for acting rather than reporting: found 4, broke 0,
 wrongly left 3. Mechanical removal beat the assistant's judgement. But *which* classes
 is decided by step 1, not by this paragraph.
 
-Provisional split, to be confirmed or refuted by the corpus run:
+Provisional split, to be confirmed or refuted by the run over the cases:
 
 | likely automatic | likely reported to a person |
 |---|---|
