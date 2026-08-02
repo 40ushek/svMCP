@@ -95,6 +95,11 @@ public static partial class ModelTools
             "fit_views_to_sheet" => TimeSpan.FromMinutes(3),
             "arrange_views_only" => TimeSpan.FromMinutes(3),
             "open_drawing" => TimeSpan.FromMinutes(2),
+            // Reads candidate points for every distinct part in the view, one bridge-side Tekla
+            // call per part, sequentially. On a large view that alone can pass the 30 s default
+            // before the detector even runs — see get_part_candidate_points_in_view's own note on
+            // avoiding the MCP timeout by calling the bridge directly.
+            "get_dimension_defects" => TimeSpan.FromMinutes(3),
             _ => PersistentBridge.DefaultResponseTimeout
         };
 }

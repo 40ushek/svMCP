@@ -1181,6 +1181,12 @@ costs nothing and risks nothing.
 `get_dimension_defects viewId`. Logic already graded in step 1; only the data source
 changes. Returns findings, never the read model.
 
+Implemented 2026-08-02. The live source reads dimension contexts and part geometry once,
+builds candidate coverage once per distinct part, and passes that snapshot to the unchanged
+`DimensionDefectDetector`. The bridge command and MCP tool return compact chain summaries,
+findings and warnings; neither modifies the drawing. If any part's candidate read fails, anchor
+checks are explicitly skipped rather than turning unavailable evidence into `UnanchoredPoint`.
+
 #### Step 3 — auto-apply only the classes that passed step 1
 
 The score on `EW.4-6` argues for acting rather than reporting: found 4, broke 0,
