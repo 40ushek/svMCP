@@ -9,9 +9,26 @@ Derived 2026-08-01 on model Midi_1-1-1: about a dozen interior walls, two exteri
 walls, and two overlay layers of one exterior wall (OSB sheathing, battens).
 **Never seen:** roof panels, trusses, parts with cut-outs, steel, any other plant.
 
-Evidence — which drawing, which numbers, which earlier versions were wrong, and a
-changelog of this file — lives next door in `HISTORY.md`, which is not loaded with
-this one. Read it when a rule looks doubtful or you are about to invent one.
+Concrete drawing examples live in
+`D:\repos\svMCP\cases\dimension_cases\assembly`. Before editing a live
+AssemblyDrawing, inspect the matching case's `before`, `after-human` and, where
+present, `after-assistant` payloads; the examples are the reference for the
+whole layout, not merely a source of defect names. Do not claim to have checked
+the examples without opening those files.
+
+`HISTORY.md` is only a journal explaining how rules were learned and corrected.
+It is optional context for a doubtful rule; it is not required to perform the
+dimensioning task.
+
+## Final report
+
+Always finish with a short execution report:
+
+- elapsed time for each major stage and total elapsed time;
+- exact token usage when the host exposes it;
+- otherwise state clearly that the token number is unavailable and give an
+  estimate, never a fabricated exact value;
+- list changed drawings/dimension IDs and verification status.
 
 ## Scope
 
@@ -51,9 +68,16 @@ Then propose, stating what each chain will print.
 
 ## Traps
 
-- **Read-back normalises point order** (top-to-bottom, right-to-left). The order
-  passed to create_dimension fixes the absolute zero and is not recoverable.
-- **LengthList is neither row** — computed here from the normalised order.
+- **`points[0]` does set the true start point**, for both horizontal and vertical
+  chains — confirmed on a live drawing by flipping it back and forth and checking the
+  visible start in Tekla itself each time. But **read-back cannot verify this directly**:
+  get_drawing_dimensions/get_dimension_contexts normalise point order for display
+  (top-to-bottom, right-to-left) regardless of what was actually passed in. For a single
+  simple chain, the true start can nevertheless be reconstructed from segment
+  Start/End connectivity for both horizontal and vertical chains. If the segments are
+  branching, disconnected or otherwise ambiguous, do not guess the start.
+- **LengthList is neither row** — computed here from the normalised (display) order,
+  not from what was passed to create_dimension.
 - **Never difference adjacent points to say what a chain reads.** Compute both rows
   and check the type.
 - **Editing renumbers**: use newDimensionId / mergedDimensionId. Match states by
