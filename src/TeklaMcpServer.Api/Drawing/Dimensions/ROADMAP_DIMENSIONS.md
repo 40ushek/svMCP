@@ -601,6 +601,62 @@ Two things deliberately left out:
 Done when a saved observation can answer "which model object does this segment
 measure against" without re-reading the drawing.
 
+### 0c. Share cached view-part geometry across readers
+
+The view context, chain coverage, defect detection and placement paths all pass
+through `GetAllPartsGeometryInView`, while `GetPartPointsInView` currently reads a
+single part through a separate solid path. A single analysis can therefore read
+the same solid geometry more than once.
+
+Target:
+
+- add a shared `DrawingGeometryCache` in the long-lived `TeklaBridge` scope;
+- key cached view geometry by `drawingId`, `viewId` and
+  `Drawing.UpToDateStatus`, with entries indexed by `modelId`;
+- make `GetAllPartsGeometryInView` populate and reuse the cache;
+- make `GetPartGeometryInView` / `GetPartPointsInView` consume the same cached
+  `PartGeometryInViewResult` and derive points without another `GetSolid()`;
+- expose cache hits/misses and solid-read counts through `PerfTrace`.
+
+Before implementation, run a live positive invalidation test: move a model part,
+read `Drawing.UpToDateStatus` immediately afterwards, and verify that the status
+changes in time to invalidate the cached view geometry. The negative test is also
+required: editing a dimension must leave the status unchanged. If the positive
+test fails, `UpToDateStatus` cannot be the sole cache version; add a model
+revision/fingerprint or disable reuse after model edits.
+
+Invalidation:
+
+- clear on `open_drawing`, `close_drawing` and `update_drawing`;
+- clear affected view entries after the explicit view-mutator list:
+  `move_view`, `set_view_scale`, `fit_views_to_sheet`, `arrange_views_only`,
+  and any future view rotate/transform/recreate command;
+- treat a changed `UpToDateStatus` as a cache miss;
+- do not clear solely because dimensions were edited when the drawing status is
+  unchanged.
+
+The current bridge processes stdin commands strictly sequentially, so the first
+implementation may assume one-threaded cache access. This is an explicit
+assumption, not a concurrency guarantee: if bridge dispatch is parallelised,
+the cache must gain a lock or an immutable/concurrent implementation before that
+change is enabled.
+
+`viewId` may be reused after a view is deleted and recreated. Each entry must
+therefore retain a cheap view fingerprint (at least view type, scale and
+`ViewCoordinateSystem`; include bounds when available). A fingerprint mismatch
+is a cache miss even when `drawingId` and `UpToDateStatus` are unchanged.
+
+The cache must not expose mutable internal lists to consumers. Direct one-shot
+`TeklaBridge.exe` CLI calls will not share entries across processes; the benefit
+is for the persistent `--loop` bridge session.
+
+Done when the positive and negative `UpToDateStatus` live tests pass, the explicit
+view-mutator list is covered by invalidation tests, repeated reads reuse one solid
+read per `(drawingId, viewId, modelId)`, view recreation cannot hit an old entry,
+the bridge sequencing assumption is documented in code, and the measured
+`GetSolid()` count and elapsed time are lower on a repeated read while producing
+byte-equivalent geometry-derived results.
+
 ### 1. Clarify orchestration naming — done
 
 `DimensionAiAssistedOrchestrator` was named for something it never did: it uses
