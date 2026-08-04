@@ -1377,6 +1377,32 @@ Current policy:
 - Any workaround based on delete/recreate must be designed as a separate,
   explicit feature.
 
+## Transport Diagnostics and Payload Reduction
+
+Recorded 2026-08-02. Before changing the bridge protocol, measure where time is
+actually spent. The current persistent bridge is a line-delimited JSON protocol
+over local stdin/stdout; compression is not automatically the bottleneck.
+
+Diagnostics must correlate, for the same command:
+
+- Tekla execution time inside the bridge (`executeMs`)
+- bridge response serialization and write time (`writeMs`)
+- server-side request write, response read and JSON parse time
+- request/response byte counts
+
+The first acceptance result is a report for several large geometry calls showing
+the median and worst-case share of time attributable to Tekla execution versus
+serialization and pipe transfer. Do not introduce gzip or change line framing
+until that report shows a material transfer cost. If compression is justified,
+keep it inside the existing bridge contract and preserve the plain JSON result
+seen by MCP tools.
+
+Coordinate reduction is a separate, low-risk optimization. It may use a compact
+wire projection rounded to 0.01 mm, while internal calculations and the
+observation/hash representation retain their existing precision. Coverage,
+anchor matching and maximum coordinate error must be tested before adopting the
+compact projection as the default MCP output.
+
 ## Acceptance Criteria
 
 The roadmap is being followed when the following remain true.

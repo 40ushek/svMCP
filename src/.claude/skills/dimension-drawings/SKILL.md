@@ -60,6 +60,18 @@ Then propose, stating what each chain will print.
   geometry, never by id.
 - **Offset side comes from the direction vector**, never from a negative distance.
   direction is required — guessing rebuilds a vertical chain as horizontal.
+- **`"horizontal"`/`"vertical"` are fixed-sign constants, not "keep the original side".**
+  `horizontal` always offsets one way, `horizontal-down` the other (same for
+  vertical/vertical-left). Before calling recreate_dimension, read the original's
+  `topDirection` (from get_drawing_dimensions) or its `ReferenceLine` position
+  relative to the points — pick the matching keyword from that, never default to
+  `horizontal`. Distance auto-correction (`distanceCorrection` in the response) only
+  fixes the *magnitude*, not the side chosen at creation — a wrong-side call still
+  reports success and a "corrected" distance while the line sits on the wrong side,
+  possibly crossing the parts it dimensions.
+- **Always re-read with get_drawing_dimensions right after a recreate** and compare
+  the new `referenceLine` to the old one (same side of the points, sane offset).
+  Do not treat a non-error response as confirmation the line landed correctly.
 - **move_dimension moves by a delta**, it does not set a value.
 - **create_dimension measures its distance from the points**, not from the part
   edge — a chain whose points sit inside the wall draws its line inside too.
