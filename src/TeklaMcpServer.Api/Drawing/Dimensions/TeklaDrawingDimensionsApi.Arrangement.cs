@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
@@ -302,7 +303,33 @@ public sealed partial class TeklaDrawingDimensionsApi
         if (targetGap < 0)
             throw new System.ArgumentOutOfRangeException(nameof(targetGap), "targetGap must be >= 0.");
 
-        return ApplyDimensionDistanceAdjustments(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
+        using var trace = DimensionContextTrace.StartArrange(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
+        try
+        {
+            IReadOnlyList<DimensionDistanceAdjustmentPlan> plans;
+            using (trace.Stage("plan", $"viewId={(viewId.HasValue ? viewId.Value.ToString() : "all")}"))
+                plans = PlanDimensionDistanceAdjustments(viewId, targetGap, allowInwardCorrectionFromPartsBounds, trace);
+
+            trace.Event(
+                "plan_summary",
+                $"planCount={plans.Count} proposalCount={plans.Sum(static plan => plan.Proposals.Count)}");
+
+            ArrangeDimensionsResult result;
+            using (trace.Stage("apply", $"planCount={plans.Count}"))
+                result = ApplyDimensionDistanceAdjustments(
+                    trace,
+                    plans);
+
+            trace.Event(
+                "result_summary",
+                $"applied={result.AppliedCount} skipped={result.SkippedCount} skipReasons={result.SkipReasons.Count}");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            trace.Event("error", $"type={ex.GetType().Name} message={ex.Message}");
+            throw;
+        }
     }
 
     internal List<DimensionGroupSpacingAnalysis> AnalyzeDimensionGroupSpacing(int? viewId)
@@ -325,20 +352,33 @@ public sealed partial class TeklaDrawingDimensionsApi
     internal List<DimensionDistanceAdjustmentPlan> PlanDimensionDistanceAdjustments(
         int? viewId,
         double targetGap,
-        bool allowInwardCorrectionFromPartsBounds = false)
+        bool allowInwardCorrectionFromPartsBounds = false,
+        DimensionContextTrace? trace = null)
     {
-        var groups = GetArrangeGroupsDeduped(viewId);
-        var decisionContext = BuildArrangeDecisionContext(groups, viewId);
-        return DimensionGroupSpacingAnalyzer.BuildStacks(groups)
-            .Select(stack =>
-            {
-                var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
-                return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
-            })
-            .ToList();
+        List<DimensionGroup> groups;
+        using (trace?.Stage("collect_groups", $"viewId={(viewId.HasValue ? viewId.Value.ToString() : "all")}"))
+            groups = GetArrangeGroupsDeduped(viewId, trace);
+
+        DimensionDecisionContext decisionContext;
+        using (trace?.Stage("build_decision_context", $"groupCount={groups.Count}"))
+            decisionContext = BuildArrangeDecisionContext(groups, viewId);
+
+        List<DimensionDistanceAdjustmentPlan> result;
+        using (trace?.Stage("build_adjustment_plans", $"groupCount={groups.Count}"))
+        {
+            result = DimensionGroupSpacingAnalyzer.BuildStacks(groups)
+                .Select(stack =>
+                {
+                    var axisPlan = DimensionGroupArrangementPlanner.BuildPlan(stack, targetGap, decisionContext, allowInwardCorrectionFromPartsBounds);
+                    return DimensionDistanceAdjustmentTranslator.BuildPlan(stack, axisPlan);
+                })
+                .ToList();
+        }
+
+        return result;
     }
 
-    private List<DimensionGroup> GetArrangeGroups(int? viewId)
+    private List<DimensionGroup> GetArrangeGroups(int? viewId, DimensionContextTrace? trace = null)
     {
         var noReductionPolicy = new DimensionReductionPolicy
         {
@@ -346,11 +386,12 @@ public sealed partial class TeklaDrawingDimensionsApi
             EnableEquivalentSimpleReduction = false,
             EnableRepresentativeSelection = false
         };
-        return DimensionGroupFactory.BuildGroups(GetDimensionSnapshots(viewId), reductionPolicy: noReductionPolicy);
+        var snapshots = trace != null ? GetDimensionSnapshots(viewId, trace) : GetDimensionSnapshots(viewId);
+        return DimensionGroupFactory.BuildGroups(snapshots, reductionPolicy: noReductionPolicy);
     }
 
-    private List<DimensionGroup> GetArrangeGroupsDeduped(int? viewId)
-        => DimensionArrangementDedup.Reduce(GetArrangeGroups(viewId));
+    private List<DimensionGroup> GetArrangeGroupsDeduped(int? viewId, DimensionContextTrace? trace = null)
+        => DimensionArrangementDedup.Reduce(GetArrangeGroups(viewId, trace));
 
     internal ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(
         int? viewId,
@@ -363,6 +404,22 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var plans = PlanDimensionDistanceAdjustments(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
         return ApplyDimensionDistanceAdjustments(activeDrawing, plans, "(MCP) ArrangeDimensions", "(MCP) RollbackArrangeDimensions");
+    }
+
+    private ArrangeDimensionsResult ApplyDimensionDistanceAdjustments(
+        DimensionContextTrace trace,
+        IReadOnlyList<DimensionDistanceAdjustmentPlan> plans)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        return ApplyDimensionDistanceAdjustments(
+            activeDrawing,
+            plans,
+            "(MCP) ArrangeDimensions",
+            "(MCP) RollbackArrangeDimensions",
+            trace);
     }
 
     internal DimensionArrangeHandoffResult TryApplyLocalArrangeHandoff(
@@ -440,7 +497,8 @@ public sealed partial class TeklaDrawingDimensionsApi
         Tekla.Structures.Drawing.Drawing activeDrawing,
         IReadOnlyList<DimensionDistanceAdjustmentPlan> plans,
         string commitMessage,
-        string rollbackCommitMessage)
+        string rollbackCommitMessage,
+        DimensionContextTrace? trace = null)
     {
         var result = new ArrangeDimensionsResult();
 
@@ -470,6 +528,10 @@ public sealed partial class TeklaDrawingDimensionsApi
             }
         }
 
+        trace?.Event(
+            "proposal_summary",
+            $"plans={plans.Count} deltas={deltas.Count} skipped={result.SkippedCount}");
+
         if (deltas.Count == 0)
             return result;
 
@@ -477,6 +539,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         DrawingEnumeratorBase.AutoFetch = false;
         try
         {
+            var targetsTimer = Stopwatch.StartNew();
             var targets = new Dictionary<int, StraightDimensionSet>();
             var allDims = activeDrawing.GetSheet().GetAllObjects(typeof(StraightDimensionSet));
             while (allDims.MoveNext())
@@ -490,6 +553,10 @@ public sealed partial class TeklaDrawingDimensionsApi
 
                 targets[id] = ds;
             }
+
+            trace?.Event(
+                "target_scan",
+                $"elapsedMs={targetsTimer.ElapsedMilliseconds} targets={targets.Count}");
 
             foreach (var id in deltas.Keys)
             {
@@ -514,13 +581,21 @@ public sealed partial class TeklaDrawingDimensionsApi
                     var ds = pair.Value;
                     var delta = deltas[id];
 
+                    var modifyTimer = Stopwatch.StartNew();
                     originalDistances[id] = ds.Distance;
                     ds.Distance += delta;
                     ds.Modify();
                     modifiedIds.Add(id);
+                    trace?.Event(
+                        "modify_dimension",
+                        $"dimensionId={id} elapsedMs={modifyTimer.ElapsedMilliseconds} delta={delta.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
                 }
 
+                var commitTimer = Stopwatch.StartNew();
                 activeDrawing.CommitChanges(commitMessage);
+                trace?.Event(
+                    "commit",
+                    $"elapsedMs={commitTimer.ElapsedMilliseconds} modified={modifiedIds.Count}");
             }
             catch
             {

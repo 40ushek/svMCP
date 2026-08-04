@@ -8,18 +8,29 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class DimensionContextTrace : IDisposable
 {
     private readonly Stopwatch _total = Stopwatch.StartNew();
-    private readonly int _viewId;
+    private readonly string _command;
+    private readonly string _scopeDetails;
     private bool _disposed;
 
-    private DimensionContextTrace(int viewId)
+    private DimensionContextTrace(string command, string scopeDetails)
     {
-        _viewId = viewId;
-        Trace("start", $"viewId={viewId}");
+        _command = command;
+        _scopeDetails = scopeDetails;
+        Trace("start", string.Empty);
     }
 
     public string TraceId { get; } = Guid.NewGuid().ToString("N").Substring(0, 8);
 
-    public static DimensionContextTrace Start(int viewId) => new(viewId);
+    public static DimensionContextTrace Start(int viewId)
+        => new("get_dimension_contexts", $"viewId={viewId}");
+
+    public static DimensionContextTrace StartArrange(
+        int? viewId,
+        double targetGap,
+        bool allowInwardCorrectionFromPartsBounds)
+        => new(
+            "arrange_dimensions",
+            $"viewId={(viewId.HasValue ? viewId.Value.ToString() : "all")} targetGap={targetGap.ToString(System.Globalization.CultureInfo.InvariantCulture)} allowInwardCorrectionFromPartsBounds={allowInwardCorrectionFromPartsBounds}");
 
     public IDisposable Stage(string stage, string details = "")
         => new StageScope(this, stage, details);
@@ -33,7 +44,7 @@ internal sealed class DimensionContextTrace : IDisposable
             return;
 
         _disposed = true;
-        Trace("end", $"viewId={_viewId}");
+        Trace("end", string.Empty);
     }
 
     private void Trace(string operation, string details)
@@ -42,7 +53,7 @@ internal sealed class DimensionContextTrace : IDisposable
             "api-dimensions-detail",
             operation,
             _total.ElapsedMilliseconds,
-            $"traceId={TraceId} viewId={_viewId} {details}".Trim());
+            $"traceId={TraceId} command={_command} {_scopeDetails} {details}".Trim());
     }
 
     private sealed class StageScope : IDisposable
