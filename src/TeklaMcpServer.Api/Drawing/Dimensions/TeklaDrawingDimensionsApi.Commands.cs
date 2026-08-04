@@ -505,6 +505,113 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
     }
 
+    /// <summary>
+    /// TEST-ONLY / EXPERIMENTAL — DO NOT USE IN PRODUCTION. TRIED AND DOES NOT WORK. Swaps
+    /// StartPoint/EndPoint on every child StraightDimension
+    /// segment, in place. Modify() returns true for all segments and the read-back through
+    /// get_dimension_contexts is unaffected either way — but on a live drawing (chain 6176,
+    /// horizontal, 2026-08-04) the visible start point in Tekla itself did not move: same
+    /// pattern as AddToDimensionSet, which also reports success while doing nothing. Left here
+    /// so the next session does not re-attempt this path; horizontal start point still has no
+    /// known fix through the Open API.
+    /// </summary>
+    public ReverseDimensionStartResult ReverseDimensionStart(int dimensionId)
+    {
+        var drawingHandler = new DrawingHandler();
+        var activeDrawing = drawingHandler.GetActiveDrawing();
+        if (activeDrawing == null)
+            throw new DrawingNotOpenException();
+
+        var set = FindDimensionSet(activeDrawing, dimensionId);
+        if (set == null)
+            return new ReverseDimensionStartResult { DimensionId = dimensionId, Error = $"DimensionSet {dimensionId} not found" };
+
+        var segments = new List<StraightDimension>();
+        var segEnum = set.GetObjects();
+        while (segEnum.MoveNext())
+            if (segEnum.Current is StraightDimension segment)
+                segments.Add(segment);
+
+        var modifySucceededCount = 0;
+        var errors = new List<string>();
+        var expectedBySegmentId = new Dictionary<int, (double StartX, double StartY, double EndX, double EndY)>();
+        foreach (var segment in segments)
+        {
+            try
+            {
+                var start = segment.StartPoint;
+                var end = segment.EndPoint;
+                segment.StartPoint = end;
+                segment.EndPoint = start;
+                var segmentId = segment.GetIdentifier().ID;
+                expectedBySegmentId[segmentId] = (end.X, end.Y, start.X, start.Y);
+                if (segment.Modify())
+                    modifySucceededCount++;
+                else
+                    errors.Add($"segment {segmentId}: Modify() returned false");
+            }
+            catch (System.Exception ex)
+            {
+                errors.Add($"segment {segment.GetIdentifier().ID}: {ex.Message}");
+            }
+        }
+
+        if (modifySucceededCount > 0)
+            activeDrawing.CommitChanges("(MCP) ReverseDimensionStart");
+
+        // Modify() is not a sufficient success signal for this probe: Tekla has been observed
+        // to return true while keeping the original segment direction. Re-read the set after
+        // commit and count only endpoints that actually match the requested reversal.
+        var verifiedCount = 0;
+        var readBack = FindDimensionSet(activeDrawing, dimensionId);
+        if (readBack == null)
+        {
+            if (modifySucceededCount > 0)
+                errors.Add("dimension set disappeared during verification");
+        }
+        else
+        {
+            var readBackSegments = new Dictionary<int, StraightDimension>();
+            var readBackEnum = readBack.GetObjects();
+            while (readBackEnum.MoveNext())
+            {
+                if (readBackEnum.Current is StraightDimension readBackSegment)
+                    readBackSegments[readBackSegment.GetIdentifier().ID] = readBackSegment;
+            }
+
+            foreach (var expected in expectedBySegmentId)
+            {
+                if (!readBackSegments.TryGetValue(expected.Key, out var segment))
+                {
+                    errors.Add($"segment {expected.Key}: missing during verification");
+                    continue;
+                }
+
+                var actualStart = segment.StartPoint;
+                var actualEnd = segment.EndPoint;
+                if (Math.Abs(actualStart.X - expected.Value.StartX) > 0.001 ||
+                    Math.Abs(actualStart.Y - expected.Value.StartY) > 0.001 ||
+                    Math.Abs(actualEnd.X - expected.Value.EndX) > 0.001 ||
+                    Math.Abs(actualEnd.Y - expected.Value.EndY) > 0.001)
+                {
+                    errors.Add($"segment {expected.Key}: Modify() reported success but endpoints were not persisted");
+                    continue;
+                }
+
+                verifiedCount++;
+            }
+        }
+
+        return new ReverseDimensionStartResult
+        {
+            Reversed = segments.Count > 0 && verifiedCount == segments.Count,
+            DimensionId = dimensionId,
+            SegmentCount = segments.Count,
+            SegmentsReversed = verifiedCount,
+            Error = errors.Count > 0 ? string.Join("; ", errors) : null
+        };
+    }
+
     private static void DiscardAddition(Tekla.Structures.Drawing.Drawing activeDrawing, StraightDimensionSet addition)
     {
         try

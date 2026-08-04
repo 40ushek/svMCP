@@ -78,3 +78,19 @@ public sealed class RecreateDimensionResult
     public string? DistanceCorrectionError { get; set; }
     public string? Error             { get; set; }
 }
+
+/// <summary>
+/// Result of <c>reverse_dimension_start</c>. TEST-ONLY / EXPERIMENTAL — do not use from
+/// production automation or MCP. See the doc comment on
+/// <see cref="TeklaDrawingDimensionsApi.ReverseDimensionStart"/>. The method probes whether
+/// swapping StartPoint/EndPoint on child segments affects Tekla's absolute-value origin; it is
+/// not a supported dimension-edit operation.
+/// </summary>
+public sealed class ReverseDimensionStartResult
+{
+    public bool    Reversed         { get; set; }
+    public int     DimensionId      { get; set; }
+    public int     SegmentCount     { get; set; }
+    public int     SegmentsReversed { get; set; }
+    public string? Error            { get; set; }
+}
