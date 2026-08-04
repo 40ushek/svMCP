@@ -80,9 +80,6 @@ internal sealed partial class DrawingCommandHandler
             case "recreate_dimension":
                 return HandleRecreateDimension(api, args);
 
-            case "reverse_dimension_start":
-                return HandleReverseDimensionStart(api, args);
-
             case "delete_dimension":
                 return HandleDeleteDimension(api, args);
 
@@ -918,30 +915,6 @@ internal sealed partial class DrawingCommandHandler
             requestedDistance = result.RequestedDistance,
             distanceCorrection = result.DistanceCorrection,
             distanceCorrectionError = result.DistanceCorrectionError,
-            error = result.Error
-        });
-        return true;
-    }
-
-    // TEST-ONLY / EXPERIMENTAL. Do not call from production automation or expose through MCP.
-    // Swaps segment StartPoint/EndPoint in place, id unchanged. It is kept as a direct bridge
-    // probe for Tekla API behaviour; a live test showed Modify() can report success without
-    // changing the visible start point.
-    private bool HandleReverseDimensionStart(TeklaDrawingDimensionsApi api, string[] args)
-    {
-        if (args.Length < 2 || !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var dimensionId))
-        {
-            WriteError("reverse_dimension_start requires a dimensionId argument");
-            return true;
-        }
-
-        var result = api.ReverseDimensionStart(dimensionId);
-        WriteJson(new
-        {
-            reversed = result.Reversed,
-            dimensionId = result.DimensionId,
-            segmentCount = result.SegmentCount,
-            segmentsReversed = result.SegmentsReversed,
             error = result.Error
         });
         return true;
