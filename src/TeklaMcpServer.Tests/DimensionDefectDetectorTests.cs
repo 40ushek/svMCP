@@ -357,6 +357,95 @@ public sealed class DimensionDefectDetectorTests
         Assert.Single(report.Defects, defect => defect.DimensionId == 9002);
     }
 
+    [Fact]
+    public void WrongStartPointUsesTheSourceOfASimpleConnectedSegmentChain()
+    {
+        var chain = new DimensionContextInfo
+        {
+            DimensionId = 9010,
+            TeklaDimensionType = "Absolute",
+            Orientation = "horizontal",
+            PointAssociations =
+            [
+                new() { Point = new DrawingPointInfo { X = 0, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 100, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 200, Y = 0 } }
+            ],
+            SegmentContexts =
+            [
+                new() { Geometry = new DimensionSegmentInfo { StartX = 0, StartY = 0, EndX = 100, EndY = 0 } },
+                new() { Geometry = new DimensionSegmentInfo { StartX = 100, StartY = 0, EndX = 200, EndY = 0 } }
+            ]
+        };
+
+        var report = DimensionDefectDetector.Detect(
+            1,
+            [chain],
+            [
+                new PartGeometryInViewResult
+                {
+                    ModelId = 1, PartPos = "R-1", PartPrefix = "R",
+                    BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 }
+                },
+                new PartGeometryInViewResult
+                {
+                    ModelId = 2, PartPos = "T-1", PartPrefix = "T",
+                    BboxMin = new[] { 190d, 0, 0 }, BboxMax = new[] { 210d, 10, 10 }
+                }
+            ],
+            []);
+
+        var defect = Assert.Single(report.Defects, defect =>
+            defect.Kind == DimensionDefectKind.WrongStartPoint);
+        Assert.Equal(9010, defect.DimensionId);
+        Assert.Equal(0d, defect.Point![0]);
+        Assert.Equal(0d, defect.Point[1]);
+    }
+
+    [Fact]
+    public void WrongStartPointSkipsABranchingSegmentGraphInsteadOfGuessing()
+    {
+        var chain = new DimensionContextInfo
+        {
+            DimensionId = 9011,
+            TeklaDimensionType = "Absolute",
+            Orientation = "horizontal",
+            PointAssociations =
+            [
+                new() { Point = new DrawingPointInfo { X = 0, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 100, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 200, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 300, Y = 0 } }
+            ],
+            SegmentContexts =
+            [
+                new() { Geometry = new DimensionSegmentInfo { StartX = 0, StartY = 0, EndX = 100, EndY = 0 } },
+                new() { Geometry = new DimensionSegmentInfo { StartX = 100, StartY = 0, EndX = 200, EndY = 0 } },
+                new() { Geometry = new DimensionSegmentInfo { StartX = 100, StartY = 0, EndX = 300, EndY = 0 } }
+            ]
+        };
+
+        var report = DimensionDefectDetector.Detect(
+            1,
+            [chain],
+            [
+                new PartGeometryInViewResult
+                {
+                    ModelId = 1, PartPos = "R-1", PartPrefix = "R",
+                    BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 }
+                },
+                new PartGeometryInViewResult
+                {
+                    ModelId = 2, PartPos = "T-1", PartPrefix = "T",
+                    BboxMin = new[] { 290d, 0, 0 }, BboxMax = new[] { 310d, 10, 10 }
+                }
+            ],
+            []);
+
+        Assert.DoesNotContain(report.Defects, defect => defect.Kind == DimensionDefectKind.WrongStartPoint);
+        Assert.Contains(report.Warnings, warning => warning.Contains("could not reconstruct a single true start point"));
+    }
+
     private static double Extent(IEnumerable<PartGeometryInViewResult> parts)
     {
         var list = parts.ToList();

@@ -360,11 +360,13 @@ public sealed partial class TeklaDrawingDimensionsApi
     /// Sets the axis AND the side the dimension line sits on: <c>(0,1,0)</c> / <c>(0,-1,0)</c> for a
     /// horizontal dimension, <c>(1,0,0)</c> / <c>(-1,0,0)</c> for a vertical one.
     ///
-    /// It does NOT set the reading order. Tekla normalizes the point list by view coordinates, so
-    /// a chain can end up running top-to-bottom or right-to-left no matter how the points were
-    /// ordered in the call — reversing the input has no effect. To force an order, create the
-    /// dimensions pairwise (points[i] to points[i+1]) or sort the points along the dimension axis
-    /// beforehand.
+    /// <c>points[0]</c> DOES become the true start — for both axes. Confirmed on a live drawing
+    /// (view 1262, both a horizontal and a vertical chain) by flipping the input order back and
+    /// forth and checking the visible start point in Tekla itself each time, not just the
+    /// read-back. get_drawing_dimensions/get_dimension_contexts normalise point order for display
+    /// and therefore do not show which point was passed first. For a single simple chain, the
+    /// true start can be reconstructed from segment Start/End connectivity for both axes; do not
+    /// infer it for branching, disconnected or otherwise ambiguous segments.
     /// </param>
     /// <param name="distance">
     /// Signed offset from the points to the dimension line. Pass <c>null</c> to reuse the

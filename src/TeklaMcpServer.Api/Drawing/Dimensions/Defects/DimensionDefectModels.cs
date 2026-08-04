@@ -58,6 +58,15 @@ public enum DimensionDefectKind
     /// nothing of its own. Overall dimensions are exempt and are never reported here.
     /// </summary>
     ContainedChain,
+
+    /// <summary>
+    /// The chain's true start point — reconstructed from segment connectivity, since the
+    /// read-back point order is normalised (top-to-bottom / right-to-left) and does not reflect
+    /// creation order — does not sit on a frame ("T") part, even though the chain reaches frame
+    /// parts elsewhere. On a wall the tape is hooked on the frame; a batten, sheathing or other
+    /// overlay layer is never where a chain's zero belongs.
+    /// </summary>
+    WrongStartPoint,
 }
 
 /// <summary>

@@ -158,6 +158,7 @@ public static class DimensionDefectDetector
         {
             AddRedundantSpans(report, entry.Chain, entry.Axis, partList, entry.Axis == 0 ? extentX : extentY);
             AddFarFromChain(report, entry.Chain, entry.Axis, visibleX, visibleY);
+            AddWrongStartPoint(report, entry.Chain, partList);
         }
 
         AddAnchorDefects(report, axisChains.Select(static entry => entry.Chain).ToList(), coverage, partList);
@@ -265,6 +266,122 @@ public static class DimensionDefectDetector
                     excess, offset, extentAcross)
             });
         }
+    }
+
+    /// <summary>
+    /// Read-back point order is normalised by Tekla (top-to-bottom / right-to-left) and does not
+    /// reflect creation order — verified by reversing a chain's input points and comparing the
+    /// resulting segment geometry, not by documentation. The true order survives in how segments
+    /// connect: each segment's Start/End follows the real chain direction, so the point that is
+    /// never anyone's End is the true start.
+    /// </summary>
+    private static void AddWrongStartPoint(
+        DimensionDefectReport report,
+        DimensionContextInfo chain,
+        IReadOnlyList<PartGeometryInViewResult> parts)
+    {
+        if (chain.TeklaDimensionType.IndexOf("Absolute", StringComparison.OrdinalIgnoreCase) < 0)
+            return;
+
+        var trueStart = FindGraphStart(chain.SegmentContexts);
+        if (trueStart == null)
+        {
+            report.Warnings.Add(
+                "chain " + chain.DimensionId +
+                ": could not reconstruct a single true start point from its segments; start-point check skipped");
+            return;
+        }
+
+        // Only meaningful where the chain actually reaches the frame somewhere. A chain
+        // dimensioning only its own overlay layer (no frame member anywhere on it) has no frame
+        // reference to start from, and reporting one would invent a rule the drawing does not
+        // have a subject for.
+        var reachesFrame = chain.PointAssociations.Any(association =>
+            parts.Any(part =>
+                string.Equals(part.PartPrefix, "T", StringComparison.OrdinalIgnoreCase) &&
+                Covers(part, new[] { association.Point.X, association.Point.Y })));
+
+        if (!reachesFrame)
+            return;
+
+        var startOnFrame = parts.Any(part =>
+            string.Equals(part.PartPrefix, "T", StringComparison.OrdinalIgnoreCase) &&
+            Covers(part, trueStart));
+
+        if (startOnFrame)
+            return;
+
+        report.Defects.Add(new DimensionDefect
+        {
+            Kind = DimensionDefectKind.WrongStartPoint,
+            Confidence = DimensionDefectConfidence.Mechanical,
+            DimensionId = chain.DimensionId,
+            Point = trueStart,
+            Reason = "the chain's true start point (reconstructed from segment order) does not sit on a frame (T) part, although the chain reaches frame parts elsewhere"
+        });
+    }
+
+    /// <summary>
+    /// The point that is a segment's Start somewhere and never anyone's End is the one true
+    /// source of the path. More or fewer than one such point means the segments do not form a
+    /// single simple chain (branching, a loop, or disconnected pieces) — report nothing rather
+    /// than guess which end was meant.
+    /// </summary>
+    private static double[]? FindGraphStart(IReadOnlyList<DimensionContextSegmentInfo> segments)
+    {
+        if (segments.Count == 0)
+            return null;
+
+        var starts = segments.Select(static s => new[] { s.Geometry.StartX, s.Geometry.StartY }).ToList();
+        var ends = segments.Select(static s => new[] { s.Geometry.EndX, s.Geometry.EndY }).ToList();
+
+        bool PointsClose(double[] a, double[] b) =>
+            Math.Abs(a[0] - b[0]) <= PointOnPartToleranceMm && Math.Abs(a[1] - b[1]) <= PointOnPartToleranceMm;
+
+        // A simple chain has at most one segment leaving and at most one segment entering a
+        // point. Merely finding one source is insufficient: A->B, B->C and B->D also has one
+        // source (A), but is a branch and its start must not be guessed.
+        for (var i = 0; i < starts.Count; i++)
+        {
+            if (starts.Count(start => PointsClose(start, starts[i])) > 1 ||
+                ends.Count(end => PointsClose(end, ends[i])) > 1)
+            {
+                return null;
+            }
+        }
+
+        // A loop disconnected from an otherwise valid path can still leave exactly one source.
+        // Verify that all segments belong to one undirected connected component before using
+        // the directed Start/End information to recover the source.
+        var visited = new bool[segments.Count];
+        var pending = new Stack<int>();
+        pending.Push(0);
+        visited[0] = true;
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            for (var candidate = 0; candidate < segments.Count; candidate++)
+            {
+                if (visited[candidate])
+                    continue;
+
+                var connected = PointsClose(starts[current], starts[candidate]) ||
+                                PointsClose(starts[current], ends[candidate]) ||
+                                PointsClose(ends[current], starts[candidate]) ||
+                                PointsClose(ends[current], ends[candidate]);
+                if (!connected)
+                    continue;
+
+                visited[candidate] = true;
+                pending.Push(candidate);
+            }
+        }
+
+        if (visited.Any(static wasVisited => !wasVisited))
+            return null;
+
+        var candidates = starts.Where(start => !ends.Any(end => PointsClose(end, start))).ToList();
+        return candidates.Count == 1 ? candidates[0] : null;
     }
 
     private static void AddAnchorDefects(
