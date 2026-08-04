@@ -112,10 +112,42 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_drawing_marks":
                 return TryHandleMarkCommands(command, args);
 
+            case "log_skill_event":
+                return HandleLogSkillEvent(args);
+
             default:
                 return false;
         }
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
+
+    private bool HandleLogSkillEvent(string[] args)
+    {
+        if (args.Length < 4)
+        {
+            WriteError("log_skill_event requires: eventType (start|task|finish), skillName, runId, [detail]");
+            return true;
+        }
+
+        var eventType = args[1];
+        if (eventType != "start" && eventType != "task" && eventType != "finish")
+        {
+            WriteError("eventType must be one of: start, task, finish");
+            return true;
+        }
+
+        var skillName = args[2];
+        var runId = args[3];
+        var detail = args.Length > 4 ? args[4] : string.Empty;
+
+        TeklaMcpServer.Api.Diagnostics.PerfTrace.Write(
+            "skill-progress",
+            eventType,
+            0,
+            $"runId={runId} skill={skillName} {detail}".Trim());
+
+        WriteJson(new { logged = true, eventType, skillName, runId });
+        return true;
+    }
 }
