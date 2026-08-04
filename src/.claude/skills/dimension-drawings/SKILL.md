@@ -20,6 +20,28 @@ the examples without opening those files.
 It is optional context for a doubtful rule; it is not required to perform the
 dimensioning task.
 
+## Progress logging
+
+Log the run so `C:\temp\svmcp-perf.log` shows what the skill was doing and when,
+without needing the final report to reconstruct it. Bridge-only command, same
+pattern as `get_dimension_chain_coverage` — call `TeklaBridge.exe` directly from
+the extensions folder, not through MCP:
+
+```
+TeklaBridge.exe log_skill_event start dimension-drawings <runId>
+TeklaBridge.exe log_skill_event task dimension-drawings <runId> "<what you're doing now>"
+TeklaBridge.exe log_skill_event finish dimension-drawings <runId> "<one-line summary>"
+```
+
+- `<runId>` — pick any short string once at `start` (e.g. the drawing mark or a
+  timestamp) and reuse it for every later call in the same run; it is the only
+  thing that ties the lines together, the bridge keeps no state between calls.
+- Call `task` every time you move from one distinguishable step to another —
+  reading case examples, running the checklist, proposing, applying,
+  verifying — not only at the two ends.
+- Filter with `Select-String C:\temp\svmcp-perf.log -Pattern "layer=skill-progress"`.
+  Duration between steps comes from the log line timestamps, not from a field.
+
 ## Final report
 
 Always finish with a short execution report:
