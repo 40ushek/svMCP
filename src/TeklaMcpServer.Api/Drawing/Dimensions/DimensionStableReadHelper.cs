@@ -12,7 +12,8 @@ internal static class DimensionStableReadHelper
         Func<T> read,
         Func<T, string> fingerprint,
         IReadOnlyList<int>? retryDelaysMs = null,
-        Action<int>? sleep = null)
+        Action<int>? sleep = null,
+        Action<int, long>? readCompleted = null)
     {
         if (read == null)
             throw new ArgumentNullException(nameof(read));
@@ -25,14 +26,23 @@ internal static class DimensionStableReadHelper
                 Thread.Sleep(delayMs);
         };
 
-        var current = read();
+        var readIndex = 0;
+        T ReadWithTrace()
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            var value = read();
+            readCompleted?.Invoke(++readIndex, timer.ElapsedMilliseconds);
+            return value;
+        }
+
+        var current = ReadWithTrace();
         var currentFingerprint = fingerprint(current);
         var delays = retryDelaysMs ?? DefaultRetryDelaysMs;
 
         foreach (var delayMs in delays)
         {
             sleep(delayMs);
-            var next = read();
+            var next = ReadWithTrace();
             var nextFingerprint = fingerprint(next);
             if (string.Equals(currentFingerprint, nextFingerprint, StringComparison.Ordinal))
                 return next;

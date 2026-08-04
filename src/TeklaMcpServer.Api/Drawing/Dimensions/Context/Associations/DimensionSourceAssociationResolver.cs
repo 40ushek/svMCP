@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
 
@@ -36,11 +37,18 @@ internal sealed class DimensionSourceAssociationResolver
     private readonly Model? _model;
     private readonly IDrawingPartPointApi _partPointApi;
     private readonly DimensionPointObjectMapper _mapper = new();
+    private readonly Dictionary<int, Tekla.Structures.Model.ModelObject?> _selectedModelObjects = new();
+    private readonly Dictionary<(int ViewId, int ModelId), GetPartPointsResult> _partPoints = new();
+    private readonly DimensionContextTrace? _trace;
 
-    public DimensionSourceAssociationResolver(Model? model, IDrawingPartPointApi partPointApi)
+    public DimensionSourceAssociationResolver(
+        Model? model,
+        IDrawingPartPointApi partPointApi,
+        DimensionContextTrace? trace = null)
     {
         _model = model;
         _partPointApi = partPointApi;
+        _trace = trace;
     }
 
     public DimensionSourceAssociationResult Resolve(StraightDimensionSet dimSet, DrawingDimensionInfo dimensionInfo)
@@ -202,15 +210,32 @@ internal sealed class DimensionSourceAssociationResolver
 
         candidate.GeometrySource = "part_points";
 
-        GetPartPointsResult partPoints;
-        try
+        var partKey = (ownerViewId.Value, candidate.ModelId.Value);
+        if (!_partPoints.TryGetValue(partKey, out var partPoints))
         {
-            partPoints = _partPointApi.GetPartPointsInView(ownerViewId.Value, candidate.ModelId.Value);
+            var timer = Stopwatch.StartNew();
+            try
+            {
+                partPoints = _partPointApi.GetPartPointsInView(partKey.Item1, partKey.Item2);
+                _partPoints[partKey] = partPoints;
+                _trace?.Event(
+                    "part_points_read",
+                    $"viewId={partKey.Item1} modelId={partKey.Item2} elapsedMs={timer.ElapsedMilliseconds} success={partPoints.Success} pointCount={partPoints.Points.Count}");
+            }
+            catch (Exception ex)
+            {
+                _trace?.Event(
+                    "part_points_error",
+                    $"viewId={partKey.Item1} modelId={partKey.Item2} elapsedMs={timer.ElapsedMilliseconds} type={ex.GetType().Name} message={ex.Message}");
+                candidate.GeometryWarnings.Add("part_points_failed");
+                return;
+            }
         }
-        catch
+        else
         {
-            candidate.GeometryWarnings.Add("part_points_failed");
-            return;
+            _trace?.Event(
+                "part_points_cache_hit",
+                $"viewId={partKey.Item1} modelId={partKey.Item2} pointCount={partPoints.Points.Count}");
         }
 
         if (!partPoints.Success)
@@ -387,27 +412,44 @@ internal sealed class DimensionSourceAssociationResolver
         if (_model == null)
             return null;
 
-        try
-        {
-            return _model.SelectModelObject(drawingModelObject.ModelIdentifier);
-        }
-        catch
-        {
-            return null;
-        }
+        // Pass the drawing object's own Identifier through unchanged rather than
+        // rebuilding one from the bare int — SelectModelObject is not guaranteed to
+        // behave identically for the two, and this call site always has the real one.
+        return TrySelectModelObject(drawingModelObject.ModelIdentifier.ID, drawingModelObject.ModelIdentifier);
     }
 
     private Tekla.Structures.Model.ModelObject? TrySelectModelObjectById(int modelId)
+        => modelId > 0
+            ? TrySelectModelObject(modelId, new Tekla.Structures.Identifier(modelId))
+            : null;
+
+    private Tekla.Structures.Model.ModelObject? TrySelectModelObject(int modelId, Tekla.Structures.Identifier identifier)
     {
         if (_model == null || modelId <= 0)
             return null;
 
+        if (_selectedModelObjects.TryGetValue(modelId, out var cached))
+        {
+            _trace?.Event("select_model_object_cache_hit", $"modelId={modelId} found={cached != null}");
+            return cached;
+        }
+
+        var timer = Stopwatch.StartNew();
         try
         {
-            return _model.SelectModelObject(new Tekla.Structures.Identifier(modelId));
+            var selected = _model.SelectModelObject(identifier);
+            _selectedModelObjects[modelId] = selected;
+            _trace?.Event(
+                "select_model_object",
+                $"modelId={modelId} elapsedMs={timer.ElapsedMilliseconds} found={selected != null} type={selected?.GetType().Name ?? string.Empty}");
+            return selected;
         }
-        catch
+        catch (Exception ex)
         {
+            _selectedModelObjects[modelId] = null;
+            _trace?.Event(
+                "select_model_object_error",
+                $"modelId={modelId} elapsedMs={timer.ElapsedMilliseconds} type={ex.GetType().Name} message={ex.Message}");
             return null;
         }
     }

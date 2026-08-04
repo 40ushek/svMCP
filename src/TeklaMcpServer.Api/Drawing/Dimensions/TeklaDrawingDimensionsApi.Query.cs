@@ -13,6 +13,16 @@ public sealed partial class TeklaDrawingDimensionsApi
             () => ReadDimensionSnapshotsCore(viewId),
             BuildDimensionSnapshotFingerprint);
 
+    private List<TeklaDimensionSetSnapshot> GetDimensionSnapshots(
+        int? viewId,
+        DimensionContextTrace trace)
+        => DimensionStableReadHelper.ReadStable(
+            () => ReadDimensionSnapshotsCore(viewId),
+            BuildDimensionSnapshotFingerprint,
+            readCompleted: (readIndex, elapsedMs) => trace.Event(
+                "snapshot_read",
+                $"readIndex={readIndex} elapsedMs={elapsedMs}"));
+
     private List<TeklaDimensionSetSnapshot> ReadDimensionSnapshotsCore(int? viewId)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -88,28 +98,66 @@ public sealed partial class TeklaDrawingDimensionsApi
     public GetDimensionContextsResult GetDimensionContexts(int viewId)
     {
         var total = Stopwatch.StartNew();
+        using var trace = DimensionContextTrace.Start(viewId);
         try
         {
-            var snapshots = GetDimensionSnapshots(viewId);
-            var items = DimensionGroupFactory.BuildGroups(snapshots)
+            List<TeklaDimensionSetSnapshot> snapshots;
+            using (trace.Stage("snapshots", $"viewId={viewId}"))
+                snapshots = GetDimensionSnapshots(viewId, trace);
+
+            List<DimensionItem> items;
+            using (trace.Stage("group_items", $"snapshotCount={snapshots.Count}"))
+            {
+                items = DimensionGroupFactory.BuildGroups(snapshots)
                 .SelectMany(static group => group.DimensionList)
                 .Distinct()
                 .OrderBy(static item => item.DimensionId)
                 .ToList();
+            }
+
+            trace.Event("input_summary", $"snapshotCount={snapshots.Count} itemCount={items.Count}");
             if (items.Count == 0)
                 return new GetDimensionContextsResult { ViewId = viewId };
 
-            var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
-            var liveAssociations = ReadLiveDimensionAssociations(
-                viewId,
-                snapshots.ToDictionary(static snapshot => snapshot.Id),
-                associationResolver);
-            var contexts = BuildDimensionContexts(items, liveAssociations, out var warnings);
-            var result = DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
-            result.DimensionLinks.AddRange(ReadDimensionLinks(
-                result.Dimensions.Select(static dimension => dimension.DimensionId).ToHashSet(),
-                result.Warnings));
+            Dictionary<int, DimensionSourceAssociationResult> liveAssociations;
+            using (trace.Stage("live_associations", $"itemCount={items.Count}"))
+            {
+                var associationResolver = new DimensionSourceAssociationResolver(
+                    _model,
+                    new TeklaDrawingPartPointApi(_model),
+                    trace);
+                liveAssociations = ReadLiveDimensionAssociations(
+                    viewId,
+                    snapshots.ToDictionary(static snapshot => snapshot.Id),
+                    associationResolver,
+                    trace);
+            }
+
+            IReadOnlyList<DimensionContext> contexts;
+            IReadOnlyList<string> warnings;
+            using (trace.Stage("build_contexts", $"associationCount={liveAssociations.Count}"))
+                contexts = BuildDimensionContexts(items, liveAssociations, out warnings);
+
+            GetDimensionContextsResult result;
+            using (trace.Stage("map_result", $"contextCount={contexts.Count}"))
+                result = DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+
+            using (trace.Stage("read_links", $"dimensionCount={result.Dimensions.Count}"))
+            {
+                result.DimensionLinks.AddRange(ReadDimensionLinks(
+                    result.Dimensions.Select(static dimension => dimension.DimensionId).ToHashSet(),
+                    result.Warnings));
+            }
+
+            trace.Event(
+                "result_summary",
+                $"dimensions={result.Dimensions.Count} links={result.DimensionLinks.Count} warnings={result.Warnings.Count}");
             return result;
+        }
+        catch (Exception ex)
+        {
+            trace.Event("error", $"type={ex.GetType().Name} message={ex.Message}");
+            throw;
         }
         finally
         {
@@ -180,7 +228,8 @@ public sealed partial class TeklaDrawingDimensionsApi
     private Dictionary<int, DimensionSourceAssociationResult> ReadLiveDimensionAssociations(
         int viewId,
         IReadOnlyDictionary<int, TeklaDimensionSetSnapshot> snapshotsById,
-        DimensionSourceAssociationResolver resolver)
+        DimensionSourceAssociationResolver resolver,
+        DimensionContextTrace trace)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -202,7 +251,13 @@ public sealed partial class TeklaDrawingDimensionsApi
 
                 // The live Tekla handle is valid only during this read. Store only
                 // the resolved association result; never let the handle escape.
-                result[snapshot.Id] = ResolveDimensionContextAssociation(resolver, dimSet, snapshot);
+                using (trace.Stage("dimension_association", $"dimensionId={snapshot.Id}"))
+                    result[snapshot.Id] = ResolveDimensionContextAssociation(resolver, dimSet, snapshot);
+
+                var association = result[snapshot.Id];
+                trace.Event(
+                    "dimension_association_summary",
+                    $"dimensionId={snapshot.Id} candidates={association.Candidates.Count} points={association.MeasuredPoints.Count} mappings={association.PointMappings.Count} warnings={association.Warnings.Count}");
             }
 
             return result;
