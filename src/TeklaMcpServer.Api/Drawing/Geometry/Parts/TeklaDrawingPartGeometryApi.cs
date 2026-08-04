@@ -4,6 +4,8 @@ using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using ModelPart = Tekla.Structures.Model.Part;
+using System.Diagnostics;
+using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -18,6 +20,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
 
     public List<PartGeometryInViewResult> GetAllPartsGeometryInView(int viewId)
     {
+        var total = Stopwatch.StartNew();
         var dh = new DrawingHandler();
         var activeDrawing = dh.GetActiveDrawing();
         if (activeDrawing == null)
@@ -162,7 +165,11 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         finally
         {
             workPlaneHandler.SetCurrentTransformationPlane(originalPlane);
-            //_model.CommitChanges();
+            PerfTrace.Write(
+                "api-geometry",
+                "get_all_parts_geometry_in_view_total",
+                total.ElapsedMilliseconds,
+                $"viewId={viewId} parts={results.Count}");
         }
         return results;
     }

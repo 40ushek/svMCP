@@ -1,5 +1,7 @@
 using System.Linq;
+using System.Diagnostics;
 using Tekla.Structures.Model;
+using TeklaMcpServer.Api.Diagnostics;
 using TeklaMcpServer.Api.Drawing.ViewLayout;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -15,6 +17,7 @@ public sealed class TeklaDrawingViewContextApi
 
     public GetDrawingViewContextResult GetViewContext(int viewId)
     {
+        var total = Stopwatch.StartNew();
         DrawingViewsResult viewsResult;
         try
         {
@@ -46,6 +49,11 @@ public sealed class TeklaDrawingViewContextApi
             new TeklaDrawingBoltGeometryApi(_model),
             new TeklaDrawingGridApi());
         var context = builder.Build(viewId, viewScale, view.ViewType);
+        PerfTrace.Write(
+            "api-geometry",
+            "get_drawing_view_context_total",
+            total.ElapsedMilliseconds,
+            $"viewId={viewId} parts={context.Parts.Count} bolts={context.Bolts.Count} grids={context.GridIds.Count}");
         return DrawingViewContextMapper.ToResult(context);
     }
 }

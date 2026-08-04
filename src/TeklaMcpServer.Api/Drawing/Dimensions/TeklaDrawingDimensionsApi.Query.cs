@@ -1,6 +1,8 @@
 using System.Text;
+using System.Diagnostics;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Diagnostics;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -85,26 +87,38 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     public GetDimensionContextsResult GetDimensionContexts(int viewId)
     {
-        var snapshots = GetDimensionSnapshots(viewId);
-        var items = DimensionGroupFactory.BuildGroups(snapshots)
-            .SelectMany(static group => group.DimensionList)
-            .Distinct()
-            .OrderBy(static item => item.DimensionId)
-            .ToList();
-        if (items.Count == 0)
-            return new GetDimensionContextsResult { ViewId = viewId };
+        var total = Stopwatch.StartNew();
+        try
+        {
+            var snapshots = GetDimensionSnapshots(viewId);
+            var items = DimensionGroupFactory.BuildGroups(snapshots)
+                .SelectMany(static group => group.DimensionList)
+                .Distinct()
+                .OrderBy(static item => item.DimensionId)
+                .ToList();
+            if (items.Count == 0)
+                return new GetDimensionContextsResult { ViewId = viewId };
 
-        var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
-        var liveAssociations = ReadLiveDimensionAssociations(
-            viewId,
-            snapshots.ToDictionary(static snapshot => snapshot.Id),
-            associationResolver);
-        var contexts = BuildDimensionContexts(items, liveAssociations, out var warnings);
-        var result = DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
-        result.DimensionLinks.AddRange(ReadDimensionLinks(
-            result.Dimensions.Select(static dimension => dimension.DimensionId).ToHashSet(),
-            result.Warnings));
-        return result;
+            var associationResolver = new DimensionSourceAssociationResolver(_model, new TeklaDrawingPartPointApi(_model));
+            var liveAssociations = ReadLiveDimensionAssociations(
+                viewId,
+                snapshots.ToDictionary(static snapshot => snapshot.Id),
+                associationResolver);
+            var contexts = BuildDimensionContexts(items, liveAssociations, out var warnings);
+            var result = DimensionContextReadModelMapper.ToResult(viewId, contexts, warnings);
+            result.DimensionLinks.AddRange(ReadDimensionLinks(
+                result.Dimensions.Select(static dimension => dimension.DimensionId).ToHashSet(),
+                result.Warnings));
+            return result;
+        }
+        finally
+        {
+            PerfTrace.Write(
+                "api-dimensions",
+                "get_dimension_contexts_total",
+                total.ElapsedMilliseconds,
+                $"viewId={viewId}");
+        }
     }
 
     private static List<DimensionLinkInfo> ReadDimensionLinks(
