@@ -35,6 +35,7 @@ public sealed partial class TeklaDrawingViewApi
         view.Origin = origin;
         view.Modify();
         activeDrawing.CommitChanges();
+        DrawingPartGeometryCache.InvalidateView(activeDrawing.GetIdentifier().ID, viewId);
 
         return new MoveViewResult
         {
@@ -68,7 +69,10 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         if (updated.Count > 0)
+        {
             activeDrawing.CommitChanges();
+            DrawingPartGeometryCache.InvalidateDrawing(activeDrawing.GetIdentifier().ID);
+        }
 
         return new SetViewScaleResult { UpdatedCount = updated.Count, UpdatedIds = updated, Scale = scale };
     }

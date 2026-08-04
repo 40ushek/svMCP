@@ -39,6 +39,9 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         if (view == null)
             return new();
 
+        if (DrawingPartGeometryCache.TryGetAll(activeDrawing, view, viewId, out var cachedResults))
+            return cachedResults;
+
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
         var viewPlane = new TransformationPlane(view.ViewCoordinateSystem);
@@ -171,6 +174,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 total.ElapsedMilliseconds,
                 $"viewId={viewId} parts={results.Count}");
         }
+
+        DrawingPartGeometryCache.StoreAll(activeDrawing, view, viewId, results);
         return results;
     }
 
@@ -194,6 +199,9 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         }
         if (view == null)
             return Fail(viewId, modelId, $"View {viewId} not found in active drawing.");
+
+        if (DrawingPartGeometryCache.TryGetPart(activeDrawing, view, viewId, modelId, out var cachedResult))
+            return cachedResult;
 
         // Pattern from ObjectDimensioningCreator:
         // Set work plane to view's DisplayCoordinateSystem so that all model
@@ -258,7 +266,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 }
             }
 
-            return new PartGeometryInViewResult
+            var result = new PartGeometryInViewResult
             {
                 Success = true,
                 ViewId = viewId,
@@ -275,6 +283,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 ViewHull = viewHull,
                 SolidGeometryComplete = solidGeometryComplete
             };
+            DrawingPartGeometryCache.StorePart(activeDrawing, view, viewId, result);
+            return result;
         }
         finally
         {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -73,4 +74,47 @@ public sealed class PartGeometryInViewResult
     /// Use get_drawing_parts for those.
     /// </summary>
     public string? PartPrefix     { get; set; }
+
+    internal PartGeometryInViewResult Clone() => new()
+    {
+        Success = Success,
+        ViewId = ViewId,
+        ModelId = ModelId,
+        Error = Error,
+        StartPoint = StartPoint.ToArray(),
+        EndPoint = EndPoint.ToArray(),
+        CoordinateSystemOrigin = CoordinateSystemOrigin.ToArray(),
+        AxisX = AxisX.ToArray(),
+        AxisY = AxisY.ToArray(),
+        BboxMin = BboxMin.ToArray(),
+        BboxMax = BboxMax.ToArray(),
+        SolidVertices = SolidVertices.Select(static vertex => vertex.ToArray()).ToList(),
+        ViewHull = ViewHull.Select(static vertex => vertex.ToArray()).ToList(),
+        SolidGeometryComplete = SolidGeometryComplete,
+        Type = Type,
+        Name = Name,
+        PartPos = PartPos,
+        Profile = Profile,
+        Material = Material,
+        MaterialType = MaterialType,
+        PartPrefix = PartPrefix
+    };
+
+    internal PartGeometryInViewResult CloneGeometryOnly() => new()
+    {
+        Success = Success,
+        ViewId = ViewId,
+        ModelId = ModelId,
+        Error = Error,
+        StartPoint = StartPoint.ToArray(),
+        EndPoint = EndPoint.ToArray(),
+        CoordinateSystemOrigin = CoordinateSystemOrigin.ToArray(),
+        AxisX = AxisX.ToArray(),
+        AxisY = AxisY.ToArray(),
+        BboxMin = BboxMin.ToArray(),
+        BboxMax = BboxMax.ToArray(),
+        SolidVertices = SolidVertices.Select(static vertex => vertex.ToArray()).ToList(),
+        ViewHull = ViewHull.Select(static vertex => vertex.ToArray()).ToList(),
+        SolidGeometryComplete = SolidGeometryComplete
+    };
 }

@@ -127,6 +127,11 @@ public sealed partial class TeklaDrawingViewApi
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
+        // Only FinalOnly can move views in Tekla, and it may do so before a later
+        // validation failure — so clear at entry rather than only after a successful
+        // commit. DebugPreview never touches Tekla and must not pay this cost.
+        if (allowTeklaMutation)
+            DrawingPartGeometryCache.InvalidateDrawing(activeDrawing.GetIdentifier().ID);
         PerfTrace.Write("api-view", "layout_stage", 0, "stage=input-validated result=ok");
 
         var init = Stopwatch.StartNew();

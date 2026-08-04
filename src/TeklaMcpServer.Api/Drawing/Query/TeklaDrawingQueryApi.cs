@@ -139,6 +139,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
     public OpenDrawingResult OpenDrawing(Guid drawingGuid, bool showDrawing = true)
     {
         var drawingHandler = new DrawingHandler();
+        DrawingPartGeometryCache.InvalidateAll();
 
         // Save and close the currently active drawing before switching to avoid data loss.
         // CommitChanges() only updates Tekla's in-memory state; CloseActiveDrawing(save:true)
@@ -221,6 +222,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
     public CloseDrawingResult CloseActiveDrawing()
     {
         var drawingHandler = new DrawingHandler();
+        DrawingPartGeometryCache.InvalidateAll();
         var activeDrawing = drawingHandler.GetActiveDrawing();
         if (activeDrawing == null)
         {
@@ -257,6 +259,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
         }
 
         var updated = drawingHandler.UpdateDrawing(drawing);
+        DrawingPartGeometryCache.InvalidateAll();
         return new DrawingOperationResult
         {
             Found = true,
@@ -282,6 +285,7 @@ public sealed class TeklaDrawingQueryApi : IDrawingQueryApi
 
         var drawingInfo = ToDrawingInfo(drawing);
         var deleted = drawing.Delete();
+        DrawingPartGeometryCache.InvalidateAll();
         return new DrawingOperationResult
         {
             Found = true,
