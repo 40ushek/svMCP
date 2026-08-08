@@ -26,8 +26,7 @@ It should answer:
 - what the next phase should change
 - what is intentionally deferred
 
-Operational/current-state notes belong in
-[`README.md`](D:\repos\svMCP\src\TeklaMcpServer.Api\Drawing\Dimensions\README.md).
+Operational/current-state notes belong in [`README.md`](README.md).
 
 ## Architectural Invariants
 
@@ -258,226 +257,47 @@ preserved.
 
 ## Current Baseline
 
-Current phase status: `v1 complete`.
+Current phase status: v1 complete. The baseline is the stable foundation for the
+next phase. What it contains is operational state and is listed once, in
+[README.md](README.md); completed milestones and the evidence behind them are in
+[DIMENSION_HISTORY.md](DIMENSION_HISTORY.md).
 
-This means the current baseline is accepted as the stable foundation for the
-next phase rather than a temporary experimental branch.
+The strategic boundary is what the baseline does **not** claim: it is
+assembly-oriented, and it is neither a complete annotation-aware layout engine
+nor an autonomous replacement of drafting judgment.
 
-The current baseline already includes:
-
-- explicit internal snapshot layer for dimension sets and segments
-- snapshot-native grouping/query/debug paths
-- snapshot-native helper flow for measured-point ordering, orientation and
-  reference-line reconstruction
-- internal `DimensionItem` / `DimensionGroup` modeling
-- `DimensionItem` no longer depends on `DrawingDimensionInfo`
-- geometry-first grouping and conservative reduction
-- line-first `get_drawing_dimensions`
-- arrangement planning and `Distance`-based runtime apply
-- controlled `combine_dimensions`
-- rollback/failure reporting for combine
-- local post-combine arrange handoff
-- bounded stable reread after mutate
-- `DimensionContext`
-- `DrawingViewContext`
-- `DimensionDecisionContext`
-- `DimensionViewPlacementInfo`
-- source association and point-to-object mapping
-- explicit typed source identity via `DimensionSourceReference`
-- no remaining flat source-id semantics in domain/context layers
-- debug-first `LayoutPolicy`
-- deterministic layout-policy evaluation through `DimensionDecisionContext`
-- deterministic orchestration/debug paths using `DimensionDecisionContext`
-- arrangement planning using `DimensionDecisionContext` for view-scale-aware gap translation
-- orchestration debug packets
-- orchestration extracted into a dedicated module/layer
-- `PartsBounds` / `PartsHull` / `GridIds` added to `DrawingViewContext`
-- per-dimension `PartsBounds` placement classification and exact placement metrics
-- `PartsBounds` gap-policy signals exposed in deterministic debug/orchestration evidence
-- validated view-local part-geometry contract for both `SolidVertices` and
-  `BboxMin` / `BboxMax`
-- validated `ViewCoordinateSystem` as the accepted work-plane contract for the
-  dimension / `PartsBounds` geometry path
-- `DisplayCoordinateSystem` is rejected for this path because it risks mixing
-  coordinate spaces between part geometry, dimensions, and debug overlays
-- internal/debug-first action-plan generation surface currently exposed through
-  the bridge helper named `get_dimension_action_plan`
-
-Current `DrawingViewContext` baseline should be interpreted carefully:
-
-- it currently builds a single-view geometry context
-- it currently includes all successful `Parts` and deduplicated `Bolts` from
-  that view
-- it currently derives `PartsBounds` and `PartsHull` from part geometry only
-- it currently assumes part geometry for this context is already normalized into
-  the owning view coordinate system before bounds/hull aggregation
-- for the validated runtime path, that normalization is expected to come from
-  `ViewCoordinateSystem`, not `DisplayCoordinateSystem`
-- it currently carries `GridIds` when grids are present on the drawing view
-- the current external projection deep-copies `Parts` / `Bolts` mainly as a
-  defensive public-contract boundary; this can be relaxed later if transport
-  cost becomes significant
-- this is a good baseline for assembly-oriented drawing scenarios
-- this is not yet the target strategy for heavy GA drawings where a full-view
-  object set may be too large to load or reason over directly
-
-Current decision/placement baseline should also be interpreted explicitly:
-
-- `DimensionDecisionContext` is now the shared runtime decision container for:
-  - layout policy
-  - orchestration/debug
-  - arrangement planning/debug support
-- `DimensionViewPlacementInfo` is a computed per-dimension placement summary
-  relative to `DrawingViewContext`
-- `DimensionPartsBoundsGapPolicy` currently evaluates desired gap from
-  `PartsBounds` and exposes:
-  - current gap
-  - target gap
-  - whether correction is needed
-  - signed axis delta for the nearest chain
-- these placement/gap signals are already consumed by the current
-  deterministic arrangement pipeline in a narrow, explainable way:
-  - the nearest chain on a side can be anchored to `PartsBounds`
-  - later chains in the same stack are then arranged from that anchored chain
-- they are not yet a full replacement for deterministic arrangement rules or a
-  complete annotation-layout engine
-
-What the baseline does not claim:
-
-- full annotation-aware layout
-- collision-aware placement against all other annotations
-- final public orchestration surface
-- complete replacement of operator judgment in drafting edge cases
-
-The current internal action-plan helper is important to interpret correctly:
-
-- it is bridge/internal only
-- it is not part of the public MCP tool surface
-- it produces a debug-first plan/preview layer
-- it does not perform autonomous execution
 
 ## Validated Runtime Findings
 
-The following findings are worth preserving because they are already confirmed
-on the current implementation and should constrain future work.
+The detailed observations are in
+[DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md). Roadmap-level
+consequences are:
 
-### The coordinate contract does not always hold — verified failure
+- validate coordinate-space provenance before source association;
+- use ViewCoordinateSystem, not DisplayCoordinateSystem, for the validated
+  part-geometry path;
+- treat native dimension text position as unobservable unless Tekla exposes it;
+- preserve read-back, neighbour-reflow and ambiguity checks in mutation flows.
 
-Found 2026-08-01 on drawing `IW.10`, view 1218, after nine drawings where it did
-hold. The part-geometry read returned **model** coordinates while the dimension
-read returned view coordinates, so the two could not be matched at all.
-
-Measured across all thirteen parts: X spanned 1363, Y spanned 100, Z spanned
-3738.2. The chains in the same view measured 1363 wide and 3738.2 tall. So the
-wall's height sat in the parts' Z and the dimensions' Y; the parts' Y held the
-wall thickness. `axisY` on every part was `[0, 0, 1000]` — world Z — where a
-correct read points it up the wall.
-
-Not transient: repeating the read reproduces it, reading dimensions in between
-changes nothing, and the top view returns a third orientation
-(`axisY = [0, -1000, 0]`).
-
-**This invalidates the assumption the association layer rests on.** Everything
-downstream — candidate points, chain coverage, the placement rules — works by
-matching a dimension point to a part face. Without a shared space none of it is
-meaningful, and a planner that proceeded anyway would produce confident nonsense.
-
-Two things follow:
-
-- **the read must report which space it is in**, not leave callers to infer it
-  from the numbers. A `coordinateSpace` on the geometry result, checked by
-  `get_dimension_chain_coverage` before joining, would turn a silent mismatch
-  into a refusal;
-- **the cause needs finding.** The hypothesis is that this wall sits in the model
-  in an orientation where `TransformationPlane(view.ViewCoordinateSystem)` does
-  not flatten it into the view plane. Unverified. Evidence is kept in
-  `cases/dimension_cases/assembly/965a95fe-…/before/` — the mismatch reproduces
-  from the saved files without Tekla.
-
-### Coordinate contract for source geometry and dimension associations
-
-The existing part-geometry path establishes the model work plane from the
-owning drawing view. The assignment is implemented in
-[`TeklaDrawingPartGeometryApi.cs`](../Geometry/Parts/TeklaDrawingPartGeometryApi.cs):
-
-```text
-model work plane = new TransformationPlane(view.ViewCoordinateSystem)
-```
-
-`GetAllPartsGeometryInView` and `GetPartGeometryInView` then extract solids,
-bounds, and vertices in that view coordinate system. The point reader
-([`TeklaDrawingPartPointApi.cs`](../Geometry/Parts/TeklaDrawingPartPointApi.cs))
-is a wrapper over the same path. This is the canonical source for
-dimension/source-geometry comparisons.
-
-Rules for the next association step:
-
-- do not add an ad-hoc world-to-view conversion after this geometry has been
-  read;
-- do not use `DisplayCoordinateSystem` for this comparison;
-- use sheet projection (`view.Origin` and `view.Attributes.Scale`) only for
-  sheet overlays or layout, not for associativity matching;
-- persist coordinate-space provenance for every geometry payload in saved
-  observations;
-- revalidate point-to-source mapping in a live drawing after both dimension
-  points and source geometry are explicitly labelled with their coordinate
-  space.
-
-The current `get_dimension_contexts` output records that its per-point
-selection is inferred. Until the coordinate-space audit is complete,
-`DistanceToGeometry` and `MatchedModelId` must not be treated as proof of the
-native Tekla associativity rule.
-
-- `viewScale` is read correctly from the owning view
-- paper-gap semantics are valid:
-  - paper gap in
-  - drawing gap via `viewScale`
-- current public default for `arrange_dimensions` is `10 mm` paper gap
-- `arrange_dimensions` has already been live-validated on real drawings:
-  - idempotent second run with the same target gap can produce no changes
-  - push works when lines are too close
-  - pull works when lines are too far apart
-- `place_control_diagonals` has been live-validated on a real view using
-  `SolidVertices`-driven hull/extreme-point selection
-- `DrawingViewContext.PartsBounds` has been live-validated against debug
-  overlay on a real view after restoring the view-local bbox contract
-- `arrange_dimensions` has been live-validated with the `PartsBounds` anchor
-  path enabled, including outward shifts relative to the overall parts box
-- `arrange_dimensions` now treats `PartsBounds` as an exact-gap anchor for the
-  nearest chain in the validated deterministic path
-- for the validated part-geometry pipeline, `ViewCoordinateSystem` is the
-  accepted runtime contract; `DisplayCoordinateSystem` should not be reused
-  there
-- negative `Distance` values occur on real drawings
-- sign semantics for negative-distance dimensions remain a risk area for future
-  policy/layout work
-- line-based grouping and spacing foundation already exists
-
-## Observed Runtime Constraint: Native Dimension Text Position
-
-The following limitation is already confirmed and should not be rediscovered
-later by accident.
-
-- native dimension value text can be moved manually in Tekla
-- the moved text position is not currently observable through the validated
-  Tekla Open API surface checked so far
-
-Checked sources:
-
-- `StraightDimension.GetRelatedObjects()`
-- `StraightDimensionSet.GetRelatedObjects()`
-- recursive `GetObjects()` traversal where available
-- drawing presentation model text primitives
-- reflected public/nonpublic members on `StraightDimension`,
-  `StraightDimensionSet` and related attributes
-
-Consequence:
-
-- text polygon debug may use runtime text geometry when Tekla exposes it
-- otherwise text geometry remains a synthetic fallback path
-- this limitation must not distort the main domain redesign
 
 ## Next Phase
+
+### Research-Informed Direction (2026-08-08)
+
+Research supports a staged design: semantic selection first, typed completeness
+checks second, deterministic placement third, and stochastic optimization only
+as a later tie-breaker. Details and sources are in
+[DIMENSION_RESEARCH.md](DIMENSION_RESEARCH.md).
+
+The implementation keeps three graph roles separate:
+
+- relation graph for typed source/anchor measurement semantics;
+- candidate conflict graph for placement alternatives and obstacles;
+- policy-scoped ordering DAG for chain precedence.
+
+The roadmap records decisions and acceptance criteria; it does not port any
+paper's algorithm directly.
+
 
 The foundational architecture cleanup is largely complete.
 
@@ -486,120 +306,20 @@ of the new baseline.
 
 Priority order:
 
-### 0. Capture observations in one call
+### 0. Capture observations in one call — done
 
-Agreed 2026-08-01. Comes first because everything else in this phase is easier
-to judge once examples can be collected without friction, and it is small.
+Implemented 2026-08-01 as capture_dimension_observation. It is read-only, binds
+the existing view and dimension payloads to one capture header, and does not
+persist files. Details are in [DIMENSION_HISTORY.md](DIMENSION_HISTORY.md).
 
-Today an example takes three calls stitched together by hand — view context,
-dimension contexts, and drawing identity from a third place. Nothing ties them
-to the same moment, so a drawing edited between two of them yields an
-observation that is silently a mix of two states. At fifty drawings this also
-guarantees examples captured in inconsistent shapes.
 
-Scope, deliberately minimal:
+### 0b. Keep the relation graph instead of flattening it — baseline done
 
-Implemented 2026-08-01 as `capture_dimension_observation` / `CaptureDimensionObservation`:
-the command is read-only, returns the header plus the unchanged view and dimension
-payloads, and does not persist files.
+Per-segment related sources and readable DimensionLink endpoint IDs are retained
+in the observation/read model. The legacy flat list remains for compatibility.
+Further DimensionLink coverage is only needed when a real drawing uses such
+links.
 
-- add **view type** to `DrawingViewContext`. It carries the view id and scale but
-  not whether it is a front view, a top view or a section, and the rules differ:
-  a section is dimensioned unlike a front view;
-- add one command that composes an observation — a header plus the two existing
-  context payloads **passed through unchanged**;
-- header: drawing type, assembly mark and prefix, units, Tekla version, capture
-  time, and a hash of the parts payload.
-
-Explicitly not in scope:
-
-- **no new context type.** Three already exist in the codebase — view, dimensions
-  and marks. A fourth overlapping them would have to be kept in sync with the
-  others, and this module has just spent a session on exactly that kind of
-  divergence. The contexts stay the single source; the observation only binds
-  them and attests the moment;
-- **marks are NOT part of the v1 observation.** It composes exactly two payloads,
-  view and dimensions. Marks have their own context and would widen the contract
-  before the first one is proven against a real drawing. When they are needed
-  they join as a third payload — not as a new schema;
-- no sheet position of the view. It changes with layout while dimensions live in
-  view coordinates, so including it would make two observations of an unchanged
-  drawing differ and complicate comparison. Layout has its own command;
-- no coordinate-space field. All working coordinates are in the view coordinate
-  system by invariant, not by choice, so recording it per payload adds nothing.
-  The obligation it implies is the reverse: anything working in sheet
-  coordinates converts at the boundary and never mixes both into one payload;
-- no writing to disk — that belongs to the case service; no reduced context, no
-  fingerprints.
-
-The shared parts payload must carry a version or content hash, and the
-referencing observation must record it — see `DIMENSION_CONTEXT_SCHEMA.md`.
-Sharing is only sound while the geometry is genuinely identical, and a hash is
-what makes a mismatch detectable rather than invisible.
-
-Done when an observation of a real drawing agrees with the drawing on every
-field, and the existing cases can be recaptured through it as generation 1. The
-six generation-0 cases stay as they are.
-
-### 0b. Keep the relation graph instead of flattening it
-
-Agreed 2026-08-01, straight after the observation command. More valuable than
-adding further geometric fields: coordinates describe where a dimension is, the
-graph describes what it means.
-
-Implemented 2026-08-01: `get_dimension_contexts` and the observation payload now
-retain per-segment related sources and expose readable `DimensionLink` endpoint
-IDs. The legacy flat `RelatedSources` list remains for compatibility.
-
-Target structure:
-
-```text
-drawing
- └── view
-      └── dimension set
-           ├── segment
-           │    └── related drawing object
-           │         └── model object
-           └── DimensionLink → another set
-```
-
-**Segment membership is already kept**, as `Owner = "segment:N"` on each candidate
-and exposed publicly through `RelatedSources`. What is missing is the **nesting**
-and `DimensionLink`: the candidates are flattened into one list per chain, so
-walking from a segment to its own related objects means filtering that list by an
-owner string rather than following a structure. The data is read; the shape is
-lost.
-
-Also missing, and confirmed present in the installed 2025 assembly:
-
-- `DimensionLink` with `GetDimension1()` / `GetDimension2()`, both returning
-  `StraightDimensionSet` — readable, and not used anywhere in the project.
-
-  It is specifically a link between two **perpendicular** dimension lines, joined
-  so the lines meet and the sheet reads more cleanly — typical on embeds in a cast
-  unit, floor beams on a plan, or anchor bolts. It is created **by hand** in the
-  drawing (select both with Ctrl, then Link dimensions), never by automatic
-  dimensioning.
-
-  That is why every drawing looked at so far reports `dimensionLinks: 0`, and why
-  the read path is still unverified: there is nothing to read until someone links
-  two lines. Not worth manufacturing an example for — it will appear on a drawing
-  that actually uses them;
-- `GetView()`, `GetDrawing()` and `GetRelatedObjects()` on `DrawingObject`, so
-  they are available on the set and on each segment alike.
-
-Two things deliberately left out:
-
-- **`GetDimensionSet()` on a segment returns a live `DimensionSetBase`**, not an
-  identifier. A live handle must not enter an observation — record the id only.
-  Segment-to-chain membership is known anyway, since the traversal goes from the
-  set downwards;
-- **`GetDrawing()` per object is redundant.** The drawing is one for the whole
-  observation and already sits in the header. Reading it per segment is calls
-  spent on a constant — the same mistake as reading the assembly mark per part.
-
-Done when a saved observation can answer "which model object does this segment
-measure against" without re-reading the drawing.
 
 ### 0c. Share cached view-part geometry across readers
 
@@ -659,25 +379,9 @@ byte-equivalent geometry-derived results.
 
 ### 1. Clarify orchestration naming — done
 
-`DimensionAiAssistedOrchestrator` was named for something it never did: it uses
-no model and executes nothing. Renamed to `DimensionActionPlanBuilder`, with
-`DimensionActionPlanResult`, `DimensionActionPlanStep`, `DimensionPlanAction`
-and `DimensionActionPlanEvidence` alongside it. Behaviour is unchanged.
+DimensionActionPlanBuilder and get_dimension_action_plan are the stable names;
+the previous command remains an alias for compatibility.
 
-The command is now `get_dimension_action_plan`. The old
-`get_dimension_ai_orchestration_plan` stays as an alias so existing callers keep
-working.
-
-The boundary this fixes in the naming:
-
-```text
-observation -> DimensionActionPlanBuilder -> plan
-            -> an LLM or a person decides whether to apply it
-            -> existing combine / move / arrange / recreate
-```
-
-A future model consumes the same observation and either emits a plan of this
-shape or selects steps from one. It does not go inside the builder.
 
 ### 2. Strengthen `DimensionGeometryContext`
 
@@ -895,98 +599,10 @@ solids; holes, cut-outs, post-restart reads and model edits remain open cases.
 
 ### 2a.1. Coverage of a corrected chain — done
 
-Agreed and run 2026-08-01. Before writing the planner, check whether the candidate
-layer already contains the points a person actually used, and **save the answer**.
-An acceptance criterion that lives in someone's head is not one.
+get_dimension_chain_coverage records candidate matches, confidence, status and
+ambiguity without selecting a winner. Candidate selection remains the
+responsibility of the placement planner.
 
-`get_dimension_chain_coverage <viewId> <dimensionId> [toleranceMm]` joins one chain
-to the candidates of every part in its view, point by point. It records the
-dimension and segment ids, the coordinate, the associated model id, every anchor
-key within tolerance, the distance, and a status.
-
-It **never picks a winner** among several matches. Which of them a plan should
-prefer is the rule `2b` has to derive, and pre-selecting here would destroy the
-evidence for it.
-
-Two radii, deliberately not one:
-
-- the **search tolerance** says how far from the dimension point to look;
-- **position coincidence** is a separate, tight epsilon. A face edge shared by two
-  faces yields the identical midpoint and a hull vertex is built from a solid
-  vertex, so genuine coincidence is exact. Using the search radius for both would
-  report a real choice between two places as settled.
-
-`matched` therefore means one *place*, which normally carries three to six anchor
-keys; `ambiguous` is reserved for matches at genuinely different places.
-
-#### First run: `IW.1 - 1`, view 1214 — a tool test, not a reference
-
-This drawing was the one open at the time. It has no recorded human pass, no
-before/after pair, and it is an interior wall, while every captured drawing with a
-human pass is a roof panel. Treat the run as evidence that the command works, not
-as evidence about correct dimensioning.
-
-All eight chains in the view, 27 points: every one `matched`, on the part the
-dimension was already associated with, none missing, none ambiguous. Twenty-five
-matched a face edge, a solid vertex and a hull vertex at the same place within
-0.05 mm — so the candidate layer does contain the points these chains use.
-
-**Three of the 27 points are claimed by two parts each**, all of them junctions:
-a stud standing on the plate below it, and a raked plate resting on a stud. The
-status stays `matched` — one position, not a choice of positions — but eleven or
-twelve keys arrive from two parts. `2b` needs a rule for this: "the point sits on
-the part being located" does not say which of two parts meeting at one place is
-the one being located, and on a wall almost every level is such a junction.
-
-**Two points reach only a bounding-box corner, and they turned out to be a drawing
-error.** Chains 1622 and 1686 both anchor at `(1833.5, 1691.1)`, where the sole
-candidate is the box corner of the raked top plate. That corner is not on the
-plate: its real vertices at that end are at y=1284.6 and y=1223.1, and it reaches
-y=1691.1 only at the opposite end — where a genuine vertex exists. The dimension
-was set against an imagined assembly box; the fix is to extend the point to the
-part or drop it.
-
-So this is **not** a missing source in `2a` — the anchor exists on the same part.
-`fallbackOnly` now marks the condition: matched, but only by a hull vertex or a
-box corner.
-
-The flag **requires adjudication and is not proof of an error**. Two different
-situations raise it. The point may genuinely sit in empty space, as here. Or the
-part's solid could not be traversed — and then the candidate layer offers nothing
-but the axis and the box, so a perfectly good point simply has no better evidence
-available. Check `SolidGeometryComplete` for the parts involved before reading the
-flag as a defect.
-
-#### Consequence: which chains may serve as reference, and only after screening
-
-Two separate points, and the first was got wrong on the first attempt.
-
-**Not every captured drawing is reference material.** Of the six cases that
-existed, only three carried a recorded human pass; the rest were single as-found
-snapshots claiming nothing. A drawing that merely happens to be open is not a
-reference, however convenient — that mistake was made here first, on the drawing
-this section reports.
-
-**Even a corrected chain must be screened.** A human pass reduces mistakes; it
-does not certify their absence. Grading a planner on reproducing a chain point
-for point would grade it on reproducing whatever survived. Any point that is
-`missing`, `ambiguous`, or `fallbackOnly` is a candidate defect and has to be
-adjudicated — extended to the real anchor, deleted, or confirmed as intended.
-Unclear cases are discussed, not decided by the tool.
-
-Coverage screens **anchoring, not selection**. A chain carrying a redundant point
-— two parts sharing one grid position, the 15–60 mm junk segment this whole line
-of work started from — passes cleanly, since every point does sit on its own
-part. That class needs its own check before a chain is called screened.
-
-Every case under `cases/`, including this run's fixture, was deleted on
-2026-08-01: it predated anchors, candidate points and segment relations, and its
-lengths came from a formula since corrected, so re-capturing beat migrating. The
-numbers above are reproducible — the drawing is unmodified and the commands are
-in the skill file.
-
-**`2b` has no acceptance material until a new before/after pair is captured.**
-That capture is the prerequisite, not the planner.
 
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
 
@@ -1185,86 +801,12 @@ Applying the plan is deliberately out of scope until that holds.
 
 ### 2c. Defect detection for batch processing
 
-The goal behind this whole line of work is to process drawings in batches. `EW.4-6`
-(2026-08-02) is the first drawing where the full check list was run *before*
-proposing anything, and it produced a number worth building on:
+get_dimension_defects is implemented as a compact, read-only detector over a
+shared snapshot. Remaining work is to grade automatic actions against captured
+cases and apply only defect classes that pass that grading. The empirical basis,
+EW.4-6 result and provisional action boundary are preserved in
+[DIMENSION_HISTORY.md](DIMENSION_HISTORY.md).
 
-**The checks found all four defects. Three of the four were then left in place by the
-assistant, and the person removed them.** The fourth was acted on, incorrectly.
-
-So detection is not the bottleneck. The bottleneck is that a found defect gets talked
-out of — and it gets talked out of precisely where the rules contain the word
-*exception*. Each excuse sounded reasonable on the drawing: "exception for an overlay
-layer", "the panel is wide, the batten tops must show somewhere", "the chain prints x,
-so the number is honest". All three were wrong.
-
-Two consequences that must not be conflated:
-
-- **Speed.** Moving the checks into the bridge is a clear win and is not in dispute.
-  `get_dimension_contexts` returned 119,921 characters on a six-chain drawing and did
-  not fit the tool limit. A command that returns findings instead of the read model
-  costs hundreds of bytes and stops scaling with part count.
-- **Correctness.** A detector does not help here at all — it would report exactly what
-  was already visible. What helps is making *removal* the default and forcing an
-  exception to name a checkable condition instead of telling a story.
-
-There is a second, independent argument for putting the checks in code: on `EW.4-6`
-the ad-hoc script and `get_dimension_chain_coverage` caught **different** things. The
-script tested points against part bounding boxes, reported the width overall's two
-points as "on nothing", and the assistant dismissed them; coverage returned `Missing`
-— no candidate at all, not even a box corner — a class the bbox test cannot express.
-Two implementations of "the same" check will keep diverging as long as one of them is
-rewritten from scratch on every drawing.
-
-#### Step 1 — grade the checks offline, against the captured cases
-
-Write the checks as a pure function over captured JSON: `dimension_contexts.json`,
-`parts_geometry.json`, `candidates_*.json`, `coverage_*.json` in, findings out. No
-Tekla, no drawing touched.
-
-`cases/dimension_cases/assembly/` already holds five drawings with a human-edited
-state (`004604c1`, `5cf600c9`, `8a856c51`, `c5018fe1`, `c5109755`) plus four with an
-accepted `after`. Run the function over all of them and compare each finding against
-what the person actually changed.
-
-This is the only honest way to decide which defect classes are safe to fix
-automatically — instead of deciding it by opinion. **If a check fires on a point the
-person deliberately kept, that class is not safe.** The cases are on disk, so this
-costs nothing and risks nothing.
-
-#### Step 2 — move the same code into the bridge
-
-`get_dimension_defects viewId`. Logic already graded in step 1; only the data source
-changes. Returns findings, never the read model.
-
-Implemented 2026-08-02. The live source reads dimension contexts and part geometry once,
-builds candidate coverage once per distinct part, and passes that snapshot to the unchanged
-`DimensionDefectDetector`. The bridge command and MCP tool return compact chain summaries,
-findings and warnings; neither modifies the drawing. If any part's candidate read fails, anchor
-checks are explicitly skipped rather than turning unavailable evidence into `UnanchoredPoint`.
-
-#### Step 3 — auto-apply only the classes that passed step 1
-
-The score on `EW.4-6` argues for acting rather than reporting: found 4, broke 0,
-wrongly left 3. Mechanical removal beat the assistant's judgement. But *which* classes
-is decided by step 1, not by this paragraph.
-
-Provisional split, to be confirmed or refuted by the run over the cases:
-
-| likely automatic | likely reported to a person |
-|---|---|
-| phantom anchor (`fallbackOnly` / `Missing`) re-anchored to the nearest real vertex | anything concerning an overall dimension |
-| span equal to the part's own extent along the chain | the start point of an absolute chain |
-| point far across from its own chain's line | any drawing where the coordinate-space check failed |
-| chain whose printed values are contained in another's | a raked top beyond the one worked case |
-
-#### Start points are out of scope for batch
-
-A chain's start point is not recoverable by reading it back — the point order is
-normalised. Mass re-creation of absolute chains with the zero on the frame would
-therefore be invisibly wrong until something is printed. Report only, until **1a**
-lands and the printed rows can be read directly. There is no middle option here: the
-choice is "report" or "rebuild them all blind".
 
 ### 3. Add GA-safe `DrawingViewContext` selection strategy
 
@@ -1353,111 +895,12 @@ The following are intentionally not part of the current baseline.
 - re-centering the module around DTOs, bounds or orientation summaries
 - transactional unification of combine commit and arrange handoff in the current phase
 
-## Known Gap: `LengthList` Does Not Reproduce the Printed Run
+## Runtime notes and limitations
 
-Recorded 2026-08-01. Deliberately left as is; do not fix in passing.
+Detailed LengthList, native text, angle-dimension and transport constraints are
+in [DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md). They are
+implementation constraints, not roadmap milestones.
 
-### What a dimension prints
-
-Every snap point is projected onto the reference line along the normal, and the
-printed values are distances from the START of that line. Confirmed by exporting a
-drawing to PDF and comparing: all 26 printed values across four chains matched
-this rule, including two horizontal chains counting from the left edge and two
-vertical ones counting from the bottom.
-
-### What `LengthList` reports
-
-`DimensionItem.ReplacePointList` projects onto the reference line — that part is
-correct and fixed the old straight-line measurement, which invented fractional
-values (2555.25 against a printed 2546, 456.91 against 448) that were then read as
-snap drift, and produced negative segments once the array ran against the axis.
-
-But it still measures **from `PointList[0]`, not from the near end of the line**.
-For a chain whose points arrive in the opposite order to the line, the values come
-out correct in magnitude but in reverse: a chain printed as `60 · 1764 · 4309` is
-reported as `2545.5 · 4249.1 · 4309.1`.
-
-### Why it was not carried through
-
-Both length lists must stay index-aligned with `PointList`: `DimensionOperations`
-turns a length index into a point index by adding one
-(`GetLengthMatchedPointIndices`) and takes `LengthList[0]` as the first span.
-Ordering the values by position along the line breaks that pairing and matches a
-length against the wrong point during packet reduction — a real defect that was
-introduced once and caught in review.
-
-Sorting `PointList` itself instead is not free either: it swaps `StartX`/`StartY`
-with `EndX`/`EndY` on vertical chains, which grouping, dedup and arrangement all
-read. `BuildGroups_MergesNearbySegmentsOnSameLineBandWithinSameDimension` fails on
-exactly that.
-
-### What closing it would take
-
-Either a separate list of printed values with its own `length -> point index`
-mapping, leaving `LengthList` alone, or changing the downstream contract so a
-length and its point travel together as a pair rather than by parallel index.
-
-### Consequence to keep in mind meanwhile
-
-`LengthList` is safe for spans and for anything comparing chains against each
-other. It is **not** the absolute run shown on the sheet, so do not diagnose a
-drawing by reading it as one — that mistake cost a full session, chasing snap
-drift that the drawings did not have.
-
-Test coverage is partial: `ReferenceLineSuppliesTheAxisWhenPresent` proves the
-line wins over the direction field, but nothing yet covers the near end or a line
-running the other way.
-
-## Tekla API Limitation: AngleAtVertex Movement
-
-Tekla support confirmed that `AngleDimension` objects with
-`AngleTypes.AngleAtVertex` cannot be moved visually by changing `Distance`
-through Open API.
-
-Observed behavior:
-
-- `Distance` can be changed and persisted.
-- `Modify()` returns `true`.
-- The drawing does not visually move the angular dimension arc/text.
-- Changing `Origin` is not a valid workaround because it changes the measured
-  angle geometry.
-- `Placing` (`Free` / `Fixed`) does not solve this behavior.
-
-Current policy:
-
-- `MoveAngleDimension` must return `Moved=false` for:
-  - `AngleTypes.AngleAtVertex`
-  - `AngleTypes.AngleAtVertexGradian`
-- The result must include a clear reason.
-- Do not move `Origin` as a fallback.
-- Any workaround based on delete/recreate must be designed as a separate,
-  explicit feature.
-
-## Transport Diagnostics and Payload Reduction
-
-Recorded 2026-08-02. Before changing the bridge protocol, measure where time is
-actually spent. The current persistent bridge is a line-delimited JSON protocol
-over local stdin/stdout; compression is not automatically the bottleneck.
-
-Diagnostics must correlate, for the same command:
-
-- Tekla execution time inside the bridge (`executeMs`)
-- bridge response serialization and write time (`writeMs`)
-- server-side request write, response read and JSON parse time
-- request/response byte counts
-
-The first acceptance result is a report for several large geometry calls showing
-the median and worst-case share of time attributable to Tekla execution versus
-serialization and pipe transfer. Do not introduce gzip or change line framing
-until that report shows a material transfer cost. If compression is justified,
-keep it inside the existing bridge contract and preserve the plain JSON result
-seen by MCP tools.
-
-Coordinate reduction is a separate, low-risk optimization. It may use a compact
-wire projection rounded to 0.01 mm, while internal calculations and the
-observation/hash representation retain their existing precision. Coverage,
-anchor matching and maximum coordinate error must be tested before adopting the
-compact projection as the default MCP output.
 
 ## Acceptance Criteria
 

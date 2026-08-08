@@ -180,13 +180,10 @@ Current arrangement semantics in practice:
 Current `move_angle_dimension` limitation:
 
 - `AngleTypes.AngleAtVertex` and `AngleTypes.AngleAtVertexGradian` are reported
-  as not moved.
-- Tekla support confirmed that changing `AngleDimension.Distance` is persisted
-  but does not visually move those angle dimension types.
-- `Origin` movement is intentionally not used because it changes the measured
-  angle geometry.
-- Delete/recreate workarounds, if needed, must be implemented as a separate
-  explicit feature.
+  as not moved, with a reason.
+- The Tekla-confirmed cause, the dead ends already checked and why `Origin`
+  movement is not used as a fallback are recorded in
+  [DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md).
 
 ## Internal / Bridge-Only Debug Surface
 
@@ -271,29 +268,17 @@ overlays and layout, not to associativity matching. Persisted dimension cases
 must record the coordinate space and its source so that coordinates from
 different spaces are never compared silently.
 
+The drawing on which this contract was observed to fail, with the measured
+axis spans, is recorded in
+[DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md).
+
 ## Observed Constraint: Native Dimension Text Position
 
-The following limitation is already confirmed on the validated Tekla API
-surface currently available to this module.
-
-- native dimension value text can be moved manually in Tekla
-- the moved text position is not currently observable through the checked Tekla
-  Open API surface
-
-Checked sources so far:
-
-- `StraightDimension.GetRelatedObjects()`
-- `StraightDimensionSet.GetRelatedObjects()`
-- recursive `GetObjects()` traversal where available
-- drawing presentation model text primitives
-- reflected public/nonpublic members on `StraightDimension`,
-  `StraightDimensionSet` and related attributes
-
-Consequence:
-
-- text polygon debug may use runtime text geometry when Tekla exposes it
-- otherwise text geometry remains synthetic fallback
-- this constraint should not distort the core domain redesign
+A manually moved dimension text position is not observable through the
+validated Tekla API surface, so text geometry stays supporting/debug data. The
+constraint, the list of API surfaces already checked and the consequences are
+recorded once in
+[DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md).
 
 ## Document Split
 
@@ -303,7 +288,7 @@ Use this file as the operational description of the module:
 - current responsibilities
 - what is public vs internal
 
-Use [ROADMAP_DIMENSIONS.md](D:\repos\svMCP\src\TeklaMcpServer.Api\Drawing\Dimensions\ROADMAP_DIMENSIONS.md)
+Use [ROADMAP_DIMENSIONS.md](ROADMAP_DIMENSIONS.md)
 as the strategic document:
 
 - what is still being aligned to `dim`
