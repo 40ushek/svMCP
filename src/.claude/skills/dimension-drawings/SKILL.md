@@ -60,10 +60,29 @@ these rules destroy the drawing; GA drawings have a different subject.
 The premise: **a dimension says where a part goes, not how big it is.** Part sizes
 live on fabrication drawings. Exception on overlay layers — see rule 1.
 
-## Checklist — compute all of these before proposing anything
+## Checklist — start with get_dimension_defects, not a manual read
 
-They come out of the two reads you already make. Put them in the same script as the
-capture: a separate step gets skipped, and each of these has cost a wrong answer.
+**2026-08-04 lesson: a live run reconstructed this checklist by hand from
+`get_dimension_contexts` + per-chain `get_dimension_chain_coverage`, parsed the raw
+JSON with ad-hoc Python because the response didn't fit the tool limit, and took
+96.8s beyond the Tekla calls themselves. `get_dimension_defects <viewId>` — a bridge
+command that already existed for exactly this — did the same check in 7.9s and, run
+side by side afterwards, found two real defects the manual pass had missed. Manual
+reconstruction is not a fallback style choice; it is slower and less reliable than
+the tool built for this. Bridge-only, same CLI pattern as get_dimension_chain_coverage.**
+
+Run `TeklaBridge.exe get_dimension_defects <viewId>` first, every time. It covers
+items 1, 3, 5, 6, 7, 8 of the list below directly as `DimensionDefectKind` values —
+`CoordinateSpaceMismatch`, `RedundantPartSizeSpan`, `PhantomAnchor` /
+`AnchorUnverified` / `UnanchoredPoint`, `PointFarFromChain`, `ContainedChain`,
+`WrongStartPoint` — plus `relativeRow`/`absoluteRowFromReadOrder` per chain (item 2)
+and `isOverall`. Each defect carries a `confidence`: `Mechanical` is safe to act on,
+`Provisional` (e.g. `AmbiguousAnchor`) needs a look at the drawing before deciding.
+
+Only reach for `get_dimension_contexts` / `get_dimension_chain_coverage` /
+`get_all_parts_geometry_in_view` afterwards, and only to dig into a *specific*
+finding `get_dimension_defects` already flagged — not to re-run the whole checklist
+by hand. Item 4 (openings) is not a defect kind and still needs its own read, below.
 
 1. **Same coordinate space?** Parts extent per axis against what the chains measure.
    If the height is in the parts Z and the chains Y — stop, nothing else will work.
@@ -74,9 +93,9 @@ capture: a separate step gets skipped, and each of these has cost a wrong answer
    part whose own extent along the axis equals the span?
 4. **Openings.** Stud gaps larger than the usual spacing. Points must sit on the
    faces that bound the opening. Clear width and height must appear in a row.
-5. **Phantom points.** Run get_dimension_chain_coverage on every chain — not only
-   when in doubt. fallbackOnly means the point matched a box corner; Missing means it
-   belongs to nothing at all, which a hand-rolled bbox test does not catch. Re-anchor
+5. **Phantom points.** `get_dimension_defects` already ran coverage-equivalent
+   checks for every chain (`PhantomAnchor`/`AnchorUnverified`/`UnanchoredPoint`) — do
+   not re-run `get_dimension_chain_coverage` on chains it reported clean. Re-anchor
    either way, **including when the printed value does not depend on the anchor** — a
    horizontal chain hanging off a phantom y still gets fixed.
 6. **Points far from their chain.** A chain drawn on the left takes points near the
