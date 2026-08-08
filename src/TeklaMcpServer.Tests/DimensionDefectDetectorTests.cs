@@ -355,6 +355,71 @@ public sealed class DimensionDefectDetectorTests
         // Exactly one anchor defect for this point — Ambiguous must not ALSO fall through to a
         // second, contradictory finding.
         Assert.Single(report.Defects, defect => defect.DimensionId == 9002);
+        Assert.DoesNotContain(report.Defects, defect =>
+            defect.Kind == DimensionDefectKind.EndpointShortOfCorner);
+    }
+
+    [Fact]
+    public void EndpointShortOfCornerReportsAProvisionalNearMiss()
+    {
+        var chain = new DimensionContextInfo
+        {
+            DimensionId = 9012,
+            Orientation = "horizontal",
+            PointAssociations =
+            [
+                new() { Point = new DrawingPointInfo { X = 140.8, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 300, Y = 0 } }
+            ]
+        };
+
+        var report = DimensionDefectDetector.Detect(
+            1,
+            [chain],
+            [
+                new PartGeometryInViewResult
+                {
+                    ModelId = 1, PartPos = "T-1", PartPrefix = "T",
+                    BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 1000d, 100, 100 }
+                }
+            ],
+            []);
+
+        var defect = Assert.Single(report.Defects, item =>
+            item.Kind == DimensionDefectKind.EndpointShortOfCorner);
+        Assert.Equal(DimensionDefectConfidence.Provisional, defect.Confidence);
+        Assert.Equal(9012, defect.DimensionId);
+        Assert.Equal(140.8, defect.Point![0], 3);
+    }
+
+    [Fact]
+    public void EndpointShortOfCornerDoesNotReportAGenuinelyInternalChain()
+    {
+        var chain = new DimensionContextInfo
+        {
+            DimensionId = 9013,
+            Orientation = "horizontal",
+            PointAssociations =
+            [
+                new() { Point = new DrawingPointInfo { X = 300, Y = 0 } },
+                new() { Point = new DrawingPointInfo { X = 700, Y = 0 } }
+            ]
+        };
+
+        var report = DimensionDefectDetector.Detect(
+            1,
+            [chain],
+            [
+                new PartGeometryInViewResult
+                {
+                    ModelId = 1, PartPos = "T-1", PartPrefix = "T",
+                    BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 1000d, 100, 100 }
+                }
+            ],
+            []);
+
+        Assert.DoesNotContain(report.Defects, item =>
+            item.Kind == DimensionDefectKind.EndpointShortOfCorner);
     }
 
     [Fact]

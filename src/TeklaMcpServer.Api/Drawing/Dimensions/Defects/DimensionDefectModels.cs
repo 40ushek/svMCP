@@ -67,6 +67,14 @@ public enum DimensionDefectKind
     /// overlay layer is never where a chain's zero belongs.
     /// </summary>
     WrongStartPoint,
+
+    /// <summary>
+    /// One end of the chain sits close to, but not exactly at, the assembly's true structural
+    /// extent along the chain's axis — closer than an internal chain's own endpoint plausibly
+    /// would, suggesting it anchored to the nearest frame member instead of the real corner.
+    /// PROVISIONAL: threshold fitted to two observed cases, not graded against the case corpus.
+    /// </summary>
+    EndpointShortOfCorner,
 }
 
 /// <summary>

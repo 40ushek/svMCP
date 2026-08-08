@@ -42,6 +42,18 @@ public static class DimensionDefectDetector
     /// </summary>
     public const double FarFromChainExcessFraction = 0.3;
 
+    /// <summary>
+    /// How close an endpoint must sit to the assembly's true structural extent, without touching
+    /// it, to count as suspiciously short of the corner rather than a legitimately internal chain.
+    ///
+    /// PROVISIONAL. Fitted to two observed cases on one drawing (RE3-1, 2026-08-04): gaps of
+    /// 140.8 mm and 80 mm were both corrected by hand to reach the real corner. Set comfortably
+    /// below the smallest stud rhythm seen in this project (300 mm, rule 3 of the dimensioning
+    /// skill) so an internal chain's own endpoint is not mistaken for a short corner. Not graded
+    /// against the case corpus — do not auto-apply.
+    /// </summary>
+    public const double EndpointShortOfCornerLimitMm = 250.0;
+
     public static DimensionDefectReport Detect(
         int viewId,
         IReadOnlyList<DimensionContextInfo>? dimensions,
@@ -162,6 +174,13 @@ public static class DimensionDefectDetector
         }
 
         AddAnchorDefects(report, axisChains.Select(static entry => entry.Chain).ToList(), coverage, partList);
+
+        // Anchor ambiguity is the more specific finding. Do not add a second, contradictory
+        // endpoint finding for the same point; the operator must resolve which part owns the
+        // anchor before deciding whether the chain should reach the structural corner.
+        foreach (var entry in axisChains)
+            AddEndpointShortOfCorner(report, entry.Chain, entry.Axis, structural);
+
         AddContainedChains(report, axisChains.Select(static entry => (entry.Chain, entry.Axis)).ToList());
 
         return report;
@@ -383,6 +402,72 @@ public static class DimensionDefectDetector
         var candidates = starts.Where(start => !ends.Any(end => PointsClose(end, start))).ToList();
         return candidates.Count == 1 ? candidates[0] : null;
     }
+
+    /// <summary>
+    /// Checks only the chain's two extreme points against the assembly's true structural bounds
+    /// on its axis. An overall's own endpoints already sit exactly on those bounds by construction
+    /// (gap ~0, below tolerance) and a genuinely internal chain's endpoint sits far from them (gap
+    /// above <see cref="EndpointShortOfCornerLimitMm"/>) — only a near-miss in between is reported,
+    /// so this needs no "is this chain an overall" classification to run correctly.
+    /// </summary>
+    private static void AddEndpointShortOfCorner(
+        DimensionDefectReport report,
+        DimensionContextInfo chain,
+        int axis,
+        IReadOnlyList<PartGeometryInViewResult> structuralParts)
+    {
+        var points = OrderedPoints(chain, axis);
+        if (points.Count < 2)
+            return;
+
+        var structuralMin = structuralParts.Min(part => part.BboxMin[axis]);
+        var structuralMax = structuralParts.Max(part => part.BboxMax[axis]);
+
+        CheckEndpoint(points[0]);
+        CheckEndpoint(points[points.Count - 1]);
+
+        void CheckEndpoint(double[] point)
+        {
+            if (report.Defects.Any(defect =>
+                    defect.DimensionId == chain.DimensionId &&
+                    IsAnchorDefect(defect.Kind) &&
+                    SamePoint(defect.Point, point)))
+                return;
+
+            var value = point[axis];
+            var gapToMin = Math.Abs(value - structuralMin);
+            var gapToMax = Math.Abs(value - structuralMax);
+            var gap = Math.Min(gapToMin, gapToMax);
+
+            if (gap <= SpanMatchToleranceMm || gap > EndpointShortOfCornerLimitMm)
+                return;
+
+            var nearestBound = gapToMin < gapToMax ? structuralMin : structuralMax;
+
+            report.Defects.Add(new DimensionDefect
+            {
+                Kind = DimensionDefectKind.EndpointShortOfCorner,
+                Confidence = DimensionDefectConfidence.Provisional,
+                DimensionId = chain.DimensionId,
+                Point = new[] { point[0], point[1] },
+                Reason = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "sits {0:0.#} mm short of the assembly's true {1} extent ({2:0.#}) — likely anchored to the nearest frame member instead of the real corner",
+                    gap, axis == 0 ? "X" : "Y", nearestBound)
+            });
+        }
+    }
+
+    private static bool IsAnchorDefect(DimensionDefectKind kind) =>
+        kind is DimensionDefectKind.UnanchoredPoint
+            or DimensionDefectKind.AmbiguousAnchor
+            or DimensionDefectKind.PhantomAnchor
+            or DimensionDefectKind.AnchorUnverified;
+
+    private static bool SamePoint(double[]? first, double[] second) =>
+        first is { Length: >= 2 } &&
+        Math.Abs(first[0] - second[0]) <= PointOnPartToleranceMm &&
+        Math.Abs(first[1] - second[1]) <= PointOnPartToleranceMm;
 
     private static void AddAnchorDefects(
         DimensionDefectReport report,
