@@ -1,4 +1,4 @@
-# Dimension Research and Graph Contracts
+# Dimension Research Notes
 
 This document holds research notes moved out of the main roadmap. The roadmap
 keeps only the decisions that affect implementation.
@@ -23,27 +23,25 @@ Tekla apply/read-back verification.
 Laman's condition is only a theoretical reference for selected planar
 bar-constraint subproblems. It is not a Tekla completeness criterion.
 
-## Three graph roles
+## Constraints on a future placement layer
 
-### RelationGraph
+A typed graph model (semantic relations, placement-candidate conflicts,
+chain ordering) was drafted on 2026-08-08 and deliberately dropped: there is no
+planner creating new dimensions yet, so there is nothing to order and nothing
+to conflict. Reviewing it did produce two constraints worth keeping, whatever
+structure the placement layer eventually uses.
 
-A typed graph with 'AnchorNode' (dimension point), 'SourceFeatureNode' (face,
-edge, vertex or assembly feature), and 'DimensionRelation' edges. Relations
-retain axis, row/type, source role and evidence. Control diagonals may
-intentionally form cycles and are protected by project policy.
+**Identity must be semantic.** A dimension's identity cannot be its Tekla ID or
+its point index: 'recreate_dimension' renumbers the set, and read-back
+normalizes point order. Anything comparing a before and after state — verifying
+that a reflow moved the intended dimension, or that source associations
+survived an edit — needs identity derived from geometry and source anchors
+instead.
 
-### CandidateConflictGraph
-
-A placement candidate is a side/offset option for one chain. Edges represent
-geometric collisions. Candidates from the same chain are mutually exclusive.
-Fixed obstacles (view boundary, part geometry and reserved annotation areas)
-are rejected before solving.
-
-### OrderingDAG
-
-A policy-generated partial order scoped by view, layer and side. Typical
-precedence is base, internal, inter-element, then overall/control chains, but
-plant policy may alter it. It is not a measurement or collision graph.
+**Several sources at one point is not an error.** Where a stud meets its plate,
+one dimension point legitimately lies on two parts. Coverage already keeps all
+matches and does not pick a winner. Which part the dimension is actually
+locating is a subject/policy decision, not a nearest-point calculation.
 
 ## Confidence vocabulary
 

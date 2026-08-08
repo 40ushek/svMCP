@@ -289,11 +289,12 @@ checks second, deterministic placement third, and stochastic optimization only
 as a later tie-breaker. Details and sources are in
 [DIMENSION_RESEARCH.md](DIMENSION_RESEARCH.md).
 
-The implementation keeps three graph roles separate:
-
-- relation graph for typed source/anchor measurement semantics;
-- candidate conflict graph for placement alternatives and obstacles;
-- policy-scoped ordering DAG for chain precedence.
+Whatever structure the placement layer eventually takes, measurement semantics
+must stay separate from placement geometry: a layout inconvenience must never
+delete a correct dimension. Two constraints came out of the review and are
+recorded in [DIMENSION_RESEARCH.md](DIMENSION_RESEARCH.md) — identity must be
+semantic rather than Tekla ID or point index, and several sources at one point
+is a policy decision, not an error.
 
 The roadmap records decisions and acceptance criteria; it does not port any
 paper's algorithm directly.
@@ -313,7 +314,7 @@ the existing view and dimension payloads to one capture header, and does not
 persist files. Details are in [DIMENSION_HISTORY.md](DIMENSION_HISTORY.md).
 
 
-### 0b. Keep the relation graph instead of flattening it — baseline done
+### 0b. Keep per-segment source relations nested, not flattened — baseline done
 
 Per-segment related sources and readable DimensionLink endpoint IDs are retained
 in the observation/read model. The legacy flat list remains for compatibility.
