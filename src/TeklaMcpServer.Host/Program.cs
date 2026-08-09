@@ -24,7 +24,7 @@ internal static class Program
         var info = model.GetInfo();
         Console.WriteLine($"Connected: {info.ModelName}  ({info.ModelPath})");
 
-        RunRestrictionBoxProbe();
+        SolidContacts.ContactProbe.Run();
         Console.ReadLine();
         return;
 

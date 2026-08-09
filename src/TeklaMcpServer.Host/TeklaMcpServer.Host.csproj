@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
+    <!-- The contact library lives in its own repository because its core must stay free
+         of Tekla. Referenced here only so it can be exercised against a live model. -->
+    <ProjectReference Include="..\..\..\SolidContacts\src\SolidContacts.Core\SolidContacts.Core.csproj" />
+    <ProjectReference Include="..\..\..\SolidContacts\src\SolidContacts.Tekla\SolidContacts.Tekla.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +27,14 @@
 
   <Target Name="DeployToExtensions" AfterTargets="Build" Condition="Exists('$(TeklaExtensionsDir)')">
     <ItemGroup>
-      <HostOutput Include="$(OutputPath)*.*" />
+      <!-- app.config files are excluded on purpose. The working one in the extensions
+           folder carries codeBase entries pointing at the installed Tekla assemblies and
+           was written there by hand once; without it the NuGet copies load, their
+           version 2025.0.0.0 goes into the remoting channel name instead of the
+           installed 2025.0.52577.0, and nothing connects. Copying the build output over
+           it silently breaks every tool in that folder, which is how this exclusion came
+           to be needed. -->
+      <HostOutput Include="$(OutputPath)*.*" Exclude="$(OutputPath)*.exe.config;$(OutputPath)*.dll.config" />
     </ItemGroup>
     <Copy SourceFiles="@(HostOutput)" DestinationFolder="$(TeklaExtensionsDir)" SkipUnchangedFiles="true" />
   </Target>
