@@ -27,7 +27,8 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
   - the `DeployToExtensions` target in Host .csproj copies `@(HostOutput)` — this covers `TeklaMcpServer.Api.dll` but **not** `TeklaBridge.exe`
   - `TeklaBridge.exe` must be copied by hand after a bridge rebuild — see [README.md](../README.md) "Деплой TeklaBridge для TS2025"
   - the manual step is deliberate: `TeklaBridge.exe.config` (with `<codeBase>` entries) lives in that folder and is created once by hand
-  - after changing anything in `TeklaMcpServer.Api` that the bridge returns, copy **both** `TeklaBridge.exe` and `TeklaMcpServer.Api.dll`, or the bridge keeps answering from the stale DLL with no error
+  - after changing anything in `TeklaMcpServer.Api` that the bridge returns, copy **all three** of `TeklaBridge.exe`, `TeklaMcpServer.Api.dll` and `SolidContacts.Core.dll`, or the bridge keeps answering from the stale DLL with no error
+  - `SolidContacts.Core.dll` joined that list when `TeklaMcpServer.Api` took a direct reference on it; missing, it is not a stale answer but a `FileNotFoundException` on the first contact call
 
 ## Architecture
 

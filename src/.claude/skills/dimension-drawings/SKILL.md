@@ -142,8 +142,10 @@ Then propose, stating what each chain will print.
   edge — a chain whose points sit inside the wall draws its line inside too.
 - **Creating a dimension reflows its neighbours.** Re-read their offsets after.
 - **Deploy before testing.** dotnet build writes to bin/; the bridge runs from the
-  Tekla extensions folder. Copy both TeklaBridge.exe and TeklaMcpServer.Api.dll
-  after stopping the process.
+  Tekla extensions folder. Copy TeklaBridge.exe, TeklaMcpServer.Api.dll and
+  SolidContacts.Core.dll after stopping the process. The third joined the list
+  when the API took a direct reference on it; without it the bridge does not
+  answer wrongly, it dies on FileNotFoundException.
 
 ## Who it is for
 
