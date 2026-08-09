@@ -54,11 +54,15 @@ public static partial class ModelTools
     [McpServerTool, Description(
         "Detect dimension defects in one drawing view without returning the full dimension and part read models. " +
         "Returns compact chain summaries, mechanical or provisional findings, and warnings. " +
-        "Read-only: does not modify the drawing. Provisional findings require human review.")]
+        "Read-only: does not modify the drawing. Provisional findings require human review. " +
+        "'signals' is a separate, weaker list that fires on correct drawings too and must never be acted on automatically.")]
     public static string GetDimensionDefects(
-        [Description("View ID to check (from get_drawing_views).")] int viewId)
+        [Description("View ID to check (from get_drawing_views).")] int viewId,
+        [Description("Also search where the view's parts touch, adding the weak 'signals' list. Off by default: the search compares every pair of parts.")] bool withContacts = false)
     {
-        var json = RunBridge("get_dimension_defects", viewId.ToString(CultureInfo.InvariantCulture));
+        var json = RunBridge("get_dimension_defects",
+            viewId.ToString(CultureInfo.InvariantCulture),
+            withContacts ? "true" : "false");
         try
         {
             var doc = JsonDocument.Parse(json);

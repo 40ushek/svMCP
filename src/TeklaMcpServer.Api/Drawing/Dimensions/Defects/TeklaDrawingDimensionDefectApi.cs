@@ -14,29 +14,46 @@ public sealed class TeklaDrawingDimensionDefectApi
     private readonly Func<int, GetDimensionContextsResult> _getDimensionContexts;
     private readonly Func<int, List<PartGeometryInViewResult>> _getParts;
     private readonly Func<int, int, GetPartCandidatePointsResult> _getCandidates;
+    private readonly Func<int, ViewContactsResult>? _getContacts;
 
     public TeklaDrawingDimensionDefectApi(Model model)
     {
         var dimensionsApi = new TeklaDrawingDimensionsApi();
         var partGeometryApi = new TeklaDrawingPartGeometryApi(model);
         var candidatePointApi = new TeklaDrawingPartCandidatePointApi(model);
+        var contactApi = new TeklaDrawingViewContactApi(model);
 
         _getDimensionContexts = dimensionsApi.GetDimensionContexts;
         _getParts = partGeometryApi.GetAllPartsGeometryInView;
         _getCandidates = candidatePointApi.GetPartCandidatePointsInView;
+        _getContacts = viewId => contactApi.GetContactGraph(viewId);
     }
 
     internal TeklaDrawingDimensionDefectApi(
         Func<int, GetDimensionContextsResult> getDimensionContexts,
         Func<int, List<PartGeometryInViewResult>> getParts,
-        Func<int, int, GetPartCandidatePointsResult> getCandidates)
+        Func<int, int, GetPartCandidatePointsResult> getCandidates,
+        Func<int, ViewContactsResult>? getContacts = null)
     {
         _getDimensionContexts = getDimensionContexts;
         _getParts = getParts;
         _getCandidates = getCandidates;
+        _getContacts = getContacts;
     }
 
-    public DimensionDefectReport GetDimensionDefects(int viewId)
+    /// <summary>
+    /// Above this many parts in a view, contacts are not searched unless asked for twice over.
+    ///
+    /// The search is every pair, and the box test that rejects most of them is cheap but not
+    /// free. Measured on a real sheet: 56 parts, 1540 pairs, well under a second, and four such
+    /// views in a couple of seconds. Ten times the parts is a hundred times the pairs, and this
+    /// runs inside a defect scan people expect to be quick. The limit is set an order above what
+    /// has actually been measured rather than at some round number, and the scan says when it
+    /// skipped rather than going quiet.
+    /// </summary>
+    public const int ContactSearchPartLimit = 200;
+
+    public DimensionDefectReport GetDimensionDefects(int viewId, bool withContacts = false)
     {
         var contexts = _getDimensionContexts(viewId);
         var eligibleDimensions = contexts.Dimensions
@@ -103,7 +120,33 @@ public sealed class TeklaDrawingDimensionDefectApi
                 .ToList();
         }
 
-        var report = DimensionDefectDetector.Detect(viewId, contexts.Dimensions, parts, coverage);
+        // Contacts are read here rather than inside the detector so the detector stays pure and
+        // keeps running against the captured states, which carry no contacts. Where they are
+        // absent the contact check simply does not run.
+        SolidContacts.ContactGraph? contacts = null;
+
+        if (withContacts && _getContacts != null && parts.Count > ContactSearchPartLimit)
+        {
+            sourceWarnings.Add(
+                $"contacts not searched: {parts.Count} parts in the view is over the {ContactSearchPartLimit} limit, and the search is every pair");
+        }
+        else if (withContacts && _getContacts != null)
+        {
+            try
+            {
+                var viewContacts = _getContacts(viewId);
+                if (viewContacts.IsComplete)
+                    contacts = viewContacts.Graph;
+                else
+                    sourceWarnings.Add($"contacts not used: {viewContacts.Error ?? $"{viewContacts.Unread.Count} part(s) unread"}");
+            }
+            catch (Exception exception)
+            {
+                sourceWarnings.Add($"contacts not read: {exception.Message}");
+            }
+        }
+
+        var report = DimensionDefectDetector.Detect(viewId, contexts.Dimensions, parts, coverage, contacts);
         AddSourceWarnings(report, contexts.Warnings, sourceWarnings);
         return report;
     }

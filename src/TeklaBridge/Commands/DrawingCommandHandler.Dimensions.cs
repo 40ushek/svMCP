@@ -517,7 +517,13 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = new TeklaDrawingDimensionDefectApi(_model).GetDimensionDefects(viewId);
+        // Off by default: the contact search is every pair, and what it feeds is one weak
+        // signal that fires legitimately on correct drawings.
+        var withContacts = args.Length > 2
+            && bool.TryParse(args[2], out var requested)
+            && requested;
+
+        var result = new TeklaDrawingDimensionDefectApi(_model).GetDimensionDefects(viewId, withContacts);
         WriteJson(new
         {
             success = result.Success,
@@ -545,6 +551,14 @@ internal sealed partial class DrawingCommandHandler
                 partPos = defect.PartPos,
                 containedIn = defect.ContainedIn,
                 reason = defect.Reason
+            }),
+            signals = result.Signals.Select(signal => new
+            {
+                kind = signal.Kind.ToString(),
+                confidence = signal.Confidence.ToString(),
+                dimensionId = signal.DimensionId,
+                point = signal.Point,
+                reason = signal.Reason
             }),
             warnings = result.Warnings,
             error = result.Error

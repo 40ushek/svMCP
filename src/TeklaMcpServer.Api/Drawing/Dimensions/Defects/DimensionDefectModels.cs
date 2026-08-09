@@ -75,6 +75,30 @@ public enum DimensionDefectKind
     /// PROVISIONAL: threshold fitted to two observed cases, not graded against the case corpus.
     /// </summary>
     EndpointShortOfCorner,
+
+    /// <summary>
+    /// No two parts of the view meet at this coordinate ANYWHERE in it — not at this point.
+    ///
+    /// The weaker claim is deliberate and the name says so. The test collapses both the point
+    /// and every contact onto the chain's axis, so a contact at the top of the view supports a
+    /// point at the bottom of it as long as they share a coordinate. That is not "this point
+    /// rests on something".
+    ///
+    /// The stronger test — the point lies on a junction — needs the contact matched to the
+    /// chain's own band, and that needs a threshold this project cannot yet justify. On the wall
+    /// it was tried against, chain points sit on the outer edge of the assembly while the
+    /// junction they locate is a plate's thickness inside it: 60 mm away, which is a member
+    /// section and not a rounding. Fitting a tolerance to that is exactly the kind of guess the
+    /// confidence flag exists to stop.
+    ///
+    /// One direction only. A coordinate carrying no contact is worth a look; a contact at a
+    /// coordinate with no point is nothing at all, because most contacts are not dimensioned and
+    /// never should be.
+    ///
+    /// PROVISIONAL, and weak even so. A legitimate point can sit clear of everything — the free
+    /// end of a member, the outer corner of the assembly.
+    /// </summary>
+    CoordinateWithoutContact,
 }
 
 /// <summary>
@@ -167,7 +191,22 @@ public sealed class DimensionDefectReport
     public bool CoordinateSpaceOk { get; set; }
 
     public List<DimensionChainSummary> Chains { get; set; } = new();
+
+    /// <summary>Findings about the drawing. Everything here is something a person could act on.</summary>
     public List<DimensionDefect> Defects { get; set; } = new();
+
+    /// <summary>
+    /// Weak observations, kept out of <see cref="Defects"/> on purpose.
+    ///
+    /// A separate list rather than a flag on the entry: anything walking the defects to build a
+    /// plan would have to remember to skip these, and one day it would not. Their being
+    /// somewhere else is the safeguard.
+    ///
+    /// What lands here is a signal that fires legitimately on correct drawings - the free end
+    /// of a member, the outer corner of an assembly - so a count of them says nothing about
+    /// quality and none of them should ever be auto-applied.
+    /// </summary>
+    public List<DimensionDefect> Signals { get; set; } = new();
 
     /// <summary>Checks that could not run, and why — a skipped check must never look like a clean one.</summary>
     public List<string> Warnings { get; set; } = new();

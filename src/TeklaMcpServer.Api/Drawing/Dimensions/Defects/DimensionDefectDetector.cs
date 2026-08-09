@@ -58,7 +58,8 @@ public static class DimensionDefectDetector
         int viewId,
         IReadOnlyList<DimensionContextInfo>? dimensions,
         IReadOnlyList<PartGeometryInViewResult>? parts,
-        IReadOnlyList<DimensionChainCoverageResult>? coverage)
+        IReadOnlyList<DimensionChainCoverageResult>? coverage,
+        SolidContacts.ContactGraph? contacts = null)
     {
         var report = new DimensionDefectReport { Success = true, ViewId = viewId, CoordinateSpaceOk = true };
 
@@ -166,11 +167,14 @@ public static class DimensionDefectDetector
             return report;
         }
 
+        var contactSpans = ContactSpans(contacts);
+
         foreach (var entry in axisChains)
         {
             AddRedundantSpans(report, entry.Chain, entry.Axis, partList, entry.Axis == 0 ? extentX : extentY);
             AddFarFromChain(report, entry.Chain, entry.Axis, visibleX, visibleY);
             AddWrongStartPoint(report, entry.Chain, partList);
+            AddCoordinatesWithoutContact(report, entry.Chain, entry.Axis, contactSpans);
         }
 
         AddAnchorDefects(report, axisChains.Select(static entry => entry.Chain).ToList(), coverage, partList);
@@ -184,6 +188,113 @@ public static class DimensionDefectDetector
         AddContainedChains(report, axisChains.Select(static entry => (entry.Chain, entry.Axis)).ToList());
 
         return report;
+    }
+
+    /// <summary>
+    /// How far a chain point's coordinate may sit from the nearest coordinate at which two parts
+    /// meet and still count as covered by it.
+    ///
+    /// Wider than <see cref="PointOnPartToleranceMm"/> on purpose. A contact face and the point
+    /// a dimension actually snapped to are not obliged to agree exactly: on the wall this was
+    /// worked out on, one chain point sat 0.3 from the face of the stud it locates. The check
+    /// only ever reports an absence, so erring wide costs a missed finding and erring narrow
+    /// invents one.
+    /// </summary>
+    public const double CoordinateToContactToleranceMm = 1.0;
+
+    /// <summary>
+    /// Every place two parts of the view meet, collapsed onto X and Y as the interval it
+    /// occupies there.
+    ///
+    /// Intervals and not their ends: a seam running along a stretch is a place where something
+    /// meets something at every position along it, so a point anywhere on it is supported. Only
+    /// the ends are POSITIONS in the sense a chain cares about, but this check does not ask
+    /// where a point belongs - it asks whether anything is there at all.
+    ///
+    /// Deliberately unfiltered for the same reason. It would be easy to keep only the narrow
+    /// contacts, or only those in the chain's own band, and both would be right about where a
+    /// point belongs. Every such filter can only turn a silence into a finding, and this check
+    /// reports silence.
+    /// </summary>
+    private static IReadOnlyList<(double From, double To)>[] ContactSpans(SolidContacts.ContactGraph? contacts)
+    {
+        var byAxis = new List<(double From, double To)>[] { new(), new() };
+
+        if (contacts == null)
+            return new IReadOnlyList<(double, double)>[] { byAxis[0], byAxis[1] };
+
+        foreach (var contact in contacts.AllContacts)
+        {
+            double minX = double.MaxValue, maxX = double.MinValue;
+            double minY = double.MaxValue, maxY = double.MinValue;
+
+            foreach (var region in contact.Regions)
+            {
+                foreach (var point in region)
+                {
+                    if (point.X < minX) minX = point.X;
+                    if (point.X > maxX) maxX = point.X;
+                    if (point.Y < minY) minY = point.Y;
+                    if (point.Y > maxY) maxY = point.Y;
+                }
+            }
+
+            if (minX > maxX)
+                continue;
+
+            byAxis[0].Add((minX, maxX));
+            byAxis[1].Add((minY, maxY));
+        }
+
+        return new IReadOnlyList<(double, double)>[] { byAxis[0], byAxis[1] };
+    }
+
+    /// <summary>
+    /// Points of the chain whose coordinate along the chain's axis carries no contact anywhere
+    /// in the view.
+    ///
+    /// Only the coordinate, not the place. Both the point and every contact are collapsed onto
+    /// the axis first, so a contact elsewhere in the view supports the point as long as they
+    /// share a coordinate. Saying otherwise would need the contact matched to the chain's band,
+    /// and the tolerance that would take is a member section rather than a rounding - see the
+    /// defect kind for the numbers.
+    ///
+    /// Asked in one direction only. A contact at a coordinate with no point is not a finding:
+    /// most contacts are never dimensioned and should not be.
+    /// </summary>
+    private static void AddCoordinatesWithoutContact(
+        DimensionDefectReport report,
+        DimensionContextInfo chain,
+        int axis,
+        IReadOnlyList<(double From, double To)>[] contactSpans)
+    {
+        var spans = contactSpans[axis];
+        if (spans.Count == 0)
+            return; // Nothing to compare against says nothing about the chain.
+
+        foreach (var association in chain.PointAssociations)
+        {
+            var along = Coordinate(association, axis);
+            if (spans.Any(span => along >= span.From - CoordinateToContactToleranceMm &&
+                                  along <= span.To + CoordinateToContactToleranceMm))
+            {
+                continue;
+            }
+
+            report.Signals.Add(new DimensionDefect
+            {
+                Kind = DimensionDefectKind.CoordinateWithoutContact,
+                Confidence = DimensionDefectConfidence.Provisional,
+                DimensionId = chain.DimensionId,
+                Point = new[] { association.Point.X, association.Point.Y },
+                Reason = string.Format(
+                    CultureInfo.InvariantCulture,
+                    "no two parts of this view meet at {0} = {1:0.###} anywhere in it (within {2:0.#}); this is about the coordinate, not about this point",
+                    axis == 0 ? "X" : "Y",
+                    along,
+                    CoordinateToContactToleranceMm)
+            });
+        }
     }
 
     private static void AddRedundantSpans(
