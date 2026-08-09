@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using global::SolidContacts;
+using TeklaMcpServer.Api.Drawing;
 using global::SolidContacts.TeklaAdapter;
+using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
 using Tekla.Structures.Model.UI;
 
@@ -16,6 +18,9 @@ namespace TeklaMcpServer.Host.SolidContacts;
 /// </summary>
 internal static class ContactProbe
 {
+    private static readonly TeklaMcpServer.Api.Drawing.TeklaDrawingPartSolidGeometryApi _viewGeometry =
+        new(new Model());
+
     /// <summary>
     /// Searches each group of parts on its own.
     ///
@@ -38,18 +43,20 @@ internal static class ContactProbe
         Console.WriteLine($"gap tolerance: {options.GapTolerance} mm");
 
         var drawable = new List<Contact>();
+        var viewLocal = 0;
 
         foreach (var group in groups)
         {
             Console.WriteLine();
-            Console.WriteLine($"=== {group.Name}: {group.Parts.Count} part(s) ===");
+            Console.WriteLine($"=== {group.Name} [view {group.ViewId}]: {group.Parts.Count} part(s) ===");
 
             var named = new Dictionary<string, Part>();
             var solids = new List<ISolid>();
+            var incomplete = 0;
 
             foreach (var part in group.Parts)
             {
-                var solid = TeklaSolidAdapter.FromPart(part);
+                var solid = ReadSolid(part, group.ViewId, ref incomplete);
                 if (solid == null)
                 {
                     Console.WriteLine($"  {Describe(part)}: no solid, skipped");
@@ -60,18 +67,99 @@ internal static class ContactProbe
                 solids.Add(solid);
             }
 
+            if (incomplete > 0)
+                Console.WriteLine($"  {incomplete} face(s) dropped: unresolved vertices or no usable contour");
+
             var graph = ContactGraph.Build(solids, options);
             Report(graph, named);
-            drawable.AddRange(graph.AllContacts);
+            ReportProjections(graph, named);
+
+            // Only model-plane results are drawable. A view's contacts are in that view's
+            // own system, and the drawer paints into the model - two views would put two
+            // different systems into one picture, and every point would land somewhere
+            // plausible and wrong. A drawing that lies is worse than no drawing, because
+            // it invites the eye to confirm it.
+            if (group.ViewId == null)
+                drawable.AddRange(graph.AllContacts);
+            else
+                viewLocal += graph.AllContacts.Count;
         }
 
         Console.WriteLine();
-        Console.WriteLine($"contacts across {groups.Count} group(s): {drawable.Count}");
+        Console.WriteLine($"contacts across {groups.Count} group(s): {drawable.Count + viewLocal}");
 
         if (draw && drawable.Count > 0)
         {
             ContactDrawer.Draw(drawable);
-            Console.WriteLine("drawn in the model view");
+            Console.WriteLine($"{drawable.Count} contact(s) drawn in the model");
+        }
+
+        if (viewLocal > 0)
+            Console.WriteLine($"{viewLocal} contact(s) not drawn: they are in view coordinates, the model view is not");
+    }
+
+    /// <summary>
+    /// Geometry for one part, in the coordinates the group is asked about.
+    ///
+    /// Where the group came from a drawing view, it comes through the bridge's own reader,
+    /// which sets the work plane to the view before reading the solid - the same path and
+    /// the same coordinates the dimension work already uses. Reading it again here would
+    /// be a second way of doing one thing, and the two could drift apart.
+    /// </summary>
+    private static ISolid? ReadSolid(Part part, int? viewId, ref int incomplete)
+    {
+        if (viewId == null)
+            return TeklaSolidAdapter.FromPart(part);
+
+        var geometry = _viewGeometry.GetPartSolidGeometryInView(viewId.Value, part.Identifier.ID);
+        var solid = ViewSolidAdapter.FromGeometry(geometry);
+
+        if (solid != null && solid.DroppedFaces > 0)
+            incomplete += solid.DroppedFaces;
+
+        return solid;
+    }
+
+    /// <summary>
+    /// Each contact collapsed onto the view's two axes, as the interval it occupies.
+    ///
+    /// The interval, not a point: its width says whether the contact marks a position at
+    /// all - a stud meeting a plate is as narrow as the stud, two plates meeting run the
+    /// length of the wall - and its ends and middle serve dimensions taken to faces and
+    /// to centres without having to choose between them here.
+    /// </summary>
+    private static void ReportProjections(ContactGraph graph, IReadOnlyDictionary<string, Part> named)
+    {
+        Console.WriteLine("projections: kind a b xmin xmax ymin ymax");
+
+        foreach (var junction in graph.Junctions)
+        {
+            foreach (var contact in junction.Contacts)
+            {
+                double xmin = double.MaxValue, xmax = double.MinValue;
+                double ymin = double.MaxValue, ymax = double.MinValue;
+
+                foreach (var region in contact.Regions)
+                {
+                    foreach (var point in region)
+                    {
+                        if (point.X < xmin) xmin = point.X;
+                        if (point.X > xmax) xmax = point.X;
+                        if (point.Y < ymin) ymin = point.Y;
+                        if (point.Y > ymax) ymax = point.Y;
+                    }
+                }
+
+                if (xmin > xmax)
+                    continue;
+
+                Console.WriteLine(
+                    "PROJ {0} {1} {2} {3:0.###} {4:0.###} {5:0.###} {6:0.###}",
+                    contact.Kind,
+                    Name(named, junction.SolidAId).Replace(" ", ""),
+                    Name(named, junction.SolidBId).Replace(" ", ""),
+                    xmin, xmax, ymin, ymax);
+            }
         }
     }
 
@@ -147,16 +235,25 @@ internal static class ContactProbe
     private static string Name(IReadOnlyDictionary<string, Part> named, string id) =>
         named.TryGetValue(id, out var part) ? Describe(part) : id;
 
+    /// <summary>
+    /// A set of parts to search together, and the view they were drawn in if they were.
+    ///
+    /// The view matters because geometry is read in its coordinate system, which is the
+    /// system the drawing's dimensions live in. Contacts then come back in the same
+    /// coordinates and can be compared with them directly.
+    /// </summary>
     private sealed class PartGroup
     {
-        public PartGroup(string name, IReadOnlyList<Part> parts)
+        public PartGroup(string name, IReadOnlyList<Part> parts, int? viewId = null)
         {
             Name = name;
             Parts = parts;
+            ViewId = viewId;
         }
 
         public string Name { get; }
         public IReadOnlyList<Part> Parts { get; }
+        public int? ViewId { get; }
     }
 
     private static IEnumerable<PartGroup> Groups(bool wholeSheet)
@@ -188,7 +285,7 @@ internal static class ContactProbe
                 continue;
 
             var name = string.IsNullOrWhiteSpace(view.Name) ? $"view {index}" : view.Name;
-            byView.Add(new PartGroup(name, parts));
+            byView.Add(new PartGroup(name, parts, view.GetIdentifier().ID));
         }
 
         if (!wholeSheet)
