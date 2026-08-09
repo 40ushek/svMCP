@@ -18,8 +18,7 @@ namespace TeklaMcpServer.Host.SolidContacts;
 /// </summary>
 internal static class ContactProbe
 {
-    private static readonly TeklaMcpServer.Api.Drawing.TeklaDrawingPartSolidGeometryApi _viewGeometry =
-        new(new Model());
+    private static readonly TeklaDrawingViewContactApi _viewContacts = new(new Model());
 
     /// <summary>
     /// Searches each group of parts on its own.
@@ -50,27 +49,31 @@ internal static class ContactProbe
             Console.WriteLine();
             Console.WriteLine($"=== {group.Name} [view {group.ViewId}]: {group.Parts.Count} part(s) ===");
 
-            var named = new Dictionary<string, Part>();
-            var solids = new List<ISolid>();
-            var incomplete = 0;
+            var named = group.Parts.ToDictionary(
+                part => part.Identifier.ID.ToString(CultureInfo.InvariantCulture),
+                part => part);
 
-            foreach (var part in group.Parts)
+            // A view's contacts come from the API that owns them, so the probe exercises
+            // the path everything else will use rather than a second one of its own. The
+            // same options go both ways: a tolerance that applied to one kind of group and
+            // not the other would make the two incomparable.
+            ContactGraph graph;
+
+            if (group.ViewId is { } viewId)
             {
-                var solid = ReadSolid(part, group.ViewId, ref incomplete);
-                if (solid == null)
-                {
-                    Console.WriteLine($"  {Describe(part)}: no solid, skipped");
-                    continue;
-                }
+                var result = _viewContacts.GetContactGraph(viewId, options);
+                graph = result.Graph;
 
-                named[solid.Id] = part;
-                solids.Add(solid);
+                foreach (var part in result.Unread)
+                    Console.WriteLine($"  unread {part}");
+
+                if (!result.IsComplete)
+                    Console.WriteLine("  INCOMPLETE: absence of a contact here proves nothing");
             }
-
-            if (incomplete > 0)
-                Console.WriteLine($"  {incomplete} face(s) dropped: unresolved vertices or no usable contour");
-
-            var graph = ContactGraph.Build(solids, options);
+            else
+            {
+                graph = ContactGraph.Build(SelectedSolids(group.Parts, named), options);
+            }
             Report(graph, named);
             ReportProjections(graph, named);
 
@@ -99,25 +102,27 @@ internal static class ContactProbe
     }
 
     /// <summary>
-    /// Geometry for one part, in the coordinates the group is asked about.
-    ///
-    /// Where the group came from a drawing view, it comes through the bridge's own reader,
-    /// which sets the work plane to the view before reading the solid - the same path and
-    /// the same coordinates the dimension work already uses. Reading it again here would
-    /// be a second way of doing one thing, and the two could drift apart.
+    /// Solids for a model selection, read in the model's own plane. There is no view to
+    /// read them in, so this is the one case the view contact API cannot serve.
     /// </summary>
-    private static ISolid? ReadSolid(Part part, int? viewId, ref int incomplete)
+    private static List<ISolid> SelectedSolids(IReadOnlyList<Part> parts, IDictionary<string, Part> named)
     {
-        if (viewId == null)
-            return TeklaSolidAdapter.FromPart(part);
+        var solids = new List<ISolid>();
 
-        var geometry = _viewGeometry.GetPartSolidGeometryInView(viewId.Value, part.Identifier.ID);
-        var solid = ViewSolidAdapter.FromGeometry(geometry);
+        foreach (var part in parts)
+        {
+            var solid = TeklaSolidAdapter.FromPart(part);
+            if (solid == null)
+            {
+                Console.WriteLine($"  {Describe(part)}: no solid, skipped");
+                continue;
+            }
 
-        if (solid != null && solid.DroppedFaces > 0)
-            incomplete += solid.DroppedFaces;
+            named[solid.Id] = part;
+            solids.Add(solid);
+        }
 
-        return solid;
+        return solids;
     }
 
     /// <summary>
