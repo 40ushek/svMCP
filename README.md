@@ -79,12 +79,13 @@ TeklaBridge должен запускаться из папки расширен
 # PersistentBridge поднимет его заново при следующем вызове.
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 
-# Скопировать TeklaBridge.exe и TeklaMcpServer.Api.dll в папку расширений
+# Скопировать TeklaBridge.exe, TeklaMcpServer.Api.dll и SolidContacts.Core.dll
 $src = "src\TeklaBridge\bin\Release\net48"
 $dst = "C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP"
 New-Item -ItemType Directory -Force $dst
 Copy-Item "$src\TeklaBridge.exe" $dst
 Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
+Copy-Item "$src\SolidContacts.Core.dll" $dst
 # Также скопировать сторонние зависимости (System.Text.Json, Newtonsoft.Json и т.д.)
 ```
 
@@ -94,12 +95,15 @@ Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 EXT="C:/TeklaStructures/2025.0/Environments/common/extensions/svMCP"
 cp src/TeklaBridge/bin/Release/net48/TeklaBridge.exe \
-   src/TeklaBridge/bin/Release/net48/TeklaMcpServer.Api.dll "$EXT/"
+   src/TeklaBridge/bin/Release/net48/TeklaMcpServer.Api.dll \
+   src/TeklaBridge/bin/Release/net48/SolidContacts.Core.dll "$EXT/"
 ```
 
-> **Копировать обязательно оба файла.** Если изменить что-то в `TeklaMcpServer.Api`
+> **Копировать обязательно все три файла.** Если изменить что-то в `TeklaMcpServer.Api`
 > и обновить только `TeklaBridge.exe`, мост продолжит отвечать из старой `TeklaMcpServer.Api.dll` —
-> без ошибки, просто без новых данных. Цель `DeployToExtensions` в `Host.csproj` копирует
+> без ошибки, просто без новых данных. `SolidContacts.Core.dll` попал в этот список позже:
+> `TeklaMcpServer.Api` теперь ссылается на него напрямую, и без него мост упадёт на
+> `FileNotFoundException` при первом же обращении к геометрии контактов. Цель `DeployToExtensions` в `Host.csproj` копирует
 > `@(HostOutput)` и `TeklaBridge.exe` туда не включает, поэтому шаг ручной.
 
 **exe.config:** создаётся вручную один раз и хранится в extensions-папке.
