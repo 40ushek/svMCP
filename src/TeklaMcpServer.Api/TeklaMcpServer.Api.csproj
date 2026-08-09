@@ -8,6 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The contact search itself. netstandard2.0 and no Tekla reference of its own,
+         which is what lets the adapter between the two be tested without a running
+         model. -->
+    <ProjectReference Include="..\..\..\SolidContacts\src\SolidContacts.Core\SolidContacts.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
   </ItemGroup>
 
