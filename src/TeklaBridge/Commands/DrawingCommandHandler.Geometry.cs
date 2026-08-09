@@ -694,6 +694,9 @@ internal sealed partial class DrawingCommandHandler
             modelId = result.ModelId,
             startPoint = result.StartPoint,
             endPoint = result.EndPoint,
+            coordinateSystemOrigin = result.CoordinateSystemOrigin,
+            axisX = result.AxisX,
+            axisY = result.AxisY,
             solid = new
             {
                 bboxMin = solid.BboxMin,

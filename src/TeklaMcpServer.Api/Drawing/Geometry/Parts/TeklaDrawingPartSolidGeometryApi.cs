@@ -17,6 +17,27 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         _model = model;
     }
 
+    /// <summary>
+    /// The part's own coordinate system, in whatever plane is current. Empty arrays rather
+    /// than a failure when the part has none: the geometry is still worth returning, and a
+    /// caller can fall back to the view axes for a looser bounding box.
+    /// </summary>
+    private static (double[] Origin, double[] AxisX, double[] AxisY) ReadCoordinateSystem(ModelPart part)
+    {
+        try
+        {
+            var cs = part.GetCoordinateSystem();
+            if (cs == null)
+                return ([], [], []);
+
+            return (ToArray(cs.Origin), ToArray(cs.AxisX), ToArray(cs.AxisY));
+        }
+        catch
+        {
+            return ([], [], []);
+        }
+    }
+
     public PartSolidGeometryInViewResult GetPartSolidGeometryInView(int viewId, int modelId)
     {
         var drawingHandler = new DrawingHandler();
@@ -52,9 +73,19 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
             if (modelObject is not ModelPart part)
                 return Fail(viewId, modelId, $"Model object {modelId} is not a part.");
 
-            var solid = part.GetSolid();
+            // Beams at high accuracy, everything else at normal. A rougher solid on a cut
+            // beam loses the very faces a contact would be found on, and reading the same
+            // part at a different accuracy here than the model path uses would let one
+            // part answer differently depending on which way it was asked.
+            var solid = part is Beam
+                ? part.GetSolid(Solid.SolidCreationTypeEnum.HIGH_ACCURACY)
+                : part.GetSolid(Solid.SolidCreationTypeEnum.NORMAL);
             if (solid == null)
                 return Fail(viewId, modelId, $"Model object {modelId} does not expose solid geometry.");
+
+            // Read here, inside the view plane and with the part already in hand, so the
+            // axes arrive in the same coordinates as the faces and cost no second lookup.
+            var partPlane = ReadCoordinateSystem(part);
 
             return new PartSolidGeometryInViewResult
             {
@@ -63,6 +94,9 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
                 ModelId = modelId,
                 StartPoint = part is Beam beam ? ToArray(beam.StartPoint) : [],
                 EndPoint = part is Beam endPointBeam ? ToArray(endPointBeam.EndPoint) : [],
+                CoordinateSystemOrigin = partPlane.Origin,
+                AxisX = partPlane.AxisX,
+                AxisY = partPlane.AxisY,
                 Solid = BuildSolidGeometry(solid)
             };
         }
@@ -134,4 +168,6 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         };
 
     private static double[] ToArray(Point? point) => point == null ? [] : [point.X, point.Y, point.Z];
+
+    private static double[] ToArray(Vector? vector) => vector == null ? [] : [vector.X, vector.Y, vector.Z];
 }
