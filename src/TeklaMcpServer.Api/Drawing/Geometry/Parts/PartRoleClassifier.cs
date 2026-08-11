@@ -43,7 +43,31 @@ public sealed class PartRoleClassifier
     {
         _rules = rules == null
             ? DefaultRules
-            : rules.Select(Validated).ToList().AsReadOnly();
+            : Checked(rules);
+    }
+
+    private static IReadOnlyList<PartRoleRule> Checked(IReadOnlyList<PartRoleRule> rules)
+    {
+        var copy = rules.Select(Validated).ToList();
+
+        // Two rules on one prefix are refused rather than ordered. Matching is on the
+        // prefix and nothing else, so the second could never fire whatever the order: it
+        // is dead configuration, and letting it in would hide a mistake behind a rule
+        // about precedence. When rules grow a condition beyond the prefix, overlapping
+        // entries become meaningful and this is where that changes.
+        var duplicate = copy
+            .GroupBy(rule => rule.Prefix, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(sharing => sharing.Count() > 1);
+
+        if (duplicate != null)
+        {
+            throw new ArgumentException(
+                $"Prefix '{duplicate.Key}' is claimed by more than one rule ({string.Join(", ", duplicate.Select(rule => rule.Id))}); " +
+                "matching is on the prefix alone, so all but the first would never fire.",
+                nameof(rules));
+        }
+
+        return copy.AsReadOnly();
     }
 
     private static PartRoleRule Validated(PartRoleRule rule, int index)
@@ -57,8 +81,6 @@ public sealed class PartRoleClassifier
         if (string.IsNullOrWhiteSpace(rule.Prefix))
             throw new ArgumentException($"Rule '{rule.Id}' has no prefix, so it would match nothing.", nameof(rule));
 
-        // Duplicate prefixes are allowed on purpose: first match wins is the stated rule,
-        // and shadowing an earlier entry is a legitimate way to append an exception.
         return rule;
     }
 
@@ -70,9 +92,9 @@ public sealed class PartRoleClassifier
     }
 
     /// <summary>
-    /// First rule to match wins. Ordered rather than weighted because rules get appended
-    /// as new cases turn up, and order is the only way to resolve overlaps that stays
-    /// readable.
+    /// Matched on the prefix and nothing else, and prefixes are unique, so at most one rule
+    /// can apply. Order is kept because rules will eventually carry conditions beyond the
+    /// prefix and then it will decide; today it cannot be observed.
     ///
     /// Named apart from the <see cref="PartInView"/> overload rather than sharing a name:
     /// with both called Classify, Classify(null) silently bound to the other one and threw

@@ -89,18 +89,21 @@ public sealed class PartRoleClassifierTests
     }
 
     [Fact]
-    public void RulesAreTriedInOrderAndTheFirstMatchWins()
+    public void TwoRulesOnOnePrefixAreRefusedRatherThanOrdered()
     {
+        // Matching is on the prefix alone, so the second could never fire whatever the
+        // order. Accepting it and calling the outcome "first match wins" would hide dead
+        // configuration behind a rule about precedence.
         var rules = new[]
         {
             new PartRoleRule("first", "X", PartRole.Defining),
-            new PartRoleRule("second", "X", PartRole.Ignored),
+            new PartRoleRule("second", "x", PartRole.Ignored),
         };
 
-        var result = new PartRoleClassifier(rules).ClassifyProperties("X");
+        var thrown = Assert.Throws<ArgumentException>(() => new PartRoleClassifier(rules));
 
-        Assert.Equal(PartRole.Defining, result.Role);
-        Assert.Equal("first", result.RuleId);
+        Assert.Contains("first", thrown.Message);
+        Assert.Contains("second", thrown.Message);
     }
 
     [Fact]

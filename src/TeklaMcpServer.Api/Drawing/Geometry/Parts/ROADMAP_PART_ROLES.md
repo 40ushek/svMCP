@@ -72,9 +72,12 @@ prefix M                -> Ignored
                         -> Unknown
 ```
 
-Ordered rather than weighted: rules will be appended as new cases turn up, and
-order is the only way to resolve overlaps that stays readable. Weights and
-priorities read worse and debug worse.
+Matched on the prefix alone, so prefixes must be unique and a table claiming one
+twice is refused. Ordering exists for later, when rules carry conditions beyond
+the prefix; today it cannot be observed, and calling a shadowed duplicate "an
+exception appended later" would only hide dead configuration behind a rule about
+precedence. Ordered rather than weighted when that day comes: weights read worse
+and debug worse.
 
 **`IsMainPart` is not a rule yet.** It is a fact from Tekla, but that it means
 "defines the extent on an assembly drawing" is an assumption nobody has checked.
