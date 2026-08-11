@@ -98,7 +98,6 @@ It contains heavier facts:
 - parts
 - bolts
 - `PartsBounds`
-- `PartsHull`
 - grid ids
 - detailed view-local warnings
 

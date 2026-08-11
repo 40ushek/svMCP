@@ -14,7 +14,6 @@ internal sealed class DrawingViewContext
     public double ViewScale { get; set; }
     public List<PartGeometryInViewResult> Parts { get; } = [];
     public DrawingBoundsInfo? PartsBounds { get; set; }
-    public List<DrawingPointInfo> PartsHull { get; } = [];
     public List<BoltGroupGeometry> Bolts { get; } = [];
     public List<string> GridIds { get; } = [];
     public List<DrawingTextBox> DimensionTextBoxes { get; } = [];

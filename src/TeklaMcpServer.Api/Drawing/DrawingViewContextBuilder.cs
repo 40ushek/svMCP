@@ -47,7 +47,6 @@ internal sealed class DrawingViewContextBuilder
         }
 
         context.PartsBounds = BuildPartsBounds(context.Parts);
-        context.PartsHull.AddRange(BuildPartsHull(context.Parts));
 
         var seenBoltIds = new HashSet<int>();
         foreach (var part in context.Parts.Where(static part => part.ModelId != 0))
@@ -99,68 +98,6 @@ internal sealed class DrawingViewContextBuilder
                 part.BboxMax[0],
                 part.BboxMax[1]));
         return TeklaDrawingDimensionsApi.CombineBounds(bounds);
-    }
-
-    private static List<DrawingPointInfo> BuildPartsHull(IReadOnlyList<PartGeometryInViewResult> parts)
-    {
-        var sourcePoints = new List<Point>();
-        foreach (var part in parts)
-        {
-            AddPartHullSourcePoints(sourcePoints, part);
-        }
-
-        if (sourcePoints.Count == 0)
-            return [];
-
-        var hull = ConvexHull.Compute(sourcePoints).ToList();
-        if (hull.Count == 0)
-            return [];
-
-        hull = TeklaDrawingDimensionsApi.SimplifyHull(hull);
-        return hull
-            .Select((point, index) => new DrawingPointInfo
-            {
-                X = point.X,
-                Y = point.Y,
-                Order = index
-            })
-            .ToList();
-    }
-
-    private static void AddPartHullSourcePoints(List<Point> points, PartGeometryInViewResult part)
-    {
-        if (part.SolidGeometryComplete && part.ViewHull.Count > 0)
-        {
-            foreach (var vertex in part.ViewHull.Where(static vertex => vertex.Length >= 2))
-                points.Add(new Point(vertex[0], vertex[1], 0.0));
-
-            return;
-        }
-
-        var addedSolidVertices = false;
-        if (part.SolidGeometryComplete)
-        {
-            foreach (var vertex in part.SolidVertices.Where(static vertex => vertex.Length >= 2))
-            {
-                points.Add(new Point(
-                    vertex[0],
-                    vertex[1],
-                    vertex.Length > 2 ? vertex[2] : 0.0));
-                addedSolidVertices = true;
-            }
-        }
-
-        if (addedSolidVertices || !HasBbox(part))
-            return;
-
-        var minX = part.BboxMin[0];
-        var minY = part.BboxMin[1];
-        var maxX = part.BboxMax[0];
-        var maxY = part.BboxMax[1];
-        points.Add(new Point(minX, minY, 0));
-        points.Add(new Point(minX, maxY, 0));
-        points.Add(new Point(maxX, maxY, 0));
-        points.Add(new Point(maxX, minY, 0));
     }
 
     private static bool HasBbox(PartGeometryInViewResult part) =>

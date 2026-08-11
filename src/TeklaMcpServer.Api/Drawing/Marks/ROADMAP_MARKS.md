@@ -77,7 +77,7 @@ Marks не должны вводить отдельный базовый view-co
 
 - сначала `Parts` как каноническая геометрия деталей в виде;
 - затем `Bolts` как дополнительные obstacles/signals;
-- `PartsBounds` и `PartsHull` не считаются обязательными входами для marks на первом этапе.
+- `PartsBounds` не считается обязательным входом для marks на первом этапе.
 
 Текущий evolution path layout logic:
 

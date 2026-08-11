@@ -31,7 +31,7 @@ The current `v1` baseline already includes:
 - local post-combine arrange handoff
 - arrangement planning using `DimensionDecisionContext` for view-scale-aware
   gap translation
-- `PartsBounds` / `PartsHull` / `GridIds` in `DrawingViewContext`
+- `PartsBounds` / `GridIds` in `DrawingViewContext`
 - per-dimension `PartsBounds` placement classification and exact placement
   metrics
 - narrow deterministic consumption of `PartsBounds` gap-policy signals during

@@ -95,8 +95,6 @@ public sealed class DrawingViewContextBuilderTests
         Assert.Equal(0, context.PartsBounds.MinY, 3);
         Assert.Equal(30, context.PartsBounds.MaxX, 3);
         Assert.Equal(10, context.PartsBounds.MaxY, 3);
-        Assert.Equal([0d, 30d, 30d, 20d, 0d], context.PartsHull.ConvertAll(static point => point.X));
-        Assert.Equal([0d, 0d, 10d, 10d, 5d], context.PartsHull.ConvertAll(static point => point.Y));
         Assert.Equal([9001, 9002, 9003], context.Bolts.ConvertAll(static bolt => bolt.ModelId));
         Assert.Equal(["grid-a", "grid-b"], context.GridIds);
         Assert.Empty(context.Warnings);
@@ -163,8 +161,12 @@ public sealed class DrawingViewContextBuilderTests
 
         var context = builder.Build(10, 1, "FrontView");
 
-        Assert.Contains(context.PartsHull, point => point.X == 0d && point.Y == 0d);
-        Assert.DoesNotContain(context.PartsHull, point => point.X >= 100d || point.Y >= 100d);
+        // A part whose solid did not come through falls back to its bounding box, and the
+        // stray vertices of the incomplete read must not reach the view's bounds.
+        Assert.NotNull(context.PartsBounds);
+        Assert.Equal(0, context.PartsBounds!.MinX, 3);
+        Assert.Equal(10, context.PartsBounds.MaxX, 3);
+        Assert.Equal(5, context.PartsBounds.MaxY, 3);
     }
 
     [Fact]

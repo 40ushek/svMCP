@@ -65,7 +65,6 @@
 - part geometry
 - bolts
 - `PartsBounds`
-- `PartsHull`
 - view-local warnings
 
 Коротко:
@@ -126,7 +125,6 @@
 - `Parts`
 - `Bolts`
 - `PartsBounds`
-- `PartsHull`
 - `GridIds`
 - `Warnings`
 

@@ -10,7 +10,6 @@ public sealed class GetDrawingViewContextResult
     public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
     public DrawingBoundsInfo? PartsBounds { get; set; }
-    public List<DrawingPointInfo> PartsHull { get; set; } = new();
     public List<PartGeometryInViewResult> Parts { get; set; } = new();
     public List<BoltGroupGeometry> Bolts { get; set; } = new();
     public List<string> GridIds { get; set; } = new();
@@ -41,14 +40,6 @@ internal static class DrawingViewContextMapper
                     MaxX = context.PartsBounds.MaxX,
                     MaxY = context.PartsBounds.MaxY
                 },
-            PartsHull = context.PartsHull
-                .Select(static point => new DrawingPointInfo
-                {
-                    X = point.X,
-                    Y = point.Y,
-                    Order = point.Order
-                })
-                .ToList(),
             Parts = context.Parts
                 .Select(ClonePart)
                 .ToList(),
