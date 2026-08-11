@@ -79,6 +79,15 @@ public sealed class ViewSolidAdapterTests
     }
 
     [Fact]
+    public void AFaceWithADegenerateHoleIsDroppedWhole()
+    {
+        var geometry = Square();
+        geometry.Solid.Faces[0].Loops.Add(new PartLoopGeometry { Index = 1, VertexIndexes = [10, 11] });
+
+        Assert.Null(ViewSolidAdapter.FromGeometry(geometry));
+    }
+
+    [Fact]
     public void AFaceWithoutANormalIsKeptButCannotFormAPlane()
     {
         var solid = ViewSolidAdapter.FromGeometry(Square(normal: null));

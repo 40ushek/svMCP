@@ -24,6 +24,8 @@ internal sealed partial class DrawingCommandHandler
             partCandidatePointApi ??= new TeklaDrawingPartCandidatePointApi(_model);
         TeklaDrawingPartPointApi? partPointApi = null;
         TeklaDrawingPartPointApi GetPartPointApi() => partPointApi ??= new TeklaDrawingPartPointApi(_model, GetPartGeometryApi());
+        TeklaDrawingAssemblyOutlineApi? assemblyOutlineApi = null;
+        TeklaDrawingAssemblyOutlineApi GetAssemblyOutlineApi() => assemblyOutlineApi ??= new TeklaDrawingAssemblyOutlineApi(_model);
         TeklaDrawingGridApi? gridApi = null;
         TeklaDrawingGridApi GetGridApi() => gridApi ??= new TeklaDrawingGridApi();
         TeklaDrawingViewContextApi? viewContextApi = null;
@@ -54,6 +56,10 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_all_part_points_in_view":
                 return HandleGetAllPartPointsInView(GetPartPointApi(), args);
+
+            // Test-only probe for validating the two Clipper2 unions on a real view.
+            case "get_assembly_outline":
+                return HandleGetAssemblyOutline(GetAssemblyOutlineApi(), args);
 
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
@@ -181,6 +187,32 @@ internal sealed partial class DrawingCommandHandler
                     point = p.Point
                 })
             })
+        });
+        return true;
+    }
+
+    private bool HandleGetAssemblyOutline(TeklaDrawingAssemblyOutlineApi api, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_assembly_outline requires viewId argument");
+            return true;
+        }
+
+        var result = api.GetAssemblyOutline(viewId);
+        WriteJson(new
+        {
+            success = result.Error == null,
+            viewId = result.ViewId,
+            isComplete = result.IsComplete,
+            error = result.Error,
+            assemblyOutline = result.AssemblyNodes,
+            partOutlines = result.PartNodes.Select(part => new
+            {
+                modelId = part.Key,
+                outline = part.Value
+            }),
+            unread = result.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason })
         });
         return true;
     }
@@ -664,6 +696,7 @@ internal sealed partial class DrawingCommandHandler
         });
     }
 
+
     private void WritePartGeometryInViewResult(PartGeometryInViewResult result)
     {
         WriteJson(new
@@ -966,4 +999,5 @@ internal sealed partial class DrawingCommandHandler
         public double MaxY { get; set; }
         public List<double[]> Corners { get; set; } = [];
     }
+
 }

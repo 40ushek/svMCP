@@ -89,8 +89,16 @@ public sealed class ViewSolidAdapter : ISolid
                 if (broken)
                     break;
 
-                if (points.Count >= 3)
-                    loops.Add(new ViewLoop(points));
+                if (points.Count < 3)
+                {
+                    // A degenerate inner loop is just as damaging as a missing outer
+                    // loop: accepting the rest would fill a hole that the source solid
+                    // did not fill. Drop the whole face rather than inventing area.
+                    broken = true;
+                    break;
+                }
+
+                loops.Add(new ViewLoop(points));
             }
 
             if (broken || loops.Count == 0)

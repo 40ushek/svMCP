@@ -42,11 +42,11 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         if (drawing == null)
             return Unavailable(viewId, "no drawing is open");
 
-        var view = FindView(drawing, viewId);
+        var view = DrawingViewParts.FindView(drawing, viewId);
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        return Build(viewId, VisibleModelIds(view), _solidGeometry, options);
+        return Build(viewId, DrawingViewParts.VisibleModelIds(view), _solidGeometry, options);
     }
 
     /// <summary>
@@ -109,53 +109,4 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         return new ViewContactsResult(viewId, ContactGraph.Build(solids, options), unread);
     }
 
-    private static View? FindView(Tekla.Structures.Drawing.Drawing drawing, int viewId)
-    {
-        var views = drawing.GetSheet().GetViews();
-        while (views.MoveNext())
-        {
-            if (views.Current is View candidate && candidate.GetIdentifier().ID == viewId)
-                return candidate;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Model ids of the parts this view actually draws, each once. Parts hidden in the
-    /// view are left out: they are not on the sheet, and junctions to them would describe
-    /// something nobody can see.
-    /// </summary>
-    private static IEnumerable<int> VisibleModelIds(View view)
-    {
-        var seen = new HashSet<int>();
-
-        var objects = view.GetObjects();
-        while (objects.MoveNext())
-        {
-            if (objects.Current is not DrawingPart drawingPart)
-                continue;
-
-            if (IsHidden(drawingPart))
-                continue;
-
-            var id = drawingPart.ModelIdentifier.ID;
-            if (seen.Add(id))
-                yield return id;
-        }
-    }
-
-    private static bool IsHidden(DrawingPart drawingPart)
-    {
-        try
-        {
-            return drawingPart.Hideable.IsHidden;
-        }
-        catch
-        {
-            // A part that will not say counts as drawn: leaving it out would silently drop
-            // junctions, while keeping it only costs a search.
-            return false;
-        }
-    }
 }

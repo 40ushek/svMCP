@@ -89,6 +89,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_part_candidate_points_in_view":
             case "get_part_points_in_view":
             case "get_all_part_points_in_view":
+            case "get_assembly_outline":
             case "get_grid_axes":
             case "get_drawing_view_context":
             case "get_drawing_parts":

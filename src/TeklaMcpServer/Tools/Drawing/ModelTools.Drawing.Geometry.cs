@@ -7,6 +7,8 @@ namespace TeklaMcpServer.Tools;
 
 public static partial class ModelTools
 {
+    // Test-only probe: exposes the Clipper2 result for visual comparison with a live view.
+    // Dimension placement will use the outline API directly, not call this MCP tool.
     [McpServerTool, Description(
         "Get geometry (bboxMin, bboxMax, startPoint, endPoint, axes, solid vertices) for ALL parts in a drawing view in a single call. " +
         "Returns type, name, partPos, profile, material and full view-local coordinates for every part. " +
@@ -15,6 +17,27 @@ public static partial class ModelTools
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
     {
         return RunBridge("get_all_parts_geometry_in_view", viewId.ToString());
+    }
+
+    [McpServerTool, Description(
+        "Get the exact projected external outline of all visible parts in one drawing view. " +
+        "Returns Clipper2 polygon trees: outer contours, holes and disconnected components, plus incomplete-read warnings. " +
+        "This is geometry evidence for future dimension placement; it does not create or change dimensions.")]
+    public static string GetAssemblyOutline(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+    {
+        var json = RunBridge("get_assembly_outline", viewId.ToString());
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } error)
+                return $"Error: {error}";
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
     }
 
     [McpServerTool, Description(
