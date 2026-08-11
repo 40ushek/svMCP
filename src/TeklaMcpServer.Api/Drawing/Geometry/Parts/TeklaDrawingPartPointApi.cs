@@ -46,7 +46,7 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
         return results;
     }
 
-    internal static GetPartPointsResult BuildResult(PartGeometryInViewResult geometry)
+    internal static GetPartPointsResult BuildResult(PartInView geometry)
     {
         var result = new GetPartPointsResult
         {
@@ -153,7 +153,7 @@ public sealed class TeklaDrawingPartPointApi : IDrawingPartPointApi
         AddPoint(points, DrawingPartPointKind.ExtremeEnd, DrawingPartPointSourceKind.Part, [farthestPair.Second.X, farthestPair.Second.Y, farthestPair.Second.Z]);
     }
 
-    private static double[] TryCreateCenterPoint(PartGeometryInViewResult geometry)
+    private static double[] TryCreateCenterPoint(PartInView geometry)
     {
         if (geometry.BboxMin.Length >= 2 && geometry.BboxMax.Length >= 2)
         {

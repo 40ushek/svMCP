@@ -36,7 +36,7 @@ public sealed class DrawingViewContextMapperTests
         // structural, R insulation and M fittings are not — so losing them in the mapper would
         // silently disable that filter downstream.
         var context = new DrawingViewContext { ViewId = 1, ViewType = "FrontView", ViewScale = 1 };
-        context.Parts.Add(new PartGeometryInViewResult
+        context.Parts.Add(new PartInView
         {
             Success = true,
             ViewId = 1,

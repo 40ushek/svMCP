@@ -98,7 +98,7 @@ public sealed class SimpleMarkCostEvaluatorTests
             CanMove = true
         };
         var viewContext = new DrawingViewContext();
-        viewContext.Parts.Add(new PartGeometryInViewResult
+        viewContext.Parts.Add(new PartInView
         {
             Success = true,
             ModelId = 42,
@@ -154,14 +154,14 @@ public sealed class SimpleMarkCostEvaluatorTests
             }
         };
         var viewContext = new DrawingViewContext();
-        viewContext.Parts.Add(new PartGeometryInViewResult
+        viewContext.Parts.Add(new PartInView
         {
             Success = true,
             ModelId = 42,
             BboxMin = [80.0, 80.0],
             BboxMax = [120.0, 120.0]
         });
-        viewContext.Parts.Add(new PartGeometryInViewResult
+        viewContext.Parts.Add(new PartInView
         {
             Success = true,
             ModelId = 99,

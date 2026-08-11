@@ -16,13 +16,13 @@ namespace TeklaMcpServer.Api.Drawing;
 internal static class DrawingPartGeometryCache
 {
     private static readonly object Sync = new();
-    private static readonly Dictionary<string, List<PartGeometryInViewResult>> Entries = new();
+    private static readonly Dictionary<string, List<PartInView>> Entries = new();
 
     internal static bool TryGetAll(
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
-        out List<PartGeometryInViewResult> results)
+        out List<PartInView> results)
     {
         var key = BuildKey(drawing, view, viewId);
         if (key == null)
@@ -52,7 +52,7 @@ internal static class DrawingPartGeometryCache
         View view,
         int viewId,
         int modelId,
-        out PartGeometryInViewResult result)
+        out PartInView result)
     {
         var key = BuildKey(drawing, view, viewId);
         if (key == null)
@@ -89,7 +89,7 @@ internal static class DrawingPartGeometryCache
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
-        IReadOnlyList<PartGeometryInViewResult> results)
+        IReadOnlyList<PartInView> results)
     {
         var key = BuildKey(drawing, view, viewId);
         if (key == null)
@@ -109,7 +109,7 @@ internal static class DrawingPartGeometryCache
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
-        PartGeometryInViewResult result)
+        PartInView result)
     {
         var key = BuildKey(drawing, view, viewId);
         if (key == null)
@@ -123,7 +123,7 @@ internal static class DrawingPartGeometryCache
                 return;
 
             RemoveViewEntries(key);
-            Entries[PartKey(key, result.ModelId)] = new List<PartGeometryInViewResult> { result.Clone() };
+            Entries[PartKey(key, result.ModelId)] = new List<PartInView> { result.Clone() };
         }
 
         PerfTrace.Write("api-geometry", "parts_geometry_cache_store", 0,

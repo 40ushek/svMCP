@@ -336,7 +336,7 @@ Target:
   `Drawing.UpToDateStatus`, with entries indexed by `modelId`;
 - make `GetAllPartsGeometryInView` populate and reuse the cache;
 - make `GetPartGeometryInView` / `GetPartPointsInView` consume the same cached
-  `PartGeometryInViewResult` and derive points without another `GetSolid()`;
+  `PartInView` and derive points without another `GetSolid()`;
 - expose cache hits/misses and solid-read counts through `PerfTrace`.
 
 Before implementation, run a live positive invalidation test: move a model part,

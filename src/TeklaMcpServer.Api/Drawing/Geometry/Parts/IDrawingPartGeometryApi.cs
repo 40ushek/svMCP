@@ -2,6 +2,6 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public interface IDrawingPartGeometryApi
 {
-    List<PartGeometryInViewResult> GetAllPartsGeometryInView(int viewId);
-    PartGeometryInViewResult GetPartGeometryInView(int viewId, int modelId);
+    List<PartInView> GetAllPartsGeometryInView(int viewId);
+    PartInView GetPartGeometryInView(int viewId, int modelId);
 }

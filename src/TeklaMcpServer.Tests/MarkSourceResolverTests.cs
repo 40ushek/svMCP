@@ -9,7 +9,7 @@ public sealed class MarkSourceResolverTests
     [Fact]
     public void TryResolvePartCenter_UsesBoundingBox_WhenAvailable()
     {
-        var parts = new List<PartGeometryInViewResult>
+        var parts = new List<PartInView>
         {
             new()
             {
@@ -30,7 +30,7 @@ public sealed class MarkSourceResolverTests
     [Fact]
     public void TryResolvePartCenter_FallsBackToSolidVertices()
     {
-        var parts = new List<PartGeometryInViewResult>
+        var parts = new List<PartInView>
         {
             new()
             {
@@ -101,7 +101,7 @@ public sealed class MarkSourceResolverTests
     public void TryResolveCenter_UsesPartLookup_ForUnknownSourceKind()
     {
         var viewContext = new DrawingViewContext();
-        viewContext.Parts.Add(new PartGeometryInViewResult
+        viewContext.Parts.Add(new PartInView
         {
             Success = true,
             ModelId = 7,
@@ -123,7 +123,7 @@ public sealed class MarkSourceResolverTests
     [Fact]
     public void TryResolvePartPolygon_UsesSolidVerticesHull_WhenAvailable()
     {
-        var parts = new List<PartGeometryInViewResult>
+        var parts = new List<PartInView>
         {
             new()
             {
@@ -150,7 +150,7 @@ public sealed class MarkSourceResolverTests
     [Fact]
     public void TryResolvePartPolygon_FallsBackToBoundingBox()
     {
-        var parts = new List<PartGeometryInViewResult>
+        var parts = new List<PartInView>
         {
             new()
             {
@@ -170,7 +170,7 @@ public sealed class MarkSourceResolverTests
     [Fact]
     public void TryResolvePartPolygon_DoesNotUsePartialSolidSnapshot()
     {
-        var parts = new List<PartGeometryInViewResult>
+        var parts = new List<PartInView>
         {
             new()
             {

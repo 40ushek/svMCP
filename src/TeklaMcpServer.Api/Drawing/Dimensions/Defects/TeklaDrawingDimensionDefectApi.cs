@@ -12,7 +12,7 @@ namespace TeklaMcpServer.Api.Drawing.Dimensions.Defects;
 public sealed class TeklaDrawingDimensionDefectApi
 {
     private readonly Func<int, GetDimensionContextsResult> _getDimensionContexts;
-    private readonly Func<int, List<PartGeometryInViewResult>> _getParts;
+    private readonly Func<int, List<PartInView>> _getParts;
     private readonly Func<int, int, GetPartCandidatePointsResult> _getCandidates;
     private readonly Func<int, ViewContactsResult>? _getContacts;
 
@@ -31,7 +31,7 @@ public sealed class TeklaDrawingDimensionDefectApi
 
     internal TeklaDrawingDimensionDefectApi(
         Func<int, GetDimensionContextsResult> getDimensionContexts,
-        Func<int, List<PartGeometryInViewResult>> getParts,
+        Func<int, List<PartInView>> getParts,
         Func<int, int, GetPartCandidatePointsResult> getCandidates,
         Func<int, ViewContactsResult>? getContacts = null)
     {

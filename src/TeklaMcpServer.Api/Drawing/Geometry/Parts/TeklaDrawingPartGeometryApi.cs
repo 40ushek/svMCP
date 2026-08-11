@@ -18,7 +18,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         _model = model;
     }
 
-    public List<PartGeometryInViewResult> GetAllPartsGeometryInView(int viewId)
+    public List<PartInView> GetAllPartsGeometryInView(int viewId)
     {
         var total = Stopwatch.StartNew();
         var dh = new DrawingHandler();
@@ -48,7 +48,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         workPlaneHandler.SetCurrentTransformationPlane(viewPlane);
         //_model.CommitChanges();
 
-        var results = new List<PartGeometryInViewResult>();
+        var results = new List<PartInView>();
         try
         {
             var objEnum = view.GetObjects();
@@ -140,7 +140,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 string partPrefix = string.Empty;
                 modelPart.GetReportProperty("PART_PREFIX", ref partPrefix);
 
-                results.Add(new PartGeometryInViewResult
+                results.Add(new PartInView
                 {
                     Success = true,
                     ViewId = viewId,
@@ -179,7 +179,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         return results;
     }
 
-    public PartGeometryInViewResult GetPartGeometryInView(int viewId, int modelId)
+    public PartInView GetPartGeometryInView(int viewId, int modelId)
     {
         var dh = new DrawingHandler();
         var activeDrawing = dh.GetActiveDrawing();
@@ -266,7 +266,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 }
             }
 
-            var result = new PartGeometryInViewResult
+            var result = new PartInView
             {
                 Success = true,
                 ViewId = viewId,
@@ -293,7 +293,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         }
     }
 
-    private static PartGeometryInViewResult Fail(int viewId, int modelId, string error) =>
+    private static PartInView Fail(int viewId, int modelId, string error) =>
         new() { Success = false, ViewId = viewId, ModelId = modelId, Error = error };
 
     private static double[] ToArray(Point? p) => p == null ? [] : [R(p.X), R(p.Y), R(p.Z)];

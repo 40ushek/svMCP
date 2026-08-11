@@ -58,7 +58,7 @@ public sealed class CoordinateWithoutContactTests
             .ToList()
     };
 
-    private static List<PartGeometryInViewResult> Parts() =>
+    private static List<PartInView> Parts() =>
     [
         new()
         {

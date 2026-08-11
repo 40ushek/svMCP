@@ -71,7 +71,7 @@ internal static class MarkSourceResolver
     }
 
     internal static bool TryResolvePartCenter(
-        IReadOnlyList<PartGeometryInViewResult> parts,
+        IReadOnlyList<PartInView> parts,
         int modelId,
         out double centerX,
         out double centerY)
@@ -91,7 +91,7 @@ internal static class MarkSourceResolver
     }
 
     internal static bool TryResolvePartPolygon(
-        IReadOnlyList<PartGeometryInViewResult> parts,
+        IReadOnlyList<PartInView> parts,
         int modelId,
         out List<double[]> polygon)
     {
@@ -111,7 +111,7 @@ internal static class MarkSourceResolver
         return true;
     }
 
-    internal static Dictionary<int, List<double[]>> BuildPartPolygons(IReadOnlyList<PartGeometryInViewResult> parts)
+    internal static Dictionary<int, List<double[]>> BuildPartPolygons(IReadOnlyList<PartInView> parts)
     {
         var result = new Dictionary<int, List<double[]>>();
         foreach (var part in parts.Where(static part => part.Success && part.ModelId > 0))
@@ -126,7 +126,7 @@ internal static class MarkSourceResolver
     }
 
     internal static bool TryResolvePartPolygon(
-        PartGeometryInViewResult part,
+        PartInView part,
         out List<double[]> polygon)
     {
         polygon = [];
@@ -184,7 +184,7 @@ internal static class MarkSourceResolver
     private static MarkSourceReference CreateReference(MarkLayoutSourceKind kind, int modelId) =>
         new(kind, modelId > 0 ? modelId : null);
 
-    private static IReadOnlyList<Point> BuildPartHull(PartGeometryInViewResult part)
+    private static IReadOnlyList<Point> BuildPartHull(PartInView part)
     {
         if (part.SolidGeometryComplete && part.ViewHull.Count > 0)
         {

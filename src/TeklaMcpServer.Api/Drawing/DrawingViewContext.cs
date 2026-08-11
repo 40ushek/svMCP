@@ -12,7 +12,7 @@ internal sealed class DrawingViewContext
     /// </summary>
     public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
-    public List<PartGeometryInViewResult> Parts { get; } = [];
+    public List<PartInView> Parts { get; } = [];
     public DrawingBoundsInfo? PartsBounds { get; set; }
     public List<BoltGroupGeometry> Bolts { get; } = [];
     public List<string> GridIds { get; } = [];

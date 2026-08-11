@@ -10,7 +10,7 @@ public sealed class GetDrawingViewContextResult
     public string ViewType { get; set; } = string.Empty;
     public double ViewScale { get; set; }
     public DrawingBoundsInfo? PartsBounds { get; set; }
-    public List<PartGeometryInViewResult> Parts { get; set; } = new();
+    public List<PartInView> Parts { get; set; } = new();
     public List<BoltGroupGeometry> Bolts { get; set; } = new();
     public List<string> GridIds { get; set; } = new();
     public List<string> Warnings { get; set; } = new();
@@ -51,9 +51,9 @@ internal static class DrawingViewContextMapper
         };
     }
 
-    private static PartGeometryInViewResult ClonePart(PartGeometryInViewResult part)
+    private static PartInView ClonePart(PartInView part)
     {
-        return new PartGeometryInViewResult
+        return new PartInView
         {
             Success = part.Success,
             ViewId = part.ViewId,

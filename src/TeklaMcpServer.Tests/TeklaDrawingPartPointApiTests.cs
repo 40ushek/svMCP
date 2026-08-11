@@ -8,7 +8,7 @@ public sealed class TeklaDrawingPartPointApiTests
     [Fact]
     public void BuildResult_DoesNotUseSolidPointsWhenGeometryIsIncomplete()
     {
-        var result = TeklaDrawingPartPointApi.BuildResult(new PartGeometryInViewResult
+        var result = TeklaDrawingPartPointApi.BuildResult(new PartInView
         {
             Success = true,
             ViewId = 10,

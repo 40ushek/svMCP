@@ -229,7 +229,7 @@ internal sealed partial class DrawingCommandHandler
         var result = api.GetPartGeometryInView(
             parseResult.Request.ViewId,
             parseResult.Request.ModelId);
-        WritePartGeometryInViewResult(result);
+        WritePartInView(result);
         return true;
     }
 
@@ -697,7 +697,7 @@ internal sealed partial class DrawingCommandHandler
     }
 
 
-    private void WritePartGeometryInViewResult(PartGeometryInViewResult result)
+    private void WritePartInView(PartInView result)
     {
         WriteJson(new
         {

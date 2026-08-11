@@ -57,7 +57,7 @@ public static class DimensionDefectDetector
     public static DimensionDefectReport Detect(
         int viewId,
         IReadOnlyList<DimensionContextInfo>? dimensions,
-        IReadOnlyList<PartGeometryInViewResult>? parts,
+        IReadOnlyList<PartInView>? parts,
         IReadOnlyList<DimensionChainCoverageResult>? coverage,
         SolidContacts.ContactGraph? contacts = null)
     {
@@ -66,7 +66,7 @@ public static class DimensionDefectDetector
         var chains = (dimensions ?? Array.Empty<DimensionContextInfo>())
             .Where(static dimension => dimension.PointAssociations.Count >= 2)
             .ToList();
-        var partList = (parts ?? Array.Empty<PartGeometryInViewResult>())
+        var partList = (parts ?? Array.Empty<PartInView>())
             .Where(static part => part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
             .ToList();
 
@@ -301,7 +301,7 @@ public static class DimensionDefectDetector
         DimensionDefectReport report,
         DimensionContextInfo chain,
         int axis,
-        IReadOnlyList<PartGeometryInViewResult> parts,
+        IReadOnlyList<PartInView> parts,
         double extentAlong)
     {
         var points = OrderedPoints(chain, axis);
@@ -408,7 +408,7 @@ public static class DimensionDefectDetector
     private static void AddWrongStartPoint(
         DimensionDefectReport report,
         DimensionContextInfo chain,
-        IReadOnlyList<PartGeometryInViewResult> parts)
+        IReadOnlyList<PartInView> parts)
     {
         if (chain.TeklaDimensionType.IndexOf("Absolute", StringComparison.OrdinalIgnoreCase) < 0)
             return;
@@ -525,7 +525,7 @@ public static class DimensionDefectDetector
         DimensionDefectReport report,
         DimensionContextInfo chain,
         int axis,
-        IReadOnlyList<PartGeometryInViewResult> structuralParts)
+        IReadOnlyList<PartInView> structuralParts)
     {
         var points = OrderedPoints(chain, axis);
         if (points.Count < 2)
@@ -584,7 +584,7 @@ public static class DimensionDefectDetector
         DimensionDefectReport report,
         IReadOnlyList<DimensionContextInfo> chains,
         IReadOnlyList<DimensionChainCoverageResult>? coverage,
-        IReadOnlyList<PartGeometryInViewResult> parts)
+        IReadOnlyList<PartInView> parts)
     {
         var byChain = (coverage ?? Array.Empty<DimensionChainCoverageResult>())
             .Where(static result => result.Success)
@@ -781,13 +781,13 @@ public static class DimensionDefectDetector
         };
     }
 
-    private static bool Covers(PartGeometryInViewResult part, double[] point) =>
+    private static bool Covers(PartInView part, double[] point) =>
         point[0] >= part.BboxMin[0] - PointOnPartToleranceMm &&
         point[0] <= part.BboxMax[0] + PointOnPartToleranceMm &&
         point[1] >= part.BboxMin[1] - PointOnPartToleranceMm &&
         point[1] <= part.BboxMax[1] + PointOnPartToleranceMm;
 
-    private static double Extent(IReadOnlyList<PartGeometryInViewResult> parts, int axis) =>
+    private static double Extent(IReadOnlyList<PartInView> parts, int axis) =>
         parts.Max(part => part.BboxMax[axis]) - parts.Min(part => part.BboxMin[axis]);
 
     /// <summary>
@@ -796,7 +796,7 @@ public static class DimensionDefectDetector
     /// insulation and M a fitting. Falls back to everything rather than to nothing, because an
     /// extent of zero would silently disable the overall test.
     /// </summary>
-    private static IReadOnlyList<PartGeometryInViewResult> StructuralParts(IReadOnlyList<PartGeometryInViewResult> parts)
+    private static IReadOnlyList<PartInView> StructuralParts(IReadOnlyList<PartInView> parts)
     {
         var structural = parts
             .Where(static part => part.MaterialType == 5 ||

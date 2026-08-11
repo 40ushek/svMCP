@@ -12,7 +12,7 @@ public sealed class DrawingViewContextBuilderTests
         var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi(
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     Success = true,
                     ViewId = 10,
@@ -28,7 +28,7 @@ public sealed class DrawingViewContextBuilderTests
                         [0d, 5d, 0d]
                     ]
                 },
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     Success = true,
                     ViewId = 10,
@@ -107,7 +107,7 @@ public sealed class DrawingViewContextBuilderTests
         var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi(
             [
-                new PartGeometryInViewResult { Success = true, ViewId = 10, ModelId = 101 }
+                new PartInView { Success = true, ViewId = 10, ModelId = 101 }
             ]),
             new FakeBoltGeometryApi(new Dictionary<int, PartBoltGeometryInViewResult>
             {
@@ -140,7 +140,7 @@ public sealed class DrawingViewContextBuilderTests
         var builder = new DrawingViewContextBuilder(
             new FakePartGeometryApi(
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     Success = true,
                     ViewId = 10,
@@ -193,11 +193,11 @@ public sealed class DrawingViewContextBuilderTests
         Assert.False(context.IsEmpty);
     }
 
-    private sealed class FakePartGeometryApi(List<PartGeometryInViewResult> parts) : IDrawingPartGeometryApi
+    private sealed class FakePartGeometryApi(List<PartInView> parts) : IDrawingPartGeometryApi
     {
-        public List<PartGeometryInViewResult> GetAllPartsGeometryInView(int viewId) => [.. parts];
+        public List<PartInView> GetAllPartsGeometryInView(int viewId) => [.. parts];
 
-        public PartGeometryInViewResult GetPartGeometryInView(int viewId, int modelId)
+        public PartInView GetPartGeometryInView(int viewId, int modelId)
         {
             foreach (var part in parts)
             {
@@ -205,7 +205,7 @@ public sealed class DrawingViewContextBuilderTests
                     return part;
             }
 
-            return new PartGeometryInViewResult
+            return new PartInView
             {
                 Success = false,
                 ViewId = viewId,

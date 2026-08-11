@@ -3,7 +3,7 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-public sealed class PartGeometryInViewResult
+public sealed class PartInView
 {
     public bool    Success { get; set; }
     public int     ViewId  { get; set; }
@@ -75,7 +75,7 @@ public sealed class PartGeometryInViewResult
     /// </summary>
     public string? PartPrefix     { get; set; }
 
-    internal PartGeometryInViewResult Clone() => new()
+    internal PartInView Clone() => new()
     {
         Success = Success,
         ViewId = ViewId,
@@ -100,7 +100,7 @@ public sealed class PartGeometryInViewResult
         PartPrefix = PartPrefix
     };
 
-    internal PartGeometryInViewResult CloneGeometryOnly() => new()
+    internal PartInView CloneGeometryOnly() => new()
     {
         Success = Success,
         ViewId = ViewId,

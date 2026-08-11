@@ -88,7 +88,7 @@ internal sealed class DrawingViewContextBuilder
         return context;
     }
 
-    private static DrawingBoundsInfo? BuildPartsBounds(IReadOnlyList<PartGeometryInViewResult> parts)
+    private static DrawingBoundsInfo? BuildPartsBounds(IReadOnlyList<PartInView> parts)
     {
         var bounds = parts
             .Where(HasBbox)
@@ -100,7 +100,7 @@ internal sealed class DrawingViewContextBuilder
         return TeklaDrawingDimensionsApi.CombineBounds(bounds);
     }
 
-    private static bool HasBbox(PartGeometryInViewResult part) =>
+    private static bool HasBbox(PartInView part) =>
         part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2;
 
     private static string ResolveGridIdentifier(GridAxisInfo axis)

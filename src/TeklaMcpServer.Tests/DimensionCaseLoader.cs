@@ -24,7 +24,7 @@ public sealed class DimensionCaseState
     public string State { get; init; } = string.Empty;
     public int ViewId { get; init; }
     public List<DimensionContextInfo> Dimensions { get; init; } = new();
-    public List<PartGeometryInViewResult> Parts { get; init; } = new();
+    public List<PartInView> Parts { get; init; } = new();
     public List<DimensionChainCoverageResult> Coverage { get; init; } = new();
 
     /// <summary>
@@ -116,7 +116,7 @@ public static class DimensionCaseLoader
             State = Path.GetFileName(stateDirectory),
             ViewId = contexts?.ViewId ?? 0,
             Dimensions = contexts?.Dimensions ?? new List<DimensionContextInfo>(),
-            Parts = parts?.Parts ?? new List<PartGeometryInViewResult>(),
+            Parts = parts?.Parts ?? new List<PartInView>(),
             Coverage = coverage
         };
     }
@@ -139,6 +139,6 @@ public static class DimensionCaseLoader
 
     private sealed class PartsGeometryFile
     {
-        public List<PartGeometryInViewResult> Parts { get; set; } = new();
+        public List<PartInView> Parts { get; set; } = new();
     }
 }

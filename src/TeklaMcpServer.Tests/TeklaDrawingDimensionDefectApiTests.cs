@@ -23,7 +23,7 @@ public sealed class TeklaDrawingDimensionDefectApiTests
                 Chain(102, (0, 10), (50, 10), (100, 10))
             ]
         };
-        var parts = new List<PartGeometryInViewResult> { Part(7, solidComplete: true) };
+        var parts = new List<PartInView> { Part(7, solidComplete: true) };
 
         var api = new TeklaDrawingDimensionDefectApi(
             _ =>
@@ -177,7 +177,7 @@ public sealed class TeklaDrawingDimensionDefectApiTests
         new(_ => contexts,
             // Wide enough that a point at x = 250 is inside the view. Narrower, and the
             // coordinate-space gate fires first and switches every other check off.
-            _ => [new PartGeometryInViewResult
+            _ => [new PartInView
             {
                 ModelId = 7,
                 PartPos = "T-7",
@@ -275,7 +275,7 @@ public sealed class TeklaDrawingDimensionDefectApiTests
         }).ToList()
     };
 
-    private static PartGeometryInViewResult Part(int modelId, bool solidComplete) => new()
+    private static PartInView Part(int modelId, bool solidComplete) => new()
     {
         ModelId = modelId,
         PartPos = "T-" + modelId,

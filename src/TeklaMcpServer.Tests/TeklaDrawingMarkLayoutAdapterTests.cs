@@ -82,7 +82,7 @@ public sealed class TeklaDrawingMarkLayoutAdapterTests
         markContext.ModelId = 42;
         var marksViewContext = CreateMarksViewContext();
         var viewContext = new DrawingViewContext();
-        viewContext.Parts.Add(new PartGeometryInViewResult
+        viewContext.Parts.Add(new PartInView
         {
             Success = true,
             ModelId = 42,

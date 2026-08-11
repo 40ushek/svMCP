@@ -244,13 +244,13 @@ public sealed class DimensionDefectDetectorTests
             }
         };
 
-        var complete = new PartGeometryInViewResult
+        var complete = new PartInView
         {
             ModelId = 1, PartPos = "T-1",
             BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 },
             SolidGeometryComplete = true
         };
-        var incomplete = new PartGeometryInViewResult
+        var incomplete = new PartInView
         {
             ModelId = 2, PartPos = "T-2",
             BboxMin = new[] { 90d, 0, 0 }, BboxMax = new[] { 110d, 10, 10 },
@@ -309,13 +309,13 @@ public sealed class DimensionDefectDetectorTests
         // positions (Ambiguous) — solids read in full, so a PhantomAnchor read would otherwise be
         // available and has to lose to AmbiguousAnchor. Bounds span 0..110 so the coordinate gate
         // (widest chain span 100, against a visible extent of 110) does not itself trip.
-        var first = new PartGeometryInViewResult
+        var first = new PartInView
         {
             ModelId = 1, PartPos = "T-1",
             BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 },
             SolidGeometryComplete = true
         };
-        var second = new PartGeometryInViewResult
+        var second = new PartInView
         {
             ModelId = 2, PartPos = "T-2",
             BboxMin = new[] { 90d, 0, 0 }, BboxMax = new[] { 110d, 10, 10 },
@@ -377,7 +377,7 @@ public sealed class DimensionDefectDetectorTests
             1,
             [chain],
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 1, PartPos = "T-1", PartPrefix = "T",
                     BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 1000d, 100, 100 }
@@ -410,7 +410,7 @@ public sealed class DimensionDefectDetectorTests
             1,
             [chain],
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 1, PartPos = "T-1", PartPrefix = "T",
                     BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 1000d, 100, 100 }
@@ -447,12 +447,12 @@ public sealed class DimensionDefectDetectorTests
             1,
             [chain],
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 1, PartPos = "R-1", PartPrefix = "R",
                     BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 }
                 },
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 2, PartPos = "T-1", PartPrefix = "T",
                     BboxMin = new[] { 190d, 0, 0 }, BboxMax = new[] { 210d, 10, 10 }
@@ -494,12 +494,12 @@ public sealed class DimensionDefectDetectorTests
             1,
             [chain],
             [
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 1, PartPos = "R-1", PartPrefix = "R",
                     BboxMin = new[] { 0d, 0, 0 }, BboxMax = new[] { 10d, 10, 10 }
                 },
-                new PartGeometryInViewResult
+                new PartInView
                 {
                     ModelId = 2, PartPos = "T-1", PartPrefix = "T",
                     BboxMin = new[] { 290d, 0, 0 }, BboxMax = new[] { 310d, 10, 10 }
@@ -511,7 +511,7 @@ public sealed class DimensionDefectDetectorTests
         Assert.Contains(report.Warnings, warning => warning.Contains("could not reconstruct a single true start point"));
     }
 
-    private static double Extent(IEnumerable<PartGeometryInViewResult> parts)
+    private static double Extent(IEnumerable<PartInView> parts)
     {
         var list = parts.ToList();
         return list.Max(static part => part.BboxMax[0]) - list.Min(static part => part.BboxMin[0]);
