@@ -51,6 +51,8 @@ public static partial class ModelTools
         }
     }
 
+    // Audit-only: this remains the validation path for existing and newly placed dimensions.
+    // New-dimension placement has a separate foundation: AssemblyOutline plus contact and contour points.
     [McpServerTool, Description(
         "Detect dimension defects in one drawing view without returning the full dimension and part read models. " +
         "Returns compact chain summaries, mechanical or provisional findings, and warnings. " +

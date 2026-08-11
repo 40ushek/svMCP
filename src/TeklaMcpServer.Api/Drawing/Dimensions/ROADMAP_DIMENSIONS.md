@@ -885,6 +885,137 @@ The remaining documentation and code shape should continue to reinforce:
 - debug/read DTOs as projections only
 - no regression back to DTO-first logic
 
+### Where dimension positions come from (2026-08-09)
+
+Worked out against one real elevation, `[EW.1 - 1]` of `Midi_1-1-1`, by comparing
+computed positions with what its chains actually measure. Nothing below is built
+yet; this records what to build and what has to be checked before building on it.
+
+**The primitive is an interval, not a point.** Collapse a part onto the chain's
+direction and it becomes `[from, to]`. Its width says whether it marks a position
+at all, its ends serve dimensions taken to faces, its middle serves those taken
+to centres — and the choice between the last two need not be made while
+projecting. On the wall this was tried on, widths came out 0, 45, 60 and 120
+against 1010 and 2050: members against background, an order of magnitude apart.
+
+**Parts that abut fuse into one block.** Two studs nailed together read as one
+post, and the drawing locates the post, not the seam inside it. Merging is
+transitive, so three or five in a row need no special case. Three separate rules
+collapse into this one operation — do not dimension between adjacent studs, the
+doubled post, and the outer face of a block giving the overall.
+
+Fusion is per axis. A stud and the plate it stands on touch, but along X the
+plate runs the whole length and is background, not a position; along Y the two
+swap roles. So two parts fuse along an axis when both are narrow along it, their
+intervals meet within the gap tolerance, and they actually touch.
+
+**Positions are block boundaries**, and the chain marks where each next block
+begins, scanning from the hooked end. Not the left face nor the right: the first
+face the tape reaches. A trailing face starts nothing.
+
+**An empty run between blocks is an opening**, dimensioned clear between the
+faces flanking it.
+
+#### Shape
+
+Per view and per axis, ordered along it — a sorted list, not a graph, because
+order is the whole content:
+
+```
+AxisLayout
+  ViewId, Axis
+  Blocks[]      From, To, ModelIds[]     ordered
+  Background[]  From, To, ModelIds[]     wide along this axis
+  Gaps[]        From, To                 candidate openings
+```
+
+Two instances per view. Background is kept, not discarded: it fixes the extent
+and explains why a member is not a position. Positions are derived from the
+block boundaries rather than stored, so there is one source of truth. Gaps are
+named because an opening is a thing people talk about.
+
+#### What has to be checked first
+
+Compute `AxisLayout` for both axes of that elevation from `BboxMin`/`BboxMax`,
+which the view geometry API already returns in view coordinates, and compare:
+
+- X against `0, 60, 1040, 1635, 2050`
+- Y against `-1294.8, 740.2, 855.2, 1089.8, 1294.8`
+
+Y is the stronger test: along it the plates become positions and the studs
+become background, so a threshold fitted to X will fail there visibly.
+
+#### The open question
+
+What counts as narrow. The order-of-magnitude gap that separated members from
+background is one wall. A noggin spanning 540 mm on a 2050 mm wall does not fall
+either side of it. Do not fix the threshold from a single drawing — the same
+debt as the contact comparison.
+
+#### What contacts are still for
+
+Boxes cannot answer whether an abutment is real. A view collapses depth:
+sheathing in front of studs covers them on both axes and would fuse the whole
+wall into one block. That did not surface on this elevation only because the
+sheathing is hidden there and the frame is all that remains; on the plan, with
+every layer shown, it would. So intervals propose positions cheaply and contacts
+reject false fusions, and neither replaces the other.
+
+The ladder is: bounding boxes, then the view outline for a raked or cut member
+whose box corner sits in space, then contacts. Most cases stop at the first.
+
+### Architecture reset: geometry before dimension policy (2026-08-11)
+
+The next implementation is not another extension of `get_dimension_defects`.
+That command audits annotations already present in a drawing and remains needed
+to validate the dimensions placed later; it is simply a different task from
+creating them.  The first step sideways is to collect reliable geometric facts
+in the drawing view coordinate system, before deciding which facts deserve a
+dimension.
+
+#### 1. `AssemblyOutline` — the first concrete result
+
+For one drawing view, first project each visible part's faces onto the view plane
+and union those face projections with Clipper into that part's real 2D contour.
+Then union the part contours with Clipper into the assembly outline.  The result
+must preserve outer rings, holes and multiple disconnected components, together
+with the real vertices and extrema that produced them.  It represents the
+visible external polygon of the assembly in that view.
+
+`ViewHull` is a convex hull, not a real part contour, and must not enter either
+union.  As with an OBB, it bridges concavities, openings, raked ends and
+cut-outs, so its corners are often points in empty space.  A convex hull may
+later be useful only as a coarse bound or fallback; it is not a source of
+dimension points.  Clipper is already available through `SolidContacts.Core`,
+so this needs no new dependency.  This step finishes by comparing the computed
+outline with real drawing views.  It does not create dimensions.
+
+#### 2. Candidate facts — still no dimension policy
+
+Extend the existing `DrawingPartCandidatePoint` model and
+`DrawingPartCandidatePointBuilder`; do not introduce a second candidate type.
+Route the real per-part contour vertices from step 1 through that builder, not
+through `ViewHull`.  They already preserve a part candidate's model object,
+source, in-plane normal, confidence, anchor and reason.  Add the missing
+view/assembly level and these two new sources:
+
+- vertices and extrema of `AssemblyOutline`;
+- contact regions and the endpoints of contact intervals.
+
+The resulting view-level set keeps each existing candidate's provenance and
+adds contributing part(s) where a source spans more than one part.  `ViewHull`
+may remain a clearly degraded legacy diagnostic if separately useful, but does
+not enter this collection route.  Part OBBs may be used internally for a
+broad-phase optimisation, but are never candidates themselves.
+
+#### 3. Return to dimension placement only after the facts exist
+
+Only then should a policy select points, form chains and decide which dimensions
+are necessary.  `AxisLayout`, contacts and later collision/placement logic are
+policy layers on top of these facts, not substitutes for the geometry-collection
+step.  The preceding bounding-box ladder documents the current layout approach;
+it is not the implementation order for this reset.
+
 ## Deferred / Non-Goals
 
 The following are intentionally not part of the current baseline.
