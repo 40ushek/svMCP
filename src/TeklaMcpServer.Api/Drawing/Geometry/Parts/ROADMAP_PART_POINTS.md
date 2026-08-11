@@ -219,6 +219,28 @@ The roadmap should explicitly support these scenarios.
 - Prefer stable topology contracts over ad hoc lists of doubles.
 - Prefer explicit geometry models over anonymous point bags.
 
+## Two sources still to add (2026-08-11)
+
+The candidate model and its builder stay; what is missing is not the notion of a
+candidate with provenance but two sources for it.
+
+- **Contour points.** `get_assembly_outline` returns the real projected contour of the
+  assembly and of every part in the view. On two real assemblies every position the
+  chains use is among them - all of them on a straight wall, and on a raked one the two
+  the assembly outline misses are exact in the part contours, because a point where an
+  inner member meets the silhouette is not a vertex of the union.
+- **Contact points.** `TeklaDrawingViewContactApi` gives where the parts of a view meet,
+  in the same coordinates.
+
+Neither becomes a second candidate type. `ViewHull` must not be used for either: it is a
+convex hull, so it bridges openings and its corners fall in empty space - the phantom
+anchor the defect detector already names. The parts hull was removed from the view
+context on the same grounds.
+
+What blocks the selection that follows is not geometry but the part's role. Frame,
+filling or fixing decides which candidates can bound an overall, and MATERIAL_TYPE
+cannot say: insulation reports 5, the same as timber.
+
 ## Explicit Non-Goals
 
 This module should not become:

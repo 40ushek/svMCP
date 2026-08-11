@@ -67,6 +67,10 @@
 - `PartsBounds`
 - view-local warnings
 
+`PartsHull` was removed in August 2026: nothing read it, and a convex hull cannot serve
+as a source of dimension points because it bridges openings. The real contour comes from
+`get_assembly_outline`, which is the natural next member of this context once it settles.
+
 Коротко:
 
 - `DrawingContext` = sheet-level coarse context

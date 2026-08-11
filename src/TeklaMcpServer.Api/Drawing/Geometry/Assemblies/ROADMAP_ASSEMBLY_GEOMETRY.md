@@ -186,6 +186,21 @@ The roadmap is considered successfully implemented when:
 - member part solids and bolt groups are reused from stable lower-level APIs
 - later node or connection logic can be added without redesign
 
+## Assembly outline (2026-08-11)
+
+`get_assembly_outline` returns the real projected polygon of everything a view draws:
+outer rings, holes and disconnected components, plus each part's own contour beside the
+union. Verified against two real assemblies, including a raked one where a bounding box
+and a convex hull both flatten the slope, the steps and the notch.
+
+Two facts it settled, worth having here because assembly geometry is where they land:
+
+- the extremes of the outline are the ends of the outer chains, but only over the
+  structural set - on both walls checked, one end ran 10 mm past the chain because an
+  outer layer overhangs the frame;
+- points where an inner member meets the silhouette are not vertices of the union and
+  come only from the individual part contours. On a straight wall this never shows.
+
 ## Near-Term Next Step
 
 The first implementation step after this roadmap should be:

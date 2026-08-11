@@ -32,6 +32,7 @@
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
 | `get_drawing_dimensions` / `get_dimension_contexts` / `arrange_dimensions` / `combine_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, arrange/combine, создание/сдвиг/удаление, контрольные диагонали |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
+| `get_assembly_outline` | Реальный 2D-контур сборки в виде: внешние кольца, отверстия, компоненты, плюс контур каждой детали |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
 
@@ -50,8 +51,14 @@
 - `ProjectionMoveRejectDecision` — struct для трассировки отклонённых проекционных сдвигов; `ProjectionAlignmentResult` расширен счётчиками reject по типу
 
 **Геометрические утилиты**
-- `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется)
+- `ConvexHull` — Graham scan по 2D точкам (`Tekla.Structures.Geometry3d.Point`, Z игнорируется).
+  Годится для габаритных оценок и подбора крайних точек, но **не как источник размерных
+  точек**: оболочка перекидывает через вырезы и проёмы, и её углы оказываются в пустоте.
+  Для размеров нужен реальный контур — `get_assembly_outline`.
 - `FarthestPointPair` — диаметр множества точек (две самые удалённые)
+- `SolidContacts` (отдельный репозиторий, `SolidContacts.Core`) — поиск контактов солидов
+  и объединение проекций в контур. Без ссылки на Tekla, netstandard2.0; подключён к
+  `TeklaMcpServer.Api` напрямую, поэтому `SolidContacts.Core.dll` входит в ручной деплой
 
 ---
 
