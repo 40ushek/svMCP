@@ -132,12 +132,35 @@ to know whether the part had no prefix, an unfamiliar one, or a prefix that no
 rule covers yet. The reason is also where `MATERIAL_TYPE` and `IsMainPart`
 appear, since neither decides anything.
 
+## Selecting by role has to report what it did not know
+
+Whatever picks parts by role returns two things: the parts, and how many were
+`Unknown`. An extent computed over a set containing unknowns is a guess, and the
+caller has to be able to say so.
+
+Neither silent choice is acceptable. Including unknowns puts insulation back in
+the extent, which is the bug this exists to fix. Excluding them shortens the
+assembly without a word, which is worse, because a short overall looks exactly
+like a correct one.
+
+`StructuralParts` today falls back to every part when its filter comes up empty,
+so that an extent of zero does not silently switch the overall test off. That
+fallback stays and gains a companion: empty is one thing, incomplete is another,
+and both have to reach the report.
+
+This is the third place in this work with the same shape — `ViewContactsResult`
+carries `Unread` and `IsComplete`, the outline carries the parts it could not
+read. Three times is enough to call it the house rule: a result derived from a
+set says what was missing from the set.
+
 ## Order of work
 
 1. `PartRole`, the classifier and its tests. Prefix rules only.
 2. `PartRoleResult` on `PartInView` — role, rule and reason, filled at read time.
-3. Replace the three inline interpretations in `DimensionDefectDetector`.
-4. Structural extent for the assembly outline, over `Defining` alone.
+3. Replace the three inline interpretations in `DimensionDefectDetector`, and
+   decide there what an `Unknown` does to the structural extent.
+4. Structural extent for the assembly outline, over `Defining` alone, reporting
+   the unknowns alongside it.
 5. `IsMainPart` on `PartInView` — read it, put it in the reason, and check on
    several assemblies whether it tracks "defines the extent" before it becomes a
    rule.
