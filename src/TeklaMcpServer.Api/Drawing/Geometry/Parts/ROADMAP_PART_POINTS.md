@@ -241,6 +241,37 @@ What blocks the selection that follows is not geometry but the part's role. Fram
 filling or fixing decides which candidates can bound an overall, and MATERIAL_TYPE
 cannot say: insulation reports 5, the same as timber.
 
+## Provenance is a list, and it can be empty (2026-08-11)
+
+A candidate carries the parts it came from as `ModelObjectIds`, from none to
+several. The single `ModelObjectId` goes when the two new sources arrive; it is
+not kept alongside as a convenience. A deprecated field next to a list outlives
+everyone who remembers why, and the day someone reaches for the shorter one a
+contact starts claiming it belongs to the stud alone. Three readers use it
+today - `DimensionChainCoverageBuilder` twice and the bridge's serializer once -
+so replacing it is cheap now and will not be later.
+
+Three cases, and the third is the one that needs writing down:
+
+- a point from a part's own geometry carries that one part;
+- a contact carries both participants. One point, two owners - where a stud
+  meets its plate the point belongs to each of them, and splitting it into two
+  records with the same coordinate would invent a second point that is not there;
+- **a point created by the assembly-contour union carries none.** `Source` is
+  `AssemblyContour` and `Confidence` is `DerivedGeometry`, and the empty list is
+  the answer, not a gap in it.
+
+That last one is a contract, not an omission. Unioning part contours merges
+boundaries, and the merge runs at a tolerance that moves them: contours are
+widened by half the gap tolerance and narrowed again, so a vertex of the assembly
+outline need not be a vertex of any part, and intersections appear that no part
+ever had. Matching such a point back to the nearest part vertex would invent an
+owner - the distance-based association this whole area exists to avoid.
+
+So: no reverse match by coordinate, ever, and no tolerance to make one work. If
+a caller needs the part behind a contour point, it should ask the part contours
+directly, where provenance is a fact rather than a guess.
+
 ## Explicit Non-Goals
 
 This module should not become:
