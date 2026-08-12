@@ -353,9 +353,25 @@ outline of the same view holds them exactly, at `(2090, 1311.96)` and `(210, 172
 That is the argument for the combined set, and it is also the argument for having built
 the layers apart: each source misses precisely where the other answers.
 
-One thing seen once and not reproduced: the first invocation reported 143 candidates and
-every one since reported 144, `isComplete` true both times. Possibly a contact sitting on
-the 1 mm gap tolerance. Not diagnosed - worth watching on the next live run.
+### Two one-off readings, neither reproduced
+
+Recorded because they happened, not because either is understood. No fix has been
+attempted for either: there is nothing yet to fix, only something to watch.
+
+- the first invocation on a view reported 143 candidates; every one since reported 144,
+  with `isComplete` true both times. Possibly a contact sitting on the 1 mm gap
+  tolerance;
+- in one run of the overlay group sequence the numbers were wrong in a way that did not
+  survive a clean repeat: the opening clear reported nothing while 343 objects were on
+  the sheet, and the closing clear took 676 where 1288 were expected. Re-run from a
+  clean sheet the same sequence gives 343, 1288, 0 exactly. Deleting inside a live Tekla
+  enumerator was ruled out separately - 1288 objects clear in one pass and a second pass
+  finds none.
+
+The one thing they share is worth writing down and nothing more: both were the first
+bridge invocation after new binaries were deployed. That is a correlation across two
+observations, not a mechanism, and inventing a fix from it would be inventing the fault
+as well.
 
 ## Provenance is a list, and it can be empty (implemented 2026-08-11)
 
