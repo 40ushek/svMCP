@@ -59,7 +59,15 @@ public enum DrawingPartCandidatePointSource
     /// A corner of the assembly outline, where the contours of several parts were merged.
     /// Belongs to no single part - see the note on ModelObjectIds.
     /// </summary>
-    AssemblyContour
+    AssemblyContour,
+
+    /// <summary>
+    /// A place on a contact between two parts, as that contact reads on the sheet.
+    ///
+    /// Not geometry either part owns. It is where they meet, which is a fact about the pair
+    /// and is why both are named - and it is the fact a dimension between them is measuring.
+    /// </summary>
+    Contact
 }
 
 /// <summary>How directly the source proves that the point belongs to the part.</summary>
@@ -74,23 +82,34 @@ public enum DrawingPartCandidateConfidence
 public sealed class DrawingPartCandidateAnchor
 {
     /// <summary>
-    /// The one part this anchor is a feature of. Single on purpose, unlike the candidate's
-    /// own list: a point may belong to several parts, but a face or a vertex belongs to
-    /// exactly one, and that is what an anchor names.
+    /// The one part this anchor is a feature of, where it is a feature of one.
+    ///
+    /// Single rather than a list: a point may belong to several parts, but a face or a
+    /// vertex belongs to exactly one, and that is what an anchor names.
+    ///
+    /// Null where the feature is not one part's. A contact surface is the meeting of two
+    /// parts and belongs to neither more than the other, so naming one of them here would
+    /// make the other's face a coincidence - and naming zero would invent a part.
     /// </summary>
-    public int ModelObjectId { get; set; }
+    public int? ModelObjectId { get; set; }
     public DrawingPartCandidateAnchorKind Kind { get; set; }
     public string Id { get; set; } = string.Empty;
 
     /// <summary>
-    /// Stable comparison key: model object id, anchor kind and anchor id.
+    /// Stable comparison key: anchor kind and anchor id, prefixed by the part when the
+    /// feature is a part's.
     ///
     /// Empty where there is no anchor. A point on the assembly outline is a feature of no
-    /// part, and "0:None:" would read as an identity shared by every such point.
+    /// part, and "0:None:" would read as an identity shared by every such point. Where a
+    /// feature has no single owner but does have a name of its own - a contact point, whose
+    /// id already says which contact and which shape - the part is simply left off rather
+    /// than filled in.
     /// </summary>
     public string Key => Kind == DrawingPartCandidateAnchorKind.None
         ? string.Empty
-        : $"{ModelObjectId}:{Kind}:{Id}";
+        : ModelObjectId.HasValue
+            ? $"{ModelObjectId.Value}:{Kind}:{Id}"
+            : $"{Kind}:{Id}";
 }
 
 public enum DrawingPartCandidateAnchorKind
@@ -107,6 +126,14 @@ public enum DrawingPartCandidateAnchorKind
     /// the solid at all, so there is no native Tekla feature to name.
     /// </summary>
     ContourVertex,
+
+    /// <summary>
+    /// A point of a contact shape - one contact, one flattened shape, one place on it.
+    ///
+    /// Distinct from every other kind because it has no single owner and does not need one:
+    /// its id already says which contact and which shape, which no part could say.
+    /// </summary>
+    ContactPoint,
 
     /// <summary>
     /// No feature of any one part. For a corner of the assembly outline, where the union
