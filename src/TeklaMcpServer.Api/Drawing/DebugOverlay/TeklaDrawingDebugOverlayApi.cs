@@ -28,15 +28,20 @@ public sealed class TeklaDrawingDebugOverlayApi : IDrawingDebugOverlayApi
         var request = JsonSerializer.Deserialize<DrawingDebugOverlayRequest>(requestJson ?? string.Empty, JsonOptions)
             ?? throw new InvalidOperationException("Invalid debug overlay request JSON.");
 
-        if (request.Shapes.Count == 0)
-            return new DrawingDebugOverlayResult { Group = request.Group };
-
         var result = new DrawingDebugOverlayResult { Group = request.Group };
+
+        // Clearing happens even when there is nothing to draw. "Replace this group with
+        // these shapes" has to hold when the shapes are none, or a group whose contents
+        // legitimately went away keeps showing the last run that had any - and stale
+        // debug geometry is worse than none, because it looks like a current answer.
         if (request.ClearGroupFirst)
         {
             var cleared = ClearOverlay(request.Group);
             result.ClearedCount = cleared.ClearedCount;
         }
+
+        if (request.Shapes.Count == 0)
+            return result;
 
         foreach (var shape in request.Shapes)
         {

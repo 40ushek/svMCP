@@ -359,9 +359,10 @@ internal sealed partial class DrawingCommandHandler
             });
         }
 
-        if (request.Shapes.Count == 0)
-            return 0;
-
+        // Sent even when there is nothing to draw, so the group is cleared. A view that
+        // stopped having contacts - parts hidden, a filter changed, the drawing edited -
+        // would otherwise keep the last run that had some, and a person checking by eye
+        // would be checking geometry that is no longer there.
         return overlay.DrawOverlay(JsonSerializer.Serialize(request)).CreatedCount;
     }
 
