@@ -69,6 +69,8 @@ internal static class ContactProbe
 
                 if (!result.IsComplete)
                     Console.WriteLine("  INCOMPLETE: absence of a contact here proves nothing");
+
+                ReportShapes(ContactGeometryInViewBuilder.Build(result), named);
             }
             else
             {
@@ -166,6 +168,42 @@ internal static class ContactProbe
                     xmin, xmax, ymin, ymax);
             }
         }
+    }
+
+    /// <summary>
+    /// Every contact as it reads on the sheet, once the depth is out of it.
+    ///
+    /// Printed next to the projections above because the two answer different questions and
+    /// look alike. A projection is the box a contact occupies along each axis; this is the
+    /// contact's own shape, and its kind is the finding - on an elevation a face contact
+    /// between stacked members comes back as a line, because the view looks along it.
+    /// </summary>
+    private static void ReportShapes(
+        ViewContactGeometryResult geometry, IReadOnlyDictionary<string, Part> named)
+    {
+        Console.WriteLine("shapes: kind a b -> planar (points)");
+
+        foreach (var shape in geometry.Shapes)
+        {
+            Console.WriteLine(
+                "  SHAPE {0,-11} {1,-14} {2,-14} {3,-8} {4,-16} {5}",
+                shape.Kind,
+                Name(named, shape.Participants.SolidAId),
+                Name(named, shape.Participants.SolidBId),
+                shape.Shape.Kind,
+                shape.ShapeId,
+                string.Join("  ", shape.Shape.Points.Select(point =>
+                    string.Format(CultureInfo.InvariantCulture, "({0:0.###},{1:0.###})", point.X, point.Y))));
+        }
+
+        foreach (var lost in geometry.Unflattened)
+            Console.WriteLine($"  LOST {lost}");
+
+        foreach (var unresolved in geometry.Unresolved)
+            Console.WriteLine($"  UNRESOLVED {unresolved.Participants}: geometry kept, owner not named");
+
+        if (!geometry.IsComplete)
+            Console.WriteLine("  INCOMPLETE: this is not all of the contact geometry");
     }
 
     /// <summary>

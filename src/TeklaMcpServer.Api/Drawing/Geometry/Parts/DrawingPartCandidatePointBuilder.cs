@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using SolidContacts;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -118,7 +119,6 @@ public static class DrawingPartCandidatePointBuilder
     /// so an index into the raw traversal would change while the model did not - and
     /// Anchor.Key is documented as stable.
     /// </summary>
-    /// <summary>Every corner of every ring, outer and hole alike - an opening's edge is a place too.</summary>
     private static IEnumerable<ContourCorner> Corners(IReadOnlyList<OutlineTreeNodeResult> nodes, int depth = 0)
     {
         foreach (var node in nodes)
@@ -142,92 +142,23 @@ public static class DrawingPartCandidatePointBuilder
     }
 
     /// <summary>
-    /// The ring rewritten so the same shape always reads the same way.
+    /// The ring rewritten so the same shape always reads the same way, and named by it.
     ///
-    /// Two things have to be pinned, not one. A ring has no natural first vertex, so it is
-    /// rotated to start at its lexicographically smallest corner. It also has no natural
-    /// direction: Clipper can hand back the same loop walked either way, and rotating alone
-    /// would leave the minimum in place while every other index moved. So both walks are
-    /// built and the smaller one wins.
+    /// Both halves come from <see cref="PlanarRing"/>, which is the same canonicalisation
+    /// the flattened contact regions get. The problem is one problem - a closed run of
+    /// points with no natural first vertex and no natural direction - and two answers to it
+    /// would drift apart the moment either was touched.
     /// </summary>
     private static List<double[]> Canonical(IReadOnlyList<double[]> ring)
     {
-        var forward = RotateToSmallest(ring);
-        var backward = RotateToSmallest(ring.Reverse().ToList());
+        var canonical = PlanarRing.Canonical(
+            ring.Select(static point => new Vec3(point[0], point[1], 0)).ToList());
 
-        return Compare(forward, backward) <= 0 ? forward : backward;
+        return canonical.Select(static point => new[] { point.X, point.Y }).ToList();
     }
 
-    private static List<double[]> RotateToSmallest(IReadOnlyList<double[]> ring)
-    {
-        var start = 0;
-        for (var index = 1; index < ring.Count; index++)
-        {
-            if (Compare(ring[index], ring[start]) < 0)
-                start = index;
-        }
-
-        var rotated = new List<double[]>(ring.Count);
-        for (var offset = 0; offset < ring.Count; offset++)
-            rotated.Add(ring[(start + offset) % ring.Count]);
-
-        return rotated;
-    }
-
-    private static int Compare(double[] left, double[] right)
-    {
-        var byX = left[0].CompareTo(right[0]);
-        return byX != 0 ? byX : left[1].CompareTo(right[1]);
-    }
-
-    private static int Compare(IReadOnlyList<double[]> left, IReadOnlyList<double[]> right)
-    {
-        for (var index = 0; index < left.Count && index < right.Count; index++)
-        {
-            var order = Compare(left[index], right[index]);
-            if (order != 0)
-                return order;
-        }
-
-        return left.Count.CompareTo(right.Count);
-    }
-
-    /// <summary>
-    /// A ring's identity, from every one of its corners at full precision.
-    ///
-    /// Not from the smallest corner rounded to a few decimals, which was the first attempt:
-    /// two rings of one part whose minima differ by less than the rounding would collide and
-    /// their corners would share keys. Round-trip formatting keeps every digit the double
-    /// holds, and FNV-1a is used rather than string.GetHashCode because that one is
-    /// deliberately randomised per process and would not survive a restart.
-    /// </summary>
-    private static string Fingerprint(IReadOnlyList<double[]> canonical)
-    {
-        const ulong offsetBasis = 14695981039346656037;
-        const ulong prime = 1099511628211;
-
-        var hash = offsetBasis;
-
-        foreach (var point in canonical)
-        {
-            // Separated on both sides. Without a comma between them (1, 23) and (12, 3)
-            // feed the hash the identical characters - not an unlikely collision but the
-            // same input, every time.
-            foreach (var text in new[] { point[0].ToString("R", CultureInfo.InvariantCulture),
-                                         ",",
-                                         point[1].ToString("R", CultureInfo.InvariantCulture),
-                                         ";" })
-            {
-                foreach (var character in text)
-                {
-                    hash ^= character;
-                    hash *= prime;
-                }
-            }
-        }
-
-        return hash.ToString("x16", CultureInfo.InvariantCulture);
-    }
+    private static string Fingerprint(IReadOnlyList<double[]> canonical) =>
+        PlanarRing.Fingerprint(canonical.Select(static point => new Vec3(point[0], point[1], 0)).ToList());
 
     public static List<DrawingPartCandidatePoint> Build(PartSolidGeometryInViewResult geometry)
     {
