@@ -201,10 +201,78 @@ Two facts it settled, worth having here because assembly geometry is where they 
 - points where an inner member meets the silhouette are not vertices of the union and
   come only from the individual part contours. On a straight wall this never shows.
 
+## One read of a view - proposed, not decided (2026-08-12)
+
+Raised after the contact layer landed, when it became possible to want the outline and
+the contacts of one view at the same time. Written down to be argued with; nothing here
+has been implemented.
+
+### What is actually there now
+
+Two readers of the same solid of the same part in the same view, giving differently
+shaped answers:
+
+- `TeklaDrawingPartGeometryApi` produces `PartInView` - properties, axes, `SolidVertices`,
+  `ViewHull`. The view context uses it.
+- `TeklaDrawingPartSolidGeometryApi` produces `PartSolidGeometryInViewResult` - faces,
+  loops, vertices. The assembly outline, the contacts and the candidate points use it.
+
+And five consumers, each starting from `DrawingHandler` and walking down to the parts on
+its own: the view context, the assembly outline, the structural outline, the contacts,
+the per-part candidate points.
+
+Each `GetPartSolidGeometryInView(viewId, modelId)` call opens the drawing, enumerates
+every view on the sheet to find the one asked for, switches the transformation plane,
+selects the part and reads the solid - per part. Asking one 18-part view for its outline
+and its contacts is 36 of those over the same 18 parts.
+
+The cost is an argument from the code, not from a stopwatch: the bridge invocations
+measured about 2.2 s each, but that is dominated by process start and connecting to
+Tekla, and does not isolate the reading.
+
+### What is proposed
+
+The view read once, and held: the parts as `PartInView` with their contours, the
+assembly outline, the contacts. The outline, the structural outline, the contacts and
+the candidate layers then become functions over that object rather than readers of
+Tekla. They are already pure functions in everything but where they get their input.
+
+**No sixth type called Assembly.** On an assembly drawing the view and the assembly are
+the same thing, on a general arrangement they are not, and every result type here is
+already view-scoped - `ViewContactsResult`, `ViewAssemblyOutlineResult`,
+`ViewContactCandidatePointsResult`. Introducing `AssemblyInView` beside the view context
+would be two ways of saying one thing until a general arrangement forces them apart. So
+the unit of reading stays the view, the view context becomes that single read, and an
+assembly appears as a grouping inside it if and when a general arrangement needs one.
+
+Two conditions, or this is worse than what it replaces:
+
+- **one solid reader, not two.** Otherwise a part answers differently depending on who
+  asked, which is the trap tessellation accuracy already set once;
+- **`ViewHull` does not come along.** It is a convex hull; its corners fall in empty
+  space, and the obligation to drop it at the first combining consumer is already
+  recorded in the part-points roadmap.
+
+### What is not settled
+
+- whether the single read is eager for the whole view or lazy per part - the contacts
+  need every part, `get_part_geometry_in_view` needs one;
+- where the read is cached and for how long. `DrawingReservedAreaReader` caches by
+  drawing id in a static field and is invalidated on open and close; the persistent
+  bridge means a static cache now outlives a call, which it did not when the bridge was
+  started per command;
+- whether the contours belong in the same object as the parts or beside them. They are
+  derived, not read, and putting derived geometry next to read geometry is how
+  `ViewHull` got where it is.
+
 ## Near-Term Next Step
 
 The first implementation step after this roadmap should be:
 
-1. keep assembly geometry aligned with node and connection consumers
-2. add richer assembly-local anchors only if a downstream consumer needs them
-3. later add contact-aware assembly helpers when contacts are introduced
+1. settle the "one read of a view" proposal above, or reject it
+2. keep assembly geometry aligned with node and connection consumers
+3. add richer assembly-local anchors only if a downstream consumer needs them
+
+Contacts are no longer future work - see the part-points roadmap. What assembly geometry
+still owes them is the question of whether a junction, as against a single contact,
+deserves anything of its own here.

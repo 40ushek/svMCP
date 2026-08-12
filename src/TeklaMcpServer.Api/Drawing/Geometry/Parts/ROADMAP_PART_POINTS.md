@@ -257,6 +257,12 @@ Only now that both source layers exist should a caller decide whether it needs o
 combined view-level collection. That is a consumer decision, not a reason to blur source
 facts or introduce dimension policy here.
 
+What that consumer will run into first is not the merging but the reading. There are two
+readers of the same part solid - `TeklaDrawingPartGeometryApi` for the view context and
+`TeklaDrawingPartSolidGeometryApi` for the outline, the contacts and the candidates - and
+five separate walks from `DrawingHandler` down to the parts. See "One read of a view" in
+the assembly-geometry roadmap; it is proposed there, not decided.
+
 Neither becomes a second candidate type. `ViewHull` must not be used for either: it is a
 convex hull, so it bridges openings and its corners fall in empty space - the phantom
 anchor the defect detector already names. The parts hull was removed from the view
