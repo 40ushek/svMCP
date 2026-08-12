@@ -64,6 +64,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_structural_outline":
                 return HandleGetStructuralOutline(args);
 
+            case "get_contact_candidate_points":
+                return HandleGetContactCandidatePoints(GetDebugOverlayApi(), args);
+
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
 
@@ -228,6 +231,138 @@ internal sealed partial class DrawingCommandHandler
 
         modelIds = ids;
         return true;
+    }
+
+    /// <summary>
+    /// Where the parts drawn in a view touch each other, as places a dimension could be
+    /// taken to, and optionally drawn on the sheet so a person can check them by eye.
+    /// </summary>
+    private bool HandleGetContactCandidatePoints(TeklaDrawingDebugOverlayApi overlay, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_contact_candidate_points requires viewId argument");
+            return true;
+        }
+
+        var draw = args.Length > 2 &&
+            args[2].Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        var contacts = new TeklaDrawingViewContactApi(_model).GetContactGraph(viewId);
+        var geometry = ContactGeometryInViewBuilder.Build(contacts);
+        var result = DrawingContactCandidatePointBuilder.Build(geometry);
+
+        var drawn = draw ? Draw(overlay, viewId, geometry, result) : 0;
+
+        WriteJson(new
+        {
+            success = result.Error == null,
+            viewId,
+            isComplete = result.IsComplete,
+            searchComplete = result.SearchComplete,
+            error = result.Error,
+            drawnCount = drawn,
+
+            pointCount = result.Points.Count,
+            points = result.Points.Select(point => new
+            {
+                modelObjectIds = point.ModelObjectIds,
+                point = point.Point,
+                source = point.Source.ToString(),
+                confidence = point.Confidence.ToString(),
+                anchorKind = point.Anchor.Kind.ToString(),
+                anchorKey = point.Anchor.Key,
+                reason = point.Reason.Code,
+                values = point.Reason.Values
+            }),
+
+            // The shapes the points came from, so a reader can see a segment for what it is
+            // - a patch the view looks along - rather than guessing from two loose points.
+            shapes = geometry.Shapes.Select(shape => new
+            {
+                contactId = shape.ContactId,
+                shapeId = shape.ShapeId,
+                contactKind = shape.Kind.ToString(),
+                shapeKind = shape.Shape.Kind.ToString(),
+                modelObjectIds = shape.Participants.ModelObjectIds,
+                points = shape.Shape.Points.Select(point => new[] { point.X, point.Y })
+            }),
+
+            // Three ways a place can be missing, kept apart because they are answered
+            // differently: geometry that never arrived, a region that flattened to nothing,
+            // and a shape whose two parts could not both be named.
+            unread = result.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
+            unflattened = result.Unflattened.Select(region => new
+            {
+                contactId = region.ContactId,
+                regionIndex = region.RegionIndex,
+                parts = region.Participants.ToString(),
+                reason = region.Reason
+            }),
+            unresolved = result.Unresolved.Select(shape => new
+            {
+                contactId = shape.ContactId,
+                solidAId = shape.Participants.SolidAId,
+                solidBId = shape.Participants.SolidBId
+            })
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    /// Paints the candidates and the shapes they came from into the view.
+    ///
+    /// The shape as well as the points, because two crosses on a line say nothing about
+    /// whether the line was there; drawn together, a patch seen edge-on is visibly one
+    /// line with two ends rather than two unexplained marks.
+    /// </summary>
+    private static int Draw(
+        TeklaDrawingDebugOverlayApi overlay,
+        int viewId,
+        ViewContactGeometryResult geometry,
+        ViewContactCandidatePointsResult result)
+    {
+        var request = new DrawingDebugOverlayRequest
+        {
+            Group = "contact_candidates",
+            ClearGroupFirst = true
+        };
+
+        foreach (var shape in geometry.Shapes)
+        {
+            var points = shape.Shape.Points.Select(point => new[] { point.X, point.Y }).ToList();
+
+            if (points.Count >= 3)
+            {
+                request.Shapes.Add(new DrawingDebugShape
+                {
+                    Kind = "polygon", ViewId = viewId, Points = points, Color = "green"
+                });
+            }
+            else if (points.Count == 2)
+            {
+                request.Shapes.Add(new DrawingDebugShape
+                {
+                    Kind = "line", ViewId = viewId, Color = "green",
+                    X1 = points[0][0], Y1 = points[0][1], X2 = points[1][0], Y2 = points[1][1]
+                });
+            }
+        }
+
+        foreach (var point in result.Points)
+        {
+            request.Shapes.Add(new DrawingDebugShape
+            {
+                Kind = "cross", ViewId = viewId, Color = "red", Size = 5,
+                X1 = point.Point[0], Y1 = point.Point[1]
+            });
+        }
+
+        if (request.Shapes.Count == 0)
+            return 0;
+
+        return overlay.DrawOverlay(JsonSerializer.Serialize(request)).CreatedCount;
     }
 
     /// <summary>

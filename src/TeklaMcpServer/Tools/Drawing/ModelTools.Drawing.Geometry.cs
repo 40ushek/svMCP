@@ -31,6 +31,20 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Get candidate dimension points where the parts drawn in one view touch each other, in view coordinates. " +
+        "Each point names BOTH parts of the contact, because a touching surface belongs to the pair, not to one of them. " +
+        "Contacts seen edge-on come back as a line with two ends rather than a patch with four corners - that is the normal case on an elevation. " +
+        "Reports what was missing: parts never read, regions that flattened to nothing, shapes whose parts could not be named. " +
+        "Set draw=true to paint the shapes and points into the drawing for visual checking (overlay group 'contact_candidates'). " +
+        "Read-only evidence; it does not create or change dimensions.")]
+    public static string GetContactCandidatePoints(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Draw the shapes and points into the drawing as a debug overlay")] bool draw = false)
+    {
+        return RunBridge("get_contact_candidate_points", viewId.ToString(), draw ? "true" : "false");
+    }
+
+    [McpServerTool, Description(
         "Get the exact projected external outline of all visible parts in one drawing view, or of a chosen subset of them. " +
         "Returns Clipper2 polygon trees: outer contours, holes and disconnected components, plus incomplete-read warnings. " +
         "Pass modelIds to measure over part of the view - the frame alone, say - and the answer reports that it was restricted. " +
