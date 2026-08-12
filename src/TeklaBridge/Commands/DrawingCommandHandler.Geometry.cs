@@ -864,7 +864,7 @@ internal sealed partial class DrawingCommandHandler
             solidGeometryComplete = result.SolidGeometryComplete,
             candidates = result.Candidates.Select(candidate => new
             {
-                modelObjectId = candidate.ModelObjectId,
+                modelObjectIds = candidate.ModelObjectIds,
                 point = candidate.Point,
                 source = candidate.Source.ToString(),
                 normal = candidate.Normal,

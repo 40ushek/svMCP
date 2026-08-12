@@ -296,7 +296,7 @@ public sealed class TeklaDrawingDimensionDefectApiTests
         SolidGeometryComplete = solidComplete,
         Candidates = points.Select((point, index) => new DrawingPartCandidatePoint
         {
-            ModelObjectId = modelId,
+            ModelObjectIds = [modelId],
             Point = [point.X, point.Y, 0],
             Source = point.Confidence == DrawingPartCandidateConfidence.BoundingBoxFallback
                 ? DrawingPartCandidatePointSource.BoundingBoxCorner

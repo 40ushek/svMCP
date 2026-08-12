@@ -122,18 +122,30 @@ public static class DimensionChainCoverageBuilder
             if (distance > tolerance)
                 continue;
 
-            matches.Add(new DimensionCoverageMatch
+            // One match per owning part, not one per candidate. A candidate is a point and
+            // can belong to several parts - a contact belongs to both sides of it - while a
+            // match answers "does this point coincide with something of part X", which is
+            // per part by nature. Coverage already keeps every match and deliberately picks
+            // no winner, so two owners simply produce two.
+            //
+            // A candidate with no owner produces none. That is not a loss: derived geometry
+            // from the assembly contour has no part to associate with, and inventing one by
+            // proximity is the thing this join exists to avoid.
+            foreach (var modelObjectId in candidate.ModelObjectIds)
             {
-                ModelObjectId = candidate.ModelObjectId,
-                AnchorKey = candidate.Anchor.Key,
-                Source = candidate.Source.ToString(),
-                Confidence = candidate.Confidence.ToString(),
-                Point = [candidate.Point[0], candidate.Point[1]],
-                InPlaneNormal = candidate.InPlaneNormal is { Length: >= 2 }
-                    ? [candidate.InPlaneNormal[0], candidate.InPlaneNormal[1]]
-                    : null,
-                Distance = distance
-            });
+                matches.Add(new DimensionCoverageMatch
+                {
+                    ModelObjectId = modelObjectId,
+                    AnchorKey = AnchorKeyFor(candidate, modelObjectId),
+                    Source = candidate.Source.ToString(),
+                    Confidence = candidate.Confidence.ToString(),
+                    Point = [candidate.Point[0], candidate.Point[1]],
+                    InPlaneNormal = candidate.InPlaneNormal is { Length: >= 2 }
+                        ? [candidate.InPlaneNormal[0], candidate.InPlaneNormal[1]]
+                        : null,
+                    Distance = distance
+                });
+            }
         }
 
         return matches
@@ -141,6 +153,26 @@ public static class DimensionChainCoverageBuilder
             .ThenBy(static match => match.AnchorKey, StringComparer.Ordinal)
             .ToList();
     }
+
+    /// <summary>
+    /// The anchor key for this part's match, and empty where there is none.
+    ///
+    /// An anchor is a feature of one part - a face, a vertex - and only that part may claim
+    /// it. Where a point belongs to several, handing the first one's anchor to the rest
+    /// would publish "matched part B at part A's face", which is untrue and visible in the
+    /// serialized answer.
+    ///
+    /// Empty rather than a substitute. A key made from the coordinate looks stable and is
+    /// not: places here are counted at 0.01 mm, so two points held to be one place can round
+    /// to different keys, and two genuinely different contacts can share a coordinate in
+    /// projection. Nothing counts places by this key - the status compares point distances -
+    /// so an empty one costs nothing today, and when a Contact source arrives it can carry
+    /// an identity of the contact itself instead of one invented from geometry.
+    /// </summary>
+    private static string AnchorKeyFor(DrawingPartCandidatePoint candidate, int modelObjectId) =>
+        modelObjectId == candidate.Anchor.ModelObjectId
+            ? candidate.Anchor.Key
+            : string.Empty;
 
     /// <summary>
     /// One geometric position normally carries several anchor keys — a face edge belongs to two

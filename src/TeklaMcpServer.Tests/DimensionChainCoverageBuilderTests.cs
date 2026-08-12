@@ -225,12 +225,67 @@ public sealed class DimensionChainCoverageBuilderTests
         DrawingPartCandidateConfidence confidence) =>
         new()
         {
-            ModelObjectId = modelId,
+            ModelObjectIds = [modelId],
             Point = [x, y, 0d],
             Source = source,
             Confidence = confidence,
             Anchor = new DrawingPartCandidateAnchor { ModelObjectId = modelId, Kind = kind, Id = anchorId }
         };
+
+    [Fact]
+    public void APointSharedByTwoPartsGivesBothAMatchAndNeitherTheOthersAnchor()
+    {
+        // A contact belongs to both sides of it. An anchor does not: a face is a feature of
+        // one part, and handing part A's face to part B would publish "matched B at A's
+        // face", which is untrue and visible in the serialized answer.
+        var shared = new DrawingPartCandidatePoint
+        {
+            ModelObjectIds = [11, 22],
+            Point = [100d, 0d, 0d],
+            Source = DrawingPartCandidatePointSource.SolidVertex,
+            Confidence = DrawingPartCandidateConfidence.ExactGeometry,
+            Anchor = new DrawingPartCandidateAnchor
+            {
+                ModelObjectId = 11,
+                Kind = DrawingPartCandidateAnchorKind.Vertex,
+                Id = "v1"
+            }
+        };
+
+        var coverage = DimensionChainCoverageBuilder.Build(
+            CreateDimension((100d, 0d, 11)),
+            new Dictionary<int, IReadOnlyList<DrawingPartCandidatePoint>> { [11] = [shared] },
+            tolerance: 0.5);
+
+        var matches = coverage.Points.Single().Matches;
+
+        Assert.Equal([11, 22], matches.Select(match => match.ModelObjectId).OrderBy(id => id));
+        Assert.Equal("11:Vertex:v1", matches.Single(match => match.ModelObjectId == 11).AnchorKey);
+        // Empty, not a substitute: a key made from the coordinate would look stable and is
+        // not, and nothing here counts places by the key anyway.
+        Assert.Equal(string.Empty, matches.Single(match => match.ModelObjectId == 22).AnchorKey);
+    }
+
+    [Fact]
+    public void APointWithNoOwningPartGivesNoMatchAtAll()
+    {
+        // Derived geometry from the assembly contour has no part to associate with, and
+        // finding the nearest one would invent an owner.
+        var derived = new DrawingPartCandidatePoint
+        {
+            ModelObjectIds = [],
+            Point = [100d, 0d, 0d],
+            Source = DrawingPartCandidatePointSource.SolidVertex,
+            Confidence = DrawingPartCandidateConfidence.DerivedGeometry
+        };
+
+        var coverage = DimensionChainCoverageBuilder.Build(
+            CreateDimension((100d, 0d, 0)),
+            new Dictionary<int, IReadOnlyList<DrawingPartCandidatePoint>> { [0] = [derived] },
+            tolerance: 0.5);
+
+        Assert.Empty(coverage.Points.Single().Matches);
+    }
 
     private static Dictionary<int, IReadOnlyList<DrawingPartCandidatePoint>> Candidates(
         params (int ModelId, string Key, double X, double Y)[] candidates)
@@ -244,7 +299,7 @@ public sealed class DimensionChainCoverageBuilderTests
             var separator = candidate.Key.Split(':');
             list.Add(new DrawingPartCandidatePoint
             {
-                ModelObjectId = candidate.ModelId,
+                ModelObjectIds = [candidate.ModelId],
                 Point = [candidate.X, candidate.Y, 0d],
                 Source = DrawingPartCandidatePointSource.SolidVertex,
                 Confidence = DrawingPartCandidateConfidence.ExactGeometry,

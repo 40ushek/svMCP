@@ -3,12 +3,26 @@ using System.Collections.Generic;
 namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>
-/// A possible dimension anchor on one model part. Coordinates are in the owning drawing
-/// view coordinate system. This is evidence for placement; it does not create a dimension.
+/// A possible dimension anchor. Coordinates are in the owning drawing view coordinate
+/// system. This is evidence for placement; it does not create a dimension.
 /// </summary>
 public sealed class DrawingPartCandidatePoint
 {
-    public int ModelObjectId { get; set; }
+    /// <summary>
+    /// The parts this point came from, from none to several.
+    ///
+    /// A point on one part's geometry names that part. A contact names both participants:
+    /// where a stud meets its plate the point belongs to each, and two records at one
+    /// coordinate would invent a second point that is not there.
+    ///
+    /// Empty is a legitimate answer, not a gap. A point created by unioning part contours
+    /// has no owner to name - the union merges boundaries at a tolerance that moves them,
+    /// so a vertex of the assembly outline need not be a vertex of any part, and
+    /// intersections appear that no part ever had. Do not fill this by finding the nearest
+    /// part: that invents an owner, and it is the distance-based association this whole
+    /// area exists to avoid.
+    /// </summary>
+    public List<int> ModelObjectIds { get; set; } = [];
     public double[] Point { get; set; } = [];
     public DrawingPartCandidatePointSource Source { get; set; }
     public double[]? Normal { get; set; }
@@ -43,6 +57,11 @@ public enum DrawingPartCandidateConfidence
 
 public sealed class DrawingPartCandidateAnchor
 {
+    /// <summary>
+    /// The one part this anchor is a feature of. Single on purpose, unlike the candidate's
+    /// own list: a point may belong to several parts, but a face or a vertex belongs to
+    /// exactly one, and that is what an anchor names.
+    /// </summary>
     public int ModelObjectId { get; set; }
     public DrawingPartCandidateAnchorKind Kind { get; set; }
     public string Id { get; set; } = string.Empty;

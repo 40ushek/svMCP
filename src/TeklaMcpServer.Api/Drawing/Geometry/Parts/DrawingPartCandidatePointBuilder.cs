@@ -245,7 +245,7 @@ public static class DrawingPartCandidatePointBuilder
 
         candidates.Add(new DrawingPartCandidatePoint
         {
-            ModelObjectId = modelId,
+            ModelObjectIds = [modelId],
             Point = [.. point],
             Source = source,
             Normal = normal is { Length: > 0 } ? [.. normal] : null,
