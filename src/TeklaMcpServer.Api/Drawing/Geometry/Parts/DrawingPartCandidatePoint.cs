@@ -43,7 +43,23 @@ public enum DrawingPartCandidatePointSource
     SolidVertex,
     FaceBoundaryMidpoint,
     HullVertex,
-    BoundingBoxCorner
+    BoundingBoxCorner,
+
+    /// <summary>
+    /// A corner of one part's projected contour - the union of its faces in the view.
+    ///
+    /// Kept apart from <see cref="SolidVertex"/> rather than folded into it. After the
+    /// union a corner need not be a vertex of the solid: cut ends and merged coplanar
+    /// faces produce corners the model never had, and calling those solid vertices would
+    /// promise a native Tekla feature that is not there.
+    /// </summary>
+    PartContour,
+
+    /// <summary>
+    /// A corner of the assembly outline, where the contours of several parts were merged.
+    /// Belongs to no single part - see the note on ModelObjectIds.
+    /// </summary>
+    AssemblyContour
 }
 
 /// <summary>How directly the source proves that the point belongs to the part.</summary>
@@ -66,8 +82,15 @@ public sealed class DrawingPartCandidateAnchor
     public DrawingPartCandidateAnchorKind Kind { get; set; }
     public string Id { get; set; } = string.Empty;
 
-    /// <summary>Stable comparison key: model object id + anchor kind + anchor id.</summary>
-    public string Key => $"{ModelObjectId}:{Kind}:{Id}";
+    /// <summary>
+    /// Stable comparison key: model object id, anchor kind and anchor id.
+    ///
+    /// Empty where there is no anchor. A point on the assembly outline is a feature of no
+    /// part, and "0:None:" would read as an identity shared by every such point.
+    /// </summary>
+    public string Key => Kind == DrawingPartCandidateAnchorKind.None
+        ? string.Empty
+        : $"{ModelObjectId}:{Kind}:{Id}";
 }
 
 public enum DrawingPartCandidateAnchorKind
@@ -76,7 +99,20 @@ public enum DrawingPartCandidateAnchorKind
     Vertex,
     FaceEdge,
     HullVertex,
-    BoundingBoxCorner
+    BoundingBoxCorner,
+
+    /// <summary>
+    /// A corner of a part's own projected contour, the union of its faces in the view.
+    /// Distinct from <see cref="Vertex"/>: after the union a corner need not be a vertex of
+    /// the solid at all, so there is no native Tekla feature to name.
+    /// </summary>
+    ContourVertex,
+
+    /// <summary>
+    /// No feature of any one part. For a corner of the assembly outline, where the union
+    /// merged boundaries and there is nothing to anchor to.
+    /// </summary>
+    None
 }
 
 /// <summary>Machine-readable evidence for why a candidate was emitted.</summary>
