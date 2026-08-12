@@ -201,11 +201,23 @@ Two facts it settled, worth having here because assembly geometry is where they 
 - points where an inner member meets the silhouette are not vertices of the union and
   come only from the individual part contours. On a straight wall this never shows.
 
-## One read of a view - proposed, not decided (2026-08-12)
+## One read of a view - deferred (2026-08-12)
 
 Raised after the contact layer landed, when it became possible to want the outline and
 the contacts of one view at the same time. Written down to be argued with; nothing here
-has been implemented.
+has been implemented, and on the evidence below nothing should be yet.
+
+**Deferred, and the reason is not the design.** The consumer this was meant to serve - a
+combined view-level candidate set - was built as an experiment, measured, and rejected:
+one source, `PartContour`, reaches every point the existing chains dimension, so nothing
+currently needs the sources read together. See "The combined set, tried and rejected" in
+the part-points roadmap.
+
+That leaves the proposal without a benefit to weigh its cost against. It was an
+optimisation with no demonstrated user, and taking it first would have been building the
+foundation before knowing what stands on it. Revisit it when something genuinely needs
+two of these layers in one answer - the semantic use of contacts might, but that has to
+be shown before it can be spent on.
 
 ### What is actually there now
 
@@ -269,9 +281,12 @@ Two conditions, or this is worse than what it replaces:
 
 The first implementation step after this roadmap should be:
 
-1. settle the "one read of a view" proposal above, or reject it
-2. keep assembly geometry aligned with node and connection consumers
-3. add richer assembly-local anchors only if a downstream consumer needs them
+1. keep assembly geometry aligned with node and connection consumers
+2. add richer assembly-local anchors only if a downstream consumer needs them
+
+The "one read of a view" proposal above is deferred rather than open: it waits on a
+consumer that needs two layers in one answer, and the first candidate for that was
+measured and did not need it.
 
 Contacts are no longer future work - see the part-points roadmap. What assembly geometry
 still owes them is the question of whether a junction, as against a single contact,

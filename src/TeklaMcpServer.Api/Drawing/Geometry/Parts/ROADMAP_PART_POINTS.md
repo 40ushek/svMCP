@@ -251,11 +251,8 @@ candidate list and it has no contact or dimension policy:
   share; there is nothing to anchor a merged boundary to.
 
 The second source, **contact candidates**, now exists as a separate fact layer -
-see "Contacts as candidates" below. It is not merged with the contour layer.
-
-Only now that both source layers exist should a caller decide whether it needs one
-combined view-level collection. That is a consumer decision, not a reason to blur source
-facts or introduce dimension policy here.
+see "Contacts as candidates" below. It is not merged with the contour layer, and after
+the experiment recorded below it is not going to be.
 
 What that consumer will run into first is not the merging but the reading. There are two
 readers of the same part solid - `TeklaDrawingPartGeometryApi` for the view context and
@@ -372,6 +369,76 @@ The one thing they share is worth writing down and nothing more: both were the f
 bridge invocation after new binaries were deployed. That is a correlation across two
 observations, not a mechanism, and inventing a fix from it would be inventing the fault
 as well.
+
+## The combined set, tried and rejected (2026-08-12)
+
+Built read-only as an experiment, measured on one view, and reverted. No combined layer
+and no shared read-model exists, and the code that produced these numbers is gone: it
+implemented exactly the thing the numbers argued against, and keeping it would have left
+an API surface, a doubled read of the view, and an invitation to build policy on a basis
+already known to be wrong.
+
+The question was which sources are needed together. Front view of a raked timber wall,
+18 parts, against the 25 points its seven existing chains actually dimension. Every
+source read separately, `HullVertex` discarded on the way in, nothing selected between
+them, coincident candidates grouped at 1 mm only to be counted.
+
+| source | places | of them on a chain | covers |
+|---|---|---|---|
+| `PartContour` | 66 | 41 | 25/25 |
+| `PartContour` + `AssemblyContour` | 88 | 47 | 25/25 |
+| both contours + `Contact` | 95 | 52 | 25/25 |
+| `SolidVertex` | 94 | 52 | 25/25 |
+| everything kept | 274 | 115 | 25/25 |
+
+1188 candidates collapsed to 274 places, so more than three quarters of them repeat
+something. 163 places were found by exactly one source and 138 of those were
+`FaceBoundaryMidpoint`.
+
+**`PartContour` alone reaches all 25 points, with the fewest places of anything that
+does.** Adding sources to it added places and no coverage.
+
+What that is and is not: it is full coverage at a smaller number of places, measured on
+coordinates. It is not a statement about geometric accuracy - a contour corner is still
+`DerivedGeometry`, computed by a union that runs at a tolerance which moves boundaries.
+And the falling share of on-chain places when sources are added does **not** show the
+added sources are useless. Coverage of coordinates is not the criterion a contact is for;
+a contact carries "two parts meet here", which no contour corner says, and that has to be
+judged against a question about meaning rather than about position.
+
+### What follows, and what does not
+
+- the combined set and the shared read-model are **rejected for now**. See "One read of a
+  view" in the assembly-geometry roadmap, which is deferred on this evidence: nothing yet
+  needs the sources read together, so the cost of reading a view five times has no
+  benefit to weigh against;
+- `PartContour` is the base for positions;
+- contacts stay a separate semantic layer, not a source of positions;
+- `FaceBoundaryMidpoint`, the axis sources and `BoundingBoxCorner` are **not** removed on
+  the strength of one view - but none of them goes into new policy without evidence of
+  its own.
+
+### The follow-up test, and why it could not be answered here
+
+The useful question is not whether contacts add positions but whether the fact of a
+contact changes a decision: a contour corner that is a free end against the same corner
+where two parts join. Measured on the same view, it does not - 21% of contour corners
+with a contact land exactly on a dimension point, against 20% of those without.
+
+That result proves nothing, because the split is almost empty: **56 of 66 contour corners
+have a contact.** On a timber wall a part corner meeting nothing is rare, so the test has
+no power here.
+
+The ten corners without a contact all turned out to be on the outer envelope, two of them
+exactly the chain ends the contacts cannot reach and the rest 5 to 10 mm outside the
+chains - the overhang of an outer layer over the frame that the assembly-geometry roadmap
+already records.
+
+**Do not turn that into a rule.** "Contact means interior, no contact means envelope" is
+an observation of one timber wall, and the envelope is already answered more reliably by
+the role layer, `Defining` against `Attached`, which is what the structural outline uses.
+The follow-up belongs on geometry where free ends are ordinary - a steel member, or a
+single-part drawing - not on a wall.
 
 ## Provenance is a list, and it can be empty (implemented 2026-08-11)
 
@@ -669,5 +736,5 @@ The first implementation step after this roadmap should be:
 3. align part points with assembly and bolt point taxonomies where useful
 4. contact-aware geometry on the same base - done
 
-The next step is no longer a source. It is the combined view-level set, which is the
-first thing here that is a decision rather than a fact.
+The combined view-level set was tried and rejected - see below. The sources stay apart
+and stay separately readable.

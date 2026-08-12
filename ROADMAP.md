@@ -225,6 +225,9 @@ TS2025: NuGet `2025.0.0.0` vs FileVersion `2025.0.52577.0` → channel mismatch 
 - Довести текущий `DrawingCommandHandler` от partial-декомпозиции до отдельных доменных handler-классов, если это даст практическую пользу
 - Расширить текущие smoke/transport tests до более строгих contract/snapshot-тестов на ключевые bridge-команды
 - Selection cache (`SelectionCacheManager`) написан но не подключён к bridge handlers
+- Плавающий тест `PersistentBridgeTests.SendRestartsProcessAfterMalformedProtocolResponse`
+  — падает примерно в одном прогоне из трёх, остальные зелёные. Имя подтверждено trx-логгером,
+  а не выведено по догадке; причина не искалась
 
 ---
 
