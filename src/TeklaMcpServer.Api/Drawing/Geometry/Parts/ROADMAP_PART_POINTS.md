@@ -440,6 +440,77 @@ the role layer, `Defining` against `Attached`, which is what the structural outl
 The follow-up belongs on geometry where free ends are ordinary - a steel member, or a
 single-part drawing - not on a wall.
 
+## A dimension attaches to an edge, not to a point (2026-08-12)
+
+**A measurement, with nothing implementing it.** No code tests this predicate, and the
+candidate layers still emit corners only - so the three points below that lie on an edge
+without being at a corner remain unreachable by anything that exists. A first attempt to
+wire the contour corners into the coverage join was reverted for exactly that reason: it
+added more of a kind of point already there, could not reach those three, read every solid
+of the view a second time, and would have read as though the finding were applied.
+
+Measured on the same view as the experiment above, against the 17 distinct points its
+seven chains dimension. This is the finding that experiment was looking for and missed,
+because it compared points with points.
+
+| what the point sits on | within 1 mm |
+|---|---|
+| **an edge of a part contour** | **17 of 17** |
+| a corner of a part contour | 14 of 17 |
+| an edge of a contact | 13 of 17 |
+| a corner of a contact | 13 of 17 |
+
+Every point a person used lies on the projected boundary of a part. A corner is only the
+special case where two edges meet, and treating corners as the unit is what made three
+points look unreachable: two of them are a horizontal dimension taken to the side faces of
+two studs, where the person clicked at no particular height, and the third is on a stud
+side 17.9 mm below the corner.
+
+### Perpendicular to the chain is the operative part
+
+An edge alone does not give a position. An edge running along the chain spans a range and
+fixes nothing; only an edge across it says "here". All 17 points of the orthogonal chains
+sit on an edge perpendicular to their own chain.
+
+Two qualifications, both real:
+
+- square members give exactly 90 degrees, raked ones give 77.5 - and 90 minus 77.5 is the
+  12.5 degree rake of this wall. Perpendicularity has to be tested with a tolerance, or
+  against the member's own inclination, not against the sheet;
+- **diagonal chains are not this kind of dimension at all.** Their points sit on edges at
+  49 to 71 degrees, and correctly so: a control diagonal is a quick check of an assembly's
+  geometry, corner to corner, not a position taken to a face. `place_control_diagonals`
+  already serves them and this rule does not apply.
+
+### What the rule is worth
+
+Of the 80 contour edges in this view, 44 are perpendicular to a horizontal chain and give
+**15 distinct X positions**; 23 are perpendicular to a vertical chain and give **10 Y
+positions**. The drawing's bottom chain uses 5 of the 15 and its top chain uses 5.
+
+That is the size of the real problem: not 1188 candidates or 274 places, but fifteen
+positions across and ten up. Choosing among fifteen is a question about rules; producing
+274 places was a question about geometry, and it was the wrong question.
+
+### What implementing this looks like, and what it does not
+
+A predicate, not a source: **does this point lie on a contour edge perpendicular to this
+chain**. It is asked of a place that already exists - a dimension point being checked, or a
+position being proposed - and answered against the edges of the contours, which are
+already read.
+
+What it must not become is a fourth candidate source that samples edges into points. An
+edge is a continuum; turning each into candidates puts back the hundreds of places this
+finding just removed, and the position it defines is one number - the coordinate across
+the chain - not a scatter of points along it.
+
+### One correction, recorded because it was made out loud
+
+While chasing the stud point at 17.9 mm below its corner, a contact candidate was found
+0.43 mm away and reported as the first case of a contact supplying a position no contour
+had. That was wrong: the point lies exactly on a contour edge, at 0.00 mm. Contacts still
+add no position here, and the earlier conclusion stands unchanged.
+
 ## Provenance is a list, and it can be empty (implemented 2026-08-11)
 
 A candidate carries the parts it came from as `ModelObjectIds`, from none to

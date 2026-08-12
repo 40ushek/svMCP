@@ -282,6 +282,24 @@ consequences are:
 
 ## Next Phase
 
+### What a dimension attaches to (2026-08-12)
+
+Measured, not assumed, and **not implemented** - no code tests this yet, and the candidate
+layers still emit corners only. It changes what selection is choosing between. Every point of
+the seven chains on a real assembly view lies on an **edge** of a part contour, and on one
+**perpendicular to its own chain**. A corner is only where two such edges meet, and taking
+corners as the unit made three of seventeen points look unreachable.
+
+Applied as a filter this leaves fifteen X positions and ten Y positions on that view,
+against 274 candidate places found by pooling every source. Selection is choosing among
+fifteen, not among hundreds.
+
+Diagonals are outside this. A control diagonal checks an assembly's geometry during
+fabrication, corner to corner, and is served by `place_control_diagonals`.
+
+The full measurement, its two qualifications and one recorded correction are in the
+part-points roadmap under "A dimension attaches to an edge, not to a point".
+
 ### Research-Informed Direction (2026-08-08)
 
 Research supports a staged design: semantic selection first, typed completeness
