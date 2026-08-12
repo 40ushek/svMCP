@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -325,7 +326,9 @@ internal sealed partial class DrawingCommandHandler
     {
         var request = new DrawingDebugOverlayRequest
         {
-            Group = "contact_candidates",
+            // One group per view, so looking at a second view does not wipe the first.
+            // clear_debug_overlay contact_candidates still reaches all of them.
+            Group = "contact_candidates:" + viewId.ToString(CultureInfo.InvariantCulture),
             ClearGroupFirst = true
         };
 

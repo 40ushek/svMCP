@@ -35,7 +35,9 @@ public static partial class ModelTools
         "Each point names BOTH parts of the contact, because a touching surface belongs to the pair, not to one of them. " +
         "Contacts seen edge-on come back as a line with two ends rather than a patch with four corners - that is the normal case on an elevation. " +
         "Reports what was missing: parts never read, regions that flattened to nothing, shapes whose parts could not be named. " +
-        "Set draw=true to paint the shapes and points into the drawing for visual checking (overlay group 'contact_candidates'). " +
+        "Set draw=true to paint the shapes and points into the drawing for visual checking. " +
+        "Each view gets its own overlay group 'contact_candidates:<viewId>', so drawing a second view does not erase the first; " +
+        "clear_debug_overlay contact_candidates clears them all, clear_debug_overlay contact_candidates:<viewId> clears one. " +
         "Read-only evidence; it does not create or change dimensions.")]
     public static string GetContactCandidatePoints(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,

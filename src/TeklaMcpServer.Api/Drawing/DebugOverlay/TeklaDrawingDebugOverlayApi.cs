@@ -60,6 +60,27 @@ public sealed class TeklaDrawingDebugOverlayApi : IDrawingDebugOverlayApi
         return result;
     }
 
+    /// <summary>
+    /// Whether asking for <paramref name="requested"/> reaches the group an object is in.
+    ///
+    /// A colon divides a group from what it was drawn for, so a consumer can keep one
+    /// overlay per view without the views wiping each other. Asking for the family reaches
+    /// its members - "marks" reaches "marks:12" - and asking for a member reaches only that
+    /// one. Without this a name and its own sub-names are unrelated strings, and clearing
+    /// the obvious name would silently leave everything behind.
+    ///
+    /// A general rule rather than a special case for one consumer: any group can be
+    /// namespaced this way, and a rule that held for one name would have to be found and
+    /// copied by whoever needed the next.
+    /// </summary>
+    private static bool Covers(string requested, string? actual)
+    {
+        var group = actual ?? string.Empty;
+
+        return string.Equals(group, requested, StringComparison.Ordinal)
+            || group.StartsWith(requested + ":", StringComparison.Ordinal);
+    }
+
     public ClearDrawingDebugOverlayResult ClearOverlay(string? group)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -82,7 +103,7 @@ public sealed class TeklaDrawingDebugOverlayApi : IDrawingDebugOverlayApi
             {
                 var objectGroup = string.Empty;
                 drawingObject.GetUserProperty(OverlayGroupProperty, ref objectGroup);
-                if (!string.Equals(objectGroup, normalizedGroup, StringComparison.Ordinal))
+                if (!Covers(normalizedGroup, objectGroup))
                     continue;
             }
 
