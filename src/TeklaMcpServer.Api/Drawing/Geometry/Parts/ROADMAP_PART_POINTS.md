@@ -219,18 +219,48 @@ The roadmap should explicitly support these scenarios.
 - Prefer stable topology contracts over ad hoc lists of doubles.
 - Prefer explicit geometry models over anonymous point bags.
 
-## Two sources still to add (2026-08-11)
+## Contour candidates done; contacts next (2026-08-12)
 
-The candidate model and its builder stay; what is missing is not the notion of a
-candidate with provenance but two sources for it.
+`get_assembly_outline` returns the real projected contour of the assembly and of every
+part in the view. On two real assemblies every position the chains use is among them -
+all of them on a straight wall, and on a raked one the two the assembly outline misses
+are exact in the part contours, because a point where an inner member meets the
+silhouette is not a vertex of the union.
 
-- **Contour points.** `get_assembly_outline` returns the real projected contour of the
-  assembly and of every part in the view. On two real assemblies every position the
-  chains use is among them - all of them on a straight wall, and on a raked one the two
-  the assembly outline misses are exact in the part contours, because a point where an
-  inner member meets the silhouette is not a vertex of the union.
-- **Contact points.** `TeklaDrawingViewContactApi` gives where the parts of a view meet,
-  in the same coordinates.
+`DrawingPartCandidatePointBuilder.BuildFromContours` turns those already-read contours
+into an intentionally separate fact layer. It is not yet merged with the older per-part
+candidate list and it has no contact or dimension policy:
+
+- a `PartContour` corner has its one factual owner, `DerivedGeometry`, and a
+  `ContourVertex` anchor;
+- an `AssemblyContour` corner has no owner and `AnchorKind.None`: polygon union can
+  create a corner that belongs to no part;
+- every corner keeps `ring`, `isHole`, `depth`, and `indexInRing` in its reason, so an
+  opening cannot later be mistaken for the outer boundary;
+- contour anchors are canonical under Clipper's arbitrary start vertex and walk
+  direction. Both are pinned, not just the start: a ring is rotated to its
+  lexicographically smallest corner *and* the smaller of its two walks is chosen, since
+  walking backwards leaves that corner in place while every other index shifts. The ring
+  itself is named by a fingerprint over all its corners at round-trip precision, because
+  naming it by one rounded corner lets two rings collide. Keys follow geometry, not a
+  native Tekla feature: changing the contour legitimately changes the key;
+- an `AssemblyContour` candidate has no anchor and therefore **no key at all** -
+  `Anchor.Key` is empty, not `0:None:`. Consumers that group or compare points by key
+  must treat an empty key as "not comparable" rather than as an identity these points
+  share; there is nothing to anchor a merged boundary to.
+
+The next source is **contact candidates**, also as a separate fact layer. Before it can
+emit any point, the contact result must expose a stable identity for one contact. Do not
+manufacture that identity from projected coordinates. A contact candidate will carry
+both participants, `Source = Contact`, `DerivedGeometry`, and an anchor made from that
+contact identity plus its boundary-point index. It emits actual boundary points or
+endpoints of a contact interval, never a convenient centroid. A caller must retain the
+`Unread` and `IsComplete` contract from `ViewContactsResult`: an absent contact from an
+incomplete read is not evidence that nothing meets there.
+
+Only after the source layers exist should a caller decide whether it needs one combined
+view-level collection. That is a consumer decision, not a reason to blur source facts
+or introduce dimension policy here.
 
 Neither becomes a second candidate type. `ViewHull` must not be used for either: it is a
 convex hull, so it bridges openings and its corners fall in empty space - the phantom
@@ -241,15 +271,15 @@ What blocks the selection that follows is not geometry but the part's role. Fram
 filling or fixing decides which candidates can bound an overall, and MATERIAL_TYPE
 cannot say: insulation reports 5, the same as timber.
 
-## Provenance is a list, and it can be empty (2026-08-11)
+## Provenance is a list, and it can be empty (implemented 2026-08-11)
 
 A candidate carries the parts it came from as `ModelObjectIds`, from none to
-several. The single `ModelObjectId` goes when the two new sources arrive; it is
-not kept alongside as a convenience. A deprecated field next to a list outlives
+several. The single `ModelObjectId` is gone; it was not kept alongside as a convenience.
+A deprecated field next to a list outlives
 everyone who remembers why, and the day someone reaches for the shorter one a
-contact starts claiming it belongs to the stud alone. Three readers use it
-today - `DimensionChainCoverageBuilder` twice and the bridge's serializer once -
-so replacing it is cheap now and will not be later.
+contact starts claiming it belongs to the stud alone. Three readers needed the
+conversion - `DimensionChainCoverageBuilder` twice and the bridge's serializer once -
+so replacing it was cheap before contacts arrived.
 
 Three cases, and the third is the one that needs writing down:
 
@@ -468,10 +498,11 @@ Target direction:
 
 Important rule:
 
-- `convex hull` is acceptable as a coarse helper or fallback
-- `convex hull` is not the target implementation for exact part contour
-- a hull-derived point is lower-confidence than a face-derived point and must not
-  be silently treated as a face/vertex anchor
+- `convex hull` is acceptable only as a coarse diagnostic or geometric helper
+- `convex hull` is not the target implementation for an exact part contour
+- it creates no candidate in the contour/contact route and no native face or vertex
+  anchor. The older per-part reader still emits its `HullVertex` legacy source; a
+  future combined view-level consumer must discard it until its separate removal.
 
 Done when:
 

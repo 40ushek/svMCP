@@ -33,6 +33,7 @@
 | `get_drawing_dimensions` / `get_dimension_contexts` / `arrange_dimensions` / `combine_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, arrange/combine, создание/сдвиг/удаление, контрольные диагонали |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_assembly_outline` | Реальный 2D-контур сборки в виде: внешние кольца, отверстия, компоненты, плюс контур каждой детали |
+| `get_structural_outline` | То же, но только по деталям, задающим размер сборки: каркас без утеплителя, обшивки и крепежа. Роль читается из свойств; сообщает, чего не удалось опознать |
 | `get_drawing_parts` / `get_grid_axes` | Объекты и сетка |
 | `draw_debug_overlay` / `clear_debug_overlay` / `draw_selected_mark_part_axis_geometry` | Dev-only overlay слой и debug-геометрия марок |
 

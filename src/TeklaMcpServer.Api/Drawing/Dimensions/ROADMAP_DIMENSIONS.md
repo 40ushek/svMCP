@@ -542,20 +542,39 @@ Several candidates per part is the expected output, not a failure. Narrowing to
 one point per grid position is `2b`'s job, and it needs alternatives to choose
 between. Ranking here, deciding there.
 
-Confidence must degrade honestly. The geometry evidence has three levels, in this
-order:
+Confidence must degrade honestly. Evidence intended for placement has two levels:
 
 ```text
-face / exact contour > convex hull (ViewHull) > bounding box
+face / exact contour > bounding box
 ```
 
-`ViewHull` is a useful coarse projection, but it can bridge a concavity, a cut-out,
-or an L-shaped re-entrant edge. A point derived from it is therefore not proof that
-the point lies on the part. It has no stable native face/vertex anchor either. Hull-
-derived candidates must remain distinguishable and must not silently become
-`Create` points; they require a later exact-contour check or an explicit degraded
-decision. The difference between a face-derived point, a hull-derived point, and a
-box fallback must survive into the plan rather than being averaged away.
+This is the intended fitness ladder, not a description of the code today. The
+convex hull sits in neither level: it bridges a concavity, a cut-out or an
+L-shaped re-entrant edge, so a point derived from it is not evidence that the
+point lies on the part at all, and it has no stable native anchor either. Since
+real contours became available it fills no place a real contour does not fill
+better. The parts hull was removed from the view context on those grounds.
+
+What is actually in the code, and stays there for now:
+
+- `DrawingPartCandidatePointBuilder.Build` still emits `HullVertex`, and
+  `get_part_candidate_points_in_view` still returns it. Legacy, kept because
+  removing it is a separate change with its own tests to update.
+- `BuildFromContours`, the contour layer, does not use the hull at all.
+- `DrawingPartCandidateConfidence` still has four values. A contour point is
+  `DerivedGeometry` and not `ExactGeometry`: the union runs at a tolerance that
+  moves boundaries, so the corner is an accurate place on the drawing without
+  being a feature the model would name.
+
+The obligation this puts on whoever first builds a combined view-level set:
+discard `HullVertex` there, and do not wait for it to be deleted at the source.
+
+A bounding-box point is still a legitimate degraded fallback, and must stay
+distinguishable: box-derived candidates must not silently become `Create` points;
+they require a later exact-contour check or an explicit degraded
+decision. The difference between a contour-derived point, a hull point that is
+still being emitted, and a box fallback must survive into the plan rather than
+being averaged away.
 
 #### Box-derived points are not usable for `Create`
 
@@ -994,19 +1013,23 @@ outline with real drawing views.  It does not create dimensions.
 
 Extend the existing `DrawingPartCandidatePoint` model and
 `DrawingPartCandidatePointBuilder`; do not introduce a second candidate type.
-Route the real per-part contour vertices from step 1 through that builder, not
-through `ViewHull`.  They already preserve a part candidate's model object,
-source, in-plane normal, confidence, anchor and reason.  Add the missing
-view/assembly level and these two new sources:
 
-- vertices and extrema of `AssemblyOutline`;
-- contact regions and the endpoints of contact intervals.
+Implemented 2026-08-12: real per-part and assembly-contour vertices from step 1 pass
+through `BuildFromContours`, not `ViewHull`. `PartContour` candidates retain their one
+part; `AssemblyContour` candidates intentionally retain none. Their ring metadata says
+whether the point is on an outer boundary or a hole. This is a separate contour-facts
+layer, deliberately not yet combined with the older per-part candidates.
 
-The resulting view-level set keeps each existing candidate's provenance and
-adds contributing part(s) where a source spans more than one part.  `ViewHull`
-may remain a clearly degraded legacy diagnostic if separately useful, but does
-not enter this collection route.  Part OBBs may be used internally for a
-broad-phase optimisation, but are never candidates themselves.
+Next: expose a stable individual contact identity, then turn contact boundaries and
+interval endpoints into a separate `Contact` source. Each such point carries both
+participants and a contact-id-based anchor; it must preserve the contact read's
+`Unread` / `IsComplete` result. No coordinate-derived contact identity and no centroid
+is acceptable.
+
+Only a later consumer that actually needs all sources may construct a combined
+view-level collection. `ViewHull` may remain a clearly degraded legacy diagnostic if
+separately useful, but does not enter this collection route. Part OBBs may be used
+internally for a broad-phase optimisation, but are never candidates themselves.
 
 #### 3. Return to dimension placement only after the facts exist
 
