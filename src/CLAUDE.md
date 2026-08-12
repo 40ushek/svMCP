@@ -165,6 +165,7 @@ src/
 | `create_dimension` | Create a `StraightDimensionSet` |
 | `delete_dimension` | Delete a `StraightDimensionSet` |
 | `get_part_geometry_in_view` | Read part geometry in view coordinates |
+| `get_contact_candidate_points` | Candidate dimension points where the parts of a view touch; names both parts; `draw=true` paints them into the drawing |
 | `get_grid_axes` | Read drawing grid axes for a specific view |
 
 ### Контрольные диагональные размеры

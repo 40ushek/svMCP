@@ -176,13 +176,14 @@ These contracts should be sufficient to:
 Semantic point provenance still matters, but it is secondary to the raw
 geometry layer.
 
-The intended source taxonomy for the derived layer is:
+The source taxonomy of the derived layer, as it stands:
 
-- `Axis`
-- `Part`
-- later `Assembly`
+- `Axis` - `AxisStart`, `AxisEnd`
+- `Part` - `SolidVertex`, `FaceBoundaryMidpoint`, `PartContour`, and the legacy
+  `HullVertex` and `BoundingBoxCorner`
+- `Assembly` - `AssemblyContour`, which has no owning part
+- `Connection` - `Contact`, which has two
 - later `Node`
-- later `Connection`
 
 This taxonomy belongs to derived geometry, not the raw solid contracts.
 
@@ -196,8 +197,8 @@ workflows.
 - Solid topology should be reusable without touching transport layers.
 - Derived points must be computed from extracted geometry, not directly from
   Tekla runtime calls in every consumer.
-- Contacts are deferred, but when added later they must be computed from
-  already extracted geometry.
+- Contacts are computed from already extracted geometry, never from a second
+  reader of their own.
 - Derived points must not replace the raw solid geometry layer.
 
 ## Practical Consumer Scenarios
@@ -219,7 +220,7 @@ The roadmap should explicitly support these scenarios.
 - Prefer stable topology contracts over ad hoc lists of doubles.
 - Prefer explicit geometry models over anonymous point bags.
 
-## Contour candidates done; contacts next (2026-08-12)
+## Contour candidates, then contacts (2026-08-12)
 
 `get_assembly_outline` returns the real projected contour of the assembly and of every
 part in the view. On two real assemblies every position the chains use is among them -
@@ -249,18 +250,12 @@ candidate list and it has no contact or dimension policy:
   must treat an empty key as "not comparable" rather than as an identity these points
   share; there is nothing to anchor a merged boundary to.
 
-The next source is **contact candidates**, also as a separate fact layer. Before it can
-emit any point, the contact result must expose a stable identity for one contact. Do not
-manufacture that identity from projected coordinates. A contact candidate will carry
-both participants, `Source = Contact`, `DerivedGeometry`, and an anchor made from that
-contact identity plus its boundary-point index. It emits actual boundary points or
-endpoints of a contact interval, never a convenient centroid. A caller must retain the
-`Unread` and `IsComplete` contract from `ViewContactsResult`: an absent contact from an
-incomplete read is not evidence that nothing meets there.
+The second source, **contact candidates**, now exists as a separate fact layer -
+see "Contacts as candidates" below. It is not merged with the contour layer.
 
-Only after the source layers exist should a caller decide whether it needs one combined
-view-level collection. That is a consumer decision, not a reason to blur source facts
-or introduce dimension policy here.
+Only now that both source layers exist should a caller decide whether it needs one
+combined view-level collection. That is a consumer decision, not a reason to blur source
+facts or introduce dimension policy here.
 
 Neither becomes a second candidate type. `ViewHull` must not be used for either: it is a
 convex hull, so it bridges openings and its corners fall in empty space - the phantom
@@ -270,6 +265,91 @@ context on the same grounds.
 What blocks the selection that follows is not geometry but the part's role. Frame,
 filling or fixing decides which candidates can bound an overall, and MATERIAL_TYPE
 cannot say: insulation reports 5, the same as timber.
+
+## Contacts as candidates (implemented 2026-08-12)
+
+Where two parts of a view touch, as places a dimension could be taken to. Its own layer,
+not merged with the contour one: a contour corner says where a part ends, a contact point
+says where two parts meet, and those are different claims about the drawing even when
+they land on the same millimetre.
+
+Three steps, each its own thing, and the middle one is the whole reason the layer works.
+
+**A contact has a name.** `Contact.Id` in `SolidContacts`, built from the participants,
+the kind, and where and how large the contact is in three dimensions. Never from a
+projection - two contacts at different depths land on the same place in a view. It is a
+key, not a proof of distinctness, and it is stable against re-tessellation, which broke
+the first attempt: an outline fingerprint changed whenever a solid was read at a
+different accuracy, which happens routinely between beams and everything else.
+
+**A contact region is flattened onto the sheet.** `RegionFlattener` drops the depth and
+then the vertices that only described it - corners that coincide once flat, and corners
+in the middle of a straight run, which a subdivided edge leaves behind. What comes back
+is a polygon, a segment, or a single place, and the kind is the finding: a patch the view
+looks along has every corner on one line and is a segment with two ends, not a rectangle
+with four.
+
+The tolerance for calling two places one place is **0.001 mm**, not the 1 mm the contact
+search and the outline use. Those answer a different question - which gaps are too narrow
+to be real. A millimetre here would erase rebates, chamfers and sheet thicknesses, which
+are that size. This one absorbs the arithmetic of projecting and nothing else. A negative
+or non-numeric tolerance is refused rather than obeyed: either silently disables the
+merging and reports every duplicate as a corner.
+
+Canonicalisation moved into `PlanarRing` and the contour builder now uses it too. One
+problem - a closed run of points with no natural first vertex and no natural direction -
+and two answers to it would have drifted apart. Direction is discarded rather than
+chosen: for a projected region it says which way the surface faced the viewer, which is
+the plane's business.
+
+**The flattened shape becomes candidates.** `DrawingContactCandidatePointBuilder`:
+polygon gives its corners, segment its two ends, point itself; `ModelObjectIds` is
+`[A, B]` and never one of them; `Source = Contact`, `Confidence = DerivedGeometry`;
+the anchor is `ContactId + ShapeId + pointIndex`.
+
+Contracts a consumer cannot discover from the shape of the data:
+
+- **the shape id names the shape on the sheet, not the region that cast it.** Two regions
+  of one contact are coplanar but can sit apart in depth; seen along that plane they land
+  on the same line and share the id. That is right for a drawing - the two really are one
+  place there - so two shapes of a contact carrying the same id is a finding, not a fault;
+- **places are deduplicated, shapes are not.** The builder drops a repeated `Anchor.Key`
+  so one location is not offered as two pieces of evidence. Nothing is lost: colliding
+  shapes belong to the same contact and name the same two parts. Two patches of a plate
+  at different studs are different contacts and both survive;
+- **an anchor here has no owning part.** `Anchor.ModelObjectId` is nullable and the key
+  leaves the part off - naming one of the two would make the other's face a coincidence,
+  naming zero would invent a part. The id already says which contact and which shape;
+- **a shape whose two parts are not both named gives no candidate** and is handed back in
+  `Unresolved`. The geometry is real and worth looking at, but "these two parts meet here"
+  is a sentence that cannot be finished;
+- **three ways a place can be missing stay apart** - `Unread`, `Unflattened`,
+  `Unresolved` - because each is answered differently. Rolled into one count they would
+  read as "something went wrong somewhere".
+
+### What a real drawing says about it
+
+Checked on the front view of a raked timber wall, through
+`get_contact_candidate_points viewId draw`, which also paints the result into the drawing
+- shapes in green, candidates as red crosses. The shapes are drawn as well as the points
+because two crosses on a line say nothing about whether the line was there.
+
+56 contacts, 144 candidates, complete read. **39 of the 56 come back as segments** - the
+ordinary case on an elevation, where the view looks along most junctions. Taken as raw
+patches those 39 would have offered 78 corners for 39 places.
+
+Of the 25 points the drawing's seven existing chains actually dimension, measured along
+each chain's own direction - X for a horizontal chain, Y for a vertical one, both for a
+diagonal - **22 land on a contact candidate within a millimetre**. The three that do not
+are the two top corners of the wall, which are outline and not contact; the structural
+outline of the same view holds them exactly, at `(2090, 1311.96)` and `(210, 1728.76)`.
+
+That is the argument for the combined set, and it is also the argument for having built
+the layers apart: each source misses precisely where the other answers.
+
+One thing seen once and not reproduced: the first invocation reported 143 candidates and
+every one since reported 144, `isComplete` true both times. Possibly a contact sitting on
+the 1 mm gap tolerance. Not diagnosed - worth watching on the next live run.
 
 ## Provenance is a list, and it can be empty (implemented 2026-08-11)
 
@@ -512,20 +592,19 @@ Done when:
 
 ### Phase 6: Contacts And Connection Geometry
 
-Status: planned.
+Status: done for contacts (2026-08-12). Node-aware geometry is still open.
 
-Contacts stay explicitly out of the current stage.
+Contacts are computed by `SolidContacts` from the solids already read for the view,
+never from ad hoc runtime lookups, and they arrive in the view's own coordinate system,
+which is the system the drawing's dimensions live in. Connection-aware geometry stays
+separate from raw solid topology: nothing in `Drawing/Geometry/Parts` knows about
+contacts, and the contact layer reads solids through the same reader everything else
+does.
 
-Future target additions:
+Still open:
 
-- `ContactFace`
-- later assembly/node-aware geometry
-
-Done when:
-
-- contacts are computed from extracted part geometry rather than from ad hoc
-  runtime lookups
-- connection-aware geometry is clearly separated from raw solid topology
+- assembly/node-aware geometry
+- whether a junction, as opposed to a single contact, is worth a candidate of its own
 
 ## Validation
 
@@ -566,6 +645,7 @@ The first implementation step after this roadmap should be:
 1. keep extending raw geometry contracts where needed
 2. add projected outline helpers via polygon union
 3. align part points with assembly and bolt point taxonomies where useful
-4. later add contact-aware geometry on top of the same base
+4. contact-aware geometry on the same base - done
 
-Contacts stay after those steps.
+The next step is no longer a source. It is the combined view-level set, which is the
+first thing here that is a decision rather than a fact.
