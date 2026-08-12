@@ -18,6 +18,8 @@ namespace TeklaMcpServer.Api.Drawing.Dimensions.Defects;
 /// </summary>
 public static class DimensionDefectDetector
 {
+    private static readonly PartRoleClassifier RoleClassifier = new();
+
     /// <summary>
     /// How close a point must be to a part's bounding box to count as sitting on it. Points and
     /// part faces should coincide exactly; this only absorbs rounding.
@@ -68,6 +70,7 @@ public static class DimensionDefectDetector
             .ToList();
         var partList = (parts ?? Array.Empty<PartInView>())
             .Where(static part => part.BboxMin.Length >= 2 && part.BboxMax.Length >= 2)
+            .Select(Classified)
             .ToList();
 
         if (chains.Count == 0)
@@ -114,8 +117,14 @@ public static class DimensionDefectDetector
         // overhang the frame: on EW.4-6 a 10 mm strip reaches 1890 where the frame ends at 1880,
         // and an extent taken over everything stops recognising the 1880 overall as an overall.
         var structural = StructuralParts(partList);
-        var extentX = Extent(structural, 0);
-        var extentY = Extent(structural, 1);
+        var extentX = Extent(structural.Parts, 0);
+        var extentY = Extent(structural.Parts, 1);
+
+        // A reservation, not a defect: the extent was still computed, and every check that
+        // leans on it still ran. But a caller reading an overall taken over a set with
+        // unclassified parts in it has to know that is what it is.
+        if (structural.Reservation() is { } reservation)
+            report.Warnings.Add($"structural extent is provisional: {reservation}");
 
         // Visible bounds — every part — gate the report. A dimension may legitimately reach an
         // insulation or fitting edge outside the frame; measuring the gate against timber alone
@@ -183,7 +192,7 @@ public static class DimensionDefectDetector
         // endpoint finding for the same point; the operator must resolve which part owns the
         // anchor before deciding whether the chain should reach the structural corner.
         foreach (var entry in axisChains)
-            AddEndpointShortOfCorner(report, entry.Chain, entry.Axis, structural);
+            AddEndpointShortOfCorner(report, entry.Chain, entry.Axis, structural.Parts);
 
         AddContainedChains(report, axisChains.Select(static entry => (entry.Chain, entry.Axis)).ToList());
 
@@ -428,14 +437,14 @@ public static class DimensionDefectDetector
         // have a subject for.
         var reachesFrame = chain.PointAssociations.Any(association =>
             parts.Any(part =>
-                string.Equals(part.PartPrefix, "T", StringComparison.OrdinalIgnoreCase) &&
+                part.Role.Role == PartRole.Defining &&
                 Covers(part, new[] { association.Point.X, association.Point.Y })));
 
         if (!reachesFrame)
             return;
 
         var startOnFrame = parts.Any(part =>
-            string.Equals(part.PartPrefix, "T", StringComparison.OrdinalIgnoreCase) &&
+            part.Role.Role == PartRole.Defining &&
             Covers(part, trueStart));
 
         if (startOnFrame)
@@ -792,20 +801,45 @@ public static class DimensionDefectDetector
 
     /// <summary>
     /// The parts that define the assembly's size. Tekla MATERIAL_TYPE 5 is timber and is the
-    /// reliable signal; where it is missing the mark prefix says the same thing, R being
-    /// insulation and M a fitting. Falls back to everything rather than to nothing, because an
-    /// extent of zero would silently disable the overall test.
+    /// role rather than from the material. MATERIAL_TYPE used to decide this and got it
+    /// wrong: insulation reports 5, the same as timber, so it counted toward the frame and
+    /// two genuine overall dimensions were reported as removable.
+    ///
+    /// What the selection did not know comes back with it and reaches the warnings, because
+    /// an extent over a set containing unclassified parts is a guess and a short overall
+    /// looks exactly like a correct one.
     /// </summary>
-    private static IReadOnlyList<PartInView> StructuralParts(IReadOnlyList<PartInView> parts)
-    {
-        var structural = parts
-            .Where(static part => part.MaterialType == 5 ||
-                                  (part.MaterialType < 0 &&
-                                   !string.Equals(part.PartPrefix, "R", StringComparison.OrdinalIgnoreCase) &&
-                                   !string.Equals(part.PartPrefix, "M", StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+    private static DefiningParts StructuralParts(IReadOnlyList<PartInView> parts) =>
+        DefiningParts.From(parts);
 
-        return structural.Count > 0 ? structural : parts;
+    /// <summary>
+    /// A part that arrives without a role gets one here, from the same classifier the live
+    /// reader uses.
+    ///
+    /// Not a second interpretation - the same one, called from a second place. Without it
+    /// the frame checks would quietly stop running on everything that does not come from
+    /// the live path: the captured states under `cases/`, which carry no role because they
+    /// were taken before roles existed, and every hand-built fixture. A check that stops
+    /// finding anything looks exactly like a drawing with nothing wrong.
+    ///
+    /// Only where the classifier says a snapshot carries enough to be re-read. This is not
+    /// a limit on classification - asked directly it answers an honest Unknown for a part
+    /// with no prefix. It is that on a snapshot an absent prefix usually means nobody read
+    /// it, and reporting "no rule covers this" about a prefix never read collapses the
+    /// distinction this area is built on.
+    ///
+    /// A copy, never the part handed in. Detect audits a snapshot and must give it back
+    /// as it found it; a caller that reads its own parts afterwards should not find them
+    /// quietly changed.
+    /// </summary>
+    private static PartInView Classified(PartInView part)
+    {
+        if (part.Role.IsClassified || !RoleClassifier.CanReclassifyFromSnapshot(part))
+            return part;
+
+        var classified = part.Clone();
+        classified.Role = RoleClassifier.Classify(part);
+        return classified;
     }
 
     private static double Span(DimensionContextInfo chain, int axis)

@@ -11,6 +11,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
 {
+    private static readonly PartRoleClassifier RoleClassifier = new();
+
     private readonly Model _model;
 
     public TeklaDrawingPartGeometryApi(Model model)
@@ -161,7 +163,12 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                     Profile = profile,
                     Material = material,
                     MaterialType = materialType,
-                    PartPrefix = partPrefix
+                    PartPrefix = partPrefix,
+
+                    // Classified here, where the properties it reads have just been read,
+                    // so every consumer sees the same answer instead of working it out
+                    // again and differently.
+                    Role = RoleClassifier.ClassifyProperties(partPrefix, profile, material, materialType, name)
                 });
             }
         }

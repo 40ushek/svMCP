@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -63,6 +64,27 @@ public sealed class PartInView
     /// <summary>Tekla MATERIAL_TYPE: 1=Steel, 2=Concrete, 5=Timber, 6=Misc. -1 if unavailable.</summary>
     public int     MaterialType { get; set; } = -1;
     /// <summary>
+    /// What this part is to the size of its assembly, decided once when the part is read
+    /// rather than by each consumer for itself. Three places used to work it out inline and
+    /// the three did not agree - see ROADMAP_PART_ROLES.md.
+    ///
+    /// Never null, and never simply absent: a part reaches
+    /// <see cref="PartRole.Unknown"/> two ways, and they call for different fixes. Check
+    /// <see cref="PartRoleResult.IsClassified"/> to tell them apart - false means nobody
+    /// looked, true means nobody has a rule for it yet.
+    /// </summary>
+    public PartRoleResult Role
+    {
+        get => _role;
+        // Guarded rather than left to a default initializer: the initializer only covers
+        // the parts nobody assigns to, and the bridge reaches straight through this to
+        // Role.Role. An assignment of null anywhere would be a crash somewhere else.
+        set => _role = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    private PartRoleResult _role = PartRoleResult.Unclassified;
+
+    /// <summary>
     /// Part mark prefix, e.g. "T" in "T-368". Report property PART_PREFIX.
     /// Classifies the part: T=timber, M=metal fitting, R=insulation in this model's numbering.
     ///
@@ -97,9 +119,19 @@ public sealed class PartInView
         Profile = Profile,
         Material = Material,
         MaterialType = MaterialType,
-        PartPrefix = PartPrefix
+        PartPrefix = PartPrefix,
+
+        // Shared, not copied: PartRoleResult is immutable, so there is nothing to protect
+        // and a copy would only cost.
+        Role = Role
     };
 
+    /// <summary>
+    /// Geometry without the properties, for the single-part read that never gathers them.
+    /// The role goes with the properties it is derived from: a part whose prefix was never
+    /// read has not been classified, and saying so is better than carrying a role that was
+    /// decided somewhere else.
+    /// </summary>
     internal PartInView CloneGeometryOnly() => new()
     {
         Success = Success,

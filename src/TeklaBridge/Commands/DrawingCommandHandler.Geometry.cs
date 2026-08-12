@@ -124,7 +124,10 @@ internal sealed partial class DrawingCommandHandler
                 viewHull   = r.ViewHull,
                 solidGeometryComplete = r.SolidGeometryComplete,
                 materialType = r.MaterialType,
-                partPrefix   = r.PartPrefix
+                partPrefix   = r.PartPrefix,
+                role         = r.Role.Role.ToString(),
+                roleRuleId   = r.Role.RuleId,
+                roleReason   = r.Role.Reason
             })
         });
         return true;

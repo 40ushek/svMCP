@@ -139,6 +139,33 @@ public sealed class PartRoleClassifierTests
     }
 
     [Fact]
+    public void ReadingAPartWithNoPrefixIsAnAnswer()
+    {
+        // The live reader looked and there was nothing there. That is Unknown, and it is
+        // classified: a rule is what is missing, not the reading.
+        var result = Classifier.ClassifyProperties(null, profile: "60X200", material: "C24");
+
+        Assert.Equal(PartRole.Unknown, result.Role);
+        Assert.True(result.IsClassified);
+    }
+
+    [Fact]
+    public void ASnapshotWithNoPropertiesIsNotSomethingToReclassify()
+    {
+        // On a snapshot an absent prefix usually means nobody read it, so re-reading it
+        // would turn "never read" into "no rule covers it".
+        var geometryOnly = new PartInView { ModelId = 1, BboxMin = [0, 0, 0], BboxMax = [1, 1, 1] };
+        var read = new PartInView { ModelId = 2, PartPrefix = "T" };
+
+        Assert.False(Classifier.CanReclassifyFromSnapshot(geometryOnly));
+        Assert.True(Classifier.CanReclassifyFromSnapshot(read));
+
+        // And left alone, it stays the thing that says nobody looked.
+        Assert.False(geometryOnly.Role.IsClassified);
+        Assert.Equal(PartRole.Unknown, geometryOnly.Role.Role);
+    }
+
+    [Fact]
     public void TheDefaultsAreThePrefixesThisPlantUses()
     {
         Assert.Equal(["prefix-T", "prefix-R", "prefix-M"], PartRoleClassifier.DefaultRules.Select(rule => rule.Id));

@@ -84,6 +84,25 @@ public sealed class PartRoleClassifier
         return rule;
     }
 
+    /// <summary>
+    /// Whether a part that arrived without a role can safely be given one now.
+    ///
+    /// Not a limit on the classifier: asked directly, it answers an honest
+    /// <see cref="PartRole.Unknown"/> for a part with no prefix, marked as classified,
+    /// because the live reader looked and there was nothing there.
+    ///
+    /// The question here is different. On a snapshot - a captured state, a hand-built
+    /// fixture, a geometry-only copy - an absent prefix does not mean the part has none.
+    /// It usually means nobody read it. Classifying anyway turns "the properties were never
+    /// read" into "no rule covers it", and those want different fixes.
+    ///
+    /// It lives beside the rules so it cannot drift from them: today they read the prefix
+    /// and nothing else, and when they read more, the evidence a snapshot must carry
+    /// changes with them.
+    /// </summary>
+    public bool CanReclassifyFromSnapshot(PartInView part) =>
+        part != null && !string.IsNullOrWhiteSpace(part.PartPrefix);
+
     public PartRoleResult Classify(PartInView part)
     {
         if (part is null) throw new ArgumentNullException(nameof(part));

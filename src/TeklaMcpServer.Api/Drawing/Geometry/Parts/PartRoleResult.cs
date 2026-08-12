@@ -21,15 +21,50 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed class PartRoleResult
 {
     public PartRoleResult(PartRole role, string ruleId, string reason)
+        : this(role, ruleId, reason, isClassified: true)
+    {
+    }
+
+    private PartRoleResult(PartRole role, string ruleId, string reason, bool isClassified)
     {
         Role = role;
         RuleId = ruleId;
         Reason = reason;
+        IsClassified = isClassified;
     }
+
+    /// <summary>
+    /// For a part that was never put through the classifier - a hand-built test fixture, a
+    /// captured state from before roles existed, a geometry-only copy that dropped the
+    /// properties a role is derived from.
+    ///
+    /// Told apart from a part the classifier looked at and had no rule for by
+    /// <see cref="IsClassified"/>, and by <see cref="RuleId"/> reading "unclassified"
+    /// rather than "none". Both carry <see cref="PartRole.Unknown"/>, so neither the role
+    /// nor the reason distinguishes them.
+    /// </summary>
+    public static PartRoleResult Unclassified { get; } =
+        new(PartRole.Unknown, "unclassified", "not classified", isClassified: false);
+
+    /// <summary>
+    /// Whether the classifier looked at this part at all.
+    ///
+    /// A flag rather than a phrase in the reason. Both cases carry
+    /// <see cref="PartRole.Unknown"/>, and the difference between "no rule covered it" and
+    /// "nobody asked" changes what a caller should do - the first wants a rule, the second
+    /// wants the part read properly. Leaving that in prose would have somebody comparing
+    /// against the string sooner or later.
+    /// </summary>
+    public bool IsClassified { get; }
 
     public PartRole Role { get; }
 
-    /// <summary>The rule that matched, or "none" when nothing did.</summary>
+    /// <summary>
+    /// The rule that matched; "none" when the classifier ran and none did, and
+    /// "unclassified" when it never ran. Prefer <see cref="IsClassified"/> for the second
+    /// distinction - this is here so a report can name what happened, not so callers
+    /// compare against it.
+    /// </summary>
     public string RuleId { get; }
 
     /// <summary>What was known about the part when it was classified.</summary>
