@@ -61,6 +61,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_assembly_outline":
                 return HandleGetAssemblyOutline(GetAssemblyOutlineApi(), args);
 
+            case "get_structural_outline":
+                return HandleGetStructuralOutline(args);
+
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
 
@@ -194,6 +197,83 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
+    /// <summary>
+    /// Model ids from the argument, or null when the caller named none.
+    ///
+    /// A token that is not a number is refused rather than skipped. Skipping it turns a
+    /// typo into a full outline that looks like a successful answer, and a full extent is
+    /// exactly the wrong number to hand back by accident - it is longer than the frame by
+    /// whatever overhangs it.
+    /// </summary>
+    private static bool TryParseModelIds(string argument, out IReadOnlyCollection<int>? modelIds, out string? error)
+    {
+        modelIds = null;
+        error = null;
+
+        var tokens = argument.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length == 0)
+            return true;
+
+        var ids = new HashSet<int>();
+        foreach (var token in tokens)
+        {
+            if (!int.TryParse(token, out var id))
+            {
+                error = $"'{token}' is not a model id";
+                return false;
+            }
+
+            ids.Add(id);
+        }
+
+        modelIds = ids;
+        return true;
+    }
+
+    /// <summary>
+    /// The outline of the parts that fix the assembly's size, chosen by role rather than by
+    /// a list of ids the caller had to work out first.
+    /// </summary>
+    private bool HandleGetStructuralOutline(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_structural_outline requires viewId argument");
+            return true;
+        }
+
+        var model = new Tekla.Structures.Model.Model();
+        var api = new TeklaDrawingStructuralOutlineApi(
+            new TeklaDrawingPartRoleApi(model),
+            new TeklaDrawingAssemblyOutlineApi(model));
+
+        var result = api.Get(viewId);
+
+        WriteJson(new
+        {
+            success = result.Outline.Error == null,
+            viewId,
+            isComplete = result.IsComplete,
+
+            // A sentence for a person, and the same facts in full for a caller. The
+            // sentence caps its lists at five, so anything acting on the result has to read
+            // the arrays instead of parsing the prose.
+            reservation = result.Reservation(),
+
+            defining = result.Defining.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
+            unknown = result.Unknown.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
+            unclassified = result.Unclassified.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
+
+            unreadRoles = result.UnreadRoles.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
+            unreadOutlineParts = result.Outline.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
+            notVisibleDefiningIds = result.Outline.NotVisibleRequestedIds,
+
+            error = result.Outline.Error,
+            assemblyOutline = result.Outline.AssemblyNodes
+        });
+        return true;
+    }
+
     private bool HandleGetAssemblyOutline(TeklaDrawingAssemblyOutlineApi api, string[] args)
     {
         if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
@@ -202,12 +282,27 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = api.GetAssemblyOutline(viewId);
+        // An optional list of model ids: "the outline of these parts". One mechanism for
+        // both directions - leave the insulation out, or ask for the frame alone - and the
+        // geometry stays ignorant of what a part is for.
+        IReadOnlyCollection<int>? modelIds = null;
+        if (args.Length >= 3 && !TryParseModelIds(args[2], out modelIds, out var idError))
+        {
+            WriteError($"get_assembly_outline: {idError}");
+            return true;
+        }
+
+        var result = api.GetAssemblyOutline(viewId, options: null, modelIds);
         WriteJson(new
         {
             success = result.Error == null,
             viewId = result.ViewId,
             isComplete = result.IsComplete,
+            restricted = result.Restricted,
+            selectionComplete = result.SelectionComplete,
+            visibleCount = result.VisibleCount,
+            requestedIds = result.RequestedIds,
+            notVisibleRequestedIds = result.NotVisibleRequestedIds,
             error = result.Error,
             assemblyOutline = result.AssemblyNodes,
             partOutlines = result.PartNodes.Select(part => new

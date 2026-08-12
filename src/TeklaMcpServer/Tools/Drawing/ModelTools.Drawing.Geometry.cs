@@ -20,13 +20,28 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
-        "Get the exact projected external outline of all visible parts in one drawing view. " +
-        "Returns Clipper2 polygon trees: outer contours, holes and disconnected components, plus incomplete-read warnings. " +
-        "This is geometry evidence for future dimension placement; it does not create or change dimensions.")]
-    public static string GetAssemblyOutline(
+        "Get the projected outline of the parts that define an assembly's size in one drawing view - the frame, without insulation, cladding or fixings. " +
+        "Parts are chosen by their role, read from their properties, so the caller does not need to know the plant's mark prefixes. " +
+        "Reports what it could not classify: an extent over a set containing unknowns is a guess, not a fact. " +
+        "Read-only geometry evidence; it does not create or change dimensions.")]
+    public static string GetStructuralOutline(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
     {
-        var json = RunBridge("get_assembly_outline", viewId.ToString());
+        return RunBridge("get_structural_outline", viewId.ToString());
+    }
+
+    [McpServerTool, Description(
+        "Get the exact projected external outline of all visible parts in one drawing view, or of a chosen subset of them. " +
+        "Returns Clipper2 polygon trees: outer contours, holes and disconnected components, plus incomplete-read warnings. " +
+        "Pass modelIds to measure over part of the view - the frame alone, say - and the answer reports that it was restricted. " +
+        "This is geometry evidence for future dimension placement; it does not create or change dimensions.")]
+    public static string GetAssemblyOutline(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Optional comma-separated model IDs to measure over. Omit for every visible part.")] string modelIds = "")
+    {
+        var json = string.IsNullOrWhiteSpace(modelIds)
+            ? RunBridge("get_assembly_outline", viewId.ToString())
+            : RunBridge("get_assembly_outline", viewId.ToString(), modelIds);
         try
         {
             var doc = JsonDocument.Parse(json);

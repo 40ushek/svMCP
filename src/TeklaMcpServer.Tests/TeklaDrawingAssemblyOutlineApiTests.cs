@@ -44,6 +44,38 @@ public sealed class TeklaDrawingAssemblyOutlineApiTests
         Assert.Single(result.PartOutlines);
     }
 
+    [Fact]
+    public void AnOutlineTakenOverASubsetSaysThatItWas()
+    {
+        // A restricted outline looks exactly like a full one: smaller, with no sign of why.
+        // An extent over the frame alone is a different number from the extent of the
+        // sheet, and a reader has to be able to tell which they were handed.
+        var geometry = new StubSolidGeometryApi(
+            Square(1, 1, 0, 0, 100, 100),
+            Square(1, 2, 200, 0, 300, 100));
+
+        var whole = TeklaDrawingAssemblyOutlineApi.Build(1, [1, 2], geometry);
+        var frameOnly = TeklaDrawingAssemblyOutlineApi.Build(1, [1], geometry, restricted: true, visibleCount: 2);
+
+        Assert.False(whole.Restricted);
+        Assert.True(frameOnly.Restricted);
+        Assert.Equal(2, frameOnly.VisibleCount);
+        Assert.Equal(2, whole.PartOutlines.Count);
+        Assert.Single(frameOnly.PartOutlines);
+    }
+
+    [Fact]
+    public void ARestrictedOutlineIsStillCompleteWhenEveryPartAskedForWasRead()
+    {
+        // Restricted is not incomplete. The caller chose the subset; nothing went missing.
+        var geometry = new StubSolidGeometryApi(Square(1, 1, 0, 0, 100, 100));
+
+        var result = TeklaDrawingAssemblyOutlineApi.Build(1, [1], geometry, restricted: true, visibleCount: 3);
+
+        Assert.True(result.IsComplete);
+        Assert.True(result.Restricted);
+    }
+
     private static PartSolidGeometryInViewResult Square(int viewId, int modelId, double minX, double minY, double maxX, double maxY)
     {
         var result = new PartSolidGeometryInViewResult

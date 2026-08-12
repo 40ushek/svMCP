@@ -21,7 +21,10 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         _solidGeometry = solidGeometry ?? new TeklaDrawingPartSolidGeometryApi(model);
     }
 
-    public ViewAssemblyOutlineResult GetAssemblyOutline(int viewId, OutlineOptions? options = null)
+    public ViewAssemblyOutlineResult GetAssemblyOutline(
+        int viewId,
+        OutlineOptions? options = null,
+        IReadOnlyCollection<int>? modelIds = null)
     {
         var drawing = new DrawingHandler().GetActiveDrawing();
         if (drawing == null)
@@ -31,14 +34,39 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        return Build(viewId, DrawingViewParts.VisibleModelIds(view), _solidGeometry, options);
+        var visible = DrawingViewParts.VisibleModelIds(view).ToList();
+
+        // A caller's list is narrowed to what the view actually draws. Asking for a part
+        // the view hides would otherwise put geometry into an outline of a drawing that
+        // does not show it - and the outline is supposed to be the shape on the sheet.
+        var wanted = modelIds == null
+            ? visible
+            : visible.Where(modelIds.Contains).ToList();
+
+        var missing = modelIds == null
+            ? Array.Empty<int>()
+            : modelIds.Where(id => !visible.Contains(id)).ToArray();
+
+        return Build(
+            viewId,
+            wanted,
+            _solidGeometry,
+            options,
+            restricted: modelIds != null,
+            visible.Count,
+            modelIds?.ToArray(),
+            missing);
     }
 
     internal static ViewAssemblyOutlineResult Build(
         int viewId,
         IEnumerable<int> modelIds,
         IDrawingPartSolidGeometryApi solidGeometry,
-        OutlineOptions? options = null)
+        OutlineOptions? options = null,
+        bool restricted = false,
+        int visibleCount = 0,
+        IReadOnlyList<int>? requestedIds = null,
+        IReadOnlyList<int>? notVisibleRequestedIds = null)
     {
         var partOutlines = new Dictionary<int, PolyTreeD>();
         var unread = new List<UnreadPart>();
@@ -79,7 +107,12 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             viewId,
             ProjectedOutlineBuilder.BuildAssembly(partOutlines.Values, options),
             partOutlines,
-            unread);
+            unread,
+            error: null,
+            restricted,
+            visibleCount,
+            requestedIds,
+            notVisibleRequestedIds);
     }
 
     private static ViewAssemblyOutlineResult Unavailable(int viewId, string reason) =>
