@@ -1240,6 +1240,45 @@ of views, sheets or overlays. A position is a coordinate, so a debug view of one
 line across the group's extent - not a cross, which would put back the point framing this
 whole section exists to replace.
 
+#### 3a. Checked on a live view (2026-08-13)
+
+The raked timber wall, front view, all four sides drawn as lines and looked at.
+
+| side | positions proposed | used by the drawing | not found |
+|---|---|---|---|
+| bottom | 10 | 5 | 0 |
+| top | 14 | 5 | 0 |
+| left | 19 | 5 | 0 |
+| right | 21 | 4 | 0 |
+
+Every position the seven existing chains actually dimension is in the preliminary set, and
+every line drawn lands on a part face - none in empty space. The set is two to five times
+larger than what the drawing uses, which is what "deliberately over-complete" was meant to
+produce.
+
+Three things the run confirmed that no unit test could:
+
+- **the role layer earns its place.** The X extent starts at 210, not the 200 that
+  `get_assembly_outline` reports. Two hundred is the edge of an outer layer; the structural
+  outline excludes it. That is the ten-millimetre overhang recorded in the assembly-geometry
+  roadmap, now visible as the difference between two commands;
+- **the same coordinate does arrive from both ends of a member.** All ten bottom positions
+  appear among the fourteen at the top, each from a different endpoint of the same stud -
+  which is what the side rule predicted and what the drawing itself does;
+- **the raked members crowd one side.** Ten of the twenty-one right-hand positions fall
+  between 1248 and 1393, one per stud, because the rake cuts each at its own height. They
+  are real corners, and thinning them is a policy question rather than a fault.
+
+The doubled positions at the extremes appeared exactly as predicted - see 4b. On the sheet
+they read as one line.
+
+Reading the drawing was blocked twice during this session by Tekla returning the model
+coordinate system for a view, after a drawing was closed abnormally. Geometry then arrives
+in model space with `success: true`, and only comparing spans revealed it: a front view that
+should read 1739.9 by 3665 came back 200 by 1749.9, the height dropped and the thickness
+kept. Restarting Tekla cleared it. Nothing in the code caused it and nothing in the code
+detects it yet.
+
 #### 4b. Merging near-equal positions belongs to policy, not to the calculation
 
 Measured on a live panel view: the assembly outline sits **0.00235 mm inside** the part
