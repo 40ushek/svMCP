@@ -1194,9 +1194,17 @@ evidence.
 
 This calculation is deliberately usable for both drawing subjects. An assembly adapter
 will build a group from the selected structural parts; a single-part adapter will build a
-group from one part contour and its hole rings. Neither `GeometryGroup` nor
-`CalcDimensionChains` carries an `Assembly`/`Part` switch: both calculate geometric facts
-only. The difference begins afterwards. `AssemblyDimensionPolicy` locates parts and may
+group from one part contour and its hole rings.
+
+**The thing that must not branch is the calculator.** Positions come from contours the same
+way whichever the subject is, and a `CalcDimensionChains` that asked what it was looking at
+would have two behaviours to keep true instead of one. `GeometryGroup` shares one type today
+because nothing has yet appeared that a part snapshot needs and an assembly snapshot cannot
+hold - not because the two subjects are the same. The drawing type is known to the caller,
+so a second snapshot type is cheap to introduce the day a part needs something of its own;
+the calculator taking a switch is what would not be.
+
+The difference begins afterwards. `AssemblyDimensionPolicy` locates parts and may
 remove a span that merely repeats a made part's size; a future `PartDimensionPolicy` must
 instead describe that size, holes, cut-outs and other fabrication features. Do not apply
 assembly rules to a single-part drawing.
@@ -1355,8 +1363,10 @@ lie across my chain direction or along it.
 
 **A neutral contact type.** `ViewContactGeometryResult` has the shapes but is Tekla-shaped:
 `ViewId`, `UnreadPart`, `Unresolved` full of model ids. Embedding it would break the
-snapshot's independence from Tekla, which is the property that lets one calculator serve an
-assembly and a single part alike. What goes in is a neutral `GeometryGroupContacts`: the
+snapshot's independence from Tekla. That independence is a separate argument from the one
+above about subjects: it is what keeps a policy a pure function, testable without a running
+model. Model ids and `Identifier`s in the snapshot would take that away whether there is one
+snapshot type or two. What goes in is a neutral `GeometryGroupContacts`: the
 flattened shapes, two caller-owned participant ids per contact, the contact kind, and
 neutral issues.
 
