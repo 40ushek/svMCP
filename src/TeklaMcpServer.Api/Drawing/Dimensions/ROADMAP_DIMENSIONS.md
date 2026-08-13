@@ -1070,24 +1070,36 @@ vertical chains. It does not select the final dimensions or create anything in T
    overall dimension. Top and bottom chains carry X positions; left and right chains carry
    Y positions.
 3. For every `Defining` part contour, inspect its real edges and vertices, including hole
-   rings where the part has them. A vertical edge contributes its X coordinate; a horizontal
-   edge contributes its Y coordinate. A tilted edge contributes no coordinate by itself:
-   both coordinates vary along it. Its two endpoints are nevertheless real corners and may
-   contribute there, where the tilted edge meets another edge.
-4. The side is chosen by the actual source point, not by copying a coordinate. For a strict
+   rings where the part has them. An edge contributes one X position only when its endpoint
+   X coordinates coincide within the planar 0.001 mm tolerance; similarly for one Y
+   position. Otherwise a polygon edge contributes no coordinate by itself: both coordinates
+   vary along it. Its two endpoints are nevertheless real corners and may contribute there,
+   where the tilted edge meets another edge. The 10-degree test used to audit an already
+   placed point is intentionally not used here: it answers proximity, not whether an edge
+   has one scalar coordinate.
+
+   A `Segment` is different from a polygon edge: it is already a visible line with two real
+   terminal places, for example a flattened contact. Both endpoints remain candidates even
+   when the segment is tilted, and are recorded as `SegmentEndpoint`, not as invented
+   polygon corners.
+4. The side is chosen by the actual source point, not by copying a coordinate. For a
    vertical or horizontal edge, its endpoints are the source points. A point low in the view
    feeds the bottom chain and one high in it feeds the top; left and right likewise. A stud
    therefore contributes its X to both top and bottom through two different endpoints, which
-   is not the same as copying one coordinate across.
+   is not the same as copying one coordinate across. A source exactly equidistant from two
+   sides is deliberately offered to both preliminary chains; the set is over-complete and a
+   later policy chooses whether either side keeps it.
 
    Confirmed on the measured view: every point of the bottom chain lies at the bottom of
    its part and every point of the top chain at the top, and the left and right chains
    divide the same way by X. This confirms where a source point belongs; it does not claim
    that the human drawing used every position of the preliminary symmetric set.
 
-   Coalesce equal coordinates before forming a chain. Several parts sharing one face, or a
-   raked corner agreeing with a square edge, make one position rather than several
-   coincident dimension points.
+   Coalesce equal coordinates before forming a chain. The common 0.001 mm planar
+   coincidence tolerance (the one that flattened the source geometry) governs both which
+   points support an extent and which coordinates become one position; those are one
+   question, not two tolerances. Several parts sharing one face, or a raked corner agreeing
+   with a square edge, make one position rather than several coincident dimension points.
 
 Only the structural box supplies the four outer extremes. A part box is not used: on a
 raked or cut part its corner can be empty space, and its extremum can lie on a tilted edge
@@ -1112,6 +1124,15 @@ read Tekla, decide a part's role, create dimensions, or merge chains. It calcula
 initial, deliberately over-complete chains from the snapshot. Policies and AI skills then
 change only `group.DimensionChains`; `Boundary` and `Shapes` remain the unmodified
 geometric evidence used to explain or reconsider every change.
+
+Calculation requires at least one real planar point in the boundary, or, when there is no
+boundary, in the group shapes. It fails explicitly if that evidence is absent; four empty
+chains would look like a valid answer. `Apply` also runs once per `GeometryGroup`: it refuses
+to replace a calculated or policy-reviewed set, because that would silently discard kept or
+removed decisions and their reasons. Recalculation means constructing a new geometry snapshot.
+An `Empty` shape among otherwise usable group shapes is intentionally ignored here: it has no
+place to propose. The adapter that formed the snapshot remains responsible for reporting why
+that shape was empty and whether the group read was complete.
 
 Working state must say what has happened to it. `DimensionChainSet.Stage` distinguishes
 `Calculated` from `PolicyApplied`. More importantly, every `DimensionChainPosition` retains
