@@ -92,6 +92,16 @@ public sealed class ViewContactsResultTests
     }
 
     [Fact]
+    public void RequestedPartsRemainVisibleWhenOneNeverReachesTheGraph()
+    {
+        var reader = new Reader().Returns(10, Slab(10, 0, 50)).Fails(11, "solid unavailable");
+
+        var result = Run(reader, [10, 11]);
+
+        Assert.Equal(new[] { 10, 11 }, result.RequestedIds);
+    }
+
+    [Fact]
     public void AReaderThatThrowsLosesOnePartAndNotTheView()
     {
         var reader = new Reader().Returns(10, Slab(10, 0, 50)).Throws(11, "solid unavailable").Returns(12, Slab(12, 50, 100));

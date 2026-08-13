@@ -119,7 +119,10 @@ public sealed class TeklaDrawingStructuralOutlineApi
     /// structural extent should not have to know which prefixes this plant uses. Ids stay
     /// on the outline call for looking at things by hand.
     /// </summary>
-    public StructuralOutline Get(int viewId, OutlineOptions? options = null)
+    public StructuralOutline Get(
+        int viewId,
+        OutlineOptions? options = null,
+        System.Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null)
     {
         var read = _roles.GetRolesInView(viewId);
 
@@ -128,6 +131,7 @@ public sealed class TeklaDrawingStructuralOutlineApi
         var unclassified = read.Roles.Where(part => !part.Role.IsClassified).ToList();
 
         var ids = defining.Select(part => part.ModelId).Distinct().ToList();
+        beforeOutlineRead?.Invoke(defining);
 
         return new StructuralOutline(
             _outline.GetAssemblyOutline(viewId, options, ids),

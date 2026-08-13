@@ -252,9 +252,15 @@ internal sealed partial class DrawingCommandHandler
         var draw = args.Length > 2 &&
             args[2].Equals("true", StringComparison.OrdinalIgnoreCase);
 
-        var contacts = new TeklaDrawingViewContactApi(_model).GetContactGraph(viewId);
+        var identity = ReadSourceIdentity(viewId);
+        var contacts = new TeklaDrawingViewContactApi(_model).GetContactGraph(
+            viewId,
+            options: null,
+            beforeSolidRead: ids => CaptureParts(identity, "searched", ids));
         var geometry = ContactGeometryInViewBuilder.Build(contacts);
         var result = DrawingContactCandidatePointBuilder.Build(geometry);
+
+        var source = Describe(identity);
 
         var drawn = draw ? Draw(overlay, viewId, geometry, result) : 0;
 
@@ -262,6 +268,7 @@ internal sealed partial class DrawingCommandHandler
         {
             success = result.Error == null,
             viewId,
+            source,
             isComplete = result.IsComplete,
             searchComplete = result.SearchComplete,
             error = result.Error,
@@ -412,6 +419,182 @@ internal sealed partial class DrawingCommandHandler
     }
 
     /// <summary>
+    /// What a measurement was taken from. Its drawing identity is read before geometry, and
+    /// the reader supplies its requested part ids before it reads any solid; GUIDs are
+    /// resolved at that same boundary. The bridge therefore does not reconstruct a source
+    /// after the geometry result from surviving contacts or a second view enumeration.
+    ///
+    /// A view id identifies nothing between sessions - two reads of "view 3759" have already
+    /// returned different parts - and neither does the active drawing on its own: a stale
+    /// view id would name whatever sheet happened to be open rather than the source of the
+    /// result. So the drawing is taken from the confirmed view where there is one, and
+    /// flagged when it is only the active sheet.
+    ///
+    /// The modification date narrows a question, it does not settle one. It separates two
+    /// revisions of a sheet, and says nothing about the model behind it being rebuilt or a
+    /// different set of parts being selected - which is why the parts are named too, by GUID
+    /// rather than by the integer ids that renumbering moves.
+    /// </summary>
+    private SourceIdentity ReadSourceIdentity(int viewId)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        var view = FindView(activeDrawing, viewId);
+        var drawing = view?.GetDrawing() ?? activeDrawing;
+
+        var identity = new SourceIdentity { FromActiveSheetOnly = view == null };
+        if (drawing == null)
+            return identity;
+
+        identity.DrawingGuid = GuidText(drawing.GetIdentifier().GUID);
+        try { identity.DrawingMark = drawing.Mark ?? string.Empty; } catch { }
+        try { identity.DrawingName = drawing.Name ?? string.Empty; } catch { }
+        try
+        {
+            var date = drawing.ModificationDate;
+            identity.DrawingModified = date == DateTime.MinValue
+                ? string.Empty
+                : date.ToString("O", CultureInfo.InvariantCulture);
+        }
+        catch { }
+
+        if (drawing is AssemblyDrawing assemblyDrawing && assemblyDrawing.AssemblyIdentifier != null)
+        {
+            identity.RequiresAssemblyGuid = true;
+            // The identifier a drawing carries holds the integer id but not the GUID - it
+            // comes back as all zeros, measured on this drawing. So the model is asked, and
+            // the direct value is only used when it turns out to hold something.
+            var direct = assemblyDrawing.AssemblyIdentifier.GUID;
+            identity.AssemblyGuid = direct == Guid.Empty
+                ? ModelObjectGuid(assemblyDrawing.AssemblyIdentifier.ID)
+                : direct.ToString();
+
+            if (string.IsNullOrEmpty(identity.AssemblyGuid))
+                identity.AssemblyGuid = null;
+        }
+
+        return identity;
+    }
+
+    /// <summary>
+    /// Adds the requested parts to the source passport before the caller starts solid reads.
+    ///
+    /// <paramref name="label"/> names what the list is, because the two commands can offer
+    /// different things: the structural read knows its defining parts, the contact search
+    /// knows the bodies it searched. Calling either "the source parts" when it is not would
+    /// make two measurements look comparable when they are not.
+    ///
+    /// A part whose GUID cannot be read is listed separately rather than left with an empty
+    /// one. An empty GUID beside a real one reads as an identity, and comparing two
+    /// measurements on that basis is exactly what this block exists to prevent.
+    /// </summary>
+    private void CaptureParts(SourceIdentity identity, string label, IEnumerable<int>? modelIds)
+    {
+        if (identity.PartsCaptured)
+            throw new InvalidOperationException("Source identity already has a part snapshot.");
+
+        identity.PartsCaptured = true;
+        identity.PartsLabel = label;
+
+        foreach (var modelId in (modelIds ?? Enumerable.Empty<int>()).Distinct().OrderBy(id => id))
+        {
+            var guid = ModelObjectGuid(modelId);
+            if (string.IsNullOrEmpty(guid))
+                identity.UnresolvedPartIds.Add(modelId);
+            else
+                identity.Parts.Add(new SourcePartIdentity(modelId, guid));
+        }
+    }
+
+    /// <summary>Serializes a source identity that was captured by its reader.</summary>
+    private static object Describe(SourceIdentity identity)
+    {
+        return new
+        {
+            drawingGuid = identity.DrawingGuid,
+            drawingMark = identity.DrawingMark,
+            drawingName = identity.DrawingName,
+            drawingModified = identity.DrawingModified,
+            assemblyGuid = identity.AssemblyGuid,
+
+            // True when the view asked for was not on the sheet, so the identity above is
+            // the sheet that happened to be open and not the source of any result.
+            fromActiveSheetOnly = identity.FromActiveSheetOnly,
+
+            // False when anything above is missing, so nobody compares two measurements on
+            // an identity that is only partly known.
+            isComplete = identity.PartsCaptured
+                && !identity.FromActiveSheetOnly
+                && identity.DrawingGuid.Length > 0
+                && (!identity.RequiresAssemblyGuid || !string.IsNullOrEmpty(identity.AssemblyGuid))
+                && identity.UnresolvedPartIds.Count == 0,
+
+            partsLabel = identity.PartsLabel,
+            parts = identity.Parts,
+            unresolvedPartIds = identity.UnresolvedPartIds
+        };
+    }
+
+    private sealed class SourceIdentity
+    {
+        public string DrawingGuid { get; set; } = string.Empty;
+        public string DrawingMark { get; set; } = string.Empty;
+        public string DrawingName { get; set; } = string.Empty;
+        public string DrawingModified { get; set; } = string.Empty;
+        public string? AssemblyGuid { get; set; }
+        public bool FromActiveSheetOnly { get; set; }
+        public bool RequiresAssemblyGuid { get; set; }
+        public bool PartsCaptured { get; set; }
+        public string PartsLabel { get; set; } = string.Empty;
+        public List<SourcePartIdentity> Parts { get; } = new();
+        public List<int> UnresolvedPartIds { get; } = new();
+    }
+
+    private sealed class SourcePartIdentity(int modelId, string guid)
+    {
+        public int ModelId { get; } = modelId;
+        public string Guid { get; } = guid;
+    }
+
+    private static Tekla.Structures.Drawing.View? FindView(
+        Tekla.Structures.Drawing.Drawing? drawing, int viewId)
+    {
+        if (drawing == null)
+            return null;
+
+        var views = drawing.GetSheet().GetViews();
+        while (views.MoveNext())
+        {
+            if (views.Current is Tekla.Structures.Drawing.View candidate
+                && candidate.GetIdentifier().ID == viewId)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A part's GUID, which survives the renumbering that integer ids do not. Empty when the
+    /// object cannot be found; the caller lists that id as unresolved rather than shipping a
+    /// blank identity.
+    /// </summary>
+    private string ModelObjectGuid(int modelId)
+    {
+        try
+        {
+            var modelObject = _model.SelectModelObject(new Tekla.Structures.Identifier(modelId));
+            return modelObject == null ? string.Empty : GuidText(modelObject.Identifier.GUID);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GuidText(Guid guid) => guid == Guid.Empty ? string.Empty : guid.ToString();
+
+    /// <summary>
     /// Draws one deliberately over-complete preliminary side as lines across the structural
     /// extent. This is a read-only inspection aid: it does not choose, create, or alter a
     /// dimension. The optional side is Top, Bottom, Left, or Right; Bottom is the default
@@ -436,8 +619,14 @@ internal sealed partial class DrawingCommandHandler
 
         // Each side is independently inspectable. The overlay hierarchy lets
         // clear_debug_overlay dimension_chain_positions still clear every side and view.
+        var identity = ReadSourceIdentity(viewId);
+        var structuralOutline = GetStructuralOutline(
+            viewId,
+            defining => CaptureParts(identity, "defining", defining.Select(part => part.ModelId)));
+        var source = Describe(identity);
+
         var overlayGroup = "dimension_chain_positions:" + viewId.ToString(CultureInfo.InvariantCulture) + ":" + side;
-        var group = StructuralGeometryGroupBuilder.Build(GetStructuralOutline(viewId));
+        var group = StructuralGeometryGroupBuilder.Build(structuralOutline);
         try
         {
             CalcDimensionChains.Apply(group);
@@ -456,6 +645,7 @@ internal sealed partial class DrawingCommandHandler
             {
                 success = false,
                 viewId,
+                source,
                 side = side.ToString(),
                 group = overlayGroup,
                 clearedCount = cleared.ClearedCount,
@@ -482,6 +672,7 @@ internal sealed partial class DrawingCommandHandler
         {
             success = true,
             viewId,
+            source,
             side = side.ToString(),
             group = overlayResult.Group,
             clearedCount = overlayResult.ClearedCount,
@@ -504,10 +695,12 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private StructuralOutline GetStructuralOutline(int viewId) =>
+    private StructuralOutline GetStructuralOutline(
+        int viewId,
+        Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null) =>
         new TeklaDrawingStructuralOutlineApi(
             new TeklaDrawingPartRoleApi(_model),
-            new TeklaDrawingAssemblyOutlineApi(_model)).Get(viewId);
+            new TeklaDrawingAssemblyOutlineApi(_model)).Get(viewId, beforeOutlineRead: beforeOutlineRead);
 
     private bool HandleGetAssemblyOutline(TeklaDrawingAssemblyOutlineApi api, string[] args)
     {

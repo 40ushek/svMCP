@@ -34,7 +34,18 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         _solidGeometry = solidGeometry ?? new TeklaDrawingPartSolidGeometryApi(model);
     }
 
-    public ViewContactsResult GetContactGraph(int viewId, ContactOptions? options = null)
+    public ViewContactsResult GetContactGraph(int viewId, ContactOptions? options = null) =>
+        GetContactGraph(viewId, options, beforeSolidRead: null);
+
+    /// <summary>
+    /// As <see cref="GetContactGraph(int, ContactOptions?)"/>, while exposing the exact view
+    /// selection before any solid is read. The bridge uses it to name a measurement's source
+    /// without reconstructing that selection from a partial graph afterwards.
+    /// </summary>
+    public ViewContactsResult GetContactGraph(
+        int viewId,
+        ContactOptions? options,
+        Action<IReadOnlyList<int>>? beforeSolidRead)
     {
         options ??= new ContactOptions();
 
@@ -46,7 +57,9 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        return Build(viewId, DrawingViewParts.VisibleModelIds(view), _solidGeometry, options);
+        var requestedIds = DrawingViewParts.VisibleModelIds(view).ToList();
+        beforeSolidRead?.Invoke(requestedIds);
+        return Build(viewId, requestedIds, _solidGeometry, options);
     }
 
     /// <summary>
@@ -71,10 +84,11 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         IDrawingPartSolidGeometryApi solidGeometry,
         ContactOptions options)
     {
+        var requestedIds = modelIds.ToList();
         var solids = new List<ISolid>();
         var unread = new List<UnreadPart>();
 
-        foreach (var modelId in modelIds)
+        foreach (var modelId in requestedIds)
         {
             PartSolidGeometryInViewResult geometry;
             try
@@ -106,7 +120,8 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
             solids.Add(solid);
         }
 
-        return new ViewContactsResult(viewId, ContactGraph.Build(solids, options), unread);
+        return new ViewContactsResult(
+            viewId, ContactGraph.Build(solids, options), unread, requestedIds: requestedIds);
     }
 
 }

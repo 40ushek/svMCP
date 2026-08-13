@@ -17,12 +17,17 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed class ViewContactsResult
 {
     public ViewContactsResult(
-        int viewId, ContactGraph graph, IReadOnlyList<UnreadPart> unread, string? error = null)
+        int viewId,
+        ContactGraph graph,
+        IReadOnlyList<UnreadPart> unread,
+        string? error = null,
+        IReadOnlyList<int>? requestedIds = null)
     {
         ViewId = viewId;
         Graph = graph;
         Unread = unread;
         Error = error;
+        RequestedIds = requestedIds?.Distinct().ToArray() ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -38,6 +43,14 @@ public sealed class ViewContactsResult
 
     /// <summary>Parts the view draws whose geometry did not come back.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }
+
+    /// <summary>
+    /// Every model part the view reader was asked to search, before any solid, bounding-box,
+    /// or pair search could fail. This is deliberately not reconstructed from
+    /// <see cref="Graph"/>: a body whose own box failed never reaches <see cref="ContactGraph.SolidIds"/>,
+    /// but it was still part of the requested view and must remain visible to callers.
+    /// </summary>
+    public IReadOnlyList<int> RequestedIds { get; }
 
     /// <summary>
     /// True when every part the view draws was read and every pair searched. Only then

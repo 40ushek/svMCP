@@ -35,10 +35,12 @@ public sealed class StructuralOutlineTests
     private sealed class Outline : IDrawingViewOutlineApi
     {
         public IReadOnlyCollection<int>? Asked { get; private set; }
+        public System.Action? OnRead { get; set; }
 
         public ViewAssemblyOutlineResult GetAssemblyOutline(
             int viewId, OutlineOptions? options = null, IReadOnlyCollection<int>? modelIds = null)
         {
+            OnRead?.Invoke();
             Asked = modelIds;
             return new ViewAssemblyOutlineResult(
                 viewId,
@@ -72,6 +74,23 @@ public sealed class StructuralOutlineTests
         // fetched. Reading every part's geometry to discard most of it would cost the
         // whole point of having roles.
         Assert.Equal(1, roles.Reads);
+    }
+
+    [Fact]
+    public void DefiningPartsAreReportedBeforeTheirSolidsAreRead()
+    {
+        var outline = new Outline();
+        var callbackRan = false;
+        outline.OnRead = () => Assert.True(callbackRan);
+        var api = new TeklaDrawingStructuralOutlineApi(new Roles(Role(1, "T"), Role(2, "R")), outline);
+
+        api.Get(7, beforeOutlineRead: defining =>
+        {
+            Assert.Equal(new[] { 1 }, defining.Select(part => part.ModelId));
+            callbackRan = true;
+        });
+
+        Assert.True(callbackRan);
     }
 
     [Fact]
