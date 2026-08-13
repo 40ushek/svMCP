@@ -59,10 +59,16 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         if (view == null)
             return Fail(viewId, modelId, $"View {viewId} not found in active drawing.");
 
+        // Solid geometry is consumed as 2D geometry in the drawing view, so read it in the
+        // view CS. Refuse before reading if that system is the model's own: the read would
+        // succeed and every coordinate would silently be in the wrong space.
+        var viewCoordinateSystem = view.ViewCoordinateSystem;
+        if (DrawingViewPlane.IsModelPlane(viewCoordinateSystem))
+            return Fail(viewId, modelId, DrawingViewPlane.ModelPlaneReason);
+
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        // Solid geometry is consumed as 2D geometry in the drawing view, so read it in the view CS.
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(view.ViewCoordinateSystem));
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(viewCoordinateSystem));
 
         try
         {

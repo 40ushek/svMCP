@@ -44,6 +44,11 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         if (DrawingPartGeometryCache.TryGetAll(activeDrawing, view, viewId, out var cachedResults))
             return cachedResults;
 
+        // See DrawingViewPlane: a view reporting the model system cannot be read in view
+        // coordinates, and reading anyway returns confident nonsense.
+        if (DrawingViewPlane.IsModelPlane(view.ViewCoordinateSystem))
+            return new();
+
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
         var viewPlane = new TransformationPlane(view.ViewCoordinateSystem);
@@ -213,9 +218,12 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         // Pattern from ObjectDimensioningCreator:
         // Set work plane to view's DisplayCoordinateSystem so that all model
         // coordinates are returned in view-local space.
+        var viewCS = view.ViewCoordinateSystem;
+        if (DrawingViewPlane.IsModelPlane(viewCS))
+            return new PartInView { Success = false, ViewId = viewId, ModelId = modelId, Error = DrawingViewPlane.ModelPlaneReason };
+
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        var viewCS = view.ViewCoordinateSystem;
         workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(viewCS));
         //_model.CommitChanges();
 
