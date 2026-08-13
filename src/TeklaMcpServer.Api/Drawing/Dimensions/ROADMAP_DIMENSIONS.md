@@ -287,12 +287,15 @@ consequences are:
 Measured, not assumed, and **not implemented** - no code tests this yet, and the candidate
 layers still emit corners only. It changes what selection is choosing between. Every point of
 the seven chains on a real assembly view lies on an **edge** of a part contour, and on one
-**perpendicular to its own chain**. A corner is only where two such edges meet, and taking
-corners as the unit made three of seventeen points look unreachable.
+**square to its own chain** - or, where the member is raked and no edge is square, at a
+corner where two of its edges meet. Those are the two halves of one rule, not a rule and an
+exception: a tilted edge has no single coordinate across the chain, so it can only
+contribute where it meets something. Taking corners alone as the unit made three of
+seventeen points look unreachable; taking edges alone misses the raked members.
 
-Applied as a filter this leaves fifteen X positions and ten Y positions on that view,
-against 274 candidate places found by pooling every source. Selection is choosing among
-fifteen, not among hundreds.
+Applied as a filter the square edges leave fifteen X positions and ten Y positions on that
+view, and the corners of the raked members add theirs - against 274 candidate places found
+by pooling every source. Selection is choosing among tens, not among hundreds.
 
 Diagonals are outside this. A control diagonal checks an assembly's geometry during
 fabrication, corner to corner, and is served by `place_control_diagonals`.
@@ -1038,18 +1041,143 @@ part; `AssemblyContour` candidates intentionally retain none. Their ring metadat
 whether the point is on an outer boundary or a hole. This is a separate contour-facts
 layer, deliberately not yet combined with the older per-part candidates.
 
-Next: expose a stable individual contact identity, then turn contact boundaries and
-interval endpoints into a separate `Contact` source. Each such point carries both
-participants and a contact-id-based anchor; it must preserve the contact read's
-`Unread` / `IsComplete` result. No coordinate-derived contact identity and no centroid
-is acceptable.
+Implemented 2026-08-12: contacts are a separate `Contact` source with a stable
+individual identity, both participants and a contact-id-based anchor. Their read
+completeness stays explicit. They remain facts about a junction, not a reason by
+themselves to emit a position in a dimension chain.
 
-Only a later consumer that actually needs all sources may construct a combined
-view-level collection. `ViewHull` may remain a clearly degraded legacy diagnostic if
-separately useful, but does not enter this collection route. Part OBBs may be used
-internally for a broad-phase optimisation, but are never candidates themselves.
+The sources do not become one automatic view-level collection. A later policy may
+explicitly combine particular compatible chains, but only after each semantic group has
+been calculated separately. `ViewHull` may remain a clearly degraded legacy diagnostic
+if separately useful, but does not enter this route. Part OBBs may be used internally
+for a broad-phase optimisation, but are never candidates themselves.
 
-#### 3. Return to dimension placement only after the facts exist
+#### 3. Four preliminary chains from the structural box — proposed, not implemented
+
+This is the smallest first proposal for an ordinary assembly view with horizontal and
+vertical chains. It does not select the final dimensions or create anything in Tekla.
+
+1. Take `minX`, `maxX`, `minY` and `maxY` from the structural outline: the extent of
+   `Defining` parts, not every visible layer.
+2. Seed four preliminary chains with those two extremes:
+
+   ```text
+   top:    minX ... maxX          bottom: minX ... maxX
+   left:   minY ... maxY          right:  minY ... maxY
+   ```
+
+   They are the four outer sides of the assembly box. At this point each is only an
+   overall dimension. Top and bottom chains carry X positions; left and right chains carry
+   Y positions.
+3. For every `Defining` part contour, inspect its real edges and vertices, including hole
+   rings where the part has them. A vertical edge contributes its X coordinate; a horizontal
+   edge contributes its Y coordinate. A tilted edge contributes no coordinate by itself:
+   both coordinates vary along it. Its two endpoints are nevertheless real corners and may
+   contribute there, where the tilted edge meets another edge.
+4. The side is chosen by the actual source point, not by copying a coordinate. For a strict
+   vertical or horizontal edge, its endpoints are the source points. A point low in the view
+   feeds the bottom chain and one high in it feeds the top; left and right likewise. A stud
+   therefore contributes its X to both top and bottom through two different endpoints, which
+   is not the same as copying one coordinate across.
+
+   Confirmed on the measured view: every point of the bottom chain lies at the bottom of
+   its part and every point of the top chain at the top, and the left and right chains
+   divide the same way by X. This confirms where a source point belongs; it does not claim
+   that the human drawing used every position of the preliminary symmetric set.
+
+   Coalesce equal coordinates before forming a chain. Several parts sharing one face, or a
+   raked corner agreeing with a square edge, make one position rather than several
+   coincident dimension points.
+
+Only the structural box supplies the four outer extremes. A part box is not used: on a
+raked or cut part its corner can be empty space, and its extremum can lie on a tilted edge
+that has no one coordinate to dimension to. This is why `ViewHull` and OBBs are still
+forbidden as dimension evidence.
+
+The result is four preliminary chains near the parts they describe. Later policy may
+remove a second face that only restates a part size, add opening faces, or decide that a
+side should hold only its overall. Those are policy decisions after this geometric
+proposal, not reasons to duplicate every coordinate on both sides.
+
+#### 4. Keep semantic geometry groups separate — proposed, not implemented
+
+`GeometryGroup` is the geometry snapshot for one semantic group. It stays with the work
+after reading, rather than being a disposable argument to one calculator. It contains the
+group identity, its optional outer boundary, and its projected shapes. After
+`CalcDimensionChains.Apply(group)`, it also contains that group's working
+`DimensionChains`.
+
+`CalcDimensionChains` is a local calculation over **one** `GeometryGroup`. It does not
+read Tekla, decide a part's role, create dimensions, or merge chains. It calculates the
+initial, deliberately over-complete chains from the snapshot. Policies and AI skills then
+change only `group.DimensionChains`; `Boundary` and `Shapes` remain the unmodified
+geometric evidence used to explain or reconsider every change.
+
+Working state must say what has happened to it. `DimensionChainSet.Stage` distinguishes
+`Calculated` from `PolicyApplied`. More importantly, every `DimensionChainPosition` retains
+its geometric sources and carries a policy disposition with a reason: initially
+`Calculated`, then explicitly `Kept` or `Removed`. A policy or skill must mark a position
+removed rather than silently deleting it, so a later reader can answer both why one
+position remains and why its neighbouring position does not. A position is one coordinate
+along a chain direction, with one or more geometric supports; it is not yet the two-
+coordinate point passed to Tekla. Tekla creation consumes only kept positions and makes
+that point at its final placement. A future policy-created position must carry equally
+explicit evidence; it may not be an unexplained coordinate.
+
+Naming boundary: existing `DimensionChainCoverageResult`,
+`DimensionChainCoverageBuilder`, and `DimensionPointCoverage` audit a chain that Tekla
+has already drawn. The `DimensionChain` objects discussed here are calculated candidate
+chains, before a drawing policy decides whether any dimension should exist. Do not use a
+coverage type for `group.DimensionChains`, or call its positions coverage.
+
+The structural group is the first caller: its boundary is the structural assembly outline
+and its shapes are the contours of `Defining` parts. Future groups may instead be named
+`wood-frame`, `electrical`, `contacts`, or `bolts`. A group is a deliberate semantic
+choice by the caller, never an inference from material type or an automatic mixing of
+all visible objects.
+
+`GeometryGroup` is a concrete data object, not an interface. Each group shape wraps the
+existing `PlanarShape` with the topology and provenance the calculator needs. In
+particular, a shape made from an `OutlineTreeNodeResult` retains its `IsHole` flag beside
+the `PlanarShape`; putting it into `PlanarShape` itself would make a drawing-contour fact
+part of the common contact geometry vocabulary. Every shape therefore keeps its honest
+form without pretending that all evidence is an area: a part contour is a `Polygon`, a
+contact can be a `Polygon`, `Segment`, or `Point`, and bolts are normally `Point`s.
+
+When a caller has no real outer contour, the calculator may derive scalar X/Y extrema
+from its shapes, but it must not manufacture the four corners of their box. Each emitted
+extremum still needs a supporting point on a real shape. This is safe for a group of bolt
+points, and prevents a polygon or segment group from dimensioning to an empty box corner.
+Such a derived extent is not an outline and supplies no skew evidence. An interface may
+later be useful for a component that *supplies* several groups; it is not useful at the
+calculator boundary.
+
+Each group receives its own four preliminary X/Y chains. No result from one group is
+silently added to another, even when coordinates coincide. A later policy may explicitly
+combine selected compatible chains, such as `wood-frame.bottom` with
+`contacts.bottom`; at that time it must preserve every source that supported a shared
+coordinate. Combining is a decision about what the drawing should say, not geometry
+collection.
+
+The outer boundary of a group also retains future skew evidence: a substantial tilted
+outer edge can later supply the direction of an aligned chain. That does not authorize
+skew-chain generation yet; the rule for which tilted edges deserve a chain still needs
+evidence.
+
+This calculation is deliberately usable for both drawing subjects. An assembly adapter
+will build a group from the selected structural parts; a single-part adapter will build a
+group from one part contour and its hole rings. Neither `GeometryGroup` nor
+`CalcDimensionChains` carries an `Assembly`/`Part` switch: both calculate geometric facts
+only. The difference begins afterwards. `AssemblyDimensionPolicy` locates parts and may
+remove a span that merely repeats a made part's size; a future `PartDimensionPolicy` must
+instead describe that size, holes, cut-outs and other fabrication features. Do not apply
+assembly rules to a single-part drawing.
+
+There is no policy interface yet because only the assembly policy has evidence. When a
+single-part policy is supported by real cases, the two policies may share an explicit
+contract over calculated chains. The calculation boundary stays concrete either way.
+
+#### 5. Return to dimension placement only after the facts exist
 
 Only then should a policy select points, form chains and decide which dimensions
 are necessary.  `AxisLayout`, contacts and later collision/placement logic are

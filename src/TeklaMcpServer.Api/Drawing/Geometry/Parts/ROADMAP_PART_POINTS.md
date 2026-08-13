@@ -469,24 +469,43 @@ side 17.9 mm below the corner.
 ### Perpendicular to the chain is the operative part
 
 An edge alone does not give a position. An edge running along the chain spans a range and
-fixes nothing; only an edge across it says "here". All 17 points of the orthogonal chains
-sit on an edge perpendicular to their own chain.
+fixes nothing; only an edge across it says "here".
 
-Two qualifications, both real:
+The orthogonal chains put 21 points on the drawing. Tested strictly - within 10 degrees of
+square to the chain - **17 of the 21** lie on such an edge. The remaining four sit on the
+raked members, whose edges are 12.5 degrees off, the rake of this wall.
 
-- square members give exactly 90 degrees, raked ones give 77.5 - and 90 minus 77.5 is the
-  12.5 degree rake of this wall. Perpendicularity has to be tested with a tolerance, or
-  against the member's own inclination, not against the sheet;
-- **diagonal chains are not this kind of dimension at all.** Their points sit on edges at
-  49 to 71 degrees, and correctly so: a control diagonal is a quick check of an assembly's
-  geometry, corner to corner, not a position taken to a face. `place_control_diagonals`
-  already serves them and this rule does not apply.
+Widening the tolerance to swallow that is the obvious fix and it is wrong. Measured: at 13
+degrees the X positions stay at 15, but the Y positions jump from 10 to 23. A tilted edge
+has no single coordinate across the chain - its Y changes along it - so counting one is
+taking a midpoint of something that has no middle, and thirteen of those twenty-three are
+that artefact.
+
+The four points are corners, and were among the 14 the corner test already found. So the
+rule has two cases and they do not collapse into one:
+
+- an edge **square to the chain** gives a position by itself: every point along it has the
+  same coordinate across the chain, and that coordinate is the position;
+- a **tilted edge gives no position on its own**. It contributes one only where it meets
+  another edge, and then the position comes from the meeting - which is what a corner is.
+
+That is why corners keep 14 of 17 while edges reach all 17: the corner is not a weaker
+version of the edge rule, it is the other half of it.
+
+Diagonal chains are outside both halves. Their points sit on edges at 49 to 71 degrees,
+and correctly so: a control diagonal is a quick check of an assembly's geometry during
+fabrication, corner to corner, not a position taken to a face. `place_control_diagonals`
+already serves them and this rule does not apply.
 
 ### What the rule is worth
 
-Of the 80 contour edges in this view, 44 are perpendicular to a horizontal chain and give
-**15 distinct X positions**; 23 are perpendicular to a vertical chain and give **10 Y
-positions**. The drawing's bottom chain uses 5 of the 15 and its top chain uses 5.
+Of the 80 contour edges in this view, 44 are square to a horizontal chain and give **15
+distinct X positions**; 23 are square to a vertical chain and give **10 Y positions**. Both
+counts are at the strict test - a tilted edge is deliberately not counted, for the reason
+above. Raked-member corners are then joined with those coordinate sets and coalesced; the
+final combined count has not been measured yet, because a corner may agree with a position
+already supplied by a square edge. The drawing's bottom chain uses 5 of the 15 and its top
+chain uses 5.
 
 That is the size of the real problem: not 1188 candidates or 274 places, but fifteen
 positions across and ten up. Choosing among fifteen is a question about rules; producing
