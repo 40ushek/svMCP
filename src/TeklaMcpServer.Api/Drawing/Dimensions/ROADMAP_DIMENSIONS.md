@@ -1319,6 +1319,94 @@ to better than 0.001. Where a model is looser than that, one intended face will 
 positions - and that is worth showing rather than hiding, because it is a fact about the
 model.
 
+#### 4c. Contacts belong in the snapshot, for the policy to read — agreed, not implemented
+
+Observed once, on 2026-08-13: front view 3759 of a raked timber wall, comparing
+`draw_structural_chain_positions 3759 <side>` against `get_contact_candidate_points 3759`.
+Of 41 part pairs sharing a chain position, 34 really touched and **7 did not** - their faces
+merely landed on the same coordinate. The case files were not kept, so treat this as one
+observation that motivated a decision, not as a check anyone can rerun from here; repeating
+it needs those two commands on that view.
+
+A later read returned the same aggregates - 18 parts, 56 contacts, extent
+`200…2090 × -1771…1729`, and `Segment 39 / Polygon 16 / Point 1` - but a different set of
+model ids. The assembly/drawing identity was not captured for both reads, so this is not
+evidence of two independent panels: it may be a similar panel, rebuilt/renumbered source,
+or a selection/read defect. Record that discrepancy rather than promote the matching totals
+to confirmation.
+
+What it motivates: the supports already recorded on a position cannot answer whether two
+parts are joined. About one time in six they would say yes when the answer is no.
+
+That answer is a fact about the geometry, not a decision, so it travels in the snapshot.
+But only a policy has any use for it, and a policy must stay a pure function over the
+snapshot: if it has to read Tekla for contacts itself, it stops being testable and we are
+back where we started.
+
+**Touching is not the useful fact on its own.** Two studs standing side by side touch along
+a vertical plane; for a horizontal chain their shared face is an internal seam and no
+dimension goes there. A stud standing on a bottom plate also touches - and that is two
+different members, where the plate's top face is a real place. The same contact is a seam
+for one chain and a bearing surface for another. So the snapshot carries contacts **with
+their flattened shape**, and a policy asks its own question about an eligible shape: does it
+lie across my chain direction or along it.
+
+##### What must be decided before implementation
+
+**A neutral contact type.** `ViewContactGeometryResult` has the shapes but is Tekla-shaped:
+`ViewId`, `UnreadPart`, `Unresolved` full of model ids. Embedding it would break the
+snapshot's independence from Tekla, which is the property that lets one calculator serve an
+assembly and a single part alike. What goes in is a neutral `GeometryGroupContacts`: the
+flattened shapes, two caller-owned participant ids per contact, the contact kind, and
+neutral issues.
+
+Each flattened shape keeps both a caller-owned `ContactId` and `ShapeId`. The participant
+pair and kind do not identify one place: one pair can have several contacts, and one contact
+can project as several separate shapes. Losing either id would make policy reasons and debug
+output ambiguous, and would invite a later deduplication to merge distinct places.
+
+**A way to tell which contact touches which position.** A position knows its supporting
+`GeometryGroupShape`; a contact knows two parts. Today the only bridges between them are
+parsing `defining-part:123:ring:0` back into an id, or re-matching by distance - a string
+contract and a proximity guess, and both are the kind of thing this whole area exists to
+avoid. Fix it at the source: a group shape carries a list of neutral `SourceIds`, a contact
+carries the same two ids, and the policy joins on those. Only then does it check the
+geometry - whether the position's supporting point lies on the contact shape within a
+tolerance, and whether that shape runs across the chain.
+
+**A rule for every planar form.** Only a `Segment` has one direction, so only a segment can
+answer the first policy's across/along question directly. A `Point` has none, and a
+`Polygon` can have edges in both directions; the observation that 39 of 56 contacts project
+as segments leaves 17 that this rule does not cover. Until a separately measured rule exists
+for them, they must not be silently treated as seams or bearing surfaces: the affected
+position is `Undecided` with that reason.
+
+**A disposition for "looked at, could not decide".** `Calculated` cannot carry it: it means
+"nobody has judged this", it takes no reason, and `MarkPolicyApplied` refuses while any
+position still holds it. A policy that leaves a position undecided must be able to finish
+its review and say why, so the enum needs a third outcome - `Undecided` - with a mandatory
+reason, exactly as `Kept` and `Removed` have.
+
+##### Completeness binds the policy
+
+"These two do not touch" is only true if the whole view was searched **and** every region
+survived flattening. `ViewContactGeometryResult.IsComplete` already means all three -
+nothing unread, nothing `Unflattened`, nothing `Unresolved` - and all three must reach the
+snapshot, not only the unread parts. A region that flattened to nothing is a contact whose
+place on the sheet is unknown, and treating that as "no contact" is the same error as
+treating an unread part that way.
+
+`IsComplete` is a useful whole-view warning, not the scope of a decision. Each neutral
+contact issue must retain the affected participant `SourceIds` and, where one was known,
+its `ContactId` and `ShapeId`; this is structured data, not a compound string for policy to
+parse. A missing or unflattened A/B contact blocks only a no-seam conclusion about an
+affected A/B position. It must not make an unrelated C/D position undecidable. Where an
+issue does affect a position, the policy marks it `Undecided` and names that exact gap.
+
+So the policy takes one thing - the snapshot. Boundaries and part shapes, the preliminary
+chains with their positions and supports, the contacts with their shapes and participants,
+and the completeness of both reads. It reads nothing itself; it only marks positions.
+
 #### 5. Return to dimension placement only after the facts exist
 
 Only then should a policy select points, form chains and decide which dimensions
