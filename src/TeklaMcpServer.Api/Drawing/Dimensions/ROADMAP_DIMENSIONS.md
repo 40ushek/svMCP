@@ -1052,7 +1052,7 @@ been calculated separately. `ViewHull` may remain a clearly degraded legacy diag
 if separately useful, but does not enter this route. Part OBBs may be used internally
 for a broad-phase optimisation, but are never candidates themselves.
 
-#### 3. Four preliminary chains from the structural box — proposed, not implemented
+#### 3. Four preliminary chains from the structural box — implemented 2026-08-13
 
 This is the smallest first proposal for an ordinary assembly view with horizontal and
 vertical chains. It does not select the final dimensions or create anything in Tekla.
@@ -1101,17 +1101,24 @@ vertical chains. It does not select the final dimensions or create anything in T
    question, not two tolerances. Several parts sharing one face, or a raked corner agreeing
    with a square edge, make one position rather than several coincident dimension points.
 
-Only the structural box supplies the four outer extremes. A part box is not used: on a
-raked or cut part its corner can be empty space, and its extremum can lie on a tilted edge
-that has no one coordinate to dimension to. This is why `ViewHull` and OBBs are still
-forbidden as dimension evidence.
+Only the structural box supplies the four outer extremes; other assembly-boundary steps
+and hole rings are retained as factual boundary geometry, but do not add preliminary
+positions. Positions come from the member shapes that actually explain them. A part box
+is not used: on a raked or cut part its corner can be empty space, and its extremum can
+lie on a tilted edge that has no one coordinate to dimension to. This is why `ViewHull`
+and OBBs are still forbidden as dimension evidence.
+
+This is not a loss of useful steps. A step in the union boundary is either already an
+edge of a member contour, which supplies the same position with its owner, or is created
+or displaced by merging across `MergeGapTolerance`. Dimensioning the latter would invent
+a location which no part actually has.
 
 The result is four preliminary chains near the parts they describe. Later policy may
 remove a second face that only restates a part size, add opening faces, or decide that a
 side should hold only its overall. Those are policy decisions after this geometric
 proposal, not reasons to duplicate every coordinate on both sides.
 
-#### 4. Keep semantic geometry groups separate — proposed, not implemented
+#### 4. Keep semantic geometry groups separate — implemented 2026-08-13
 
 `GeometryGroup` is the geometry snapshot for one semantic group. It stays with the work
 after reading, rather than being a disposable argument to one calculator. It contains the
@@ -1197,6 +1204,81 @@ assembly rules to a single-part drawing.
 There is no policy interface yet because only the assembly policy has evidence. When a
 single-part policy is supported by real cases, the two policies may share an explicit
 contract over calculated chains. The calculation boundary stays concrete either way.
+
+#### 4a. Four constraints for the structural adapter — implemented 2026-08-13
+
+`StructuralGeometryGroupBuilder` connects the tested calculator to the structural outline,
+and `draw_structural_chain_positions <viewId> [side]` is its read-only line overlay. These
+constraints remain here because each is a decision that the code will not explain, and
+three of them are the kind somebody later corrects in good faith.
+
+**The group's completeness stays free of Tekla.** A group carries whether it is complete
+and which sources went unread, named by the same caller-owned ids its shapes use. Not
+`modelId`, not an `Identifier`, not a Tekla error string. The reason is the one that kept
+`IsHole` out of `PlanarShape`: a group is the same object for an assembly and for a single
+part, and the first adapter to put a model id in it will look entirely reasonable doing so.
+
+The completeness travels inside the group rather than beside it. A partially read group
+still produces plausible chains, and the damage is not confined to the gaps: if a
+`Defining` part went unread, the overall extremes are wrong, which is the one dimension a
+reader trusts without checking.
+
+**Rings alternate by depth.** Unfolding a contour tree, even depth is a normal ring and
+odd depth is a hole. This actively determines the `IsHole` evidence of part rings, which
+the calculator reads for positions. Assembly-boundary rings retain the same topology, but
+currently provide only the overall extent. Obvious only to someone who has already met an
+island inside an opening; without the rule that island becomes a hole and its edges are
+read inside out.
+
+**The overall extremes span all components together, gap included.** An assembly can
+project as several disconnected pieces, and the extent across them is the assembly's real
+overall size. Written down so that the emptiness between them is not later mistaken for a
+bug and "fixed".
+
+**Debug drawing is an adapter, not part of the calculation.** The calculator knows nothing
+of views, sheets or overlays. A position is a coordinate, so a debug view of one draws a
+line across the group's extent - not a cross, which would put back the point framing this
+whole section exists to replace.
+
+#### 4b. Merging near-equal positions belongs to policy, not to the calculation
+
+Measured on a live panel view: the assembly outline sits **0.00235 mm inside** the part
+contours it was built from, at both X extremes and nowhere in Y. The union is not a plain
+combination - `ProjectedOutlineBuilder.BuildAssembly` inflates every contour by half the
+merge gap and deflates it back, so that parts standing a fraction apart read as one
+boundary. That round trip returns exactly on some corners and not on others, and what it
+leaves behind is a few thousandths of a millimetre.
+
+The visible effect is a pair of positions at each end of every chain: one on a real part
+edge, one on the outline, 0.00235 apart and so beyond the 0.001 mm coincidence tolerance.
+The `GroupExtent` support - the overall dimension's own anchor - lands on the outline one,
+a coordinate no part actually has.
+
+Write that down rather than fix it here, because two obvious repairs are both wrong:
+
+- raising the calculation tolerance would hide it everywhere. 0.001 mm is the tolerance
+  that flattened the geometry, and a millimetre there would erase rebates and sheet
+  thicknesses;
+- changing the outline builder would touch geometry shared with contacts, to correct
+  something no drawing can show. At 1:25 the residue is a ten-thousandth of a millimetre
+  on paper.
+
+**The merge belongs to the stage that removes redundant dimensions.** Two positions closer
+together than a dimension can express are one position on the drawing - and in construction
+that threshold is around a millimetre, since nothing real is thinner. But collapsing them
+is a decision about what the drawing should say, not a fact about the geometry, and the
+disposition already exists to record it: the removed position is marked with its reason
+instead of vanishing.
+
+So the calculated set keeps both, deliberately. A reader of the raw output should expect a
+doubled position at each extreme and should not treat it as a defect of the calculation.
+
+Modelling is the other source of small differences and is not the same thing. On the panel
+measured here the whole assembly sits at -0.02235 rather than 0, which is where the parts
+genuinely are and what a dimension should report. Faces that ought to coincide did coincide
+to better than 0.001. Where a model is looser than that, one intended face will produce two
+positions - and that is worth showing rather than hiding, because it is a fact about the
+model.
 
 #### 5. Return to dimension placement only after the facts exist
 

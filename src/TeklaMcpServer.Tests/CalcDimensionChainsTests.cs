@@ -13,7 +13,7 @@ public sealed class CalcDimensionChainsTests
     public void ARectangularGroupGetsFourChainsWithItsOverallExtremes()
     {
         var rectangle = Shape("part:1", false, (0, 0), (100, 0), (100, 50), (0, 50));
-        var group = new GeometryGroup("wood-frame", rectangle, [rectangle]);
+        var group = new GeometryGroup("wood-frame", [rectangle], [rectangle]);
 
         CalcDimensionChains.Apply(group);
 
@@ -32,7 +32,7 @@ public sealed class CalcDimensionChainsTests
     {
         var boundary = Shape("outline", false, (0, 0), (200, 0), (200, 100), (0, 100));
         var stud = Shape("part:stud", false, (60, 0), (70, 0), (70, 100), (60, 100));
-        var group = new GeometryGroup("wood-frame", boundary, [stud]);
+        var group = new GeometryGroup("wood-frame", [boundary], [stud]);
 
         CalcDimensionChains.Apply(group);
 
@@ -41,23 +41,25 @@ public sealed class CalcDimensionChainsTests
     }
 
     [Fact]
-    public void ASeparateBoundaryContributesItsRealSteppedEdge()
+    public void BoundarySuppliesOnlyTheOverallBoxNotExtraChainPositions()
     {
         var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (60, 100), (60, 60), (0, 60));
         var member = Shape("bolt:1", false, (20, 20));
-        var group = new GeometryGroup("assembly", boundary, [member]);
+        var group = new GeometryGroup("assembly", [boundary], [member]);
 
         CalcDimensionChains.Apply(group);
 
-        var topAtSixty = Position(group.DimensionChains!, DimensionChainSide.Top, 60);
-        Assert.Contains(topAtSixty.Supports, support => ReferenceEquals(support.Source, boundary));
+        Assert.Equal([0d, 100d], Coordinates(group.DimensionChains!, DimensionChainSide.Top));
+        Assert.Equal([0d, 20d, 100d], Coordinates(group.DimensionChains!, DimensionChainSide.Bottom));
+        Assert.DoesNotContain(group.DimensionChains![DimensionChainSide.Bottom].Positions.SelectMany(position => position.Supports), support =>
+            ReferenceEquals(support.Source, boundary) && support.Kind != DimensionChainPositionSupportKind.GroupExtent);
     }
 
     [Fact]
     public void ASlopedEdgeContributesThroughItsCornersNotAnInventedEdgeCoordinate()
     {
         var triangle = Shape("part:raked", false, (0, 0), (100, 0), (100, 100));
-        var group = new GeometryGroup("wood-frame", triangle, [triangle]);
+        var group = new GeometryGroup("wood-frame", [triangle], [triangle]);
 
         CalcDimensionChains.Apply(group);
 
@@ -77,7 +79,7 @@ public sealed class CalcDimensionChainsTests
     {
         var boundary = Shape("outline", false, (0, 0), (200, 0), (200, 1000), (0, 1000));
         var contact = Shape("contact:1", false, (30, 0), (130, 1000)); // 5.7 degrees from vertical
-        var group = new GeometryGroup("contacts", boundary, [contact]);
+        var group = new GeometryGroup("contacts", [boundary], [contact]);
 
         CalcDimensionChains.Apply(group);
 
@@ -96,7 +98,7 @@ public sealed class CalcDimensionChainsTests
     {
         var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
         var hole = Shape("part:1/hole:1", true, (40, 40), (60, 40), (60, 60), (40, 60));
-        var group = new GeometryGroup("single-part", boundary, [hole]);
+        var group = new GeometryGroup("single-part", [boundary], [hole]);
 
         CalcDimensionChains.Apply(group);
 
@@ -112,7 +114,7 @@ public sealed class CalcDimensionChainsTests
     {
         var firstBolt = Shape("bolt:1", false, (10, 20));
         var secondBolt = Shape("bolt:2", false, (40, 80));
-        var group = new GeometryGroup("bolts", boundary: null, [firstBolt, secondBolt]);
+        var group = new GeometryGroup("bolts", boundaryShapes: null, [firstBolt, secondBolt]);
 
         CalcDimensionChains.Apply(group);
 
@@ -129,7 +131,7 @@ public sealed class CalcDimensionChainsTests
         var first = Shape("bolt:1", false, (0, 0));
         var nearFirst = Shape("bolt:2", false, (0.00075, 0));
         var last = Shape("bolt:3", false, (0.0015, 0));
-        var group = new GeometryGroup("bolts", boundary: null, [first, nearFirst, last]);
+        var group = new GeometryGroup("bolts", boundaryShapes: null, [first, nearFirst, last]);
 
         CalcDimensionChains.Apply(group);
 
@@ -143,7 +145,7 @@ public sealed class CalcDimensionChainsTests
     public void AnEmptyExtentFailsInsteadOfReturningFourEmptyChains()
     {
         var emptyBoundary = new GeometryGroupShape("outline", PlanarShape.Empty);
-        var group = new GeometryGroup("empty-group", emptyBoundary);
+        var group = new GeometryGroup("empty-group", [emptyBoundary]);
 
         var error = Assert.Throws<InvalidOperationException>(() => CalcDimensionChains.Apply(group));
 
@@ -156,7 +158,7 @@ public sealed class CalcDimensionChainsTests
     {
         var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
         var empty = new GeometryGroupShape("unflattened-contact", PlanarShape.Empty);
-        var group = new GeometryGroup("wood-frame", boundary, [empty]);
+        var group = new GeometryGroup("wood-frame", [boundary], [empty]);
 
         CalcDimensionChains.Apply(group);
 
@@ -168,7 +170,7 @@ public sealed class CalcDimensionChainsTests
     {
         var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
         var bolt = Shape("bolt:1", false, (50, 50));
-        var group = new GeometryGroup("bolts", boundary, [bolt]);
+        var group = new GeometryGroup("bolts", [boundary], [bolt]);
 
         CalcDimensionChains.Apply(group);
 
@@ -189,7 +191,7 @@ public sealed class CalcDimensionChainsTests
     public void PolicyDispositionKeepsTheReasonForARemovedPosition()
     {
         var rectangle = Shape("part:1", false, (0, 0), (100, 0), (100, 50), (0, 50));
-        var group = new GeometryGroup("wood-frame", rectangle, [rectangle]);
+        var group = new GeometryGroup("wood-frame", [rectangle], [rectangle]);
         CalcDimensionChains.Apply(group);
 
         var position = Position(group.DimensionChains!, DimensionChainSide.Top, 100);
@@ -210,7 +212,7 @@ public sealed class CalcDimensionChainsTests
     public void PolicyStageCannotHideUndecidedPositions()
     {
         var rectangle = Shape("part:1", false, (0, 0), (100, 0), (100, 50), (0, 50));
-        var group = new GeometryGroup("wood-frame", rectangle, [rectangle]);
+        var group = new GeometryGroup("wood-frame", [rectangle], [rectangle]);
         CalcDimensionChains.Apply(group);
 
         Assert.Throws<InvalidOperationException>(() => group.DimensionChains!.MarkPolicyApplied());
@@ -221,7 +223,7 @@ public sealed class CalcDimensionChainsTests
     public void ApplyingAgainCannotDiscardPolicyDecisions()
     {
         var rectangle = Shape("part:1", false, (0, 0), (100, 0), (100, 50), (0, 50));
-        var group = new GeometryGroup("wood-frame", rectangle, [rectangle]);
+        var group = new GeometryGroup("wood-frame", [rectangle], [rectangle]);
         CalcDimensionChains.Apply(group);
         var chains = group.DimensionChains!;
 
@@ -232,6 +234,37 @@ public sealed class CalcDimensionChainsTests
         Assert.Throws<InvalidOperationException>(() => CalcDimensionChains.Apply(group));
         Assert.Same(chains, group.DimensionChains);
         Assert.Equal(DimensionChainSetStage.PolicyApplied, group.DimensionChains!.Stage);
+    }
+
+    [Fact]
+    public void DebugLinesSeparateTopAndBottomEvenWhenTheyShareCoordinates()
+    {
+        var first = Shape("part:1", false, (0, 0), (10, 0), (10, 10), (0, 10));
+        var second = Shape("part:2", false, (100, 20), (110, 20), (110, 30), (100, 30));
+        var group = new GeometryGroup("disconnected", [first, second], [first, second]);
+        CalcDimensionChains.Apply(group);
+
+        var bottomLines = DimensionChainDebugOverlayBuilder.CreateLines(group, DimensionChainSide.Bottom, viewId: 7);
+        var topLines = DimensionChainDebugOverlayBuilder.CreateLines(group, DimensionChainSide.Top, viewId: 7);
+
+        Assert.All(bottomLines, line =>
+        {
+            Assert.Equal(line.X1, line.X2);
+            Assert.Equal(0d, line.Y1);
+            Assert.Equal(15d, line.Y2);
+            Assert.Equal(7, line.ViewId);
+            Assert.Equal("blue", line.Color);
+        });
+        Assert.All(topLines, line =>
+        {
+            Assert.Equal(line.X1, line.X2);
+            Assert.Equal(15d, line.Y1);
+            Assert.Equal(30d, line.Y2);
+            Assert.Equal(7, line.ViewId);
+            Assert.Equal("red", line.Color);
+        });
+        Assert.Equal(Coordinates(group.DimensionChains!, DimensionChainSide.Bottom), bottomLines.Select(line => line.X1));
+        Assert.Equal(Coordinates(group.DimensionChains!, DimensionChainSide.Top), topLines.Select(line => line.X1));
     }
 
     private static GeometryGroupShape Shape(string id, bool isHole, params (double X, double Y)[] points) =>

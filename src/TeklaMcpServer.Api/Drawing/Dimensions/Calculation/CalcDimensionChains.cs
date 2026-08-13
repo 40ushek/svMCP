@@ -29,25 +29,20 @@ public static class CalcDimensionChains
         }
 
         var chains = NewChains();
-        var extentShapes = group.Boundary == null ? group.Shapes : [group.Boundary];
+        var extentShapes = group.BoundaryShapes.Count == 0 ? group.Shapes : group.BoundaryShapes;
         var extentPoints = Points(extentShapes).ToList();
 
-        if (extentPoints.Count == 0)
+        if (group.Extent == null)
         {
             throw new InvalidOperationException(
                 $"Geometry group '{group.Id}' has no planar points from which to calculate dimension chains.");
         }
 
-        var extents = GroupExtents.From(extentPoints);
+        var extents = group.Extent;
         AddExtremes(chains, extentPoints, extents);
 
         foreach (var shape in group.Shapes)
             AddShape(chains, shape, extents);
-
-        // The union contour can contain a real step which none of the member shapes
-        // names. It is a source of positions too, even when callers keep it separate.
-        if (group.Boundary != null && !group.Shapes.Any(shape => ReferenceEquals(shape, group.Boundary)))
-            AddShape(chains, group.Boundary, extents);
 
         foreach (var chain in chains)
             chain.FinalizePositions(PositionCoincidenceToleranceMm);
@@ -66,7 +61,7 @@ public static class CalcDimensionChains
     private static void AddExtremes(
         IReadOnlyList<DimensionChain> chains,
         IReadOnlyList<SourcePoint> points,
-        GroupExtents extents)
+        GeometryGroupExtent extents)
     {
         AddExtent(chains, DimensionChainSide.Top, extents.MinX, points.Where(point => Same(point.Point.X, extents.MinX)));
         AddExtent(chains, DimensionChainSide.Top, extents.MaxX, points.Where(point => Same(point.Point.X, extents.MaxX)));
@@ -92,7 +87,7 @@ public static class CalcDimensionChains
     private static void AddShape(
         IReadOnlyList<DimensionChain> chains,
         GeometryGroupShape shape,
-        GroupExtents extents)
+        GeometryGroupExtent extents)
     {
         var points = shape.Shape.Points;
         if (points.Count == 0)
@@ -144,7 +139,7 @@ public static class CalcDimensionChains
         IReadOnlyList<DimensionChain> chains,
         SourcePoint source,
         DimensionChainPositionSupportKind kind,
-        GroupExtents extents)
+        GeometryGroupExtent extents)
     {
         AddX(chains, source, kind, extents);
         AddY(chains, source, kind, extents);
@@ -154,7 +149,7 @@ public static class CalcDimensionChains
         IReadOnlyList<DimensionChain> chains,
         SourcePoint source,
         DimensionChainPositionSupportKind kind,
-        GroupExtents extents)
+        GeometryGroupExtent extents)
     {
         var toTop = Math.Abs(source.Point.Y - extents.MaxY);
         var toBottom = Math.Abs(source.Point.Y - extents.MinY);
@@ -171,7 +166,7 @@ public static class CalcDimensionChains
         IReadOnlyList<DimensionChain> chains,
         SourcePoint source,
         DimensionChainPositionSupportKind kind,
-        GroupExtents extents)
+        GeometryGroupExtent extents)
     {
         var toLeft = Math.Abs(source.Point.X - extents.MinX);
         var toRight = Math.Abs(source.Point.X - extents.MaxX);
@@ -200,29 +195,6 @@ public static class CalcDimensionChains
 
     private static bool Same(double first, double second) =>
         Math.Abs(first - second) <= PositionCoincidenceToleranceMm;
-
-    private readonly struct GroupExtents
-    {
-        private GroupExtents(double minX, double maxX, double minY, double maxY)
-        {
-            MinX = minX;
-            MaxX = maxX;
-            MinY = minY;
-            MaxY = maxY;
-        }
-
-        public double MinX { get; }
-        public double MaxX { get; }
-        public double MinY { get; }
-        public double MaxY { get; }
-
-        public static GroupExtents From(IReadOnlyList<SourcePoint> points) =>
-            new(
-                points.Min(point => point.Point.X),
-                points.Max(point => point.Point.X),
-                points.Min(point => point.Point.Y),
-                points.Max(point => point.Point.Y));
-    }
 
     private readonly struct SourcePoint(GeometryGroupShape shape, Vec3 point, int index)
     {

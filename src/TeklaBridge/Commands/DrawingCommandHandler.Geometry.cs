@@ -65,6 +65,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_structural_outline":
                 return HandleGetStructuralOutline(args);
 
+            case "draw_structural_chain_positions":
+                return HandleDrawStructuralChainPositions(GetDebugOverlayApi(), args);
+
             case "get_contact_candidate_points":
                 return HandleGetContactCandidatePoints(GetDebugOverlayApi(), args);
 
@@ -381,12 +384,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var model = new Tekla.Structures.Model.Model();
-        var api = new TeklaDrawingStructuralOutlineApi(
-            new TeklaDrawingPartRoleApi(model),
-            new TeklaDrawingAssemblyOutlineApi(model));
-
-        var result = api.Get(viewId);
+        var result = GetStructuralOutline(viewId);
 
         WriteJson(new
         {
@@ -412,6 +410,104 @@ internal sealed partial class DrawingCommandHandler
         });
         return true;
     }
+
+    /// <summary>
+    /// Draws one deliberately over-complete preliminary side as lines across the structural
+    /// extent. This is a read-only inspection aid: it does not choose, create, or alter a
+    /// dimension. The optional side is Top, Bottom, Left, or Right; Bottom is the default
+    /// so a first call remains legible rather than drawing all four chains at once.
+    /// </summary>
+    private bool HandleDrawStructuralChainPositions(TeklaDrawingDebugOverlayApi overlay, string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("draw_structural_chain_positions requires viewId argument");
+            return true;
+        }
+
+        var side = DimensionChainSide.Bottom;
+        if (args.Length >= 3 &&
+            (!Enum.TryParse(args[2], ignoreCase: true, out side) ||
+             !Enum.IsDefined(typeof(DimensionChainSide), side)))
+        {
+            WriteError("draw_structural_chain_positions side must be Top, Bottom, Left, or Right");
+            return true;
+        }
+
+        // Each side is independently inspectable. The overlay hierarchy lets
+        // clear_debug_overlay dimension_chain_positions still clear every side and view.
+        var overlayGroup = "dimension_chain_positions:" + viewId.ToString(CultureInfo.InvariantCulture) + ":" + side;
+        var group = StructuralGeometryGroupBuilder.Build(GetStructuralOutline(viewId));
+        try
+        {
+            CalcDimensionChains.Apply(group);
+        }
+        catch (InvalidOperationException exception)
+        {
+            // A failed calculation must not leave an old successful run on the sheet.
+            var cleared = overlay.DrawOverlay(JsonSerializer.Serialize(new DrawingDebugOverlayRequest
+            {
+                Group = overlayGroup,
+                ClearGroupFirst = true
+            }));
+            var sourceError = group.Completeness.Issues
+                .FirstOrDefault(issue => issue.Id == "structural-outline")?.Reason;
+            WriteJson(new
+            {
+                success = false,
+                viewId,
+                side = side.ToString(),
+                group = overlayGroup,
+                clearedCount = cleared.ClearedCount,
+                isComplete = group.Completeness.IsComplete,
+                issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+                // The calculation error says what it could not do; when the structural
+                // reader already supplied a cause, make that the primary error instead.
+                error = sourceError ?? exception.Message,
+                calculationError = exception.Message
+            });
+            return true;
+        }
+
+        var lines = DimensionChainDebugOverlayBuilder.CreateLines(group, side, viewId);
+        var overlayResult = overlay.DrawOverlay(JsonSerializer.Serialize(new DrawingDebugOverlayRequest
+        {
+            Group = overlayGroup,
+            ClearGroupFirst = true,
+            Shapes = lines.ToList()
+        }));
+
+        var extent = group.Extent!;
+        WriteJson(new
+        {
+            success = true,
+            viewId,
+            side = side.ToString(),
+            group = overlayResult.Group,
+            clearedCount = overlayResult.ClearedCount,
+            drawnCount = overlayResult.CreatedCount,
+            isComplete = group.Completeness.IsComplete,
+            issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+            extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
+            positions = group.DimensionChains![side].Positions.Select(position => new
+            {
+                coordinate = position.Coordinate,
+                supports = position.Supports.Select(support => new
+                {
+                    sourceId = support.Source.Id,
+                    isHole = support.Source.IsHole,
+                    kind = support.Kind.ToString(),
+                    point = new[] { support.Point.X, support.Point.Y }
+                })
+            })
+        });
+        return true;
+    }
+
+    private StructuralOutline GetStructuralOutline(int viewId) =>
+        new TeklaDrawingStructuralOutlineApi(
+            new TeklaDrawingPartRoleApi(_model),
+            new TeklaDrawingAssemblyOutlineApi(_model)).Get(viewId);
 
     private bool HandleGetAssemblyOutline(TeklaDrawingAssemblyOutlineApi api, string[] args)
     {
