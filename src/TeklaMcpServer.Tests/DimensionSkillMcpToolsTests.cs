@@ -12,6 +12,9 @@ public sealed class DimensionSkillMcpToolsTests
     private static string GeometryToolsSource() => File.ReadAllText(
         Path.Combine(BridgeTestHelpers.FindRepoRoot(), "src", "TeklaMcpServer", "Tools", "Drawing", "ModelTools.Drawing.Geometry.cs"));
 
+    private static string DimensionsToolsSource() => File.ReadAllText(
+        Path.Combine(BridgeTestHelpers.FindRepoRoot(), "src", "TeklaMcpServer", "Tools", "Drawing", "ModelTools.Drawing.Dimensions.cs"));
+
     [Fact]
     public void StructuralChainPositionsIsPublishedAsAnMcpTool()
     {
@@ -38,5 +41,14 @@ public sealed class DimensionSkillMcpToolsTests
         Assert.Contains("string modelIds = \"\"", text);
         Assert.Contains("string.IsNullOrWhiteSpace(modelIds)", text);
         Assert.Contains("draw ? \"true\" : \"false\", modelIds", text);
+    }
+
+    [Fact]
+    public void DimensionChainCoverageIsPublishedAsAnMcpTool()
+    {
+        var text = DimensionsToolsSource();
+
+        Assert.Contains("public static string GetDimensionChainCoverage(", text);
+        Assert.Contains("RunBridge(\n            \"get_dimension_chain_coverage\"", text);
     }
 }

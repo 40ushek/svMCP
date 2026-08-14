@@ -51,6 +51,34 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description(
+        "Check one dimension against a specific anchor question: whether its points land on real part geometry. " +
+        "Read-only; use in review mode for a targeted anchor check, not as a mandatory pre-placement scan. " +
+        "Reports each point as matched, on a fallback (fallbackOnly), or missing entirely, per point.")]
+    public static string GetDimensionChainCoverage(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("ID of the dimension set to check (from get_drawing_dimensions)")] int dimensionId,
+        [Description("Match tolerance in view units. Default: 1.0")] double tolerance = 1.0)
+    {
+        var json = RunBridge(
+            "get_dimension_chain_coverage",
+            viewId.ToString(CultureInfo.InvariantCulture),
+            dimensionId.ToString(CultureInfo.InvariantCulture),
+            tolerance.ToString(CultureInfo.InvariantCulture));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
+                return $"Error: {err.GetString()}";
+
+            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch
+        {
+            return $"Bridge error: {json}";
+        }
+    }
+
     [McpServerTool, Description("Delete a straight dimension set from the active drawing by its ID (from get_drawing_dimensions).")]
     public static string DeleteDimension(
         [Description("ID of the StraightDimensionSet to delete")] int dimensionId)
