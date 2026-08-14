@@ -1,201 +1,180 @@
 ---
 name: dimension-drawings
-description: Place, clean up or review dimensions on a Tekla assembly drawing — thinning redundant chain points, removing duplicate chains, fixing snap points, or dimensioning a drawing from scratch. Use whenever the task touches drawing dimensions in this project.
+description: Place, repair, clean up, or review dimensions on a Tekla AssemblyDrawing in this project. Use whenever a request touches drawing dimensions, including a request to dimension an active assembly drawing completely.
 ---
 
-# Dimensioning Tekla assembly drawings
+# Tekla Assembly Dimensioning
 
-Derived 2026-08-01 on model Midi_1-1-1: about a dozen interior walls, two exterior
-walls, and two overlay layers of one exterior wall (OSB sheathing, battens).
-**Never seen:** roof panels, trusses, parts with cut-outs, steel, any other plant.
+Use this skill only for `AssemblyDrawing`. Confirm the drawing type before any
+write. Do not change project code, role rules, roadmaps, or this skill while
+dimensioning a drawing unless the user explicitly asks for that separate work.
 
-Evidence — which drawing, which numbers, which earlier versions were wrong, and a
-changelog of this file — lives next door in `HISTORY.md`, which is not loaded with
-this one. Read it when a rule looks doubtful or you are about to invent one.
+## Choose one mode
 
-## Scope
+| User intent | Mode | Writes dimensions? |
+|---|---|---|
+| Review, inspect, compare, explain | `review` | No |
+| Place, fix, recreate, or dimension completely | `place` | Yes |
 
-AssemblyDrawing only — check type from get_drawing_context. On single-part drawings
-these rules destroy the drawing; GA drawings have a different subject.
+Do not start in `review` and call it a completed `place` task. If the user says
+"fully", "completely", or asks to place dimensions, use `place`.
 
-The premise: **a dimension says where a part goes, not how big it is.** Part sizes
-live on fabrication drawings. Exception on overlay layers — see rule 1.
+## Progress log
 
-## Checklist — compute all of these before proposing anything
+Before the first bridge read, start a run. Log each transition between reading,
+planning, applying, and verifying. Finish once.
 
-They come out of the two reads you already make. Put them in the same script as the
-capture: a separate step gets skipped, and each of these has cost a wrong answer.
+```powershell
+TeklaBridge.exe log_skill_event start dimension-drawings <runId>
+TeklaBridge.exe log_skill_event task dimension-drawings <runId> "<step>"
+TeklaBridge.exe log_skill_event finish dimension-drawings <runId> "<summary>"
+```
 
-1. **Same coordinate space?** Parts extent per axis against what the chains measure.
-   If the height is in the parts Z and the chains Y — stop, nothing else will work.
-2. **Both rows.** Compute relative (gaps between adjacent points) and absolute
-   (running totals from the start). TeklaDimensionType says which are printed:
-   Relative, Absolute, or RelativeAndAbsolute meaning both.
-3. **Rule 1 mechanically.** For each adjacent pair: do both points resolve to one
-   part whose own extent along the axis equals the span?
-4. **Openings.** Stud gaps larger than the usual spacing. Points must sit on the
-   faces that bound the opening. Clear width and height must appear in a row.
-5. **Phantom points.** Run get_dimension_chain_coverage on every chain — not only
-   when in doubt. fallbackOnly means the point matched a box corner; Missing means it
-   belongs to nothing at all, which a hand-rolled bbox test does not catch. Re-anchor
-   either way, **including when the printed value does not depend on the anchor** — a
-   horizontal chain hanging off a phantom y still gets fixed.
-6. **Points far from their chain.** A chain drawn on the left takes points near the
-   left, not across the view. Remove them; a wide panel is not an excuse.
-7. **Containment.** Compare what each chain prints. All values inside another's and
-   it goes. Overall dimensions are the exception.
-8. **Start point.** Which point is first? On a layer over a finished frame the zero
-   belongs on the frame. Unverifiable afterwards — read-back normalises the order.
+Call `TeklaBridge.exe` directly from the Tekla extension folder. Every bridge
+command is logged separately; do not duplicate those log lines manually.
 
-Then propose, stating what each chain will print.
+- **Mark before you act, not after you learn.** The line goes out when you decide
+  to do something, describing what you are about to do. A mark written after a
+  check has already told you what is wrong records a reaction, not a step, and
+  the interval before it holds work nobody logged.
+- **Name a failed command in your own mark.** `bridge-exec` records the
+  exception, but the step mark stays silent and the step reads as clean. If a
+  call errors, say so in the next `task`.
 
-## Traps
+## Review mode
 
-- **Read-back normalises point order** (top-to-bottom, right-to-left). The order
-  passed to create_dimension fixes the absolute zero and is not recoverable.
-- **LengthList is neither row** — computed here from the normalised order.
-- **Never difference adjacent points to say what a chain reads.** Compute both rows
-  and check the type.
-- **Editing renumbers**: use newDimensionId / mergedDimensionId. Match states by
-  geometry, never by id.
-- **Offset side comes from the direction vector**, never from a negative distance.
-  direction is required — guessing rebuilds a vertical chain as horizontal.
-- **move_dimension moves by a delta**, it does not set a value.
-- **create_dimension measures its distance from the points**, not from the part
-  edge — a chain whose points sit inside the wall draws its line inside too.
-- **Creating a dimension reflows its neighbours.** Re-read their offsets after.
-- **Deploy before testing.** dotnet build writes to bin/; the bridge runs from the
-  Tekla extensions folder. Copy TeklaBridge.exe, TeklaMcpServer.Api.dll and
-  SolidContacts.Core.dll after stopping the process. The third joined the list
-  when the API took a direct reference on it; without it the bridge does not
-  answer wrongly, it dies on FileNotFoundException.
+1. Read the drawing context and requested view dimensions.
+2. Use `get_dimension_contexts` only when a particular anchor needs checking.
+3. Use `get_dimension_chain_coverage` only for that specific anchor question.
+4. Report facts; do not create, move, delete, or recreate a dimension.
 
-## Who it is for
+When a case snapshot exists, it is evidence for review, not a prerequisite for
+placing dimensions. Do not let a missing case block a `place` task.
 
-A person at a table with a tape measure. Every rule follows from that; a robot
-would not need the drawing at all. When a question has no obvious answer, ask what
-the fitter would do with the number.
+## Place mode — mandatory loop
 
-| rule | because |
-|---|---|
-| points on faces, not axes | the tape hook needs an edge; timber has no centreline |
-| one face per family | the tape runs down one side |
-| running totals | the hook stays on the first beam; error does not accumulate |
-| wall reads from the bottom | that is where the tape is hooked |
-| face bounding an opening | the fitter needs the clear size |
-| no span restating a part size | the part is already made |
-| control diagonal untouched | checked with a tape on the table, in the moment |
+The LLM chooses the dimensions. The bridge only reads, creates, and verifies
+the LLM's decisions.
 
-**Fewer dimensions is better, provided everything is clear — like good code.** Not
-by trimming, but by finding what the reader already knows elsewhere and not
-repeating it. Fewer numbers means fewer to misread. Removing something needed is
-far worse than leaving one span too many.
+### 1. Read the facts
 
-## The measured rules
+For each requested base view:
 
-**1. A span equal to a part's own size is redundant.** Compare anchors, not lengths
-— both points on the same part, span equal to its own extent. The numbers differ by
-profile (60, 120, 160 all seen); no length threshold works. *Exception:* on a layer
-laid over a finished frame the part's own size may carry the fit — a batten's
-length gives its overhang and its top gap together. The exception is about length
-along the chain, **not thickness across it**: 45 between a header underside and the
-batten top came straight out.
+1. Read drawing context and confirm `AssemblyDrawing`.
+2. Run `get_structural_chain_positions <viewId>`.
+3. `isComplete=false` stops automatic placement for that geometry group. Report
+   its issues and continue independent complete views and groups.
 
-**2. A chain has a subject.** An overall chain keeps only its two extreme points,
-however honestly the middle ones sit on parts.
+   **`Unknown` is not `Ignored`.** It means the role was never established, so
+   the part may still turn out to be `Defining` — and a `Defining` part moves
+   not only the overall but every interior position on whichever side it
+   touches. Until the role is settled nothing in the set is a fact, so there is
+   no safe subset to place "meanwhile".
 
-**3. Stud spacing tells you where the openings are.** Rhythm is 600 to 625; a gap
-noticeably larger is an opening. 600 is the classic, roughly 80% offhand: it suits
-1200 plasterboard exactly and 1250 OSB trimmed by 50. Do not read sheet size back
-from spacing. Cripples above an opening do not follow the rhythm; a doubled stud is
-one position.
+   Identify the parts with `get_drawing_parts <viewId>` and report them by
+   `partPos`, type, and material, so the role can be added outside this run.
+   That reading is evidence for settling the role; it does not settle it, and
+   it does not license placement.
 
-**4. On a wall, vertical chains start at the bottom** — the underside of the bottom
-plate, where the tape is hooked. A constraint on point order, not a habit.
+   Placing anyway takes an explicit instruction from the user for this drawing.
+   When it is given, log it as its own `task` line and state in the final
+   response which positions rest on unverified geometry.
+4. Read existing dimensions with `get_drawing_dimensions <viewId>`.
+5. Use `draw_structural_chain_positions <viewId> <side>` when the visual side
+   or a raked edge needs confirmation.
 
-**5. At an opening, the point goes on the face that bounds it** — the jamb, the
-header underside, not the far face. Anchor to the framing members. The clear width
-and height must be readable, and an opening is dimensioned more than once.
+`get_structural_chain_positions` is the coordinate source. Do not rebuild its
+positions from bounding boxes, axes, raw solid vertices, or contacts. Contacts
+can justify a retained position as a joint; they do not add coordinates.
 
-**6. Measure to an edge, never to an axis.** Timber has no centreline. Axis
-candidates rank below face and vertex ones and are a last resort worth flagging.
-Untested outside timber.
+### 2. Decide all four sides before writing
 
-**7. A chain goes on the side its subject is on.** Which side is free; once chosen,
-hold to it across drawings so a stack reads alike. Two chains take opposite sides,
-each by its own subject. Says nothing about how many chains there should be.
+Create an internal plan for `Top`, `Bottom`, `Left`, and `Right`.
 
-**8. A composite post is marked by its 60X100 member** — not the board, not the
-outer face of the pair. End posts are covered by the assembly edges.
+For every calculated position, choose exactly one:
 
-**9. If one chain's values are contained in another's, it goes.** Test on printed
-values, not points; this catches a chain measuring the same parts from the other
-face. Check before proposing — missed three times in one session. *Exception:* an
-overall dimension, unless the chain it duplicates is only two values long.
+- `Kept` — give the drawing reason;
+- `Removed` — give the drawing reason.
 
-**10. A sheathing layer is dimensioned by its joints, and every internal joint sits
-on a frame member's centreline** — both sheets need wood to nail into, half the
-member each, and the sheathing works as a diaphragm against shear. Joints are
-staggered so there is no continuous fold line, and the noggin rows exist to back
-them. The frame is cut to suit the sheet, not the reverse. *Battens differ:* nailed
-through the sheet, they need only lie inside some frame member's width — test
-containment, not centring. A 45 batten on a 60 stud has 15 mm of play.
+For every side, choose exactly one outcome:
 
-**11. On a raked top the chain ends at the panel's real corner, and an overall may
-span two different x.** Tekla measures the projection between the points, so the
-overall height runs from the lowest real point to the highest wherever they sit —
-"no single part is that tall" proves nothing about an assembly overall. The corner
-of the raked member is the anchor, not the top of the nearest batten under it. One
-worked case (EW.4-6).
+- create or recreate a chain from its `Kept` positions;
+- retain a verified existing chain that already expresses those positions;
+- intentionally no chain, with a concrete reason.
 
-## Layers
+Never silently drop a position. Never replace a multi-position chain with a
+shorter one unless every removed position has a reason.
 
-Each layer has its own reader at a later moment and dimensions only what is still
-open. A frame drawing locates parts; a sheathing or batten drawing locates its own
-layer against a frame already built, and never re-dimensions the frame.
+**Check the plan before it is written.** Walk each side's `Kept` list in order
+and ask of every adjacent pair whether the span merely restates one part's own
+size. This must be decided before writing: verification only compares the drawing
+with the plan, so it cannot find a redundant span the plan itself selected.
 
-- **relative row = the rhythm; absolute row = the marks stepped off from the frame.**
-  Round numbers in the absolute row are not a goal — if they appear, the zero may be
-  sitting on the wrong thing.
-- **Do not thin a chain because its relative values repeat.** Cladding is dimensioned
-  board by board so error does not accumulate and the boards meet the neighbouring
-  panel to within a couple of millimetres.
+This comparison is mechanical only when the two positions have a common non-null
+`modelId` support and that support's `partExtentAlongChain` equals their gap within
+the response's `partSpanMatchToleranceMm`. That field is present only for a part
+whose whole projected contour is axis-aligned; it is deliberately `null` for a
+raked part, whose bbox would invent a span through empty space. A support on
+`structural-boundary` has neither field and never qualifies.
+Remove one endpoint for a confirmed part-size span, except for the documented
+layer-fit exception in [`references/plant-rules.md`](references/plant-rules.md).
+All other keep/remove choices remain drawing judgement under those rules.
 
-## More than one correct answer
+### 3. Apply the plan
 
-The user produced two acceptable dimensionings of one wall and said neither is the
-only truth. They agreed on which points are redundant, which face each sits on,
-where the chain starts and what the sheet must show; they differed in how the work
-was split between chains.
+Create or recreate only the planned `Kept` positions. Preserve an existing
+chain when it already matches the plan. If replacing it, capture the returned
+new ID: Tekla renumbers edited dimensions.
 
-**Do not grade by exact reproduction**, and do not present one layout as the correct
-one. Prefer the shorter of two correct answers.
+Choose the placement direction from the existing reference line or from the
+requested side. The direction keyword sets the side; a negative distance does
+not. Read [`references/placement-and-verification.md`](references/placement-and-verification.md)
+before the first create/recreate in a run.
 
-**Some of it is factory convention and cannot be derived** — how many chains, which
-carries what, where each sits. That comes from the plant's habit and the production
-technology, not from the drawing. It belongs in configuration, never in inference,
-and captured examples are local to one plant. When a layout question has no
-geometric answer, ask.
+### 4. Verify and iterate
 
-## Stop and ask
+Immediately re-read `get_drawing_dimensions <viewId>` after every write that
+can reflow neighbouring dimensions. Verify against the plan:
 
-- **Raked or gable tops beyond rule 11** — stud ends at different heights, and the
-  bounding box of a raked member spans the whole panel, so every bbox check lies.
-- **Unfamiliar assembly type** — truss, beam, plate with cuts.
-- **A point where several parts each end** — the value says "to what, exactly?".
-- **Anything the examples do not cover.** Say so instead of inventing a rule.
+- every `Kept` coordinate is present;
+- every `Removed` coordinate is absent for its stated reason;
+- the reference line is on the planned side with a sane offset;
+- relative/absolute rows match the intended type;
+- the chain endpoints are real outline corners where required.
 
-Judge each defect separately: stopping on one ground must not block an unrelated fix
-in the same chain.
+Correct mismatches and repeat the read-back. A successful create response is
+not verification.
 
-## Capturing a case
+There is no dimension-defect auditor. Make selection mistakes visible in the plan
+before the gate below instead.
 
-cases/dimension_cases/assembly/<drawing-guid>/, gitignored — real drawings.
-Commands: get_dimension_contexts, get_all_parts_geometry_in_view,
-get_part_candidate_points_in_view, get_dimension_chain_coverage — called on
-TeklaBridge.exe directly from the extensions folder, which avoids the MCP timeout.
+### Completion gate
 
-Capture before and after a person edits, and record in meta.json whether a human
-actually passed over the chains: a drawing that merely happened to be open is not
-reference material. Capture the before state first and check it reached disk —
-states that were not saved cannot be re-captured.
+Do not answer that placement is complete until every requested view has a
+resolved `Top`, `Bottom`, `Left`, and `Right` outcome and every created or
+recreated chain has been read back successfully. Do not substitute analysis,
+an overlay, or a partial list of IDs for this gate.
+
+Only these conditions may leave a side unresolved: incomplete structural
+geometry, a Tekla write/read error, or a policy question not covered by the
+references. State the exact side and blocker; do not claim completion.
+
+## Final response
+
+For `place`, return only:
+
+- created, changed, and deleted dimension IDs;
+- one short verification status for `Top`, `Bottom`, `Left`, and `Right`;
+- any unresolved side and exact blocker.
+
+For `review`, return the requested findings only. Do not include an execution
+essay unless the user asks for it.
+
+## References
+
+- [`references/plant-rules.md`](references/plant-rules.md): measured timber
+  drawing rules, openings, layers, raked tops, and when to stop.
+- [`references/placement-and-verification.md`](references/placement-and-verification.md):
+  Tekla point-order, direction, offsets, reflow, and read-back traps.
+- [`HISTORY.md`](HISTORY.md): historical experiments only; never treat it as a
+  required execution checklist.

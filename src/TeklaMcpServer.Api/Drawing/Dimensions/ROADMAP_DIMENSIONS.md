@@ -840,12 +840,11 @@ omission.
 
 Applying the plan is deliberately out of scope until that holds.
 
-### 2c. Defect detection for batch processing
+### 2c. Defect detection for batch processing — retired
 
-get_dimension_defects is implemented as a compact, read-only detector over a
-shared snapshot. Remaining work is to grade automatic actions against captured
-cases and apply only defect classes that pass that grading. The empirical basis,
-EW.4-6 result and provisional action boundary are preserved in
+The dimension-defect detector and its public command were removed. Placement now
+starts from calculated structural-chain positions and makes every keep/remove
+decision before writing. Its empirical history remains in
 [DIMENSION_HISTORY.md](DIMENSION_HISTORY.md).
 
 
@@ -1006,12 +1005,8 @@ whose box corner sits in space, then contacts. Most cases stop at the first.
 
 ### Architecture reset: geometry before dimension policy (2026-08-11)
 
-The next implementation is not another extension of `get_dimension_defects`.
-That command audits annotations already present in a drawing and remains needed
-to validate the dimensions placed later; it is simply a different task from
-creating them.  The first step sideways is to collect reliable geometric facts
-in the drawing view coordinate system, before deciding which facts deserve a
-dimension.
+The first step sideways is to collect reliable geometric facts in the drawing view
+coordinate system, before deciding which facts deserve a dimension.
 
 #### 1. `AssemblyOutline` — the first concrete result
 

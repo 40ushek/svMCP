@@ -45,10 +45,8 @@ locating is a subject/policy decision, not a nearest-point calculation.
 
 ## Confidence vocabulary
 
-Do not introduce a third confidence taxonomy:
+Do not introduce a second confidence taxonomy beside source evidence:
 
-- actionability: 'DimensionDefectConfidence' =
-  'Mechanical' / 'Provisional';
 - source evidence: 'DrawingPartCandidateConfidence' =
   'ExactGeometry', 'ReferenceGeometry', 'DerivedGeometry',
   'BoundingBoxFallback';
@@ -56,4 +54,3 @@ Do not introduce a third confidence taxonomy:
 
 Tekla-native associativity must not be claimed until observable on the validated
 Open API path.
-

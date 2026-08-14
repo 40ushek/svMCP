@@ -157,8 +157,9 @@ set says what was missing from the set.
 
 1. `PartRole`, the classifier and its tests. Prefix rules only.
 2. `PartRoleResult` on `PartInView` — role, rule and reason, filled at read time.
-3. Replace the three inline interpretations in `DimensionDefectDetector`, and
-   decide there what an `Unknown` does to the structural extent.
+3. Replace the three inline interpretations in the former defect detector, and
+   decide what an `Unknown` does to the structural extent. Completed before that
+   detector was removed; the structural-outline path now owns the decision.
 4. Structural extent for the assembly outline, over `Defining` alone, reporting
    the unknowns alongside it.
 5. `IsMainPart` on `PartInView` — read it, put it in the reason, and check on

@@ -1,4 +1,4 @@
 interface:
   display_name: "Tekla Dimension Drawings"
   short_description: "Review and place Tekla drawing dimensions"
-  default_prompt: "Use $dimension-drawings to review a Tekla assembly drawing."
+  default_prompt: "Use $dimension-drawings to place and verify dimensions on the active Tekla assembly drawing."

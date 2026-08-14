@@ -56,7 +56,7 @@ coordinates are in [DIMENSION_RUNTIME_NOTES.md](DIMENSION_RUNTIME_NOTES.md).
 
 ## Defect detection evidence
 
-This is the empirical history behind 'get_dimension_defects'.
+This is the empirical history behind the removed 'get_dimension_defects'.
 
 ### EW.4-6 batch check — 2026-08-02
 
@@ -99,11 +99,12 @@ The cases include human-edited states
 '004604c1', '5cf600c9', '8a856c51', 'c5018fe1', and 'c5109755', plus accepted
 after-states.
 
-### Bridge implementation
+### Former bridge implementation
 
-'get_dimension_defects viewId' is implemented as a read-only compact detector.
-It reads dimension contexts and part geometry once, builds candidate coverage
-once per distinct part, and passes that snapshot to 'DimensionDefectDetector'.
+'get_dimension_defects viewId' was a read-only compact detector, removed on
+2026-08-14 when placement moved to structural-chain positions.
+It read dimension contexts and part geometry once, built candidate coverage once
+per distinct part, and passed that snapshot to `DimensionDefectDetector`.
 
 The bridge/MCP result contains compact chain summaries, findings and warnings.
 If a part candidate read fails, anchor checks are skipped instead of producing
