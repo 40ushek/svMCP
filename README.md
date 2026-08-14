@@ -234,6 +234,7 @@ src/
 | `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, `dimensionType`, distance, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, bbox set/segments, `dimensionLine`, `leadLineMain/Second`, `textBounds` |
 | `get_dimension_contexts` | Internal/context read path для размеров по виду |
+| `get_dimension_chain_coverage` | Проверка одного размера на конкретный вопрос: попадают ли его точки на реальную геометрию детали (`matched`/`fallbackOnly`/missing); read-only, для точечной проверки в review, не для массового прохода |
 | `arrange_dimensions` | Детерминированная раздвижка параллельных стеков размеров через `Distance` |
 | `combine_dimensions` | Controlled combine path для совместимых наборов размеров |
 | `move_dimension` | Сдвинуть размерную линию на delta (изменяет `StraightDimensionSet.Distance`) |

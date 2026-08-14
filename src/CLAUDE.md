@@ -161,6 +161,7 @@ src/
 | `arrange_marks` | Full mark auto-layout per view |
 | `arrange_marks_no_collisions` | Run arrange + repeated overlap cleanup until stable |
 | `get_drawing_dimensions` | Read drawing dimensions with `dimensionType`, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, set/segment bounds and nullable `textBounds` |
+| `get_dimension_chain_coverage` | Check one dimension against a specific anchor question: whether its points land on real part geometry, per point `matched`/`fallbackOnly`/missing; read-only, for a targeted review check, not a mandatory pre-placement scan |
 | `move_dimension` | Move a dimension by delta |
 | `create_dimension` | Create a `StraightDimensionSet` |
 | `delete_dimension` | Delete a `StraightDimensionSet` |

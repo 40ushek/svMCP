@@ -31,6 +31,7 @@
 | `get_drawing_marks` / `create_part_marks` / `set_mark_content` / `delete_all_marks` | Марки, их bbox/OBB/resolvedGeometry, content, arrowhead и leader line данные |
 | `resolve_mark_overlaps` / `arrange_marks` / `arrange_marks_no_collisions` | Расстановка марок |
 | `get_drawing_dimensions` / `get_dimension_contexts` / `arrange_dimensions` / `combine_dimensions` / `create_dimension` / `move_dimension` / `delete_dimension` / `place_control_diagonals` | Размеры: rich line-based read API, context layer, arrange/combine, создание/сдвиг/удаление, контрольные диагонали |
+| `get_dimension_chain_coverage` | Точечная проверка одного размера: попадают ли его точки на реальную геометрию детали, per-point `matched`/`fallbackOnly`/missing; для review, не для массового прохода |
 | `get_part_geometry_in_view` / `get_all_parts_geometry_in_view` | Геометрия деталей в виде |
 | `get_assembly_outline` | Реальный 2D-контур сборки в виде: внешние кольца, отверстия, компоненты, плюс контур каждой детали |
 | `get_structural_outline` | То же, но только по деталям, задающим размер сборки: каркас без утеплителя, обшивки и крепежа. Роль читается из свойств; сообщает, чего не удалось опознать |
