@@ -166,6 +166,7 @@ src/
 | `delete_dimension` | Delete a `StraightDimensionSet` |
 | `get_part_geometry_in_view` | Read part geometry in view coordinates |
 | `get_contact_candidate_points` | Candidate dimension points where the parts of a view touch; names both parts; `draw=true` paints them into the drawing |
+| `get_part_degrees_of_freedom` | Read-only contact diagnostic per part: axes without an observed qualifying `FaceToFace`/`Touching` contact; never selects or creates dimensions |
 | `draw_structural_chain_positions` | Dev/debug: draw one preliminary structural chain side (`Top`/`Bottom`/`Left`/`Right`; default `Bottom`) as lines; it never creates dimensions |
 | `get_grid_axes` | Read drawing grid axes for a specific view |
 
