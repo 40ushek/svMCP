@@ -31,19 +31,46 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
+        "Get the four preliminary dimension chains calculated from the structural geometry of one drawing view. " +
+        "This is the only coordinate source for AssemblyDrawing dimension placement: every position carries its evidence, " +
+        "and isComplete/issues say whether it is safe to use. Read-only; it does not create or change dimensions.")]
+    public static string GetStructuralChainPositions(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+    {
+        return RunBridge("get_structural_chain_positions", viewId.ToString(CultureInfo.InvariantCulture));
+    }
+
+    [McpServerTool, Description(
+        "Draw one preliminary structural dimension-chain side as debug lines in a drawing view. " +
+        "Use to check a raked edge or which side a calculated position belongs to; it never creates dimensions.")]
+    public static string DrawStructuralChainPositions(
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Chain side: Top, Bottom, Left, or Right. Default: Bottom.")] string side = "Bottom")
+    {
+        return RunBridge(
+            "draw_structural_chain_positions",
+            viewId.ToString(CultureInfo.InvariantCulture),
+            string.IsNullOrWhiteSpace(side) ? "Bottom" : side);
+    }
+
+    [McpServerTool, Description(
         "Get candidate dimension points where the parts drawn in one view touch each other, in view coordinates. " +
         "Each point names BOTH parts of the contact, because a touching surface belongs to the pair, not to one of them. " +
         "Contacts seen edge-on come back as a line with two ends rather than a patch with four corners - that is the normal case on an elevation. " +
         "Reports what was missing: parts never read, regions that flattened to nothing, shapes whose parts could not be named. " +
+        "Optionally pass comma-separated modelIds to search only pairs within that named set; check selectionComplete before using an empty result. " +
         "Set draw=true to paint the shapes and points into the drawing for visual checking. " +
         "Each view gets its own overlay group 'contact_candidates:<viewId>', so drawing a second view does not erase the first; " +
         "clear_debug_overlay contact_candidates clears them all, clear_debug_overlay contact_candidates:<viewId> clears one. " +
         "Read-only evidence; it does not create or change dimensions.")]
     public static string GetContactCandidatePoints(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
-        [Description("Draw the shapes and points into the drawing as a debug overlay")] bool draw = false)
+        [Description("Draw the shapes and points into the drawing as a debug overlay")] bool draw = false,
+        [Description("Optional comma-separated model IDs. Searches only contacts whose two parts are in this set.")] string modelIds = "")
     {
-        return RunBridge("get_contact_candidate_points", viewId.ToString(), draw ? "true" : "false");
+        return string.IsNullOrWhiteSpace(modelIds)
+            ? RunBridge("get_contact_candidate_points", viewId.ToString(CultureInfo.InvariantCulture), draw ? "true" : "false")
+            : RunBridge("get_contact_candidate_points", viewId.ToString(CultureInfo.InvariantCulture), draw ? "true" : "false", modelIds);
     }
 
     [McpServerTool, Description(
