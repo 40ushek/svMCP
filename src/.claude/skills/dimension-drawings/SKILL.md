@@ -112,14 +112,16 @@ with the plan, so it cannot find a redundant span the plan itself selected.
 
 This comparison is mechanical only when the two positions have a common non-null
 `modelId` support and that support's `partExtentAlongChain` equals their gap within
-the response's `partSpanMatchToleranceMm`. That field is present only for a part
-whose whole projected contour is axis-aligned; it is deliberately `null` for a
-raked part, whose bbox would invent a span through empty space. A support on
-`structural-boundary` has neither field and never qualifies.
-Remove one endpoint for a confirmed part-size span, except for the documented
-layer-fit exception in
+the response's `partSpanMatchToleranceMm`. The field is present only for a part
+whose whole projected contour is axis-aligned. It is `null` for a raked part,
+whose bbox would invent a span through empty space, and equally for one whose
+shapes yielded no usable extent — it is fail-closed, so its absence names no
+cause. A support on `structural-boundary` has neither field and never qualifies.
+Remove one endpoint for a confirmed part-size span. A null `partExtentAlongChain`
+is not a confirmation of anything — the field is fail-closed, so it withdraws the
+test rather than answering it, and that pair stays a judgement.
+All other keep/remove choices remain drawing judgement under
 [`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md).
-All other keep/remove choices remain drawing judgement under those rules.
 
 ### 3. Apply the plan
 

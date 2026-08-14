@@ -1094,3 +1094,60 @@ Two things the last set of cases got wrong, worth avoiding:
 
 Calling the bridge directly avoids the MCP timeout on slow commands and is how all
 of this was verified.
+
+## Degrees of freedom: the count that collapses on a timber frame
+
+Tried on EWA.5, 2026-08-14. The idea was to stop guessing which positions matter
+and ask instead whether each part is fixed on the plane — dimensions pin a
+coordinate, a part's own size along the chain makes it rigid, contacts tie it to
+its neighbours — and to require a dimension exactly where a degree of freedom
+was left over.
+
+It predicted the two parts that had actually been missed, and cleared the two
+that had rightly been dropped:
+
+```
+part      contacts   extent   free   plant dimensioned
+3295501   Y          -        X      XY    raked top plate
+3458550   X          XY       Y      XY    noggin
+3458858   X          XY       Y      XY    noggin
+3458950   X          XY       Y      Y     noggin
+3295561   XY         -        none   X     stud
+3301347   XY         -        none   X     stud
+3301377   XY         -        none   X     stud
+3295591   XY         -        none   -     inner half of a doubled post
+3295681   XY         -        none   -     inner half of a doubled post
+```
+
+Then it cleared every stud as well, and the plant dimensions those. Not a bug in
+the count: a stud is seated on the bottom plate, capped by the top one and butted
+by noggins on both sides, so locally it really is fixed. Contacts constrain parts
+to each other, and a timber frame is contacted throughout — so the count is
+almost always zero and one dimension would fix the whole panel. Geometrically
+true, useless in a workshop, where nobody derives a position by tracing twenty
+joints.
+
+What that says is not that the model is wrong but that **the question was wrong
+for this assembly**: where the contacts close, dimensions are not what makes it
+determinate. The parts are marked and they seat into each other; the numbers are
+there to be checked against. Which is why a control diagonal carries no position
+at all and appears on every drawing, and why 270 beside 270 was chosen over the
+brace's own landings.
+
+The same count was then run on M.53, a steel girder, on 2026-08-14. There it was
+right on every part: four had one free direction each and the engineer had
+dimensioned each in exactly that direction, while the three constrained on both
+axes carried no dimension of their own. Its inclined end plate was dimensioned
+with an angled dimension, a tool the timber rules do not have at all.
+
+**The difference is not the material.** A braced steel frame closes at its nodes
+as a stud panel does; a timber part hung on one face stays as free as a plate on
+a flange. What separates the two runs is whether the contact count saturates, and
+that is readable from the contacts themselves - no need to know what the assembly
+is made of before deciding which reading applies.
+
+Do not rebuild the count as it stands. If it is ever worth another try, the
+version that could work grounds the system at the structural extent and
+propagates outward, counting only constraints that reach that ground — a graph
+walk, not a per-part tally. The narrow rule kept instead (4a and 4b in
+`references/plant-rules.md`) caught both real cases here without any of it.

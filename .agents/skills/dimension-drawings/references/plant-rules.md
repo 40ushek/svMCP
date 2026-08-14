@@ -37,6 +37,45 @@ trusses, roof panels, or parts with cut-outs without evidence.
    a coordinate you had to fetch from anywhere else is the warning sign.
 4. Keep both faces that bound an opening. Clear opening width and height must
    remain readable.
+4a. **A null `partExtentAlongChain` withdraws the automatic test; it decides
+   nothing.** The field is fail-closed: it is absent for a part with a tilted
+   edge, and equally for one whose shapes gave no usable extent at all. So a null
+   says the mechanical part-size comparison cannot be run here — not that the
+   part must keep a position. Judge it on the drawing instead, and do not let the
+   absence of evidence read as evidence.
+   Two measured cases on EWA.5 where the answer was to keep, both dimensioned by
+   the plant and both dropped by an earlier pass: the diagonal brace, whose ends
+   are interior, and the raked top plate, whose upper face is an outline corner
+   while its underside sits 61.4 below it. In both, one face was given and the
+   other followed from nothing a reader could measure. That is the argument to
+   keep — not the null itself, and not a rule that every tilted part is kept: a
+   contact may well settle a tilted part, and then it needs no number.
+   That 61.4 was once explained by the layer-fit case under `Layers`. It is not
+   that case: the raked plate is frame, not a layer laid over a finished frame,
+   and the reason to keep it is the one above. The layer-fit case stands where it
+   was measured — battens and sheathing — and does not extend to framing.
+4b. **A contact may choose among positions that already exist. It never adds
+   one.** A brace crossing the bottom plate offers three — its two landings and
+   the joint with its pair — and on EWA.5 `get_contact_candidate_points` reports
+   `modelObjectIds [3458147, 3457274]`, `FaceToFace`, x = 1476.5, which coincides
+   with a calculated position. Prefer that one. Two conditions before it counts:
+   the contact result is complete, and a calculated position already carries that
+   exact coordinate. **Exact — no tolerance is applied.** Contacts and positions
+   are flattened from the same geometry, and on EWA.5 the two agreed to the last
+   digit (1476.50173 against 1476.50173, difference 0). A contact coordinate that
+   does not land on a calculated position is a different feature, and reaching for
+   the nearest one would be exactly the invention of a coordinate this rule
+   forbids. If a run ever shows the two disagreeing by a hair, the number needed
+   is the position coincidence tolerance, and it must be added to the response
+   before this rule can use it — it is not serialized today.
+   Fail either condition and the contact says nothing — neither to add a
+   coordinate nor to remove one, and an incomplete contact read is not evidence
+   that a joint is absent.
+   Having chosen it, measure from the faces bounding the bay it falls in rather
+   than from one stud family's face: 1206.5 and 1746.5 give 270 and 270, and two
+   equal numbers show the joint is central without anyone measuring, where the
+   stud face would read 330 and 210 and show nothing. With a single brace there
+   is no contact and the choice among its positions is free.
 5. Use edges, never axes. Axis evidence is a flagged last resort.
 6. Put a chain on the free side of the subject and keep that convention within
    the drawing.
@@ -63,6 +102,31 @@ prove that an edge is free.
 A contact that has no selected chain position is ordinary and never demands a
 dimension. Most joints are not dimensioned; contacts may justify a selected
 position, but do not create either a required coordinate or a defect by themselves.
+
+Their one decisive use so far is rule 4b: choosing which of a tilted part's
+positions to keep. That is the shape of evidence they give — not a new
+coordinate, but a reason to prefer one that already exists.
+
+## Background: why these panels are dimensioned the way they are
+
+Not a rule and not a procedure — nothing below is to be counted or applied while
+choosing positions. It is here so the rules above read as something other than
+arbitrary.
+
+A stud panel is one contacted body: a stud is seated on the bottom plate, capped
+by the top one, butted by noggins each side. With parts marked, such a frame
+largely locates itself, and much of what is on the sheet is there to be checked
+against rather than to position anything — equal 600s in which a mistake stands
+out, 270 against 270 showing a joint is central, a control diagonal that carries
+no position at all. An open assembly, where a part meets another on one face and
+can slide along it, is a different case and was measured on one steel girder.
+
+Neither observation decides a keep-or-remove. An attempt to drive selection from
+counting contacts was tried and failed on the first panel: it cleared nearly
+every stud, which the plant dimensions regardless. The measurements and that
+negative result are in `HISTORY.md`, and the standing of the idea is set out in
+`Drawing/Geometry/Contacts/ROADMAP_PART_FREEDOM.md` — read-only diagnostic, not
+an input to dimensioning.
 
 ## Stop only for a real policy gap
 
