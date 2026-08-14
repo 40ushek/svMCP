@@ -1151,3 +1151,162 @@ version that could work grounds the system at the structural extent and
 propagates outward, counting only constraints that reach that ground — a graph
 walk, not a per-part tally. The narrow rule kept instead (4a and 4b in
 `references/plant-rules.md`) caught both real cases here without any of it.
+
+## A cold run of the same skill missed rules 3 and 4b
+
+EWA.5, 2026-08-14, same model (Sonnet) as the session that wrote rules 3 and 4b,
+but a fresh chat with no memory of the conversation that measured them - only the
+committed SKILL.md and plant-rules.md to work from. Asked to place dimensions on
+the same drawing already worked out in detail above.
+
+The plan it produced kept both faces of every stud on the bottom chain (546.5 and
+606.5, 1146.5 and 1206.5, and so on - rule 3 not applied) and kept all three
+positions of the diagonal brace's landing instead of the one `FaceToFace` contact
+confirmed (rule 4b not applied). It also added a Top chain whose X set is a
+subset of Bottom's - not wrong by any written rule, but not reasoned either.
+
+The rules themselves were not the problem - re-verified against the same live
+geometry immediately after, and they still held. What failed was where the rules
+lived: SKILL.md forces "decide every position, Kept or Removed, with a reason",
+which is close to impossible to skip - but the reason for these two specific
+patterns sat in plant-rules.md, read as background, not as a required check.
+Passing through the loop with every position marked Kept and a generic reason
+satisfies the letter of the loop without ever consulting the prose that would
+have said which reason was wrong.
+
+Fix: rules 2 and 3 of "Check the plan before it is written" in SKILL.md now name
+these two patterns directly, as required checks in the same walk that already
+catches the mechanical part-size case, rather than leaving them for a reader to
+recall from the reference. Whether this actually closes the gap needs the same
+test repeated - a fresh session, no prior conversation - not just a re-reading by
+someone who already knows what to look for.
+
+## Fix: get_contact_candidate_points can now be asked about specific parts
+
+Traced from the operation log of the cold run above: step 15 was "grep this
+95 KB response for the pair in question - failed, decided by hand instead." The
+run had ~40 parts in view; `get_contact_candidate_points` had no way to ask
+about two of them directly, only the whole view. What came out of the manual
+read was a Right-side chain with a coordinate from the diagonal's Bottom-side
+joint mixed into it - the specific defect this tool gap made likely.
+
+`get_contact_candidate_points <viewId> <draw> <modelIds>` now accepts a third
+argument narrowing the search to named parts, mirroring the modelIds filter
+`get_assembly_outline` already had. `Restricted` and `NotVisibleRequestedIds` on
+`ViewContactsResult` say whether the call was narrowed and name anything asked
+for that the view does not draw, the same way `ViewAssemblyOutlineResult` already
+does. SKILL.md's rule 4b check now names the filtered form directly rather than
+leaving a reader to discover the unfiltered one is unusable at real scale.
+
+Not yet re-tested: whether a fresh session, given the updated instruction, calls
+it filtered without being told to in this much detail. The fix removes the trap;
+whether the skill text reliably steers a cold reader into using it is the next
+thing to measure.
+
+## Six minutes, zero bridge calls, one missing sentence
+
+EWA.5, 2026-08-14, third cold run (Sonnet, fresh chat, same drawing as the two
+before it). Verified against `C:\temp\svmcp-perf.log` line by line, not from the
+run's own summary: 11 min 42 s wall time, 12.7 s of it spent in the Tekla
+bridge. One gap, 14:02:16 to 14:08:24, six minutes with not one bridge call
+logged - hand-checking two 14-point sides against rules 1/2/3, and, inside
+that, not knowing whether `create_dimension`'s points were view or model
+coordinates and choosing to grep `HISTORY.md` and the test suite for an
+example instead of a one-second throwaway call, or instead of noticing that
+every point already in hand had come from a view-coordinate read.
+
+Fixed the resolvable half: `placement-and-verification.md` now states the
+coordinate system as its first line, so there is nothing to test or search for.
+The other half of that six minutes - working two 14-point sides by hand against
+three rules - is not a documentation gap. It is the job.
+
+A second sub-cause named in the run's own report - confusing which side was
+Left and which was Right on this particular raked panel - is left unfixed
+here. No documentation change was found that would have prevented it without
+guessing at what specifically confused that reading, and a guessed fix is worse
+than none.
+
+## Anchors placed on the panel's outer edge instead of on real parts
+
+EWA.5, 2026-08-14, same third cold run reviewed above. Its Right chain read
+correctly (one Y per position, no cross-side contamination, the joint-contact
+rule applied) but was built by pairing every position's Y with one shared X -
+2953, the panel's outer edge - rather than that position's own X. Checked
+against `get_structural_chain_positions`'s own supports:
+
+```
+y=1080.77  real x=1746.5   dimension used x=2953   off by 1206.5
+y=1094.07  real x=1806.5   dimension used x=2953   off by 1146.5
+y=1174.78  real x=2893.0   dimension used x=2953   off by    60.0
+y=1198.74  real x=2833.0   dimension used x=2953   off by   120.0
+y=1321.66  real x=2833.0   dimension used x=2953   off by   120.0
+y=1334.96  real x=2893.0   dimension used x=2953   off by    60.0
+```
+
+Six anchors, two of them over a metre from any real part. Not a rounding
+matter: the panel's right boundary steps in and out along its height rather
+than running flush, so "hold to one side" (rule 6) was read as "hold to one
+X" and applied to the anchor points themselves rather than to which side the
+dimension line sits on. `plant-rules.md` now says explicitly that an anchor's
+coordinate is its own support point, never borrowed from a neighbour or from
+the outer extent, and rule 6 cross-references it.
+
+Not yet re-tested on a fourth cold run.
+
+## Two blockers in the contact filter before it could be trusted
+
+Caught in review before commit, not measured on a run.
+
+`NotVisibleRequestedIds` was tracked but never affected `IsComplete` - a typo'd
+or stale id in the filter would silently drop out of the search while the
+result still read as complete, so a caller checking only `isComplete` could
+take "one of the two ids was never searched" for "these two do not touch."
+Fixed the same way `ViewAssemblyOutlineResult` already had it: a separate
+`SelectionComplete`, kept apart from `IsComplete` on purpose - a fully-read
+search of the wrong selection is a different failure from an incomplete read
+of the right one, and folding them together would hide which had happened.
+
+The filter's own shape was also unsafe to read as a negative. It reports a
+junction only when both parts are named in `modelIds`, so a part's contact
+with anything outside that set is never searched - `modelIds=[brace]` alone
+answers empty regardless of what the brace touches, because one body can never
+form a pair. The command now refuses a filter with fewer than two ids, and
+both the response and the skill's rule 4b text say plainly that this tool
+confirms a named pair; it does not clear one.
+
+## Check 3's own words contradicted rule 4b's contract
+
+Caught in review before commit, not measured on a run.
+
+Check 3 in SKILL.md said "rule 4b keeps the one that coincides with a contact,
+exactly, and removes the rest" as its opening instruction, with the actual
+conditions - selectionComplete, FaceToFace, Touching, an exact coordinate match
+- stated afterward in a separate paragraph about the filter's mechanics. Read
+in order, a reader hits the unconditional "removes the rest" first and could
+act on it before reaching the qualification, which is exactly the failure the
+filter's own contract (positive confirmation only, never a negative one) was
+written to prevent one layer down.
+
+Reordered so the condition comes with the instruction: removing candidates
+requires all three checks to hold, and every other outcome - empty, incomplete,
+wrong kind, wrong state, no exact match, or a filtered call silent about a part
+outside its named set - removes nothing and leaves the choice to rule 4a's
+drawing judgement.
+
+## Check 3 required a field the command never sent
+
+Caught in review before commit, not measured on a run.
+
+Rule 4b's removal condition names ContactState.Touching alongside FaceToFace,
+and check 3's rewrite spelled both out - but `get_contact_candidate_points`
+serialized `contactKind` on every shape and candidate point, never
+`contactState`. An LLM trying to verify the second condition had no field to
+read it from and would have had to guess, which is exactly what the positive-
+confirmation-only rule exists to rule out. `get_part_degrees_of_freedom`
+already carried this field; the candidate-point command did not.
+
+Added `contactState` beside `contactKind` in both places it was missing: the
+`shapes` array in the bridge response, and `Reason.Values` on each
+`DrawingPartCandidatePoint` in `DrawingContactCandidatePointBuilder`, so the
+state is on the specific candidate a caller is looking at, not only on the
+shape it came from.

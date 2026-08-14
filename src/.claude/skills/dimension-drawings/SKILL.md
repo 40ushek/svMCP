@@ -125,20 +125,73 @@ Never silently drop a position. Never replace a multi-position chain with a
 shorter one unless every removed position has a reason.
 
 **Check the plan before it is written.** Walk each side's `Kept` list in order
-and ask of every adjacent pair whether the span merely restates one part's own
-size. This must be decided before writing: verification only compares the drawing
-with the plan, so it cannot find a redundant span the plan itself selected.
+and put every adjacent pair or cluster through all three checks below, not just
+the first one a part-size flag happens to catch. This must be decided before
+writing: verification only compares the drawing with the plan, so it cannot find
+an error the plan itself selected — confirmed independently when a second run of
+this skill, on a fresh session with no memory of this one, skipped checks 2 and 3
+below and produced a plan neither caught afterward.
 
-This comparison is mechanical only when the two positions have a common non-null
-`modelId` support and that support's `partExtentAlongChain` equals their gap within
-the response's `partSpanMatchToleranceMm`. The field is present only for a part
-whose whole projected contour is axis-aligned. It is `null` for a raked part,
-whose bbox would invent a span through empty space, and equally for one whose
-shapes yielded no usable extent — it is fail-closed, so its absence names no
-cause. A support on `structural-boundary` has neither field and never qualifies.
-Remove one endpoint for a confirmed part-size span. A null `partExtentAlongChain`
-is not a confirmation of anything — the field is fail-closed, so it withdraws the
-test rather than answering it, and that pair stays a judgement.
+1. **A span merely restating one part's own size.** Mechanical only when the two
+   positions have a common non-null `modelId` support and that support's
+   `partExtentAlongChain` equals their gap within the response's
+   `partSpanMatchToleranceMm`. The field is present only for a part whose whole
+   projected contour is axis-aligned. It is `null` for a raked part, whose bbox
+   would invent a span through empty space, and equally for one whose shapes
+   yielded no usable extent — it is fail-closed, so its absence names no cause. A
+   support on `structural-boundary` has neither field and never qualifies. Remove
+   one endpoint for a confirmed span; a null `partExtentAlongChain` is not a
+   confirmation of anything and that pair stays a judgement, decided under check 2.
+2. **Two positions on the same regular family, where one number should carry
+   both.** When adjacent positions sit a member-width apart on the same kind of
+   stud or post, keep one face and remove the other — `plant-rules.md` rule 3
+   says which face and why. This is exactly the case check 1 cannot settle
+   mechanically, since the member's own `partExtentAlongChain` is frequently
+   `null` on a plain stud too; the walk still has to ask it of every such pair.
+   Measured on EWA.5: a plan that skipped this question kept both faces of every
+   stud on the bottom chain (546.5 and 606.5, 1146.5 and 1206.5, and so on),
+   doubling the row without adding a reading.
+3. **More than one candidate position on a part with no `partExtentAlongChain`.**
+   Rule 4a says such a part keeps a position because nothing else on the sheet
+   supplies one; it does not say to keep every position the list offers for it.
+   Where more than one appears, check `get_contact_candidate_points` before
+   choosing — never delete down to one without checking.
+
+   **The check can only confirm; it can never remove anything on its own.**
+   Remove all candidates but one only when all three hold at once, readable
+   straight off the response: `selectionComplete` is `true`; the shape's
+   `contactKind` is `FaceToFace` and its `contactState` is `Touching`; and that
+   contact's coordinate matches a calculated position exactly — the same
+   conditions rule 4b states. Anything else the check can come back with - empty,
+   `selectionComplete=false`, `contactKind` of `FaceToEdge`/`EdgeToEdge`,
+   `contactState` of `Gap`/`Overlap`, a coordinate that does not land on a
+   calculated position - proves nothing about the candidates
+   and removes none of them: the choice stays a 4a judgement on the drawing, not
+   an automatic deletion. A filtered call answers only for the named parts and
+   is silent about everything outside that set, so its silence is never grounds
+   to remove a position either. Measured on EWA.5: a plan that skipped this
+   question entirely kept a diagonal brace's two landings and its joint with its
+   pair, all three, instead of the one confirmed contact - the failure this
+   check exists to catch is skipping the question, not necessarily reaching a
+   confirmed answer every time it is asked.
+
+   **Call it as `get_contact_candidate_points <viewId> <draw> <modelIds>`, named
+   to the specific two or three parts in question — never with `modelIds` left
+   off.** An unfiltered call on a real view answers in tens of kilobytes across
+   every part the view draws, not the one pair being checked. Measured on EWA.5:
+   a run that called it unfiltered spent most of its time trying to pull one
+   contact out of that by hand, and the plan it produced that day mixed a
+   coordinate from the brace's joint into an unrelated side's chain - the filter
+   exists so this check is cheap enough to run every time it applies, not
+   something to reach for only when the view is small.
+
+   Before reading a result at all, check `selectionComplete`: `false` means some
+   named id never entered the search — a typo or a stale id — and the read
+   proves nothing either way. The command itself refuses a filter naming fewer
+   than two distinct parts, for the same reason: with zero or one body there is
+   no possible pair, so it would answer empty regardless of what that part
+   actually touches.
+
 All other keep/remove choices remain drawing judgement under
 [`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md).
 

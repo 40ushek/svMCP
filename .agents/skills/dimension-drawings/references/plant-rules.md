@@ -19,6 +19,19 @@ trusses, roof panels, or parts with cut-outs without evidence.
   the structural extent.
 - The real corner of a raked panel is an endpoint. Never replace it with the
   bounding-box corner or the nearest member.
+- **A position's anchor is its own support point — the exact one reported for
+  that position — never a value borrowed from another position or from the
+  assembly's outer extent.** `Left`/`Right` carry one measured axis (Y), but
+  placing the anchor still needs the other axis (X), and that X is whatever
+  this position's own support reported, not a coordinate chosen once and
+  reused down the whole side. Measured on EWA.5: a Right chain built by pairing
+  every position's Y with one shared X (2953, the panel's outer edge) put six
+  anchors up to 1200 mm from any real part - the true X at those heights was
+  1746.5, 1806.5, 2833, or 2893, all interior members set back from the edge,
+  because the panel's true right boundary steps in and out along its height
+  rather than running flush. Rule 6's "hold to one side" picks which side of
+  the geometry the chain and its dimension line sit on; it says nothing about
+  an individual anchor's own coordinate, and is not license to overwrite one.
 
 ## Keep or remove
 
@@ -78,7 +91,8 @@ trusses, roof panels, or parts with cut-outs without evidence.
    is no contact and the choice among its positions is free.
 5. Use edges, never axes. Axis evidence is a flagged last resort.
 6. Put a chain on the free side of the subject and keep that convention within
-   the drawing.
+   the drawing. About the chain and its dimension line, not about any anchor's
+   own coordinate — see "Reading the preliminary chains" above.
 7. Remove a chain whose printed values are contained in another chain, except
    for an overall chain.
 8. On a wall, vertical chains start at the underside of the bottom plate.

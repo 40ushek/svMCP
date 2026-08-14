@@ -5,6 +5,15 @@ delete in a placement run.
 
 ## Coordinate and order facts
 
+- **`create_dimension`'s points are view coordinates in millimetres, Z always
+  `0` for a base view — the same system `get_structural_chain_positions`,
+  `get_drawing_dimensions`, and every other read in this loop already use.**
+  Feed the coordinates you just read straight back in; do not test this with a
+  throwaway call or search the codebase for an example first. Measured on
+  EWA.5: not stating this plainly cost six minutes of grepping `HISTORY.md` and
+  the test suite for a coordinate-format example, when the numbers needed were
+  already sitting in the same `get_structural_chain_positions` response the
+  plan was built from.
 - `points[0]` is the true start of a horizontal or vertical chain.
 - Tekla normalizes read-back point order for display. JSON order alone does not
   prove the passed start. Recover it only from a single, connected segment path;
