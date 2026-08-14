@@ -76,9 +76,28 @@ For each requested base view:
    That reading is evidence for settling the role; it does not settle it, and
    it does not license placement.
 
-   Placing anyway takes an explicit instruction from the user for this drawing.
-   When it is given, log it as its own `task` line and state in the final
-   response which positions rest on unverified geometry.
+   Placing anyway takes an explicit instruction from the user naming the
+   condition, for this drawing only. Something of this shape:
+
+   > For this drawing treat every part with prefix=W as Ignored. If
+   > `get_structural_chain_positions` is incomplete only because of those,
+   > continue placing. Any other Unknown remains a blocker.
+
+   Given one, do all four:
+
+   - check that **every** `Unknown` falls under the stated condition, by reading
+     the parts rather than assuming — the instruction grants what it names and
+     nothing beside it;
+   - continue only if none is left over; a single `Unknown` outside the condition
+     stops the group as before;
+   - leave the role rules in code alone. A per-drawing permission is not evidence
+     for a rule, and a rule guessed from one drawing speaks for every future
+     assembly — see the W entry in `PartRoleClassifier.DefaultRules`;
+   - log it as its own `task` line, and say in the final response which parts
+     were excluded and on whose instruction.
+
+   This is the practical route. Inventing a universal prefix rule to unblock one
+   drawing is the failure it avoids.
 4. Read existing dimensions with `get_drawing_dimensions <viewId>`.
 5. Use `draw_structural_chain_positions <viewId> <side>` when the visual side
    or a raked edge needs confirmation.
