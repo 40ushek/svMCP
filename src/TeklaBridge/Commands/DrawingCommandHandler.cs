@@ -68,7 +68,6 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_dimension_action_plan":
             case "get_dimension_ai_orchestration_plan":
             case "get_dimension_chain_coverage":
-            case "get_dimension_defects":
             case "get_dimension_arrangement_debug":
             case "arrange_dimensions":
             case "combine_dimensions":
@@ -91,6 +90,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_all_part_points_in_view":
             case "get_assembly_outline":
             case "get_structural_outline":
+            case "get_structural_chain_positions":
             case "draw_structural_chain_positions":
             case "get_contact_candidate_points":
             case "get_grid_axes":

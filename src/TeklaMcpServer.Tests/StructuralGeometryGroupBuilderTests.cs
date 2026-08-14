@@ -44,6 +44,9 @@ public sealed class StructuralGeometryGroupBuilderTests
         Assert.Equal([false, true, false], group.Shapes
             .Where(shape => shape.Id.StartsWith("defining-part:10:ring:"))
             .Select(shape => shape.IsHole));
+        Assert.All(group.Shapes.Where(shape => shape.Id.StartsWith("defining-part:10:ring:")),
+            shape => Assert.Equal(10, shape.ModelId));
+        Assert.All(group.BoundaryShapes, shape => Assert.Null(shape.ModelId));
     }
 
     [Fact]

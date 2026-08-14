@@ -183,12 +183,14 @@ public sealed class DimensionChainPositionSupport
         GeometryGroupShape source,
         DimensionChainPositionSupportKind kind,
         Vec3 point,
-        int pointIndex)
+        int pointIndex,
+        GeometryGroupExtent? axisAlignedModelExtent)
     {
         Source = source ?? throw new ArgumentNullException(nameof(source));
         Kind = kind;
         Point = point;
         PointIndex = pointIndex;
+        AxisAlignedModelExtent = axisAlignedModelExtent;
     }
 
     public GeometryGroupShape Source { get; }
@@ -198,4 +200,14 @@ public sealed class DimensionChainPositionSupport
     public Vec3 Point { get; }
 
     public int PointIndex { get; }
+
+    /// <summary>Owning model part, if this support came from one.</summary>
+    public int? ModelId => Source.ModelId;
+
+    /// <summary>
+    /// Extent of the owning model part across all of its projected rings, but only when every
+    /// projected edge of that part is horizontal or vertical. Null for a raked part: its bbox
+    /// would invent a span through empty space. Also null when the support has no single owner.
+    /// </summary>
+    public GeometryGroupExtent? AxisAlignedModelExtent { get; }
 }

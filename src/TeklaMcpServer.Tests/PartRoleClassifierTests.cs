@@ -168,6 +168,45 @@ public sealed class PartRoleClassifierTests
     [Fact]
     public void TheDefaultsAreThePrefixesThisPlantUses()
     {
-        Assert.Equal(["prefix-T", "prefix-R", "prefix-M"], PartRoleClassifier.DefaultRules.Select(rule => rule.Id));
+        Assert.Equal(
+            ["prefix-T", "prefix-GLB", "prefix-R", "prefix-S", "prefix-M"],
+            PartRoleClassifier.DefaultRules.Select(rule => rule.Id));
+    }
+
+    [Fact]
+    public void AWindowMarkStaysUnknownUntilTheWholeModelHasBeenLookedAt()
+    {
+        // Observed: W-65 and W-68 on EW.8, W-64 on EW.18 - three ContourPlates with material
+        // WINDOW. A prefix rule built on that would speak for every W part in every future
+        // assembly, and Ignored is the answer that quietly removes a part from the extent.
+        // Unknown is the honest answer: it makes isComplete false and sends the caller to
+        // settle the role rather than inheriting a guess.
+        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties("W").Role);
+    }
+
+    [Fact]
+    public void AGlulamBeamCarriesTheFrameAndSetsItsExtent()
+    {
+        // Measured: a dimension point on thirteen drawings had no candidate under it
+        // because the GL24h beam beneath it was unclassified.
+        Assert.Equal(PartRole.Defining, Classifier.ClassifyProperties("GLB").Role);
+    }
+
+    [Fact]
+    public void SheathingIsAttachedRatherThanDefining()
+    {
+        // Calling it Defining would make its overhang part of the overall, which is the
+        // difference between an extent starting at 210 and one starting at 200. That a
+        // person dimensions the sheet is a fact about another semantic group.
+        Assert.Equal(PartRole.Attached, Classifier.ClassifyProperties("S").Role);
+    }
+
+    [Fact]
+    public void ALongerPrefixIsNotSwallowedByAShorterOne()
+    {
+        // GLB and G would collide if matching were by first letter. It is not - but the
+        // day a G rule is added, this test says which behaviour was intended.
+        Assert.Equal("prefix-GLB", Classifier.ClassifyProperties("GLB").RuleId);
+        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties("G").Role);
     }
 }

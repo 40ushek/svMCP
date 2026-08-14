@@ -65,6 +65,9 @@ internal sealed partial class DrawingCommandHandler
             case "get_structural_outline":
                 return HandleGetStructuralOutline(args);
 
+            case "get_structural_chain_positions":
+                return HandleGetStructuralChainPositions(args);
+
             case "draw_structural_chain_positions":
                 return HandleDrawStructuralChainPositions(GetDebugOverlayApi(), args);
 
@@ -595,6 +598,81 @@ internal sealed partial class DrawingCommandHandler
     private static string GuidText(Guid guid) => guid == Guid.Empty ? string.Empty : guid.ToString();
 
     /// <summary>
+    /// All four preliminary sides of a view, read only: no overlay, no drawing touched.
+    ///
+    /// Separate from the drawing command rather than a flag on it, because studying what a
+    /// person actually dimensioned wants every side in one answer, while looking at the
+    /// sheet wants one side at a time. Drawing during a study also costs what it is trying
+    /// to measure - it edits the drawing being studied.
+    /// </summary>
+    private bool HandleGetStructuralChainPositions(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_structural_chain_positions requires viewId argument");
+            return true;
+        }
+
+        var identity = ReadSourceIdentity(viewId);
+        var structuralOutline = GetStructuralOutline(
+            viewId,
+            defining => CaptureParts(identity, "defining", defining.Select(part => part.ModelId)));
+        var source = Describe(identity);
+        var group = StructuralGeometryGroupBuilder.Build(structuralOutline);
+
+        try
+        {
+            CalcDimensionChains.Apply(group);
+        }
+        catch (InvalidOperationException exception)
+        {
+            var sourceError = group.Completeness.Issues
+                .FirstOrDefault(issue => issue.Id == "structural-outline")?.Reason;
+            WriteJson(new
+            {
+                success = false,
+                viewId,
+                source,
+                isComplete = group.Completeness.IsComplete,
+                issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+                error = sourceError ?? exception.Message,
+                calculationError = exception.Message
+            });
+            return true;
+        }
+
+        var extent = group.Extent!;
+        WriteJson(new
+        {
+            success = true,
+            viewId,
+            source,
+            isComplete = group.Completeness.IsComplete,
+            issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+            partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
+            extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
+            sides = group.DimensionChains!.Chains.Select(chain => new
+            {
+                side = chain.Side.ToString(),
+                positions = chain.Positions.Select(position => new
+                {
+                    coordinate = position.Coordinate,
+                    supports = position.Supports.Select(support => new
+                    {
+                        sourceId = support.Source.Id,
+                        modelId = support.ModelId,
+                        partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent),
+                        isHole = support.Source.IsHole,
+                        kind = support.Kind.ToString(),
+                        point = new[] { support.Point.X, support.Point.Y }
+                    })
+                })
+            })
+        });
+        return true;
+    }
+
+    /// <summary>
     /// Draws one deliberately over-complete preliminary side as lines across the structural
     /// extent. This is a read-only inspection aid: it does not choose, create, or alter a
     /// dimension. The optional side is Top, Bottom, Left, or Right; Bottom is the default
@@ -679,6 +757,7 @@ internal sealed partial class DrawingCommandHandler
             drawnCount = overlayResult.CreatedCount,
             isComplete = group.Completeness.IsComplete,
             issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+            partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
             extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
             positions = group.DimensionChains![side].Positions.Select(position => new
             {
@@ -686,6 +765,8 @@ internal sealed partial class DrawingCommandHandler
                 supports = position.Supports.Select(support => new
                 {
                     sourceId = support.Source.Id,
+                    modelId = support.ModelId,
+                    partExtentAlongChain = ExtentAlong(side, support.AxisAlignedModelExtent),
                     isHole = support.Source.IsHole,
                     kind = support.Kind.ToString(),
                     point = new[] { support.Point.X, support.Point.Y }
@@ -693,6 +774,16 @@ internal sealed partial class DrawingCommandHandler
             })
         });
         return true;
+    }
+
+    private static double? ExtentAlong(DimensionChainSide side, GeometryGroupExtent? extent)
+    {
+        if (extent == null)
+            return null;
+
+        return side is DimensionChainSide.Top or DimensionChainSide.Bottom
+            ? extent.MaxX - extent.MinX
+            : extent.MaxY - extent.MinY;
     }
 
     private StructuralOutline GetStructuralOutline(

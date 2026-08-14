@@ -53,6 +53,86 @@ public sealed class CalcDimensionChainsTests
         Assert.Equal([0d, 20d, 100d], Coordinates(group.DimensionChains!, DimensionChainSide.Bottom));
         Assert.DoesNotContain(group.DimensionChains![DimensionChainSide.Bottom].Positions.SelectMany(position => position.Supports), support =>
             ReferenceEquals(support.Source, boundary) && support.Kind != DimensionChainPositionSupportKind.GroupExtent);
+        Assert.All(group.DimensionChains.Chains.SelectMany(chain => chain.Positions)
+            .SelectMany(position => position.Supports)
+            .Where(support => ReferenceEquals(support.Source, boundary)), support =>
+            Assert.Null(support.ModelId));
+    }
+
+    [Fact]
+    public void PartSupportCarriesItsModelIdAndExtentAcrossAllOfItsRings()
+    {
+        var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 50), (0, 50));
+        var outer = Shape("part:11:outer", false, modelId: 11, (0, 0), (100, 0), (100, 50), (0, 50));
+        var hole = Shape("part:11:hole", true, modelId: 11, (40, 10), (60, 10), (60, 40), (40, 40));
+        var group = new GeometryGroup("one-part", [boundary], [outer, hole]);
+
+        CalcDimensionChains.Apply(group);
+
+        var support = Assert.Single(Position(group.DimensionChains!, DimensionChainSide.Top, 0).Supports,
+            item => ReferenceEquals(item.Source, outer));
+        Assert.Equal(11, support.ModelId);
+        Assert.Equal(0d, support.AxisAlignedModelExtent!.MinX);
+        Assert.Equal(100d, support.AxisAlignedModelExtent.MaxX);
+        Assert.Equal(0d, support.AxisAlignedModelExtent.MinY);
+        Assert.Equal(50d, support.AxisAlignedModelExtent.MaxY);
+    }
+
+    [Fact]
+    public void ARakedPartNeverSuppliesABoundingBoxPartSpan()
+    {
+        var boundary = Shape("outline", false, (0, 0), (200, 0), (200, 100), (0, 100));
+        var rakedPart = Shape("part:raked", false, modelId: 11, (0, 0), (100, 0), (100, 100));
+        var group = new GeometryGroup("raked", [boundary], [rakedPart]);
+
+        CalcDimensionChains.Apply(group);
+
+        Assert.All(group.DimensionChains!.Chains.SelectMany(chain => chain.Positions)
+            .SelectMany(position => position.Supports)
+            .Where(support => support.ModelId == 11), support =>
+            Assert.Null(support.AxisAlignedModelExtent));
+    }
+
+    [Fact]
+    public void ProjectionNoiseDoesNotHideAnOtherwiseAxisAlignedPartExtent()
+    {
+        var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
+        var noisyRectangle = Shape("part:noisy", false, modelId: 11,
+            (0, 0), (60, 0.002), (60, 100), (0, 100));
+        var group = new GeometryGroup("noisy", [boundary], [noisyRectangle]);
+
+        CalcDimensionChains.Apply(group);
+
+        Assert.Contains(group.DimensionChains!.Chains.SelectMany(chain => chain.Positions)
+            .SelectMany(position => position.Supports), support =>
+            support.ModelId == 11 && support.AxisAlignedModelExtent != null);
+    }
+
+    [Fact]
+    public void AShortDiagonalIsNotMistakenForAnAxisAlignedPart()
+    {
+        var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
+        var diagonal = Shape("part:diagonal", false, modelId: 11, (0, 0), (0.001, 0.001));
+        var group = new GeometryGroup("short-diagonal", [boundary], [diagonal]);
+
+        CalcDimensionChains.Apply(group);
+
+        Assert.All(group.DimensionChains!.Chains.SelectMany(chain => chain.Positions)
+            .SelectMany(position => position.Supports)
+            .Where(support => support.ModelId == 11), support =>
+            Assert.Null(support.AxisAlignedModelExtent));
+    }
+
+    [Fact]
+    public void AnEmptyPartSourceDoesNotFailTheWholeCalculation()
+    {
+        var boundary = Shape("outline", false, (0, 0), (100, 0), (100, 100), (0, 100));
+        var emptyPart = new GeometryGroupShape("part:empty", PlanarShape.Empty, modelId: 11);
+        var group = new GeometryGroup("with-empty-part", [boundary], [emptyPart]);
+
+        CalcDimensionChains.Apply(group);
+
+        Assert.NotNull(group.DimensionChains);
     }
 
     [Fact]
@@ -268,7 +348,14 @@ public sealed class CalcDimensionChainsTests
     }
 
     private static GeometryGroupShape Shape(string id, bool isHole, params (double X, double Y)[] points) =>
-        new(id, RegionFlattener.Flatten(points.Select(point => new Vec3(point.X, point.Y, 0)).ToList()), isHole);
+        Shape(id, isHole, modelId: null, points);
+
+    private static GeometryGroupShape Shape(
+        string id,
+        bool isHole,
+        int? modelId,
+        params (double X, double Y)[] points) =>
+        new(id, RegionFlattener.Flatten(points.Select(point => new Vec3(point.X, point.Y, 0)).ToList()), isHole, modelId);
 
     private static double[] Coordinates(DimensionChainSet chains, DimensionChainSide side) =>
         chains[side].Positions.Select(position => position.Coordinate).ToArray();

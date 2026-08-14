@@ -2,7 +2,6 @@ using System.Linq;
 using System.Reflection;
 using TeklaMcpServer.Api.Drawing;
 using System.Globalization;
-using TeklaMcpServer.Api.Drawing.Dimensions.Defects;
 
 namespace TeklaBridge.Commands;
 
@@ -52,9 +51,6 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_dimension_chain_coverage":
                 return HandleGetDimensionChainCoverage(args);
-
-            case "get_dimension_defects":
-                return HandleGetDimensionDefects(args);
 
             case "get_dimension_arrangement_debug":
                 return HandleGetDimensionArrangementDebug(api, args);
@@ -503,64 +499,6 @@ internal sealed partial class DrawingCommandHandler
                     distance = match.Distance
                 })
             }),
-            error = result.Error
-        });
-        return true;
-    }
-
-    private bool HandleGetDimensionDefects(string[] args)
-    {
-        if (args.Length < 2
-            || !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var viewId))
-        {
-            WriteError("get_dimension_defects requires viewId argument");
-            return true;
-        }
-
-        // Off by default: the contact search is every pair, and what it feeds is one weak
-        // signal that fires legitimately on correct drawings.
-        var withContacts = args.Length > 2
-            && bool.TryParse(args[2], out var requested)
-            && requested;
-
-        var result = new TeklaDrawingDimensionDefectApi(_model).GetDimensionDefects(viewId, withContacts);
-        WriteJson(new
-        {
-            success = result.Success,
-            viewId = result.ViewId,
-            coordinateSpaceOk = result.CoordinateSpaceOk,
-            chains = result.Chains.Select(chain => new
-            {
-                dimensionId = chain.DimensionId,
-                orientation = chain.Orientation,
-                teklaDimensionType = chain.TeklaDimensionType,
-                distance = chain.Distance,
-                pointCount = chain.PointCount,
-                relativeRow = chain.RelativeRow,
-                absoluteRowFromReadOrder = chain.AbsoluteRowFromReadOrder,
-                isOverall = chain.IsOverall
-            }),
-            defects = result.Defects.Select(defect => new
-            {
-                kind = defect.Kind.ToString(),
-                confidence = defect.Confidence.ToString(),
-                dimensionId = defect.DimensionId,
-                point = defect.Point,
-                spanEnd = defect.SpanEnd,
-                modelObjectId = defect.ModelObjectId,
-                partPos = defect.PartPos,
-                containedIn = defect.ContainedIn,
-                reason = defect.Reason
-            }),
-            signals = result.Signals.Select(signal => new
-            {
-                kind = signal.Kind.ToString(),
-                confidence = signal.Confidence.ToString(),
-                dimensionId = signal.DimensionId,
-                point = signal.Point,
-                reason = signal.Reason
-            }),
-            warnings = result.Warnings,
             error = result.Error
         });
         return true;

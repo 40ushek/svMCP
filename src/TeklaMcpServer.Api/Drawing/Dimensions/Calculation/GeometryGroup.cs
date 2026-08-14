@@ -149,7 +149,7 @@ public sealed class GeometryGroupExtent
 /// </summary>
 public sealed class GeometryGroupShape
 {
-    public GeometryGroupShape(string id, PlanarShape shape, bool isHole = false)
+    public GeometryGroupShape(string id, PlanarShape shape, bool isHole = false, int? modelId = null)
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("A group shape needs an id.", nameof(id));
@@ -157,6 +157,7 @@ public sealed class GeometryGroupShape
         Id = id;
         Shape = shape ?? throw new ArgumentNullException(nameof(shape));
         IsHole = isHole;
+        ModelId = modelId;
     }
 
     /// <summary>Caller-owned stable identity, for example a part, contact, or bolt id.</summary>
@@ -166,4 +167,11 @@ public sealed class GeometryGroupShape
 
     /// <summary>True only when this shape came from a contour hole ring.</summary>
     public bool IsHole { get; }
+
+    /// <summary>
+    /// Model part that owns this shape, when the caller has one. Assembly-boundary and
+    /// derived geometry deliberately have no owner; a missing value is not an invitation
+    /// to recover one by nearest-coordinate matching.
+    /// </summary>
+    public int? ModelId { get; }
 }

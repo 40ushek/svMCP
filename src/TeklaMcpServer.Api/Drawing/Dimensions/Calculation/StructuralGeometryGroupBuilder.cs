@@ -25,7 +25,8 @@ public static class StructuralGeometryGroupBuilder
             .SelectMany(part => BuildRings(
                 "defining-part:" + part.Key.ToString(CultureInfo.InvariantCulture),
                 part.Value,
-                issues))
+                issues,
+                part.Key))
             .ToList();
 
         return new GeometryGroup(id, boundaries, shapes, new GeometryGroupCompleteness(issues));
@@ -39,7 +40,8 @@ public static class StructuralGeometryGroupBuilder
     internal static IReadOnlyList<GeometryGroupShape> BuildRings(
         string sourceId,
         IReadOnlyList<OutlineTreeNodeResult> nodes,
-        ICollection<GeometryGroupSourceIssue> issues)
+        ICollection<GeometryGroupSourceIssue> issues,
+        int? modelId = null)
     {
         if (string.IsNullOrWhiteSpace(sourceId))
             throw new ArgumentException("A contour source needs an id.", nameof(sourceId));
@@ -50,7 +52,7 @@ public static class StructuralGeometryGroupBuilder
 
         var shapes = new List<GeometryGroupShape>();
         for (var index = 0; index < nodes.Count; index++)
-            AddRing(sourceId, nodes[index], depth: 0, index.ToString(CultureInfo.InvariantCulture), shapes, issues);
+            AddRing(sourceId, nodes[index], depth: 0, index.ToString(CultureInfo.InvariantCulture), shapes, issues, modelId);
 
         return shapes;
     }
@@ -61,7 +63,8 @@ public static class StructuralGeometryGroupBuilder
         int depth,
         string path,
         ICollection<GeometryGroupShape> shapes,
-        ICollection<GeometryGroupSourceIssue> issues)
+        ICollection<GeometryGroupSourceIssue> issues,
+        int? modelId)
     {
         if (node == null)
             throw new ArgumentException("A contour tree cannot contain a null ring.", nameof(node));
@@ -88,11 +91,12 @@ public static class StructuralGeometryGroupBuilder
         shapes.Add(new GeometryGroupShape(
             ringId,
             shape,
-            isHole: (depth & 1) == 1));
+            isHole: (depth & 1) == 1,
+            modelId: modelId));
 
         for (var index = 0; index < node.Children.Count; index++)
             AddRing(sourceId, node.Children[index], depth + 1,
-                path + "." + index.ToString(CultureInfo.InvariantCulture), shapes, issues);
+                path + "." + index.ToString(CultureInfo.InvariantCulture), shapes, issues, modelId);
     }
 
     private static IReadOnlyList<GeometryGroupSourceIssue> Issues(StructuralOutline structuralOutline)

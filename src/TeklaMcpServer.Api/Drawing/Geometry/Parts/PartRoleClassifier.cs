@@ -27,7 +27,36 @@ public sealed class PartRoleClassifier
     public static IReadOnlyList<PartRoleRule> DefaultRules { get; } = new List<PartRoleRule>
     {
         new("prefix-T", "T", PartRole.Defining),
+
+        // A glulam beam carries the frame like a stud does, so it sets the extent. Found by
+        // measurement, not by reading a catalogue: on thirteen assembly drawings one
+        // dimension point had no candidate under it, and the part beneath it was GL24h with
+        // this prefix, unclassified and therefore left out of the structural set.
+        new("prefix-GLB", "GLB", PartRole.Defining),
+
         new("prefix-R", "R", PartRole.Attached),
+
+        // Sheathing is attached to the frame; it does not decide where the frame ends. Two
+        // more of those thirteen drawings dimension a 15 mm OSB panel, and the temptation is
+        // to call it Defining so those points appear. That would put the panel's overhang
+        // back into the overall - the reason the structural extent starts at 210 and not the
+        // 200 the whole-view outline reports. A dimension to a sheet is a fact about a
+        // different semantic group, not a reason to widen this one.
+        new("prefix-S", "S", PartRole.Attached),
+
+        // No W rule. Three parts on two panels came back unclassified - W-65 and W-68 on
+        // EW.8, W-64 on EW.18 - and all three were ContourPlate with material WINDOW. That
+        // is evidence about three windows, not about the letter: the prefix is incidental to
+        // what was actually observed, and a prefix rule asserts a role for every future W
+        // part in every future assembly. Ignored is not a harmless guess either - a part
+        // wrongly Ignored is one that silently stops setting the extent, which is the one
+        // failure the completeness flag exists to prevent.
+        //
+        // What would earn the rule: read the properties of every W part across the model,
+        // not one drawing, and show that none of them carries the frame. Until then these
+        // parts stay Unknown, isComplete comes back false, and the caller is told to settle
+        // the role rather than being answered from a guess.
+
         new("prefix-M", "M", PartRole.Ignored),
     }.AsReadOnly();
 
@@ -139,9 +168,7 @@ public sealed class PartRoleClassifier
         // already known to report 5 for insulation, the same as timber, so as a rule of
         // last resort it would quietly become the deciding one on every unfamiliar prefix
         // - which is exactly how the structural extent went wrong. This classifier does
-        // not use it as a rule; it only reports it. The old inline reading in
-        // DimensionDefectDetector.StructuralParts is still there and still wrong, and goes
-        // when the consumers move over.
+        // not use it as a rule; it only reports it.
         return new PartRoleResult(PartRole.Unknown, "none", known);
     }
 

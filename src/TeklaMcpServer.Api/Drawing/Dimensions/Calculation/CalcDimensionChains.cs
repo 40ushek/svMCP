@@ -18,6 +18,28 @@ public static class CalcDimensionChains
     /// </summary>
     public const double PositionCoincidenceToleranceMm = RegionFlattener.CoincidenceTolerance;
 
+    /// <summary>
+    /// Comparison tolerance for a policy check that recognizes a span as a whole, proven
+    /// axis-aligned part. This is deliberately not the coordinate-coincidence tolerance:
+    /// it answers whether a printed span represents the same manufactured length.
+    /// </summary>
+    public const double PartSpanMatchToleranceMm = 0.5;
+
+    /// <summary>
+    /// Geometric tolerance for deciding whether a part contour is sufficiently axis-aligned
+    /// to expose a safe whole-part span. This is separate from coordinate coincidence: it
+    /// tolerates projection/Clipper noise, but must never turn a genuinely short diagonal
+    /// into a rectangular part.
+    /// </summary>
+    public const double PartExtentAxisAlignmentOffsetToleranceMm = 0.01;
+
+    /// <summary>
+    /// Maximum deviation from a view axis for whole-part span evidence. Together with the
+    /// 0.01 mm offset cap this matters only below about 5.7 mm edge length; on ordinary
+    /// members the absolute cap is the limiting condition.
+    /// </summary>
+    public const double PartExtentAxisAlignmentAngleToleranceDegrees = 0.1;
+
     public static void Apply(GeometryGroup group)
     {
         if (group == null)
@@ -30,7 +52,8 @@ public static class CalcDimensionChains
 
         var chains = NewChains();
         var extentShapes = group.BoundaryShapes.Count == 0 ? group.Shapes : group.BoundaryShapes;
-        var extentPoints = Points(extentShapes).ToList();
+        var modelExtents = AxisAlignedModelExtents(group.Shapes);
+        var extentPoints = Points(extentShapes, modelExtents).ToList();
 
         if (group.Extent == null)
         {
@@ -42,7 +65,7 @@ public static class CalcDimensionChains
         AddExtremes(chains, extentPoints, extents);
 
         foreach (var shape in group.Shapes)
-            AddShape(chains, shape, extents);
+            AddShape(chains, shape, extents, modelExtents);
 
         foreach (var chain in chains)
             chain.FinalizePositions(PositionCoincidenceToleranceMm);
@@ -87,7 +110,8 @@ public static class CalcDimensionChains
     private static void AddShape(
         IReadOnlyList<DimensionChain> chains,
         GeometryGroupShape shape,
-        GeometryGroupExtent extents)
+        GeometryGroupExtent extents,
+        IReadOnlyDictionary<int, GeometryGroupExtent> modelExtents)
     {
         var points = shape.Shape.Points;
         if (points.Count == 0)
@@ -99,7 +123,7 @@ public static class CalcDimensionChains
 
         if (shape.Shape.Kind == PlanarShapeKind.Point)
         {
-            AddCorner(chains, new SourcePoint(shape, points[0], 0), DimensionChainPositionSupportKind.PointShape, extents);
+            AddCorner(chains, CreateSourcePoint(shape, points[0], 0, modelExtents), DimensionChainPositionSupportKind.PointShape, extents);
             return;
         }
 
@@ -107,8 +131,8 @@ public static class CalcDimensionChains
         for (var startIndex = 0; startIndex < edgeCount; startIndex++)
         {
             var endIndex = (startIndex + 1) % points.Count;
-            var start = new SourcePoint(shape, points[startIndex], startIndex);
-            var end = new SourcePoint(shape, points[endIndex], endIndex);
+            var start = CreateSourcePoint(shape, points[startIndex], startIndex, modelExtents);
+            var end = CreateSourcePoint(shape, points[endIndex], endIndex, modelExtents);
             var deltaX = Math.Abs(end.Point.X - start.Point.X);
             var deltaY = Math.Abs(end.Point.Y - start.Point.Y);
 
@@ -179,27 +203,101 @@ public static class CalcDimensionChains
     }
 
     private static DimensionChainPositionSupport Support(SourcePoint source, DimensionChainPositionSupportKind kind) =>
-        new(source.Shape, kind, source.Point, source.Index);
+        new(source.Shape, kind, source.Point, source.Index, source.ModelExtent);
 
     private static DimensionChain Chain(IReadOnlyList<DimensionChain> chains, DimensionChainSide side) =>
         chains.Single(chain => chain.Side == side);
 
-    private static IEnumerable<SourcePoint> Points(IEnumerable<GeometryGroupShape> shapes)
+    private static IEnumerable<SourcePoint> Points(
+        IEnumerable<GeometryGroupShape> shapes,
+        IReadOnlyDictionary<int, GeometryGroupExtent> modelExtents)
     {
         foreach (var shape in shapes)
         {
             for (var index = 0; index < shape.Shape.Points.Count; index++)
-                yield return new SourcePoint(shape, shape.Shape.Points[index], index);
+                yield return CreateSourcePoint(shape, shape.Shape.Points[index], index, modelExtents);
         }
     }
+
+    /// <summary>
+    /// Returns an extent only for a part whose projected rings contain no tilted edge.
+    /// A box around a raked part invents a span through empty space, so callers must receive
+    /// no automatic part-size evidence for it. Empty/point-only sources are ignored rather
+    /// than allowing a missing extent to fail the whole group calculation.
+    /// </summary>
+    private static IReadOnlyDictionary<int, GeometryGroupExtent> AxisAlignedModelExtents(
+        IEnumerable<GeometryGroupShape> shapes)
+    {
+        var results = new Dictionary<int, GeometryGroupExtent>();
+        foreach (var part in shapes
+                     .Where(shape => shape.ModelId.HasValue)
+                     .GroupBy(shape => shape.ModelId!.Value))
+        {
+            var partShapes = part.ToList();
+            if (!HasOnlyAxisAlignedEdges(partShapes))
+                continue;
+
+            var extent = GeometryGroupExtent.TryCreate(partShapes);
+            if (extent != null)
+                results.Add(part.Key, extent);
+        }
+
+        return results;
+    }
+
+    private static bool HasOnlyAxisAlignedEdges(IEnumerable<GeometryGroupShape> shapes)
+    {
+        foreach (var shape in shapes)
+        {
+            var points = shape.Shape.Points;
+            var edgeCount = shape.Shape.Kind switch
+            {
+                PlanarShapeKind.Polygon => points.Count,
+                PlanarShapeKind.Segment => Math.Max(points.Count - 1, 0),
+                _ => 0
+            };
+
+            for (var startIndex = 0; startIndex < edgeCount; startIndex++)
+            {
+                var endIndex = (startIndex + 1) % points.Count;
+                var deltaX = Math.Abs(points[endIndex].X - points[startIndex].X);
+                var deltaY = Math.Abs(points[endIndex].Y - points[startIndex].Y);
+                if (!IsAxisAlignedForPartExtent(deltaX, deltaY))
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsAxisAlignedForPartExtent(double deltaX, double deltaY)
+    {
+        var length = Math.Sqrt((deltaX * deltaX) + (deltaY * deltaY));
+        if (length <= PositionCoincidenceToleranceMm)
+            return true;
+
+        var offset = Math.Min(deltaX, deltaY);
+        var maximumOffsetForAngle = length * Math.Sin(
+            PartExtentAxisAlignmentAngleToleranceDegrees * Math.PI / 180.0);
+        return offset <= PartExtentAxisAlignmentOffsetToleranceMm && offset <= maximumOffsetForAngle;
+    }
+
+    private static SourcePoint CreateSourcePoint(
+        GeometryGroupShape shape,
+        Vec3 point,
+        int index,
+        IReadOnlyDictionary<int, GeometryGroupExtent> modelExtents) =>
+        new(shape, point, index,
+            shape.ModelId is int modelId && modelExtents.TryGetValue(modelId, out var extent) ? extent : null);
 
     private static bool Same(double first, double second) =>
         Math.Abs(first - second) <= PositionCoincidenceToleranceMm;
 
-    private readonly struct SourcePoint(GeometryGroupShape shape, Vec3 point, int index)
+    private readonly struct SourcePoint(GeometryGroupShape shape, Vec3 point, int index, GeometryGroupExtent? modelExtent)
     {
         public GeometryGroupShape Shape { get; } = shape;
         public Vec3 Point { get; } = point;
         public int Index { get; } = index;
+        public GeometryGroupExtent? ModelExtent { get; } = modelExtent;
     }
 }

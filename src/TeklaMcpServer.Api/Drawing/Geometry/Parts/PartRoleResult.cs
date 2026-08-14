@@ -10,9 +10,8 @@ namespace TeklaMcpServer.Api.Drawing;
 ///
 /// It is where MATERIAL_TYPE appears, and the only place the classifier uses it: it is
 /// already known to lie about the case that matters, since insulation reports 5, the same
-/// as timber. Reporting it is not the same as the problem being over - the old inline
-/// reading in DimensionDefectDetector.StructuralParts is still there until the consumers
-/// move across.
+/// as timber. Reporting it is not the same as using it as a rule: it remains diagnostic
+/// evidence only.
 ///
 /// IsMainPart is meant to join it, for the same reason: a fact from Tekla whose meaning
 /// for dimensioning nobody has checked. The classifier does not receive it yet - see step

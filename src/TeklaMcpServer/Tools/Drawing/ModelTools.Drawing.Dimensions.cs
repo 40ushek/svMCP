@@ -51,39 +51,6 @@ public static partial class ModelTools
         }
     }
 
-    // Audit-only: this remains the validation path for existing and newly placed dimensions.
-    // New-dimension placement has a separate foundation: AssemblyOutline plus contact and contour points.
-    [McpServerTool, Description(
-        "Detect dimension defects in one drawing view without returning the full dimension and part read models. " +
-        "Returns compact chain summaries, mechanical or provisional findings, and warnings. " +
-        "Read-only: does not modify the drawing. Provisional findings require human review. " +
-        "'signals' is a separate, weaker list that fires on correct drawings too and must never be acted on automatically.")]
-    public static string GetDimensionDefects(
-        [Description("View ID to check (from get_drawing_views).")] int viewId,
-        [Description("Also search where the view's parts touch, adding the weak 'signals' list. Off by default: the search compares every pair of parts.")] bool withContacts = false)
-    {
-        var json = RunBridge("get_dimension_defects",
-            viewId.ToString(CultureInfo.InvariantCulture),
-            withContacts ? "true" : "false");
-        try
-        {
-            var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind == JsonValueKind.Object
-                && doc.RootElement.TryGetProperty("error", out var err)
-                && err.ValueKind == JsonValueKind.String
-                && err.GetString() is { Length: > 0 } message)
-            {
-                return $"Error: {message}";
-            }
-
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch
-        {
-            return $"Bridge error: {json}";
-        }
-    }
-
     [McpServerTool, Description("Delete a straight dimension set from the active drawing by its ID (from get_drawing_dimensions).")]
     public static string DeleteDimension(
         [Description("ID of the StraightDimensionSet to delete")] int dimensionId)
