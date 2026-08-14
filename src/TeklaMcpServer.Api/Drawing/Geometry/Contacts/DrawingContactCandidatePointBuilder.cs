@@ -167,13 +167,19 @@ public sealed class ViewContactCandidatePointsResult
     /// <summary>Parts the view draws whose geometry never reached the contact search.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }
 
-    /// <summary>Whether the contact search underneath saw the whole view.</summary>
+    /// <summary>
+    /// Whether the contact search underneath saw everything in its requested scope - the
+    /// whole view when unrestricted, only the named parts when a caller narrowed the search.
+    /// </summary>
     public bool SearchComplete { get; }
 
     /// <summary>
-    /// True when the whole view was searched, every region flattened, and every shape knew
-    /// both of its parts. Only then does the absence of a candidate somewhere mean that
-    /// nothing touches there.
+    /// True when everything in the requested scope was searched, every region flattened,
+    /// and every shape knew both of its parts. Only then does the absence of a candidate
+    /// somewhere in that scope mean that nothing touches there - and when the search was
+    /// restricted, that absence only ever says the named parts do not touch each other,
+    /// never that one of them touches nothing. A contact with an unnamed part is not in
+    /// scope, complete or not.
     /// </summary>
     public bool IsComplete =>
         Error == null && SearchComplete && Unflattened.Count == 0 && Unresolved.Count == 0;

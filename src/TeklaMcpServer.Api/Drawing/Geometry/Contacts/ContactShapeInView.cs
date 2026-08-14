@@ -249,7 +249,12 @@ public sealed class ViewContactGeometryResult
     /// <summary>Parts the view draws whose geometry never reached the search.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }
 
-    /// <summary>Whether the contact search underneath saw the whole view.</summary>
+    /// <summary>
+    /// Whether the contact search underneath saw everything in its requested scope - the
+    /// whole view when unrestricted, only the named parts when a caller narrowed it. A
+    /// contact with a part outside that scope was never searched for either way; this says
+    /// nothing about it.
+    /// </summary>
     public bool SearchComplete { get; }
 
     /// <summary>Shapes whose two bodies could not both be named as model objects.</summary>
@@ -269,9 +274,11 @@ public sealed class ViewContactGeometryResult
     }
 
     /// <summary>
-    /// True when the whole view was searched, every region it found came through, and every
-    /// shape knows both of its parts. Only then does the absence of contact geometry
-    /// somewhere mean that nothing is there.
+    /// True when everything in the requested scope was searched, every region it found came
+    /// through, and every shape knows both of its parts. Only then does the absence of
+    /// contact geometry somewhere in that scope mean that nothing is there - and a
+    /// restricted scope only ever proves the named parts do not touch each other, never that
+    /// one of them touches nothing.
     /// </summary>
     public bool IsComplete =>
         Error == null && SearchComplete && Unflattened.Count == 0 && Unresolved.Count == 0;

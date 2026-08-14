@@ -146,6 +146,75 @@ public sealed class ViewContactsResultTests
     }
 
     [Fact]
+    public void NarrowingTheRequestNeverTouchesAPartOutsideIt()
+    {
+        // The point of a filter is that the excluded part costs nothing - not read, not
+        // searched, not a reason the answer could quietly include a coordinate that belongs
+        // to it. A reader that throws for the excluded part proves it was never asked.
+        var reader = new Reader()
+            .Returns(10, Slab(10, 0, 50))
+            .Returns(11, Slab(11, 50, 100))
+            .Throws(12, "must not be read when excluded from the request");
+
+        var result = Run(reader, [10, 11]);
+
+        Assert.Equal(new[] { 10, 11 }, result.RequestedIds);
+        Assert.True(result.IsComplete);
+    }
+
+    [Fact]
+    public void ARestrictedSearchNamesItselfAndWhatItAskedForThatIsNotThere()
+    {
+        // Mirrors TeklaDrawingAssemblyOutlineApiTests: Restricted and NotVisibleRequestedIds
+        // are set by the caller that computed them (GetContactGraph, against a live view) and
+        // only carried here, since the intersection with what a view actually draws needs
+        // Tekla and cannot be exercised from this half of the search.
+        var reader = new Reader().Returns(10, Slab(10, 0, 50)).Returns(11, Slab(11, 50, 100));
+
+        var result = TeklaDrawingViewContactApi.Build(
+            1, [10, 11], reader, new ContactOptions(), restricted: true, notVisibleRequestedIds: [999]);
+
+        Assert.True(result.Restricted);
+        Assert.Equal([999], result.NotVisibleRequestedIds);
+        // A restricted search is not incomplete on that account alone - the caller chose the
+        // subset, and everything asked for that exists was read.
+        Assert.True(result.IsComplete);
+    }
+
+    [Fact]
+    public void AnUnrestrictedSearchSaysSo()
+    {
+        var result = Run(new Reader(), []);
+
+        Assert.False(result.Restricted);
+        Assert.Empty(result.NotVisibleRequestedIds);
+    }
+
+    [Fact]
+    public void SelectionCompleteIsFalseWhenAnAskedForIdNeverEnteredTheSearch()
+    {
+        // A typo'd or stale id in the filter must not be able to hide behind a clean
+        // IsComplete=true on whatever the rest of the search did find.
+        var reader = new Reader().Returns(10, Slab(10, 0, 50)).Returns(11, Slab(11, 50, 100));
+
+        var result = TeklaDrawingViewContactApi.Build(
+            1, [10, 11], reader, new ContactOptions(), restricted: true, notVisibleRequestedIds: [999]);
+
+        Assert.False(result.SelectionComplete);
+        // IsComplete is a different claim - the search that did run was read in full - and
+        // must not be dragged down by a selection problem it cannot see.
+        Assert.True(result.IsComplete);
+    }
+
+    [Fact]
+    public void SelectionCompleteIsTrueWhenNothingWasDropped()
+    {
+        var result = Run(new Reader(), []);
+
+        Assert.True(result.SelectionComplete);
+    }
+
+    [Fact]
     public void AViewThatWasNeverSearchedIsNotTheSameAsAnEmptyOne()
     {
         // An empty view is a finding - nothing there touches anything. No view at all is

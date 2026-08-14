@@ -42,10 +42,18 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
     /// selection before any solid is read. The bridge uses it to name a measurement's source
     /// without reconstructing that selection from a partial graph afterwards.
     /// </summary>
+    /// <param name="modelIds">
+    /// Narrows the search to these parts when given, instead of everything the view draws.
+    /// Answering "does A touch B" this way was added after a caller had to grep an
+    /// unfiltered whole-view result by hand to find one pair, and mixed up a coordinate from
+    /// a different part in the process - a slow search is a nuisance, a wrong answer copied
+    /// out of one is a defect in whatever the caller builds next.
+    /// </param>
     public ViewContactsResult GetContactGraph(
         int viewId,
         ContactOptions? options,
-        Action<IReadOnlyList<int>>? beforeSolidRead)
+        Action<IReadOnlyList<int>>? beforeSolidRead,
+        IReadOnlyCollection<int>? modelIds = null)
     {
         options ??= new ContactOptions();
 
@@ -57,9 +65,16 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        var requestedIds = DrawingViewParts.VisibleModelIds(view).ToList();
-        beforeSolidRead?.Invoke(requestedIds);
-        return Build(viewId, requestedIds, _solidGeometry, options);
+        var visible = DrawingViewParts.VisibleModelIds(view).ToList();
+        var wanted = modelIds == null ? visible : visible.Where(modelIds.Contains).ToList();
+        var notVisible = modelIds == null
+            ? Array.Empty<int>()
+            : modelIds.Where(id => !visible.Contains(id)).ToArray();
+
+        beforeSolidRead?.Invoke(wanted);
+        return Build(
+            viewId, wanted, _solidGeometry, options,
+            restricted: modelIds != null, notVisibleRequestedIds: notVisible);
     }
 
     /// <summary>
@@ -82,7 +97,9 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         int viewId,
         IEnumerable<int> modelIds,
         IDrawingPartSolidGeometryApi solidGeometry,
-        ContactOptions options)
+        ContactOptions options,
+        bool restricted = false,
+        IReadOnlyList<int>? notVisibleRequestedIds = null)
     {
         var requestedIds = modelIds.ToList();
         var solids = new List<ISolid>();
@@ -121,7 +138,8 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         }
 
         return new ViewContactsResult(
-            viewId, ContactGraph.Build(solids, options), unread, requestedIds: requestedIds);
+            viewId, ContactGraph.Build(solids, options), unread, requestedIds: requestedIds,
+            restricted: restricted, notVisibleRequestedIds: notVisibleRequestedIds);
     }
 
 }

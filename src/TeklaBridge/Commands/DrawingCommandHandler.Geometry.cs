@@ -247,6 +247,21 @@ internal sealed partial class DrawingCommandHandler
     /// <summary>
     /// Where the parts drawn in a view touch each other, as places a dimension could be
     /// taken to, and optionally drawn on the sheet so a person can check them by eye.
+    ///
+    /// The optional 4th argument narrows the search to named parts, e.g. two ends of one
+    /// brace, instead of returning every contact the view holds. Added after a whole-view
+    /// answer on a ~40-part view ran to 95 KB with no way to ask "does A touch B" directly,
+    /// and grepping that by hand for one pair produced a wrong answer built from the wrong
+    /// part of the file rather than no answer at all.
+    ///
+    /// <b>Pairs only, and only within the named set.</b> A junction is found only when both
+    /// of its parts are in `modelIds`; a part's contact with anything outside that set is
+    /// never searched and never reported missing. This answers "do these named parts touch
+    /// each other", never "what does this one part touch" - for that, search unfiltered, or
+    /// this command would return a confident, silent false negative. A single id is refused
+    /// outright: with one body there is no possible pair, so the search would always come
+    /// back empty regardless of what that part actually touches, which is a query that
+    /// cannot mean what a caller would read it to mean.
     /// </summary>
     private bool HandleGetContactCandidatePoints(TeklaDrawingDebugOverlayApi overlay, string[] args)
     {
@@ -259,11 +274,35 @@ internal sealed partial class DrawingCommandHandler
         var draw = args.Length > 2 &&
             args[2].Equals("true", StringComparison.OrdinalIgnoreCase);
 
+        IReadOnlyCollection<int>? modelIds = null;
+        if (args.Length > 3 && !string.IsNullOrWhiteSpace(args[3]))
+        {
+            if (!TryParseModelIds(args[3], out modelIds, out var idError))
+            {
+                WriteError($"get_contact_candidate_points: {idError}");
+                return true;
+            }
+
+            // One id can never form a pair, so the search would always come back empty -
+            // not because that part touches nothing, but because nothing was ever compared
+            // against it. Reporting that as a clean empty result would be exactly the false
+            // negative this filter must never produce.
+            if (modelIds is { Count: < 2 })
+            {
+                WriteError(
+                    "get_contact_candidate_points: modelIds needs at least two parts - a " +
+                    "single id can never form a pair, so the search would always come back " +
+                    "empty regardless of what that part touches");
+                return true;
+            }
+        }
+
         var identity = ReadSourceIdentity(viewId);
         var contacts = new TeklaDrawingViewContactApi(_model).GetContactGraph(
             viewId,
             options: null,
-            beforeSolidRead: ids => CaptureParts(identity, "searched", ids));
+            beforeSolidRead: ids => CaptureParts(identity, "searched", ids),
+            modelIds: modelIds);
         var geometry = ContactGeometryInViewBuilder.Build(contacts);
         var result = DrawingContactCandidatePointBuilder.Build(geometry);
 
@@ -280,6 +319,13 @@ internal sealed partial class DrawingCommandHandler
             searchComplete = result.SearchComplete,
             error = result.Error,
             drawnCount = drawn,
+            restricted = contacts.Restricted,
+            requestedIds = contacts.RequestedIds,
+            // False here means some id in the filter was never searched at all - a typo or
+            // a stale id, not a part confirmed to touch nothing. An empty or partial result
+            // must not be read as "no contact" while this is false.
+            selectionComplete = contacts.SelectionComplete,
+            notVisibleRequestedIds = contacts.NotVisibleRequestedIds,
 
             pointCount = result.Points.Count,
             points = result.Points.Select(point => new
