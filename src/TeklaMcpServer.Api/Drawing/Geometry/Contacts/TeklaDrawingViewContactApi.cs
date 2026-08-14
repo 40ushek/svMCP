@@ -55,6 +55,14 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         Action<IReadOnlyList<int>>? beforeSolidRead,
         IReadOnlyCollection<int>? modelIds = null)
     {
+        // Guarded here, not only by whichever caller happens to check first: one body can
+        // never form a pair, so a single-id filter would always come back empty regardless
+        // of what that part actually touches - a query with no honest answer. Checked before
+        // anything Tekla-side, the same way a bad viewId would be, so every caller of this
+        // API gets the same protection the bridge command's own check already gave it.
+        if (RejectSingleIdFilter(viewId, modelIds) is { } rejected)
+            return rejected;
+
         options ??= new ContactOptions();
 
         var drawing = new DrawingHandler().GetActiveDrawing();
@@ -87,6 +95,27 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
             ContactGraph.Build(Array.Empty<ISolid>()),
             Array.Empty<UnreadPart>(),
             reason);
+
+    /// <summary>
+    /// Null when the filter is usable, an error result when it is not. Kept apart from
+    /// <see cref="GetContactGraph(int, ContactOptions?, Action{IReadOnlyList{int}}?, IReadOnlyCollection{int}?)"/>
+    /// so the guard is testable on its own - that method needs a live view to run at all,
+    /// and this check must not depend on one to be trusted.
+    ///
+    /// Counts distinct ids, not <see cref="IReadOnlyCollection{T}.Count"/>: <c>[10, 10]</c>
+    /// has two elements and one part. Left as a raw count, it would pass this guard, reach a
+    /// live search that reads the same part twice, and throw inside
+    /// <see cref="ContactGraph.Build"/> - `SolidContacts` refuses two bodies sharing an id -
+    /// which is a worse failure than the one this guard exists to give a clean answer for.
+    /// </summary>
+    internal static ViewContactsResult? RejectSingleIdFilter(int viewId, IReadOnlyCollection<int>? modelIds) =>
+        modelIds != null && modelIds.Distinct().Take(2).Count() < 2
+            ? Unavailable(
+                viewId,
+                "modelIds needs at least two distinct parts - one part, named once or " +
+                "repeated, can never form a pair, so the search would always come back " +
+                "empty regardless of what that part touches")
+            : null;
 
     /// <summary>
     /// The part of the work that needs no Tekla: read each named part, take in what came

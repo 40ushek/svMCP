@@ -319,13 +319,16 @@ internal sealed partial class DrawingCommandHandler
             searchComplete = result.SearchComplete,
             error = result.Error,
             drawnCount = drawn,
-            restricted = contacts.Restricted,
-            requestedIds = contacts.RequestedIds,
+            // Read from `result`, not `contacts` directly - the whole point is that a
+            // consumer working from the candidate points has the same selection facts a
+            // consumer of the raw search would, without needing the raw search at all.
+            restricted = result.Restricted,
+            requestedIds = result.RequestedIds,
             // False here means some id in the filter was never searched at all - a typo or
             // a stale id, not a part confirmed to touch nothing. An empty or partial result
             // must not be read as "no contact" while this is false.
-            selectionComplete = contacts.SelectionComplete,
-            notVisibleRequestedIds = contacts.NotVisibleRequestedIds,
+            selectionComplete = result.SelectionComplete,
+            notVisibleRequestedIds = result.NotVisibleRequestedIds,
 
             pointCount = result.Points.Count,
             points = result.Points.Select(point => new
@@ -347,6 +350,7 @@ internal sealed partial class DrawingCommandHandler
                 contactId = shape.ContactId,
                 shapeId = shape.ShapeId,
                 contactKind = shape.Kind.ToString(),
+                contactState = shape.State.ToString(),
                 shapeKind = shape.Shape.Kind.ToString(),
                 modelObjectIds = shape.Participants.ModelObjectIds,
                 points = shape.Shape.Points.Select(point => new[] { point.X, point.Y })

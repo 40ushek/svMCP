@@ -226,7 +226,10 @@ public sealed class ViewContactGeometryResult
         IReadOnlyList<UnflattenedRegion> unflattened,
         IReadOnlyList<UnreadPart> unread,
         bool searchComplete,
-        string? error = null)
+        string? error = null,
+        bool restricted = false,
+        IReadOnlyList<int>? requestedIds = null,
+        IReadOnlyList<int>? notVisibleRequestedIds = null)
     {
         ViewId = viewId;
         Shapes = shapes;
@@ -234,6 +237,9 @@ public sealed class ViewContactGeometryResult
         Unread = unread;
         SearchComplete = searchComplete;
         Error = error;
+        Restricted = restricted;
+        RequestedIds = requestedIds ?? Array.Empty<int>();
+        NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -248,6 +254,32 @@ public sealed class ViewContactGeometryResult
 
     /// <summary>Parts the view draws whose geometry never reached the search.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }
+
+    /// <summary>
+    /// Whether the search underneath this geometry was narrowed to specific parts rather
+    /// than everything the view draws. Carried from <see cref="ViewContactsResult.Restricted"/>
+    /// rather than re-derived, because a consumer of flattened geometry has no other way to
+    /// tell a genuinely quiet corner of the view from a search that only ever looked at two
+    /// named parts.
+    /// </summary>
+    public bool Restricted { get; }
+
+    /// <summary>
+    /// The ids that actually entered the search, when <see cref="Restricted"/> is true - not
+    /// the caller's raw filter by itself. An id in the filter but not in this view lands in
+    /// <see cref="NotVisibleRequestedIds"/> instead; the two together are the full ask.
+    /// </summary>
+    public IReadOnlyList<int> RequestedIds { get; }
+
+    /// <summary>Ids the caller asked for that this view does not draw.</summary>
+    public IReadOnlyList<int> NotVisibleRequestedIds { get; }
+
+    /// <summary>
+    /// Whether every id the caller asked for made it into the search. False here means an
+    /// empty or partial result proves nothing - some named part was never searched at all,
+    /// not confirmed to touch nothing.
+    /// </summary>
+    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
 
     /// <summary>
     /// Whether the contact search underneath saw everything in its requested scope - the

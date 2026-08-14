@@ -49,10 +49,13 @@ public sealed class ViewContactsResult
     public IReadOnlyList<UnreadPart> Unread { get; }
 
     /// <summary>
-    /// Every model part the view reader was asked to search, before any solid, bounding-box,
-    /// or pair search could fail. This is deliberately not reconstructed from
-    /// <see cref="Graph"/>: a body whose own box failed never reaches <see cref="ContactGraph.SolidIds"/>,
-    /// but it was still part of the requested view and must remain visible to callers.
+    /// Every model part that actually entered the search, before any solid, bounding-box,
+    /// or pair search could fail on it - the whole view when unrestricted, or a caller's
+    /// filter with anything not visible in this view already set aside into
+    /// <see cref="NotVisibleRequestedIds"/>. Not the caller's raw filter by itself: the two
+    /// together are that. This is deliberately not reconstructed from <see cref="Graph"/>: a
+    /// body whose own box failed never reaches <see cref="ContactGraph.SolidIds"/>, but it
+    /// was still part of the search and must remain visible to callers.
     /// </summary>
     public IReadOnlyList<int> RequestedIds { get; }
 

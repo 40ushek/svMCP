@@ -29,19 +29,22 @@ public sealed class ContactCandidatePointsFilterCommandTests
     {
         var text = GeometryHandlerSource();
 
-        Assert.Contains("restricted = contacts.Restricted", text);
-        Assert.Contains("notVisibleRequestedIds = contacts.NotVisibleRequestedIds", text);
+        Assert.Contains("restricted = result.Restricted", text);
+        Assert.Contains("notVisibleRequestedIds = result.NotVisibleRequestedIds", text);
     }
 
     [Fact]
     public void TheResponseSaysWhetherTheSelectionItselfWasComplete()
     {
         // Restricted/notVisibleRequestedIds alone are not enough - a caller has to be able
-        // to gate "this pair does not touch" on more than "the call did not error".
+        // to gate "this pair does not touch" on more than "the call did not error". Read
+        // from `result` (the candidate-point result), not `contacts` (the raw search) - a
+        // consumer working from candidate points has no access to `contacts` at all, so if
+        // the fields were only ever right on `contacts`, this response would be wrong.
         var text = GeometryHandlerSource();
 
-        Assert.Contains("selectionComplete = contacts.SelectionComplete", text);
-        Assert.Contains("requestedIds = contacts.RequestedIds", text);
+        Assert.Contains("selectionComplete = result.SelectionComplete", text);
+        Assert.Contains("requestedIds = result.RequestedIds", text);
     }
 
     [Fact]
@@ -49,7 +52,9 @@ public sealed class ContactCandidatePointsFilterCommandTests
     {
         // One body can never form a pair, so the search would always come back empty
         // regardless of what that part actually touches - a query with no honest answer,
-        // refused rather than answered with a silent false negative.
+        // refused rather than answered with a silent false negative. Pinned at the bridge
+        // handler; the API's own guard (RejectSingleIdFilter, distinct-id counting included)
+        // has its own runnable coverage in ViewContactsResultTests.
         var text = GeometryHandlerSource();
         var start = text.IndexOf("private bool HandleGetContactCandidatePoints(", System.StringComparison.Ordinal);
         Assert.True(start >= 0);
@@ -59,5 +64,16 @@ public sealed class ContactCandidatePointsFilterCommandTests
         var guard = text[start..readSourceIdentity];
         Assert.Contains("modelIds is { Count: < 2 }", guard);
         Assert.Contains("WriteError(", guard);
+    }
+
+    [Fact]
+    public void EachShapeCarriesItsContactStateAlongsideItsKind()
+    {
+        // Skill rule 4b's removal condition names both FaceToFace and Touching. Kind alone
+        // cannot distinguish a settled contact from a gap or an overlap, so an LLM checking
+        // the condition needs contactState on the shape itself, not just contactKind.
+        var text = GeometryHandlerSource();
+
+        Assert.Contains("contactState = shape.State.ToString()", text);
     }
 }

@@ -214,6 +214,35 @@ public sealed class ViewContactsResultTests
         Assert.True(result.SelectionComplete);
     }
 
+    [Theory]
+    [InlineData(new int[] { })]
+    [InlineData(new[] { 10 })]
+    [InlineData(new[] { 10, 10 })]
+    public void AFilterWithFewerThanTwoDistinctIdsIsRejected(int[] modelIds)
+    {
+        // A pair needs two distinct named parts. Zero is as degenerate as one, and [10, 10]
+        // is the same degeneracy wearing a Count of 2 - one part named twice reads the same
+        // solid twice and would throw inside ContactGraph.Build, which refuses two bodies
+        // sharing an id, rather than answer with the clean error this guard exists to give.
+        var rejected = TeklaDrawingViewContactApi.RejectSingleIdFilter(1, modelIds);
+
+        Assert.NotNull(rejected);
+        Assert.Contains("at least two distinct parts", rejected!.Error);
+        Assert.False(rejected.IsComplete);
+    }
+
+    [Fact]
+    public void ANullFilterMeaningNoRestrictionIsNotRejected()
+    {
+        Assert.Null(TeklaDrawingViewContactApi.RejectSingleIdFilter(1, null));
+    }
+
+    [Fact]
+    public void ATwoOrMoreIdFilterIsNotRejected()
+    {
+        Assert.Null(TeklaDrawingViewContactApi.RejectSingleIdFilter(1, [10, 11]));
+    }
+
     [Fact]
     public void AViewThatWasNeverSearchedIsNotTheSameAsAnEmptyOne()
     {

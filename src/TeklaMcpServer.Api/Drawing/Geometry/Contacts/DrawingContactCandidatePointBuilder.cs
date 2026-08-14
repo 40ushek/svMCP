@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using SolidContacts;
@@ -68,7 +69,8 @@ public static class DrawingContactCandidatePointBuilder
 
         return new ViewContactCandidatePointsResult(
             geometry.ViewId, points, geometry.Unflattened, geometry.Unresolved,
-            geometry.Unread, geometry.SearchComplete, geometry.Error);
+            geometry.Unread, geometry.SearchComplete, geometry.Error,
+            geometry.Restricted, geometry.RequestedIds, geometry.NotVisibleRequestedIds);
     }
 
     private static DrawingPartCandidatePoint Candidate(ContactShapeInView shape, int pointIndex)
@@ -103,6 +105,7 @@ public static class DrawingContactCandidatePointBuilder
                 Values = new Dictionary<string, string>
                 {
                     ["contactKind"] = shape.Kind.ToString(),
+                    ["contactState"] = shape.State.ToString(),
                     ["shapeKind"] = shape.Shape.Kind.ToString(),
                     ["shapeId"] = shape.ShapeId,
                     ["pointIndex"] = pointIndex.ToString(CultureInfo.InvariantCulture),
@@ -132,7 +135,10 @@ public sealed class ViewContactCandidatePointsResult
         IReadOnlyList<ContactShapeInView> unresolved,
         IReadOnlyList<UnreadPart> unread,
         bool searchComplete,
-        string? error = null)
+        string? error = null,
+        bool restricted = false,
+        IReadOnlyList<int>? requestedIds = null,
+        IReadOnlyList<int>? notVisibleRequestedIds = null)
     {
         ViewId = viewId;
         Points = points;
@@ -141,6 +147,9 @@ public sealed class ViewContactCandidatePointsResult
         Unread = unread;
         SearchComplete = searchComplete;
         Error = error;
+        Restricted = restricted;
+        RequestedIds = requestedIds ?? Array.Empty<int>();
+        NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -172,6 +181,25 @@ public sealed class ViewContactCandidatePointsResult
     /// whole view when unrestricted, only the named parts when a caller narrowed the search.
     /// </summary>
     public bool SearchComplete { get; }
+
+    /// <summary>Whether the search was narrowed to specific parts. Carried from <see cref="ViewContactsResult.Restricted"/>.</summary>
+    public bool Restricted { get; }
+
+    /// <summary>
+    /// The ids that actually entered the search, when <see cref="Restricted"/> is true - not
+    /// the caller's raw filter by itself. An id in the filter but not in this view lands in
+    /// <see cref="NotVisibleRequestedIds"/> instead; the two together are the full ask.
+    /// </summary>
+    public IReadOnlyList<int> RequestedIds { get; }
+
+    /// <summary>Ids the caller asked for that this view does not draw.</summary>
+    public IReadOnlyList<int> NotVisibleRequestedIds { get; }
+
+    /// <summary>
+    /// Whether every id the caller asked for made it into the search. False means an empty
+    /// or partial result here proves nothing - some named part was never searched.
+    /// </summary>
+    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
 
     /// <summary>
     /// True when everything in the requested scope was searched, every region flattened,

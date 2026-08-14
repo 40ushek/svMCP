@@ -103,6 +103,18 @@ public sealed class ContactCandidatePointTests
     }
 
     [Fact]
+    public void EveryPointCarriesTheContactStateNotOnlyTheKind()
+    {
+        // Kind alone cannot tell a settled FaceToFace touch from a gap or an overlap inside
+        // the search's broad tolerance - a caller deciding whether a contact confirms
+        // anything needs both, on the candidate itself, not a second lookup.
+        var point = TwoSlabs().Points[0];
+
+        Assert.Equal("FaceToFace", point.Reason.Values["contactKind"]);
+        Assert.Equal("Touching", point.Reason.Values["contactState"]);
+    }
+
+    [Fact]
     public void TheAnchorNamesTheContactTheShapeAndThePlaceAndNoPart()
     {
         var result = TwoSlabs();
@@ -292,5 +304,37 @@ public sealed class ContactCandidatePointTests
             Assert.NotEqual(DrawingPartCandidatePointSource.PartContour, point.Source);
             Assert.NotEqual(DrawingPartCandidateAnchorKind.ContourVertex, point.Anchor.Kind);
         });
+    }
+
+    [Fact]
+    public void ARestrictedSelectionSurvivesBothTranslationSteps()
+    {
+        // Restricted/SelectionComplete are decided once, on the raw search, then have to
+        // cross two translations - flattening onto the sheet, then building candidates -
+        // to reach a caller that only ever sees the final result. Each step used to carry
+        // its own IsComplete forward and drop everything else, so a caller working from
+        // candidate points alone saw a clean, unqualified "complete" even though a named id
+        // had never been searched at all.
+        var contacts = TeklaDrawingViewContactApi.Build(
+            1, [10, 11], new Reader().Returns(10, Slab(10, 0, 50, onEdge: true)).Returns(11, Slab(11, 50, 100, onEdge: true)),
+            new ContactOptions(), restricted: true, notVisibleRequestedIds: [999]);
+
+        var geometry = ContactGeometryInViewBuilder.Build(contacts);
+        var candidates = DrawingContactCandidatePointBuilder.Build(geometry);
+
+        foreach (var (restricted, selectionComplete, notVisible, isComplete) in new[]
+                 {
+                     (contacts.Restricted, contacts.SelectionComplete, contacts.NotVisibleRequestedIds, contacts.IsComplete),
+                     (geometry.Restricted, geometry.SelectionComplete, geometry.NotVisibleRequestedIds, geometry.IsComplete),
+                     (candidates.Restricted, candidates.SelectionComplete, candidates.NotVisibleRequestedIds, candidates.IsComplete)
+                 })
+        {
+            Assert.True(restricted);
+            Assert.False(selectionComplete);
+            Assert.Equal([999], notVisible);
+            // IsComplete is a different claim - the search that ran was read in full - and
+            // must stay true even while the selection itself is short one id.
+            Assert.True(isComplete);
+        }
     }
 }
