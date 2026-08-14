@@ -78,15 +78,27 @@ public sealed class ContactShapeInView
         string contactId,
         ContactParticipants participants,
         ContactKind kind,
+        ContactState state,
+        Vec3 normal,
         PlanarShape shape)
     {
         ContactId = contactId;
         Participants = participants;
         Kind = kind;
+        State = state;
+        Normal = normal;
         Shape = shape;
     }
 
-    /// <summary>The contact this region belongs to. Stable across runs, not across edits.</summary>
+    /// <summary>
+    /// The contact this region belongs to. Stable across runs, not across edits - and, per
+    /// <c>ContactIdentity</c>'s own remarks, a key rather than a proof of distinctness. Two
+    /// separate <see cref="Contact"/> instances are not guaranteed to disagree on it, so
+    /// nothing downstream should look a contact back up by this id: <see cref="Kind"/>,
+    /// <see cref="State"/> and <see cref="Normal"/> are carried alongside for that reason,
+    /// copied straight from the one <see cref="Contact"/> this shape was flattened from,
+    /// while that association is still unambiguous.
+    /// </summary>
     public string ContactId { get; }
 
     /// <summary>
@@ -108,6 +120,18 @@ public sealed class ContactShapeInView
     public ContactParticipants Participants { get; }
 
     public ContactKind Kind { get; }
+
+    /// <summary>Whether the two bodies coincide, leave a gap, or overlap. See <see cref="ContactId"/>.</summary>
+    public ContactState State { get; }
+
+    /// <summary>
+    /// The contact plane's unit normal, in the same view coordinates as <see cref="Shape"/>
+    /// - <c>ViewSolidAdapter</c> never converts frames, so this is directly comparable to a
+    /// drawing's own X and Y. Its in-plane component (X, Y) says which in-plane direction a
+    /// face contact resists; a normal that is mostly out of the view plane (large Z) resists
+    /// depth instead and says nothing about either in-plane axis on its own.
+    /// </summary>
+    public Vec3 Normal { get; }
 
     /// <summary>
     /// What the region looks like on the sheet - an area, a line, or a single place. The

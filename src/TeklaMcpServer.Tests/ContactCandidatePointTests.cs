@@ -163,7 +163,7 @@ public sealed class ContactCandidatePointTests
         var shape = new ContactShapeInView(
             "contact-1",
             new ContactParticipants("10", "assembly-outline"),
-            ContactKind.FaceToFace,
+            ContactKind.FaceToFace, ContactState.Touching, new Vec3(0, 0, 1),
             RegionFlattener.Flatten(new List<Vec3> { new(0, 0, 0), new(10, 0, 0), new(10, 10, 0) }));
 
         var geometry = new ViewContactGeometryResult(
@@ -185,12 +185,14 @@ public sealed class ContactCandidatePointTests
         var participants = new ContactParticipants("10", "11");
 
         var deep = new ContactShapeInView("contact-1", participants, ContactKind.FaceToFace,
+            ContactState.Touching, new Vec3(0, 0, 1),
             RegionFlattener.Flatten(new List<Vec3>
             {
                 new(50, 0, 0), new(50, 100, 0), new(50, 100, 10), new(50, 0, 10)
             }));
 
         var shallow = new ContactShapeInView("contact-1", participants, ContactKind.FaceToFace,
+            ContactState.Touching, new Vec3(0, 0, 1),
             RegionFlattener.Flatten(new List<Vec3>
             {
                 new(50, 0, 80), new(50, 100, 80), new(50, 100, 90), new(50, 0, 90)
@@ -223,8 +225,12 @@ public sealed class ContactCandidatePointTests
             1,
             new[]
             {
-                new ContactShapeInView("contact-1", new ContactParticipants("10", "11"), ContactKind.FaceToFace, shape),
-                new ContactShapeInView("contact-2", new ContactParticipants("10", "12"), ContactKind.FaceToFace, shape)
+                new ContactShapeInView(
+                    "contact-1", new ContactParticipants("10", "11"), ContactKind.FaceToFace,
+                    ContactState.Touching, new Vec3(0, 0, 1), shape),
+                new ContactShapeInView(
+                    "contact-2", new ContactParticipants("10", "12"), ContactKind.FaceToFace,
+                    ContactState.Touching, new Vec3(0, 0, 1), shape)
             },
             new List<UnflattenedRegion>(), new List<UnreadPart>(), searchComplete: true);
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using SolidContacts;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using TeklaMcpServer.Api.Drawing;
@@ -73,6 +74,9 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_contact_candidate_points":
                 return HandleGetContactCandidatePoints(GetDebugOverlayApi(), args);
+
+            case "get_part_degrees_of_freedom":
+                return HandleGetPartDegreesOfFreedom(args);
 
             case "get_grid_axes":
                 return HandleGetGridAxes(GetGridApi(), args);
@@ -323,6 +327,121 @@ internal sealed partial class DrawingCommandHandler
 
         return true;
     }
+
+    /// <summary>
+    /// Which axes each part's contacts already settle, and how far the reading can be
+    /// trusted. Read-only diagnostic - see
+    /// TeklaMcpServer.Api/Drawing/Geometry/Contacts/ROADMAP_PART_FREEDOM.md. It does not
+    /// decide anything about dimensions and role-independent: unlike
+    /// get_structural_chain_positions it works whether or not any part classified as
+    /// Defining, because it never asks a part's role.
+    /// </summary>
+    private bool HandleGetPartDegreesOfFreedom(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
+        {
+            WriteError("get_part_degrees_of_freedom requires viewId argument");
+            return true;
+        }
+
+        var identity = ReadSourceIdentity(viewId);
+        var contacts = new TeklaDrawingViewContactApi(_model).GetContactGraph(
+            viewId,
+            options: null,
+            beforeSolidRead: ids => CaptureParts(identity, "searched", ids));
+        var geometry = ContactGeometryInViewBuilder.Build(contacts);
+        var result = PartDegreesOfFreedomAnalyzer.Build(contacts, geometry);
+
+        var source = Describe(identity);
+
+        WriteJson(new
+        {
+            success = result.Error == null,
+            viewId,
+            source,
+            isComplete = result.IsComplete,
+            searchComplete = result.SearchComplete,
+            // Not "the assembly is fixed" - nothing here is grounded to a datum, so a group
+            // bolted only to itself reads the same as one bolted to the world. See
+            // PartDegreesOfFreedomAnalyzer / ROADMAP_PART_FREEDOM.md.
+            allPartsHaveObservedAxisContacts = result.AllPartsHaveObservedAxisContacts,
+            error = result.Error,
+
+            partCount = result.Parts.Count,
+            parts = result.Parts.Select(part => new
+            {
+                modelId = part.ModelId,
+                freeX = part.FreeX,
+                freeY = part.FreeY,
+                freeRotation = part.FreeRotation,
+                constrainedByX = part.ConstrainedByX.Select(Describe),
+                constrainedByY = part.ConstrainedByY.Select(Describe)
+            }),
+
+            // Touched but not counted: wrong ContactKind, or a gap/overlap rather than a
+            // settled Touching state. A part reading as free may still have one of these
+            // against it - see PartDegreesOfFreedomAnalyzer. contactKind/contactState say
+            // which of the two excluded it; shapeKind alone (Segment/Polygon) never would.
+            notLoadBearing = result.NotLoadBearing.Select(shape => new
+            {
+                contactId = shape.ContactId,
+                shapeId = shape.ShapeId,
+                contactKind = shape.Kind.ToString(),
+                contactState = shape.State.ToString(),
+                shapeKind = shape.Shape.Kind.ToString(),
+                modelObjectIds = shape.Participants.ModelObjectIds,
+                reason = shape.Kind != ContactKind.FaceToFace
+                    ? $"{shape.Kind} carries no support"
+                    : $"state is {shape.State}, not Touching"
+            }),
+
+            // Not a defect either - a load-bearing contact whose own plane normal points out
+            // of the view plane or lies diagonal within it, so neither in-plane axis is
+            // preferred over the other. See PartDegreesOfFreedomAnalyzer.ConstrainedAxisOf.
+            ambiguousDirection = result.AmbiguousDirection.Select(shape => new
+            {
+                contactId = shape.ContactId,
+                shapeId = shape.ShapeId,
+                contactKind = shape.Kind.ToString(),
+                contactState = shape.State.ToString(),
+                normal = new[] { shape.Normal.X, shape.Normal.Y, shape.Normal.Z },
+                modelObjectIds = shape.Participants.ModelObjectIds
+            }),
+
+            // Four separate ways the read can be short of the whole view, answered
+            // differently: a part never reached, a region that flattened to nothing, a
+            // shape whose two parts did not resolve, a pair whose search itself threw.
+            unread = result.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
+            unflattened = result.Unflattened.Select(region => new
+            {
+                contactId = region.ContactId,
+                regionIndex = region.RegionIndex,
+                parts = region.Participants.ToString(),
+                reason = region.Reason
+            }),
+            unresolved = result.Unresolved.Select(shape => new
+            {
+                contactId = shape.ContactId,
+                solidAId = shape.Participants.SolidAId,
+                solidBId = shape.Participants.SolidBId
+            }),
+            failures = result.Failures.Select(failure => new
+            {
+                solidAId = failure.SolidAId,
+                solidBId = failure.SolidBId,
+                reason = failure.Exception.Message
+            })
+        });
+
+        return true;
+    }
+
+    private static object Describe(FreedomConstraint constraint) => new
+    {
+        partnerModelId = constraint.PartnerModelId,
+        contactId = constraint.ContactId,
+        shapeId = constraint.ShapeId
+    };
 
     /// <summary>
     /// Paints the candidates and the shapes they came from into the view.

@@ -60,7 +60,8 @@ public static class ContactGeometryInViewBuilder
                         continue;
                     }
 
-                    shapes.Add(new ContactShapeInView(contact.Id, participants, contact.Kind, shape));
+                    shapes.Add(new ContactShapeInView(
+                        contact.Id, participants, contact.Kind, contact.State, contact.Plane.Normal, shape));
                 }
             }
         }
