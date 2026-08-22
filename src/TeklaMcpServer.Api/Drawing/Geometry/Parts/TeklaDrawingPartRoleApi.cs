@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Tekla.Structures;
@@ -16,18 +17,47 @@ public interface IDrawingPartRoleApi
 /// <summary>A part of a view and the role its properties give it. No geometry.</summary>
 public sealed class PartRoleInView
 {
-    public PartRoleInView(int modelId, string? partPos, string? partPrefix, PartRoleResult role)
+    public PartRoleInView(
+        int modelId,
+        string? partPos,
+        string? partPrefix,
+        PartRoleResult role,
+        bool isMainPart = false,
+        bool isMainPartKnown = true)
     {
         ModelId = modelId;
         PartPos = partPos;
         PartPrefix = partPrefix;
         Role = role;
+        IsMainPart = isMainPart;
+        IsMainPartKnown = isMainPartKnown;
     }
 
     public int ModelId { get; }
     public string? PartPos { get; }
     public string? PartPrefix { get; }
     public PartRoleResult Role { get; }
+
+    /// <summary>
+    /// Whether Tekla reports this part as the main part of its assembly.
+    ///
+    /// A fact, not a judgement, and deliberately outside <see cref="PartRoleResult"/>: it
+    /// decides nothing here. On a beam or a column it is the member everything else is
+    /// fixed to, and the base a secondary part is measured from; on a panel it is one of
+    /// many equal members and means nothing at all. Which of the two applies is the rule
+    /// set's business, so this is reported and never acted on in this layer.
+    /// </summary>
+    public bool IsMainPart { get; }
+
+    /// <summary>
+    /// Whether the assembly could be asked at all.
+    ///
+    /// False means the read threw, and then <see cref="IsMainPart"/> is not "no" but "not
+    /// known" - the two carry the same value and only this flag separates them. A rule set
+    /// that measures from the main part has to refuse the drawing here rather than measure
+    /// from whatever is left, which is what a swallowed exception would have let it do.
+    /// </summary>
+    public bool IsMainPartKnown { get; }
 
     public override string ToString() => $"{PartPos ?? ModelId.ToString()} {Role}";
 }
@@ -87,6 +117,7 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
 
         var roles = new List<PartRoleInView>();
         var unread = new List<UnreadPart>();
+        var mainPartByAssembly = new Dictionary<int, int>();
 
         foreach (var modelId in DrawingViewParts.VisibleModelIds(view))
         {
@@ -107,17 +138,35 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
             var materialType = -1;
 
             part.GetReportProperty("PART_POS", ref partPos);
-            part.GetReportProperty("MATERIAL", ref material);
             part.GetReportProperty("MATERIAL_TYPE", ref materialType);
 
-            // The prefix is the only input the rules read, so its read is the one that must
-            // be checked. Failing it means the role is unknown because nobody could look,
-            // which is not the same as no rule covering it - and only the first is fixed by
-            // reading the part again.
-            if (!part.GetReportProperty("PART_PREFIX", ref partPrefix))
+            // Both are read whatever the filter says, because both go into the reason a
+            // person reads before writing an exclusion. Only the ones an exclusion actually
+            // consults are required: refusing a part because Tekla would not hand over a
+            // property nobody asked about is the blocker this redesign removed.
+            var prefixRead = part.GetReportProperty("PART_PREFIX", ref partPrefix);
+            var materialRead = part.GetReportProperty("MATERIAL", ref material);
+
+            var missing = new List<string>();
+            if (_classifier.NeedsPrefix && !prefixRead) missing.Add("PART_PREFIX");
+            if (_classifier.NeedsMaterial && !materialRead) missing.Add("MATERIAL");
+
+            var mainPart = IsMainPart(part, mainPartByAssembly, out var mainPartKnown);
+
+            // Fail-closed, and this is the whole point of the check. A material read that
+            // came back empty would leave excludeMaterials matching nothing while the
+            // answer still called itself complete - the window stays in the extent and
+            // nobody is told.
+            if (missing.Count > 0)
             {
-                unread.Add(new UnreadPart(modelId, "PART_PREFIX could not be read"));
-                roles.Add(new PartRoleInView(modelId, NullIfEmpty(partPos), null, PartRoleResult.Unclassified));
+                unread.Add(new UnreadPart(modelId, string.Join(" and ", missing) + " could not be read"));
+                roles.Add(new PartRoleInView(
+                    modelId,
+                    NullIfEmpty(partPos),
+                    prefixRead ? NullIfEmpty(partPrefix) : null,
+                    PartRoleResult.Unclassified,
+                    mainPart,
+                    mainPartKnown));
                 continue;
             }
 
@@ -128,10 +177,52 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 materialType,
                 part.Name);
 
-            roles.Add(new PartRoleInView(modelId, NullIfEmpty(partPos), NullIfEmpty(partPrefix), role));
+            roles.Add(new PartRoleInView(
+                modelId,
+                NullIfEmpty(partPos),
+                NullIfEmpty(partPrefix),
+                role,
+                mainPart,
+                mainPartKnown));
         }
 
         return new PartRoleReadResult(roles, unread);
+    }
+
+    /// <summary>
+    /// Asks the assembly, once per assembly rather than once per part: the answer is the
+    /// same for every part of one assembly, and each read costs a round trip to Tekla.
+    ///
+    /// A part with no assembly, or one whose assembly names another part, is simply not the
+    /// main part and <paramref name="known"/> stays true. A read that throws is a different
+    /// answer and says so: "false" would be indistinguishable from "no", and a rule set that
+    /// measures from the main part would then measure from nothing while the drawing still
+    /// looked complete.
+    /// </summary>
+    private static bool IsMainPart(ModelPart part, IDictionary<int, int> mainPartByAssembly, out bool known)
+    {
+        known = true;
+
+        try
+        {
+            var assembly = part.GetAssembly();
+            if (assembly == null)
+                return false;
+
+            var assemblyId = assembly.Identifier.ID;
+            if (!mainPartByAssembly.TryGetValue(assemblyId, out var mainPartId))
+            {
+                mainPartId = assembly.GetMainPart() is ModelPart main ? main.Identifier.ID : 0;
+                mainPartByAssembly[assemblyId] = mainPartId;
+            }
+
+            return mainPartId != 0 && mainPartId == part.Identifier.ID;
+        }
+        catch (Exception)
+        {
+            known = false;
+            return false;
+        }
     }
 
     private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;

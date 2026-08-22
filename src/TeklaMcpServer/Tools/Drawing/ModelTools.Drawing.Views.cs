@@ -165,7 +165,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
+    [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, PART_PREFIX, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. partPrefix is what an exclusion filter is written from - nothing in the code reads a meaning into a prefix, so the list has to be visible to be written. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
     public static string GetDrawingParts()
     {
         var json = RunBridge("get_drawing_parts");

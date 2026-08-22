@@ -20,24 +20,38 @@ public static partial class ModelTools
     }
 
     [McpServerTool, Description(
-        "Get the projected outline of the parts that define an assembly's size in one drawing view - the frame, without insulation, cladding or fixings. " +
-        "Parts are chosen by their role, read from their properties, so the caller does not need to know the plant's mark prefixes. " +
-        "Reports what it could not classify: an extent over a set containing unknowns is a guess, not a fact. " +
-        "Read-only geometry evidence; it does not create or change dimensions.")]
+        "Get the projected outline of the parts drawn in one drawing view. Every part takes part by default; " +
+        "pass excludePrefixes/excludeMaterials to leave out what this model does not count as structure - insulation, cladding, fixings. " +
+        "Nothing is excluded unless you say so: mark prefixes and material names are each plant's own convention, in its own language. " +
+        "Reports what it excluded and what it could not read. Read-only geometry evidence; it does not create or change dimensions.")]
     public static string GetStructuralOutline(
-        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Optional comma-separated mark prefixes to exclude, e.g. \"R,M\". Empty excludes nothing.")] string excludePrefixes = "",
+        [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings, e.g. \"WINDOW\". Empty excludes nothing.")] string excludeMaterials = "")
     {
-        return RunBridge("get_structural_outline", viewId.ToString());
+        return RunBridge(
+            "get_structural_outline",
+            viewId.ToString(CultureInfo.InvariantCulture),
+            excludePrefixes ?? string.Empty,
+            excludeMaterials ?? string.Empty);
     }
 
     [McpServerTool, Description(
         "Get the four preliminary dimension chains calculated from the structural geometry of one drawing view. " +
         "This is the only coordinate source for AssemblyDrawing dimension placement: every position carries its evidence, " +
-        "and isComplete/issues say whether it is safe to use. Read-only; it does not create or change dimensions.")]
+        "and isComplete/issues say whether it is safe to use. Every part the view draws takes part unless you exclude it; " +
+        "mainPartModelIds reports the assembly's main part, which is the base a secondary part is measured from on a beam or a column " +
+        "and means nothing on a panel of many equal members. Read-only; it does not create or change dimensions.")]
     public static string GetStructuralChainPositions(
-        [Description("ID of the drawing view (from get_drawing_views)")] int viewId)
+        [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
+        [Description("Optional comma-separated mark prefixes to exclude, e.g. \"R,M\". Empty excludes nothing.")] string excludePrefixes = "",
+        [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings. Empty excludes nothing.")] string excludeMaterials = "")
     {
-        return RunBridge("get_structural_chain_positions", viewId.ToString(CultureInfo.InvariantCulture));
+        return RunBridge(
+            "get_structural_chain_positions",
+            viewId.ToString(CultureInfo.InvariantCulture),
+            excludePrefixes ?? string.Empty,
+            excludeMaterials ?? string.Empty);
     }
 
     [McpServerTool, Description(
@@ -45,12 +59,16 @@ public static partial class ModelTools
         "Use to check a raked edge or which side a calculated position belongs to; it never creates dimensions.")]
     public static string DrawStructuralChainPositions(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
-        [Description("Chain side: Top, Bottom, Left, or Right. Default: Bottom.")] string side = "Bottom")
+        [Description("Chain side: Top, Bottom, Left, or Right. Default: Bottom.")] string side = "Bottom",
+        [Description("Optional comma-separated mark prefixes to exclude, e.g. \"R,M\". Empty excludes nothing.")] string excludePrefixes = "",
+        [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings. Empty excludes nothing.")] string excludeMaterials = "")
     {
         return RunBridge(
             "draw_structural_chain_positions",
             viewId.ToString(CultureInfo.InvariantCulture),
-            string.IsNullOrWhiteSpace(side) ? "Bottom" : side);
+            string.IsNullOrWhiteSpace(side) ? "Bottom" : side,
+            excludePrefixes ?? string.Empty,
+            excludeMaterials ?? string.Empty);
     }
 
     [McpServerTool, Description(

@@ -7,16 +7,18 @@ using Xunit;
 namespace TeklaMcpServer.Tests;
 
 /// <summary>
-/// The extent an overall measures comes from the parts that fix the assembly's size, not
-/// from everything the view draws - and it has to say when it could not be sure which was
-/// which.
+/// The extent an overall measures comes from the parts a view draws, minus what the
+/// caller's filter excludes - and it has to say when a part could not be read at all.
 /// </summary>
 public sealed class StructuralOutlineTests
 {
-    private static PartRoleInView Role(int modelId, string prefix)
+    private static readonly PartRoleClassifier WithoutInsulationOrFixings =
+        new([PartExclusionRule.ByPrefix("R"), PartExclusionRule.ByPrefix("M")]);
+
+    private static PartRoleInView Role(int modelId, string prefix, bool isMainPart = false)
     {
-        var result = new PartRoleClassifier().ClassifyProperties(prefix);
-        return new PartRoleInView(modelId, $"{prefix}-{modelId}", prefix, result);
+        var result = WithoutInsulationOrFixings.ClassifyProperties(prefix);
+        return new PartRoleInView(modelId, $"{prefix}-{modelId}", prefix, result, isMainPart);
     }
 
     private sealed class Roles(PartRoleInView[] roles, UnreadPart[]? unread = null) : IDrawingPartRoleApi
@@ -56,10 +58,10 @@ public sealed class StructuralOutlineTests
     }
 
     [Fact]
-    public void OnlyTheDefiningPartsAreOutlined()
+    public void OnlyThePartsTheFilterKeptAreOutlined()
     {
-        // The caller does not have to know which prefixes this plant uses; the selection
-        // happens here, from roles the parts already carry.
+        // The caller states its exclusions once; the selection happens here, from what the
+        // parts already carry, so the outline call does not repeat them as ids.
         var outline = new Outline();
         var roles = new Roles(Role(1, "T"), Role(2, "R"), Role(3, "M"));
         var api = new TeklaDrawingStructuralOutlineApi(roles, outline);
@@ -77,16 +79,16 @@ public sealed class StructuralOutlineTests
     }
 
     [Fact]
-    public void DefiningPartsAreReportedBeforeTheirSolidsAreRead()
+    public void IncludedPartsAreReportedBeforeTheirSolidsAreRead()
     {
         var outline = new Outline();
         var callbackRan = false;
         outline.OnRead = () => Assert.True(callbackRan);
         var api = new TeklaDrawingStructuralOutlineApi(new Roles(Role(1, "T"), Role(2, "R")), outline);
 
-        api.Get(7, beforeOutlineRead: defining =>
+        api.Get(7, beforeOutlineRead: included =>
         {
-            Assert.Equal(new[] { 1 }, defining.Select(part => part.ModelId));
+            Assert.Equal(new[] { 1 }, included.Select(part => part.ModelId));
             callbackRan = true;
         });
 
@@ -94,15 +96,45 @@ public sealed class StructuralOutlineTests
     }
 
     [Fact]
-    public void APartNoRuleCoversMakesTheExtentProvisional()
+    public void APartNoExclusionNamesIsMeasuredOverRatherThanBlockingTheExtent()
     {
+        // What a prefix table used to make a blocker. An unfamiliar mark is ordinary: the
+        // filter names what leaves the set, and nothing else does.
         var outline = new Outline();
         var api = new TeklaDrawingStructuralOutlineApi(new Roles(Role(1, "T"), Role(2, "Q")), outline);
 
         var result = api.Get(7);
 
-        Assert.False(result.IsComplete);
-        Assert.Contains("matched no role rule", result.Reservation());
+        Assert.Equal([1, 2], outline.Asked);
+        Assert.True(result.IsComplete);
+        Assert.Null(result.Reservation());
+    }
+
+    [Fact]
+    public void TheExcludedPartsAreReportedRatherThanJustMissing()
+    {
+        // An extent that came out short is answered by looking here first.
+        var api = new TeklaDrawingStructuralOutlineApi(new Roles(Role(1, "T"), Role(2, "R")), new Outline());
+
+        var result = api.Get(7);
+
+        var excluded = Assert.Single(result.Excluded);
+        Assert.Equal(2, excluded.ModelId);
+        Assert.Equal("exclude-prefix:R", excluded.Role.RuleId);
+    }
+
+    [Fact]
+    public void TheMainPartIsCarriedThroughWithoutDecidingAnything()
+    {
+        // It is the base a secondary part is measured from on a beam or a column and means
+        // nothing on a panel. Which of the two this is belongs to the rule set, not here.
+        var api = new TeklaDrawingStructuralOutlineApi(
+            new Roles(Role(1, "P", isMainPart: true), Role(2, "P")),
+            new Outline());
+
+        var result = api.Get(7);
+
+        Assert.Equal([1], result.Included.Where(part => part.IsMainPart).Select(part => part.ModelId));
     }
 
     [Fact]
@@ -122,11 +154,10 @@ public sealed class StructuralOutlineTests
     }
 
     [Fact]
-    public void AFailedPropertyReadIsUnclassifiedRatherThanUnknown()
+    public void AFailedPropertyReadIsReportedAsUnclassified()
     {
-        // "Nobody could look" is fixed by reading the part again; "no rule covers it" is
-        // fixed by adding a rule. Reporting the first as the second sends someone to edit
-        // a table that was never the problem.
+        // "Nobody could look" is its own answer: an exclusion that should have caught this
+        // part could not fire, so the set is provisional even though the part is in it.
         var unreadable = new PartRoleInView(2, "T-2", null, PartRoleResult.Unclassified);
 
         var api = new TeklaDrawingStructuralOutlineApi(
@@ -136,12 +167,11 @@ public sealed class StructuralOutlineTests
         var result = api.Get(7);
 
         Assert.Single(result.Unclassified);
-        Assert.Empty(result.Unknown);
         Assert.Contains("never classified", result.Reservation());
     }
 
     [Fact]
-    public void ADefiningPartTheViewDoesNotDrawIsNotSilentlyDropped()
+    public void AnIncludedPartTheViewDoesNotDrawIsNotSilentlyDropped()
     {
         // The geometry of what remained can be read perfectly and still not be the outline
         // that was asked for.

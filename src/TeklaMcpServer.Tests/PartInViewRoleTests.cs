@@ -12,14 +12,14 @@ namespace TeklaMcpServer.Tests;
 public sealed class PartInViewRoleTests
 {
     [Fact]
-    public void APartNobodyClassifiedSaysSoRatherThanLookingUnknown()
+    public void APartNobodyClassifiedSaysSoRatherThanLookingRead()
     {
-        // Both carry Unknown, and the difference decides what to do about it: a part no
-        // rule covered wants a rule, a part nobody looked at wants reading properly.
+        // Both carry Included, and the difference decides what to do about it: a part the
+        // filter kept is a fact, a part nobody looked at could not be filtered at all.
         var part = new PartInView { ModelId = 1 };
 
         Assert.False(part.Role.IsClassified);
-        Assert.Equal(PartRole.Unknown, part.Role.Role);
+        Assert.Equal(PartRole.Included, part.Role.Role);
         Assert.Equal("unclassified", part.Role.RuleId);
     }
 
@@ -29,7 +29,7 @@ public sealed class PartInViewRoleTests
         var result = new PartRoleClassifier().ClassifyProperties("Z");
 
         Assert.True(result.IsClassified);
-        Assert.Equal(PartRole.Unknown, result.Role);
+        Assert.Equal(PartRole.Included, result.Role);
     }
 
     [Fact]
@@ -49,13 +49,13 @@ public sealed class PartInViewRoleTests
         {
             ModelId = 5,
             PartPrefix = "T",
-            Role = new PartRoleClassifier().ClassifyProperties("T")
+            Role = new PartRoleClassifier([PartExclusionRule.ByPrefix("T")]).ClassifyProperties("T")
         };
 
         var clone = part.Clone();
 
-        Assert.Equal(PartRole.Defining, clone.Role.Role);
-        Assert.Equal("prefix-T", clone.Role.RuleId);
+        Assert.Equal(PartRole.Excluded, clone.Role.Role);
+        Assert.Equal("exclude-prefix:T", clone.Role.RuleId);
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public sealed class PartInViewRoleTests
         var clone = part.CloneGeometryOnly();
 
         Assert.False(clone.Role.IsClassified);
-        Assert.Equal(PartRole.Unknown, clone.Role.Role);
+        Assert.Equal(PartRole.Included, clone.Role.Role);
     }
 
     [Fact]
@@ -86,13 +86,13 @@ public sealed class PartInViewRoleTests
             PartPrefix = "R",
             BboxMin = [0, 0, 0],
             BboxMax = [1, 1, 1],
-            Role = new PartRoleClassifier().ClassifyProperties("R")
+            Role = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]).ClassifyProperties("R")
         });
 
         var result = DrawingViewContextMapper.ToResult(context);
 
         var part = Assert.Single(result.Parts);
-        Assert.Equal(PartRole.Attached, part.Role.Role);
-        Assert.Equal("prefix-R", part.Role.RuleId);
+        Assert.Equal(PartRole.Excluded, part.Role.Role);
+        Assert.Equal("exclude-prefix:R", part.Role.RuleId);
     }
 }

@@ -106,9 +106,6 @@ public static class StructuralGeometryGroupBuilder
         foreach (var unread in structuralOutline.UnreadRoles)
             issues.Add(new GeometryGroupSourceIssue("role:" + unread.ModelId.ToString(CultureInfo.InvariantCulture), unread.Reason));
 
-        foreach (var unknown in structuralOutline.Unknown)
-            issues.Add(new GeometryGroupSourceIssue("role:" + unknown.ModelId.ToString(CultureInfo.InvariantCulture), "matched no role rule"));
-
         foreach (var unclassified in structuralOutline.Unclassified)
             issues.Add(new GeometryGroupSourceIssue("role:" + unclassified.ModelId.ToString(CultureInfo.InvariantCulture), "was never classified"));
 
@@ -116,14 +113,14 @@ public static class StructuralGeometryGroupBuilder
         {
             issues.Add(new GeometryGroupSourceIssue(
                 "outline:" + missing.ToString(CultureInfo.InvariantCulture),
-                "was requested as defining but is not visible in this view"));
+                "was requested for the structural geometry but is not visible in this view"));
         }
 
         foreach (var unread in structuralOutline.Outline.Unread)
             issues.Add(new GeometryGroupSourceIssue("outline:" + unread.ModelId.ToString(CultureInfo.InvariantCulture), unread.Reason));
 
-        if (structuralOutline.Defining.Count == 0)
-            issues.Add(new GeometryGroupSourceIssue("structural", "no part is classified as defining"));
+        if (structuralOutline.Included.Count == 0)
+            issues.Add(new GeometryGroupSourceIssue("structural", "every part in this view was excluded by the filter"));
 
         if (!string.IsNullOrWhiteSpace(structuralOutline.Outline.Error))
             issues.Add(new GeometryGroupSourceIssue("structural-outline", structuralOutline.Outline.Error!));

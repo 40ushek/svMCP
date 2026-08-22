@@ -3,19 +3,19 @@ namespace TeklaMcpServer.Api.Drawing;
 /// <summary>
 /// A part's role, which rule said so, and what was known at the time.
 ///
-/// The last two are not decoration. Without them <see cref="PartRole.Unknown"/> is
-/// visible but useless: a part with no prefix, one with an unfamiliar prefix, and one
-/// whose prefix no rule covers yet are three different situations wanting three different
-/// fixes, and the report has to tell them apart.
+/// The last two are not decoration. Without them an excluded part is visible but
+/// unexplained: which of the caller's exclusions took it out, and on what property, is
+/// what a person needs before deciding the filter was right.
 ///
 /// It is where MATERIAL_TYPE appears, and the only place the classifier uses it: it is
 /// already known to lie about the case that matters, since insulation reports 5, the same
 /// as timber. Reporting it is not the same as using it as a rule: it remains diagnostic
 /// evidence only.
 ///
-/// IsMainPart is meant to join it, for the same reason: a fact from Tekla whose meaning
-/// for dimensioning nobody has checked. The classifier does not receive it yet - see step
-/// five of ROADMAP_PART_ROLES.md.
+/// IsMainPart deliberately does NOT live here. It is a fact about the assembly, not a
+/// judgement about the part, and it decides nothing on its own: it is the base of
+/// measurement for a beam or a column and means nothing on a panel. It sits on
+/// <see cref="PartRoleInView.IsMainPart"/> where a consumer must ask for it on purpose.
 /// </summary>
 public sealed class PartRoleResult
 {
@@ -37,29 +37,30 @@ public sealed class PartRoleResult
     /// captured state from before roles existed, a geometry-only copy that dropped the
     /// properties a role is derived from.
     ///
-    /// Told apart from a part the classifier looked at and had no rule for by
+    /// Told apart from a part the classifier looked at and kept by
     /// <see cref="IsClassified"/>, and by <see cref="RuleId"/> reading "unclassified"
-    /// rather than "none". Both carry <see cref="PartRole.Unknown"/>, so neither the role
-    /// nor the reason distinguishes them.
+    /// rather than "included". Both carry <see cref="PartRole.Included"/>, so neither the
+    /// role nor the reason distinguishes them.
     /// </summary>
     public static PartRoleResult Unclassified { get; } =
-        new(PartRole.Unknown, "unclassified", "not classified", isClassified: false);
+        new(PartRole.Included, "unclassified", "not classified", isClassified: false);
 
     /// <summary>
     /// Whether the classifier looked at this part at all.
     ///
     /// A flag rather than a phrase in the reason. Both cases carry
-    /// <see cref="PartRole.Unknown"/>, and the difference between "no rule covered it" and
-    /// "nobody asked" changes what a caller should do - the first wants a rule, the second
-    /// wants the part read properly. Leaving that in prose would have somebody comparing
-    /// against the string sooner or later.
+    /// <see cref="PartRole.Included"/>, and the difference between "the filter kept it"
+    /// and "nobody asked" changes what a caller should do - the second means the part's
+    /// properties were never read, so an exclusion that should have caught it could not
+    /// fire. Leaving that in prose would have somebody comparing against the string
+    /// sooner or later.
     /// </summary>
     public bool IsClassified { get; }
 
     public PartRole Role { get; }
 
     /// <summary>
-    /// The rule that matched; "none" when the classifier ran and none did, and
+    /// The exclusion that matched; "included" when the classifier ran and none did, and
     /// "unclassified" when it never ran. Prefer <see cref="IsClassified"/> for the second
     /// distinction - this is here so a report can name what happened, not so callers
     /// compare against it.

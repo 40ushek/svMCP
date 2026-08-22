@@ -552,8 +552,8 @@ internal sealed partial class DrawingCommandHandler
     }
 
     /// <summary>
-    /// The outline of the parts that fix the assembly's size, chosen by role rather than by
-    /// a list of ids the caller had to work out first.
+    /// The outline of the parts a view draws, minus what the caller's exclusion filter
+    /// takes out, rather than a list of ids the caller had to work out first.
     /// </summary>
     private bool HandleGetStructuralOutline(string[] args)
     {
@@ -563,26 +563,34 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var result = GetStructuralOutline(viewId);
+        var exclusions = ReadExclusions(args, 2);
+        var result = GetStructuralOutline(viewId, exclusions: exclusions);
 
         WriteJson(new
         {
             success = result.Outline.Error == null,
             viewId,
             isComplete = result.IsComplete,
+            exclusions = exclusions.Select(rule => rule.Id),
 
             // A sentence for a person, and the same facts in full for a caller. The
             // sentence caps its lists at five, so anything acting on the result has to read
             // the arrays instead of parsing the prose.
             reservation = result.Reservation(),
 
-            defining = result.Defining.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
-            unknown = result.Unknown.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
+            included = result.Included.Select(part => new
+            {
+                modelId = part.ModelId,
+                partPos = part.PartPos,
+                isMainPart = part.IsMainPart,
+                isMainPartKnown = part.IsMainPartKnown
+            }),
+            excluded = result.Excluded.Select(part => new { modelId = part.ModelId, partPos = part.PartPos, by = part.Role.RuleId }),
             unclassified = result.Unclassified.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
 
             unreadRoles = result.UnreadRoles.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
             unreadOutlineParts = result.Outline.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
-            notVisibleDefiningIds = result.Outline.NotVisibleRequestedIds,
+            notVisibleIncludedIds = result.Outline.NotVisibleRequestedIds,
 
             error = result.Outline.Error,
             assemblyOutline = result.Outline.AssemblyNodes
@@ -783,9 +791,11 @@ internal sealed partial class DrawingCommandHandler
         }
 
         var identity = ReadSourceIdentity(viewId);
+        var exclusions = ReadExclusions(args, 2);
         var structuralOutline = GetStructuralOutline(
             viewId,
-            defining => CaptureParts(identity, "defining", defining.Select(part => part.ModelId)));
+            included => CaptureParts(identity, "included", included.Select(part => part.ModelId)),
+            exclusions);
         var source = Describe(identity);
         var group = StructuralGeometryGroupBuilder.Build(structuralOutline);
 
@@ -802,6 +812,7 @@ internal sealed partial class DrawingCommandHandler
                 success = false,
                 viewId,
                 source,
+                exclusions = exclusions.Select(rule => rule.Id),
                 isComplete = group.Completeness.IsComplete,
                 issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
                 error = sourceError ?? exception.Message,
@@ -818,6 +829,23 @@ internal sealed partial class DrawingCommandHandler
             source,
             isComplete = group.Completeness.IsComplete,
             issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+            exclusions = exclusions.Select(rule => rule.Id),
+
+            // A fact from the assembly, not a decision. It is the base a secondary part is
+            // measured from on a beam or a column, and it means nothing on a panel of many
+            // equal members - which of the two this is belongs to the rule set, not here.
+            mainPartModelIds = structuralOutline.Included
+                .Where(part => part.IsMainPart)
+                .Select(part => part.ModelId),
+
+            // Parts whose assembly could not be asked. Not the same as "not the main
+            // part": a rule set that measures from the main part must refuse the drawing
+            // while this is non-empty rather than measure from what is left.
+            mainPartUnresolvedModelIds = structuralOutline.Included
+                .Concat(structuralOutline.Excluded)
+                .Where(part => !part.IsMainPartKnown)
+                .Select(part => part.ModelId),
+
             partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
             extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
             sides = group.DimensionChains!.Chains.Select(chain => new
@@ -867,9 +895,11 @@ internal sealed partial class DrawingCommandHandler
         // Each side is independently inspectable. The overlay hierarchy lets
         // clear_debug_overlay dimension_chain_positions still clear every side and view.
         var identity = ReadSourceIdentity(viewId);
+        var exclusions = ReadExclusions(args, 3);
         var structuralOutline = GetStructuralOutline(
             viewId,
-            defining => CaptureParts(identity, "defining", defining.Select(part => part.ModelId)));
+            included => CaptureParts(identity, "included", included.Select(part => part.ModelId)),
+            exclusions);
         var source = Describe(identity);
 
         var overlayGroup = "dimension_chain_positions:" + viewId.ToString(CultureInfo.InvariantCulture) + ":" + side;
@@ -897,6 +927,7 @@ internal sealed partial class DrawingCommandHandler
                 group = overlayGroup,
                 clearedCount = cleared.ClearedCount,
                 isComplete = group.Completeness.IsComplete,
+                exclusions = exclusions.Select(rule => rule.Id),
                 issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
                 // The calculation error says what it could not do; when the structural
                 // reader already supplied a cause, make that the primary error instead.
@@ -926,6 +957,11 @@ internal sealed partial class DrawingCommandHandler
             drawnCount = overlayResult.CreatedCount,
             isComplete = group.Completeness.IsComplete,
             issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
+
+            // Echoed on every exit, like the two reading commands: a chain that came out
+            // short is answered by reading what was excluded, and an overlay that shows
+            // fewer lines than expected is exactly that question asked visually.
+            exclusions = exclusions.Select(rule => rule.Id),
             partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
             extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
             positions = group.DimensionChains![side].Positions.Select(position => new
@@ -957,10 +993,22 @@ internal sealed partial class DrawingCommandHandler
 
     private StructuralOutline GetStructuralOutline(
         int viewId,
-        Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null) =>
+        Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null,
+        IReadOnlyList<PartExclusionRule>? exclusions = null) =>
         new TeklaDrawingStructuralOutlineApi(
-            new TeklaDrawingPartRoleApi(_model),
+            new TeklaDrawingPartRoleApi(_model, new PartRoleClassifier(exclusions)),
             new TeklaDrawingAssemblyOutlineApi(_model)).Get(viewId, beforeOutlineRead: beforeOutlineRead);
+
+    /// <summary>
+    /// Two optional comma-separated lists: mark prefixes and material names to leave out.
+    /// Empty means leave nothing out, which is the default everywhere - what counts as
+    /// insulation, a fixing or a window is this model's convention in this model's
+    /// language, and none of it belongs in the code.
+    /// </summary>
+    private static IReadOnlyList<PartExclusionRule> ReadExclusions(string[] args, int firstIndex) =>
+        PartExclusions.Parse(
+            args.Length > firstIndex ? args[firstIndex] : null,
+            args.Length > firstIndex + 1 ? args[firstIndex + 1] : null);
 
     private bool HandleGetAssemblyOutline(TeklaDrawingAssemblyOutlineApi api, string[] args)
     {
@@ -1474,6 +1522,8 @@ internal sealed partial class DrawingCommandHandler
                 modelId = p.ModelId,
                 type = p.Type,
                 partPos = p.PartPos,
+                partPrefix = p.PartPrefix,
+                partPrefixKnown = p.PartPrefixKnown,
                 assemblyPos = p.AssemblyPos,
                 profile = p.Profile,
                 material = p.Material,

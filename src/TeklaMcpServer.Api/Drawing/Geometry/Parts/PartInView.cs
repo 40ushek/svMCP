@@ -64,14 +64,14 @@ public sealed class PartInView
     /// <summary>Tekla MATERIAL_TYPE: 1=Steel, 2=Concrete, 5=Timber, 6=Misc. -1 if unavailable.</summary>
     public int     MaterialType { get; set; } = -1;
     /// <summary>
-    /// What this part is to the size of its assembly, decided once when the part is read
-    /// rather than by each consumer for itself. Three places used to work it out inline and
-    /// the three did not agree - see ROADMAP_PART_ROLES.md.
+    /// Whether this part takes part in the structural geometry of its assembly, decided
+    /// once when the part is read rather than by each consumer for itself. Three places
+    /// used to work it out inline and the three did not agree - see ROADMAP_PART_ROLES.md.
     ///
-    /// Never null, and never simply absent: a part reaches
-    /// <see cref="PartRole.Unknown"/> two ways, and they call for different fixes. Check
-    /// <see cref="PartRoleResult.IsClassified"/> to tell them apart - false means nobody
-    /// looked, true means nobody has a rule for it yet.
+    /// Never null. Included is the default and needs no evidence; check
+    /// <see cref="PartRoleResult.IsClassified"/> before trusting it on a part read from a
+    /// snapshot - false means nobody looked, so an exclusion that should have caught it
+    /// could not fire.
     /// </summary>
     public PartRoleResult Role
     {
@@ -86,7 +86,9 @@ public sealed class PartInView
 
     /// <summary>
     /// Part mark prefix, e.g. "T" in "T-368". Report property PART_PREFIX.
-    /// Classifies the part: T=timber, M=metal fitting, R=insulation in this model's numbering.
+    /// Nothing in this code reads a meaning into it: a prefix is the plant's own
+    /// convention in the plant's own language, and it decides something only when the
+    /// caller passes it as an exclusion.
     ///
     /// Like the fields above, this is filled by GetAllPartsGeometryInView only. The single-part
     /// call (get_part_geometry_in_view) leaves it null and does not serialize it.

@@ -7,45 +7,70 @@ using Xunit;
 namespace TeklaMcpServer.Tests;
 
 /// <summary>
-/// One interpretation of what a part is for, in one place. The same judgement was written
-/// inline three times in the defect detector and the three did not agree; these tests hold
-/// the replacement to the decisions recorded in ROADMAP_PART_ROLES.md.
+/// One interpretation of whether a part takes part in the structural geometry, in one
+/// place. It ships with no rules: prefixes and material names are each plant's own
+/// convention in its own language, and the prefix table that used to live here answered
+/// one timber model while turning every part of a steel column into a blocker.
 /// </summary>
 public sealed class PartRoleClassifierTests
 {
     private static readonly PartRoleClassifier Classifier = new();
 
-    [Theory]
-    [InlineData("T", PartRole.Defining)]
-    [InlineData("R", PartRole.Attached)]
-    [InlineData("M", PartRole.Ignored)]
-    public void KnownPrefixesGetTheirRole(string prefix, PartRole expected)
+    [Fact]
+    public void WithNoExclusionsEveryPartTakesPart()
     {
-        Assert.Equal(expected, Classifier.ClassifyProperties(prefix).Role);
+        // The whole point of the redesign. "T" is a timber frame member, "P" is every part
+        // of a steel column, "W" is a window - none of them means anything here.
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties("T").Role);
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties("P").Role);
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties("W").Role);
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties(null).Role);
+    }
+
+    [Fact]
+    public void TheDefaultIsAnEmptyExclusionSet()
+    {
+        Assert.Empty(new PartRoleClassifier().Exclusions);
+        Assert.Empty(PartRoleClassifier.NoExclusions);
+    }
+
+    [Fact]
+    public void APrefixExclusionTakesOutExactlyThatPrefix()
+    {
+        var classifier = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]);
+
+        Assert.Equal(PartRole.Excluded, classifier.ClassifyProperties("R").Role);
+        Assert.Equal(PartRole.Included, classifier.ClassifyProperties("RS").Role);
+        Assert.Equal(PartRole.Included, classifier.ClassifyProperties("T").Role);
     }
 
     [Fact]
     public void PrefixMatchingIgnoresCase()
     {
-        Assert.Equal(PartRole.Defining, Classifier.ClassifyProperties("t").Role);
+        var classifier = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]);
+
+        Assert.Equal(PartRole.Excluded, classifier.ClassifyProperties("r").Role);
     }
 
     [Fact]
-    public void AnUnfamiliarPrefixIsUnknownRatherThanIgnored()
+    public void AMaterialExclusionMatchesAsASubstring()
     {
-        // "Takes no part in dimensions" and "no rule matched" are different, and an extent
-        // computed over a set containing the second is a guess, not a fact.
-        var result = Classifier.ClassifyProperties("B");
+        // Material names are written by the plant, in its language, with grades and
+        // suffixes attached: "Mineralwolle 040", "C24-KVH". Whole-string matching would
+        // make the caller guess the exact spelling of every variant.
+        var classifier = new PartRoleClassifier([PartExclusionRule.ByMaterial("wolle")]);
 
-        Assert.Equal(PartRole.Unknown, result.Role);
-        Assert.Equal("none", result.RuleId);
+        Assert.Equal(PartRole.Excluded, classifier.ClassifyProperties("R", material: "Mineralwolle 040").Role);
+        Assert.Equal(PartRole.Included, classifier.ClassifyProperties("T", material: "C24").Role);
     }
 
     [Fact]
-    public void NoPrefixAtAllIsAlsoUnknown()
+    public void TheExclusionThatMatchedIsNamed()
     {
-        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties(null).Role);
-        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties("  ").Role);
+        var classifier = new PartRoleClassifier([PartExclusionRule.ByMaterial("WINDOW")]);
+
+        Assert.Equal("exclude-material:WINDOW", classifier.ClassifyProperties("W", material: "WINDOW").RuleId);
+        Assert.Equal("included", classifier.ClassifyProperties("T").RuleId);
     }
 
     [Fact]
@@ -53,20 +78,16 @@ public sealed class PartRoleClassifierTests
     {
         // The whole reason this class exists. Insulation reports MATERIAL_TYPE 5, the same
         // as timber, which is how it came to inflate the structural extent; consulted even
-        // as a last resort it would quietly become the deciding signal again on every
-        // unfamiliar prefix.
-        var insulation = Classifier.ClassifyProperties("R", materialType: 5);
-        var unfamiliarTimber = Classifier.ClassifyProperties("Z", materialType: 5);
-
-        Assert.Equal(PartRole.Attached, insulation.Role);
-        Assert.Equal(PartRole.Unknown, unfamiliarTimber.Role);
+        // as a last resort it would quietly become the deciding signal again.
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties("R", materialType: 5).Role);
+        Assert.Equal(PartRole.Included, Classifier.ClassifyProperties("Z", materialType: 5).Role);
     }
 
     [Fact]
-    public void WhatWasKnownIsReportedSoUnknownCanBeActedOn()
+    public void WhatWasKnownIsReportedSoAnExclusionCanBeWritten()
     {
-        // Without this, Unknown is visible but useless: no prefix, an unfamiliar prefix and
-        // a prefix no rule covers yet want three different fixes.
+        // Without this, a filter is guesswork: the person choosing what to exclude needs to
+        // see the prefix, the material and the name the parts actually carry.
         var result = Classifier.ClassifyProperties("Z", profile: "45*145", material: "C24", materialType: 5, name: "STUD");
 
         Assert.Contains("prefix=Z", result.Reason);
@@ -83,130 +104,113 @@ public sealed class PartRoleClassifierTests
     }
 
     [Fact]
-    public void TheRuleThatMatchedIsNamed()
-    {
-        Assert.Equal("prefix-T", Classifier.ClassifyProperties("T").RuleId);
-    }
-
-    [Fact]
-    public void TwoRulesOnOnePrefixAreRefusedRatherThanOrdered()
-    {
-        // Matching is on the prefix alone, so the second could never fire whatever the
-        // order. Accepting it and calling the outcome "first match wins" would hide dead
-        // configuration behind a rule about precedence.
-        var rules = new[]
-        {
-            new PartRoleRule("first", "X", PartRole.Defining),
-            new PartRoleRule("second", "x", PartRole.Ignored),
-        };
-
-        var thrown = Assert.Throws<ArgumentException>(() => new PartRoleClassifier(rules));
-
-        Assert.Contains("first", thrown.Message);
-        Assert.Contains("second", thrown.Message);
-    }
-
-    [Fact]
     public void ItClassifiesAPartInViewFromItsOwnProperties()
     {
         var part = new PartInView { ModelId = 7, PartPos = "R-68", PartPrefix = "R", MaterialType = 5 };
+        var classifier = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]);
 
-        Assert.Equal(PartRole.Attached, Classifier.Classify(part).Role);
+        Assert.Equal(PartRole.Excluded, classifier.Classify(part).Role);
+        Assert.Equal(PartRole.Included, Classifier.Classify(part).Role);
     }
 
     [Fact]
-    public void RulesGivenToItCannotBeChangedUnderIt()
+    public void ExclusionsGivenToItCannotBeChangedUnderIt()
     {
         // A classifier whose table can be rewritten from outside after it is built would
         // answer differently at different times for reasons no caller can see.
-        var rules = new List<PartRoleRule> { new("only", "X", PartRole.Defining) };
+        var rules = new List<PartExclusionRule> { PartExclusionRule.ByPrefix("X") };
         var classifier = new PartRoleClassifier(rules);
 
         rules.Clear();
-        rules.Add(new PartRoleRule("swapped", "X", PartRole.Ignored));
+        rules.Add(PartExclusionRule.ByPrefix("T"));
 
-        Assert.Equal(PartRole.Defining, classifier.ClassifyProperties("X").Role);
-        Assert.Equal("only", classifier.ClassifyProperties("X").RuleId);
+        Assert.Equal(PartRole.Excluded, classifier.ClassifyProperties("X").Role);
+        Assert.Equal(PartRole.Included, classifier.ClassifyProperties("T").Role);
     }
 
     [Fact]
-    public void ARuleWithoutAnIdOrAPrefixIsRefused()
+    public void AnExclusionWithNoValueIsRefused()
     {
-        // An id is what a report names when the rule matches; a rule with no prefix would
-        // match nothing and quietly do so.
-        Assert.Throws<ArgumentException>(() => new PartRoleClassifier([new PartRoleRule("", "X", PartRole.Defining)]));
-        Assert.Throws<ArgumentException>(() => new PartRoleClassifier([new PartRoleRule("no-prefix", " ", PartRole.Defining)]));
+        // It would match nothing and quietly do so, which reads on a report exactly like a
+        // filter that was applied and found nothing to remove.
+        Assert.Throws<ArgumentException>(() =>
+            new PartRoleClassifier([new PartExclusionRule("blank", PartExclusionKind.Prefix, " ")]));
     }
 
     [Fact]
-    public void ReadingAPartWithNoPrefixIsAnAnswer()
+    public void OnlyThePropertiesAnExclusionReadsAreNeeded()
     {
-        // The live reader looked and there was nothing there. That is Unknown, and it is
-        // classified: a rule is what is missing, not the reading.
-        var result = Classifier.ClassifyProperties(null, profile: "60X200", material: "C24");
+        // The reader consults these before deciding that a failed property read matters.
+        // Requiring PART_PREFIX with no prefix exclusion is what blocked a steel column
+        // over a property nobody asked about; not requiring MATERIAL with a material
+        // exclusion is worse - the window stays in the extent and the answer still calls
+        // itself complete.
+        Assert.False(new PartRoleClassifier().NeedsPrefix);
+        Assert.False(new PartRoleClassifier().NeedsMaterial);
 
-        Assert.Equal(PartRole.Unknown, result.Role);
-        Assert.True(result.IsClassified);
+        var byPrefix = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]);
+        Assert.True(byPrefix.NeedsPrefix);
+        Assert.False(byPrefix.NeedsMaterial);
+
+        var byMaterial = new PartRoleClassifier([PartExclusionRule.ByMaterial("WINDOW")]);
+        Assert.False(byMaterial.NeedsPrefix);
+        Assert.True(byMaterial.NeedsMaterial);
     }
 
     [Fact]
-    public void ASnapshotWithNoPropertiesIsNotSomethingToReclassify()
+    public void AMaterialOnlyFilterDoesNotDemandAPrefix()
     {
-        // On a snapshot an absent prefix usually means nobody read it, so re-reading it
-        // would turn "never read" into "no rule covers it".
+        // A steel model has no useful prefixes at all; demanding one to run a material
+        // filter would refuse the drawing over a property the filter never reads.
+        var byMaterial = new PartRoleClassifier([PartExclusionRule.ByMaterial("WINDOW")]);
+        var noPrefix = new PartInView { ModelId = 1, Material = "S235JR" };
+
+        Assert.True(byMaterial.CanReclassifyFromSnapshot(noPrefix));
+        Assert.False(byMaterial.CanReclassifyFromSnapshot(new PartInView { ModelId = 2, PartPrefix = "P" }));
+    }
+
+    [Fact]
+    public void ASnapshotIsSafeToClassifyWhenNoExclusionNeedsAPropertyItLacks()
+    {
+        // With no exclusions there is nothing to read, so a geometry-only copy classifies
+        // fine: the answer is Included and it rests on no property at all.
         var geometryOnly = new PartInView { ModelId = 1, BboxMin = [0, 0, 0], BboxMax = [1, 1, 1] };
-        var read = new PartInView { ModelId = 2, PartPrefix = "T" };
 
-        Assert.False(Classifier.CanReclassifyFromSnapshot(geometryOnly));
-        Assert.True(Classifier.CanReclassifyFromSnapshot(read));
+        Assert.True(Classifier.CanReclassifyFromSnapshot(geometryOnly));
 
-        // And left alone, it stays the thing that says nobody looked.
+        // With a prefix exclusion it is not: an absent prefix on a snapshot usually means
+        // nobody read it, and including a part because its prefix was never read is the
+        // silent version of the mistake this area exists to prevent.
+        var byPrefix = new PartRoleClassifier([PartExclusionRule.ByPrefix("R")]);
+
+        Assert.False(byPrefix.CanReclassifyFromSnapshot(geometryOnly));
+        Assert.True(byPrefix.CanReclassifyFromSnapshot(new PartInView { ModelId = 2, PartPrefix = "T" }));
+    }
+
+    [Fact]
+    public void UntouchedPartsCarryTheAnswerThatNobodyLooked()
+    {
+        var geometryOnly = new PartInView { ModelId = 1 };
+
         Assert.False(geometryOnly.Role.IsClassified);
-        Assert.Equal(PartRole.Unknown, geometryOnly.Role.Role);
+        Assert.Equal(PartRole.Included, geometryOnly.Role.Role);
     }
 
     [Fact]
-    public void TheDefaultsAreThePrefixesThisPlantUses()
+    public void TwoListsBecomeTwoKindsOfExclusion()
     {
+        var rules = PartExclusions.Parse(" R , M ", "WINDOW");
+
         Assert.Equal(
-            ["prefix-T", "prefix-GLB", "prefix-R", "prefix-S", "prefix-M"],
-            PartRoleClassifier.DefaultRules.Select(rule => rule.Id));
+            ["exclude-prefix:R", "exclude-prefix:M", "exclude-material:WINDOW"],
+            rules.Select(rule => rule.Id));
     }
 
     [Fact]
-    public void AWindowMarkStaysUnknownUntilTheWholeModelHasBeenLookedAt()
+    public void EmptyListsExcludeNothing()
     {
-        // Observed: W-65 and W-68 on EW.8, W-64 on EW.18 - three ContourPlates with material
-        // WINDOW. A prefix rule built on that would speak for every W part in every future
-        // assembly, and Ignored is the answer that quietly removes a part from the extent.
-        // Unknown is the honest answer: it makes isComplete false and sends the caller to
-        // settle the role rather than inheriting a guess.
-        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties("W").Role);
-    }
-
-    [Fact]
-    public void AGlulamBeamCarriesTheFrameAndSetsItsExtent()
-    {
-        // Measured: a dimension point on thirteen drawings had no candidate under it
-        // because the GL24h beam beneath it was unclassified.
-        Assert.Equal(PartRole.Defining, Classifier.ClassifyProperties("GLB").Role);
-    }
-
-    [Fact]
-    public void SheathingIsAttachedRatherThanDefining()
-    {
-        // Calling it Defining would make its overhang part of the overall, which is the
-        // difference between an extent starting at 210 and one starting at 200. That a
-        // person dimensions the sheet is a fact about another semantic group.
-        Assert.Equal(PartRole.Attached, Classifier.ClassifyProperties("S").Role);
-    }
-
-    [Fact]
-    public void ALongerPrefixIsNotSwallowedByAShorterOne()
-    {
-        // GLB and G would collide if matching were by first letter. It is not - but the
-        // day a G rule is added, this test says which behaviour was intended.
-        Assert.Equal("prefix-GLB", Classifier.ClassifyProperties("GLB").RuleId);
-        Assert.Equal(PartRole.Unknown, Classifier.ClassifyProperties("G").Role);
+        Assert.Empty(PartExclusions.Parse(null, null));
+        Assert.Empty(PartExclusions.Parse("", "   "));
+        Assert.Empty(PartExclusions.Parse(",  ,", ""));
     }
 }

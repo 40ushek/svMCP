@@ -93,12 +93,12 @@ public sealed class StructuralGeometryGroupBuilderTests
             7,
             parts.Select(part => part.ModelId),
             new StubSolidGeometryApi(parts));
-        var defining = parts.Select(part => new PartRoleInView(
+        var included = parts.Select(part => new PartRoleInView(
             part.ModelId,
             "P" + part.ModelId,
             "T",
-            new PartRoleResult(PartRole.Defining, "prefix-T", "test"))).ToList();
-        return new StructuralOutline(outline, defining, [], []);
+            new PartRoleResult(PartRole.Included, "included", "test"))).ToList();
+        return new StructuralOutline(outline, included, [], []);
     }
 
     private static PartSolidGeometryInViewResult Square(

@@ -1,34 +1,34 @@
 namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>
-/// What a part is to the size of the assembly it belongs to.
+/// Whether a part takes part in the structural geometry of its assembly.
 ///
-/// Named for that relationship rather than for the material, so the same four cover
-/// timber and steel: a stud and a stiffener both define, insulation and a splice plate
-/// are both attached, fixings are ignored. Naming them after timber would have made the
-/// first steel assembly a rewrite.
+/// Two states, not the former four. `Defining`/`Attached`/`Ignored`/`Unknown` were decided
+/// from mark prefixes written into this code, and a prefix is a plant's own convention: it
+/// differs by office, by model and by language. The table answered one timber model and
+/// turned every part of the next one into an `Unknown` that blocked the whole drawing -
+/// nine parts of one steel column, all prefixed `P`, produced no structural geometry at
+/// all.
 ///
-/// This narrows a question; it does not answer one. What a part is worth for a given job
-/// is the job's business - see ROADMAP_PART_ROLES.md for the contract per consumer. In
-/// particular a door built into an assembly defines no extent and is exactly what says an
-/// opening is there, so a caller that keeps only <see cref="Defining"/> will be wrong
-/// about openings.
+/// What a part is FOR is now the business of the rule set the operator picks (see the
+/// skill references). The code answers one narrower question: was this part excluded.
+///
+/// The main part of an assembly is a separate fact and deliberately not a role - see
+/// <see cref="PartRoleInView.IsMainPart"/>. It carries the assembly on a beam or a column,
+/// where everything else is fixed to one member, and carries nothing on a panel, where the
+/// frame is many equal members.
 /// </summary>
 public enum PartRole
 {
     /// <summary>
-    /// Nobody said. Deliberately not <see cref="Ignored"/>: "takes no part" and "no rule
-    /// matched" are different, and an extent computed over a set containing these is a
-    /// guess rather than a fact.
+    /// Takes part in the structural geometry. The default for every part that is read:
+    /// nothing is dropped unless the caller says to drop it.
     /// </summary>
-    Unknown,
+    Included,
 
-    /// <summary>Fixes the assembly's size and the positions inside it.</summary>
-    Defining,
-
-    /// <summary>Fastened to the assembly; does not fix its size.</summary>
-    Attached,
-
-    /// <summary>Takes no part in dimensions.</summary>
-    Ignored,
+    /// <summary>
+    /// Taken out by the caller's exclusion filter, which is the only way a part leaves the
+    /// set. There is no rule in this code that excludes anything.
+    /// </summary>
+    Excluded,
 }
