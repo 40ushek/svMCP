@@ -116,6 +116,34 @@ For each requested base view:
 positions from bounding boxes, axes, raw solid vertices, or contacts. Contacts
 can justify a retained position as a joint; they do not add coordinates.
 
+**The reference body.** Every assembly has one body that everything else is
+located against, and every chain closes on that body's extent along the chain's
+axis. Which body it is comes from the rule set - the main part on steel, the
+frame on a timber panel - and its ends are the extreme positions whose supports
+carry one of its `modelId`s. That is derived from the response and from nothing
+else: the group extent covers every included part and is a different number.
+
+A member and a panel differ in shape, not in rule. A column is long, so one
+chain runs along it and the other sides carry little; a panel is a plane, so all
+four sides carry work.
+
+**Which end is start.** Two different questions, two different sources - do not
+answer either by guessing from a dimension's JSON point order.
+
+- **A chain this skill is creating.** Tekla's own zero for a running dimension is
+  the reference body's own model `StartPoint` (already read by
+  `get_part_geometry_in_view`/`get_all_parts_geometry_in_view`), unless the plan
+  states the plant reverses it - Tekla calls that flag `Reversed direction for
+  running dimensions`. Read the `StartPoint`, do not infer an end from the
+  drawing.
+- **A chain already on the sheet**, when matching or recreating its convention.
+  Here the same rule as marks in `AGENTS.md` applies: JSON point order does not
+  confirm the true start, because Tekla normalizes it for display. Recover it
+  only from a single, connected segment path via `Segment.StartPoint`/
+  `EndPoint`. A branched, broken, or otherwise ambiguous chain has no
+  recoverable start - mark it unverified and do not build an absolute row, or a
+  "counts from" claim, on top of it.
+
 ### 2. Decide all four sides before writing
 
 Create an internal plan for `Top`, `Bottom`, `Left`, and `Right`.
@@ -214,7 +242,7 @@ plant's `Internal` policy, which the steel file requires you to have asked for:
 | `Internal` | How the walk decides a secondary part's internal position |
 |---|---|
 | `None` | `Removed`, every one of them, reason `Internal=None`. The checks do not run |
-| `Necessary` | The steel file's "Necessary" principle — keep what the shape cannot tell, drop what it can |
+| `Necessary` | Keep what the shape cannot tell, drop what it can. Needs `recognizableDistance`; without it, stop |
 | `All` | `Kept`, every admissible one. The "Necessary" principle is **not** applied as a filter here; only the position rules that hold under every policy do — near-duplicates are one position, and clutter control still applies |
 
 Applying `Necessary` under an answer of `All` deletes numbers the plant asks for, and
@@ -256,8 +284,8 @@ Do not answer that placement is complete until every requested view has a
 resolved `Top`, `Bottom`, `Left`, and `Right` outcome and every created or
 recreated chain has been read back successfully. On steel, a section showing a
 connection is a requested view in its own right, and a side may legitimately
-resolve to "no chain" because that feature is dimensioned in section — steel
-rules 9 and 10. Do not substitute analysis,
+resolve to "no chain" because that feature is dimensioned in section, as the
+steel file allows. Do not substitute analysis,
 an overlay, or a partial list of IDs for this gate.
 
 Only these conditions may leave a side unresolved: incomplete structural
@@ -270,7 +298,9 @@ For `place`, return only:
 
 - created, changed, and deleted dimension IDs;
 - one short verification status for `Top`, `Bottom`, `Left`, and `Right`;
-- the rule set used, and on steel the `Internal` policy the plan was built under;
+- the rule set used, and every setting the plan was built under - on steel that is
+  `Internal`, the anchor, `recognizableDistance` when `Necessary` was chosen, closure,
+  datum and row type, plus any check that could not be run;
 - any unresolved side and exact blocker.
 
 For `review`, return the requested findings only. Do not include an execution
@@ -281,9 +311,8 @@ essay unless the user asks for it.
 - [`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md): measured timber
   drawing rules, openings, layers, raked tops, and when to stop.
 - [`references/steel-rules.md`](../../../../.agents/skills/dimension-drawings/references/steel-rules.md): steel assemblies —
-  main part and secondaries, base of measurement, the "Necessary" principle, and
-  the gaps (bolts, section coordinates). Every rule is tagged with its evidence
-  class; the file is mostly derived from Tekla's own model, not yet measured.
+  one logic (everything measured from the main part), the settings where people
+  legitimately differ, five arithmetic checks, and what is not covered.
 - [`references/placement-and-verification.md`](../../../../.agents/skills/dimension-drawings/references/placement-and-verification.md):
   Tekla point-order, direction, offsets, reflow, and read-back traps.
 - [`HISTORY.md`](HISTORY.md): historical experiments only; never treat it as a

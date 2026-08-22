@@ -24,6 +24,13 @@ not separate what a name does - a window `ContourPlate` marked like any other pa
 These lists are this plant's convention, in this plant's language. Another office's model
 has its own, and the code has none.
 
+## The reference body
+
+The frame: every part left after the exclusions above, taken together. No single member
+is it - a bottom plate runs the whole length and still holds nothing on its own. Closure
+and datum follow the shared rule in `SKILL.md`; rule 8 below is that rule applied to a
+wall.
+
 ## Reading the preliminary chains
 
 - Top and Bottom chains carry **X** positions.
