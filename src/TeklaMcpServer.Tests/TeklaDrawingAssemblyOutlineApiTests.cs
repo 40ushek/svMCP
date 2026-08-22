@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 using Xunit;
 
@@ -6,6 +7,28 @@ namespace TeklaMcpServer.Tests;
 
 public sealed class TeklaDrawingAssemblyOutlineApiTests
 {
+    /// <summary>
+    /// `ProjectedOutlineBuilder.BuildPart` flattens a solid's faces to 2D by dropping Z
+    /// outright - correct for an elevation/plan, where nothing meaningful varies along the
+    /// short depth axis, but wrong for a view whose own depth axis runs along the member's
+    /// length, where positions genuinely differ by depth. Confirmed on M.505: three
+    /// distinct section/end views returned byte-identical coordinates before this gate.
+    /// `EndView` is deliberately included even though `ViewSemanticKind` buckets it under
+    /// `BaseProjected` for layout purposes - that answers a different question and must
+    /// not be reused here.
+    /// </summary>
+    [Theory]
+    [InlineData(View.ViewTypes.SectionView, true)]
+    [InlineData(View.ViewTypes.EndView, true)]
+    [InlineData(View.ViewTypes.FrontView, false)]
+    [InlineData(View.ViewTypes.TopView, false)]
+    [InlineData(View.ViewTypes.BackView, false)]
+    [InlineData(View.ViewTypes.BottomView, false)]
+    public void OnlyViewsLookingDownTheMemberAreRefused(View.ViewTypes viewType, bool expected)
+    {
+        Assert.Equal(expected, TeklaDrawingAssemblyOutlineApi.LooksAlongMemberLength(viewType));
+    }
+
     [Fact]
     public void BuildUnionsReadablePartOutlines()
     {

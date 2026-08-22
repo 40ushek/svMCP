@@ -34,6 +34,20 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
+        if (LooksAlongMemberLength(view.ViewType))
+        {
+            return Unavailable(
+                viewId,
+                $"view {viewId} is a {view.ViewType}: its depth axis runs along the " +
+                "member's own length, where positions actually differ. This builder " +
+                "flattens a solid's faces to 2D without clipping by depth (see " +
+                "ProjectedOutlineBuilder.BuildPart) - correct for an elevation/plan view, " +
+                "where nothing meaningful varies along the short depth axis, but wrong " +
+                "here: it would silently collapse every cross-section along the member " +
+                "into one shape. Confirmed on M.505 - three distinct section/end views " +
+                "(different parts, different bolts) returned byte-identical coordinates.");
+        }
+
         var visible = DrawingViewParts.VisibleModelIds(view).ToList();
 
         // A caller's list is narrowed to what the view actually draws. Asking for a part
@@ -122,4 +136,15 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             new Dictionary<int, PolyTreeD>(),
             Array.Empty<UnreadPart>(),
             reason);
+
+    /// <summary>
+    /// True for the two Tekla view types whose own viewing direction runs down a member's
+    /// length rather than across its short cross-section - `SectionView` by definition, and
+    /// `EndView` because it looks straight down the part it ends. Both are classified
+    /// `BaseProjected` by <see cref="ViewLayout.ViewSemanticKind"/> for layout purposes, but
+    /// that classification answers a different question (does fit-to-sheet treat it as a
+    /// base view) and must not be reused here.
+    /// </summary>
+    internal static bool LooksAlongMemberLength(View.ViewTypes viewType) =>
+        viewType is View.ViewTypes.SectionView or View.ViewTypes.EndView;
 }

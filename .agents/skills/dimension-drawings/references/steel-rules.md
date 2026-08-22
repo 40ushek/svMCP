@@ -55,7 +55,7 @@ until something is confirmed. State in the final response which applied.
 | Anchor | faces | An axis is allowed when the sheet already uses one. Compute it only from a qualifying pair - same `modelId`, both `kind=AxisAlignedEdge`, non-null `partExtentAlongChain`, the two coordinates differing by exactly that extent within `partSpanMatchToleranceMm`. Otherwise faces. |
 | `Internal` | ask | `None` no secondary-part internal dimensions; `Necessary` keeps what the shape cannot tell; `All` keeps every admissible one. Never blend: `Necessary` under `All` deletes what the plant wants, anything under `None` adds what it does not. |
 | `recognizableDistance` | ask | The asymmetry below which a fitter cannot orient a part. Required by `Necessary`, by nothing else; without it `Necessary` stops. Tekla's dialogs use tens of mm. |
-| `minDimensionLength` | 1 mm | Local, not Tekla's - its own default is 0. Drops arithmetic noise only: the radius staircase on a rolled flange steps 0.2-2 mm. |
+| `minDimensionLength` | 3 mm | Local, not Tekla's - its own default is 0. The filter drops anything *shorter* than this, so it must sit above the noise it targets: the radius staircase on a rolled flange steps 0.2-2 mm, and 3 mm clears all of it with headroom. Still below the smallest genuine feature seen - a 5 mm segment at a raked corner on `M.78`. |
 | Close | closed | An interior position never becomes an endpoint: if an extreme one is dropped, the side loses its chain rather than shrinking. |
 | Datum | main part start | For a new chain, its zero is the main part's own model `StartPoint`, unless the plant reverses it (`Reversed direction for running dimensions`) - see `SKILL.md`. All twenty-one absolute rows count up from one end, never down from the other - consistent from a 2886 mm column to a 20180 mm girder. **Not checked against any main part's own `StartPoint`** via the model API, so the direction is observed on every sheet, not API-confirmed on any of them. |
 | Row type | `RelativeAndAbsolute` | An attributes choice, not a geometry one, and twenty-one of twenty-one main chains read use it. But **no attributes file that produces it through `create_dimension` is known** - `standard` gives plain `Relative`, and nothing else has been tried. A fresh chain cannot be guaranteed this type until one is found; see Stop. Recreating an existing chain keeps its own type regardless and needs no attributes file for this. |
@@ -82,13 +82,26 @@ It is a code fix, and it does not block placement.
   extreme-bolt checks cannot be planned at all. Tekla devotes a whole tab to them, and this
   plant uses it: regularly spaced chains in plan views (`M.73`, `M.81`) sit exactly where a
   bolted flange splice would be. Confirms the gap; does not close it.
-- **Sections.** Untested: whether `get_structural_chain_positions` and `create_dimension`
-  work on a section view at all. Most sections, on all ten columns, sit in the same small
-  coordinate range as the base views - nothing special expected there. One section per
-  drawing does not: its coordinates carry a large, drawing-specific offset (`-58369` on
-  `M.82`, `+67454` on `M.77`, no two alike), consistent with a plane cut at the column's own
-  position along a building axis rather than at the section itself. Untested either way -
-  do not assume the large numbers break `create_dimension`, and do not assume they do not.
+- **Sections.** Three separate findings now, not one guess.
+  1. On the ten measured columns, most section views sit in the same small coordinate
+     range as the base views; one per drawing carries a large, drawing-specific offset
+     (`-58369` on `M.82`, `+67454` on `M.77`, no two alike), consistent with a plane cut at
+     the column's own position along a building axis. Whether `create_dimension` accepts
+     those large numbers is still untested.
+  2. **Confirmed broken, on `M.505`.** Three distinct section/end views (A-A, B-B, C-C -
+     different cutting planes, different parts visible: A-A shows the base plate and its
+     four bolts, B-B the far end plate with none, C-C a rib pair) all returned byte-identical
+     coordinates from `get_structural_chain_positions` - same 28 Top/Bottom and 32 Left/Right
+     positions, to the decimal, for all three. The tool is not reading which section was
+     requested; it answers the same thing regardless. Do not place a dimension from this
+     source on any section or end view until this is fixed - the numbers are not wrong by a
+     little, they are answering a different question than the one asked.
+  3. The Left/Right coordinates it does return step in 0.2-2 mm increments near the
+     web-to-flange transition (51 to 68 mm, dozens of points) - the rolled profile's own
+     fillet radius, polygonized. Not a real feature to dimension even once the routing bug
+     above is fixed. This is exactly why the `minDimensionLength` setting above is set to 3 mm and
+     not 1: a 1 mm cutoff only drops steps *shorter* than 1 mm and lets the 1-2 mm end of
+     this same staircase straight through.
 - **Skew, grouping, work points, centre of gravity** - Tekla settings with no counterpart here.
 - Trusses and braced frames as their own assembly (diagonals as part of this assembly's
   own geometry, not bolted on externally through gusset plates) remain unmeasured.
@@ -98,7 +111,7 @@ It is a code fix, and it does not block placement.
 - no single resolvable main part, or any `mainPartUnresolvedModelIds`;
 - `Internal` unstated, or `Necessary` without a `recognizableDistance`;
 - a bolt dimension is required;
-- a section must be dimensioned - untested end to end, see Not covered;
+- a section or end view must be dimensioned - blocked by the confirmed routing bug (fail-closed in code, see Not covered), not merely untested;
 - a fresh `RelativeAndAbsolute` chain is needed and no attributes file producing that type
   has been confirmed - ask the operator for the file name, or limit the run to recreating
   chains that already carry the type.

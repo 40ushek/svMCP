@@ -20,6 +20,16 @@ delete in a placement run.
   otherwise mark the start unverified.
 - `LengthList` is neither the relative nor absolute printed row. Compute the
   intended rows from the planned start and dimension type.
+- **Do not reuse one edge coordinate across two points at different positions
+  along the chain.** Each point needs its own real boundary, read from that
+  same position's own support in `get_structural_chain_positions` - not copied
+  from another point because the footprint looked rectangular. Measured on
+  M.505: an overall chain used Y=-170 (the near end plate's own edge) at both
+  the near AND the far end, but the far end plate is narrower - its real edge
+  there is only Y=-68. The far leader had no edge within 100 mm to land on and
+  hung in open space; a person looking at the sheet caught it, the write and
+  read-back both reported success. Read each point's own Y (or X, for a
+  vertical chain) from its own position in the response before creating.
 
 ## Placement facts
 
