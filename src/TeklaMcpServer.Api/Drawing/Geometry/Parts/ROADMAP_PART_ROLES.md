@@ -23,7 +23,35 @@ So this is mostly not new data: every input but one is already read and sits on
 `PartInView`. The exception is `IsMainPart`, which is not on it yet. It is one
 interpretation in one place, instead of three.
 
-## Shape
+## Superseded: the prefix table is gone
+
+The four roles below were decided from mark prefixes written into this code. They served
+one timber model and failed on the first steel assembly: nine parts of column `M.80` all
+carry prefix `P`, so no rule matched, nothing was `Defining`, and the structural geometry
+came back empty. Prefixes and material names are each plant's own convention in its own
+language, so no table here can be right for the next model.
+
+What replaced it:
+
+```
+PartRole
+  Included   takes part in the structural geometry - the default for every part
+  Excluded   the caller's exclusion filter took it out - the only way out
+```
+
+- the code ships **no** exclusions; the caller passes prefixes and/or material names
+  (`excludePrefixes`, `excludeMaterials`) and a timber run passes `R,S,M`;
+- `IsMainPart` is read from the assembly and reported on `PartRoleInView`. It is a fact,
+  not a role: the base a secondary part is measured from on a beam or a column, and
+  nothing at all on a panel of many equal members. Which applies is the rule set's
+  business, not this layer's;
+- an unfamiliar mark no longer blocks a drawing. Only an unreadable part, an outline
+  error, or a filter that excluded everything makes the result provisional.
+
+The rest of this document is kept for the reasoning that still holds - what a role must
+not be asked to decide, and why an incomplete set has to say so. Its prefix rules do not.
+
+## Shape (superseded)
 
 ```
 PartRole
@@ -61,7 +89,7 @@ material. Timber maps onto it — frame, insulation, fixings — and so does ste
 main part and stiffeners define, splice plates are attached, bolts are ignored.
 Naming the roles after timber would have made the steel case a rewrite.
 
-## Rules
+## Rules (superseded — see the top of this file)
 
 An ordered list, first match wins.
 
@@ -93,13 +121,11 @@ rule of last resort it would quietly become the deciding one again on every part
 whose prefix is unfamiliar. It goes into the reason attached to `Unknown`, so a
 person can see what was known, and nowhere else.
 
-## Where the table lives
+## Where the table lives — answered
 
-Undecided, and deliberately so. Defaults in code, matching this plant's
-prefixes, until a second model needs different ones. A file or a setting can be
-added then, when it is known who edits it — the engineer or the fitter on site.
-Building the override before there is a second set of rules would be a layer
-without a consumer.
+The second model arrived and answered it: nowhere in code. The exclusions travel with the
+call, and which ones a model needs is written in the skill's rule set beside the rest of
+that plant's conventions. There is no default and no file format to agree on.
 
 ## Inputs
 
@@ -162,9 +188,10 @@ set says what was missing from the set.
    detector was removed; the structural-outline path now owns the decision.
 4. Structural extent for the assembly outline, over `Defining` alone, reporting
    the unknowns alongside it.
-5. `IsMainPart` on `PartInView` — read it, put it in the reason, and check on
-   several assemblies whether it tracks "defines the extent" before it becomes a
-   rule.
+5. `IsMainPart` — read from the assembly and reported on `PartRoleInView` and in
+   `mainPartModelIds`. Never became a rule and should not: the steel rule set
+   uses it as a base of measurement, the timber one ignores it.
+6. Prefix rules removed; exclusions moved to the caller. Done.
 
 ## Not this
 

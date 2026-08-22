@@ -30,8 +30,11 @@ TeklaBridge.exe log_skill_event task dimension-drawings <runId> "<step>"
 TeklaBridge.exe log_skill_event finish dimension-drawings <runId> "<summary>"
 ```
 
-Call `TeklaBridge.exe` directly from the Tekla extension folder. Every bridge
-command is logged separately; do not duplicate those log lines manually.
+`log_skill_event` has no MCP tool; call `TeklaBridge.exe` directly from the
+Tekla extension folder for this one. Every other bridge command named in this
+skill has an MCP tool of the same name — use it when one is available, and
+fall back to the bridge only in a session that has none. Every bridge command
+is logged separately either way; do not duplicate those log lines manually.
 
 - **Mark before you act, not after you learn.** The line goes out when you decide
   to do something, describing what you are about to do. A mark written after a
@@ -58,46 +61,53 @@ the LLM's decisions.
 
 ### 1. Read the facts
 
+**First pick the rule set, from the subject.** Read the parts with
+`get_drawing_parts` and decide once for the drawing:
+
+| Subject | Rule set |
+|---|---|
+| Timber panel or wall — framing under prefixes `T`/`GLB`, sheathing `S` | `references/plant-rules.md` |
+| Steel assembly — a main member with plates and gussets fixed to it | `references/steel-rules.md` |
+
+Neither fits the drawing, or both seem to: stop and say so. Do not blend the two
+— on a part's own size they say opposite things, and a blend is not a compromise
+but an unrecorded third rule set. State the chosen set in the final response.
+
 For each requested base view:
 
 1. Read drawing context and confirm `AssemblyDrawing`.
-2. Run `get_structural_chain_positions <viewId>`.
+2. Run `get_structural_chain_positions <viewId>`, passing the rule set's
+   exclusions. **Every part the view draws takes part unless you exclude it.**
+   Nothing is filtered in code: a mark prefix and a material name are the
+   plant's own convention in the plant's own language, so the rule set names
+   what to leave out and the call carries it:
+
+   ```
+   get_structural_chain_positions <viewId> <excludePrefixes> <excludeMaterials>
+   ```
+
+   Both lists are comma-separated and both may be empty. The response echoes
+   `exclusions`, so a chain that came out short is answered by reading them
+   first. `mainPartModelIds` names the assembly's main part - the base a
+   secondary part is measured from on a beam or a column, and nothing at all on
+   a panel of many equal members.
 3. `isComplete=false` stops automatic placement for that geometry group. Report
    its issues and continue independent complete views and groups.
 
-   **`Unknown` is not `Ignored`.** It means the role was never established, so
-   the part may still turn out to be `Defining` — and a `Defining` part moves
-   not only the overall but every interior position on whichever side it
-   touches. Until the role is settled nothing in the set is a fact, so there is
-   no safe subset to place "meanwhile".
+   Three things make it false, and they want different fixes:
 
-   Identify the parts with `get_drawing_parts <viewId>` and report them by
-   `partPos`, type, and material, so the role can be added outside this run.
-   That reading is evidence for settling the role; it does not settle it, and
-   it does not license placement.
+   - **a part whose properties could not be read** (`role:<id>`). It is measured
+     over like any other, but an exclusion that should have caught it could not
+     fire, so nothing in the set is a fact. Read the parts with
+     `get_drawing_parts` and report what came back.
+   - **every part excluded** (`structural`). The filter is wrong for this
+     drawing, not the drawing. Say which exclusions were passed.
+   - **an outline error or a part the view does not draw** (`outline:<id>`).
 
-   Placing anyway takes an explicit instruction from the user naming the
-   condition, for this drawing only. Something of this shape:
-
-   > For this drawing treat every part with prefix=W as Ignored. If
-   > `get_structural_chain_positions` is incomplete only because of those,
-   > continue placing. Any other Unknown remains a blocker.
-
-   Given one, do all four:
-
-   - check that **every** `Unknown` falls under the stated condition, by reading
-     the parts rather than assuming — the instruction grants what it names and
-     nothing beside it;
-   - continue only if none is left over; a single `Unknown` outside the condition
-     stops the group as before;
-   - leave the role rules in code alone. A per-drawing permission is not evidence
-     for a rule, and a rule guessed from one drawing speaks for every future
-     assembly — see the W entry in `PartRoleClassifier.DefaultRules`;
-   - log it as its own `task` line, and say in the final response which parts
-     were excluded and on whose instruction.
-
-   This is the practical route. Inventing a universal prefix rule to unblock one
-   drawing is the failure it avoids.
+   An unfamiliar mark prefix is none of these and blocks nothing. That was the
+   old failure: a prefix table in the code answered one timber model and turned
+   every part of the next assembly into a blocker - nine parts of one steel
+   column, all prefixed `P`, produced no geometry at all.
 4. Read existing dimensions with `get_drawing_dimensions <viewId>`.
 5. Use `draw_structural_chain_positions <viewId> <side>` when the visual side
    or a raked edge needs confirmation.
@@ -192,8 +202,25 @@ below and produced a plan neither caught afterward.
    no possible pair, so it would answer empty regardless of what that part
    actually touches.
 
-All other keep/remove choices remain drawing judgement under
-[`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md).
+All other keep/remove choices remain drawing judgement under the rule set chosen
+in step 1 — [`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md) for timber,
+[`references/steel-rules.md`](../../../../.agents/skills/dimension-drawings/references/steel-rules.md) for steel.
+
+The three checks above are written from the timber rules. On steel, check 1 is
+**inverted**: a span restating a part's own size is often the dimension the sheet
+exists for. Run the walk all the same, but what decides each pair depends on the
+plant's `Internal` policy, which the steel file requires you to have asked for:
+
+| `Internal` | How the walk decides a secondary part's internal position |
+|---|---|
+| `None` | `Removed`, every one of them, reason `Internal=None`. The checks do not run |
+| `Necessary` | The steel file's "Necessary" principle — keep what the shape cannot tell, drop what it can |
+| `All` | `Kept`, every admissible one. The "Necessary" principle is **not** applied as a filter here; only the position rules that hold under every policy do — near-duplicates are one position, and clutter control still applies |
+
+Applying `Necessary` under an answer of `All` deletes numbers the plant asks for, and
+applying anything at all under `None` creates numbers it does not. The policy is
+therefore part of the plan, not a detail of it: state it beside the plan and in the
+final response.
 
 ### 3. Apply the plan
 
@@ -227,7 +254,10 @@ before the gate below instead.
 
 Do not answer that placement is complete until every requested view has a
 resolved `Top`, `Bottom`, `Left`, and `Right` outcome and every created or
-recreated chain has been read back successfully. Do not substitute analysis,
+recreated chain has been read back successfully. On steel, a section showing a
+connection is a requested view in its own right, and a side may legitimately
+resolve to "no chain" because that feature is dimensioned in section — steel
+rules 9 and 10. Do not substitute analysis,
 an overlay, or a partial list of IDs for this gate.
 
 Only these conditions may leave a side unresolved: incomplete structural
@@ -240,6 +270,7 @@ For `place`, return only:
 
 - created, changed, and deleted dimension IDs;
 - one short verification status for `Top`, `Bottom`, `Left`, and `Right`;
+- the rule set used, and on steel the `Internal` policy the plan was built under;
 - any unresolved side and exact blocker.
 
 For `review`, return the requested findings only. Do not include an execution
@@ -249,6 +280,10 @@ essay unless the user asks for it.
 
 - [`references/plant-rules.md`](../../../../.agents/skills/dimension-drawings/references/plant-rules.md): measured timber
   drawing rules, openings, layers, raked tops, and when to stop.
+- [`references/steel-rules.md`](../../../../.agents/skills/dimension-drawings/references/steel-rules.md): steel assemblies —
+  main part and secondaries, base of measurement, the "Necessary" principle, and
+  the gaps (bolts, section coordinates). Every rule is tagged with its evidence
+  class; the file is mostly derived from Tekla's own model, not yet measured.
 - [`references/placement-and-verification.md`](../../../../.agents/skills/dimension-drawings/references/placement-and-verification.md):
   Tekla point-order, direction, offsets, reflow, and read-back traps.
 - [`HISTORY.md`](HISTORY.md): historical experiments only; never treat it as a

@@ -4,6 +4,26 @@ Read this reference while deciding which preliminary positions to keep. These
 rules were measured on timber-wall drawings; do not generalize them to steel,
 trusses, roof panels, or parts with cut-outs without evidence.
 
+## What this model excludes
+
+Nothing is filtered in code. Every part a view draws takes part in the structural
+geometry unless this call says otherwise, so a timber run passes:
+
+```
+excludePrefixes = R,S,M
+```
+
+`R` insulation and `M` fixings never fixed the frame's size; `S` sheathing is attached to
+the frame and does not decide where it ends - its overhang is the difference between an
+extent starting at 210 and one starting at 200. `T` framing and `GLB` glulam are what
+remains, and they need no naming: they are in by default.
+
+Materials are the second list and this model needs none of it. Use it where a prefix does
+not separate what a name does - a window `ContourPlate` marked like any other part.
+
+These lists are this plant's convention, in this plant's language. Another office's model
+has its own, and the code has none.
+
 ## Reading the preliminary chains
 
 - Top and Bottom chains carry **X** positions.
