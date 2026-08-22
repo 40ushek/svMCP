@@ -23,13 +23,32 @@ The main part lies on the welding table and everything is welded to it. So:
 
 Coordinates come from `get_structural_chain_positions` and from nowhere else.
 
-Measured once, on `M.80`: this logic reproduced that sheet's vertical chain point for
-point, six of six, without consulting any of the settings below.
+Read on twenty-one drawings across three member types: ten HEB160 columns,
+`M.73`–`M.82`; eight IPE220 beams, `M.30`/`M.31`/`M.33`/`M.34`/`M.37`/`M.38`/`M.39`/`M.70`;
+three HEB800 girders, `M.47`/`M.48`/`M.355` (six more `Binder` drawings selected but not read
+in detail). **What this checked, and what it did not.** It is a reading exercise: each
+sheet's existing dimensions and its parts list were compared by eye, part type against
+point-list coordinate ranges. It confirmed the logic is *plausible* on all three member
+types - every part type present has some point that could be it, no chain contradicts
+closing on the main part's own ends, and the row type is consistent. It did **not** run
+`get_structural_chain_positions` on any of these twenty-one, and did not link one specific
+part's `modelId` to one specific `dimensionId` and coordinate. That per-part audit is what
+the Checks below require of an actual placement run, and none of these twenty-one were a
+placement run - the sheets were already dimensioned, by the plant, before this skill looked
+at them.
+
+Two things this reading did establish concretely, because they need no per-part linkage to
+see: One beam, `M.38`, has no end plate at either end and its chain still closes on the
+beam's own bare ends - closure follows the main part, not what is welded to it. The girders
+carry no regular spacing at all - their node gussets sit wherever a diagonal brace actually
+connects, and `M.355` has four more of them mid-span than its otherwise identical twins
+`M.47`/`M.48`, which is evidence against inventing a position from a pattern, whatever the
+per-part linkage.
 
 ## Settings
 
-Where reasonable people differ. Each has a default; state in the final response which
-values a run used.
+Where reasonable people differ. Each has a policy - a default, or a question, or a stop
+until something is confirmed. State in the final response which applied.
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -38,8 +57,8 @@ values a run used.
 | `recognizableDistance` | ask | The asymmetry below which a fitter cannot orient a part. Required by `Necessary`, by nothing else; without it `Necessary` stops. Tekla's dialogs use tens of mm. |
 | `minDimensionLength` | 1 mm | Local, not Tekla's - its own default is 0. Drops arithmetic noise only: the radius staircase on a rolled flange steps 0.2-2 mm. |
 | Close | closed | An interior position never becomes an endpoint: if an extreme one is dropped, the side loses its chain rather than shrinking. |
-| Datum | main part start | For a new chain, its zero is the main part's own model `StartPoint`, unless the plant reverses it (`Reversed direction for running dimensions`) - see `SKILL.md`. On `M.80`, sheet `615.5 / 1005.5 / 1074.5` = read `640.4 / 1030.4 / 1099.5` minus 25, consistent with counting from the top of the base plate - **not checked against the column's own `StartPoint`**, so treat the offset as observed, not confirmed, until it is. |
-| Row type | match the sheet, else ask | An attributes choice, not a geometry one. One data point exists and it does not favour a default: `M.80`'s own chain is `RelativeAndAbsolute`, while `create_dimension` with `standard` gives `Relative`. Recreating a chain keeps its type; a fresh chain with no sheet convention to match is asked. |
+| Datum | main part start | For a new chain, its zero is the main part's own model `StartPoint`, unless the plant reverses it (`Reversed direction for running dimensions`) - see `SKILL.md`. All twenty-one absolute rows count up from one end, never down from the other - consistent from a 2886 mm column to a 20180 mm girder. **Not checked against any main part's own `StartPoint`** via the model API, so the direction is observed on every sheet, not API-confirmed on any of them. |
+| Row type | `RelativeAndAbsolute` | An attributes choice, not a geometry one, and twenty-one of twenty-one main chains read use it. But **no attributes file that produces it through `create_dimension` is known** - `standard` gives plain `Relative`, and nothing else has been tried. A fresh chain cannot be guaranteed this type until one is found; see Stop. Recreating an existing chain keeps its own type regardless and needs no attributes file for this. |
 | Side | free side | One side per subject, held for the drawing. |
 
 ## Checks
@@ -60,18 +79,29 @@ It is a code fix, and it does not block placement.
 ## Not covered
 
 - **Bolts.** `BoltArray` is not in the structural outline, so edge distances, spacing and
-  extreme-bolt checks cannot be planned at all. Tekla devotes a whole tab to them.
-- **Sections.** Dimensions read from section `I` on `M.80` sit near `x = -43369` while the
-  view occupies `x = 50...172`. Settle that coordinate system before writing into a section.
+  extreme-bolt checks cannot be planned at all. Tekla devotes a whole tab to them, and this
+  plant uses it: regularly spaced chains in plan views (`M.73`, `M.81`) sit exactly where a
+  bolted flange splice would be. Confirms the gap; does not close it.
+- **Sections.** Untested: whether `get_structural_chain_positions` and `create_dimension`
+  work on a section view at all. Most sections, on all ten columns, sit in the same small
+  coordinate range as the base views - nothing special expected there. One section per
+  drawing does not: its coordinates carry a large, drawing-specific offset (`-58369` on
+  `M.82`, `+67454` on `M.77`, no two alike), consistent with a plane cut at the column's own
+  position along a building axis rather than at the section itself. Untested either way -
+  do not assume the large numbers break `create_dimension`, and do not assume they do not.
 - **Skew, grouping, work points, centre of gravity** - Tekla settings with no counterpart here.
-- Trusses, braced frames, welded plate girders: one column is the whole evidence.
+- Trusses and braced frames as their own assembly (diagonals as part of this assembly's
+  own geometry, not bolted on externally through gusset plates) remain unmeasured.
 
 ## Stop
 
 - no single resolvable main part, or any `mainPartUnresolvedModelIds`;
 - `Internal` unstated, or `Necessary` without a `recognizableDistance`;
 - a bolt dimension is required;
-- a section must be dimensioned and its coordinate system is not yet settled.
+- a section must be dimensioned - untested end to end, see Not covered;
+- a fresh `RelativeAndAbsolute` chain is needed and no attributes file producing that type
+  has been confirmed - ask the operator for the file name, or limit the run to recreating
+  chains that already carry the type.
 
 Tekla's own model behind this file: *Dimensioning rule properties*, *Dimensioning
 properties (Integrated dimensioning)* - General, Position, Part, Bolt and Grouping tabs -
