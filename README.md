@@ -231,7 +231,7 @@ src/
 | `get_drawing_marks` | Прочитать марки: позиция, bbox/OBB, `resolvedGeometry`, перекрытия, leader lines, содержимое PropertyElement; фильтрация по виду |
 | `create_part_marks` | Создать марки детали с заданным содержимым и стилем |
 | `delete_all_marks` | Удалить все марки на активном чертеже |
-| `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, ASSEMBLY_POS, PROFILE, MATERIAL, NAME |
+| `get_drawing_parts` | Все модельные объекты чертежа: PART_POS, PART_PREFIX, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. `partPrefix` — то, из чего пишется фильтр исключений; `partPrefixKnown=false` означает, что Tekla не отдала свойство, а не что префикса нет |
 | `get_drawing_dimensions` | Все `StraightDimensionSet` активного чертежа: id, `dimensionType`, distance, `viewId/viewType`, orientation, `direction`, `topDirection`, `referenceLine`, bbox set/segments, `dimensionLine`, `leadLineMain/Second`, `textBounds` |
 | `get_dimension_contexts` | Internal/context read path для размеров по виду |
 | `get_dimension_chain_coverage` | Проверка одного размера на конкретный вопрос: попадают ли его точки на реальную геометрию детали (`matched`/`fallbackOnly`/missing); read-only, для точечной проверки в review, не для массового прохода |
@@ -243,10 +243,10 @@ src/
 | `place_control_diagonals` | Контрольные диагональные размеры по реальной solid-геометрии видимых деталей вида; фильтрация по `MATERIAL_TYPE` (по умолчанию сталь/бетон/дерево, без утеплителя); направление всегда снизу вверх |
 | `get_part_geometry_in_view` | Получить геометрию детали (bbox, start/end, оси) в локальной СК вида |
 | `get_all_parts_geometry_in_view` | Пакетно получить геометрию всех деталей вида за один вызов |
-| `get_structural_chain_positions` | Четыре предварительные цепочки позиций по конструктивной геометрии; единственный источник координат для постановки размеров, с опорами и признаком полноты |
+| `get_structural_chain_positions` | Четыре предварительные цепочки позиций по конструктивной геометрии; единственный источник координат для постановки размеров, с опорами и признаком полноты. В геометрию входят **все** детали вида; необязательные `excludePrefixes`/`excludeMaterials` убирают лишнее (для деревянной модели — `R,S,M`) и возвращаются в ответе полем `exclusions`. `mainPartModelIds` называет главную деталь сборки, `mainPartUnresolvedModelIds` — детали, у которых сборку не удалось спросить |
 | `get_contact_candidate_points` | Точки касания деталей вида как кандидаты для размера; каждая точка называет обе детали; `draw=true` рисует формы и точки в чертеже; `modelIds` ограничивает поиск парами внутри названного набора |
 | `get_part_degrees_of_freedom` | Read-only диагностика контактов: для каждой детали показывает оси без наблюдаемого подходящего контакта `FaceToFace`/`Touching`; не выбирает и не создаёт размеры |
-| `draw_structural_chain_positions` | Dev/debug: показать одну предварительную сторону (`Top`/`Bottom`/`Left`/`Right`, по умолчанию `Bottom`) линиями по структурному контуру; размеры не создаёт |
+| `draw_structural_chain_positions` | Dev/debug: показать одну предварительную сторону (`Top`/`Bottom`/`Left`/`Right`, по умолчанию `Bottom`) линиями по структурному контуру; размеры не создаёт. Принимает те же `excludePrefixes`/`excludeMaterials` и сообщает их на обоих выходах |
 | `get_grid_axes` | Получить оси сетки в заданном виде чертежа |
 | `resolve_mark_overlaps` | Автоматически разрешить перекрытия текстовых блоков марок внутри каждого вида — минимальные локальные сдвиги |
 | `arrange_marks` | Полная автоматическая расстановка марок внутри каждого вида вокруг anchor point |

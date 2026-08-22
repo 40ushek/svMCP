@@ -167,9 +167,9 @@ src/
 | `delete_dimension` | Delete a `StraightDimensionSet` |
 | `get_part_geometry_in_view` | Read part geometry in view coordinates |
 | `get_contact_candidate_points` | Candidate dimension points where the parts of a view touch; names both parts; `draw=true` paints them into the drawing; optional `modelIds` searches pairs only within that named set |
-| `get_structural_chain_positions` | Four preliminary structural dimension chains with supported coordinates and completeness; the only coordinate source for dimension placement |
+| `get_structural_chain_positions` | Four preliminary structural dimension chains with supported coordinates and completeness; the only coordinate source for dimension placement. Every part the view draws takes part unless the caller excludes it (`excludePrefixes`/`excludeMaterials`, echoed back as `exclusions`); the code ships no exclusions, since prefixes and material names are each plant’s own convention in its own language. `mainPartModelIds` names the assembly’s main part and `mainPartUnresolvedModelIds` keeps “could not ask the assembly” apart from “not the main part” |
 | `get_part_degrees_of_freedom` | Read-only contact diagnostic per part: axes without an observed qualifying `FaceToFace`/`Touching` contact; never selects or creates dimensions |
-| `draw_structural_chain_positions` | Dev/debug: draw one preliminary structural chain side (`Top`/`Bottom`/`Left`/`Right`; default `Bottom`) as lines; it never creates dimensions |
+| `draw_structural_chain_positions` | Dev/debug: draw one preliminary structural chain side (`Top`/`Bottom`/`Left`/`Right`; default `Bottom`) as lines; takes the same exclusions and echoes them on both exits; it never creates dimensions |
 | `get_grid_axes` | Read drawing grid axes for a specific view |
 
 ### Контрольные диагональные размеры
