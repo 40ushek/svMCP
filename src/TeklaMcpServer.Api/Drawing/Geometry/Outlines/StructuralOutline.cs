@@ -21,13 +21,15 @@ public sealed class StructuralOutline
         IReadOnlyList<PartRoleInView> included,
         IReadOnlyList<PartRoleInView> excluded,
         IReadOnlyList<PartRoleInView> unclassified,
-        IReadOnlyList<UnreadPart>? unreadRoles = null)
+        IReadOnlyList<UnreadPart>? unreadRoles = null,
+        IReadOnlyList<int>? outsideDepthModelIds = null)
     {
         Outline = outline;
         Included = included;
         Excluded = excluded;
         Unclassified = unclassified;
         UnreadRoles = unreadRoles ?? Array.Empty<UnreadPart>();
+        OutsideDepthModelIds = outsideDepthModelIds ?? Array.Empty<int>();
     }
 
     public ViewAssemblyOutlineResult Outline { get; }
@@ -53,6 +55,14 @@ public sealed class StructuralOutline
     public IReadOnlyList<UnreadPart> UnreadRoles { get; }
 
     /// <summary>
+    /// Parts a section/end view named whose solid was confirmed outside the view's depth
+    /// window. A definite answer, not a read failure, so it does not affect
+    /// <see cref="IsComplete"/> - the same reasoning as
+    /// <see cref="PartRoleReadResult.OutsideDepthModelIds"/>, which this is read from.
+    /// </summary>
+    public IReadOnlyList<int> OutsideDepthModelIds { get; }
+
+    /// <summary>
     /// True only when every part was read, every requested part was drawn, and every
     /// solid was read. Anything less and the extent is a guess, however clean it looks.
     /// </summary>
@@ -71,8 +81,24 @@ public sealed class StructuralOutline
         if (UnreadRoles.Count > 0)
             said.Add($"{UnreadRoles.Count} part(s) had no readable properties ({string.Join("; ", UnreadRoles.Take(5))})");
 
+        if (OutsideDepthModelIds.Count > 0)
+            said.Add($"{OutsideDepthModelIds.Count} part(s) confirmed outside this view's depth window");
+
         if (Included.Count == 0)
-            said.Add("every part in this view was excluded, so there is nothing to measure over");
+        {
+            // Three distinct causes can each empty Included, and a caller reading this line
+            // has to be told which - "every part... was excluded" is simply false when even
+            // one empty slot came from depth instead, and the reverse is just as false the
+            // other way round. A mix of causes gets a neutral line instead of naming one
+            // cause and hiding the other: the causes are already listed above by their own
+            // exact counts, this line only says the net result.
+            said.Add((Excluded.Count > 0, OutsideDepthModelIds.Count > 0) switch
+            {
+                (true, false) => "every part in this view was excluded, so there is nothing to measure over",
+                (false, true) => "every part named by this view was outside its depth window, so there is nothing to measure over",
+                _ => "no included parts remained to measure over"
+            });
+        }
 
         if (Unclassified.Count > 0)
             said.Add($"{Unclassified.Count} part(s) were never classified ({Marks(Unclassified)})");
@@ -137,6 +163,7 @@ public sealed class TeklaDrawingStructuralOutlineApi
             included,
             excluded,
             unclassified,
-            read.Unread);
+            read.Unread,
+            read.OutsideDepthModelIds);
     }
 }

@@ -337,4 +337,33 @@ public sealed class ContactCandidatePointTests
             Assert.True(isComplete);
         }
     }
+
+    [Fact]
+    public void DepthSelectionReasonsSurviveBothTranslationSteps()
+    {
+        var contacts = TeklaDrawingViewContactApi.Build(
+            1,
+            [10, 11],
+            new Reader().Returns(10, Slab(10, 0, 50, onEdge: true)).Returns(11, Slab(11, 50, 100, onEdge: true)),
+            new ContactOptions(),
+            restricted: true,
+            outsideDepthRequestedIds: [12],
+            unresolvedDepthRequestedIds: [13],
+            selectionUnread: [new UnreadPart(13, "depth=BoundaryAmbiguous")]);
+        var geometry = ContactGeometryInViewBuilder.Build(contacts);
+        var candidates = DrawingContactCandidatePointBuilder.Build(geometry);
+
+        foreach (var result in new[]
+                 {
+                     (contacts.NotVisibleRequestedIds, contacts.OutsideDepthRequestedIds, contacts.UnresolvedDepthRequestedIds, contacts.SelectionComplete),
+                     (geometry.NotVisibleRequestedIds, geometry.OutsideDepthRequestedIds, geometry.UnresolvedDepthRequestedIds, geometry.SelectionComplete),
+                     (candidates.NotVisibleRequestedIds, candidates.OutsideDepthRequestedIds, candidates.UnresolvedDepthRequestedIds, candidates.SelectionComplete)
+                 })
+        {
+            Assert.Empty(result.NotVisibleRequestedIds);
+            Assert.Equal([12], result.OutsideDepthRequestedIds);
+            Assert.Equal([13], result.UnresolvedDepthRequestedIds);
+            Assert.False(result.SelectionComplete);
+        }
+    }
 }

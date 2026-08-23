@@ -72,16 +72,28 @@ public sealed class PartRoleInView
 /// </summary>
 public sealed class PartRoleReadResult
 {
-    public PartRoleReadResult(IReadOnlyList<PartRoleInView> roles, IReadOnlyList<UnreadPart> unread)
+    public PartRoleReadResult(
+        IReadOnlyList<PartRoleInView> roles,
+        IReadOnlyList<UnreadPart> unread,
+        IReadOnlyList<int>? outsideDepthModelIds = null)
     {
         Roles = roles;
         Unread = unread;
+        OutsideDepthModelIds = outsideDepthModelIds ?? Array.Empty<int>();
     }
 
     public IReadOnlyList<PartRoleInView> Roles { get; }
 
     /// <summary>Parts the view draws whose properties did not come back.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }
+
+    /// <summary>
+    /// Parts a section/end view named but whose solid was confirmed outside the view's
+    /// depth window - a definite answer, not a read failure, so it does not affect
+    /// <see cref="IsComplete"/>. Recorded so this confirmed exclusion stays visible instead
+    /// of looking identical to a candidate that was never named at all.
+    /// </summary>
+    public IReadOnlyList<int> OutsideDepthModelIds { get; }
 
     public bool IsComplete => Unread.Count == 0;
 }
@@ -118,8 +130,10 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
         var roles = new List<PartRoleInView>();
         var unread = new List<UnreadPart>();
         var mainPartByAssembly = new Dictionary<int, int>();
+        var selected = DrawingViewParts.GetDepthFilteredParts(_model, view);
+        unread.AddRange(selected.Incomplete);
 
-        foreach (var modelId in DrawingViewParts.VisibleModelIds(view))
+        foreach (var modelId in selected.ModelIds)
         {
             if (_model.SelectModelObject(new Identifier(modelId)) is not ModelPart part)
             {
@@ -186,7 +200,7 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 mainPartKnown));
         }
 
-        return new PartRoleReadResult(roles, unread);
+        return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds);
     }
 
     /// <summary>

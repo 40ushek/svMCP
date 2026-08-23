@@ -21,7 +21,8 @@ public sealed class StructuralOutlineTests
         return new PartRoleInView(modelId, $"{prefix}-{modelId}", prefix, result, isMainPart);
     }
 
-    private sealed class Roles(PartRoleInView[] roles, UnreadPart[]? unread = null) : IDrawingPartRoleApi
+    private sealed class Roles(PartRoleInView[] roles, UnreadPart[]? unread = null, int[]? outsideDepth = null)
+        : IDrawingPartRoleApi
     {
         public Roles(params PartRoleInView[] roles) : this(roles, null) { }
 
@@ -30,7 +31,7 @@ public sealed class StructuralOutlineTests
         public PartRoleReadResult GetRolesInView(int viewId)
         {
             Reads++;
-            return new PartRoleReadResult(roles, unread ?? []);
+            return new PartRoleReadResult(roles, unread ?? [], outsideDepth ?? []);
         }
     }
 
@@ -195,5 +196,58 @@ public sealed class StructuralOutlineTests
         Assert.False(result.Outline.SelectionComplete);
         Assert.False(result.IsComplete);
         Assert.Contains("not drawn in this view", result.Reservation());
+    }
+
+    [Fact]
+    public void PartsConfirmedOutsideDepthAreReportedWithoutMakingTheExtentProvisional()
+    {
+        // A confirmed exclusion, not a read failure - it must reach the result, but it must
+        // not flip IsComplete: the answer is definite, not a guess.
+        var api = new TeklaDrawingStructuralOutlineApi(
+            new Roles([Role(1, "T")], outsideDepth: [9]),
+            new Outline());
+
+        var result = api.Get(7);
+
+        Assert.Equal([9], result.OutsideDepthModelIds);
+        Assert.True(result.IsComplete);
+        Assert.Contains("1 part(s) confirmed outside this view's depth window", result.Reservation());
+    }
+
+    [Fact]
+    public void AnEmptyExtentFromDepthAloneIsNamedDifferentlyThanOneFromTheFilter()
+    {
+        // "Everything was excluded" is true either way, but a caller reading this by eye
+        // needs to know whether to look at the exclusion filter or at the view itself.
+        var api = new TeklaDrawingStructuralOutlineApi(
+            new Roles([], outsideDepth: [9, 10]),
+            new Outline());
+
+        var result = api.Get(7);
+
+        Assert.Contains("outside its depth window", result.Reservation());
+        Assert.DoesNotContain("every part in this view was excluded", result.Reservation());
+    }
+
+    [Fact]
+    public void AMixOfFilterExclusionAndDepthExclusionGetsANeutralLineNotEitherOneAlone()
+    {
+        // One part was excluded by the filter, another was confirmed outside depth, and
+        // nothing was included. Neither single-cause sentence is true here on its own -
+        // "every part... was excluded" is false, since one slot came from depth instead, and
+        // the depth-only sentence would be just as false the other way round.
+        var api = new TeklaDrawingStructuralOutlineApi(
+            new Roles([Role(1, "R")], outsideDepth: [9]),
+            new Outline());
+
+        var result = api.Get(7);
+
+        var reservation = result.Reservation();
+        Assert.Equal([9], result.OutsideDepthModelIds);
+        Assert.Single(result.Excluded);
+        Assert.Empty(result.Included);
+        Assert.Contains("no included parts remained to measure over", reservation);
+        Assert.DoesNotContain("every part in this view was excluded", reservation);
+        Assert.DoesNotContain("every part named by this view was outside its depth window", reservation);
     }
 }

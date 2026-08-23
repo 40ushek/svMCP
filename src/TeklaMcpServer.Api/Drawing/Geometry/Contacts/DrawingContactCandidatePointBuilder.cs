@@ -70,7 +70,8 @@ public static class DrawingContactCandidatePointBuilder
         return new ViewContactCandidatePointsResult(
             geometry.ViewId, points, geometry.Unflattened, geometry.Unresolved,
             geometry.Unread, geometry.SearchComplete, geometry.Error,
-            geometry.Restricted, geometry.RequestedIds, geometry.NotVisibleRequestedIds);
+            geometry.Restricted, geometry.RequestedIds, geometry.NotVisibleRequestedIds,
+            geometry.OutsideDepthRequestedIds, geometry.UnresolvedDepthRequestedIds);
     }
 
     private static DrawingPartCandidatePoint Candidate(ContactShapeInView shape, int pointIndex)
@@ -138,7 +139,9 @@ public sealed class ViewContactCandidatePointsResult
         string? error = null,
         bool restricted = false,
         IReadOnlyList<int>? requestedIds = null,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthRequestedIds = null,
+        IReadOnlyList<int>? unresolvedDepthRequestedIds = null)
     {
         ViewId = viewId;
         Points = points;
@@ -150,6 +153,8 @@ public sealed class ViewContactCandidatePointsResult
         Restricted = restricted;
         RequestedIds = requestedIds ?? Array.Empty<int>();
         NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
+        OutsideDepthRequestedIds = outsideDepthRequestedIds ?? Array.Empty<int>();
+        UnresolvedDepthRequestedIds = unresolvedDepthRequestedIds ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -195,11 +200,20 @@ public sealed class ViewContactCandidatePointsResult
     /// <summary>Ids the caller asked for that this view does not draw.</summary>
     public IReadOnlyList<int> NotVisibleRequestedIds { get; }
 
+    /// <summary>Ids definitely outside the view's depth volume, distinct from hidden/not-drawn ids.</summary>
+    public IReadOnlyList<int> OutsideDepthRequestedIds { get; }
+
+    /// <summary>Ids whose depth relation could not be established safely.</summary>
+    public IReadOnlyList<int> UnresolvedDepthRequestedIds { get; }
+
     /// <summary>
     /// Whether every id the caller asked for made it into the search. False means an empty
     /// or partial result here proves nothing - some named part was never searched.
     /// </summary>
-    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
+    public bool SelectionComplete =>
+        NotVisibleRequestedIds.Count == 0 &&
+        OutsideDepthRequestedIds.Count == 0 &&
+        UnresolvedDepthRequestedIds.Count == 0;
 
     /// <summary>
     /// True when everything in the requested scope was searched, every region flattened,

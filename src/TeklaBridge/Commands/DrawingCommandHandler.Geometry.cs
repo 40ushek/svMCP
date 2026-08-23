@@ -212,37 +212,12 @@ internal sealed partial class DrawingCommandHandler
     }
 
     /// <summary>
-    /// Model ids from the argument, or null when the caller named none.
-    ///
-    /// A token that is not a number is refused rather than skipped. Skipping it turns a
-    /// typo into a full outline that looks like a successful answer, and a full extent is
-    /// exactly the wrong number to hand back by accident - it is longer than the frame by
-    /// whatever overhangs it.
+    /// Model ids from the argument, or null when the caller named none. Delegates to
+    /// <see cref="ModelIdListParser"/> so the parsing logic has runnable coverage without a
+    /// Tekla dependency, instead of only being checked by grepping this file's source.
     /// </summary>
-    private static bool TryParseModelIds(string argument, out IReadOnlyCollection<int>? modelIds, out string? error)
-    {
-        modelIds = null;
-        error = null;
-
-        var tokens = argument.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries);
-        if (tokens.Length == 0)
-            return true;
-
-        var ids = new HashSet<int>();
-        foreach (var token in tokens)
-        {
-            if (!int.TryParse(token, out var id))
-            {
-                error = $"'{token}' is not a model id";
-                return false;
-            }
-
-            ids.Add(id);
-        }
-
-        modelIds = ids;
-        return true;
-    }
+    private static bool TryParseModelIds(string argument, out IReadOnlyCollection<int>? modelIds, out string? error) =>
+        ModelIdListParser.TryParse(argument, out modelIds, out error);
 
     /// <summary>
     /// Where the parts drawn in a view touch each other, as places a dimension could be
@@ -325,10 +300,13 @@ internal sealed partial class DrawingCommandHandler
             restricted = result.Restricted,
             requestedIds = result.RequestedIds,
             // False here means some id in the filter was never searched at all - a typo or
-            // a stale id, not a part confirmed to touch nothing. An empty or partial result
-            // must not be read as "no contact" while this is false.
+            // a stale id, one definitely outside the depth window, or a depth relation we
+            // could not establish. An empty or partial result must not be read as "no
+            // contact" while this is false.
             selectionComplete = result.SelectionComplete,
             notVisibleRequestedIds = result.NotVisibleRequestedIds,
+            outsideDepthRequestedIds = result.OutsideDepthRequestedIds,
+            unresolvedDepthRequestedIds = result.UnresolvedDepthRequestedIds,
 
             pointCount = result.Points.Count,
             points = result.Points.Select(point => new
@@ -587,6 +565,7 @@ internal sealed partial class DrawingCommandHandler
             }),
             excluded = result.Excluded.Select(part => new { modelId = part.ModelId, partPos = part.PartPos, by = part.Role.RuleId }),
             unclassified = result.Unclassified.Select(part => new { modelId = part.ModelId, partPos = part.PartPos }),
+            outsideDepthModelIds = result.OutsideDepthModelIds,
 
             unreadRoles = result.UnreadRoles.Select(part => new { modelId = part.ModelId, reason = part.Reason }),
             unreadOutlineParts = result.Outline.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason }),

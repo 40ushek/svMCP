@@ -73,16 +73,30 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        var visible = DrawingViewParts.VisibleModelIds(view).ToList();
+        var selected = DrawingViewParts.GetDepthFilteredParts(_model, view);
+        var visible = selected.ModelIds;
         var wanted = modelIds == null ? visible : visible.Where(modelIds.Contains).ToList();
         var notVisible = modelIds == null
             ? Array.Empty<int>()
-            : modelIds.Where(id => !visible.Contains(id)).ToArray();
+            : modelIds.Where(id => !selected.CandidateModelIds.Contains(id)).ToArray();
+        var outsideDepth = modelIds == null
+            ? Array.Empty<int>()
+            : selected.OutsideDepthModelIds.Where(modelIds.Contains).ToArray();
+        var unresolvedDepth = modelIds == null
+            ? Array.Empty<int>()
+            : selected.Incomplete.Select(part => part.ModelId).Where(modelIds.Contains).Distinct().ToArray();
+        var selectionUnread = modelIds == null
+            ? selected.Incomplete
+            : selected.Incomplete.Where(part => modelIds.Contains(part.ModelId));
 
         beforeSolidRead?.Invoke(wanted);
         return Build(
             viewId, wanted, _solidGeometry, options,
-            restricted: modelIds != null, notVisibleRequestedIds: notVisible);
+            restricted: modelIds != null,
+            notVisibleRequestedIds: notVisible,
+            outsideDepthRequestedIds: outsideDepth,
+            unresolvedDepthRequestedIds: unresolvedDepth,
+            selectionUnread: selectionUnread.ToList());
     }
 
     /// <summary>
@@ -128,11 +142,14 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
         IDrawingPartSolidGeometryApi solidGeometry,
         ContactOptions options,
         bool restricted = false,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthRequestedIds = null,
+        IReadOnlyList<int>? unresolvedDepthRequestedIds = null,
+        IReadOnlyList<UnreadPart>? selectionUnread = null)
     {
         var requestedIds = modelIds.ToList();
         var solids = new List<ISolid>();
-        var unread = new List<UnreadPart>();
+        var unread = selectionUnread?.ToList() ?? new List<UnreadPart>();
 
         foreach (var modelId in requestedIds)
         {
@@ -168,7 +185,10 @@ public sealed class TeklaDrawingViewContactApi : IDrawingViewContactApi
 
         return new ViewContactsResult(
             viewId, ContactGraph.Build(solids, options), unread, requestedIds: requestedIds,
-            restricted: restricted, notVisibleRequestedIds: notVisibleRequestedIds);
+            restricted: restricted,
+            notVisibleRequestedIds: notVisibleRequestedIds,
+            outsideDepthRequestedIds: outsideDepthRequestedIds,
+            unresolvedDepthRequestedIds: unresolvedDepthRequestedIds);
     }
 
 }

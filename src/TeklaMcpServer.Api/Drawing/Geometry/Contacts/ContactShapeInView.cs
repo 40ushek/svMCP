@@ -229,7 +229,9 @@ public sealed class ViewContactGeometryResult
         string? error = null,
         bool restricted = false,
         IReadOnlyList<int>? requestedIds = null,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthRequestedIds = null,
+        IReadOnlyList<int>? unresolvedDepthRequestedIds = null)
     {
         ViewId = viewId;
         Shapes = shapes;
@@ -240,6 +242,8 @@ public sealed class ViewContactGeometryResult
         Restricted = restricted;
         RequestedIds = requestedIds ?? Array.Empty<int>();
         NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
+        OutsideDepthRequestedIds = outsideDepthRequestedIds ?? Array.Empty<int>();
+        UnresolvedDepthRequestedIds = unresolvedDepthRequestedIds ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -274,12 +278,21 @@ public sealed class ViewContactGeometryResult
     /// <summary>Ids the caller asked for that this view does not draw.</summary>
     public IReadOnlyList<int> NotVisibleRequestedIds { get; }
 
+    /// <summary>Ids definitely outside the view's depth volume, distinct from hidden/not-drawn ids.</summary>
+    public IReadOnlyList<int> OutsideDepthRequestedIds { get; }
+
+    /// <summary>Ids whose depth relation could not be established safely.</summary>
+    public IReadOnlyList<int> UnresolvedDepthRequestedIds { get; }
+
     /// <summary>
     /// Whether every id the caller asked for made it into the search. False here means an
     /// empty or partial result proves nothing - some named part was never searched at all,
     /// not confirmed to touch nothing.
     /// </summary>
-    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
+    public bool SelectionComplete =>
+        NotVisibleRequestedIds.Count == 0 &&
+        OutsideDepthRequestedIds.Count == 0 &&
+        UnresolvedDepthRequestedIds.Count == 0;
 
     /// <summary>
     /// Whether the contact search underneath saw everything in its requested scope - the

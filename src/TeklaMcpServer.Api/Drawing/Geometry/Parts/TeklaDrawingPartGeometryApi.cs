@@ -41,13 +41,29 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         if (view == null)
             return new();
 
-        if (DrawingPartGeometryCache.TryGetAll(activeDrawing, view, viewId, out var cachedResults))
+        var depthWindow = ViewDepthWindow.Read(_model, view);
+        if (DrawingPartGeometryCache.TryGetAll(activeDrawing, view, viewId, depthWindow, out var cachedResults))
             return cachedResults;
 
-        // See DrawingViewPlane: a view reporting the model system cannot be read in view
-        // coordinates, and reading anyway returns confident nonsense.
+        var selected = DrawingViewParts.GetDepthFilteredParts(_model, view, depthWindow);
+        var results = selected.Incomplete
+            .Select(unread => Fail(viewId, unread.ModelId, unread.Reason))
+            .ToList();
+
+        // A base-projected view uses the cheap selection overload, so retain the existing
+        // refusal if its coordinate system cannot represent view-local geometry.
         if (DrawingViewPlane.IsModelPlane(view.ViewCoordinateSystem))
-            return new();
+        {
+            results.AddRange(selected.ModelIds.Select(modelId => Fail(viewId, modelId, DrawingViewPlane.ModelPlaneReason)));
+            DrawingPartGeometryCache.StoreAll(activeDrawing, view, viewId, depthWindow, results);
+            return results;
+        }
+
+        if (selected.ModelIds.Count == 0)
+        {
+            DrawingPartGeometryCache.StoreAll(activeDrawing, view, viewId, depthWindow, results);
+            return results;
+        }
 
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
@@ -55,126 +71,129 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         workPlaneHandler.SetCurrentTransformationPlane(viewPlane);
         //_model.CommitChanges();
 
-        var results = new List<PartInView>();
         try
         {
-            var objEnum = view.GetObjects();
-            while (objEnum.MoveNext())
+            foreach (var modelId in selected.ModelIds)
             {
-                if (objEnum.Current is not Tekla.Structures.Drawing.Part drawingPart)
-                    continue;
-                if (drawingPart.Hideable.IsHidden)
-                    continue;
-
-                var id = drawingPart.ModelIdentifier;
-                var modelPart = _model.SelectModelObject(id) as ModelPart;
-                if (modelPart == null) continue;
-                modelPart.Select(); // required for GetReportProperty to work
-
-                var modelId = id.ID;
-                double[] startPt = [], endPt = [], axisX = [], axisY = [], csOrigin = [];
-
-                string typeName = modelPart.GetType().Name;
-
-                string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
-                double[] bboxMin = [], bboxMax = [];
-                List<double[]> solidVertices = new();
-                List<double[]> viewHull = new();
-                var solidGeometryComplete = false;
-
-                if (modelPart is Beam beam)
+                try
                 {
-
-                    startPt = ToArray(beam.StartPoint);
-                    endPt = ToArray(beam.EndPoint);
-                    var cs = beam.GetCoordinateSystem();
-                    csOrigin = ToArray(cs.Origin);
-                    axisX = ToArray(cs.AxisX);
-                    axisY = ToArray(cs.AxisY);
-                    name = beam.Name;
-                    profile = beam.Profile.ProfileString;
-                    material = beam.Material.MaterialString;
-                    var solid = beam.GetSolid();
-                    if (solid != null)
+                    var id = new Identifier(modelId);
+                    var modelPart = _model.SelectModelObject(id) as ModelPart;
+                    if (modelPart == null)
                     {
-                        bboxMin = ToArray(solid.MinimumPoint);
-                        bboxMax = ToArray(solid.MaximumPoint);
-                        var snapshot = SolidViewVertexCollector.Collect(solid);
-                        solidGeometryComplete = snapshot.IsComplete;
-                        if (solidGeometryComplete)
+                        results.Add(Fail(viewId, modelId, "the view names it but the model does not have it as a part"));
+                        continue;
+                    }
+                    modelPart.Select(); // required for GetReportProperty to work
+
+                    double[] startPt = [], endPt = [], axisX = [], axisY = [], csOrigin = [];
+
+                    string typeName = modelPart.GetType().Name;
+
+                    string name = string.Empty, partPos = string.Empty, profile = string.Empty, material = string.Empty;
+                    double[] bboxMin = [], bboxMax = [];
+                    List<double[]> solidVertices = new();
+                    List<double[]> viewHull = new();
+                    var solidGeometryComplete = false;
+
+                    if (modelPart is Beam beam)
+                    {
+
+                        startPt = ToArray(beam.StartPoint);
+                        endPt = ToArray(beam.EndPoint);
+                        var cs = beam.GetCoordinateSystem();
+                        csOrigin = ToArray(cs.Origin);
+                        axisX = ToArray(cs.AxisX);
+                        axisY = ToArray(cs.AxisY);
+                        name = beam.Name;
+                        profile = beam.Profile.ProfileString;
+                        material = beam.Material.MaterialString;
+                        var solid = beam.GetSolid();
+                        if (solid != null)
                         {
-                            solidVertices = snapshot.Vertices;
-                            viewHull = PartViewGeometryBuilder.BuildHull(snapshot.Vertices);
+                            bboxMin = ToArray(solid.MinimumPoint);
+                            bboxMax = ToArray(solid.MaximumPoint);
+                            var snapshot = SolidViewVertexCollector.Collect(solid);
+                            solidGeometryComplete = snapshot.IsComplete;
+                            if (solidGeometryComplete)
+                            {
+                                solidVertices = snapshot.Vertices;
+                                viewHull = PartViewGeometryBuilder.BuildHull(snapshot.Vertices);
+                            }
                         }
+
+                        //var rect1 = new Rectangle(view, solid.MinimumPoint, solid.MaximumPoint);
+                        //rect1.Attributes.Line.Color = DrawingColors.Magenta;
+                        //rect1.Insert();
+
+                    }
+                    else if (modelPart is ModelPart part)
+                    {
+                        var cs = part.GetCoordinateSystem();
+                        startPt = ToArray(cs.Origin);
+                        csOrigin = ToArray(cs.Origin);
+                        axisX = ToArray(cs.AxisX);
+                        axisY = ToArray(cs.AxisY);
+                        name = part.Name;
+                        var solid = part.GetSolid();
+                        if (solid != null)
+                        {
+                            bboxMin = ToArray(solid.MinimumPoint);
+                            bboxMax = ToArray(solid.MaximumPoint);
+                            var snapshot = SolidViewVertexCollector.Collect(solid);
+                            solidGeometryComplete = snapshot.IsComplete;
+                            if (solidGeometryComplete)
+                            {
+                                solidVertices = snapshot.Vertices;
+                                viewHull = PartViewGeometryBuilder.BuildHull(snapshot.Vertices);
+                            }
+                        }
+                        part.GetReportProperty("PROFILE", ref profile);
+                        part.GetReportProperty("MATERIAL", ref material);
                     }
 
-                    //var rect1 = new Rectangle(view, solid.MinimumPoint, solid.MaximumPoint);
-                    //rect1.Attributes.Line.Color = DrawingColors.Magenta;
-                    //rect1.Insert();
+                    modelPart.GetReportProperty("PART_POS", ref partPos);
+                    int materialType = -1;
+                    modelPart.GetReportProperty("MATERIAL_TYPE", ref materialType);
+                    if (materialType == -1)
+                        materialType = InferMaterialType(material);
 
-                }
-                else if (modelPart is ModelPart part)
-                {
-                    var cs = part.GetCoordinateSystem();
-                    startPt = ToArray(cs.Origin);
-                    csOrigin = ToArray(cs.Origin);
-                    axisX = ToArray(cs.AxisX);
-                    axisY = ToArray(cs.AxisY);
-                    name = part.Name;
-                    var solid = part.GetSolid();
-                    if (solid != null)
+                    string partPrefix = string.Empty;
+                    modelPart.GetReportProperty("PART_PREFIX", ref partPrefix);
+
+                    results.Add(new PartInView
                     {
-                        bboxMin = ToArray(solid.MinimumPoint);
-                        bboxMax = ToArray(solid.MaximumPoint);
-                        var snapshot = SolidViewVertexCollector.Collect(solid);
-                        solidGeometryComplete = snapshot.IsComplete;
-                        if (solidGeometryComplete)
-                        {
-                            solidVertices = snapshot.Vertices;
-                            viewHull = PartViewGeometryBuilder.BuildHull(snapshot.Vertices);
-                        }
-                    }
-                    part.GetReportProperty("PROFILE", ref profile);
-                    part.GetReportProperty("MATERIAL", ref material);
+                        Success = true,
+                        ViewId = viewId,
+                        ModelId = modelId,
+                        StartPoint = startPt,
+                        EndPoint = endPt,
+                        CoordinateSystemOrigin = csOrigin,
+                        AxisX = axisX,
+                        AxisY = axisY,
+                        BboxMin = bboxMin,
+                        BboxMax = bboxMax,
+                        SolidVertices = solidVertices,
+                        ViewHull = viewHull,
+                        SolidGeometryComplete = solidGeometryComplete,
+                        Type = typeName,
+                        Name = name,
+                        PartPos = partPos,
+                        Profile = profile,
+                        Material = material,
+                        MaterialType = materialType,
+                        PartPrefix = partPrefix,
+
+                        // Classified here, where the properties it reads have just been read,
+                        // so every consumer sees the same answer instead of working it out
+                        // again and differently.
+                        Role = RoleClassifier.ClassifyProperties(partPrefix, profile, material, materialType, name)
+                    });
                 }
-
-                modelPart.GetReportProperty("PART_POS", ref partPos);
-                int materialType = -1;
-                modelPart.GetReportProperty("MATERIAL_TYPE", ref materialType);
-                if (materialType == -1)
-                    materialType = InferMaterialType(material);
-
-                string partPrefix = string.Empty;
-                modelPart.GetReportProperty("PART_PREFIX", ref partPrefix);
-
-                results.Add(new PartInView
+                catch (Exception exception)
                 {
-                    Success = true,
-                    ViewId = viewId,
-                    ModelId = modelId,
-                    StartPoint = startPt,
-                    EndPoint = endPt,
-                    CoordinateSystemOrigin = csOrigin,
-                    AxisX = axisX,
-                    AxisY = axisY,
-                    BboxMin = bboxMin,
-                    BboxMax = bboxMax,
-                    SolidVertices = solidVertices,
-                    ViewHull = viewHull,
-                    SolidGeometryComplete = solidGeometryComplete,
-                    Type = typeName,
-                    Name = name,
-                    PartPos = partPos,
-                    Profile = profile,
-                    Material = material,
-                    MaterialType = materialType,
-                    PartPrefix = partPrefix,
-
-                    // Classified here, where the properties it reads have just been read,
-                    // so every consumer sees the same answer instead of working it out
-                    // again and differently.
-                    Role = RoleClassifier.ClassifyProperties(partPrefix, profile, material, materialType, name)
-                });
+                    results.Add(Fail(viewId, modelId, exception.Message));
+                }
             }
         }
         finally
@@ -187,7 +206,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 $"viewId={viewId} parts={results.Count}");
         }
 
-        DrawingPartGeometryCache.StoreAll(activeDrawing, view, viewId, results);
+        DrawingPartGeometryCache.StoreAll(activeDrawing, view, viewId, depthWindow, results);
         return results;
     }
 
@@ -212,7 +231,8 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
         if (view == null)
             return Fail(viewId, modelId, $"View {viewId} not found in active drawing.");
 
-        if (DrawingPartGeometryCache.TryGetPart(activeDrawing, view, viewId, modelId, out var cachedResult))
+        var depthWindow = ViewDepthWindow.Read(_model, view);
+        if (DrawingPartGeometryCache.TryGetPart(activeDrawing, view, viewId, modelId, depthWindow, out var cachedResult))
             return cachedResult;
 
         // Pattern from ObjectDimensioningCreator:
@@ -298,7 +318,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
                 ViewHull = viewHull,
                 SolidGeometryComplete = solidGeometryComplete
             };
-            DrawingPartGeometryCache.StorePart(activeDrawing, view, viewId, result);
+            DrawingPartGeometryCache.StorePart(activeDrawing, view, viewId, depthWindow, result);
             return result;
         }
         finally

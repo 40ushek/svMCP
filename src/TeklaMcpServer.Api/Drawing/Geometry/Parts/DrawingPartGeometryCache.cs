@@ -22,9 +22,10 @@ internal static class DrawingPartGeometryCache
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
+        ViewDepthWindow depthWindow,
         out List<PartInView> results)
     {
-        var key = BuildKey(drawing, view, viewId);
+        var key = BuildKey(drawing, view, viewId, depthWindow);
         if (key == null)
         {
             results = new();
@@ -52,9 +53,10 @@ internal static class DrawingPartGeometryCache
         View view,
         int viewId,
         int modelId,
+        ViewDepthWindow depthWindow,
         out PartInView result)
     {
-        var key = BuildKey(drawing, view, viewId);
+        var key = BuildKey(drawing, view, viewId, depthWindow);
         if (key == null)
         {
             result = new();
@@ -89,9 +91,10 @@ internal static class DrawingPartGeometryCache
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
+        ViewDepthWindow depthWindow,
         IReadOnlyList<PartInView> results)
     {
-        var key = BuildKey(drawing, view, viewId);
+        var key = BuildKey(drawing, view, viewId, depthWindow);
         if (key == null)
             return;
 
@@ -109,9 +112,10 @@ internal static class DrawingPartGeometryCache
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
         int viewId,
+        ViewDepthWindow depthWindow,
         PartInView result)
     {
-        var key = BuildKey(drawing, view, viewId);
+        var key = BuildKey(drawing, view, viewId, depthWindow);
         if (key == null)
             return;
 
@@ -166,18 +170,20 @@ internal static class DrawingPartGeometryCache
     private static string? BuildKey(
         Tekla.Structures.Drawing.Drawing drawing,
         View view,
-        int viewId)
+        int viewId,
+        ViewDepthWindow depthWindow)
     {
         try
         {
             var drawingId = drawing.GetIdentifier().ID;
             var cs = view.ViewCoordinateSystem;
-            if (drawingId <= 0 || viewId <= 0 || cs == null)
+            if (drawingId <= 0 || viewId <= 0 || cs == null || !depthWindow.IsUsable)
                 return null;
+            var restrictionBox = depthWindow.Box!.Value;
 
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "d={0}|v={1}|status={2}|type={3}|scale={4:R}|origin={5:R},{6:R}|csO={7:R},{8:R},{9:R}|csX={10:R},{11:R},{12:R}|csY={13:R},{14:R},{15:R}",
+                "d={0}|v={1}|status={2}|type={3}|scale={4:R}|origin={5:R},{6:R}|csO={7:R},{8:R},{9:R}|csX={10:R},{11:R},{12:R}|csY={13:R},{14:R},{15:R}|box={16:R},{17:R},{18:R},{19:R},{20:R},{21:R}",
                 drawingId,
                 viewId,
                 drawing.UpToDateStatus,
@@ -193,7 +199,13 @@ internal static class DrawingPartGeometryCache
                 cs.AxisX.Z,
                 cs.AxisY.X,
                 cs.AxisY.Y,
-                cs.AxisY.Z);
+                cs.AxisY.Z,
+                restrictionBox.MinX,
+                restrictionBox.MinY,
+                restrictionBox.MinZ,
+                restrictionBox.MaxX,
+                restrictionBox.MaxY,
+                restrictionBox.MaxZ);
         }
         catch
         {

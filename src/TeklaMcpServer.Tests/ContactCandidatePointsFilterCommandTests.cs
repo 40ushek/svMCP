@@ -31,6 +31,8 @@ public sealed class ContactCandidatePointsFilterCommandTests
 
         Assert.Contains("restricted = result.Restricted", text);
         Assert.Contains("notVisibleRequestedIds = result.NotVisibleRequestedIds", text);
+        Assert.Contains("outsideDepthRequestedIds = result.OutsideDepthRequestedIds", text);
+        Assert.Contains("unresolvedDepthRequestedIds = result.UnresolvedDepthRequestedIds", text);
     }
 
     [Fact]

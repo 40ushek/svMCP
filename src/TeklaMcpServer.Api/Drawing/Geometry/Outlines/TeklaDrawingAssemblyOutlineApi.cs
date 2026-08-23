@@ -48,7 +48,7 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
                 "(different parts, different bolts) returned byte-identical coordinates.");
         }
 
-        var visible = DrawingViewParts.VisibleModelIds(view).ToList();
+        var visible = DrawingViewParts.CandidateModelIds(view).ToList();
 
         // A caller's list is narrowed to what the view actually draws. Asking for a part
         // the view hides would otherwise put geometry into an outline of a drawing that
@@ -146,5 +146,5 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
     /// base view) and must not be reused here.
     /// </summary>
     internal static bool LooksAlongMemberLength(View.ViewTypes viewType) =>
-        viewType is View.ViewTypes.SectionView or View.ViewTypes.EndView;
+        DrawingViewParts.LooksAlongMemberLength(viewType);
 }

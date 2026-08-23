@@ -24,6 +24,12 @@ internal static class Program
         var info = model.GetInfo();
         Console.WriteLine($"Connected: {info.ModelName}  ({info.ModelPath})");
 
+        if (ShouldRunViewRelatedObjectsProbe(args))
+        {
+            RunViewRelatedObjectsProbe();
+            return;
+        }
+
         SolidContacts.ContactProbe.Run();
         Console.ReadLine();
         return;
@@ -50,6 +56,29 @@ internal static class Program
         }
 
         return false;
+    }
+
+    private static bool ShouldRunViewRelatedObjectsProbe(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--view-related-objects-probe", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void RunViewRelatedObjectsProbe()
+    {
+        try
+        {
+            new DrawingViewRelatedObjectsProbe().Run();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"View related-objects probe failed: {ex.Message}");
+        }
     }
 
     private static void RunRestrictionBoxProbe()

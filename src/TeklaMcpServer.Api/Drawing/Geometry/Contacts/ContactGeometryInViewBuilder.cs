@@ -68,6 +68,7 @@ public static class ContactGeometryInViewBuilder
 
         return new ViewContactGeometryResult(
             contacts.ViewId, shapes, unflattened, contacts.Unread, contacts.IsComplete, contacts.Error,
-            contacts.Restricted, contacts.RequestedIds, contacts.NotVisibleRequestedIds);
+            contacts.Restricted, contacts.RequestedIds, contacts.NotVisibleRequestedIds,
+            contacts.OutsideDepthRequestedIds, contacts.UnresolvedDepthRequestedIds);
     }
 }

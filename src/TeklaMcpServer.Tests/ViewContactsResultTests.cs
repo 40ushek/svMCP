@@ -92,6 +92,45 @@ public sealed class ViewContactsResultTests
     }
 
     [Fact]
+    public void APartWhoseDepthCouldNotBeReadMakesTheSearchIncompleteBeforeSolidReads()
+    {
+        var reader = new Reader().Returns(10, Slab(10, 0, 50)).Returns(11, Slab(11, 50, 100));
+
+        var result = TeklaDrawingViewContactApi.Build(
+            1,
+            [10, 11],
+            reader,
+            new ContactOptions(),
+            selectionUnread: [new UnreadPart(12, "RestrictionBox could not be read")]);
+
+        Assert.Equal([10, 11], result.RequestedIds);
+        Assert.Contains(result.Unread, part => part.ModelId == 12 && part.Reason.Contains("RestrictionBox"));
+        Assert.False(result.IsComplete);
+    }
+
+    [Fact]
+    public void DepthOutcomesRemainDistinctFromPartsThatAreNotDrawn()
+    {
+        var reader = new Reader().Returns(10, Slab(10, 0, 50)).Returns(11, Slab(11, 50, 100));
+
+        var result = TeklaDrawingViewContactApi.Build(
+            1,
+            [10, 11],
+            reader,
+            new ContactOptions(),
+            restricted: true,
+            outsideDepthRequestedIds: [12],
+            unresolvedDepthRequestedIds: [13],
+            selectionUnread: [new UnreadPart(13, "depth=BoundaryAmbiguous")]);
+
+        Assert.Empty(result.NotVisibleRequestedIds);
+        Assert.Equal([12], result.OutsideDepthRequestedIds);
+        Assert.Equal([13], result.UnresolvedDepthRequestedIds);
+        Assert.False(result.SelectionComplete);
+        Assert.False(result.IsComplete);
+    }
+
+    [Fact]
     public void RequestedPartsRemainVisibleWhenOneNeverReachesTheGraph()
     {
         var reader = new Reader().Returns(10, Slab(10, 0, 50)).Fails(11, "solid unavailable");

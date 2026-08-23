@@ -23,7 +23,9 @@ public sealed class ViewContactsResult
         string? error = null,
         IReadOnlyList<int>? requestedIds = null,
         bool restricted = false,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthRequestedIds = null,
+        IReadOnlyList<int>? unresolvedDepthRequestedIds = null)
     {
         ViewId = viewId;
         Graph = graph;
@@ -32,6 +34,8 @@ public sealed class ViewContactsResult
         RequestedIds = requestedIds?.Distinct().ToArray() ?? Array.Empty<int>();
         Restricted = restricted;
         NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
+        OutsideDepthRequestedIds = outsideDepthRequestedIds ?? Array.Empty<int>();
+        UnresolvedDepthRequestedIds = unresolvedDepthRequestedIds ?? Array.Empty<int>();
     }
 
     public int ViewId { get; }
@@ -76,6 +80,21 @@ public sealed class ViewContactsResult
     public IReadOnlyList<int> NotVisibleRequestedIds { get; }
 
     /// <summary>
+    /// Ids that the drawing object enumerator named, but whose solid box is definitely
+    /// disjoint from this section/end view's restriction volume. This is intentionally not
+    /// merged with <see cref="NotVisibleRequestedIds"/>: the first is an observed drawing
+    /// fact, this one is a depth-filtering conclusion.
+    /// </summary>
+    public IReadOnlyList<int> OutsideDepthRequestedIds { get; }
+
+    /// <summary>
+    /// Ids whose depth could not be confirmed: an invalid box, a read failure, or a boundary
+    /// touch. A positive-volume AABB overlap is a confirmed include, not this - it lands in
+    /// the search directly. They were not searched and must not be read as absent.
+    /// </summary>
+    public IReadOnlyList<int> UnresolvedDepthRequestedIds { get; }
+
+    /// <summary>
     /// True when every part in the requested scope was read and every pair among them
     /// searched - the whole view when <see cref="Restricted"/> is false, only the named
     /// parts when it is true. Only then does the absence of a contact mean anything, and
@@ -97,7 +116,10 @@ public sealed class ViewContactsResult
     /// <see cref="ViewAssemblyOutlineResult.SelectionComplete"/> exists for on the outline
     /// side of this same problem.
     /// </summary>
-    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
+    public bool SelectionComplete =>
+        NotVisibleRequestedIds.Count == 0 &&
+        OutsideDepthRequestedIds.Count == 0 &&
+        UnresolvedDepthRequestedIds.Count == 0;
 
     public override string ToString() =>
         Error != null
