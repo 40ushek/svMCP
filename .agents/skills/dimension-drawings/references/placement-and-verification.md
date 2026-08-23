@@ -30,6 +30,42 @@ delete in a placement run.
   hung in open space; a person looking at the sheet caught it, the write and
   read-back both reported success. Read each point's own Y (or X, for a
   vertical chain) from its own position in the response before creating.
+- **This applies to the cross-axis coordinate too, not just the chain axis.**
+  A `StraightDimensionSet`'s points do **not** need to share the cross-axis
+  coordinate (Y, for a horizontal chain) with each other - each point only
+  needs its own coordinate pair to be a real vertex of its own part. Do not
+  default the cross-axis coordinate to 0 or to a centreline just because it
+  is a convenient constant shared by every point; read it per point, the same
+  as the chain axis. Measured on M.16, SectionView `2152`: a horizontal chain
+  (230/130/-120/-130 in X) held Y=0 for all four points; X=130 at Y=0 falls
+  between an I-profile's flanges, where there is no material at all, not on a
+  line - Tekla flagged it. The fix used each part's own real corner Y (plate
+  top/bottom Y=±140, column top/bottom Y=±130) - confirmed again on the same
+  drawing's views `1641` and `1408`, where a correct horizontal chain's four
+  points carry four different Y values, one per real vertex.
+- **A small real step between two parts' edges makes the connecting segment
+  hug the part's own corner - that is correct, not an overlap bug.** When
+  adjacent chain points come from different parts whose edges differ by only
+  a few mm (one part overhangs the other slightly), the dimension jogs there,
+  and the jog sits right next to the real corner - it can look like the
+  dimension is drawn on top of the part outline. Before treating this as
+  wrong, confirm both points against `get_all_parts_geometry_in_view`'s
+  `viewHull`/`solidVertices` (ground truth, not the derived chain). Measured
+  on M.16, SectionView `2152`: column (HEB260) edge at X=-130, base plate
+  (BLE30×280) edge at X=-120 - a real 10 mm overhang, not a coordinate error.
+  `get_dimension_chain_coverage`'s reliability is unresolved (see
+  `steel-rules.md`, Checks) - do not depend on it; confirm against
+  `get_all_parts_geometry_in_view` instead.
+- **For a profiled beam (I/H-section etc.), `viewHull`/the structural-chain
+  extent is the part's bounding box, not its true cross-section polygon.**
+  Fillets between web and flange, and any other curve inside the box, are not
+  modelled - a "corner" from this data is a box corner, not necessarily a
+  point on the real drawn contour. Tekla's own pink "unresolved point"
+  warning can still appear on a box-corner point that is otherwise correctly
+  read, when the true section has a fillet near that spot. This is a tool
+  gap, not a wrong point choice - do not try to "fix" it by guessing a
+  different coordinate. Measured on M.16, SectionView `2152` (HEB260 web
+  fillet near the flange tip).
 
 ## Placement facts
 

@@ -1,11 +1,12 @@
 # Section and end view geometry
 
 Two separate bugs turned out to share one cause: nothing in this codebase asks
-a `SectionView` or `EndView` *where along the member's length* it is. One bug
-now has an explicitly broad-phase implementation: positive-volume overlap of
-view-aligned solid and restriction boxes includes the part, while a boundary
-touch stays unresolved. The other was investigated in depth and deliberately
-not fixed - kept as a record, not a plan.
+a `SectionView` or `EndView` *where along the member's length* it is. Part
+selection now uses an explicitly broad-phase implementation: positive-volume
+overlap of view-aligned solid and restriction boxes includes the part, while a
+boundary touch stays unresolved. Outline construction uses that same selected
+set; it still projects each selected full solid without an exact 3D clip. That
+remaining limit is explicit below.
 
 ## Bug 1 (implemented conservatively): the part list itself was wrong
 
@@ -150,8 +151,7 @@ GetDepthFilteredParts(Model model, View view)   // depth-aware answer
 For a base-projected view it returns exactly that list with an empty
 `Unread`, at the cost of one unused `Model` parameter - no plane switch, no
 solid read, same cost as today. Only for `SectionView`/`EndView`
-(`LooksAlongMemberLength(view.ViewType)` - see Bug 2 for where that check
-already lives) does it go further:
+(`DrawingViewParts.LooksAlongMemberLength(view.ViewType)`) does it go further:
 
 - **Same plane discipline as every existing solid read, not a new one.**
   Guard with `DrawingViewPlane.IsModelPlane(view.ViewCoordinateSystem)`
@@ -211,12 +211,12 @@ view membership at all, by design: a caller that already names a part is
 presumed to have a reason, and enforcing view membership there would change
 what that method is for.
 
-It does **not** touch `get_structural_chain_positions`/`get_assembly_outline`'s
-own fail-closed gate - correct, because Bug 2's flatten-without-clip problem
-is still real and that gate still guards it. A correct part list does not
-make `ProjectedOutlineBuilder.BuildPart` clip a beam's full-length solid to
-one cross-section; it only makes sure the *count* of parts offered to it is
-right. The two bugs share a cause, not a fix.
+`get_structural_chain_positions` and `get_assembly_outline` now use this same
+depth-filtered result. A correct part list still does not make
+`ProjectedOutlineBuilder.BuildPart` clip a beam's full-length solid to one
+cross-section; it changes the question from "all assembly parts" to "the parts
+this view actually contains". The remaining projection limit is documented as
+Bug 2 below and is not presented as exact renderer visibility.
 
 **Caching.** `ViewDepthWindow.Read` captures `RestrictionBox` once under the
 view transformation plane before `TryGetAll`. That immutable snapshot is
@@ -235,49 +235,88 @@ wrapper - a throwaway probe belongs in `TeklaMcpServer.Host`, this
 project's own local/debug utility, not in the bridge's command switch. Note
 for next time rather than a live problem now.
 
-## Bug 2 (investigated, not fixed): outline geometry has no concept of depth
+## Bug 2 (bounded, not exact): selected solids are projected without 3D clipping
 
-`get_structural_chain_positions` on a section/end view does not just list the
-wrong parts - the *shape* it would compute for a correctly-listed part is
-also wrong, because `ProjectedOutlineBuilder.BuildPart` (`SolidContacts.Core`)
-flattens a face's loop by keeping only X/Y and dropping Z outright, with no
-clipping. Correct for an elevation or plan, where nothing meaningful varies
-along the short depth axis. Wrong here, where the depth axis is the member's
-length - flattening a beam's full uncut solid along it collapses every
-cross-section into the same silhouette regardless of where the section is.
+`ProjectedOutlineBuilder.BuildPart` (`SolidContacts.Core`) flattens a selected
+solid's face loops by keeping X/Y and dropping Z, with no 3D clipping. The
+depth filter fixes which solids reach that projection. It does not make the
+result an exact clipped silhouette when one selected solid changes along the
+depth axis.
 
-Confirmed on `M.505`: three distinct cuts - A-A (base plate, four bolts), B-B
-(far plate, none), C-C (a rib pair) - returned byte-identical coordinates
-from `get_structural_chain_positions`, to the decimal, before this was
-gated off.
+Before depth-aware selection, `M.505`'s distinct cuts - A-A (base plate, four
+bolts), B-B (far plate, none), C-C (a rib pair) - returned byte-identical
+coordinates from `get_structural_chain_positions`, to the decimal. At that
+point each read started with all nine assembly parts, so that observation did
+not distinguish the bad part list from the remaining full-solid projection
+limit.
 
 `View.ViewTypes.EndView` is bucketed under `ViewSemanticKind.BaseProjected`
 by `ViewSemanticClassifier` - correct for the layout question that
 classifier answers (does fit-to-sheet treat it as a base view), wrong for
-this one. The two questions must not share a check; see
-`TeklaDrawingAssemblyOutlineApi.LooksAlongMemberLength`, added for this
-reason and reused by Bug 1's design above.
+this one. The two questions must not share a check; the depth filter uses
+`DrawingViewParts.LooksAlongMemberLength` for this reason.
 
-### Shipped: fail-closed, and it stays
+### Shipped: the blanket refusal was removed after depth selection
 
-`TeklaDrawingAssemblyOutlineApi.GetAssemblyOutline` refuses
-(`Unavailable`, not a silent wrong answer) when
-`LooksAlongMemberLength(view.ViewType)` is true. Covered by
-`TeklaDrawingAssemblyOutlineApiTests.OnlyViewsLookingDownTheMemberAreRefused`
-(a real unit test - `View.ViewTypes` is a plain enum, needs no live Tekla).
+`TeklaDrawingAssemblyOutlineApi.GetAssemblyOutline` now calls
+`DrawingViewParts.GetDepthFilteredParts` before reading any face. It exposes
+`outsideDepthModelIds` and `unresolvedDepthModelIds` in its bridge result, so
+the direct outline path cannot silently return the nine drawing-database
+candidates again. `get_structural_chain_positions` reaches it through the same
+role-selected ids.
 
-### Decided: not worth fixing
+Live check on 23 August 2026, `M.505` / `EndView` `1709`:
 
-A real fix was designed and reasoned all the way through against the
-installed API (2025.0), then deliberately not built, because the need
-behind it turned out not to exist. What a section view actually needs
-dimensioned - on `M.505`, four bolts in a plate at A-A, nothing at B-B/C-C
-beyond marks already carrying every length - comes from contacts and
-per-part geometry (`get_contact_candidate_points`, `get_part_geometry_in_view`,
-correctly scoped once Bug 1's design is built), not from a true cut
-silhouette. Nothing in this skill's dimensioning loop has needed the
-flattened 2D shape of a cross-section itself; that need was assumed, not
-observed.
+- `get_assembly_outline 1709`: `visibleCount=2`, part outlines only for
+  `P/5005` / model `9532104` and `P/5010` / model `10104380`; the other seven
+  candidates appear in `outsideDepthModelIds`.
+- `get_structural_chain_positions 1709`: succeeds with exactly those two
+  included source ids, no issues, and extent `x=-130..130`, `y=-170..170`.
+  That is consistent with the visible `260 × 340` end plate.
+
+That validation read did not create a dimension. Later placement on this view
+must be recorded separately; it is not evidence that every end or section view
+is safe to dimension.
+
+### Open gap: no signal when an included solid outgrows the window
+
+The depth filter's own broad phase (`DepthBoxRelation.Overlaps`) is written
+to *include* a solid whose own extent runs past the `RestrictionBox` on the
+depth axis - that is deliberate, confirmed by
+`ALongMemberSpanningTheWindowIsNotRejectedForHavingEndpointsOutsideIt`, and
+is exactly right for part *selection*: a member genuinely cut mid-span must
+still be in the list.
+
+But `Build()` in `TeklaDrawingAssemblyOutlineApi.cs` then hands every
+included part's full, unclipped solid straight to
+`ProjectedOutlineBuilder.BuildPart` with no further check. For a part fully
+inside the window the flattened projection equals the true cut - on
+M.505/1709 the result is visually consistent with the drawn view, but
+containment itself was never checked, because nothing in this code computes
+it. For a member whose solid actually extends past the window on the depth
+axis - the
+same case the broad phase was written to keep in the list - the projection
+is the member's whole silhouette, not the shape at the cut, and nothing in
+`ViewAssemblyOutlineResult` says so: no field distinguishes "solid confirmed
+inside the window" from "solid included but reaches past it." This is a
+silent-wrong-answer gap of exactly the kind the rest of this fix exists to
+close, currently open only because no live case has hit it yet.
+
+The fix, not yet built: compare each included solid's own depth-axis extent
+against the same `RestrictionBox` snapshot already read once per call via
+`ViewDepthWindow`, and report a part whose extent is not fully contained
+(e.g. a new `ProjectionExceedsDepthWindow`-style list) rather than folding it
+into a plain `Included`. This is bookkeeping over data already read, not the
+6-sided Boolean clip deferred below - do not conflate the two when picking
+this back up.
+
+### Exact clipping remains deliberately deferred
+
+An exact renderer-equivalent fix was designed and reasoned through against the
+installed API (2025.0), but is not built. It is only needed when a selected
+solid's projection can differ materially from the actual thin cut; the live
+`1709` result is a successful end-view validation, not proof for every
+section, raked member, or changing profile.
 
 The designed fix, kept as a record in case the need ever does show up (a
 genuine reason to draw a cut's own contour - a profile's fillet on a detail
@@ -315,13 +354,16 @@ view, say):
   sibling anywhere - checked `View`, `SectionMark`, and their internal
   structs (`dotGrView_t`, `dotGrSectionMarkAttributes_t`) field by field.
 
-Do not build this without a concrete need in hand.
+Build this only after a concrete counterexample shows the selected-solid
+projection is insufficient. The likely refinement is a plane cut for the
+particular dimensioning need, not a claim that it reproduces the full six-plane
+`RestrictionBox` clip.
 
 ## Status
 
 Bug 1 is implemented conservatively and verified live on the original
-axis-aligned case: `M.505`, view `1709`, still returns only `P/5010` and
-`P/5005`; its unrestricted contact search names the same pair.
+axis-aligned case: `M.505`, view `1709`, returns only `P/5010` and `P/5005`
+through geometry, contacts, and outline/structural-chain paths.
 
 The implemented guard is intentionally not an exact solid-vs-box Boolean:
 it includes positive-volume overlap between the view-local AABB of a solid and
@@ -332,4 +374,14 @@ heavily cut part whose view-local AABB overlaps the window while its real
 solid does not; that is an accepted, documented trade-off for now. A live
 raked or inclined example remains required before relying on it more broadly.
 
-Bug 2's fail-closed gate stays as the permanent answer, not an interim one.
+Bug 2 no longer has a blanket gate. Its remaining full-solid-projection limit
+is accepted for the validated end-view case and must be rechecked before
+relying on it for a section whose selected part changes along the depth axis.
+Concretely: a member the broad phase correctly keeps *in* the part list
+because it spans the window (by design - see the long-member test) currently
+gets its whole, unclipped silhouette projected with no flag saying so - see
+"Open gap" above. Close that before trusting `get_assembly_outline`/
+`get_structural_chain_positions` on a section that cuts a continuous member
+mid-span - M.505/1709's result only looked visually consistent with the
+drawn view; whether its two parts actually sit fully inside the window was
+never checked, because nothing in this code computes that.

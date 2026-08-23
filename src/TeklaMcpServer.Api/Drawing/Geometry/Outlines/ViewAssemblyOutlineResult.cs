@@ -20,12 +20,16 @@ public sealed class ViewAssemblyOutlineResult
         bool restricted = false,
         int visibleCount = 0,
         IReadOnlyList<int>? requestedIds = null,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthModelIds = null,
+        IReadOnlyList<int>? unresolvedDepthModelIds = null)
     {
         Restricted = restricted;
         VisibleCount = visibleCount;
         RequestedIds = requestedIds ?? Array.Empty<int>();
         NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
+        OutsideDepthModelIds = outsideDepthModelIds ?? Array.Empty<int>();
+        UnresolvedDepthModelIds = unresolvedDepthModelIds ?? Array.Empty<int>();
         ViewId = viewId;
         AssemblyOutline = assemblyOutline;
         PartOutlines = partOutlines;
@@ -70,15 +74,31 @@ public sealed class ViewAssemblyOutlineResult
     public IReadOnlyList<int> NotVisibleRequestedIds { get; }
 
     /// <summary>
-    /// Whether every id asked for made it into the answer.
+    /// Parts named by the drawing-object enumerator but definitely outside this section/end
+    /// view's depth volume. They are distinct from parts that are hidden or absent from
+    /// the drawing, and are reported even for an unrestricted outline.
+    /// </summary>
+    public IReadOnlyList<int> OutsideDepthModelIds { get; }
+
+    /// <summary>
+    /// Parts whose depth relation could not be determined safely. Their detailed reason is
+    /// carried by <see cref="Unread"/>; this list makes selection incompleteness inspectable.
+    /// </summary>
+    public IReadOnlyList<int> UnresolvedDepthModelIds { get; }
+
+    /// <summary>
+    /// Whether every id asked for made it into the answer with a confirmed depth relation.
     ///
     /// Deliberately not folded into <see cref="IsComplete"/>. That one says the geometry of
     /// the parts used was read in full, which is a different claim: asking for two parts
     /// and getting a clean outline of the one the view draws is a complete read of an
-    /// incomplete selection, and reporting it as simply complete would hide the typo or the
-    /// stale id that caused it.
+    /// incomplete selection, and reporting it as simply complete would hide a typo, stale
+    /// id, depth exclusion, or unresolved depth relation.
     /// </summary>
-    public bool SelectionComplete => NotVisibleRequestedIds.Count == 0;
+    public bool SelectionComplete =>
+        NotVisibleRequestedIds.Count == 0 &&
+        !RequestedIds.Any(OutsideDepthModelIds.Contains) &&
+        !RequestedIds.Any(UnresolvedDepthModelIds.Contains);
 
     /// <summary>Absent view/drawing, distinct from a successfully read empty view.</summary>
     public string? Error { get; }

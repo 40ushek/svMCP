@@ -116,6 +116,16 @@ For each requested base view:
 positions from bounding boxes, axes, raw solid vertices, or contacts. Contacts
 can justify a retained position as a joint; they do not add coordinates.
 
+**What a dimension on this drawing is for.** Standard drafting practice splits every
+dimension into a **size dimension** ("how big is this feature") or a **location dimension**
+("where is it relative to something else"). An `AssemblyDrawing` exists to answer the second
+question - a part's own size already lives on its own single-part drawing. This is why the
+reference body below exists at all: a location dimension needs something to be *from*, and a
+number tied to nothing else is a size dimension standing where a location dimension belongs,
+however correct it is on its own. `steel-rules.md`'s inversion of check 1 below is this same
+principle read the other way: on a steel assembly, a part's own size is frequently *also* the
+distance to the next thing, so stating it is not restating - see that file for when.
+
 **The reference body.** Every assembly has one body that everything else is
 located against, and every chain closes on that body's extent along the chain's
 axis. Which body it is comes from the rule set - the main part on steel, the

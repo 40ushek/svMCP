@@ -7,28 +7,6 @@ namespace TeklaMcpServer.Tests;
 
 public sealed class TeklaDrawingAssemblyOutlineApiTests
 {
-    /// <summary>
-    /// `ProjectedOutlineBuilder.BuildPart` flattens a solid's faces to 2D by dropping Z
-    /// outright - correct for an elevation/plan, where nothing meaningful varies along the
-    /// short depth axis, but wrong for a view whose own depth axis runs along the member's
-    /// length, where positions genuinely differ by depth. Confirmed on M.505: three
-    /// distinct section/end views returned byte-identical coordinates before this gate.
-    /// `EndView` is deliberately included even though `ViewSemanticKind` buckets it under
-    /// `BaseProjected` for layout purposes - that answers a different question and must
-    /// not be reused here.
-    /// </summary>
-    [Theory]
-    [InlineData(View.ViewTypes.SectionView, true)]
-    [InlineData(View.ViewTypes.EndView, true)]
-    [InlineData(View.ViewTypes.FrontView, false)]
-    [InlineData(View.ViewTypes.TopView, false)]
-    [InlineData(View.ViewTypes.BackView, false)]
-    [InlineData(View.ViewTypes.BottomView, false)]
-    public void OnlyViewsLookingDownTheMemberAreRefused(View.ViewTypes viewType, bool expected)
-    {
-        Assert.Equal(expected, TeklaDrawingAssemblyOutlineApi.LooksAlongMemberLength(viewType));
-    }
-
     [Fact]
     public void BuildUnionsReadablePartOutlines()
     {
@@ -97,6 +75,25 @@ public sealed class TeklaDrawingAssemblyOutlineApiTests
 
         Assert.True(result.IsComplete);
         Assert.True(result.Restricted);
+    }
+
+    [Fact]
+    public void APartOutsideDepthIsReportedAndMakesOnlyThatRestrictedSelectionIncomplete()
+    {
+        var geometry = new StubSolidGeometryApi(Square(1, 1, 0, 0, 100, 100));
+
+        var result = TeklaDrawingAssemblyOutlineApi.Build(
+            1,
+            [1],
+            geometry,
+            restricted: true,
+            visibleCount: 1,
+            requestedIds: [1, 2],
+            outsideDepthModelIds: [2]);
+
+        Assert.Equal([2], result.OutsideDepthModelIds);
+        Assert.False(result.SelectionComplete);
+        Assert.True(result.IsComplete);
     }
 
     private static PartSolidGeometryInViewResult Square(int viewId, int modelId, double minX, double minY, double maxX, double maxY)

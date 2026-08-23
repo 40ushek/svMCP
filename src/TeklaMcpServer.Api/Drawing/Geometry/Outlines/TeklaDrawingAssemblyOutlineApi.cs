@@ -14,10 +14,12 @@ namespace TeklaMcpServer.Api.Drawing;
 /// </summary>
 public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
 {
+    private readonly Model _model;
     private readonly IDrawingPartSolidGeometryApi _solidGeometry;
 
     public TeklaDrawingAssemblyOutlineApi(Model model, IDrawingPartSolidGeometryApi? solidGeometry = null)
     {
+        _model = model;
         _solidGeometry = solidGeometry ?? new TeklaDrawingPartSolidGeometryApi(model);
     }
 
@@ -34,21 +36,8 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         if (view == null)
             return Unavailable(viewId, $"view {viewId} is not on the active drawing");
 
-        if (LooksAlongMemberLength(view.ViewType))
-        {
-            return Unavailable(
-                viewId,
-                $"view {viewId} is a {view.ViewType}: its depth axis runs along the " +
-                "member's own length, where positions actually differ. This builder " +
-                "flattens a solid's faces to 2D without clipping by depth (see " +
-                "ProjectedOutlineBuilder.BuildPart) - correct for an elevation/plan view, " +
-                "where nothing meaningful varies along the short depth axis, but wrong " +
-                "here: it would silently collapse every cross-section along the member " +
-                "into one shape. Confirmed on M.505 - three distinct section/end views " +
-                "(different parts, different bolts) returned byte-identical coordinates.");
-        }
-
-        var visible = DrawingViewParts.CandidateModelIds(view).ToList();
+        var selected = DrawingViewParts.GetDepthFilteredParts(_model, view);
+        var visible = selected.ModelIds;
 
         // A caller's list is narrowed to what the view actually draws. Asking for a part
         // the view hides would otherwise put geometry into an outline of a drawing that
@@ -57,9 +46,23 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             ? visible
             : visible.Where(modelIds.Contains).ToList();
 
-        var missing = modelIds == null
+        var requestedIds = modelIds?.ToArray();
+        var missing = requestedIds == null
             ? Array.Empty<int>()
-            : modelIds.Where(id => !visible.Contains(id)).ToArray();
+            : requestedIds.Where(id => !selected.CandidateModelIds.Contains(id)).ToArray();
+        var selectionUnread = requestedIds == null
+            ? selected.Incomplete
+            : selected.Incomplete.Where(part => requestedIds.Contains(part.ModelId));
+        var outsideDepth = requestedIds == null
+            ? selected.OutsideDepthModelIds
+            : selected.OutsideDepthModelIds.Where(requestedIds.Contains).ToArray();
+        var unresolvedDepth = requestedIds == null
+            ? selected.Incomplete.Select(part => part.ModelId).Distinct().ToArray()
+            : selected.Incomplete
+                .Where(part => requestedIds.Contains(part.ModelId))
+                .Select(part => part.ModelId)
+                .Distinct()
+                .ToArray();
 
         return Build(
             viewId,
@@ -68,8 +71,11 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             options,
             restricted: modelIds != null,
             visible.Count,
-            modelIds?.ToArray(),
-            missing);
+            requestedIds,
+            missing,
+            outsideDepth,
+            unresolvedDepth,
+            selectionUnread.ToList());
     }
 
     internal static ViewAssemblyOutlineResult Build(
@@ -80,10 +86,13 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         bool restricted = false,
         int visibleCount = 0,
         IReadOnlyList<int>? requestedIds = null,
-        IReadOnlyList<int>? notVisibleRequestedIds = null)
+        IReadOnlyList<int>? notVisibleRequestedIds = null,
+        IReadOnlyList<int>? outsideDepthModelIds = null,
+        IReadOnlyList<int>? unresolvedDepthModelIds = null,
+        IReadOnlyList<UnreadPart>? selectionUnread = null)
     {
         var partOutlines = new Dictionary<int, PolyTreeD>();
-        var unread = new List<UnreadPart>();
+        var unread = selectionUnread?.ToList() ?? new List<UnreadPart>();
 
         foreach (var modelId in modelIds)
         {
@@ -109,6 +118,17 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
                     continue;
                 }
 
+                // KNOWN GAP (see ROADMAP_SECTION_CROSS_SECTIONS.md, "Open gap: no signal
+                // when an included solid outgrows the window"): this flattens the part's
+                // FULL, unclipped solid. GetDepthFilteredParts deliberately includes a
+                // member whose solid runs past RestrictionBox on the depth axis (a
+                // mid-span section must still list it), but nothing here checks whether
+                // THIS solid's own extent stayed inside that box. For a part fully inside
+                // the window the projection is the true cut; for one that reaches past it,
+                // this silently returns the whole member's silhouette instead - and no
+                // field on the result says which happened. Not fixed here; do not treat an
+                // outline from a section/end view as a trustworthy cut shape without first
+                // closing this.
                 partOutlines.Add(modelId, ProjectedOutlineBuilder.BuildPart(solid));
             }
             catch (Exception exception)
@@ -126,7 +146,9 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             restricted,
             visibleCount,
             requestedIds,
-            notVisibleRequestedIds);
+            notVisibleRequestedIds,
+            outsideDepthModelIds,
+            unresolvedDepthModelIds);
     }
 
     private static ViewAssemblyOutlineResult Unavailable(int viewId, string reason) =>
@@ -137,14 +159,4 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             Array.Empty<UnreadPart>(),
             reason);
 
-    /// <summary>
-    /// True for the two Tekla view types whose own viewing direction runs down a member's
-    /// length rather than across its short cross-section - `SectionView` by definition, and
-    /// `EndView` because it looks straight down the part it ends. Both are classified
-    /// `BaseProjected` by <see cref="ViewLayout.ViewSemanticKind"/> for layout purposes, but
-    /// that classification answers a different question (does fit-to-sheet treat it as a
-    /// base view) and must not be reused here.
-    /// </summary>
-    internal static bool LooksAlongMemberLength(View.ViewTypes viewType) =>
-        DrawingViewParts.LooksAlongMemberLength(viewType);
 }

@@ -1008,25 +1008,7 @@ internal sealed partial class DrawingCommandHandler
         }
 
         var result = api.GetAssemblyOutline(viewId, options: null, modelIds);
-        WriteJson(new
-        {
-            success = result.Error == null,
-            viewId = result.ViewId,
-            isComplete = result.IsComplete,
-            restricted = result.Restricted,
-            selectionComplete = result.SelectionComplete,
-            visibleCount = result.VisibleCount,
-            requestedIds = result.RequestedIds,
-            notVisibleRequestedIds = result.NotVisibleRequestedIds,
-            error = result.Error,
-            assemblyOutline = result.AssemblyNodes,
-            partOutlines = result.PartNodes.Select(part => new
-            {
-                modelId = part.Key,
-                outline = part.Value
-            }),
-            unread = result.Unread.Select(part => new { modelId = part.ModelId, reason = part.Reason })
-        });
+        WriteJson(AssemblyOutlineResponse.From(result));
         return true;
     }
 
