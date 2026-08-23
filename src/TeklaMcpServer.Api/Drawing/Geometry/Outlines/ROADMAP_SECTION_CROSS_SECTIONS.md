@@ -2,11 +2,12 @@
 
 Two separate bugs turned out to share one cause: nothing in this codebase asks
 a `SectionView` or `EndView` *where along the member's length* it is. One bug
-has a design, confirmed against live data, not yet written - see Status for
-what "designed" does and does not mean here. The other was investigated in
-depth and deliberately not fixed - kept as a record, not a plan.
+now has an explicitly broad-phase implementation: positive-volume overlap of
+view-aligned solid and restriction boxes includes the part, while a boundary
+touch stays unresolved. The other was investigated in depth and deliberately
+not fixed - kept as a record, not a plan.
 
-## Bug 1 (designed, not yet built): the part list itself is wrong
+## Bug 1 (implemented conservatively): the part list itself was wrong
 
 `get_all_parts_geometry_in_view` / `get_drawing_view_context` on a section or
 end view return every part associated with the drawing, not the ones actually
@@ -21,13 +22,15 @@ Root cause: `Tekla.Structures.Drawing.Part.Hideable.IsHidden` is a manual
 the view's own depth window - Tekla's drawing engine clips that visually, at
 render time, without ever marking the part `IsHidden`.
 
-**Four call sites read "which parts are in this view," not one, and three of
-them share the same helper.** `DrawingViewParts.VisibleModelIds(View)` reads
+**Three call sites read "which parts are in this view," and two of them share
+the candidate helper.** `DrawingViewParts.CandidateModelIds(View)` reads
 `view.GetObjects()` and the `IsHidden` flag only - no `Solid`, no bbox
 (`TeklaMcpServer.Api/Drawing/Geometry/DrawingViewParts.cs`) - and is called
 directly by `TeklaDrawingViewContactApi.GetContactGraph` (behind
 `get_contact_candidate_points`) and `TeklaDrawingPartRoleApi.GetRolesInView`
-(behind `get_drawing_parts` and the role/structural-outline path).
+(behind the role/structural-outline path). `get_drawing_parts` is not a
+view reader: it deliberately returns all model objects referenced by the
+active drawing and accepts no `viewId`.
 `TeklaDrawingPartGeometryApi.GetAllPartsGeometryInView` (behind
 `get_all_parts_geometry_in_view` and, through `DrawingViewContextBuilder`,
 `get_drawing_view_context`) does not call the shared helper at all - it has
@@ -40,9 +43,54 @@ the other three - the ones `get_contact_candidate_points` and
 `get_drawing_parts` actually run on - answering from the same 9-of-9 list as
 before. Contacts on a section view is the specific thing the user asked for
 after "срезы солидов вообще не нужны"; a fix that leaves contacts unfixed
-does not close that. The depth check has to sit where all four can reach it,
-which means giving `DrawingViewParts` a second, depth-aware entry point
+does not close that. The depth check has to sit where all three can reach it,
+which means routing all three readers through one depth-aware entry point
 rather than only patching one caller.
+
+### Open API limitation and an API-native experiment (forum-confirmed)
+
+This is not an inference from our implementation. In the Tekla Structures
+Open API forum, Carlos Herrero (Open API Specialist, Product Development)
+states that `View.GetObjects()` returns the drawing-view database, not just
+objects rendered in the view, and that **Open API has no direct method that
+returns only visible parts**. The same answer was repeated for
+`GetModelObjects()`/`GetObjects()` in a second thread:
+
+- [View.GetObjects() (26–27 February 2025)](https://forum.tekla.com/topic/38026-viewgetobjects/)
+- [Get drawingparts in a view (29–30 April 2025)](https://forum.tekla.com/topic/38573-get-drawingparts-in-a-view/)
+
+The specialist's suggested workaround is to call `GetRelatedObjects()` for
+every drawing `Part` returned by `view.GetObjects()`; only visible parts are
+said to have related drawing objects. It is not documented as a complete
+renderer contract, and the original reporter said it was not accurate enough
+for their case. Therefore do **not** replace the depth result with it or call
+it an exact visibility API without a live test.
+
+**Live result — not a selection gate.** `DrawingViewRelatedObjectsProbe` in
+`TeklaMcpServer.Host` selects every drawing `Part` before reading its
+relations, then logs model id, `PART_POS`, `Hideable.IsHidden`, and the count
+and types from `GetRelatedObjects()`. It was run on 22 August 2026 with the
+header `View: id=1709, type=EndView`; this is the `M.505` view in question.
+`View.GetObjects()` returned these nine non-hidden parts:
+
+| Model id | Part position | `GetRelatedObjects()` |
+|---:|---|---|
+| 9532104 | `P/5005` — visible main beam | empty |
+| 10097493 | `P/5007` | empty |
+| 10097601 | `P/5007` | empty |
+| 10100321 | `P/5008` | empty |
+| 10100607 | `P/5007` | empty |
+| 10100714 | `P/5007` | empty |
+| 10104380 | `P/5010` — visible end plate | `Mark#1795` |
+| 10128715 | `P/5027` | empty |
+| 10128826 | `P/5027` | empty |
+
+The two sheet-visible parts are `P/5005` and `P/5010`; `P/5005` has no
+related object. Thus a non-empty relation is not necessary for a visible
+part and filtering on it would silently drop the main beam. Keep
+`GetRelatedObjects()` available only as a positive diagnostic signal; it is
+not an API-native visibility gate and must not replace the depth/solid
+selection.
 
 ### The fix, confirmed live
 
@@ -88,15 +136,17 @@ needs checking before it is trusted beyond that.
 
 ### Where it goes
 
-A second entry point on `DrawingViewParts`, alongside the existing one:
+The implemented entries on `DrawingViewParts` have deliberately different
+names so a cheap candidate enumeration cannot be mistaken for a visible-part
+answer:
 
 ```csharp
-VisibleModelIds(View view)                     // unchanged: IsHidden only
-VisibleModelIds(Model model, View view)         // new: IsHidden, then depth
-    -> DepthFilteredParts { ModelIds, Unread }
+CandidateModelIds(View view)                    // IsHidden only; not visibility
+GetDepthFilteredParts(Model model, View view)   // depth-aware answer
+    -> { ModelIds, OutsideDepthModelIds, BoundaryAmbiguous, Unread }
 ```
 
-The new overload starts from the same `view.GetObjects()`/`IsHidden` pass.
+`GetDepthFilteredParts` starts from the same `view.GetObjects()`/`IsHidden` pass.
 For a base-projected view it returns exactly that list with an empty
 `Unread`, at the cost of one unused `Model` parameter - no plane switch, no
 solid read, same cost as today. Only for `SectionView`/`EndView`
@@ -115,13 +165,18 @@ already lives) does it go further:
   *currently set* (a piece of global state), so **both must be read under
   the same, deliberately-set plane**: set
   `workPlaneHandler.SetCurrentTransformationPlane(new
-  TransformationPlane(view.ViewCoordinateSystem))` once, before reading
-  `view.RestrictionBox` *and* before the per-candidate `GetSolid()` bbox
-  reads that follow, and restore the original plane in `finally` - the same
-  save/switch/restore shape the existing readers already use, not a
-  second, independent implementation of it.
-- **Read `RestrictionBox` once**, after `view.Select()`, before the
-  candidate loop - not once per candidate.
+  TransformationPlane(view.ViewCoordinateSystem))` before `view.Select()`.
+  `ViewDepthWindow` then stores the one resulting `RestrictionBox` snapshot;
+  the candidate filter and cache key receive that same snapshot.
+- **Use a view-aligned broad phase deliberately.** With the model work plane
+  set to `view.ViewCoordinateSystem`, `solid.MinimumPoint`/`MaximumPoint` are
+  the solid's AABB in that same frame. Treating the two AABBs as OBBs with the
+  view axes would be mathematically identical; the code keeps the simpler
+  `DepthBox` comparison. A strictly disjoint box is `OutsideDepth`; a boundary
+  touch is `BoundaryAmbiguous`; positive-volume overlap is included. This is
+  deliberately allowed to produce a false include for a skewed, curved, or
+  heavily cut part. It must never be described as Tekla's exact renderer
+  visibility result.
 - **For each candidate, a read failure is not a silent answer either way.**
   `SelectModelObject`/`GetSolid()`/the bbox read can each throw. Treating a
   failure as "exclude" would produce a quiet false negative - a part
@@ -129,29 +184,27 @@ already lives) does it go further:
   produce a false positive dressed up as success. Neither is acceptable,
   which is exactly the shape `ViewContactsResult.Unread` and
   `PartRoleReadResult.Unread` already exist to name (`UnreadPart(modelId,
-  reason)`, established elsewhere in this codebase). The new overload
-  returns the same currency: `DepthFilteredParts.ModelIds` for candidates
-  whose depth check actually ran and passed, `.Unread` for every candidate
-  whose read failed before the check could answer either way - reusing
-  `UnreadPart`, not inventing a parallel type.
+  reason)`, established elsewhere in this codebase). The depth-aware result
+  separates confirmed `ModelIds`, definite `OutsideDepthModelIds`, and
+  `BoundaryAmbiguous`/`Unread` candidates; the latter two reuse
+  `UnreadPart` so existing incomplete-result paths keep their details.
 
 `TeklaDrawingViewContactApi.GetContactGraph` and `TeklaDrawingPartRoleApi
-.GetRolesInView` switch to the new overload - both already hold the `Model`
-reference this needs, and both already fold an `Unread` list of exactly this
-shape into their own result (`ViewContactsResult.Unread`,
-`PartRoleReadResult.Unread`), so the new overload's `Unread` is appended to
-the existing one rather than needing a new field. `TeklaDrawingPartGeometryApi
+.GetRolesInView` call `GetDepthFilteredParts` - both already hold the `Model`
+reference this needs. Contacts expose requested ids that are hidden/not drawn,
+definitely outside depth, or unresolved depth separately; roles append the
+unresolved cases to their existing `Unread` list. `TeklaDrawingPartGeometryApi
 .GetAllPartsGeometryInView` switches its own inline `view.GetObjects()`/
-`IsHidden` loop to source candidate IDs from the new overload too, and turns
+`IsHidden` loop to source candidate IDs from the depth-aware result too, and turns
 each of its `Unread` entries into the same `PartInView { Success = false,
 ModelId, Error = reason }` shape it already produces for a failed geometry
 read - one filter, reused, not two that could drift apart, and no new
 result shape for this consumer either.
 
 **Scope, stated precisely rather than implied.** This closes
-`get_contact_candidate_points`, `get_drawing_parts`,
-`get_all_parts_geometry_in_view`, and `get_drawing_view_context` - every
-consumer that today asks "which parts does this view draw." It does **not**
+`get_contact_candidate_points`, `get_all_parts_geometry_in_view`, and
+`get_drawing_view_context` - every current consumer that asks "which parts
+does this view draw." It does **not**
 close `TeklaDrawingPartGeometryApi.GetPartGeometryInView(viewId, modelId)` -
 the single-part lookup takes any caller-supplied model ID and never checks
 view membership at all, by design: a caller that already names a part is
@@ -165,28 +218,12 @@ make `ProjectedOutlineBuilder.BuildPart` clip a beam's full-length solid to
 one cross-section; it only makes sure the *count* of parts offered to it is
 right. The two bugs share a cause, not a fix.
 
-**Caching.** `TeklaDrawingPartGeometryApi.GetAllPartsGeometryInView` returns
-early on a cache hit (`DrawingPartGeometryCache.TryGetAll`), before any
-filtering, depth-aware or not, runs - a post-filter sitting after that
-`return` would simply never execute on a hit, which is what the review
-caught. Routing candidate selection through the new overload does not sidestep
-this by itself: whatever gets cached is whatever the new overload returned
-*at read time*, and the cache key (drawing id, view id, status, view type,
-scale, origin, coordinate system) has no term that a depth-only change to
-the view is guaranteed to move. The fix belongs in the key, not around the
-cache: add `view.RestrictionBox.MinPoint`/`MaxPoint` (six numbers, cheap to
-read once `Select()`ed) to `DrawingPartGeometryCache.BuildKey` for every
-view, not only section/end ones - simpler than branching the key by view
-type, and harmless for a base-projected view whose `RestrictionBox` has no
-reason to change between calls. With that, a hit only replays a result whose
-depth window has not moved either.
-
-`BuildKey` is already the one private method every public entry point calls
-- `TryGetAll`, `TryGetPart`, `StoreAll`, `StorePart` each call it once, not
-their own copy - so `view.Select()` followed by the `RestrictionBox` read
-belongs inside `BuildKey` itself and nowhere else. That gives the "call
-`Select()` before reading the box, once" requirement its single home for
-free, rather than needing four call sites kept in sync by hand.
+**Caching.** `ViewDepthWindow.Read` captures `RestrictionBox` once under the
+view transformation plane before `TryGetAll`. That immutable snapshot is
+passed to `TryGetAll`, `GetDepthFilteredParts`, and `StoreAll`; `BuildKey`
+only serializes the six snapshot coordinates and never calls `view.Select()`.
+A depth-only change therefore changes the key, while a cache miss no longer
+performs a second or third IPC read of the same box.
 
 ### Debug command
 
@@ -282,28 +319,17 @@ Do not build this without a concrete need in hand.
 
 ## Status
 
-Bug 1's design is confirmed against live data on one axis-aligned assembly;
-nothing has been written yet. Next steps, in order:
+Bug 1 is implemented conservatively and verified live on the original
+axis-aligned case: `M.505`, view `1709`, still returns only `P/5010` and
+`P/5005`; its unrestricted contact search names the same pair.
 
-1. Add `DrawingViewParts.VisibleModelIds(Model, View) -> DepthFilteredParts
-   { ModelIds, Unread }` - the depth-aware overload described in "Where it
-   goes", with its own plane switch (guarded by `DrawingViewPlane
-   .IsModelPlane`, restored in `finally`) and per-candidate read failures
-   surfaced as `UnreadPart`, not silently included or excluded. Switch
-   `TeklaDrawingViewContactApi`, `TeklaDrawingPartRoleApi`, and
-   `TeklaDrawingPartGeometryApi.GetAllPartsGeometryInView`'s candidate
-   selection to it, folding `.Unread` into each consumer's existing
-   incompleteness signal. `GetPartGeometryInView` stays untouched, by
-   design.
-2. Move `view.Select()` and the `RestrictionBox` read into
-   `DrawingPartGeometryCache.BuildKey`, adding `MinPoint`/`MaxPoint` to the
-   key for every view, before relying on the cache for any of the above -
-   otherwise a cache hit can replay a part list read under a
-   since-changed depth window.
-3. Verify `get_all_parts_geometry_in_view` and `get_contact_candidate_points`
-   reproduce the two parts confirmed above on `M.505` view `1709`.
-4. Before calling the bbox test itself trustworthy rather than merely
-   working here: check it against a raked or inclined part in some other
-   assembly, since a bbox is not the part.
+The implemented guard is intentionally not an exact solid-vs-box Boolean:
+it includes positive-volume overlap between the view-local AABB of a solid and
+`RestrictionBox`, rejects a strictly disjoint box, and reports a boundary
+touch as incomplete. This deliberately avoids losing a long member that a
+section cuts between its end vertices. It can include a skewed, curved, or
+heavily cut part whose view-local AABB overlaps the window while its real
+solid does not; that is an accepted, documented trade-off for now. A live
+raked or inclined example remains required before relying on it more broadly.
 
 Bug 2's fail-closed gate stays as the permanent answer, not an interim one.
