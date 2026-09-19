@@ -89,7 +89,7 @@ internal sealed partial class DrawingCommandHandler
                 return HandleGetDrawingViewContext(GetViewContextApi(), args);
 
             case "get_drawing_parts":
-                return HandleGetDrawingParts(GetPartsApi());
+                return HandleGetDrawingParts(GetPartsApi(), args);
 
             case "draw_debug_overlay":
                 return HandleDrawDebugOverlay(GetDebugOverlayApi(), args);
@@ -775,6 +775,8 @@ internal sealed partial class DrawingCommandHandler
 
         var identity = ReadSourceIdentity(viewId);
         var exclusions = ReadExclusions(args, 2);
+        // Compact is the default; the fifth argument restores the full per-support evidence.
+        var verbose = args.Length > 4 && string.Equals(args[4], "verbose", StringComparison.OrdinalIgnoreCase);
         var structuralOutline = GetStructuralOutline(
             viewId,
             included => CaptureParts(identity, "included", included.Select(part => part.ModelId)),
@@ -833,25 +835,33 @@ internal sealed partial class DrawingCommandHandler
             partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
             sourceFingerprint,
             extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
-            sides = group.DimensionChains!.Chains.Select(chain => new
-            {
-                side = chain.Side.ToString(),
-                positions = chain.Positions.Select((position, positionIndex) => new
+            format = verbose ? "verbose" : "compact",
+            sides = verbose
+                ? (object)group.DimensionChains!.Chains.Select(chain => new
                 {
-                    positionIndex,
-                    coordinate = position.Coordinate,
-                    supports = position.Supports.Select((support, supportIndex) => new
+                    side = chain.Side.ToString(),
+                    positions = chain.Positions.Select((position, positionIndex) => new
                     {
-                        supportIndex,
-                        sourceId = support.Source.Id,
-                        modelId = support.ModelId,
-                        partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent),
-                        isHole = support.Source.IsHole,
-                        kind = support.Kind.ToString(),
-                        point = new[] { support.Point.X, support.Point.Y }
+                        positionIndex,
+                        coordinate = position.Coordinate,
+                        supports = position.Supports.Select((support, supportIndex) => new
+                        {
+                            supportIndex,
+                            sourceId = support.Source.Id,
+                            modelId = support.ModelId,
+                            partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent),
+                            isHole = support.Source.IsHole,
+                            kind = support.Kind.ToString(),
+                            point = new[] { support.Point.X, support.Point.Y }
+                        })
                     })
                 })
-            })
+                : group.DimensionChains!.Chains.Select(chain => new
+                {
+                    side = chain.Side.ToString(),
+                    positions = CompactChainPositions.Project(
+                        chain, support => ExtentAlong(chain.Side, support.AxisAlignedModelExtent))
+                })
         });
         return true;
     }
@@ -1066,10 +1076,16 @@ internal sealed partial class DrawingCommandHandler
         return true;
     }
 
-    private bool HandleGetDrawingParts(TeklaDrawingPartsApi api)
+    private bool HandleGetDrawingParts(TeklaDrawingPartsApi api, string[] args)
     {
         var result = api.GetDrawingParts();
-        WriteGetDrawingPartsResult(result);
+        // Compact is the default; the first argument "verbose" restores the full per-object list.
+        // The second names object types to bring back into the compact answer ("all" for every one).
+        var verbose = args.Length > 1 && string.Equals(args[1], "verbose", StringComparison.OrdinalIgnoreCase);
+        if (verbose)
+            WriteGetDrawingPartsResult(result);
+        else
+            WriteJson(CompactDrawingParts.Project(result.Parts, result.Total, args.Length > 2 ? args[2] : null));
         return true;
     }
 

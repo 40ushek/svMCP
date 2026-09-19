@@ -165,17 +165,25 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Get all model objects (parts, assemblies) referenced by the active drawing, with type, PART_POS, PART_PREFIX, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. partPrefix is what an exclusion filter is written from - nothing in the code reads a meaning into a prefix, so the list has to be visible to be written. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration.")]
-    public static string GetDrawingParts()
+    [McpServerTool, Description("Get the model objects (parts, assemblies) referenced by the whole active DRAWING - not by one view - with type, PART_POS, PART_PREFIX, ASSEMBLY_POS, PROFILE, MATERIAL, NAME. partPrefix is what an exclusion filter is written from - nothing in the code reads a meaning into a prefix, so the list has to be visible to be written. Uses direct DrawingHandler.GetModelObjectIdentifiers — no sheet enumeration. " +
+        "Default (compact): objects identical in every read field, partPrefix and partPrefixKnown included, are one entry with count and all modelIds; BoltArray, EdgeChamfer, ReferenceModel and Connection objects are left out but counted by type in hiddenByType. " +
+        "total = objects before filtering, returnedObjects = objects in parts, returnedGroups = entries in parts, hiddenObjects = objects left out. verbose=true returns the full one-record-per-object list.")]
+    public static string GetDrawingParts(
+        [Description("false (default): compact answer. true: the full one-record-per-object list, nothing hidden or merged.")] bool verbose = false,
+        [Description("Compact answer only: comma-separated object types to bring back, e.g. \"BoltArray,Connection\", or \"all\". Default hides BoltArray, EdgeChamfer, ReferenceModel, Connection.")] string includeTypes = "")
     {
-        var json = RunBridge("get_drawing_parts");
+        var json = RunBridge("get_drawing_parts", verbose ? "verbose" : "compact", includeTypes ?? string.Empty);
         try
         {
             var doc = JsonDocument.Parse(json);
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
-            return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
+            // The compact answer is read by a model, not a person: indentation puts every modelId
+            // on its own line and costs more than the merging saved. verbose keeps it readable.
+            return verbose
+                ? JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })
+                : doc.RootElement.GetRawText();
         }
         catch
         {

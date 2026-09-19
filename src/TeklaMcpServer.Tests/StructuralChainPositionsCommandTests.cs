@@ -65,7 +65,9 @@ public sealed class StructuralChainPositionsCommandTests
 
         Assert.Contains("isComplete = group.Completeness.IsComplete", text);
         Assert.Contains("issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason })", text);
-        Assert.Contains("sides = group.DimensionChains!.Chains.Select(chain => new", text);
+        Assert.Contains("sides = verbose", text);
+        Assert.Contains("? (object)group.DimensionChains!.Chains.Select(chain => new", text);
+        Assert.Contains("CompactChainPositions.Project(", text);
         Assert.Contains("extent = new { minX = extent.MinX", text);
     }
 

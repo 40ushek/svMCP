@@ -45,13 +45,15 @@ public static partial class ModelTools
     public static string GetStructuralChainPositions(
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
         [Description("Optional comma-separated mark prefixes to exclude, e.g. \"R,M\". Empty excludes nothing.")] string excludePrefixes = "",
-        [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings. Empty excludes nothing.")] string excludeMaterials = "")
+        [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings. Empty excludes nothing.")] string excludeMaterials = "",
+        [Description("false (default): compact answer - supports at the same part and point are merged (all supportIndices and kinds kept), sourceId dropped, isHole only when true. true: the full per-support answer.")] bool verbose = false)
     {
         return RunBridge(
             "get_structural_chain_positions",
             viewId.ToString(CultureInfo.InvariantCulture),
             excludePrefixes ?? string.Empty,
-            excludeMaterials ?? string.Empty);
+            excludeMaterials ?? string.Empty,
+            verbose ? "verbose" : "compact");
     }
 
     [McpServerTool, Description(
