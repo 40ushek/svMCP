@@ -30,6 +30,18 @@ internal static class Program
             return;
         }
 
+        if (ShouldRunViewStitchProbe(args))
+        {
+            RunViewStitchProbe(args);
+            return;
+        }
+
+        if (ShouldRunViewFoldProbe(args))
+        {
+            RunViewFoldProbe(args);
+            return;
+        }
+
         SolidContacts.ContactProbe.Run();
         Console.ReadLine();
         return;
@@ -69,6 +81,31 @@ internal static class Program
         return false;
     }
 
+    private static bool ShouldRunViewStitchProbe(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--view-stitch-probe", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--view-stitch-probe-selected", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--view-stitch-apply-selected", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool ShouldRunViewFoldProbe(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--view-fold-probe-selected", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(arg, "--view-fold-apply-selected", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     private static void RunViewRelatedObjectsProbe()
     {
         try
@@ -78,6 +115,31 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"View related-objects probe failed: {ex.Message}");
+        }
+    }
+
+    private static void RunViewStitchProbe(string[] args)
+    {
+        try
+        {
+            new ViewStitchTransformProbe().Run(args);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"View stitch probe failed: {ex.Message}");
+        }
+    }
+
+    private static void RunViewFoldProbe(string[] args)
+    {
+        try
+        {
+            var applyRequested = args.Any(arg => string.Equals(arg, "--view-fold-apply-selected", StringComparison.OrdinalIgnoreCase));
+            new ViewFoldTransformProbe().Run(applyRequested);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"View fold probe failed: {ex.Message}");
         }
     }
 
