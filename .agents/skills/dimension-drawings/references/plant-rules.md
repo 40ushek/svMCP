@@ -6,8 +6,8 @@ trusses, roof panels, or parts with cut-outs without evidence.
 
 ## What this model excludes
 
-Nothing is filtered in code. Every part a view draws takes part in the structural
-geometry unless this call says otherwise, so a timber run passes:
+The code has no plant-specific prefix/material policy. View visibility/depth
+selection still applies; among its candidates this timber run excludes:
 
 ```
 excludePrefixes = R,S,M
@@ -42,8 +42,9 @@ wall.
   edge and `1597.80 / 1597.84` on the left side. Collapse anything within about
   0.5 mm and keep the one anchored on the `Defining` member's face; the other
   belongs to a neighbouring part or a sheathing edge. Never print both.
-- The structural outline is `Defining` parts only. `Attached` parts never widen
-  the structural extent.
+- The structural outline uses the included parts after the explicit exclusions.
+  Exclude sheathing/other attached layers for the frame measurement; do not rely
+  on legacy `Defining`/`Attached` labels to filter them automatically.
 - The real corner of a raked panel is an endpoint. Never replace it with the
   bounding-box corner or the nearest member.
 - **A position's anchor is its own support point — the exact one reported for
@@ -61,6 +62,19 @@ wall.
   an individual anchor's own coordinate, and is not license to overwrite one.
 
 ## Keep or remove
+
+Before writing, walk the kept positions in order through all three checks:
+one part's own size (rule 1), repeated faces of a regular family (rule 3), and
+multiple candidates without an explicit part extent (rules 4a/4b). Passing the
+first check does not skip the other two. A null extent alone decides nothing.
+For the third case, check the specific candidate parts' contact before reducing
+them to one position. Use `get_contact_candidate_points <viewId> false <modelIds>`;
+do not fetch the whole view's contact graph or draw contact overlays.
+Reduction based on a contact requires **all** of: `selectionComplete=true`,
+`contactKind=FaceToFace`, `contactState=Touching`, and the contact coordinate
+exactly equals an existing calculated position. Empty, incomplete, different
+kind/state or nonmatching coordinates cannot justify that removal. Continue
+with rule 4a judgement, not an inferred absence of a joint.
 
 1. Remove a span that merely restates one part's own size: both anchors resolve
    to that part and its explicitly supplied, axis-aligned extent along the chain

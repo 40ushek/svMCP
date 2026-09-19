@@ -1,19 +1,103 @@
 # Drawing Dimensions
 
+## Verified writes and structural plans (2026-09-19)
+
+New work beyond the historical v1 baseline below:
+
+- `create_dimension` and `recreate_dimension` now use a shared verified-write
+  protocol. A replacement is committed and read back before the original is
+  deleted. `CommitChanges()`, `Modify()` and `Delete()` false results stop the operation. A failed
+  named attributes load stops before creation; unreadable original attributes
+  are never silently replaced by defaults.
+- Read-back checks owning view, unique XY points/segment count (0.01 mm match),
+  direction/side, row type and offset. Running rows additionally require a unique
+  connected segment path proving the requested first point. This is not visual
+  collision checking or an exhaustive comparison of all style properties.
+- `writeState` preserves the new ID, failed stage, last observed offset and
+  deletion status. Failed replacements are left for inspection, not automatically
+  removed. A failed deletion/commit can leave both dimensions or an uncertain
+  state: re-read both IDs before doing anything else. No atomicity or blind retry.
+- `preview_structural_dimension_plan <planJson>` validates without writing;
+  `apply_structural_dimension_plan <planJson> <approvalToken>` re-reads the
+  source, rejects a changed source/plan and calls the verified writer.
+
+The initial plan scope is **one steel PartLocation chain**, horizontal or
+vertical, **Relative rows only**, **Create only**. Existing dimensions are not
+automatically matched, replaced or deleted by this command. Other sides remain
+unreviewed. Raw recreate uses the safer protocol independently.
+
+This is a validator/executor for a caller-selected chain, **not** an automatic
+planner of sufficient assembly dimensions. In particular, it checks ownership
+of selected supports but does not prove that their faces/axis locate the subject.
+The next proposed layer starts with measurement intent and checks which
+relationships each chain satisfies; see
+[active roadmap direction](ROADMAP_DIMENSIONS.md#active-direction-measurement-intent-before-point-selection-2026-09-19).
+
+Start with `get_structural_chain_positions`: it now returns `sourceFingerprint`,
+`positionIndex` and `supportIndex`. Build a plan with:
+
+```json
+{
+  "viewId": 17,
+  "sourceFingerprint": "copy from the actual read",
+  "side": "Bottom",
+  "referenceModelId": 1,
+  "subjectModelId": 2,
+  "ruleSet": "steel",
+  "purpose": "PartLocation",
+  "internalPolicy": "Necessary",
+  "recognizableDistance": 1,
+  "datumReason": "start at the selected left plate edge",
+  "closureReason": "close on plate edges around the main member",
+  "rowType": "Relative",
+  "attributesFile": "standard",
+  "distance": 20,
+  "reverseStart": false,
+  "positions": [
+    { "positionIndex": 0, "disposition": "Kept", "supportIndex": 1, "reason": "plate edge" },
+    { "positionIndex": 1, "disposition": "Removed", "reason": "state actual drawing reason" }
+  ]
+}
+```
+
+This is a schema illustration, **not an executable plan**: IDs, indices, reasons
+and the decision list must come from the actual view. Every candidate on the
+selected side needs exactly one explained Kept/Removed decision. Kept points
+must select real supports belonging to either the confirmed main part or the
+subject, and the chain must include both. The reference body is not forced to
+be the closure: a plate can extend on both sides of the main member. Each
+support retains its own transverse coordinate. A plate-size-only chain is
+rejected as a location claim. `Internal=None` permits one subject location,
+not multiple subject positions.
+
+Review preview points before applying the unchanged plan with its returned
+token. The token is a consistency check, not authentication or an idempotency
+key. The fingerprint covers source identity, calculated supports, role facts,
+exclusions, view coordinate systems, scale and depth window; there is no lock
+against concurrent manual edits. The named style is loaded and its row type
+checked at apply, not by the geometry-only preview.
+
+Limits: the validator checks traceability and structure, not whether the human
+or LLM chose all necessary dimensions. The accepted full-solid projection gap
+on sections is unchanged. Do not claim true clipped contours or whole-view
+completion. Unit tests exercise plan decisions and injected write failures;
+the new writer still needs a live Tekla smoke test before production use.
+
 ## Purpose
 
 `Drawing/Dimensions` is the line-first dimension module for drawing runtime.
 
 ## Current Phase Status
 
-Current phase status: `v1 complete`.
+Historical foundation status: `v1 complete`. The verified-write/structured-plan
+increment above is later work and remains pending live validation.
 
 This means:
 
 - the current `Drawing/Dimensions` baseline is considered stable enough to stop
   expanding in this cycle
-- no new behavior changes are intended inside the current phase
-- remaining improvements move to the next phase as backlog items
+- the following v1 inventory is not a readiness claim for later increments
+- new work follows the active roadmap gates rather than reopening completed v1 milestones
 
 The current `v1` baseline already includes:
 

@@ -92,7 +92,20 @@ delete in a placement run.
 
 ## Verification
 
-A non-error write response proves only that Tekla accepted a request. Re-read
+One `get_drawing_dimensions <viewId>` read after each potentially reflowing write
+serves the point, row, reference-line and neighbour checks together. Do not add
+a full solid read or coverage call when these checks expose no specific doubt.
+Reuse the unchanged structural snapshot; refresh dimension state after writes.
+
+On bridge versions exposing `writeState`, inspect it as well as the returned ID.
+The verified writer checks its new chain, not all neighbouring chains or drafting
+sufficiency. A failed call can leave the replacement present and the original
+retained, deleted or uncertain depending on the stage. Re-read both IDs before
+any retry/cleanup; do not assume atomic rollback. No speculative delete/recreate
+loop to discover a coordinate or style.
+
+Without an explicit verified state, a non-error response proves only that Tekla
+accepted a request. In either case, re-read
 the dimensions, compare the reference line with the planned side and offset,
 and verify the intended points and printed rows. Use the returned dimension ID;
 edits can renumber it.

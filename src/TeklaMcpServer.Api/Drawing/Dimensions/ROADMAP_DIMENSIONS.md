@@ -1,5 +1,150 @@
 # Dimensions Roadmap
 
+## Increment: verified writes and one-chain plans (2026-09-19)
+
+Implemented in code, not yet live-validated: shared create/read-back/delete
+protocol and explicit preview/apply commands over `DimensionChainSet` for a
+single steel location chain. See [current contract](README.md#verified-writes-and-structural-plans-2026-09-19).
+
+The plan keeps reference ownership separate from closure endpoints. Kept and
+Removed decisions carry reasons; points are selected from calculated supports,
+not reconstructed from bbox. No new automatic drafting policy was introduced.
+
+The active order of work is below. The older numbered proposals later in this
+file are background/backlog, not another competing implementation sequence.
+
+## Active direction: measurement intent before point selection (2026-09-19)
+
+**Decision:** keep `GeometryGroup`, `CalcDimensionChains` and `DimensionChainSet`.
+They provide candidate coordinates and their evidence, not a decision about
+which measurements the assembly needs. Do not replace them with another bbox,
+OBB or contact-driven selection algorithm to solve a semantic selection problem.
+
+The decision flow is:
+
+`measurement question -> reference + subject -> required relationships -> supported chain points -> placement -> verification`
+
+This is the order of reasoning, not a requirement for six separate API calls.
+Read geometry once where possible and reuse it for the questions in scope.
+For example, "locate this plate against the beam profile in X" is a question;
+"retain four coordinates" is only one possible representation of its answer.
+
+### Current status, not inferred readiness
+
+| Component | Status | Does not yet prove |
+|---|---|---|
+| Preliminary structural chains | Implemented; carry positions and owner supports | That a selected chain answers the fabrication question |
+| `StructuralDimensionPlanBuilder` | Implemented validator for a supplied one-chain steel `PartLocation` plan | Automatic intent selection or sufficient dimensions; reasons are still free text |
+| Preview/apply bridge + MCP | Implemented, experimental; Relative/Create only | Deployment or successful live Tekla operation; retain/replace and duplicate suppression are absent |
+| Verified create/recreate protocol | Implemented; injected failure tests | Live read-back/reflow behaviour, atomic rollback, or verification of every style property |
+| `dimension-drawings` skill | Updated: scoped work, current-data reuse, targeted reads, no default overlays | Measured runtime improvement or better drafting results on live cases |
+| Intent/relationship coverage planner | Proposed below; not implemented | Anything about whole-view or whole-assembly completeness |
+
+Previous verification recorded 959 passed / 0 failed / 1 skipped in the full
+suite and a successful bridge build. Those are code-test results, not live
+drawing acceptance. No new live result is asserted by this roadmap update.
+
+### Boundaries to keep
+
+- The LLM/operator identifies the measurement question and resolves plant
+  conventions. Code performs repeatable validation, point resolution, writing
+  and read-back. Gradually encode only rules supported by the cases; do not
+  keep enlarging the skill to compensate for missing deterministic checks.
+- Reference, closure and datum are separate choices. A transverse plate chain
+  may close on plate edges and locate them against the main-profile edges.
+  A plate-size-only chain cannot satisfy a plate-location requirement.
+- Part ownership is necessary but insufficient: including both part IDs does
+  not prove the chosen faces/axis provide the required location or orientation.
+- Reuse the existing plan as the execution boundary; evolve/adapt it to the
+  existing domain/context model. Do not create a competing public plan DTO
+  merely to name intent. Position/support indices are snapshot-local handles,
+  not durable semantic identity or keys for matching existing dimensions.
+- Keep three results distinct: source geometry complete, requested measurement
+  requirements satisfied, and write/read-back successful. None implies the
+  other two. One completed chain cannot certify an entire view.
+- Full-solid projection beyond section depth remains an accepted known gap.
+  Current section/end-view visual checks remain required; changing the planner
+  does not make the contour a verified clipped section.
+- Bolts retain their separate data/logic roadmap:
+  [ROADMAP_BOLT_GEOMETRY.md](../Geometry/Bolts/ROADMAP_BOLT_GEOMETRY.md).
+  Structural chains do not supply bolt coordinates by implication.
+
+### Next steps and acceptance gates
+
+**0. Live smoke test of the implemented path, before expanding it.**
+
+On an authorized test drawing, record drawing/view identity and existing IDs;
+preview one horizontal plate-location chain with the agreed settings, inspect
+it, apply once, and read back the chain plus affected neighbours. Repeat in the
+vertical direction. Test raw recreate separately: structured apply does not
+support replacement. Verify unavailable attributes stop before creation and
+offset correction is actually reflected on the sheet. Exercise safe failure
+paths on a test copy where possible; retain injected tests for failures that
+cannot safely be induced live. Do not describe them as live-tested.
+
+Pass only with correct own-support XY points, side, rows, offset and neighbour
+state, and no unexplained extra objects. On failure preserve returned IDs and
+state, inspect before retry, and fix the demonstrated cause. No blind apply
+retry or implied rollback. Do not touch a production drawing just to run this gate.
+
+**1. Define three small reference cases before implementing new selection.**
+
+For each, record the measurement question, reference/subject, axis, policy,
+actual support identities, acceptable answer(s) and a deliberately wrong plan.
+Obtain values from the case, not from historical M.505 example numbers.
+
+| Case | Required answer | Negative case that must fail |
+|---|---|---|
+| Symmetric end plate | Location relative to the main profile in each requested axis; explain equal offsets | Plate width/height alone presented as location |
+| Offset plate | Correct unequal offsets in the affected axis; preserve the measured asymmetry under the stated policy | Reusing the symmetric template despite changed supports |
+| Intermediate stiffener | Its longitudinal station from the specified main-part datum; other relationships only if requested/required | Stiffener thickness alone presented as its station |
+
+These cases validate the named relationships, not complete 3D placement or
+orientation of every part. Bolt-pattern orientation is a separate requirement
+when needed. Different equivalent chain layouts may pass; exact reproduction
+of an old drawing is not the criterion.
+
+**2. Add intent and coverage to a read-only planner.**
+
+Proposed semantic information (not fields already present in the API): the
+measurement question/purpose, subject, reference feature, measured axis,
+required relationship, policy and supporting evidence. Record each requirement
+as satisfied by specific chain spans, intentionally not required by a named
+rule, or unresolved with a reason. Free-text `Purpose`/`Reason` alone is not a
+coverage proof; add stable reason codes and evidence as the cases justify them.
+
+Resolve those relationships against existing chain supports, keeping each
+point's own cross-axis coordinate. If no suitable support exists, report the
+missing capability rather than synthesizing a bbox point. Contact facts can
+support a choice but neither force a dimension nor replace its coordinates.
+Keep selection separate from line placement: a layout collision cannot silently
+remove a required measurement. Preserve explicit Internal/row-type choices;
+do not switch them to suit the prototype.
+
+Pass when the read-only planner satisfies all three positive cases, rejects
+their negative cases and leaves incomplete/ambiguous evidence unresolved.
+Test shifted geometry, missing supports, multiple possible references and
+policy changes. No automatic whole-drawing placement at this stage.
+
+**3. Extend execution only after those gates.**
+
+Add semantic matching of existing dimensions, retain/replace actions and
+duplicate-safe retry handling before batching. A preview token is not an
+idempotency key. Then add all-side/whole-view outcomes and explicit running-row
+datum support, each with its own tests and live acceptance. Share a stable
+contract with orchestration through an adapter/migration, not a second planner
+whose independent outputs can disagree silently.
+
+### Efficiency must be measured, not assumed
+
+For the same reference cases and runtime, record before/after wall time,
+bridge reads/writes, solid-read counts where instrumentation exists, response
+volume and retries. Record model token usage only if actually available.
+The shorter skill is not a measured speedup. Target fewer redundant reads and
+no default debug objects while preserving verification and correct dimensions.
+Do not remove safety reads to hit an arbitrary call-count target, or promise
+a cache benefit without invalidation tests.
+
 ## Purpose
 
 `Drawing/Dimensions` is the dimension domain module for drawing runtime.
@@ -282,7 +427,16 @@ consequences are:
 
 ## Next Phase
 
+The dated proposals below preserve design history and longer-term backlog.
+For current priority and acceptance, use **Active direction** above. In
+particular, historical `2b` is not a second planner to implement in parallel.
+
 ### What a dimension attaches to (2026-08-12)
+
+Historical observation: the "not implemented" statement below described the
+2026-08-12 candidate path. `CalcDimensionChains` subsequently added edge/corner
+supports (see the implemented 2026-08-13 section); it still does not decide
+whether a selected support answers a measurement requirement.
 
 Measured, not assumed, and **not implemented** - no code tests this yet, and the candidate
 layers still emit corners only. It changes what selection is choosing between. Every point of
@@ -326,7 +480,7 @@ The foundational architecture cleanup is largely complete.
 The next phase should improve naming, semantics and richer layout support on top
 of the new baseline.
 
-Priority order:
+Historical backlog numbering (not the current priority order):
 
 ### 0. Capture observations in one call — done
 
@@ -646,6 +800,24 @@ responsibility of the placement planner.
 
 
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
+
+**Historical proposal, not the current implementation contract (2026-09-19).**
+The initial implementation now uses `StructuralDimensionPlanBuilder` over
+`DimensionChainSet`, not the generic candidate path proposed below. It validates
+a supplied plan; the intent/coverage planner remains unbuilt. Its own public
+preview/apply contract exists, so the old "must not introduce a second plan
+shape" instruction is an integration concern to resolve by adapter/migration,
+not a claim that unification already happened.
+
+Other superseded assumptions below: offsets are now corrected/read back by the
+verified writer, not routinely repaired by a separate `move_dimension`; datum
+can be recovered only for a unique connected segment path, not from normalized
+point order; sections/end views use the current skill's visual gate; contact or
+bbox candidates are not alternative create coordinates; the old 15-60 mm
+grouping discussion is not an active tolerance. Limited Create/apply is already
+implemented, but still awaits live validation. Use **Active direction** for
+new work and the README for exact supported arguments. The remaining rationale
+is retained as design history, not instructions to bypass the current skill.
 
 Agreed 2026-08-01. The first component that decides where dimensions *should*
 go, as opposed to reducing the ones already there. It changes nothing: it reads

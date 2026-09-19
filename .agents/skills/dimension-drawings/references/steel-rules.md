@@ -88,18 +88,27 @@ Neither the sheet nor the person is authority, so the answer is arithmetic. The 
 four run on what is already read and are part of the gate:
 
 - every welded part is located by some chain on the sheet;
-- each chain closes on the main part's ends;
+- longitudinal location chains close on the main part's ends; transverse plate
+  chains use their explicitly planned closure (including plate edges around the
+  main-profile edges). Reference body and closure are not interchangeable;
 - an absolute row equals the sum of its relative segments;
 - no chain's values are contained in another's, the overall excepted.
 
-The fifth - every dimension point lands on real part geometry - needs
-`get_dimension_chain_coverage`. Its reliability is unresolved, not confirmed broken: it
+The fifth - every dimension point lands on real part geometry - starts with the
+selected support and the dimension read-back already available. Request extra
+geometry only for a specific unresolved anchor or visible warning, not once per
+dimension by default. `get_dimension_chain_coverage` is an optional targeted
+diagnostic. Its reliability is unresolved, not confirmed broken: it
 returned an empty error on M.16 (SectionViews `2152` and `1641`) and M.505 (FrontView `2724`)
 on 2026-08-23, but was reported working - checking all four points of a created dimension -
 on M.505's EndView `1709` earlier the same day, on a drawing that has since had those
-dimensions replaced. Run it; if it errors, say in the final response that this check could
-not run, and fall back to `get_all_parts_geometry_in_view`'s `viewHull`/`solidVertices`
-(ground truth) instead. It is a code fix, and it does not block placement.
+dimensions replaced. If used and it errors, report that diagnostic failure and
+do not repeat it unchanged for every chain. Reuse actual geometry already read,
+or read the suspect part with `get_part_geometry_in_view` (the whole view only
+when several parts genuinely need it). A hull/bbox alone does not prove a point
+on a profiled or curved contour; keep a remaining anchor doubt explicit.
+The failed diagnostic alone does not block placement, but an unresolved required
+anchor does. Geometry verification cannot supply new chain coordinates.
 
 ## Not covered
 
@@ -134,9 +143,13 @@ not run, and fall back to `get_all_parts_geometry_in_view`'s `viewHull`/`solidVe
 A `SectionView` or `EndView` may be dimensioned only when all of the following are true:
 
 1. `get_structural_chain_positions <viewId>` returns `isComplete=true` with no issues.
-2. `draw_structural_chain_positions <viewId> <side>` has been used for every side that the
-   plan will create or recreate, and every candidate the plan retains agrees visually with
-   geometry on the drawing.
+2. Every retained candidate on each side being created/recreated agrees visually
+   with geometry in a current image of that exact drawing/view. Use an available
+   current view image or request one if needed. `draw_structural_chain_positions`
+   is optional, not the gate itself: it creates drawing objects. Use it only when
+   the image is insufficient and temporary drawing marks are authorized; remove
+   only the overlay objects created by this run after the check. No usable visual
+   evidence means this gate remains unresolved, not automatically passed.
 3. The plan does not require bolt dimensions. Bolt arrays are still outside the structural
    outline contract.
 4. The final response says that this was the section/end-view exception, names the view
