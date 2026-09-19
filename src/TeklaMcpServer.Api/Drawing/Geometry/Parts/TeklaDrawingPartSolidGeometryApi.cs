@@ -79,13 +79,8 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
             if (modelObject is not ModelPart part)
                 return Fail(viewId, modelId, $"Model object {modelId} is not a part.");
 
-            // Beams at high accuracy, everything else at normal. A rougher solid on a cut
-            // beam loses the very faces a contact would be found on, and reading the same
-            // part at a different accuracy here than the model path uses would let one
-            // part answer differently depending on which way it was asked.
-            var solid = part is Beam
-                ? part.GetSolid(Solid.SolidCreationTypeEnum.HIGH_ACCURACY)
-                : part.GetSolid(Solid.SolidCreationTypeEnum.NORMAL);
+            // NORMAL for every part, as in the other solid readers; cut-beam contact faces at NORMAL are unverified.
+            var solid = part.GetSolid(Solid.SolidCreationTypeEnum.NORMAL);
             if (solid == null)
                 return Fail(viewId, modelId, $"Model object {modelId} does not expose solid geometry.");
 

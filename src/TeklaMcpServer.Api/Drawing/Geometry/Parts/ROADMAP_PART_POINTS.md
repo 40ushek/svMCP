@@ -828,3 +828,43 @@ The first implementation step after this roadmap should be:
 
 The combined view-level set was tried and rejected - see below. The sources stay apart
 and stay separately readable.
+
+## Open decision: rolled-profile fillets read as polygon noise (2026-08-23)
+
+`TeklaDrawingPartGeometryApi.GetAllPartsGeometryInView` reads a `Beam`'s solid via
+`beam.GetSolid()` - the parameterless overload, `NORMAL` creation type. For a catalog
+rolled profile (HEB260 measured) the web-to-flange fillet comes back polygonized into a
+staircase of 0.2-2 mm segments (confirmed on M.16, SectionView `2152`), which is exactly
+the noise `get_structural_chain_positions` has to filter with `minDimensionLength` (see
+`steel-rules.md`) before it can be used for dimension placement.
+
+**Tried and reverted:** switching the `Beam` branch to
+`beam.GetSolid(Solid.SolidCreationTypeEnum.HIGH_ACCURACY)` - per the Tekla Open API docs,
+`HIGH_ACCURACY` is "created as normal with an exact profile cross section," against
+`NORMAL`'s plain "all cutting and fitting operations" (polygonized). Until 2026-08-23 this
+was the creation type `TeklaDrawingPartSolidGeometryApi.GetPartSolidGeometryInView` used
+for beams; that call now also reads at `NORMAL`, so every solid reader answers at the same
+accuracy. Decision: `NORMAL` for every beam, not just I-profiles. Not yet compared live:
+whether cut-beam faces used by contact detection lose anything at `NORMAL`.
+
+**A cleaner candidate than either solid-accuracy setting, found but not tried:**
+`Tekla.Structures.Catalogs.ProfileItem.GetCrossSection()` /
+`GetHighAccuracyCrossSection()` return the profile's own cross-section points straight
+from the catalog definition - no solid, no view projection, no convex hull. Each
+`CrossSectionPoint` carries its own `Chamfer` property, so a fillet/chamfer point is
+flagged by Tekla itself rather than inferred from point spacing or curve-fitting. Unlike
+either solid-accuracy switch or a point-runs-lie-on-one-arc heuristic, this works
+uniformly across profile families (I, U, L, etc.) since it reads the catalog shape
+directly, not a projected/triangulated solid.
+
+Also relevant: `PartViewGeometryBuilder.BuildHull` runs a convex hull over solid vertices,
+which is a second, independent source of lost detail on a concave cross-section (an
+I-profile's web) - the web is inside the convex hull of the flange tips regardless of
+solid accuracy. A convex-hull-based `viewHull` cannot represent it either way; this is
+orthogonal to the fillet-noise question above and not fixed by this decision.
+
+Not yet built. Revisit `GetCrossSection()`/`Chamfer` before trying another solid-accuracy
+setting or a geometric arc-detection pass over raw vertices - see
+`ContourPlateRadiusDimensionPlacer.cs` (`TeklaMcpServer.Host`) for how the same problem
+was already solved for a `ContourPlate`'s own polycurve, which exposes typed `Arc`
+segments directly rather than needing to be inferred.
