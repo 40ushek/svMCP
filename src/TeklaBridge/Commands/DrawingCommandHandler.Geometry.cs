@@ -69,6 +69,10 @@ internal sealed partial class DrawingCommandHandler
             case "get_structural_chain_positions":
                 return HandleGetStructuralChainPositions(args);
 
+            case "preview_structural_dimension_plan":
+            case "apply_structural_dimension_plan":
+                return HandleStructuralDimensionPlan(args, command == "apply_structural_dimension_plan");
+
             case "draw_structural_chain_positions":
                 return HandleDrawStructuralChainPositions(GetDebugOverlayApi(), args);
 
@@ -801,6 +805,7 @@ internal sealed partial class DrawingCommandHandler
         }
 
         var extent = group.Extent!;
+        var sourceFingerprint = StructuralPlanFingerprint(viewId, identity, structuralOutline, group, exclusions);
         WriteJson(new
         {
             success = true,
@@ -826,15 +831,18 @@ internal sealed partial class DrawingCommandHandler
                 .Select(part => part.ModelId),
 
             partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
+            sourceFingerprint,
             extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
             sides = group.DimensionChains!.Chains.Select(chain => new
             {
                 side = chain.Side.ToString(),
-                positions = chain.Positions.Select(position => new
+                positions = chain.Positions.Select((position, positionIndex) => new
                 {
+                    positionIndex,
                     coordinate = position.Coordinate,
-                    supports = position.Supports.Select(support => new
+                    supports = position.Supports.Select((support, supportIndex) => new
                     {
+                        supportIndex,
                         sourceId = support.Source.Id,
                         modelId = support.ModelId,
                         partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent),

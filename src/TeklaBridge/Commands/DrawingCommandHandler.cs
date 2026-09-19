@@ -91,6 +91,8 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_assembly_outline":
             case "get_structural_outline":
             case "get_structural_chain_positions":
+            case "preview_structural_dimension_plan":
+            case "apply_structural_dimension_plan":
             case "draw_structural_chain_positions":
             case "get_contact_candidate_points":
             case "get_part_degrees_of_freedom":
