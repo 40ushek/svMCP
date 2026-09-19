@@ -853,11 +853,21 @@ internal sealed partial class DrawingCommandHandler
 
         var direction = args[3];
 
-        var distance = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance) ? (double?)parsedDistance : null;
+        double? distance = null;
+        if (args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]))
+        {
+            if (!double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance))
+            {
+                WriteError("distance must be a number");
+                return true;
+            }
+            distance = parsedDistance;
+        }
         var result = api.RecreateDimension(dimensionId, points, direction, distance);
         WriteJson(new
         {
             recreated = result.Recreated,
+            writeState = result.WriteState,
             oldDimensionId = result.OldDimensionId,
             newDimensionId = result.NewDimensionId,
             viewId = result.ViewId,
@@ -1091,6 +1101,7 @@ internal sealed partial class DrawingCommandHandler
         WriteJson(new
         {
             created = result.Created,
+            writeState = result.WriteState,
             dimensionId = result.DimensionId,
             viewId = result.ViewId,
             pointCount = result.PointCount,

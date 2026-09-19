@@ -66,8 +66,8 @@ internal static class DimensionCreatePlacementHelper
         var attributes = new StraightDimensionSet.StraightDimensionSetAttributes();
 #pragma warning restore CS0618
         var normalizedAttributes = NormalizeAttributesFile(attributesFile);
-        if (!string.IsNullOrEmpty(normalizedAttributes))
-            attributes.LoadAttributes(normalizedAttributes);
+        if (!string.IsNullOrEmpty(normalizedAttributes) && !attributes.LoadAttributes(normalizedAttributes))
+            throw new System.InvalidOperationException($"Dimension attributes '{normalizedAttributes}' could not be loaded; nothing created");
 
         return attributes;
     }
@@ -84,7 +84,9 @@ internal static class DimensionCreatePlacementHelper
             double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var y) &&
             double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out var z))
         {
-            return new Vector(x, y, z);
+            return DimensionWriteProtocol.Finite(x) && DimensionWriteProtocol.Finite(y) &&
+                   DimensionWriteProtocol.Finite(z) && (x != 0 || y != 0 || z != 0)
+                ? new Vector(x, y, z) : null;
         }
 
         return null;

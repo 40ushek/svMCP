@@ -40,19 +40,20 @@ public sealed class AddDimensionPointsResult
 /// </summary>
 public sealed class RecreateDimensionResult
 {
+    public DimensionWriteState? WriteState { get; set; }
     public bool    Recreated       { get; set; }
-    /// <summary>Id of the set that was deleted. No longer addressable after the call.</summary>
+    /// <summary>Original ID. Inspect WriteState on failure; it may still exist.</summary>
     public int     OldDimensionId  { get; set; }
     /// <summary>Id of the freshly created set. This is what later calls must use.</summary>
     public int     NewDimensionId  { get; set; }
     public int     ViewId          { get; set; }
     public int     PointCount      { get; set; }
-    /// <summary>False when the original attributes could not be read and defaults were used.</summary>
+    /// <summary>Original attributes were supplied; defaults are never substituted on failure.</summary>
     public bool    AttributesKept  { get; set; }
     /// <summary>
     /// Offset the new set actually ended up with, re-read from a freshly fetched set after the
-    /// correction was committed. When the correction failed this is the pre-correction value —
-    /// it never reports an offset the sheet does not show.
+    /// correction was committed. Zero if unread; WriteState.ObservedDistance distinguishes
+    /// unknown from a verified zero. On failure inspect WriteState before using this value.
     /// </summary>
     public double  Distance          { get; set; }
     /// <summary>Offset that was asked for — either the caller's value or the original's.</summary>
@@ -70,10 +71,8 @@ public sealed class RecreateDimensionResult
     /// </summary>
     public double  DistanceCorrection { get; set; }
     /// <summary>
-    /// Set when the offset correction failed, while the recreate itself succeeded. The new set
-    /// exists and is addressable through <see cref="NewDimensionId"/>; only its line sits at the
-    /// wrong offset and can be nudged with `move_dimension`. Distinct from <see cref="Error"/>,
-    /// which means the recreate did not happen at all.
+    /// Legacy field retained for wire compatibility. Failures now use Error and WriteState;
+    /// an offset failure prevents original deletion and is not reported as successful recreation.
     /// </summary>
     public string? DistanceCorrectionError { get; set; }
     public string? Error             { get; set; }

@@ -305,10 +305,10 @@ public static partial class ModelTools
         "before the original is deleted, so an error at the very end can leave both on the sheet — on failure, " +
         "re-read the view and drop whichever is left over. To add points, use add_dimension_points instead.")]
     public static string RecreateDimension(
-        [Description("ID of the dimension set to rebuild. This id is DEAD after the call.")] int dimensionId,
-        [Description("Flat JSON array of model-space coordinates for the new chain: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
+        [Description("ID of the dimension set to rebuild. Replaced only after verification; inspect writeState on failure.")] int dimensionId,
+        [Description("Flat JSON array of view-local coordinates for the new chain: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
         [Description("REQUIRED, no default — passing the wrong one rebuilds a vertical chain as horizontal. 'horizontal' (offset along Y), 'vertical' (offset along X), or a custom 'dx,dy,dz' vector for inclined chains. Read dimensionType from get_dimension_contexts for the chain being rebuilt.")] string direction,
-        [Description("Signed offset from the points to the dimension line, mm. Omit to reuse the original set's Distance — but Tekla stores it unsigned, so the line can end up on the opposite side. The offset IS auto-corrected: creation does not honour it, so the command assigns Distance afterwards and re-reads it. distance is what the sheet shows; a non-zero distanceCorrection is normal. If distanceCorrectionError is set, the recreate succeeded but the line stayed at the created offset — nudge it with move_dimension.")] double? distance = null)
+        [Description("Non-negative offset. Omit to reuse original Distance. Direction sets the side. Replacement offset is corrected and read back before deleting the original. On failure inspect both IDs and writeState; do not retry blindly.")] double? distance = null)
     {
         var json = RunBridge("recreate_dimension",
             dimensionId.ToString(CultureInfo.InvariantCulture),
@@ -319,13 +319,13 @@ public static partial class ModelTools
         {
             var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
-                return $"Error: {e}";
+                return $"Error: {e}\n{json}";
 
             var ok = doc.RootElement.TryGetProperty("recreated", out var r) && r.GetBoolean();
             var newId = doc.RootElement.TryGetProperty("newDimensionId", out var n) ? n.GetInt32() : 0;
             var kept = doc.RootElement.TryGetProperty("attributesKept", out var k) && k.GetBoolean();
             return ok
-                ? $"Recreated dimension {dimensionId} as {newId} (style {(kept ? "preserved" : "DEFAULTED")}). Use {newId} from now on.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
+                ? $"Recreated dimension {dimensionId} as {newId} (original attributes supplied: {kept}). Use {newId} from now on.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
                 : $"Failed to recreate dimension.\n{json}";
         }
         catch
@@ -334,10 +334,10 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create a straight dimension set in a drawing view from a list of model-space points. Points are passed as a flat JSON array [x0,y0,z0, x1,y1,z1, ...] in model coordinates (mm). Tekla projects them onto the view automatically.")]
+    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. On failure inspect dimensionId and writeState: a replacement may exist. No automatic rollback or blind retry.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,
-        [Description("Flat JSON array of model-space coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
+        [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
         [Description("Direction of the dimension offset: 'horizontal' (offset up, dimension left-right), 'vertical' (offset right, dimension up-down), or custom 'dx,dy,dz' vector. Default: horizontal")] string direction = "horizontal",
         [Description("Offset distance from the part to the dimension line in mm. Default: 50")] double distance = 50.0,
         [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
@@ -352,7 +352,7 @@ public static partial class ModelTools
         {
             var doc = JsonDocument.Parse(json);
             if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
-                return $"Error: {e}";
+                return $"Error: {e}\n{json}";
 
             var created = doc.RootElement.TryGetProperty("created", out var c) && c.GetBoolean();
             var dimId   = doc.RootElement.TryGetProperty("dimensionId", out var d) ? d.GetInt32() : 0;

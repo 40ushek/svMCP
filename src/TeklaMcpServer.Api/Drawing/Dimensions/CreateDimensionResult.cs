@@ -2,6 +2,7 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed class CreateDimensionResult
 {
+    public DimensionWriteState? WriteState { get; set; }
     public bool    Created     { get; set; }
     public int     DimensionId { get; set; }
     public int     ViewId      { get; set; }

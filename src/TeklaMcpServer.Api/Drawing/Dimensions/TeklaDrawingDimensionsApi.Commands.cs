@@ -92,7 +92,14 @@ public sealed partial class TeklaDrawingDimensionsApi
     }
 
     public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile)
+        => CreateDimension(viewId, points, direction, distance, attributesFile, null);
+
+    public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance,
+        string attributesFile, string? expectedRowType)
     {
+        var validationError = DimensionWriteProtocol.Validate(points, distance);
+        if (validationError != null) return new CreateDimensionResult { Error = validationError };
+        var dirVector = DimensionCreatePlacementHelper.ResolveDirection(direction);
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
             throw new DrawingNotOpenException();
@@ -100,30 +107,19 @@ public sealed partial class TeklaDrawingDimensionsApi
         var view = EnumerateViews(activeDrawing).FirstOrDefault(v => v.GetIdentifier().ID == viewId)
             ?? throw new ViewNotFoundException(viewId);
 
-        if (points == null || points.Length < 6 || points.Length % 3 != 0)
-            return new CreateDimensionResult { Error = "points must be a flat array [x0,y0,z0, x1,y1,z1, ...] with at least 2 points" };
-
-        var pointList = new PointList();
-        for (int i = 0; i + 2 < points.Length; i += 3)
-            pointList.Add(new Point(points[i], points[i + 1], points[i + 2]));
-
-        var dirVector = DimensionCreatePlacementHelper.ResolveDirection(direction);
         var attr = DimensionCreatePlacementHelper.CreateAttributes(attributesFile);
-
-        var dim = new StraightDimensionSetHandler().CreateDimensionSet(
-            view, pointList, dirVector, distance, attr);
-
-        if (dim == null)
-            return new CreateDimensionResult { Error = "CreateDimensionSet returned null" };
-
-        activeDrawing.CommitChanges("(MCP) CreateDimension");
+        if (expectedRowType != null && !string.Equals(attr.DimensionType.ToString(), expectedRowType, System.StringComparison.OrdinalIgnoreCase))
+            return new CreateDimensionResult { Error = $"Attributes row type is {attr.DimensionType}, plan requires {expectedRowType}; nothing created" };
+        var state = WriteVerifiedDimension(activeDrawing, view, points, dirVector, distance, attr);
 
         return new CreateDimensionResult
         {
-            Created = true,
-            DimensionId = dim.GetIdentifier().ID,
+            Created = state.Completed,
+            DimensionId = state.NewDimensionId,
             ViewId = viewId,
-            PointCount = pointList.Count
+            PointCount = points.Length / 3,
+            WriteState = state,
+            Error = state.Error
         };
     }
 
@@ -381,11 +377,12 @@ public sealed partial class TeklaDrawingDimensionsApi
         // Argument check first: a malformed point array is the caller's mistake and needs no
         // round trip into Tekla to diagnose. It also matters here because the original set is
         // only deleted much later — validation must never get far enough to touch the drawing.
-        if (points == null || points.Length < 6 || points.Length % 3 != 0)
+        var validationError = DimensionWriteProtocol.Validate(points, distance);
+        if (validationError != null)
             return new RecreateDimensionResult
             {
                 OldDimensionId = dimensionId,
-                Error = "points must be a flat array [x0,y0,z0, x1,y1,z1, ...] with at least 2 points"
+                Error = validationError
             };
 
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
@@ -397,7 +394,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         try
         {
             var original = FindDimensionSet(activeDrawing, dimensionId);
-            if (original == null)
+            if (original == null || !original.Select())
                 return new RecreateDimensionResult
                 {
                     OldDimensionId = dimensionId,
@@ -416,87 +413,34 @@ public sealed partial class TeklaDrawingDimensionsApi
             var originalDistance = original.Distance;
             var effectiveDistance = distance ?? originalDistance;
 
-            StraightDimensionSet.StraightDimensionSetAttributes? attributes = null;
-            try { attributes = original.Attributes; } catch { }
-
-            var pointList = ToPointList(points);
-            var dirVector = DimensionCreatePlacementHelper.ResolveDirection(direction);
-
-            var handler = new StraightDimensionSetHandler();
-            var created = attributes != null
-                ? handler.CreateDimensionSet(view, pointList, dirVector, effectiveDistance, attributes)
-                : handler.CreateDimensionSet(view, pointList, dirVector, effectiveDistance);
-
-            if (created == null)
-                return new RecreateDimensionResult
-                {
-                    OldDimensionId = dimensionId,
-                    ViewId = viewId,
-                    Error = "CreateDimensionSet returned null; original left untouched"
-                };
-
-            // Only drop the original once the replacement exists, so a failure above cannot
-            // leave the drawing without the dimension.
-            original.Delete();
-            activeDrawing.CommitChanges("(MCP) RecreateDimension");
-
-            // Creation does not honour the requested offset: attributes copied from the original
-            // carry their own, which Tekla adds on top — the same points and distance land the
-            // line in different places with "standard" attributes and with copied ones. Passing a
-            // corrected value into CreateDimensionSet does not help either, because Distance is
-            // measured from the extreme point along the offset direction and the sign of that
-            // direction decides which extreme.
-            //
-            // Assigning Distance on the already-created set instead is exact. This is NOT what
-            // move_dimension does: that one shifts Distance by a delta, this sets it to a value.
-            // Correcting by hand after every recreate landed the line correctly every time over a
-            // day of use, so do it here instead of making every caller repeat it.
-            var createdDistance = created.Distance;
-            var newDimensionId = created.GetIdentifier().ID;
-            var appliedDistance = createdDistance;
-            string? correctionError = null;
-
-            if (System.Math.Abs(createdDistance - effectiveDistance) > 1e-6)
+            var offsetError = DimensionWriteProtocol.Validate(points, effectiveDistance);
+            if (offsetError != null)
+                return new RecreateDimensionResult { OldDimensionId = dimensionId, Error = offsetError };
+            // Failure to read style must stop before creating anything, not fall back to defaults.
+            StraightDimensionSet.StraightDimensionSetAttributes attributes;
+            try { attributes = original.Attributes ?? throw new System.InvalidOperationException("Missing original attributes"); }
+            catch (System.Exception ex)
             {
-                try
-                {
-                    created.Distance = effectiveDistance;
-                    created.Modify();
-                    activeDrawing.CommitChanges("(MCP) RecreateDimension offset");
-
-                    // Read the offset back off a freshly fetched set rather than off `created`.
-                    // That instance holds the value just assigned to it whether or not Tekla
-                    // accepted it, so reporting from it would claim a correction the sheet does
-                    // not show.
-                    var reread = FindDimensionSet(activeDrawing, newDimensionId);
-                    if (reread != null)
-                        appliedDistance = reread.Distance;
-                    else
-                        correctionError =
-                            $"offset correction was committed but set {newDimensionId} could not be found to verify it";
-                }
-                catch (System.Exception ex)
-                {
-                    // The recreate itself succeeded and must stand — only the line sits at the
-                    // wrong offset. Report that precisely instead of failing the whole call, and
-                    // leave appliedDistance at the pre-correction value so the result cannot
-                    // claim a move that did not happen.
-                    correctionError = $"offset correction failed: {ex.Message}";
-                }
+                return new RecreateDimensionResult { OldDimensionId = dimensionId, Error = ex.Message };
             }
+            var dirVector = DimensionCreatePlacementHelper.ResolveDirection(direction);
+            var state = WriteVerifiedDimension(activeDrawing, view, points, dirVector,
+                effectiveDistance, attributes, original);
 
             return new RecreateDimensionResult
             {
-                Recreated = true,
+                Recreated = state.Completed,
                 OldDimensionId = dimensionId,
-                NewDimensionId = newDimensionId,
+                NewDimensionId = state.NewDimensionId,
                 ViewId = viewId,
-                PointCount = pointList.Count,
-                AttributesKept = attributes != null,
-                Distance = appliedDistance,
+                PointCount = points.Length / 3,
+                AttributesKept = state.NewDimensionId > 0,
+                Distance = state.ObservedDistance ?? 0,
                 RequestedDistance = effectiveDistance,
-                DistanceCorrection = appliedDistance - createdDistance,
-                DistanceCorrectionError = correctionError
+                DistanceCorrection = state.ObservedDistance.HasValue && state.InitialDistance.HasValue
+                    ? state.ObservedDistance.Value - state.InitialDistance.Value : 0,
+                WriteState = state,
+                Error = state.Error
             };
         }
         finally
