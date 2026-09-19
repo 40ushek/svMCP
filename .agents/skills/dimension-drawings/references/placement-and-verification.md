@@ -20,6 +20,19 @@ delete in a placement run.
   otherwise mark the start unverified.
 - `LengthList` is neither the relative nor absolute printed row. Compute the
   intended rows from the planned start and dimension type.
+- **When a part touches another part, its own real corner exists on both
+  faces - the face it shares with the other part, and its own outer/visible
+  face. Use the outer face, the one actually drawn in the view, not the
+  touching one.** Both are real, so this is not the floating-point bug above -
+  picking the touching face still lands on a real vertex, but not the one a
+  person reading the sheet would measure to. Measured on M.505, FrontView
+  `2724`: a 20 mm end plate spans X=-20 (its own outer face) to X=0 (where it
+  meets the beam, X=0 is also the beam's own start). A vertical dimension
+  built with the plate's points at X=0 read cleanly and passed every other
+  check, but its witness lines started at the hidden, touching face instead
+  of the plate's drawn outline; the fix was moving the plate's two points to
+  X=-20, its true outer face, matching the horizontal chain on the same view
+  that already used it.
 - **Do not reuse one edge coordinate across two points at different positions
   along the chain.** Each point needs its own real boundary, read from that
   same position's own support in `get_structural_chain_positions` - not copied
@@ -99,10 +112,12 @@ Reuse the unchanged structural snapshot; refresh dimension state after writes.
 
 On bridge versions exposing `writeState`, inspect it as well as the returned ID.
 The verified writer checks its new chain, not all neighbouring chains or drafting
-sufficiency. A failed call can leave the replacement present and the original
-retained, deleted or uncertain depending on the stage. Re-read both IDs before
-any retry/cleanup; do not assume atomic rollback. No speculative delete/recreate
-loop to discover a coordinate or style.
+sufficiency. A failure before the original is touched removes the new set
+(`newDimensionRemoved`); a failed cleanup or a failure after the original delete
+started can leave the replacement present and the original retained, deleted or
+uncertain depending on the stage. Re-read both IDs before any retry/cleanup; the
+protocol is not atomic. No speculative delete/recreate loop to discover a
+coordinate or style.
 
 Without an explicit verified state, a non-error response proves only that Tekla
 accepted a request. In either case, re-read

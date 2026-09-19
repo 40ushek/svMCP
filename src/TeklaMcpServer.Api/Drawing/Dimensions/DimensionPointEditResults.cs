@@ -52,10 +52,10 @@ public sealed class RecreateDimensionResult
     public bool    AttributesKept  { get; set; }
     /// <summary>
     /// Offset the new set actually ended up with, re-read from a freshly fetched set after the
-    /// correction was committed. Zero if unread; WriteState.ObservedDistance distinguishes
-    /// unknown from a verified zero. On failure inspect WriteState before using this value.
+    /// correction was committed. Null when it was never read or when the failed replacement was
+    /// removed (there is no set left to have an offset); a real zero is a real zero.
     /// </summary>
-    public double  Distance          { get; set; }
+    public double? Distance          { get; set; }
     /// <summary>Offset that was asked for — either the caller's value or the original's.</summary>
     public double  RequestedDistance { get; set; }
     /// <summary>
@@ -70,11 +70,6 @@ public sealed class RecreateDimensionResult
     /// they still differ, the correction did not take and the line needs attention.
     /// </summary>
     public double  DistanceCorrection { get; set; }
-    /// <summary>
-    /// Legacy field retained for wire compatibility. Failures now use Error and WriteState;
-    /// an offset failure prevents original deletion and is not reported as successful recreation.
-    /// </summary>
-    public string? DistanceCorrectionError { get; set; }
     public string? Error             { get; set; }
 }
 

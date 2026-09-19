@@ -301,9 +301,11 @@ public static partial class ModelTools
         "REBUILD a dimension chain from a new point list, carrying over its style and offset. " +
         "Use this only when points must be REMOVED: Tekla Open API cannot drop a point from an existing " +
         "chain, so the chain is deleted and recreated. IMPORTANT — the id CHANGES, and the old id stops " +
-        "working; use newDimensionId from the response afterwards. Not atomic: the replacement is created " +
-        "before the original is deleted, so an error at the very end can leave both on the sheet — on failure, " +
-        "re-read the view and drop whichever is left over. To add points, use add_dimension_points instead.")]
+        "working; use newDimensionId from the response afterwards. If the replacement fails verification, the tool tries to " +
+        "delete it and leave the original: that is guaranteed only when writeState.newDimensionRemoved is true; " +
+        "if the cleanup failed the error says the replacement may still be on the sheet. Once the original delete has started " +
+        "nothing is undone: an error then can leave both on the sheet or an uncertain state — re-read the view " +
+        "before doing anything. To add points, use add_dimension_points instead.")]
     public static string RecreateDimension(
         [Description("ID of the dimension set to rebuild. Replaced only after verification; inspect writeState on failure.")] int dimensionId,
         [Description("Flat JSON array of view-local coordinates for the new chain: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
@@ -334,7 +336,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. On failure inspect dimensionId and writeState: a replacement may exist. No automatic rollback or blind retry.")]
+    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,
         [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,

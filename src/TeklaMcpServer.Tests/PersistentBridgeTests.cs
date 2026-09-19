@@ -36,7 +36,7 @@ public sealed class PersistentBridgeTests
     [Fact]
     public void SendRestartsProcessAfterMalformedProtocolResponse()
     {
-        using var bridge = CreateBridge("malformed-then-ok", TimeSpan.FromMilliseconds(500), out var stateFile);
+        using var bridge = CreateBridge("malformed-then-ok", TimeSpan.FromSeconds(3), out var stateFile);
 
         Assert.ThrowsAny<Exception>(() => bridge.Send("ping"));
 

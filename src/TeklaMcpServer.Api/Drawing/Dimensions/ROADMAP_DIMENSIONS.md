@@ -36,9 +36,32 @@ For example, "locate this plate against the beam profile in X" is a question;
 | Preliminary structural chains | Implemented; carry positions and owner supports | That a selected chain answers the fabrication question |
 | `StructuralDimensionPlanBuilder` | Implemented validator for a supplied one-chain steel `PartLocation` plan | Automatic intent selection or sufficient dimensions; reasons are still free text |
 | Preview/apply bridge + MCP | Implemented, experimental; Relative/Create only | Deployment or successful live Tekla operation; retain/replace and duplicate suppression are absent |
-| Verified create/recreate protocol | Implemented; injected failure tests | Live read-back/reflow behaviour, atomic rollback, or verification of every style property |
+| Verified create/recreate protocol | Implemented; injected failure tests | Live read-back/reflow behaviour, live compensation, rollback after the original delete started, or verification of every style property |
 | `dimension-drawings` skill | Updated: scoped work, current-data reuse, targeted reads, no default overlays | Measured runtime improvement or better drafting results on live cases |
 | Intent/relationship coverage planner | Proposed below; not implemented | Anything about whole-view or whole-assembly completeness |
+
+### Write failure handling: compensation before the original is touched
+
+`DimensionWriteProtocol` is still non-transactional, but it compensates where
+that is safe. `create_dimension` and the replacement inside `recreate_dimension`
+are committed before they are read back. If the write fails **before the
+original is deleted**, the new set is deleted, the commit is repeated and its
+absence is confirmed: `writeState.newDimensionRemoved = true`, the result's ID is
+0 and the original (for recreate) is untouched. If that cleanup fails,
+`writeState.cleanupError` is set and the error text says the new set may still
+be on the sheet; the caller must re-read the view before retrying.
+
+Once the original delete has been attempted nothing is undone: deleting the
+replacement then could leave no dimension at all. A later deletion/commit/
+read-back failure can leave both dimensions or an uncertain state. Callers keep
+the returned IDs/state, re-read the view before retrying and must not assume a
+failed response removed either object.
+
+Covered by injected-failure unit tests only (`DimensionWriteProtocolTests`); the
+compensation path is not yet exercised on a live drawing. Exercise it only on a
+test drawing; do not induce failures on a production sheet.
+`add_dimension_points` and `combine_dimensions` keep their own cleanup/rollback
+paths and are not routed through this protocol.
 
 Previous verification recorded 959 passed / 0 failed / 1 skipped in the full
 suite and a successful bridge build. Those are code-test results, not live

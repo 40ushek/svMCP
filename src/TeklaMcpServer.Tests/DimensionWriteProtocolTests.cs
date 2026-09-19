@@ -126,6 +126,70 @@ public sealed class DimensionWriteProtocolTests
     }
 
     [Fact]
+    public void FreshCreateFailingVerificationRemovesTheNewSetAndConfirmsIt()
+    {
+        var calls = new List<string>();
+        var result = DimensionWriteProtocol.Execute(() => 42,
+            () => { calls.Add("commit"); return true; }, _ => "wrong points", null, null,
+            id => { calls.Add("deleteNew:" + id); return true; },
+            id => { calls.Add("absent:" + id); return true; });
+        Assert.Equal(new[] { "commit", "deleteNew:42", "commit", "absent:42" }, calls);
+        Assert.True(result.NewDimensionRemoved);
+        Assert.Null(result.CleanupError);
+        Assert.False(result.Completed);
+        Assert.Contains("the new dimension was removed", result.ErrorDetail);
+    }
+
+    [Fact]
+    public void ReplacementFailingBeforeOriginalDeletionIsRemovedAndOriginalStays()
+    {
+        var originalDeleted = false;
+        var result = DimensionWriteProtocol.Execute(() => 42, () => true, _ => "wrong style",
+            () => { originalDeleted = true; return true; }, () => true,
+            _ => true, _ => true);
+        Assert.False(originalDeleted);
+        Assert.True(result.NewDimensionRemoved);
+        Assert.False(result.OriginalDeleteAttempted);
+    }
+
+    [Theory]
+    [InlineData("deleteFalse")]
+    [InlineData("commitFails")]
+    [InlineData("stillPresent")]
+    public void FailedCleanupIsReportedAndNeverClaimedAsRemoval(string failure)
+    {
+        var commits = 0;
+        var result = DimensionWriteProtocol.Execute(() => 42,
+            () => failure == "commitFails" && ++commits == 2 ? throw new Exception("lost connection") : true,
+            _ => "wrong points", null, null,
+            _ => failure != "deleteFalse", _ => failure != "stillPresent");
+        Assert.False(result.NewDimensionRemoved);
+        Assert.NotNull(result.CleanupError);
+        Assert.Contains("may still be on the sheet", result.ErrorDetail);
+        Assert.Equal(42, result.NewDimensionId);
+    }
+
+    [Fact]
+    public void NothingIsUndoneOnceTheOriginalDeleteWasAttempted()
+    {
+        var deletedNew = false;
+        var result = DimensionWriteProtocol.Execute(() => 42, () => true, _ => null,
+            () => false, () => false, _ => { deletedNew = true; return true; }, _ => true);
+        Assert.True(result.OriginalDeleteAttempted);
+        Assert.False(deletedNew);
+        Assert.False(result.NewDimensionRemoved);
+    }
+
+    [Fact]
+    public void FailedCreateHasNothingToRemove()
+    {
+        var result = DimensionWriteProtocol.Execute(() => 0, () => true, _ => null, null, null,
+            _ => throw new Exception("must not delete"), _ => true);
+        Assert.False(result.NewDimensionRemoved);
+        Assert.Null(result.CleanupError);
+    }
+
+    [Fact]
     public void CommitFalseStopsBeforeVerificationOrDeletion()
     {
         var result = DimensionWriteProtocol.Execute(() => 42, () => false,

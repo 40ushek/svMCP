@@ -78,7 +78,9 @@ public sealed partial class TeklaDrawingDimensionsApi
                         ? null : DimensionWriteVerification.CheckDatum(points[0], points[1], links);
                 },
                 original == null ? null : () => original.Delete(),
-                originalId == null ? null : () => FindDimensionSet(drawing, originalId.Value) == null);
+                originalId == null ? null : () => FindDimensionSet(drawing, originalId.Value) == null,
+                id => FindDimensionSet(drawing, id)?.Delete() == true,
+                id => FindDimensionSet(drawing, id) == null);
             state.ObservedDistance = observedDistance;
             state.InitialDistance = initialDistance;
             return state;

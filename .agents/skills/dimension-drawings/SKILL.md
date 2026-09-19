@@ -151,8 +151,10 @@ alone is not verification; a verified-write response does not replace the
 neighbour check.
 
 On write error, keep all returned IDs and `writeState`; inspect the view before
-retrying. An old and new dimension may both exist. Never assume rollback or
-delete the old chain merely because a new ID exists. Correct a demonstrated
+retrying. If `writeState.newDimensionRemoved` is true the failed replacement is
+gone and the original stands; otherwise an old and new dimension may both exist
+(a failed cleanup says so). Never delete the old chain merely because a new ID
+exists. Correct a demonstrated
 mismatch, then verify again. If the same failure repeats without new evidence,
 stop that operation and report the state; do not loop speculative writes.
 

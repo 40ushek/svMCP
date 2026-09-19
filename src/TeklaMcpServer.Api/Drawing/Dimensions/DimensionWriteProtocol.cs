@@ -3,9 +3,11 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-/// <summary>Non-transactional write: preserve IDs and stop before deleting the original
-/// unless a committed replacement has passed read-back. Failed replacements are left
-/// available for inspection; this protocol never claims rollback.</summary>
+/// <summary>Non-transactional write: stop before deleting the original unless a committed
+/// replacement has passed read-back. If the write fails before the original is touched, the
+/// new set is deleted and its absence confirmed (<see cref="NewDimensionRemoved"/>); a failed
+/// cleanup is reported, not hidden. After the original delete is attempted nothing is undone:
+/// deleting the replacement then could leave no dimension at all.</summary>
 public sealed class DimensionWriteState
 {
     public int NewDimensionId { get; set; }
@@ -14,6 +16,15 @@ public sealed class DimensionWriteState
     public bool OriginalDeleteAccepted { get; set; }
     public bool OriginalDeletionVerified { get; set; }
     public bool Completed { get; set; }
+    /// <summary>True only when the new set was deleted and its absence confirmed after a failure
+    /// that happened before the original was touched.</summary>
+    public bool NewDimensionRemoved { get; set; }
+    public string? CleanupError { get; set; }
+    /// <summary>The failure plus what became of the new set, for callers that show one message.</summary>
+    public string? ErrorDetail => Error == null ? null
+        : NewDimensionRemoved ? Error + "; the new dimension was removed"
+        : CleanupError != null ? Error + "; removal of the new dimension failed (" + CleanupError + "), it may still be on the sheet"
+        : Error;
     public double? ObservedDistance { get; set; }
     public double? InitialDistance { get; set; }
     public string Stage { get; set; } = "notStarted";
@@ -24,7 +35,8 @@ internal static class DimensionWriteProtocol
 {
     internal static DimensionWriteState Execute(Func<int> create, Func<bool> commit,
         Func<int, string?> verify, Func<bool>? deleteOriginal = null,
-        Func<bool>? originalIsAbsent = null)
+        Func<bool>? originalIsAbsent = null, Func<int, bool>? deleteNew = null,
+        Func<int, bool>? newIsAbsent = null)
     {
         var state = new DimensionWriteState();
         try
@@ -62,8 +74,32 @@ internal static class DimensionWriteProtocol
             state.Stage = "completed";
             state.Completed = true;
         }
-        catch (Exception ex) { state.Error = ex.Message; }
+        catch (Exception ex)
+        {
+            state.Error = ex.Message;
+            if (deleteNew != null && !state.OriginalDeleteAttempted && state.NewDimensionId > 0)
+                RemoveNew(state, commit, deleteNew, newIsAbsent);
+        }
         return state;
+    }
+
+    private static void RemoveNew(DimensionWriteState state, Func<bool> commit,
+        Func<int, bool> deleteNew, Func<int, bool>? newIsAbsent)
+    {
+        try
+        {
+            if (!deleteNew(state.NewDimensionId))
+                throw new InvalidOperationException("Delete() of the new dimension returned false");
+            if (!commit())
+                throw new InvalidOperationException("CommitChanges() after removing the new dimension returned false");
+            if (newIsAbsent == null || !newIsAbsent(state.NewDimensionId))
+                throw new InvalidOperationException("Removal of the new dimension could not be confirmed");
+            state.NewDimensionRemoved = true;
+        }
+        catch (Exception ex)
+        {
+            state.CleanupError = ex.Message;
+        }
     }
 
     internal static string? Validate(double[]? points, double? distance)

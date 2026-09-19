@@ -115,11 +115,11 @@ public sealed partial class TeklaDrawingDimensionsApi
         return new CreateDimensionResult
         {
             Created = state.Completed,
-            DimensionId = state.NewDimensionId,
+            DimensionId = state.NewDimensionRemoved ? 0 : state.NewDimensionId,
             ViewId = viewId,
             PointCount = points.Length / 3,
             WriteState = state,
-            Error = state.Error
+            Error = state.ErrorDetail
         };
     }
 
@@ -431,16 +431,16 @@ public sealed partial class TeklaDrawingDimensionsApi
             {
                 Recreated = state.Completed,
                 OldDimensionId = dimensionId,
-                NewDimensionId = state.NewDimensionId,
+                NewDimensionId = state.NewDimensionRemoved ? 0 : state.NewDimensionId,
                 ViewId = viewId,
                 PointCount = points.Length / 3,
-                AttributesKept = state.NewDimensionId > 0,
-                Distance = state.ObservedDistance ?? 0,
+                AttributesKept = state.Completed,
+                Distance = state.NewDimensionRemoved ? null : state.ObservedDistance,
                 RequestedDistance = effectiveDistance,
-                DistanceCorrection = state.ObservedDistance.HasValue && state.InitialDistance.HasValue
+                DistanceCorrection = !state.NewDimensionRemoved && state.ObservedDistance.HasValue && state.InitialDistance.HasValue
                     ? state.ObservedDistance.Value - state.InitialDistance.Value : 0,
                 WriteState = state,
-                Error = state.Error
+                Error = state.ErrorDetail
             };
         }
         finally
