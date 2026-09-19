@@ -100,6 +100,33 @@ delete in a placement run.
 - Before replacing a chain, read its `topDirection` and reference-line position;
   select the matching direction keyword.
 - `move_dimension` takes a delta, not an absolute target.
+- **`distance` is measured from a BASE point of the chain, along the direction
+  vector, in view units (not paper mm on TS2025).** Tekla documents it as "distance
+  from the first dimension point to the dimension line". The base is the first point
+  *after Tekla orders the chain along its axis*: the LEFTMOST point of a horizontal
+  chain, the LOWEST point of a vertical one, NOT necessarily the point you passed
+  first and NOT the outermost point. (Measured on M.48 view 4732: an overall chain
+  passed right-point-first got `InitialDistance` 949.95 = 389.95 + 560, i.e. Tekla
+  counted from the leftmost point; the line landed at y~230, inside the girder, and
+  a screenshot confirmed it.) The side comes from the direction keyword, never from
+  the sign of `distance` or from point order; point order only decides where the
+  chain starts counting.
+  To put the line a `gap` beyond the outermost measured point pass
+  `distance = gap + (offset-side extreme coordinate - base point coordinate)`
+  along the offset direction, where the base point is the leftmost (horizontal) or
+  lowest (vertical) point. Easiest: pass the chain leftmost/lowest point first. Example (M.48 section E, top chain, first point y=86.8, outermost
+  y=427.05, gap 120): `distance = 120 + 427.05 - 86.8 = 460.25`. Passing 120 put the
+  line at y~207, inside the end plate. Alternatively pass the outermost point first
+  if the datum allows it. A gap in paper mm becomes `paperGap x viewScale`.
+  Measured values from a chain the user placed by hand on M.48 section C: about 68
+  view units above the flange and about 86 left of the plate (7-9 mm on paper at
+  1:10); use as a starting point, not as a rule.
+- **Do not trust the read-back `referenceLine` for the offset side.** As of this
+  writing `get_drawing_dimensions` (and the verified writer's "correction") assume the
+  extreme point, so `referenceLine` can show a line that is not where Tekla draws it,
+  and `writeState.Verified=true` does not prove the line is outside the assembly.
+  Compute the expected line yourself (`first point coordinate + distance`) and state
+  it; the user's screenshot is the check that settles it.
 - Dimension creation measures the offset from its points, not from a part edge.
 - Creating or recreating a chain may reflow other chains. Re-read them.
 

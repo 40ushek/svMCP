@@ -19,7 +19,10 @@ steel visual gate still applies.
 ## Read, preview, apply
 
 1. From the current `get_structural_chain_positions` response, retain
-   `sourceFingerprint`, `positionIndex` and `supportIndex` with the coordinates.
+   `sourceFingerprint`, `positionIndex` and each support's `supportIndex` with the
+   coordinates. In the default compact answer the `supportIndex` values are the
+   `refs[].supportIndex` of a support entry (one entry may list several, all naming
+   the same point); name any one of them. Use `verbose=true` for the full form.
    Also read existing dimensions to avoid duplicating a matching chain.
 2. Build one plan JSON with these fields:
    - `viewId`, `sourceFingerprint`, `side` (Top/Bottom/Left/Right);

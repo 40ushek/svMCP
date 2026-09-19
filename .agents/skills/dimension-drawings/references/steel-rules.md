@@ -41,6 +41,12 @@ the beam's own known profile width folded in between rather than stated on its o
 dimensions on the sheet (both read empty); re-derive from `get_structural_chain_positions`
 before placing rather than trusting these numbers as already-placed.
 
+**A raked secondary part dimensioned at both ends** (a stiffener cut at an angle, one point in
+the top chain and one in the bottom chain) uses the SAME side of the part at both ends - the left
+corner on top and the left corner on the bottom, or the right on both. Mixing sides gives two
+numbers that look alike (283 and 283) but measure different edges. Confirmed by the user on the
+M.48 girder's raked ribs (top 15045.7 with bottom 15122.4, not 15142.3).
+
 Coordinates come from `get_structural_chain_positions` and from nowhere else.
 
 Read on twenty-one drawings across three member types: ten HEB160 columns,
@@ -72,7 +78,7 @@ until something is confirmed. State in the final response which applied.
 
 | Setting | Default | Notes |
 |---|---|---|
-| Anchor | faces | An axis is allowed when the sheet already uses one. Compute it only from a qualifying pair - same `modelId`, both `kind=AxisAlignedEdge`, non-null `partExtentAlongChain`, the two coordinates differing by exactly that extent within `partSpanMatchToleranceMm`. Otherwise faces. |
+| Anchor | faces | An axis is allowed when the sheet already uses one. Compute it only from a qualifying pair - same `modelId`, both supports having a `refs` entry with `kind=AxisAlignedEdge` (an entry merged from several supports lists each kind against its own `supportIndex`; a `TiltedEdgeCorner` ref alone does not qualify), non-null `partExtentAlongChain`, the two coordinates differing by exactly that extent within `partSpanMatchToleranceMm`. Otherwise faces. |
 | `Internal` | ask | `None` no secondary-part internal dimensions; `Necessary` keeps what the shape cannot tell; `All` keeps every admissible one. Never blend: `Necessary` under `All` deletes what the plant wants, anything under `None` adds what it does not. |
 | `recognizableDistance` | ask | The asymmetry below which a fitter cannot orient a part. Required by `Necessary`, by nothing else; without it `Necessary` stops. Tekla's dialogs use tens of mm. |
 | `minDimensionLength` | 3 mm | Local, not Tekla's - its own default is 0. The filter drops anything *shorter* than this, so it must sit above the noise it targets: the radius staircase on a rolled flange steps 0.2-2 mm, and 3 mm clears all of it with headroom. Still below the smallest genuine feature seen - a 5 mm segment at a raked corner on `M.78`. |

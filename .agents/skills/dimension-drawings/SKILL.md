@@ -141,7 +141,9 @@ After each write that can reflow neighbours, re-read
 `get_drawing_dimensions <viewId>` and compare to the plan:
 - kept coordinates present, removed ones absent from the planned chain;
 - each witness point uses its own intended support;
-- reference line on the correct side/offset;
+- reference line on the correct side/offset, outside the assembly outline: `distance`
+  counts from the FIRST point, so compute `first point + distance` yourself; the
+  read-back `referenceLine` and `Verified=true` are not proof (placement reference);
 - intended relative/absolute rows and closure;
 - affected neighbouring chains still correct.
 
