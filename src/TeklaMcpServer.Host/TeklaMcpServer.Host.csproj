@@ -21,6 +21,15 @@
     <PackageReference Include="TSAppConfigPatcherTask" Version="2.1.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="Tekla.Structures.DrawingPresentationModel">
+      <HintPath>C:\TeklaStructures\2025.0\bin\Tekla.Structures.DrawingPresentationModel.dll</HintPath>
+    </Reference>
+    <Reference Include="Tekla.Structures.DrawingPresentationModelInterface">
+      <HintPath>C:\TeklaStructures\2025.0\bin\Tekla.Structures.DrawingPresentationModelInterface.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
   <PropertyGroup>
     <TeklaExtensionsDir>C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\</TeklaExtensionsDir>
   </PropertyGroup>

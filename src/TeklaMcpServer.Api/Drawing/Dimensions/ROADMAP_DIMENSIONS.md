@@ -13,6 +13,173 @@ not reconstructed from bbox. No new automatic drafting policy was introduced.
 The active order of work is below. The older numbered proposals later in this
 file are background/backlog, not another competing implementation sequence.
 
+## Increment: faster, safer one-chain placement (2026-09-19)
+
+Planned, not implemented. Live runs on M.49/M.48 (sections C/E, back view
+`Hinten`) suggest that line placement and manually reviewing too many candidate
+positions are the main avoidable costs. The work below first makes placement
+semantics trustworthy, then reduces reads and adds a conditional template.
+
+**Observed behavior (TS2025; do not generalize beyond the tested cases yet):**
+
+- The initial observations were the overall chain on M.48 `Hinten` and the top
+  and left chains on section E (a wider probe run is recorded below). In those
+  cases, the physical offset
+  appeared tied to Tekla's geometric base point: leftmost for a horizontal chain
+  and lowest for a vertical one, regardless of input enumeration order. On
+  M.48 `Hinten`, points passed right-first:
+  `InitialDistance` 949.95 = 389.95 + 560; the screenshot showed the line at
+  y~230 inside the girder. On M.48 section E, `distance` 120 from a flag edge
+  (y 86.8) put the line inside the end plate; 460.25 moved it out. No diagonal
+  chain or tied-base case is represented in these observations.
+- This placement base is **not** the chain datum. `points[0]` remains the
+  requested start of a new chain; running dimensions must follow the main-part
+  start rule or an explicit reverse direction. Sorting must not silently change
+  that datum.
+- The current verified writer corrects and checks the stored `Distance`, points,
+  direction and (where applicable) datum; it does not prove the rendered line
+  is at the expected location. The reader's `referenceLine` is reconstructed
+  from points and `Distance`, not an independent observation of the drawn line.
+- **Presentation Model line read is confirmed for dimension segments, not sets.**
+  In the live TS2025 drawing `Binder`, section E (`viewId=6093`, scale 1:10),
+  `GetObjectPresentation(dimensionSetId)` returned `null` for the two tested
+  chains (`22198` top, `22171` left). Calling it for each `StraightDimension`
+  segment instead returned the rendered primitives: dimension line, extension
+  lines and text. The reported paper-space line coordinates were `y=54.705`
+  for the top chain and `x=-38` for the left chain; multiplied by 10 they
+  matched the independently expected `y=547.05` and `x=-380`. Segment text
+  values matched the visible dimensions. Thus the API can provide an independent
+  line observation in this tested case, without reading reconstructed
+  `referenceLine` or relying on a screenshot. Read each segment, not its parent
+  set. This confirms the route only for these two chains at 1:10; other sides,
+  scales, point orders and tied-base cases were not covered by this first run.
+  The `null` for the set id is real API behavior in that run: the segment reads
+  worked in the same process. (A separate sandbox-launched probe that could not
+  reach the Presentation Model gRPC endpoint (`Ping` failed) is a connection
+  failure and says nothing about geometry.)
+- **Wider probe run (55 of 65 dimensions compared).** With `DIMENSION_PROBE_ALL=1`
+  the probe read every dimension on the drawing (1:5 and 1:10 views, all four
+  sides). Drawn line = base point (leftmost of a horizontal chain, lowest of a
+  vertical one) +- `distance` in view units matched 36 of 55. Base and outermost
+  point coincide in 20 of those 36, so only the other 16 tell the two apart; in
+  those 16 none matched the outermost point, and no dimension matched the
+  paper-mm reading. Only 3 dimensions were 1:5; 1:3, both point orders and tied
+  bases are still untested. The other 19 were vertical dimensions past a break
+  of a long view: the expected-minus-drawn shift is constant inside a stretch
+  and jumps between stretches. The shift levels by stretch were 3419.5, 7733.5,
+  13229.5 and 13615.6 (these are levels, not jump sizes; the jumps differ in
+  size). This points to a break of the view, not a different base
+  rule, but the offset from the base for those 19 was not checked separately.
+  The 10 dimensions not compared: 65 were in the probe log, 4 were not listed by
+  the dimension reader (ids 11224, 11218, 11216, 11222) and 6 were not straight
+  horizontal/vertical sets (ids 11226, 11220, 1532, 13269, 11276, 2205).
+- TS2025 `Tekla.Structures.Drawing.xml` documents `StraightDimensionSet.Distance`
+  in paper millimeters. Live measurements disagree: across the tested 1:5 and
+  1:10 views, `Distance` behaved like view/model units (paper offset × view
+  scale); for example, 220 at 1:10 produced a 22 mm paper offset, 460.255 gave
+  46 mm and 80 gave 8 mm (three 1:5 dimensions scaled the same way). Keep this as
+  measured TS2025 behavior, not a universal rule, until independently revalidated.
+- Same side of a raked part at both ends is user-confirmed and recorded in the
+  skill. Compact answers shipped in commit `723e66d`; measured payloads were
+  2,793 vs 10,565 chars for parts, 13,439 vs 18,201 for section C chain
+  positions, and 39,373 vs 62,926 for `Hinten`.
+
+**Work, in this order:**
+
+1. **Characterize and fix write/read verification.** Use
+   `GetObjectPresentation(segmentId)` for each `StraightDimension` segment as
+   the independent rendered-line observation; the parent
+   `GetObjectPresentation(dimensionSetId)` returned `null` in the live test.
+   The segment route is confirmed for the top and left chains on section E at
+   1:10, including dimension/extension lines and text. Complete the bounded
+   side/order/scale/tie matrix below before generalizing that result. Do not
+   treat reconstructed `referenceLine` or `Verified: true` as independent
+   verification.
+
+   Use a bounded matrix, not open-ended experiments: four sides (`Top`/`Bottom`
+   horizontal, `Left`/`Right` vertical), both input point orders, and scales
+   1:3, 1:5 and the recorded 1:10 case. Include equal-coordinate/tied-base
+   cases. Compare requested side, actual line coordinate and API `Distance`.
+   This increment covers straight axis-aligned chains only; diagonal control
+   dimensions via `place_control_diagonals` are explicitly out of scope and
+   need their own characterization. Preserve the explicit chain datum in every
+   case. Do not build an applying helper until the matrix and an independent
+   line observation pass on an isolated test copy.
+2. **Add `sides` filtering to chain-position reads.** Return only requested
+   sides, but calculate the full unfiltered source first. `sourceFingerprint`
+   must remain the fingerprint of that full source; `positionIndex` and every
+   `supportIndex` must remain indices into the corresponding unfiltered side
+   and support list. Add tests comparing filtered entries and indices with the
+   same sides in an unfiltered response, and prove a plan made from those indices
+   still resolves. Keep `GroupExtent` available for overall dimensions; do not
+   drop it merely because it has no single part owner.
+3. **Keep the plate-and-flags template explicitly unvalidated.** The proposed
+   sequence (top: flag–plate–flange–plate–flag; left: plate–flag–plate) comes
+   from one view, M.48 section E. The three reference cases below—symmetric end
+   plate, offset plate, intermediate stiffener—do not include flags, so they can
+   test the general intent planner but cannot validate this template. Do not
+   apply the sequence as a general section rule. Until additional independent
+   views with the same confirmed part/role/support pattern validate it, keep it
+   as a hypothesis for the M.48 section E test-copy only; do not auto-activate
+   it on another view. A `SectionView` label alone is not a match.
+4. **Reduce the displayed candidate set only for a matched template.** The
+   roughly 10 positions are a starting hypothesis from that one geometry, not a
+   general rule. Do not reduce candidates until the template is validated or
+   explicitly limited to that exact view pattern. The plan must still classify
+   each source position as kept or removed with its reason, but the compact
+   response should summarize removals by reason; expose per-position detail only
+   on request. Keep the full source available for review. Coordinates continue
+   to come from `get_structural_chain_positions`; contacts may support a
+   keep/remove decision but never supply a coordinate.
+5. **Implement `place_chain` only after step 1 passes.** Scope: horizontal and
+   vertical chains only, not `place_control_diagonals`. Inputs: view, side,
+   selected supports, explicit datum/start direction, and gap in paper mm. The
+   calculator must define the signed side normal, convert paper distance using
+   the verified view scale/units, and convert the target line location to the
+   API's `Distance` using the characterized semantics. Do not sort away or
+   replace the declared datum. Return the planned line and datum; apply only
+   through the corrected writer.
+6. **Use a conservative contour guard where geometry is trustworthy.** Reuse
+   `ViewDepthWindow.Read`'s `RestrictionBox` snapshot and the solid bounding
+   boxes already read by `DrawingViewParts.GetDepthFilteredParts`. The current
+   `DepthBox.Classify` is only an overlap test (`Disjoint`, `BoundaryTouch`,
+   `Overlaps`, `Invalid`); it does not report full containment. This is the
+   known gap documented in `ROADMAP_SECTION_CROSS_SECTIONS.md` and in the
+   comment beside `ProjectedOutlineBuilder.BuildPart` in
+   `TeklaDrawingAssemblyOutlineApi.cs`.
+
+   For the pilot, extend the per-part depth result with an explicit containment
+   outcome computed from the already-read view-space `solidBox`; do not select
+   the part and read its solid a second time just to repeat this test. A solid
+   bounding box fully inside the `RestrictionBox` is a conservative sufficient
+   proof for trusting that plate/flag outline. A box that is not contained is
+   untrusted, not proof that the solid itself protrudes. Mere overlap is not
+   enough. Exclude the unclipped main beam. A collision with this trusted subset
+   may reject an inside line. A clear result proves clearance only from that
+   subset, not the whole assembly, so report it as partial and retain visual
+   verification or a complete clipped contour for global clearance. Check the
+   view frame separately as a clipping/visibility constraint, not as a second
+   assembly boundary.
+7. **Re-place the affected chains on isolated test copies** of M.49 section C,
+   M.48 section E (template pilot), and M.48 `Hinten`—not on the working
+   drawings. Record the copy/drawing identity used for each run. Proceed only
+   after the preceding gates pass.
+
+Out of scope: repairing section-depth geometry itself. A bad or incomplete
+contour must produce `not verified`, not a guessed placement decision.
+
+**Acceptance gates:** tests cover the bounded side/order/scale/tie matrix and
+preservation of the explicit datum; filtered results retain the unfiltered
+indices and fingerprint; the three reference cases test the general intent
+planner, while the plate-and-flags template remains disabled for general use
+until independently validated; compact candidate summaries retain full detail
+on request; containment distinguishes fully-in-box details from mere overlaps;
+the trusted-subset guard can reject an inside line but never claims whole-
+assembly clearance; an isolated-copy write confirms actual line placement
+independently of reconstructed `referenceLine`. Do not change
+`CalcDimensionChains` or silently redefine its candidate geometry as part of
+this increment.
+
 ## Active direction: measurement intent before point selection (2026-09-19)
 
 **Decision:** keep `GeometryGroup`, `CalcDimensionChains` and `DimensionChainSet`.

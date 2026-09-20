@@ -94,6 +94,10 @@ delete in a placement run.
   | `vertical-left` | left of the points | `topDirection = 1` |
   | `vertical` | right of the points | `topDirection = -1` |
 
+  The official TS2025 XML (`Tekla.Structures.Drawing.xml`, properties and
+  `CreateDimensionSet`) defines `UpDirection` as the direction from dimension
+  points to the dimension line. The explicit vector selects the side; point
+  order and the sign of `Distance` do not.
   Confirmed on EW.8 and EW.18: a bottom chain needs `horizontal-down`, a chain
   left of the panel needs `vertical-left`. Do not infer the keyword from the
   word "vertical" alone — the bare form goes right.
@@ -101,8 +105,14 @@ delete in a placement run.
   select the matching direction keyword.
 - `move_dimension` takes a delta, not an absolute target.
 - **`distance` is measured from a BASE point of the chain, along the direction
-  vector, in view units (not paper mm on TS2025).** Tekla documents it as "distance
-  from the first dimension point to the dimension line". The base is the first point
+  vector.** TS2025's official XML documents `StraightDimensionSet.Distance` as
+  paper millimeters from the first dimension point, but live measurements disagree:
+  on tested 1:5 and 1:10 views it behaved as view units (paper gap × view scale).
+  Measured: 220 at 1:10 gave a 22 mm paper offset (M.48 section E, left chain),
+  460.255 gave 46 mm (its top chain), 80 gave 8 mm (M.48 `Hinten`, top chain); the
+  three 1:5 dimensions scaled the same way. No 1:3 dimension was available.
+  Treat this as measured TS2025 behavior, not a universal API rule. The base is
+  the first point
   *after Tekla orders the chain along its axis*: the LEFTMOST point of a horizontal
   chain, the LOWEST point of a vertical one, NOT necessarily the point you passed
   first and NOT the outermost point. (Measured on M.48 view 4732: an overall chain
@@ -114,10 +124,17 @@ delete in a placement run.
   To put the line a `gap` beyond the outermost measured point pass
   `distance = gap + (offset-side extreme coordinate - base point coordinate)`
   along the offset direction, where the base point is the leftmost (horizontal) or
-  lowest (vertical) point. Easiest: pass the chain leftmost/lowest point first. Example (M.48 section E, top chain, first point y=86.8, outermost
-  y=427.05, gap 120): `distance = 120 + 427.05 - 86.8 = 460.25`. Passing 120 put the
-  line at y~207, inside the end plate. Alternatively pass the outermost point first
-  if the datum allows it. A gap in paper mm becomes `paperGap x viewScale`.
+  lowest (vertical) point. The order in which you pass the points does not change
+  the base (it only sets where the chain starts counting), so compute the base
+  yourself from the coordinates.
+  Example (M.48 section E, top chain, base y=86.8, outermost y=427.05, gap 120):
+  `distance = 120 + 427.05 - 86.8 = 460.25`. Passing 120 put the line at y~207,
+  inside the end plate. A gap in paper mm becomes `paperGap x viewScale`.
+  In the 55-dimension probe across 1:5 and 1:10, all 36 comparable cases matched
+  the leftmost/lowest-point base; the other 19 apparent mismatches were explained
+  by view breaks (vertical dimensions past a cut-out part of a long view), not by
+  a different base rule. Only 16 of the 36 tell the base from the outermost point
+  apart (in the other 20 they coincide), and only 3 dimensions were 1:5.
   Measured values from a chain the user placed by hand on M.48 section C: about 68
   view units above the flange and about 86 left of the plate (7-9 mm on paper at
   1:10); use as a starting point, not as a rule.
@@ -125,8 +142,11 @@ delete in a placement run.
   writing `get_drawing_dimensions` (and the verified writer's "correction") assume the
   extreme point, so `referenceLine` can show a line that is not where Tekla draws it,
   and `writeState.Verified=true` does not prove the line is outside the assembly.
-  Compute the expected line yourself (`first point coordinate + distance`) and state
-  it; the user's screenshot is the check that settles it.
+  Compute the expected line yourself (`base point coordinate + distance`, base =
+  leftmost/lowest point) and state it. The rendered line can be read per
+  `StraightDimension` segment with `GetObjectPresentation(segmentId)` (Host probe
+  `--dimension-presentation-probe`); the set id itself returns null. Otherwise the
+  user's screenshot settles it.
 - Dimension creation measures the offset from its points, not from a part edge.
 - Creating or recreating a chain may reflow other chains. Re-read them.
 
@@ -148,6 +168,7 @@ coordinate or style.
 
 Without an explicit verified state, a non-error response proves only that Tekla
 accepted a request. In either case, re-read
-the dimensions, compare the reference line with the planned side and offset,
-and verify the intended points and printed rows. Use the returned dimension ID;
-edits can renumber it.
+the dimensions, compare the planned side and offset with the expected line
+(base point + distance; the read-back `referenceLine` is not independent, see
+Placement facts), and verify the intended points and printed rows. Use the
+returned dimension ID; edits can renumber it.

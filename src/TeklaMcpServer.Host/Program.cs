@@ -30,6 +30,12 @@ internal static class Program
             return;
         }
 
+        if (ShouldRunDimensionPresentationProbe(args))
+        {
+            RunDimensionPresentationProbe();
+            return;
+        }
+
         if (ShouldRunViewStitchProbe(args))
         {
             RunViewStitchProbe(args);
@@ -79,6 +85,30 @@ internal static class Program
         }
 
         return false;
+    }
+
+    private static bool ShouldRunDimensionPresentationProbe(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--dimension-presentation-probe", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void RunDimensionPresentationProbe()
+    {
+        try
+        {
+            new DimensionPresentationProbe().Run();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Dimension presentation probe failed: {ex}");
+            Environment.ExitCode = 1;
+        }
     }
 
     private static bool ShouldRunViewStitchProbe(string[] args)
