@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -19,9 +20,19 @@ public sealed class ViewDimensionContext
     private readonly JsonElement _source;
     private readonly JsonElement _metadata;
     private readonly string[] _exclusions;
+    private readonly IReadOnlyDictionary<int, PartSolidGeometryInViewResult> _partSolids;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
+
+    /// <summary>Returns an isolated copy of a captured part solid, or null when it was not read.</summary>
+    public PartSolidGeometryInViewResult? GetPartSolidGeometry(int modelId) =>
+        _partSolids.TryGetValue(modelId, out var geometry) ? Clone(geometry) : null;
+
+    // Internal geometry consumers can reuse the stored DTO without cloning it.
+    // Treat it as immutable; public callers use the defensive-copy method above.
+    internal PartSolidGeometryInViewResult? GetPartSolidGeometrySnapshot(int modelId) =>
+        _partSolids.TryGetValue(modelId, out var geometry) ? geometry : null;
 
     internal ViewDimensionContext(int viewId, double scale, StructuralOutline outline,
         IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata)
@@ -30,6 +41,8 @@ public sealed class ViewDimensionContext
         Scale = scale;
         _group = StructuralGeometryGroupBuilder.Build(outline);
         _complete = outline.IsComplete && _group.Completeness.IsComplete;
+        _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
+            outline.Outline.PartSolidGeometries.ToDictionary(pair => pair.Key, pair => pair.Value));
         _source = Freeze(source);
         _metadata = Freeze(metadata);
         _exclusions = exclusions.Select(x => x.Id).ToArray();
@@ -178,6 +191,41 @@ public sealed class ViewDimensionContext
         s.AxisAlignedModelExtent == null ? null : side is DimensionChainSide.Top or DimensionChainSide.Bottom
             ? s.AxisAlignedModelExtent.MaxX - s.AxisAlignedModelExtent.MinX
             : s.AxisAlignedModelExtent.MaxY - s.AxisAlignedModelExtent.MinY;
+
+    private static PartSolidGeometryInViewResult Clone(PartSolidGeometryInViewResult source) => new()
+    {
+        Success = source.Success,
+        ViewId = source.ViewId,
+        ModelId = source.ModelId,
+        Error = source.Error,
+        StartPoint = (double[])source.StartPoint.Clone(),
+        EndPoint = (double[])source.EndPoint.Clone(),
+        CoordinateSystemOrigin = (double[])source.CoordinateSystemOrigin.Clone(),
+        AxisX = (double[])source.AxisX.Clone(),
+        AxisY = (double[])source.AxisY.Clone(),
+        Solid = new PartSolidGeometry
+        {
+            BboxMin = (double[])source.Solid.BboxMin.Clone(),
+            BboxMax = (double[])source.Solid.BboxMax.Clone(),
+            SolidGeometryComplete = source.Solid.SolidGeometryComplete,
+            ViewHull = source.Solid.ViewHull.Select(point => (double[])point.Clone()).ToList(),
+            Vertices = source.Solid.Vertices.Select(vertex => new PartVertexGeometry
+            {
+                Index = vertex.Index,
+                Point = (double[])vertex.Point.Clone()
+            }).ToList(),
+            Faces = source.Solid.Faces.Select(face => new PartFaceGeometry
+            {
+                Index = face.Index,
+                Normal = face.Normal == null ? null : (double[])face.Normal.Clone(),
+                Loops = face.Loops.Select(loop => new PartLoopGeometry
+                {
+                    Index = loop.Index,
+                    VertexIndexes = new List<int>(loop.VertexIndexes)
+                }).ToList()
+            }).ToList()
+        }
+    };
 
     internal static JsonElement Freeze(object value, bool display = false)
     {

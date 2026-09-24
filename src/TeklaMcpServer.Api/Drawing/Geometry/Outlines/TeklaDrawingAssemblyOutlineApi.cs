@@ -92,9 +92,10 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         IReadOnlyList<UnreadPart>? selectionUnread = null)
     {
         var partOutlines = new Dictionary<int, PolyTreeD>();
+        var partSolidGeometries = new Dictionary<int, PartSolidGeometryInViewResult>();
         var unread = selectionUnread?.ToList() ?? new List<UnreadPart>();
 
-        foreach (var modelId in modelIds)
+        foreach (var modelId in modelIds.Distinct())
         {
             try
             {
@@ -104,6 +105,9 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
                     unread.Add(new UnreadPart(modelId, geometry.Error ?? "geometry read failed"));
                     continue;
                 }
+
+                // Retain the detached data from this read for the view context.
+                partSolidGeometries.Add(modelId, geometry);
 
                 var solid = ViewSolidAdapter.FromGeometry(geometry);
                 if (solid == null)
@@ -148,7 +152,8 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
             requestedIds,
             notVisibleRequestedIds,
             outsideDepthModelIds,
-            unresolvedDepthModelIds);
+            unresolvedDepthModelIds,
+            partSolidGeometries);
     }
 
     private static ViewAssemblyOutlineResult Unavailable(int viewId, string reason) =>

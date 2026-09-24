@@ -11,6 +11,10 @@ still pending. Step 4 remains design, not implemented functionality.
   Chains are calculated lazily; explicit-distance creation needs no outline.
 - `get_view_dimension_context` answers points/edges/parts/scale/placement.
   Queries return detached JSON; candidate choices cannot mutate the snapshot.
+- The context retains detached per-part solid DTOs (bbox, vertices, faces,
+  loops and view hull) from the same successful reads used to build outlines.
+  `GetPartSolidGeometry(modelId)` returns a copy so consumers cannot mutate the
+  snapshot. Tekla `Solid` handles themselves are not retained.
 - Create accepts the same exclusions as reads. Explicit refresh clears lower
   geometry caches too; drawing/query-view changes end the active snapshot run.
 - Axis-aligned reference-line reconstruction uses a unique leftmost/lowest

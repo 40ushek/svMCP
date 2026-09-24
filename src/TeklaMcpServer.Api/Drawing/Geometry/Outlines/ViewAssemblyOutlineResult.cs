@@ -22,7 +22,8 @@ public sealed class ViewAssemblyOutlineResult
         IReadOnlyList<int>? requestedIds = null,
         IReadOnlyList<int>? notVisibleRequestedIds = null,
         IReadOnlyList<int>? outsideDepthModelIds = null,
-        IReadOnlyList<int>? unresolvedDepthModelIds = null)
+        IReadOnlyList<int>? unresolvedDepthModelIds = null,
+        IReadOnlyDictionary<int, PartSolidGeometryInViewResult>? partSolidGeometries = null)
     {
         Restricted = restricted;
         VisibleCount = visibleCount;
@@ -33,6 +34,7 @@ public sealed class ViewAssemblyOutlineResult
         ViewId = viewId;
         AssemblyOutline = assemblyOutline;
         PartOutlines = partOutlines;
+        PartSolidGeometries = partSolidGeometries ?? new Dictionary<int, PartSolidGeometryInViewResult>();
         Unread = unread;
         Error = error;
         AssemblyNodes = ToNodes(assemblyOutline);
@@ -44,6 +46,7 @@ public sealed class ViewAssemblyOutlineResult
     public int ViewId { get; }
     public PolyTreeD AssemblyOutline { get; }
     public IReadOnlyDictionary<int, PolyTreeD> PartOutlines { get; }
+    internal IReadOnlyDictionary<int, PartSolidGeometryInViewResult> PartSolidGeometries { get; }
     public IReadOnlyList<OutlineTreeNodeResult> AssemblyNodes { get; }
     public IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>> PartNodes { get; }
     public IReadOnlyList<UnreadPart> Unread { get; }

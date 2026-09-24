@@ -28,6 +28,10 @@ New work beyond the historical v1 baseline below:
   Different normalized filters have separate snapshots. Dimensions do not
   invalidate them; external geometry/view edits require `refresh=true` on a
   query. Drawing/view switches and bridge restart discard the active run.
+- The context also retains detached solid data for successfully read parts:
+  bbox, vertices, faces/loops and view hull. `GetPartSolidGeometry(modelId)`
+  returns a deep copy. Excluded or unread parts retain their separate role and
+  diagnostic records. Memory use grows with the captured solid geometry.
 - `get_view_dimension_context` accepts `questions=points,edges,parts,scale`
   (or `all`) and `sides=Top,Bottom,Left,Right` (or `all`). Optional
   `placement` additionally needs flat XYZ `points`, `direction` and optional

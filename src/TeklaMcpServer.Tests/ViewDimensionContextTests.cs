@@ -148,6 +148,25 @@ public sealed class ViewDimensionContextTests
         Assert.Equal("wool", parse.Request.ExcludeMaterials);
     }
 
+    [Fact]
+    public void SolidGeometryIsStoredAsAnIsolatedSnapshotAndMissingPartsReturnNull()
+    {
+        var context = Context();
+
+        var returned = context.GetPartSolidGeometry(10);
+        Assert.NotNull(returned);
+        Assert.Equal(4, returned.Solid.Vertices.Count);
+        Assert.Single(returned.Solid.Faces);
+        returned.Solid.Vertices[0].Point[0] = 999;
+        returned.Solid.Faces[0].Loops[0].VertexIndexes.Clear();
+
+        var stored = context.GetPartSolidGeometry(10);
+        Assert.Equal(0, stored!.Solid.Vertices[0].Point[0]);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, stored.Solid.Faces[0].Loops[0].VertexIndexes);
+        Assert.Null(context.GetPartSolidGeometry(999));
+        Assert.NotNull(context.GetPartSolidGeometrySnapshot(10));
+    }
+
     private static string Evidence(double x, double y, JsonElement s) =>
         JsonSerializer.Serialize(new { x, y,
             model = s.TryGetProperty("modelId", out var id) && id.ValueKind != JsonValueKind.Null ? id.GetInt32() : (int?)null,
