@@ -210,16 +210,16 @@ public static partial class ModelTools
         "When allowInwardCorrectionFromPartsBounds=true, the nearest chain may also be pulled toward the overall parts box to restore the exact target gap.")]
     public static string ArrangeDimensions(
         [Description("Optional drawing view ID. Omit to process all dimensions on the active drawing.")] int? viewId = null,
-        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 10")] double targetGap = 10.0,
+        [Description("Desired minimum gap between neighboring dimension lines in paper units. Default: 8")] double? targetGap = null,
         [Description("When true, also pull the nearest chain toward PartsBounds if it is farther than the target gap. Default: false")] bool allowInwardCorrectionFromPartsBounds = false)
     {
-        if (targetGap < 0)
+        if (targetGap.HasValue && (double.IsNaN(targetGap.Value) || double.IsInfinity(targetGap.Value) || targetGap < 0))
             return "Error: 'targetGap' must be a non-negative number.";
 
         var json = RunBridge(
             "arrange_dimensions",
             viewId?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-            targetGap.ToString(CultureInfo.InvariantCulture),
+            targetGap?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             allowInwardCorrectionFromPartsBounds.ToString(CultureInfo.InvariantCulture));
         try
         {
@@ -336,20 +336,22 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
+    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; paperGapMm overrides that. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,
         [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
         [Description("Direction of the dimension offset: 'horizontal' (offset up, dimension left-right), 'vertical' (offset right, dimension up-down), or custom 'dx,dy,dz' vector. Default: horizontal")] string direction = "horizontal",
-        [Description("Offset distance from the part to the dimension line in mm. Default: 50")] double distance = 50.0,
-        [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard")
+        [Description("Optional explicit offset distance in view units. Omit to calculate it from the assembly outline and paperGapMm.")] double? distance = null,
+        [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard",
+        [Description("Paper-space gap beyond the assembly outline in mm when distance is omitted. Default: 8.")] double? paperGapMm = null)
     {
         var json = RunBridge("create_dimension",
             viewId.ToString(CultureInfo.InvariantCulture),
             points,
             direction,
-            distance.ToString(CultureInfo.InvariantCulture),
-            attributesFile);
+            distance?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            attributesFile,
+            paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
         try
         {
             var doc = JsonDocument.Parse(json);

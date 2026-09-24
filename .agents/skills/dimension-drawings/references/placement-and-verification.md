@@ -130,7 +130,7 @@ delete in a placement run.
   Example (M.48 section E, top chain, base y=86.8, outermost y=427.05, gap 120):
   `distance = 120 + 427.05 - 86.8 = 460.25`. Passing 120 put the line at y~207,
   inside the end plate. The 120 (12 mm on paper at 1:10) is a measured example,
-  not the standard gap; the planned default paper gap is 8 mm (see the roadmap).
+  not the standard gap; the structured-plan default paper gap is 8 mm (see the roadmap).
   A gap in paper mm becomes `paperGap x viewScale`.
   In the 55-dimension probe across 1:5 and 1:10, all 36 comparable cases matched
   the leftmost/lowest-point base; the other 19 apparent mismatches were explained

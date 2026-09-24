@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using SolidContacts;
 using Tekla.Structures.Drawing;
@@ -68,10 +70,6 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_structural_chain_positions":
                 return HandleGetStructuralChainPositions(args);
-
-            case "preview_structural_dimension_plan":
-            case "apply_structural_dimension_plan":
-                return HandleStructuralDimensionPlan(args, command == "apply_structural_dimension_plan");
 
             case "draw_structural_chain_positions":
                 return HandleDrawStructuralChainPositions(GetDebugOverlayApi(), args);
@@ -757,6 +755,55 @@ internal sealed partial class DrawingCommandHandler
 
     private static string GuidText(Guid guid) => guid == Guid.Empty ? string.Empty : guid.ToString();
 
+    private string StructuralChainFingerprint(int viewId, SourceIdentity identity,
+        StructuralOutline outline, GeometryGroup group, IReadOnlyList<PartExclusionRule> exclusions,
+        out double viewScale)
+    {
+        var view = FindView(new DrawingHandler().GetActiveDrawing(), viewId)
+            ?? throw new ViewNotFoundException(viewId);
+        if (!view.Select()) throw new InvalidOperationException("Cannot refresh view for structural source fingerprint");
+        viewScale = view.Attributes.Scale;
+        var cs = view.ViewCoordinateSystem;
+        var display = view.DisplayCoordinateSystem;
+        var depth = ViewDepthWindow.Read(_model, view);
+        var context = JsonSerializer.Serialize(new
+        {
+            viewId,
+            source = Describe(identity),
+            viewCoordinates = new[] { cs.Origin.X, cs.Origin.Y, cs.Origin.Z, cs.AxisX.X, cs.AxisX.Y, cs.AxisX.Z, cs.AxisY.X, cs.AxisY.Y, cs.AxisY.Z },
+            displayCoordinates = new[] { display.Origin.X, display.Origin.Y, display.Origin.Z, display.AxisX.X, display.AxisX.Y, display.AxisX.Z, display.AxisY.X, display.AxisY.Y, display.AxisY.Z },
+            scale = viewScale,
+            extent = group.Extent == null ? null : new { group.Extent.MinX, group.Extent.MaxX, group.Extent.MinY, group.Extent.MaxY },
+            depthWindow = depth.Box,
+            depthError = depth.Error,
+            exclusions = exclusions.Select(rule => rule.Id),
+            parts = outline.Included.Concat(outline.Excluded).Select(part => new { part.ModelId, part.IsMainPart, part.IsMainPartKnown })
+        });
+        var chains = group.DimensionChains ?? throw new InvalidOperationException("Dimension chains are unavailable for fingerprinting");
+        var serialized = JsonSerializer.Serialize(new
+        {
+            sourceContext = context,
+            chains = chains.Chains.Select(chain => new
+            {
+                side = chain.Side.ToString(),
+                positions = chain.Positions.Select(position => new
+                {
+                    position.Coordinate,
+                    supports = position.Supports.Select(support => new
+                    {
+                        support.Source.Id,
+                        support.ModelId,
+                        support.Source.IsHole,
+                        kind = support.Kind.ToString(),
+                        point = new[] { support.Point.X, support.Point.Y, support.Point.Z }
+                    })
+                })
+            })
+        });
+        using var sha = SHA256.Create();
+        return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(serialized))).Replace("-", string.Empty);
+    }
+
     /// <summary>
     /// All four preliminary sides of a view, read only: no overlay, no drawing touched.
     ///
@@ -807,7 +854,7 @@ internal sealed partial class DrawingCommandHandler
         }
 
         var extent = group.Extent!;
-        var sourceFingerprint = StructuralPlanFingerprint(viewId, identity, structuralOutline, group, exclusions);
+        var sourceFingerprint = StructuralChainFingerprint(viewId, identity, structuralOutline, group, exclusions, out _);
         WriteJson(new
         {
             success = true,

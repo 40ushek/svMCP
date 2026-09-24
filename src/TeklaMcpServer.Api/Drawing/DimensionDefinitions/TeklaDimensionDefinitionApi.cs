@@ -1,3 +1,5 @@
+using TeklaMcpServer.Api.Drawing.Dimensions;
+
 namespace TeklaMcpServer.Api.Drawing.DimensionDefinitions;
 
 public sealed class TeklaDimensionDefinitionApi : IDimensionDefinitionApi
@@ -48,7 +50,7 @@ public sealed class TeklaDimensionDefinitionApi : IDimensionDefinitionApi
                         Sources = { DrawingDimensionSourceKind.Axis, DrawingDimensionSourceKind.Assembly },
                         Placement = new DrawingDimensionPlacementPolicy
                         {
-                            DefaultDistance = 10.0,
+                            DefaultDistance = DimensionPlacementSettings.DefaultPaperGapMm,
                             DirectionHint = "along-axis",
                             AttributesFileName = "standard"
                         },
@@ -64,7 +66,7 @@ public sealed class TeklaDimensionDefinitionApi : IDimensionDefinitionApi
                         Sources = { DrawingDimensionSourceKind.Assembly, DrawingDimensionSourceKind.Part },
                         Placement = new DrawingDimensionPlacementPolicy
                         {
-                            DefaultDistance = 10.0,
+                            DefaultDistance = DimensionPlacementSettings.DefaultPaperGapMm,
                             AttributesFileName = "standard"
                         },
                         Points = new DrawingDimensionPointPolicy
@@ -79,7 +81,7 @@ public sealed class TeklaDimensionDefinitionApi : IDimensionDefinitionApi
                         Sources = { DrawingDimensionSourceKind.Node },
                         Placement = new DrawingDimensionPlacementPolicy
                         {
-                            DefaultDistance = 10.0,
+                            DefaultDistance = DimensionPlacementSettings.DefaultPaperGapMm,
                             AttributesFileName = "standard"
                         },
                         Points = new DrawingDimensionPointPolicy
@@ -94,7 +96,7 @@ public sealed class TeklaDimensionDefinitionApi : IDimensionDefinitionApi
                         Sources = { DrawingDimensionSourceKind.Bolt, DrawingDimensionSourceKind.Part },
                         Placement = new DrawingDimensionPlacementPolicy
                         {
-                            DefaultDistance = 10.0,
+                            DefaultDistance = DimensionPlacementSettings.DefaultPaperGapMm,
                             AttributesFileName = "standard"
                         },
                         Points = new DrawingDimensionPointPolicy

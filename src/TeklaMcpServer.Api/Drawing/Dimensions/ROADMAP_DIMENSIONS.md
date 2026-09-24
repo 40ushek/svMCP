@@ -15,7 +15,12 @@ file are background/backlog, not another competing implementation sequence.
 
 ## Increment: faster, safer one-chain placement (2026-09-19)
 
-Planned, not implemented. Live runs on M.49/M.48 (sections C/E, back view
+Partially implemented: the structural plan now calculates `Distance` from its
+existing assembly extent, selected supports, side and view scale, with an 8 mm
+default paper gap. It reports the planned line in preview and uses that exact
+distance on apply. The broader side/order/scale/tie matrix and independent
+rendered-line verification remain open; the new path has not been live tested.
+Live runs on M.49/M.48 (sections C/E, back view
 `Hinten`) suggest that line placement and manually reviewing too many candidate
 positions are the main avoidable costs. The work below first makes placement
 semantics trustworthy, then reduces reads and adds a conditional template.
@@ -144,15 +149,14 @@ semantics trustworthy, then reduces reads and adds a conditional template.
    TS2025 behavior (`paperGap * viewScale`) and keep the documented paper-mm
    discrepancy explicit.
 
-   Reuse the `extent` already present in the unchanged chain-position snapshot
-   (the source outline extent; this is distinct from a support kind or index).
-   Do not call the outline reader a
-   second time merely to calculate the gap. Re-read only when the source
-   snapshot is stale or the required extent was not part of that snapshot.
+   `create_dimension` now computes an omitted offset from the selected view's
+   complete structural outline. It currently rereads that outline for each
+   standalone call; reusing the `extent` from a fresh chain-position snapshot is
+   a follow-up optimization, not current behavior.
 
    Keep placement values in one shared `DimensionPlacementSettings` source of
    truth, not as separate constants in `create_dimension`, `place_chain`,
-   `arrange_dimensions` or the presets. The initial settings are:
+   `arrange_dimensions` or the presets. The ordinary runtime defaults are now implemented there; the initial settings are:
 
    - `DefaultPaperGapMm = 8` for ordinary assembly dimensions;
    - `VerificationToleranceViewUnits = 0.6` for rendered-line comparison;
@@ -173,9 +177,9 @@ semantics trustworthy, then reduces reads and adds a conditional template.
    that case is characterized. Reject `Distance <= 0` before calling Tekla.
    Do not sort away or replace the declared datum. Return the target line, base,
    gap, unit conversion and verification state; apply only through the corrected
-   writer. This calculation must be used by the new-dimension path itself
-   (`create_dimension` or `place_chain`), not only by read-back/arrangement of
-   dimensions that already exist.
+   writer. This calculation is used by `create_dimension` when `distance` is
+   omitted; an explicit `distance` remains available for a manually chosen
+   offset.
 
    Verify the rendered `StraightDimension` segment through
    `GetObjectPresentation(segmentId)`. Convert its paper-space coordinate back
@@ -245,8 +249,7 @@ For example, "locate this plate against the beam profile in X" is a question;
 | Component | Status | Does not yet prove |
 |---|---|---|
 | Preliminary structural chains | Implemented; carry positions and owner supports | That a selected chain answers the fabrication question |
-| `StructuralDimensionPlanBuilder` | Implemented validator for a supplied one-chain steel `PartLocation` plan | Automatic intent selection or sufficient dimensions; reasons are still free text |
-| Preview/apply bridge + MCP | Implemented, experimental; Relative/Create only | Deployment or successful live Tekla operation; retain/replace and duplicate suppression are absent |
+| Structural plan preview/apply commands | Removed on 2026-09-24 | No public structured-plan execution path currently exists |
 | Verified create/recreate protocol | Implemented; injected failure tests | Live read-back/reflow behaviour, live compensation, rollback after the original delete started, or verification of every style property |
 | `dimension-drawings` skill | Updated: scoped work, current-data reuse, targeted reads, no default overlays | Measured runtime improvement or better drafting results on live cases |
 | Intent/relationship coverage planner | Proposed below; not implemented | Anything about whole-view or whole-assembly completeness |
@@ -1035,23 +1038,19 @@ responsibility of the placement planner.
 
 ### 2b. Read-only `DimensionPlacementPlanBuilder`
 
-**Historical proposal, not the current implementation contract (2026-09-19).**
-The initial implementation now uses `StructuralDimensionPlanBuilder` over
-`DimensionChainSet`, not the generic candidate path proposed below. It validates
-a supplied plan; the intent/coverage planner remains unbuilt. Its own public
-preview/apply contract exists, so the old "must not introduce a second plan
-shape" instruction is an integration concern to resolve by adapter/migration,
-not a claim that unification already happened.
+**Historical proposal, not the current implementation contract (2026-09-24).**
+The experimental `StructuralDimensionPlanBuilder` preview/apply commands were
+removed. No public structural-plan preview/apply contract currently exists; the
+intent/coverage planner described here remains unbuilt.
 
 Other superseded assumptions below: offsets are now corrected/read back by the
 verified writer, not routinely repaired by a separate `move_dimension`; datum
 can be recovered only for a unique connected segment path, not from normalized
 point order; sections/end views use the current skill's visual gate; contact or
 bbox candidates are not alternative create coordinates; the old 15-60 mm
-grouping discussion is not an active tolerance. Limited Create/apply is already
-implemented, but still awaits live validation. Use **Active direction** for
-new work and the README for exact supported arguments. The remaining rationale
-is retained as design history, not instructions to bypass the current skill.
+grouping discussion is not an active tolerance. Use **Active direction** for
+new work. The remaining rationale is retained as design history, not
+instructions to bypass the current skill.
 
 Agreed 2026-08-01. The first component that decides where dimensions *should*
 go, as opposed to reducing the ones already there. It changes nothing: it reads

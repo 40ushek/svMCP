@@ -30,13 +30,18 @@ steel visual gate still applies.
    - `ruleSet="steel"`, `purpose="PartLocation"`;
    - `internalPolicy` (None/Necessary/All), `recognizableDistance` for Necessary;
    - `datumReason`, `closureReason`, `rowType="Relative"`, `attributesFile`;
-   - `distance` (non-negative), `reverseStart`, and the same
+   - omit `distance` for the default 8 mm paper gap, or set `paperGapMm` for a
+     one-plan override; an explicit non-negative `distance` keeps the manual
+     path. Never provide both `distance` and `paperGapMm`;
+   - `reverseStart`, and the same
      `excludePrefixes` / `excludeMaterials` as the source read;
    - `positions`: exactly one decision per candidate on the selected side,
      each with `positionIndex`, `disposition` (Kept/Removed), `reason`;
      Kept also selects `supportIndex`, Removed omits it.
-3. Preview once. Inspect resolved points, side and settings against the intended
-   measurement. Both reference and subject supports must be represented; a bare
+3. Preview once. Inspect resolved points, side, calculated `distance`, base and
+   target line (when using a paper gap) against the intended
+   measurement. The target line is calculated, not independently observed from
+   the rendered Tekla dimension. Both reference and subject supports must be represented; a bare
    plate size is not a location chain. Each support keeps its own transverse
    coordinate. Reference and closure can differ.
 4. Apply the unchanged plan with the returned `approvalToken`. The bridge

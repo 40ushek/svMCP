@@ -4,13 +4,12 @@ using System.Diagnostics;
 using Tekla.Structures;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
-    internal const double DefaultArrangeTargetGapPaper = 10.0;
-
     internal DimensionArrangementDebugResult GetDimensionArrangementDebug(
         int? viewId,
         double targetGap,
@@ -426,7 +425,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         Tekla.Structures.Drawing.Drawing activeDrawing,
         int viewId,
         int anchorDimensionId,
-        double targetGap = DefaultArrangeTargetGapPaper)
+        double targetGap = DimensionPlacementSettings.DefaultPaperGapMm)
     {
         var groups = GetArrangeGroupsDeduped(viewId);
         var decisionContext = BuildArrangeDecisionContext(groups, viewId);

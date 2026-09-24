@@ -1,3 +1,5 @@
+using TeklaMcpServer.Api.Drawing.Dimensions;
+
 namespace TeklaMcpServer.Api.Drawing;
 
 internal sealed class DimensionPartsBoundsGapPolicyResult
@@ -17,7 +19,7 @@ internal static class DimensionPartsBoundsGapPolicy
 {
     public static DimensionPartsBoundsGapPolicyResult Evaluate(
         DimensionViewPlacementInfo placementInfo,
-        double targetGapPaper = TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper,
+        double targetGapPaper = DimensionPlacementSettings.DefaultPaperGapMm,
         bool allowInwardCorrection = false)
     {
         var result = new DimensionPartsBoundsGapPolicyResult

@@ -244,8 +244,9 @@ public sealed class CreateDimensionRequest
     public int ViewId { get; set; }
     public double[] Points { get; set; } = Array.Empty<double>();
     public string Direction { get; set; } = "horizontal";
-    public double Distance { get; set; } = 50.0;
+    public double? Distance { get; set; }
     public string AttributesFile { get; set; } = string.Empty;
+    public double? PaperGapMm { get; set; }
 }
 
 public sealed class CreateDimensionParseResult

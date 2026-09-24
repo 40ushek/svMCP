@@ -1,7 +1,9 @@
 using System.Linq;
 using System.Reflection;
+using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 using System.Globalization;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaBridge.Commands;
 
@@ -639,7 +641,7 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionArrangementDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var targetGap = 10.0;
+        var targetGap = TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.DefaultPaperGapMm;
         var allowInwardCorrectionFromPartsBounds = false;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
@@ -677,7 +679,7 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleArrangeDimensions(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var targetGap = 10.0;
+        var targetGap = TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.DefaultPaperGapMm;
         var allowInwardCorrectionFromPartsBounds = false;
         if (args.Length > 2 && !string.IsNullOrWhiteSpace(args[2]))
         {
@@ -753,15 +755,58 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
+        var request = parseResult.Request;
+        double distance;
+        DimensionPlacementCalculation? placement = null;
+        if (request.Distance.HasValue)
+        {
+            distance = request.Distance.Value;
+        }
+        else
+        {
+            try
+            {
+                var outline = GetStructuralOutline(request.ViewId);
+                var group = StructuralGeometryGroupBuilder.Build(outline);
+                if (!outline.IsComplete || group.Extent == null)
+                    throw new InvalidOperationException("Cannot calculate automatic dimension offset: assembly outline is incomplete or empty");
+                var view = FindView(new DrawingHandler().GetActiveDrawing(), request.ViewId)
+                    ?? throw new ViewNotFoundException(request.ViewId);
+                if (!view.Select())
+                    throw new InvalidOperationException("Cannot select view to read its scale");
+                placement = DimensionPlacementCalculator.Calculate(
+                    ParseDimensionChainSide(request.Direction), request.Points, group.Extent,
+                    view.Attributes.Scale, request.PaperGapMm ?? DimensionPlacementSettings.DefaultPaperGapMm);
+                distance = placement.Distance;
+            }
+            catch (Exception exception)
+            {
+                WriteError(exception.Message);
+                return true;
+            }
+        }
+
         var result = api.CreateDimension(
-            parseResult.Request.ViewId,
-            parseResult.Request.Points,
-            parseResult.Request.Direction,
-            parseResult.Request.Distance,
-            parseResult.Request.AttributesFile);
+            request.ViewId,
+            request.Points,
+            request.Direction,
+            distance,
+            request.AttributesFile);
+        result.DistanceUsed = distance;
+        result.Placement = placement;
         WriteCreateDimensionResult(result);
         return true;
     }
+
+    private static DimensionChainSide ParseDimensionChainSide(string direction) =>
+        direction.Trim().ToLowerInvariant() switch
+        {
+            "horizontal" or "h" or "horizontal-up" => DimensionChainSide.Top,
+            "horizontal-down" or "h-" => DimensionChainSide.Bottom,
+            "vertical-left" or "v-" => DimensionChainSide.Left,
+            "vertical" or "v" or "vertical-right" => DimensionChainSide.Right,
+            _ => throw new ArgumentException("Automatic offset requires horizontal, horizontal-down, vertical-left or vertical direction; for a custom vector, supply distance explicitly", nameof(direction))
+        };
 
     private static double[]? ParseFlatPointArray(string json)
     {
@@ -1104,6 +1149,8 @@ internal sealed partial class DrawingCommandHandler
             dimensionId = result.DimensionId,
             viewId = result.ViewId,
             pointCount = result.PointCount,
+            distanceUsed = result.DistanceUsed,
+            placement = result.Placement,
             error = result.Error
         });
     }

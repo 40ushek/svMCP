@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -101,7 +102,7 @@ internal sealed class DimensionActionPlanBuilder
         step.ToolArguments = new DimensionActionPlanToolArguments
         {
             ViewId = packet.ViewId,
-            TargetGap = TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper
+            TargetGap = DimensionPlacementSettings.DefaultPaperGapMm
         };
         step.DimensionIds.Clear();
         step.DimensionIds.AddRange(packet.DimensionIds);

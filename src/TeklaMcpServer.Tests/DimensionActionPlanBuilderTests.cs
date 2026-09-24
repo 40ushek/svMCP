@@ -1,11 +1,27 @@
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.DimensionDefinitions;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
 public sealed class DimensionActionPlanBuilderTests
 {
+    [Fact]
+    public void SharedPlacementSettingsDefineTheOrdinaryDimensionGap()
+    {
+        Assert.Equal(8.0, DimensionPlacementSettings.DefaultPaperGapMm);
+
+        var preset = new TeklaDimensionDefinitionApi()
+            .GetDefaultPreset(DrawingDimensionDefinitionScope.Assembly)
+            .Preset!;
+
+        Assert.All(
+            preset.DefinitionSet.Definitions.Where(static definition => definition.ScenarioKind != DrawingDimensionScenarioKind.ControlDiagonal),
+            definition => Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, definition.Placement.DefaultDistance));
+    }
+
     [Fact]
     public void Build_EmitsCombineThenArrangeStepsForInformationPreservingMerge()
     {
@@ -38,7 +54,7 @@ public sealed class DimensionActionPlanBuilderTests
         Assert.False(arrange.PreviewOnly);
         Assert.NotNull(arrange.ToolArguments);
         Assert.Equal(10, arrange.ToolArguments!.ViewId);
-        Assert.Equal(TeklaDrawingDimensionsApi.DefaultArrangeTargetGapPaper, arrange.ToolArguments.TargetGap);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, arrange.ToolArguments.TargetGap);
     }
 
     [Fact]
@@ -155,8 +171,8 @@ public sealed class DimensionActionPlanBuilderTests
         Assert.Equal(0, result.Steps[0].Evidence.ViewScale, 3);
         Assert.True(result.Steps[0].Evidence.CanEvaluatePartsBoundsGap);
         Assert.Equal(20, result.Steps[0].Evidence.CurrentPartsBoundsGapDrawing, 3);
-        Assert.Equal(10, result.Steps[0].Evidence.TargetPartsBoundsGapPaper, 3);
-        Assert.Equal(10, result.Steps[0].Evidence.TargetPartsBoundsGapDrawing, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.Steps[0].Evidence.TargetPartsBoundsGapPaper, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.Steps[0].Evidence.TargetPartsBoundsGapDrawing, 3);
         Assert.False(result.Steps[0].Evidence.RequiresPartsBoundsGapCorrection);
         Assert.Equal(0, result.Steps[0].Evidence.SuggestedOutwardDeltaFromPartsBounds, 3);
     }

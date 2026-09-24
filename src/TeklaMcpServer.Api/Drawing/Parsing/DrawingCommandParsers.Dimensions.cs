@@ -10,15 +10,28 @@ public static partial class DrawingCommandParsers
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
         {
-            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> <distance> [attributesFile]");
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> [distance] [attributesFile] [paperGapMm]");
         }
 
         var pointsJson = args.Length > 2 ? args[2] : "[]";
         var direction = args.Length > 3 ? args[3] : "horizontal";
-        var distance = args.Length > 4 && double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance)
-            ? parsedDistance
-            : 50.0;
+        double? distance = null;
+        if (args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]))
+        {
+            if (!double.TryParse(args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDistance))
+                return CreateDimensionParseResult.Fail("distance must be a number when supplied");
+            distance = parsedDistance;
+        }
         var attributesFile = args.Length > 5 ? args[5] : string.Empty;
+        double? paperGapMm = null;
+        if (args.Length > 6 && !string.IsNullOrWhiteSpace(args[6]))
+        {
+            if (!double.TryParse(args[6], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedGap))
+                return CreateDimensionParseResult.Fail("paperGapMm must be a number when supplied");
+            paperGapMm = parsedGap;
+        }
+        if (distance.HasValue && paperGapMm.HasValue)
+            return CreateDimensionParseResult.Fail("Specify either distance or paperGapMm, not both");
 
         double[] points;
         try
@@ -36,7 +49,8 @@ public static partial class DrawingCommandParsers
             Points = points,
             Direction = direction,
             Distance = distance,
-            AttributesFile = attributesFile
+            AttributesFile = attributesFile,
+            PaperGapMm = paperGapMm
         });
     }
 

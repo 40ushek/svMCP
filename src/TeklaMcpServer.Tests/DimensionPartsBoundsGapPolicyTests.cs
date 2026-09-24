@@ -1,4 +1,5 @@
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 using Xunit;
 
 namespace TeklaMcpServer.Tests;
@@ -21,8 +22,8 @@ public sealed class DimensionPartsBoundsGapPolicyTests
 
         Assert.True(result.CanEvaluate);
         Assert.Equal(20, result.CurrentGapDrawing, 3);
-        Assert.Equal(10, result.TargetGapPaper, 3);
-        Assert.Equal(10, result.TargetGapDrawing, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.TargetGapPaper, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.TargetGapDrawing, 3);
         Assert.False(result.RequiresCorrection);
         Assert.False(result.RequiresOutwardCorrection);
         Assert.False(result.RequiresInwardCorrection);
@@ -46,13 +47,13 @@ public sealed class DimensionPartsBoundsGapPolicyTests
 
         Assert.True(result.CanEvaluate);
         Assert.Equal(5, result.CurrentGapDrawing, 3);
-        Assert.Equal(10, result.TargetGapPaper, 3);
-        Assert.Equal(20, result.TargetGapDrawing, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.TargetGapPaper, 3);
+        Assert.Equal(16, result.TargetGapDrawing, 3);
         Assert.True(result.RequiresCorrection);
         Assert.True(result.RequiresOutwardCorrection);
         Assert.False(result.RequiresInwardCorrection);
-        Assert.Equal(15, result.SuggestedAxisDeltaDrawing, 3);
-        Assert.Equal(15, result.SuggestedOutwardDeltaDrawing, 3);
+        Assert.Equal(11, result.SuggestedAxisDeltaDrawing, 3);
+        Assert.Equal(11, result.SuggestedOutwardDeltaDrawing, 3);
     }
 
     [Fact]
@@ -73,7 +74,7 @@ public sealed class DimensionPartsBoundsGapPolicyTests
         Assert.True(result.RequiresCorrection);
         Assert.False(result.RequiresOutwardCorrection);
         Assert.True(result.RequiresInwardCorrection);
-        Assert.Equal(-10, result.SuggestedAxisDeltaDrawing, 3);
+        Assert.Equal(-12, result.SuggestedAxisDeltaDrawing, 3);
         Assert.Equal(0, result.SuggestedOutwardDeltaDrawing, 3);
     }
 
@@ -94,7 +95,7 @@ public sealed class DimensionPartsBoundsGapPolicyTests
         Assert.False(result.RequiresCorrection);
         Assert.False(result.RequiresOutwardCorrection);
         Assert.False(result.RequiresInwardCorrection);
-        Assert.Equal(10, result.TargetGapPaper, 3);
+        Assert.Equal(DimensionPlacementSettings.DefaultPaperGapMm, result.TargetGapPaper, 3);
         Assert.Equal(0, result.TargetGapDrawing, 3);
     }
 }
