@@ -134,11 +134,55 @@ semantics trustworthy, then reduces reads and adds a conditional template.
 5. **Implement `place_chain` only after step 1 passes.** Scope: horizontal and
    vertical chains only, not `place_control_diagonals`. Inputs: view, side,
    selected supports, explicit datum/start direction, and gap in paper mm. The
-   calculator must define the signed side normal, convert paper distance using
-   the verified view scale/units, and convert the target line location to the
-   API's `Distance` using the characterized semantics. Do not sort away or
-   replace the declared datum. Return the planned line and datum; apply only
-   through the corrected writer.
+   clearance source is the existing `AssemblyOutline`/`PolyTreeD`, not a newly
+   invented polygon and not `PartsBounds`/AABB. For a full-assembly clearance,
+   use the outermost outline coordinate on the requested side; use a restricted
+   `PartOutlines` result only when the plan explicitly limits the clearance
+   subjects. The canonical default paper gap for this increment is 8 mm; it
+   supersedes the current `10.0` arrangement constant and the skill's older
+   12 mm wording. Convert it with the characterized
+   TS2025 behavior (`paperGap * viewScale`) and keep the documented paper-mm
+   discrepancy explicit.
+
+   Reuse the `extent` already present in the unchanged chain-position snapshot
+   (the source outline extent; this is distinct from a support kind or index).
+   Do not call the outline reader a
+   second time merely to calculate the gap. Re-read only when the source
+   snapshot is stale or the required extent was not part of that snapshot.
+
+   Keep placement values in one shared `DimensionPlacementSettings` source of
+   truth, not as separate constants in `create_dimension`, `place_chain`,
+   `arrange_dimensions` or the presets. The initial settings are:
+
+   - `DefaultPaperGapMm = 8` for ordinary assembly dimensions;
+   - `VerificationToleranceViewUnits = 0.6` for rendered-line comparison;
+   - `MinimumDistanceViewUnits = 0.001` as the positive-distance guard.
+
+   A command may override the paper gap for one operation, but an omitted value
+   uses the shared default. Plant rules such as `Necessary`, `All` and
+   `recognizableDistance` remain in the steel rule set, not in this technical
+   placement settings object. Control diagonals remain outside this increment;
+   no default diagonal gap is chosen here. The skill's M.48 example using
+   `distance = 120` at scale 1:10 is a measured 12 mm paper-gap example, not
+   the standard setting; preserve the number and label it as an observation.
+
+   The calculator must define the signed side normal and convert the target line
+   location to the API's positive `Distance` from Tekla's ordered base: leftmost
+   point for horizontal chains, lowest point for vertical chains. A tied base is
+   not silently guessed; require an explicit datum or return `unverified` until
+   that case is characterized. Reject `Distance <= 0` before calling Tekla.
+   Do not sort away or replace the declared datum. Return the target line, base,
+   gap, unit conversion and verification state; apply only through the corrected
+   writer. This calculation must be used by the new-dimension path itself
+   (`create_dimension` or `place_chain`), not only by read-back/arrangement of
+   dimensions that already exist.
+
+   Verify the rendered `StraightDimension` segment through
+   `GetObjectPresentation(segmentId)`. Convert its paper-space coordinate back
+   to view units with the view scale and compare using an approximately 0.6-view-
+   unit tolerance. On a broken/shortened view, where Tekla applies a stretch
+   offset, report `unverified` rather than treating the coordinate difference as
+   a placement failure.
 6. **Use a conservative contour guard where geometry is trustworthy.** Reuse
    `ViewDepthWindow.Read`'s `RestrictionBox` snapshot and the solid bounding
    boxes already read by `DrawingViewParts.GetDepthFilteredParts`. The current
