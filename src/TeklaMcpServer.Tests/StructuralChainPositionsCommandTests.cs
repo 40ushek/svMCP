@@ -57,45 +57,39 @@ public sealed class StructuralChainPositionsCommandTests
     [Fact]
     public void TheAnswerAlwaysCarriesCompletenessBesideItsPositions()
     {
-        // isComplete and issues travel with the data, not instead of it. A caller that reads only
-        // `sides` and never looks at `isComplete` would place dimensions on a hypothesis; the
-        // fields being present on the success path is what makes that a choice rather than an
-        // impossibility.
-        var text = HandlerSource();
-
-        Assert.Contains("isComplete = group.Completeness.IsComplete", text);
-        Assert.Contains("issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason })", text);
-        Assert.Contains("sides = verbose", text);
-        Assert.Contains("? (object)group.DimensionChains!.Chains.Select(chain => new", text);
-        Assert.Contains("CompactChainPositions.Project(", text);
-        Assert.Contains("extent = new { minX = extent.MinX", text);
+        var response = ViewDimensionContextTests.Context(incomplete: true).ChainPositions();
+        Assert.False(response.GetProperty("isComplete").GetBoolean());
+        Assert.NotEmpty(response.GetProperty("issues").EnumerateArray());
+        Assert.Equal(4, response.GetProperty("sides").GetArrayLength());
+        Assert.Equal(260, response.GetProperty("extent").GetProperty("maxX").GetDouble());
     }
 
     [Fact]
     public void EverySupportNamesItsPartAndOnlyAProvenAxisAlignedExtent()
     {
-        var text = HandlerSource();
-
-        Assert.Contains("modelId = support.ModelId", text);
-        Assert.Contains("partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm", text);
-        Assert.Contains("partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent)", text);
-        Assert.Contains("partExtentAlongChain = ExtentAlong(side, support.AxisAlignedModelExtent)", text);
+        var response = ViewDimensionContextTests.Context().ChainPositions(true);
+        foreach (var side in response.GetProperty("sides").EnumerateArray())
+        foreach (var position in side.GetProperty("positions").EnumerateArray())
+        foreach (var support in position.GetProperty("supports").EnumerateArray())
+        {
+            Assert.True(support.TryGetProperty("modelId", out _));
+            Assert.True(support.TryGetProperty("partExtentAlongChain", out _));
+        }
+        Assert.True(response.GetProperty("partSpanMatchToleranceMm").GetDouble() > 0);
     }
 
     [Fact]
     public void AFailedCalculationStaysDistinguishableFromAnIncompleteRead()
     {
-        // Two different failures reach the same catch: the outline could not be read, or the chain
-        // calculation threw on geometry it could read. Collapsing them into one `error` would tell
-        // a caller to go and classify a part when the real fault was in the calculation, so the
-        // source reason is preferred for `error` while the exception is kept alongside it.
-        var text = HandlerSource();
-
-        Assert.Contains("catch (InvalidOperationException exception)", text);
-        Assert.Contains("issue.Id == \"structural-outline\"", text);
-        Assert.Contains("error = sourceError ?? exception.Message", text);
-        Assert.Contains("calculationError = exception.Message", text);
-        Assert.Contains("success = false", text);
+        var outline = new TeklaMcpServer.Api.Drawing.StructuralOutline(
+            new TeklaMcpServer.Api.Drawing.ViewAssemblyOutlineResult(7, new Clipper2Lib.PolyTreeD(),
+                new Dictionary<int, Clipper2Lib.PolyTreeD>(), [], error: "source unavailable"), [], [], []);
+        var context = new TeklaMcpServer.Api.Drawing.ViewDimensionContext(7, 10, outline, [], new { }, new { });
+        var response = context.ChainPositions();
+        Assert.False(response.GetProperty("success").GetBoolean());
+        Assert.False(response.GetProperty("isComplete").GetBoolean());
+        Assert.Equal("source unavailable", response.GetProperty("error").GetString());
+        Assert.Contains("no planar points", response.GetProperty("calculationError").GetString());
     }
 
     [Fact]

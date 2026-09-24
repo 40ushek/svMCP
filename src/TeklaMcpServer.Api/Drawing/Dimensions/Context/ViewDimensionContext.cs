@@ -1,0 +1,216 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using TeklaMcpServer.Api.Drawing.Dimensions;
+
+namespace TeklaMcpServer.Api.Drawing;
+
+/// <summary>Captured source geometry. Mutable working chains never escape this boundary.</summary>
+public sealed class ViewDimensionContext
+{
+    private readonly GeometryGroup _group;
+    private readonly bool _complete;
+    private readonly JsonElement _parts;
+    private readonly JsonElement _diagnostics;
+    private readonly JsonElement _source;
+    private readonly JsonElement _metadata;
+    private readonly string[] _exclusions;
+    private string? _fingerprint;
+    public int ViewId { get; }
+    public double Scale { get; }
+
+    internal ViewDimensionContext(int viewId, double scale, StructuralOutline outline,
+        IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata)
+    {
+        ViewId = viewId;
+        Scale = scale;
+        _group = StructuralGeometryGroupBuilder.Build(outline);
+        _complete = outline.IsComplete && _group.Completeness.IsComplete;
+        _source = Freeze(source);
+        _metadata = Freeze(metadata);
+        _exclusions = exclusions.Select(x => x.Id).ToArray();
+        _parts = Freeze(outline.Included.Concat(outline.Excluded).Concat(outline.Unclassified)
+            .GroupBy(p => p.ModelId).Select(g => g.First())
+            .Select(p => new { modelId = p.ModelId, partPos = p.PartPos, partPrefix = p.PartPrefix,
+                profile = p.Profile, material = p.Material,
+                role = p.Role.Role.ToString(), classified = p.Role.IsClassified, ruleId = p.Role.RuleId, reason = p.Role.Reason,
+                isMainPart = p.IsMainPart, mainPartKnown = p.IsMainPartKnown }).ToArray());
+        _diagnostics = Freeze(new {
+            mainPartModelIds = outline.Included.Where(p => p.IsMainPart).Select(p => p.ModelId).ToArray(),
+            mainPartUnresolvedModelIds = outline.Included.Concat(outline.Excluded)
+                .Where(p => !p.IsMainPartKnown).Select(p => p.ModelId).ToArray(),
+            excludedModelIds = outline.Excluded.Select(p => p.ModelId).ToArray(),
+            outsideDepthModelIds = outline.OutsideDepthModelIds,
+            unresolvedDepthModelIds = outline.Outline.UnresolvedDepthModelIds,
+            issues = _group.Completeness.Issues.Select(i => new { id = i.Id, reason = i.Reason }).ToArray()
+        });
+    }
+
+    public DimensionPlacementCalculation Calculate(string direction, double[] points, double? paperGapMm = null)
+    {
+        if (!_complete || _group.Extent == null)
+            throw new InvalidOperationException("Cannot calculate automatic dimension offset: assembly outline is incomplete or empty");
+        return DimensionPlacementCalculator.Calculate(ParseSide(direction), points, _group.Extent,
+            Scale, paperGapMm ?? DimensionPlacementSettings.DefaultPaperGapMm);
+    }
+
+    public JsonElement ChainPositions(bool verbose = false)
+    {
+        var result = Header();
+        try { EnsureChains(); }
+        catch (InvalidOperationException ex)
+        {
+            result["success"] = false;
+            result["error"] = _group.Completeness.Issues.FirstOrDefault(i => i.Id == "structural-outline")?.Reason ?? ex.Message;
+            result["calculationError"] = ex.Message;
+            return Freeze(result, display: true);
+        }
+        result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
+        result["sourceFingerprint"] = Fingerprint();
+        result["format"] = verbose ? "verbose" : "compact";
+        result["sides"] = _group.DimensionChains!.Chains.Select(chain => new {
+            side = chain.Side.ToString(),
+            positions = verbose ? (object)VerbosePositions(chain) : CompactChainPositions.Project(chain, s => Span(chain.Side, s))
+        }).ToArray();
+        return Freeze(result, display: true);
+    }
+
+    /// <summary>One or several small questions; answers never round or mutate stored points.</summary>
+    public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
+        double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
+    {
+        var requested = Split(questions);
+        var allowed = new[] { "points", "edges", "parts", "scale", "placement", "all" };
+        if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
+            throw new ArgumentException("questions must contain points, edges, parts, scale, placement or all");
+        var selected = ParseSides(sides);
+        bool Wants(string q) => requested.Contains("all") || requested.Contains(q);
+        var result = Header(shortAnswer: true);
+        if (requested.Contains("placement"))
+            result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
+        if (Wants("scale")) result["scale"] = Scale;
+        if (Wants("parts")) result["parts"] = _parts;
+        if (Wants("points"))
+        {
+            try { EnsureChains(); }
+            catch (InvalidOperationException ex)
+            {
+                result["success"] = false;
+                result["error"] = _group.Completeness.Issues.FirstOrDefault(i => i.Id == "structural-outline")?.Reason ?? ex.Message;
+                result["calculationError"] = ex.Message;
+                return Freeze(result, display: true);
+            }
+        }
+        if (Wants("points") || Wants("edges"))
+            result["sides"] = selected.Select(side => {
+                var row = new Dictionary<string, object?> { ["side"] = side.ToString() };
+                if (Wants("edges")) row["edge"] = Edge(side);
+                if (Wants("points")) row["points"] = ShortPoints(_group.DimensionChains![side]);
+                return row;
+            }).ToArray();
+        result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
+        return Freeze(result, display: true);
+    }
+
+    private object[] ShortPoints(DimensionChain chain) => chain.Positions
+        .SelectMany(p => p.Supports).GroupBy(s => (s.Point.X, s.Point.Y))
+        .OrderBy(g => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom ? g.Key.X : g.Key.Y)
+        .ThenBy(g => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom ? g.Key.Y : g.Key.X)
+        .Select(g => (object)new {
+            x = g.Key.X, y = g.Key.Y,
+            supports = g.GroupBy(s => (s.ModelId, s.Kind, s.Source.IsHole, Extent: Span(chain.Side, s)))
+                .Select(s => {
+                    var d = new Dictionary<string, object?> { ["kind"] = s.Key.Kind.ToString() };
+                    if (s.Key.ModelId.HasValue) d["modelId"] = s.Key.ModelId.Value;
+                    if (s.Key.IsHole) d["isHole"] = true;
+                    if (s.Key.Extent.HasValue) d["partExtentAlongChain"] = s.Key.Extent.Value;
+                    return d;
+                }).ToArray()
+        }).ToArray();
+
+    private Dictionary<string, object?> Header(bool shortAnswer = false)
+    {
+        var result = new Dictionary<string, object?> {
+            ["success"] = true, ["viewId"] = ViewId, ["isComplete"] = _complete,
+            ["exclusions"] = _exclusions,
+            ["projectionVerification"] = "full-solid projection; section clipping is not verified"
+        };
+        foreach (var property in _diagnostics.EnumerateObject()) result[property.Name] = property.Value;
+        if (!shortAnswer) { result["source"] = _source; result["extent"] = Extent(); }
+        return result;
+    }
+
+    private object? Extent() => _group.Extent == null ? null : new {
+        minX = _group.Extent.MinX, maxX = _group.Extent.MaxX,
+        minY = _group.Extent.MinY, maxY = _group.Extent.MaxY };
+
+    private double? Edge(DimensionChainSide side) => _group.Extent == null ? null : side switch {
+        DimensionChainSide.Top => _group.Extent.MaxY, DimensionChainSide.Bottom => _group.Extent.MinY,
+        DimensionChainSide.Left => _group.Extent.MinX, _ => _group.Extent.MaxX };
+
+    private void EnsureChains()
+    {
+        if (_group.DimensionChains == null) CalcDimensionChains.Apply(_group);
+    }
+
+    private string Fingerprint()
+    {
+        if (_fingerprint != null) return _fingerprint;
+        using var hash = SHA256.Create();
+        var text = JsonSerializer.Serialize(new { source = _source, metadata = _metadata, Scale,
+            exclusions = _exclusions, extent = Extent(), parts = _parts,
+            chains = _group.DimensionChains!.Chains.Select(c => new { c.Side, positions = VerbosePositions(c) }) });
+        return _fingerprint = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLowerInvariant();
+    }
+
+    private static object[] VerbosePositions(DimensionChain chain) => chain.Positions.Select((p, index) => (object)new {
+        positionIndex = index, coordinate = p.Coordinate,
+        supports = p.Supports.Select((s, i) => new { supportIndex = i, sourceId = s.Source.Id,
+            modelId = s.ModelId, partExtentAlongChain = Span(chain.Side, s), isHole = s.Source.IsHole,
+            kind = s.Kind.ToString(), point = new[] { s.Point.X, s.Point.Y } }).ToArray()
+    }).ToArray();
+
+    private static double? Span(DimensionChainSide side, DimensionChainPositionSupport s) =>
+        s.AxisAlignedModelExtent == null ? null : side is DimensionChainSide.Top or DimensionChainSide.Bottom
+            ? s.AxisAlignedModelExtent.MaxX - s.AxisAlignedModelExtent.MinX
+            : s.AxisAlignedModelExtent.MaxY - s.AxisAlignedModelExtent.MinY;
+
+    internal static JsonElement Freeze(object value, bool display = false)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(value, display ? DisplayOptions : null));
+        return doc.RootElement.Clone();
+    }
+
+    private static readonly JsonSerializerOptions DisplayOptions = new() { Converters = { new DisplayDoubleConverter() } };
+    private sealed class DisplayDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) => reader.GetDouble();
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) =>
+            writer.WriteNumberValue(Math.Round(value, 3));
+    }
+
+    private static string[] Split(string value) => value.Split(',').Select(s => s.Trim().ToLowerInvariant())
+        .Where(s => s.Length > 0).Distinct().ToArray();
+
+    private static DimensionChainSide[] ParseSides(string sides)
+    {
+        var names = Split(sides);
+        if (names.Length == 1 && names[0] == "all") return (DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide));
+        if (names.Length == 0) throw new ArgumentException("sides must not be empty");
+        return names.Select(n => Enum.TryParse<DimensionChainSide>(n, true, out var s)
+            && Enum.IsDefined(typeof(DimensionChainSide), s) && !char.IsDigit(n[0])
+                ? s : throw new ArgumentException("sides must contain Top, Bottom, Left, Right or all")).ToArray();
+    }
+
+    internal static DimensionChainSide ParseSide(string direction) => direction.Trim().ToLowerInvariant() switch {
+        "horizontal" or "h" or "horizontal-up" => DimensionChainSide.Top,
+        "horizontal-down" or "h-" => DimensionChainSide.Bottom,
+        "vertical-left" or "v-" => DimensionChainSide.Left,
+        "vertical" or "v" or "vertical-right" => DimensionChainSide.Right,
+        _ => throw new ArgumentException("Automatic offset requires horizontal, horizontal-down, vertical-left or vertical direction; for a custom vector, supply distance explicitly")
+    };
+}

@@ -343,7 +343,9 @@ public static partial class ModelTools
         [Description("Direction of the dimension offset: 'horizontal' (offset up, dimension left-right), 'vertical' (offset right, dimension up-down), or custom 'dx,dy,dz' vector. Default: horizontal")] string direction = "horizontal",
         [Description("Optional explicit offset distance in view units. Omit to calculate it from the assembly outline and paperGapMm.")] double? distance = null,
         [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard",
-        [Description("Paper-space gap beyond the assembly outline in mm when distance is omitted. Default: 8.")] double? paperGapMm = null)
+[Description("Paper-space gap beyond the assembly outline in mm when distance is omitted. Default: 8.")] double? paperGapMm = null,
+        [Description("Excluded prefixes, as in the candidate query. Empty means none.")] string excludePrefixes = "",
+        [Description("Excluded material substrings, as in the candidate query. Empty means none.")] string excludeMaterials = "")
     {
         var json = RunBridge("create_dimension",
             viewId.ToString(CultureInfo.InvariantCulture),
@@ -351,7 +353,8 @@ public static partial class ModelTools
             direction,
             distance?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             attributesFile,
-            paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+            paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            excludePrefixes, excludeMaterials);
         try
         {
             var doc = JsonDocument.Parse(json);

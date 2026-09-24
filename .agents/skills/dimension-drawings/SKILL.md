@@ -32,7 +32,7 @@ Read only the relevant references, once per run; reuse them while unchanged.
 | Timber frame/panel | [plant-rules.md](references/plant-rules.md) |
 | Steel member with plates/gussets | [steel-rules.md](references/steel-rules.md) |
 | First drawing write of the run | [placement-and-verification.md](references/placement-and-verification.md) |
-| Explicit use of the experimental structured plan | [structured-plan.md](references/structured-plan.md) |
+| Compact context response and snapshot refresh | [structured-plan.md](references/structured-plan.md) |
 
 Do not blend timber and steel rules. If neither applies or the subject is
 ambiguous, ask. Do not routinely read HISTORY, roadmaps, code or the internet
@@ -46,10 +46,13 @@ For each target view:
    under several command names. Report the human view label as well as its ID.
 2. Read `get_drawing_parts` if needed to choose the subject/rule set or resolve
    unread roles. Reuse an existing current parts response.
-3. Read `get_structural_chain_positions <viewId> <excludePrefixes> <excludeMaterials>`
-   once per unchanged source snapshot. Timber uses its rule-set exclusions;
-   steel excludes nothing unless the agreed rules say otherwise. Check the
-   echoed `exclusions`, `isComplete`, issues and main-part identity.
+3. When deployed, use `get_view_dimension_context` with `questions="points,edges,scale"`
+   and the sides in scope. It shares the structural candidates and snapshot with
+   `get_structural_chain_positions` and `create_dimension`. Use the latter for
+   full evidence (`verbose=true`) or on an older bridge. Timber uses its rule-set
+   exclusions; steel excludes nothing unless agreed otherwise. Check `exclusions`,
+   `isComplete`, issues and main-part identity. Pass the SAME exclusion lists to
+   `create_dimension`; empty lists mean no exclusions, not the last query's filters.
 4. Read `get_drawing_dimensions <viewId>` once to identify chains to retain or
    change. These and the chain positions are the normal planning inputs.
 
@@ -58,12 +61,13 @@ dimension contexts, coverage or debug overlays. Each extra read must answer a
 specific outstanding question. For review, begin with context and dimensions;
 fetch structural positions only if the question requires them.
 
-Reuse source geometry for different sides of the same unchanged view. Re-read
-it when the drawing/model, view depth/coordinates, parts or exclusions change,
-when current identity is uncertain, or when a plan fingerprint is stale.
+The bridge treats source geometry as fixed while working on one view. Reuse it
+for all sides. After external model/view edits or uncertain source identity,
+request `refresh=true` on a context or chain-position read. Switching requested
+view/drawing clears the snapshot; different filters resolve separate snapshots.
+External edits are not automatically detected during the run.
 A dimension-only write invalidates the dimension snapshot because of reflow;
-it does not by itself require another full solid/outline read. The experimental
-plan command still requires a fresh source fingerprint when its gate rejects one.
+it does not by itself require another full solid/outline read.
 
 `isComplete=false` stops automatic placement for that group, not independent
 complete groups. Report the actual issue: unread properties, no included parts,
@@ -89,7 +93,8 @@ Keep one compact plan, not repeated prose copies:
 - closure endpoints, first point/datum, side, offset, attributes and row type;
 - chosen rule set and its policy settings.
 
-**Coordinates:** `get_structural_chain_positions` is the source. Use each
+**Coordinates:** structural candidates from `get_view_dimension_context` or
+`get_structural_chain_positions` are the source. Use each
 position's own real support point, including its own cross-axis coordinate.
 Never reconstruct positions from bbox, raw vertices, axes or contacts.
 Geometry reads may verify a support; they do not invent replacement coordinates.
@@ -133,17 +138,18 @@ dimensions. Direction chooses the side; distance is non-negative. Keep the
 returned new ID when Tekla renumbers a chain.
 
 Use available, known working tools; source code existing is not proof that the
-running bridge contains it. Structured preview/apply is experimental, limited
-to one steel location chain, Relative/Create only; do not force all work through
-it or silently change policy to make it fit. See its reference only when using it.
+running bridge contains it. The experimental structural preview/apply commands
+were removed. Use `create_dimension`; omit `distance` for the automatic 8-paper-mm
+gap, or supply `paperGapMm`. Do not supply both distance and paperGapMm.
 
 After each write that can reflow neighbours, re-read
 `get_drawing_dimensions <viewId>` and compare to the plan:
 - kept coordinates present, removed ones absent from the planned chain;
 - each witness point uses its own intended support;
-- reference line on the correct side/offset, outside the assembly outline: `distance`
-  counts from the FIRST point, so compute `first point + distance` yourself; the
-  read-back `referenceLine` and `Verified=true` are not proof (placement reference);
+- reference line on the correct side/offset: inspect `writeState.RenderedLine`
+  when available. `matched` checks this chain's rendered offset; `not verified`
+  needs the remaining visual check. Calculated `referenceLine` and stored-value
+  `Verified=true` alone are not independent evidence (placement reference);
 - intended relative/absolute rows and closure;
 - affected neighbouring chains still correct.
 

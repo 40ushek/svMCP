@@ -11,10 +11,14 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
     private readonly Model _model;
     private readonly TextWriter _output;
 
-    public DrawingCommandHandler(Model model, TextWriter output)
+    private readonly TeklaMcpServer.Api.Drawing.ViewDimensionContextProvider _dimensionContexts;
+
+    public DrawingCommandHandler(Model model, TextWriter output,
+        TeklaMcpServer.Api.Drawing.ViewDimensionContextProvider dimensionContexts)
     {
         _model = model;
         _output = output;
+        _dimensionContexts = dimensionContexts;
     }
 
     public bool TryHandle(string command, string[] args)
@@ -91,6 +95,7 @@ internal sealed partial class DrawingCommandHandler : ICommandHandler
             case "get_assembly_outline":
             case "get_structural_outline":
             case "get_structural_chain_positions":
+            case "get_view_dimension_context":
             case "draw_structural_chain_positions":
             case "get_contact_candidate_points":
             case "get_part_degrees_of_freedom":

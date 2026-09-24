@@ -38,7 +38,7 @@ public static partial class ModelTools
 
     [McpServerTool, Description(
         "Get the four preliminary dimension chains calculated from the structural geometry of one drawing view. " +
-        "This is the only coordinate source for AssemblyDrawing dimension placement: every position carries its evidence, " +
+        "Shares its preliminary candidates with get_view_dimension_context: every position carries its evidence, " +
         "and isComplete/issues say whether it is safe to use. Every part the view draws takes part unless you exclude it; " +
         "mainPartModelIds reports the assembly's main part, which is the base a secondary part is measured from on a beam or a column " +
         "and means nothing on a panel of many equal members. Read-only; it does not create or change dimensions.")]
@@ -46,14 +46,32 @@ public static partial class ModelTools
         [Description("ID of the drawing view (from get_drawing_views)")] int viewId,
         [Description("Optional comma-separated mark prefixes to exclude, e.g. \"R,M\". Empty excludes nothing.")] string excludePrefixes = "",
         [Description("Optional comma-separated material names to exclude, matched as case-insensitive substrings. Empty excludes nothing.")] string excludeMaterials = "",
-        [Description("false (default): compact answer - supports at the same part and point are merged (all supportIndices and kinds kept), sourceId dropped, isHole only when true. true: the full per-support answer.")] bool verbose = false)
+        [Description("false (default): compact answer - supports at the same part and point are merged (all supportIndices and kinds kept), sourceId dropped, isHole only when true. true: the full per-support answer.")] bool verbose = false,
+        [Description("Force a fresh geometry read after external model/view edits. Dimensions alone do not require refresh.")] bool refresh = false)
     {
         return RunBridge(
             "get_structural_chain_positions",
             viewId.ToString(CultureInfo.InvariantCulture),
             excludePrefixes ?? string.Empty,
             excludeMaterials ?? string.Empty,
-            verbose ? "verbose" : "compact");
+            verbose ? "verbose" : "compact", refresh.ToString());
+    }
+
+    [McpServerTool, Description("Ask small questions of the captured structural view geometry. Shares its snapshot with get_structural_chain_positions and create_dimension. Source geometry is frozen until refresh or a drawing/view switch; external edits require refresh=true. No bolts/grids are read. Full source evidence remains available through get_structural_chain_positions(verbose=true).")]
+    public static string GetViewDimensionContext(
+        [Description("Drawing view ID")] int viewId,
+        [Description("Comma-separated questions: points, edges, parts, scale, placement, or all. all excludes placement, which needs explicit points.")] string questions = "points,edges,scale",
+        [Description("Top,Bottom,Left,Right or all")] string sides = "all",
+        [Description("Same excluded prefixes as create_dimension")] string excludePrefixes = "",
+        [Description("Same excluded material substrings as create_dimension")] string excludeMaterials = "",
+        [Description("Re-read source geometry after external edits")] bool refresh = false,
+        [Description("Flat XYZ JSON array, only for a placement question")] string points = "",
+        [Description("Offset direction for a placement question")] string direction = "horizontal",
+        [Description("Optional paper gap for a placement question, default 8 mm")] double? paperGapMm = null)
+    {
+        return RunBridge("get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
+            questions, sides, excludePrefixes, excludeMaterials, refresh.ToString(), points, direction,
+            paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
     }
 
     [McpServerTool, Description(

@@ -22,13 +22,32 @@ internal static class DimensionProjectionHelper
 
         direction = normalizedDirection;
 
-        var offsetProjection = points.Max(point => Project(point.X, point.Y, upDirection.X, upDirection.Y)) + distance;
+        // Only characterized axis-aligned chains have a known base. Do not substitute
+        // the outermost point: it need not be Tekla's first point along the chain axis.
+        if (!TryBaseProjection(points, upDirection, out var baseProjection)) return null;
+        var offsetProjection = baseProjection + distance;
         var minAlongProjection = points.Min(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
         var maxAlongProjection = points.Max(point => Project(point.X, point.Y, normalizedDirection.X, normalizedDirection.Y));
 
         var start = CreatePointOnDimensionLine(minAlongProjection, offsetProjection, normalizedDirection, upDirection);
         var end = CreatePointOnDimensionLine(maxAlongProjection, offsetProjection, normalizedDirection, upDirection);
         return TeklaDrawingDimensionsApi.CreateLineInfo(start.X, start.Y, end.X, end.Y);
+    }
+
+    internal static bool TryBaseProjection(IReadOnlyList<(double X, double Y)> points,
+        (double X, double Y) up, out double projection)
+    {
+        projection = 0;
+        if (points.Count == 0) return false;
+        var horizontal = System.Math.Abs(up.X) < 1e-8 && System.Math.Abs(System.Math.Abs(up.Y) - 1) < 1e-8;
+        var vertical = System.Math.Abs(up.Y) < 1e-8 && System.Math.Abs(System.Math.Abs(up.X) - 1) < 1e-8;
+        if (!horizontal && !vertical) return false;
+        if (points.Any(p => !DimensionWriteProtocol.Finite(p.X) || !DimensionWriteProtocol.Finite(p.Y))) return false;
+        var first = points.Min(p => horizontal ? p.X : p.Y);
+        var bases = points.Where(p => System.Math.Abs((horizontal ? p.X : p.Y) - first) <= 0.01).ToArray();
+        if (bases.Length != 1) return false;
+        projection = Project(bases[0].X, bases[0].Y, up.X, up.Y);
+        return true;
     }
 
     internal static (double X, double Y) CreateReferencePoint(

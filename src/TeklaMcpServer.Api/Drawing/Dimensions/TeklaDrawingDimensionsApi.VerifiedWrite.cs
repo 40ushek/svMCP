@@ -23,6 +23,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             var originalId = original?.GetIdentifier().ID;
             double? observedDistance = null;
             double? initialDistance = null;
+            DimensionRenderedLineResult? renderedLine = null;
             var state = DimensionWriteProtocol.Execute(
                 () => new StraightDimensionSetHandler()
                     .CreateDimensionSet(view, ToPointList(points), direction, distance, attributes)
@@ -74,8 +75,13 @@ public sealed partial class TeklaDrawingDimensionsApi
                     }
                     var pointError = DimensionWriteVerification.CheckPoints(points, actual, segmentCount);
                     if (pointError != null) return pointError;
-                    return expectedRowType == DimensionSetBaseAttributes.DimensionTypes.Relative
+                    var datumError = expectedRowType == DimensionSetBaseAttributes.DimensionTypes.Relative
                         ? null : DimensionWriteVerification.CheckDatum(points[0], points[1], links);
+                    if (datumError != null) return datumError;
+                    renderedLine = DimensionRenderedLineVerification.Read(view, read, points, direction, distance);
+                    // An observed mismatch follows the existing compensation path, before
+                    // deletion of an original. Unavailable observation keeps its own status.
+                    return renderedLine.Status == "mismatch" ? renderedLine.Reason : null;
                 },
                 original == null ? null : () => original.Delete(),
                 originalId == null ? null : () => FindDimensionSet(drawing, originalId.Value) == null,
@@ -83,6 +89,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 id => FindDimensionSet(drawing, id) == null);
             state.ObservedDistance = observedDistance;
             state.InitialDistance = initialDistance;
+            state.RenderedLine = renderedLine;
             return state;
         }
         finally { DrawingEnumeratorBase.AutoFetch = previousAutoFetch; }

@@ -27,6 +27,7 @@ public sealed class DimensionWriteState
         : Error;
     public double? ObservedDistance { get; set; }
     public double? InitialDistance { get; set; }
+    public DimensionRenderedLineResult? RenderedLine { get; set; }
     public string Stage { get; set; } = "notStarted";
     public string? Error { get; set; }
 }

@@ -1,58 +1,36 @@
-# Experimental structured location plan
+# Shared view context and creation
 
-Read only when using `preview_structural_dimension_plan` /
-`apply_structural_dimension_plan`. These were added to source on 2026-09-19;
-unit tests and builds passed, but live Tekla validation was not performed then.
-Do not infer deployment from source or make ordinary placement depend on a
-live test of these commands. Use only on an explicitly requested test or after
-live validation for the relevant runtime has been established.
+The experimental preview/apply commands were removed. Use `create_dimension`;
+do not request approval tokens or reconstruct their old plan format.
 
-## Supported scope
+1. On a bridge exposing `get_view_dimension_context`, read
+   `questions="points,edges,scale"` with required `sides` (or `all`).
+   Request `parts` only when needed. Completeness, main-part identity and
+   exclusions accompany the answer.
+2. Each side lists real XY points with `supports`: owner, kind, hole flag
+   when true and `partExtentAlongChain`. Merged points can have several owners:
+   use evidence for the intended part. Ownerless GroupExtent anchors are valid.
+3. Select measurements by plant rules; compact output does not choose points.
+   Read existing dimensions to avoid duplicating chains.
+4. Call `create_dimension` with selected XYZ points, direction and the SAME
+   `excludePrefixes`/`excludeMaterials`. Omit `distance` for the default
+   8 paper mm gap, or set `paperGapMm`. Explicit `distance` retains manual
+   view units. Never pass both. Custom vectors require explicit distance.
+5. Inspect write state and rendered-line result, then reread dimensions for
+   neighbours and row/point checks. Missing or `not verified` observation does
+   not prove the line was drawn at the calculated location. After an uncertain
+   write, inspect actual dimensions before retrying.
 
-One steel `PartLocation` chain, horizontal/vertical, `Relative`, **Create only**.
-Not timber, running rows, retain/replace, all-side completion or automatic
-drafting judgement. Do not change the user's row type/policy to fit this scope.
-Outside it, use the existing placement route and its explicit internal plan.
-The accepted full-solid projection limitation on sections is unchanged; the
-steel visual gate still applies.
+A `placement` question accepts points/direction/gap and calculates without
+writing; it is optional, not a mandatory preview. Creation uses the same calculator.
 
-## Read, preview, apply
+The persistent bridge retains snapshots per normalized filter scope for the
+active drawing/view. Dimensions do not invalidate them. External geometry,
+scale or view edits require `refresh=true`. Switching drawing or queried view,
+or restarting the bridge, loses the snapshot; first use builds it. No automatic
+external-edit detection is promised.
 
-1. From the current `get_structural_chain_positions` response, retain
-   `sourceFingerprint`, `positionIndex` and each support's `supportIndex` with the
-   coordinates. In the default compact answer the `supportIndex` values are the
-   `refs[].supportIndex` of a support entry (one entry may list several, all naming
-   the same point); name any one of them. Use `verbose=true` for the full form.
-   Also read existing dimensions to avoid duplicating a matching chain.
-2. Build one plan JSON with these fields:
-   - `viewId`, `sourceFingerprint`, `side` (Top/Bottom/Left/Right);
-   - `referenceModelId` (the confirmed main part), `subjectModelId`;
-   - `ruleSet="steel"`, `purpose="PartLocation"`;
-   - `internalPolicy` (None/Necessary/All), `recognizableDistance` for Necessary;
-   - `datumReason`, `closureReason`, `rowType="Relative"`, `attributesFile`;
-   - omit `distance` for the default 8 mm paper gap, or set `paperGapMm` for a
-     one-plan override; an explicit non-negative `distance` keeps the manual
-     path. Never provide both `distance` and `paperGapMm`;
-   - `reverseStart`, and the same
-     `excludePrefixes` / `excludeMaterials` as the source read;
-   - `positions`: exactly one decision per candidate on the selected side,
-     each with `positionIndex`, `disposition` (Kept/Removed), `reason`;
-     Kept also selects `supportIndex`, Removed omits it.
-3. Preview once. Inspect resolved points, side, calculated `distance`, base and
-   target line (when using a paper gap) against the intended
-   measurement. The target line is calculated, not independently observed from
-   the rendered Tekla dimension. Both reference and subject supports must be represented; a bare
-   plate size is not a location chain. Each support keeps its own transverse
-   coordinate. Reference and closure can differ.
-4. Apply the unchanged plan with the returned `approvalToken`. The bridge
-   re-reads source and rejects stale fingerprints or changed plans. Re-preview
-   only after an actual change/rejection; do not run repeated previews for an
-   unchanged plan. Named attributes and their row type are checked at apply,
-   not by the geometry-only preview.
-5. Inspect returned ID/write state and read dimensions once for neighbour and
-   plan verification. Other sides remain unreviewed.
-
-The token checks consistency, not user authorization, duplicate suppression or
-atomicity. Do not blindly resend apply after a timeout/error. Inspect the actual
-view first: the chain might already exist. A stale-token error requires a fresh
-source and reviewed plan, not bypassing the gate with raw create.
+`get_structural_chain_positions` remains the compatibility/full-evidence route
+(`verbose=true` for original supports), sharing the snapshot and refresh policy.
+On an older deployed bridge use that route; source files do not prove deployment.
+Both routes retain the accepted full-solid projection limitation on section/end views.

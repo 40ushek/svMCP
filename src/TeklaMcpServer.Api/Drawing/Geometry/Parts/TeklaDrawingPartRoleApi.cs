@@ -23,7 +23,9 @@ public sealed class PartRoleInView
         string? partPrefix,
         PartRoleResult role,
         bool isMainPart = false,
-        bool isMainPartKnown = true)
+        bool isMainPartKnown = true,
+        string? profile = null,
+        string? material = null)
     {
         ModelId = modelId;
         PartPos = partPos;
@@ -31,11 +33,15 @@ public sealed class PartRoleInView
         Role = role;
         IsMainPart = isMainPart;
         IsMainPartKnown = isMainPartKnown;
+        Profile = profile;
+        Material = material;
     }
 
     public int ModelId { get; }
     public string? PartPos { get; }
     public string? PartPrefix { get; }
+    public string? Profile { get; }
+    public string? Material { get; }
     public PartRoleResult Role { get; }
 
     /// <summary>
@@ -184,9 +190,10 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 continue;
             }
 
+            var profile = part.Profile?.ProfileString;
             var role = _classifier.ClassifyProperties(
                 partPrefix,
-                part.Profile?.ProfileString,
+                profile,
                 material,
                 materialType,
                 part.Name);
@@ -197,7 +204,9 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 NullIfEmpty(partPrefix),
                 role,
                 mainPart,
-                mainPartKnown));
+                mainPartKnown,
+                profile,
+                materialRead ? material : null));
         }
 
         return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds);

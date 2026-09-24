@@ -1,7 +1,28 @@
 # Dimensions Roadmap
 
-Updated 2026-09-24. This file is the active work order. The context and query
-changes below are agreed design, not implemented functionality.
+Updated 2026-09-24. This file is the active work order. Steps 1-3 now have a
+source implementation and automated tests; deployment and live acceptance are
+still pending. Step 4 remains design, not implemented functionality.
+
+## Current delivery and next gate
+
+- Persistent `ViewDimensionContextProvider` shares frozen, filter-specific
+  geometry between chain reads, short context queries and automatic creation.
+  Chains are calculated lazily; explicit-distance creation needs no outline.
+- `get_view_dimension_context` answers points/edges/parts/scale/placement.
+  Queries return detached JSON; candidate choices cannot mutate the snapshot.
+- Create accepts the same exclusions as reads. Explicit refresh clears lower
+  geometry caches too; drawing/query-view changes end the active snapshot run.
+- Axis-aligned reference-line reconstruction uses a unique leftmost/lowest
+  base. Stored Distance correction is retained. Segment presentation checking
+  reports matched/mismatch/not verified separately; mismatch fails the existing
+  write verification before deleting an original. Missing presentation,
+  shortened views and ambiguous bases do not count as a match and do not alone
+  reject the stored-value-verified write.
+- Next: deploy on an authorized test drawing, validate four sides and 1:5/1:10,
+  ambiguous bases and shortened views, then measure full-task time and response
+  size on the agreed cases. No live speedup or placement guarantee is claimed.
+  Trace events count context builds/hits, not individual solid reads.
 [The archive](ROADMAP_DIMENSIONS_ARCHIVE_2026-09-24.md) preserves the previous
 roadmap, measurements, rejected proposals and longer-term ideas. Its work orders
 do not compete with this one.
@@ -13,11 +34,10 @@ losing required measurements, source evidence or existing write checks.
 
 - `GeometryGroup`, `CalcDimensionChains` and `DimensionChainSet` already provide
   the structural contours and preliminary candidates. Reuse these components.
-- `get_structural_chain_positions` currently builds its own structural outline
-  and chains for each call; it does not retain that result for creation.
-- `create_dimension` calculates an omitted `distance` using another structural
-  outline read. Its current outline call has no exclusion filters. Chain reads
-  can have filters, so the two commands can currently use different extents.
+- `get_structural_chain_positions` and automatic `create_dimension` resolve
+  the same context for the requested view and normalized exclusions. Repeated
+  reads/writes reuse the outline; different exclusions never use the last
+  context indiscriminately.
 - `DimensionPlacementCalculator` and `DimensionPlacementSettings` already exist.
   The default gap is 8 paper mm; `paperGapMm` overrides it. An explicit `distance`
   remains a manual view-unit input. Preset distances are not outline gaps.
@@ -30,7 +50,7 @@ losing required measurements, source evidence or existing write checks.
 
 ## One source of geometry for the selected view
 
-Introduce `ViewDimensionContext` in `TeklaMcpServer.Api`. It contains a captured
+Implemented `ViewDimensionContext` in `TeklaMcpServer.Api`. It contains a captured
 view identity, coordinate system, type, scale and depth window; normalized
 exclusion filters; structural part properties and roles; structural outline;
 `GeometryGroup`; and calculated preliminary chains. An assembly-wide context
@@ -145,10 +165,10 @@ savings result. This step does not require a separate command for every field.
 
 ### 3. Correct line reconstruction and add independent observation
 
-`DimensionProjectionHelper.TryCreateCommonReferenceLine` currently uses the
-maximum projection toward the side plus `distance`. Reconcile reconstruction
-with the supported base-point semantics; keep calculated and independently
-observed line positions distinguishable. Do not generalize an axis-aligned
+The previous `DimensionProjectionHelper.TryCreateCommonReferenceLine` used the
+maximum projection toward the side plus `distance`. It now uses the supported
+unique leftmost/lowest base. Keep calculated and independently observed line
+positions distinguishable. Do not generalize an axis-aligned
 formula to diagonals, ambiguous ties or shortened views without evidence.
 
 Retain stored `Distance` correction and the existing point/side/row/datum checks.

@@ -755,58 +755,14 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var request = parseResult.Request;
-        double distance;
-        DimensionPlacementCalculation? placement = null;
-        if (request.Distance.HasValue)
+        try
         {
-            distance = request.Distance.Value;
+            var result = _dimensionContexts.Create(parseResult.Request);
+            WriteCreateDimensionResult(result);
         }
-        else
-        {
-            try
-            {
-                var outline = GetStructuralOutline(request.ViewId);
-                var group = StructuralGeometryGroupBuilder.Build(outline);
-                if (!outline.IsComplete || group.Extent == null)
-                    throw new InvalidOperationException("Cannot calculate automatic dimension offset: assembly outline is incomplete or empty");
-                var view = FindView(new DrawingHandler().GetActiveDrawing(), request.ViewId)
-                    ?? throw new ViewNotFoundException(request.ViewId);
-                if (!view.Select())
-                    throw new InvalidOperationException("Cannot select view to read its scale");
-                placement = DimensionPlacementCalculator.Calculate(
-                    ParseDimensionChainSide(request.Direction), request.Points, group.Extent,
-                    view.Attributes.Scale, request.PaperGapMm ?? DimensionPlacementSettings.DefaultPaperGapMm);
-                distance = placement.Distance;
-            }
-            catch (Exception exception)
-            {
-                WriteError(exception.Message);
-                return true;
-            }
-        }
-
-        var result = api.CreateDimension(
-            request.ViewId,
-            request.Points,
-            request.Direction,
-            distance,
-            request.AttributesFile);
-        result.DistanceUsed = distance;
-        result.Placement = placement;
-        WriteCreateDimensionResult(result);
+        catch (Exception exception) { WriteError(exception.Message); }
         return true;
     }
-
-    private static DimensionChainSide ParseDimensionChainSide(string direction) =>
-        direction.Trim().ToLowerInvariant() switch
-        {
-            "horizontal" or "h" or "horizontal-up" => DimensionChainSide.Top,
-            "horizontal-down" or "h-" => DimensionChainSide.Bottom,
-            "vertical-left" or "v-" => DimensionChainSide.Left,
-            "vertical" or "v" or "vertical-right" => DimensionChainSide.Right,
-            _ => throw new ArgumentException("Automatic offset requires horizontal, horizontal-down, vertical-left or vertical direction; for a custom vector, supply distance explicitly", nameof(direction))
-        };
 
     private static double[]? ParseFlatPointArray(string json)
     {
@@ -1084,6 +1040,7 @@ internal sealed partial class DrawingCommandHandler
                 },
                 topDirection = g.TopDirection,
                 referenceLine = SerializeLine(g.ReferenceLine),
+                referenceLineSource = "calculated; not a presentation observation",
                 leadLineMain = SerializeLine(g.LeadLineMain),
                 leadLineSecond = SerializeLine(g.LeadLineSecond),
                 maximumDistance = g.MaximumDistance,
@@ -1097,6 +1054,7 @@ internal sealed partial class DrawingCommandHandler
                     dimensionType = item.DimensionType,
                     teklaDimensionType = item.TeklaDimensionType,
                     referenceLine = SerializeLine(item.ReferenceLine),
+                    referenceLineSource = "calculated; not a presentation observation",
                     startPoint = item.StartPoint == null ? null : new
                     {
                         x = item.StartPoint.X,

@@ -10,7 +10,7 @@ public static partial class DrawingCommandParsers
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
         {
-            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> [distance] [attributesFile] [paperGapMm]");
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials]");
         }
 
         var pointsJson = args.Length > 2 ? args[2] : "[]";
@@ -50,7 +50,9 @@ public static partial class DrawingCommandParsers
             Direction = direction,
             Distance = distance,
             AttributesFile = attributesFile,
-            PaperGapMm = paperGapMm
+            PaperGapMm = paperGapMm,
+            ExcludePrefixes = args.Length > 7 ? args[7] : string.Empty,
+            ExcludeMaterials = args.Length > 8 ? args[8] : string.Empty
         });
     }
 

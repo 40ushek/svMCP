@@ -80,13 +80,15 @@ internal static class Program
     private static void ExecuteLegacyCommand(string[] args, TextWriter realOut, StringWriter teklaLog)
     {
         var model = new Model();
-        var payload = ExecuteCommand(model, args[0], args, teklaLog);
+        var contexts = new TeklaMcpServer.Api.Drawing.ViewDimensionContextProvider(model);
+        var payload = ExecuteCommand(model, args[0], args, teklaLog, contexts);
         realOut.WriteLine(payload);
     }
 
     private static void RunPersistentLoop(TextWriter realOut, StringWriter teklaLog)
     {
         var model = new Model();
+        var contexts = new TeklaMcpServer.Api.Drawing.ViewDimensionContextProvider(model);
         var teklaLogBuffer = teklaLog.GetStringBuilder();
         string? line;
 
@@ -121,7 +123,7 @@ internal static class Program
             {
                 var fullArgs = BuildFullArgs(request.Cmd, request.Args);
                 var execute = Stopwatch.StartNew();
-                var payload = ExecuteCommand(model, request.Cmd, fullArgs, teklaLog);
+                var payload = ExecuteCommand(model, request.Cmd, fullArgs, teklaLog, contexts);
                 execute.Stop();
                 var write = Stopwatch.StartNew();
                 WriteBridgeResponse(realOut, new BridgeResponse
@@ -164,7 +166,8 @@ internal static class Program
         output.Flush();
     }
 
-    private static string ExecuteCommand(Model model, string command, string[] args, StringWriter teklaLog)
+    private static string ExecuteCommand(Model model, string command, string[] args, StringWriter teklaLog,
+        TeklaMcpServer.Api.Drawing.ViewDimensionContextProvider contexts)
     {
         var total = Stopwatch.StartNew();
         using var payloadWriter = new StringWriter();
@@ -188,7 +191,8 @@ internal static class Program
             }
             else
             {
-                var dispatcher = new CommandDispatcher(model, payloadWriter);
+                contexts.ObserveActiveDrawing();
+                var dispatcher = new CommandDispatcher(model, payloadWriter, contexts);
                 if (!dispatcher.Dispatch(command, args))
                 {
                     status = "unknown_command";

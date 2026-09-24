@@ -13,16 +13,34 @@ New work beyond the historical v1 baseline below:
   direction/side, row type and offset. Running rows additionally require a unique
   connected segment path proving the requested first point. This is not visual
   collision checking or an exhaustive comparison of all style properties.
-- `writeState` preserves the new ID, failed stage, last observed offset and
-  deletion status. Failed replacements are left for inspection, not automatically
-  removed. A failed deletion/commit can leave both dimensions or an uncertain
-  state: re-read both IDs before doing anything else. No atomicity or blind retry.
-- `create_dimension` with no explicit `distance` reads the complete structural
-  outline for that view, then calculates a line 8 paper mm beyond its extent.
-  `paperGapMm` overrides that setting; explicit `distance` keeps the manual
-  view-unit path. The response includes the used distance and calculated base,
-  target line, scale and gap. Each standalone create currently rereads the
-  structural outline; snapshot reuse is a follow-up optimization.
+- `writeState` preserves the new ID, failed stage, observed offset and deletion
+  status. Failure before original deletion triggers cleanup of the new set;
+  cleanup is itself committed and verified. Failed cleanup or failure after
+  original deletion starts may leave uncertain state. Inspect both IDs before
+  retrying; the protocol is not atomic.
+- Automatic `create_dimension` calculates a line 8 paper mm beyond the complete
+  structural outline. `paperGapMm` overrides the gap; explicit `distance`
+  retains manual view units without building geometry. The response includes
+  `distanceUsed` and calculated `placement`.
+- The persistent bridge shares a frozen `ViewDimensionContext` between
+  `get_structural_chain_positions`, `get_view_dimension_context` and creation.
+  Pass identical `excludePrefixes`/`excludeMaterials` for identical scope.
+  Different normalized filters have separate snapshots. Dimensions do not
+  invalidate them; external geometry/view edits require `refresh=true` on a
+  query. Drawing/view switches and bridge restart discard the active run.
+- `get_view_dimension_context` accepts `questions=points,edges,parts,scale`
+  (or `all`) and `sides=Top,Bottom,Left,Right` (or `all`). Optional
+  `placement` additionally needs flat XYZ `points`, `direction` and optional
+  `paperGapMm`; it uses the creation calculator without writing.
+- `writeState.RenderedLine` independently compares segment presentation lines:
+  `matched`, `mismatch`, or `not verified` with a reason. A mismatch fails the
+  existing verified-write protocol before deleting an original. Unsupported
+  views/bases or unavailable presentation remain explicitly unverified; they
+  do not block an otherwise verified write. This checks the created line, not
+  neighbours or drafting sufficiency. Read-back `referenceLine` remains a
+  calculation, now labelled `referenceLineSource`, not a presentation observation.
+- These changes have automated coverage; new runtime observation and reuse
+  still require live validation. See the active roadmap.
 ## Purpose
 
 `Drawing/Dimensions` is the line-first dimension module for drawing runtime.

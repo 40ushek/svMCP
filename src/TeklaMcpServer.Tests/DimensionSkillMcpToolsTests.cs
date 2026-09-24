@@ -50,7 +50,6 @@ public sealed class DimensionSkillMcpToolsTests
 
     [Theory]
     [InlineData("HandleGetStructuralOutline")]
-    [InlineData("HandleGetStructuralChainPositions")]
     [InlineData("HandleDrawStructuralChainPositions")]
     public void EveryCommandThatAppliesAnExclusionFilterAlsoReportsIt(string handler)
     {
@@ -98,11 +97,9 @@ public sealed class DimensionSkillMcpToolsTests
         // Both arrive as isMainPart=false. The steel rule set measures from the main part,
         // so it has to refuse a drawing whose assembly could not be asked rather than
         // measure from what is left.
-        var body = HandlerBody("HandleGetStructuralChainPositions");
-
-        Assert.Contains("mainPartModelIds", body);
-        Assert.Contains("mainPartUnresolvedModelIds", body);
-        Assert.Contains("!part.IsMainPartKnown", body);
+        var response = ViewDimensionContextTests.Context().ChainPositions();
+        Assert.Equal(10, response.GetProperty("mainPartModelIds")[0].GetInt32());
+        Assert.Equal(20, response.GetProperty("mainPartUnresolvedModelIds")[0].GetInt32());
     }
 
     private static string HandlerSource() => File.ReadAllText(

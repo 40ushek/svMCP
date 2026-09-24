@@ -70,6 +70,8 @@ internal sealed partial class DrawingCommandHandler
 
             case "get_structural_chain_positions":
                 return HandleGetStructuralChainPositions(args);
+            case "get_view_dimension_context":
+                return HandleGetViewDimensionContext(args);
 
             case "draw_structural_chain_positions":
                 return HandleDrawStructuralChainPositions(GetDebugOverlayApi(), args);
@@ -755,55 +757,6 @@ internal sealed partial class DrawingCommandHandler
 
     private static string GuidText(Guid guid) => guid == Guid.Empty ? string.Empty : guid.ToString();
 
-    private string StructuralChainFingerprint(int viewId, SourceIdentity identity,
-        StructuralOutline outline, GeometryGroup group, IReadOnlyList<PartExclusionRule> exclusions,
-        out double viewScale)
-    {
-        var view = FindView(new DrawingHandler().GetActiveDrawing(), viewId)
-            ?? throw new ViewNotFoundException(viewId);
-        if (!view.Select()) throw new InvalidOperationException("Cannot refresh view for structural source fingerprint");
-        viewScale = view.Attributes.Scale;
-        var cs = view.ViewCoordinateSystem;
-        var display = view.DisplayCoordinateSystem;
-        var depth = ViewDepthWindow.Read(_model, view);
-        var context = JsonSerializer.Serialize(new
-        {
-            viewId,
-            source = Describe(identity),
-            viewCoordinates = new[] { cs.Origin.X, cs.Origin.Y, cs.Origin.Z, cs.AxisX.X, cs.AxisX.Y, cs.AxisX.Z, cs.AxisY.X, cs.AxisY.Y, cs.AxisY.Z },
-            displayCoordinates = new[] { display.Origin.X, display.Origin.Y, display.Origin.Z, display.AxisX.X, display.AxisX.Y, display.AxisX.Z, display.AxisY.X, display.AxisY.Y, display.AxisY.Z },
-            scale = viewScale,
-            extent = group.Extent == null ? null : new { group.Extent.MinX, group.Extent.MaxX, group.Extent.MinY, group.Extent.MaxY },
-            depthWindow = depth.Box,
-            depthError = depth.Error,
-            exclusions = exclusions.Select(rule => rule.Id),
-            parts = outline.Included.Concat(outline.Excluded).Select(part => new { part.ModelId, part.IsMainPart, part.IsMainPartKnown })
-        });
-        var chains = group.DimensionChains ?? throw new InvalidOperationException("Dimension chains are unavailable for fingerprinting");
-        var serialized = JsonSerializer.Serialize(new
-        {
-            sourceContext = context,
-            chains = chains.Chains.Select(chain => new
-            {
-                side = chain.Side.ToString(),
-                positions = chain.Positions.Select(position => new
-                {
-                    position.Coordinate,
-                    supports = position.Supports.Select(support => new
-                    {
-                        support.Source.Id,
-                        support.ModelId,
-                        support.Source.IsHole,
-                        kind = support.Kind.ToString(),
-                        point = new[] { support.Point.X, support.Point.Y, support.Point.Z }
-                    })
-                })
-            })
-        });
-        using var sha = SHA256.Create();
-        return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(serialized))).Replace("-", string.Empty);
-    }
-
     /// <summary>
     /// All four preliminary sides of a view, read only: no overlay, no drawing touched.
     ///
@@ -819,97 +772,37 @@ internal sealed partial class DrawingCommandHandler
             WriteError("get_structural_chain_positions requires viewId argument");
             return true;
         }
-
-        var identity = ReadSourceIdentity(viewId);
-        var exclusions = ReadExclusions(args, 2);
-        // Compact is the default; the fifth argument restores the full per-support evidence.
-        var verbose = args.Length > 4 && string.Equals(args[4], "verbose", StringComparison.OrdinalIgnoreCase);
-        var structuralOutline = GetStructuralOutline(
-            viewId,
-            included => CaptureParts(identity, "included", included.Select(part => part.ModelId)),
-            exclusions);
-        var source = Describe(identity);
-        var group = StructuralGeometryGroupBuilder.Build(structuralOutline);
-
         try
         {
-            CalcDimensionChains.Apply(group);
+            var context = _dimensionContexts.Get(viewId,
+                args.Length > 2 ? args[2] : null, args.Length > 3 ? args[3] : null,
+                args.Length > 5 && bool.Parse(args[5]));
+            var verbose = args.Length > 4 && string.Equals(args[4], "verbose", StringComparison.OrdinalIgnoreCase);
+            WriteJson(context.ChainPositions(verbose));
         }
-        catch (InvalidOperationException exception)
+        catch (Exception ex) { WriteError(ex.Message); }
+        return true;
+    }
+
+    private bool HandleGetViewDimensionContext(string[] args)
+    {
+        if (args.Length < 2 || !int.TryParse(args[1], out var viewId))
         {
-            var sourceError = group.Completeness.Issues
-                .FirstOrDefault(issue => issue.Id == "structural-outline")?.Reason;
-            WriteJson(new
-            {
-                success = false,
-                viewId,
-                source,
-                exclusions = exclusions.Select(rule => rule.Id),
-                isComplete = group.Completeness.IsComplete,
-                issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
-                error = sourceError ?? exception.Message,
-                calculationError = exception.Message
-            });
+            WriteError("get_view_dimension_context requires viewId");
             return true;
         }
-
-        var extent = group.Extent!;
-        var sourceFingerprint = StructuralChainFingerprint(viewId, identity, structuralOutline, group, exclusions, out _);
-        WriteJson(new
+        try
         {
-            success = true,
-            viewId,
-            source,
-            isComplete = group.Completeness.IsComplete,
-            issues = group.Completeness.Issues.Select(issue => new { id = issue.Id, reason = issue.Reason }),
-            exclusions = exclusions.Select(rule => rule.Id),
-
-            // A fact from the assembly, not a decision. It is the base a secondary part is
-            // measured from on a beam or a column, and it means nothing on a panel of many
-            // equal members - which of the two this is belongs to the rule set, not here.
-            mainPartModelIds = structuralOutline.Included
-                .Where(part => part.IsMainPart)
-                .Select(part => part.ModelId),
-
-            // Parts whose assembly could not be asked. Not the same as "not the main
-            // part": a rule set that measures from the main part must refuse the drawing
-            // while this is non-empty rather than measure from what is left.
-            mainPartUnresolvedModelIds = structuralOutline.Included
-                .Concat(structuralOutline.Excluded)
-                .Where(part => !part.IsMainPartKnown)
-                .Select(part => part.ModelId),
-
-            partSpanMatchToleranceMm = CalcDimensionChains.PartSpanMatchToleranceMm,
-            sourceFingerprint,
-            extent = new { minX = extent.MinX, maxX = extent.MaxX, minY = extent.MinY, maxY = extent.MaxY },
-            format = verbose ? "verbose" : "compact",
-            sides = verbose
-                ? (object)group.DimensionChains!.Chains.Select(chain => new
-                {
-                    side = chain.Side.ToString(),
-                    positions = chain.Positions.Select((position, positionIndex) => new
-                    {
-                        positionIndex,
-                        coordinate = position.Coordinate,
-                        supports = position.Supports.Select((support, supportIndex) => new
-                        {
-                            supportIndex,
-                            sourceId = support.Source.Id,
-                            modelId = support.ModelId,
-                            partExtentAlongChain = ExtentAlong(chain.Side, support.AxisAlignedModelExtent),
-                            isHole = support.Source.IsHole,
-                            kind = support.Kind.ToString(),
-                            point = new[] { support.Point.X, support.Point.Y }
-                        })
-                    })
-                })
-                : group.DimensionChains!.Chains.Select(chain => new
-                {
-                    side = chain.Side.ToString(),
-                    positions = CompactChainPositions.Project(
-                        chain, support => ExtentAlong(chain.Side, support.AxisAlignedModelExtent))
-                })
-        });
+            var context = _dimensionContexts.Get(viewId,
+                args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
+                args.Length > 6 && bool.Parse(args[6]));
+            WriteJson(context.Query(args.Length > 2 ? args[2] : "points,edges,scale",
+                args.Length > 3 ? args[3] : "all",
+                args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,
+                args.Length > 8 ? args[8] : "horizontal",
+                args.Length > 9 && !string.IsNullOrWhiteSpace(args[9]) ? double.Parse(args[9], CultureInfo.InvariantCulture) : (double?)null));
+        }
+        catch (Exception ex) { WriteError(ex.Message); }
         return true;
     }
 

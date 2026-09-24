@@ -247,6 +247,8 @@ public sealed class CreateDimensionRequest
     public double? Distance { get; set; }
     public string AttributesFile { get; set; } = string.Empty;
     public double? PaperGapMm { get; set; }
+    public string ExcludePrefixes { get; set; } = string.Empty;
+    public string ExcludeMaterials { get; set; } = string.Empty;
 }
 
 public sealed class CreateDimensionParseResult

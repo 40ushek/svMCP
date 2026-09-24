@@ -130,7 +130,7 @@ delete in a placement run.
   Example (M.48 section E, top chain, base y=86.8, outermost y=427.05, gap 120):
   `distance = 120 + 427.05 - 86.8 = 460.25`. Passing 120 put the line at y~207,
   inside the end plate. The 120 (12 mm on paper at 1:10) is a measured example,
-  not the standard gap; the structured-plan default paper gap is 8 mm (see the roadmap).
+  not the standard gap; the `create_dimension` default paper gap is 8 mm.
   A gap in paper mm becomes `paperGap x viewScale`.
   In the 55-dimension probe across 1:5 and 1:10, all 36 comparable cases matched
   the leftmost/lowest-point base; the other 19 apparent mismatches were explained
@@ -140,15 +140,19 @@ delete in a placement run.
   Measured values from a chain the user placed by hand on M.48 section C: about 68
   view units above the flange and about 86 left of the plate (7-9 mm on paper at
   1:10); use as a starting point, not as a rule.
-- **Do not trust the read-back `referenceLine` for the offset side.** As of this
-  writing `get_drawing_dimensions` (and the verified writer's "correction") assume the
-  extreme point, so `referenceLine` can show a line that is not where Tekla draws it,
-  and `writeState.Verified=true` does not prove the line is outside the assembly.
-  Compute the expected line yourself (`base point coordinate + distance`, base =
-  leftmost/lowest point) and state it. The rendered line can be read per
-  `StraightDimension` segment with `GetObjectPresentation(segmentId)` (Host probe
-  `--dimension-presentation-probe`); the set id itself returns null. Otherwise the
-  user's screenshot settles it.
+- **A read-back `referenceLine` is calculated, not independently observed.**
+  Axis-aligned reconstruction uses a unique leftmost/lowest base, not the
+  outermost point. Stored `Distance` correction remains necessary and is not
+  a rendered-line check. On updated bridges, inspect `writeState.RenderedLine`:
+  `matched` confirms this chain's observed segment lines against the calculation;
+  `mismatch` fails verification before deleting the original; `not verified`
+  includes a reason (shortened view, tied base or unavailable presentation).
+  It does not mean a match. Neighbours and drafting sufficiency remain separate
+  checks. Older bridges need the Host presentation probe or a screenshot.
+- Omit `distance` in `create_dimension` for automatic offset from the captured
+  outline (default 8 paper mm, override `paperGapMm`). Pass the same exclusion
+  filters as the candidate read. External geometry/view edits require explicit
+  context refresh; writing dimensions alone does not.
 - Dimension creation measures the offset from its points, not from a part edge.
 - Creating or recreating a chain may reflow other chains. Re-read them.
 
