@@ -29,6 +29,11 @@ internal sealed class DimensionPointCatalog
         _lines = lines;
     }
 
+    internal IEnumerable<DimensionPoint> AllPoints => _points.Values;
+
+    internal IReadOnlyList<DimensionPoint> LinePoints(DimensionChainSide side) =>
+        _lines[side].Entries.Select(entry => _points[entry.PointId]).ToArray();
+
     public object Project(IEnumerable<DimensionChainSide> sides) => new {
         sides = sides.Select(side => new {
             side = side.ToString(),

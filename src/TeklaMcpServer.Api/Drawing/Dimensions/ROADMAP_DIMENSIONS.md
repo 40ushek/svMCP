@@ -297,6 +297,41 @@ there: line order (the first rule is placed closest to the part), the
 alignment tolerance (default 50 mm), the minimum dimension length, grouping by
 side.
 
+#### 4a, second stage: chain preview (implemented, read-only)
+
+`get_view_dimension_context(questions="chain")` returns, per side, a preview of the
+standard location chain and the overall chain as point ids, segment lengths, the
+role of each point and the parts that were skipped. It writes nothing; a chain is
+still created by a separate `create_dimension` call with `contextId` and `pointIds`.
+`all` does not include it.
+
+Rules of this first version (built from the M.505 hand-placed chains):
+
+- The main axis is the longer side of the main part's points. A side that runs
+  along it gets a chain of: the extremes of the side, the main part's two ends
+  (preferred at their coordinate) and the first edge of every other part.
+- A side across it (an end-plate chain) uses only the parts that stick out past the
+  main part's end on that side, with the main part's own edges; with an end part
+  flush with the main part it returns no chain and says why. No overall is
+  produced across the main part: the location chain already spans it.
+- One point per coordinate (within 0.01): the main part wins, otherwise the point
+  farthest to the outside, otherwise a real part edge before a bare group extent.
+- Segments shorter than 3 view units are dropped in the interior of the chain. The
+  3 is in the units of the point coordinates, not on paper, so on paper it is
+  3 divided by the view scale. Dropped points are listed in `droppedShortPointIds`
+  and a part left without any point is added to `skippedPartIds`.
+- The preview refuses instead of guessing: a section or end view (they need the
+  section/end-view check), a main part that is not exactly one, or an unresolved
+  main part. The answer carries the reason in `note`.
+
+Checked live on M.505 (back view): bottom 20 / 203.999 / 4500.002 / 348.094 / 142.5 / 10,
+left 94 / 152 / 94, right 8 / 136 / 8 and the bottom overall gave the same point
+ids as the chains placed by hand. Not checked: M.48 (long girder with raked ribs) and
+M.81 (columns); the rule "one point per welded part" uses every part on the side, not
+a real welding relation, so contacts may be needed to tell attached parts from
+neighbours; mirrored sides (Top repeats Bottom) are not suppressed yet; a section
+or end view is not covered.
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now

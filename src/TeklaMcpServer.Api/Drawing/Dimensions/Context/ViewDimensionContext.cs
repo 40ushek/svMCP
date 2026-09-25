@@ -26,6 +26,8 @@ public sealed class ViewDimensionContext
     private readonly IReadOnlyList<UnreadPart> _contactSelectionUnread;
     private ViewContactsSnapshot? _contacts;
     private DimensionPointCatalog? _dimensionPointCatalog;
+    private readonly int[] _mainPartIds;
+    private readonly int[] _mainPartUnresolvedIds;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
@@ -49,6 +51,10 @@ public sealed class ViewDimensionContext
         _complete = outline.IsComplete && _group.Completeness.IsComplete;
         _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
             outline.Outline.PartSolidGeometries.ToDictionary(pair => pair.Key, pair => pair.Value));
+        _mainPartIds = outline.Included.Where(p => p.IsMainPart).Select(p => p.ModelId).ToArray();
+        // A part that was never classified could be the main part: count it as unresolved.
+        _mainPartUnresolvedIds = outline.Included.Concat(outline.Excluded)
+            .Where(p => !p.IsMainPartKnown).Concat(outline.Unclassified).Select(p => p.ModelId).Distinct().ToArray();
         _contactModelIds = outline.ContactModelIds.Distinct().ToArray();
         _contactSelectionUnread = outline.ContactSelectionUnread;
         _source = Freeze(source);
@@ -105,12 +111,12 @@ public sealed class ViewDimensionContext
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
     {
         var requested = Split(questions);
-        var allowed = new[] { "points", "dimensionpoints", "edges", "parts", "scale", "placement", "contacts", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "edges", "parts", "scale", "placement", "contacts", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, edges, parts, scale, placement, contacts or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, edges, parts, scale, placement, contacts or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
-            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints");
+            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain");
         var result = Header(shortAnswer: true);
         if (requested.Contains("contacts"))
         {
@@ -122,7 +128,7 @@ public sealed class ViewDimensionContext
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
-        if (Wants("points") || requested.Contains("dimensionpoints"))
+        if (Wants("points") || requested.Contains("dimensionpoints") || requested.Contains("chain"))
         {
             try { EnsureChains(); }
             catch (InvalidOperationException ex)
@@ -135,6 +141,17 @@ public sealed class ViewDimensionContext
         }
         if (requested.Contains("dimensionpoints"))
             result["dimensionPoints"] = GetDimensionPointCatalog().Project(selected);
+        if (requested.Contains("chain"))
+        {
+            var refusal = ChainPreviewRefusal();
+            result["chainPreview"] = selected.Select(side => new {
+                side = side.ToString(),
+                chains = refusal != null
+                    ? DimensionChainPreview.Refused(side, refusal)
+                    : DimensionChainPreview.Build(GetDimensionPointCatalog(), side, _mainPartIds,
+                        DimensionPlacementSettings.MinimumChainSegmentViewUnits)
+            }).ToArray();
+        }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
                 var row = new Dictionary<string, object?> { ["side"] = side.ToString() };
@@ -155,6 +172,19 @@ public sealed class ViewDimensionContext
 
     internal int[] ContactModelIds => _contactModelIds;
     internal IReadOnlyList<UnreadPart> ContactSelectionUnread => _contactSelectionUnread;
+
+    // The preview stops instead of guessing when its assumptions do not hold.
+    private string? ChainPreviewRefusal()
+    {
+        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        if (viewType is "SectionView" or "EndView")
+            return $"the chain preview does not cover a {viewType}; it needs the section/end-view check";
+        if (_mainPartUnresolvedIds.Length > 0)
+            return "the main part could not be resolved for some parts";
+        if (_mainPartIds.Length != 1)
+            return _mainPartIds.Length == 0 ? "no main part in this view" : "more than one main part in this view";
+        return null;
+    }
 
     internal double[] ResolvePointIds(IEnumerable<string> pointIds, string direction)
     {
