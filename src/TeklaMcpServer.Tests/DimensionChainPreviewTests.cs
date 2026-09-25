@@ -150,6 +150,67 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
+    public void PartAboveTheMainAxisIsLocatedOnTheTopChainOnly()
+    {
+        var context = Context(rightHalfHeight: 68, upperPlate: true);
+        Assert.Contains(500d, Cumulative(Chain(context, "Top", "location")));
+        Assert.DoesNotContain(500d, Cumulative(Chain(context, "Bottom", "location")));
+    }
+
+    [Fact]
+    public void PartCrossingTheMainAxisIsLocatedOnBothSides()
+    {
+        var context = Context(rightHalfHeight: 68, crossingPlate: true);
+        Assert.Contains(500d, Cumulative(Chain(context, "Top", "location")));
+        Assert.Contains(500d, Cumulative(Chain(context, "Bottom", "location")));
+    }
+
+    [Fact]
+    public void PartIsNotLostWhenOnlyTheOtherSideOffersItsPoints()
+    {
+        // The tall end plate moves the assembly's middle up, so the plate above the main axis
+        // is offered to the Bottom chain only; it must stay there instead of vanishing.
+        var context = Context(rightHalfHeight: 68, upperPlate: true, tallEnd: true);
+        var onTop = Cumulative(Chain(context, "Top", "location")).Contains(500d);
+        var onBottom = Cumulative(Chain(context, "Bottom", "location")).Contains(500d);
+        Assert.True(onTop || onBottom);
+    }
+
+    [Fact]
+    public void PartOnTheAxisIsLocatedOnBothSides()
+    {
+        var context = Context(rightHalfHeight: 68, edgeOnPlate: true);
+        Assert.Contains(500d, Cumulative(Chain(context, "Top", "location")));
+        Assert.Contains(500d, Cumulative(Chain(context, "Bottom", "location")));
+    }
+
+    [Fact]
+    public void CrossingPartIsStillLocatedWhenTheAssemblyMiddleIsPushedAway()
+    {
+        var context = Context(rightHalfHeight: 68, crossingPlate: true, tallEnd: true);
+        var located = new[] { "Top", "Bottom" }.Any(side => Cumulative(Chain(context, side, "location")).Contains(500d));
+        Assert.True(located);
+    }
+
+    [Fact]
+    public void PartOfferedToTheOtherSideIsReportedNotSilentlyDropped()
+    {
+        // The end plate puts the assembly's middle between the upper plate's edges, so both lines
+        // offer it; Bottom leaves it to Top and says so.
+        var context = Context(rightHalfHeight: 68, upperPlate: true, midEnd: true);
+        Assert.Contains(500d, Cumulative(Chain(context, "Top", "location")));
+        var bottom = Chain(context, "Bottom", "location");
+        Assert.Equal(16, Assert.Single(bottom.GetProperty("offeredOnOtherSidePartIds").EnumerateArray()).GetInt32());
+        Assert.False(Chain(context, "Top", "location").TryGetProperty("offeredOnOtherSidePartIds", out _));
+    }
+
+    private static double[] Cumulative(JsonElement chain)
+    {
+        var total = -20d;
+        return new[] { total }.Concat(Segments(chain).Select(x => total += x)).ToArray();
+    }
+
+    [Fact]
     public void RakedEndTakesTheCornerOnTheLineSideNotTheFarCorner()
     {
         var context = Context(rightHalfHeight: 68, rakedEnd: true);
@@ -166,7 +227,7 @@ public sealed class DimensionChainPreviewTests
 
     private static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
-        bool rakedEnd = false)
+        bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -175,6 +236,11 @@ public sealed class DimensionChainPreviewTests
             [13] = Solid(13, 1000, 1010, -rightHalfHeight, rightHalfHeight)
         };
         if (closeRib) parts[15] = Solid(15, 201.5, 206, -66, 66);
+        if (upperPlate) parts[16] = Solid(16, 500, 510, 20, 120);
+        if (crossingPlate) parts[16] = Solid(16, 500, 510, -20, 80);
+        if (edgeOnPlate) parts[16] = Solid(16, 500, 510, -0.001, 0.001);
+        if (midEnd) parts[11] = Solid(11, -20, 0, -76, 214);
+        if (tallEnd) parts[11] = Solid(11, -20, 0, -170, 1000);
         if (rakedEnd)
         {
             parts.Remove(13);
@@ -182,12 +248,13 @@ public sealed class DimensionChainPreviewTests
         }
         var ids = closeRib ? new[] { 10, 11, 12, 13, 15 } : new[] { 10, 11, 12, 13 };
         if (rakedEnd) ids = ids.Where(id => id != 13).ToArray();
+        if (upperPlate || crossingPlate || edgeOnPlate) ids = ids.Append(16).ToArray();
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts));
         var role = new PartRoleResult(PartRole.Included, "included", "test");
         var structural = new StructuralOutline(outline,
             (new[] { new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false),
              new(12, "P12", "P", role, secondMain), new(13, "P13", "P", role, false) })
-                .Where(p => !rakedEnd || p.ModelId != 13).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
+                .Where(p => !rakedEnd || p.ModelId != 13).Concat(upperPlate || crossingPlate || edgeOnPlate ? [new PartRoleInView(16, "P16", "P", role, false)] : []).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType });

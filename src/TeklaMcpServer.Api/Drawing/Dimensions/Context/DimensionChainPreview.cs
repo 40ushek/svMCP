@@ -26,7 +26,7 @@ internal static class DimensionChainPreview
             if (property.Name is "points" or "side") continue;
             if (value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
             if (value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
-                && property.Name is "skippedPartIds" or "droppedShortPointIds") continue;
+                && property.Name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds") continue;
             // Numbers go through decimal so the answer prints 1088.417, not its binary tail.
             result[property.Name] = value.ValueKind == System.Text.Json.JsonValueKind.Array
                 ? value.EnumerateArray().Select(e => e.ValueKind == System.Text.Json.JsonValueKind.Number
@@ -51,7 +51,7 @@ internal static class DimensionChainPreview
 
         var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
         var mainAlongX = main.Max(p => p.X) - main.Min(p => p.X) >= main.Max(p => p.Y) - main.Min(p => p.Y);
-        var ctx = new Ctx(alongX, side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1, mainPartIds, line);
+        var ctx = new Ctx(alongX, side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1, mainPartIds, line, all, main, catalog.LinePoints(Opposite(side)));
 
         // Across the main part the location chain already spans the whole width, so no overall.
         var overall = alongX == mainAlongX
@@ -63,14 +63,36 @@ internal static class DimensionChainPreview
         return [location, overall];
     }
 
-    private sealed class Ctx(bool alongX, int outer, IReadOnlyCollection<int> mainIds, IReadOnlyList<DimensionPoint> line)
+    private static DimensionChainSide Opposite(DimensionChainSide side) => side switch {
+        DimensionChainSide.Top => DimensionChainSide.Bottom, DimensionChainSide.Bottom => DimensionChainSide.Top,
+        DimensionChainSide.Left => DimensionChainSide.Right, _ => DimensionChainSide.Left };
+
+    private sealed class Ctx(bool alongX, int outer, IReadOnlyCollection<int> mainIds, IReadOnlyList<DimensionPoint> line,
+        IReadOnlyList<DimensionPoint> all, IReadOnlyList<DimensionPoint> main, IReadOnlyList<DimensionPoint> otherLine)
     {
-        public IReadOnlyList<DimensionPoint> Line { get; } = line;
         public bool AlongX { get; } = alongX;
         public int Outer { get; } = outer;
         public IReadOnlyCollection<int> MainIds { get; } = mainIds;
+        public IReadOnlyList<DimensionPoint> Line { get; } = line;
         public double Along(DimensionPoint p) => AlongX ? p.X : p.Y;
         public double Across(DimensionPoint p) => AlongX ? p.Y : p.X;
+
+        // A part is located from the side of the main part it reaches. A part that crosses the main
+        // part's axis can be located only on sides whose preliminary chain offers its points.
+        // The preliminary chains use the whole assembly's middle; they do not guarantee a final pick.
+        public bool LiesOnThisSide(int partId)
+        {
+            var own = all.Where(p => Parts(p).Contains(partId)).Select(Across).ToArray();
+            if (own.Length == 0 || main.Count == 0) return true;
+            var mainMiddle = (main.Max(Across) + main.Min(Across)) / 2;
+            var reachesHigh = own.Max() > mainMiddle + SameCoordinate;
+            var reachesLow = own.Min() < mainMiddle - SameCoordinate;
+            // A part on the axis itself (seen edge-on) reaches neither side and belongs to both.
+            if (!reachesHigh && !reachesLow) return true;
+            if (Outer > 0 ? reachesHigh : reachesLow) return true;
+            return !otherLine.Any(p => Parts(p).Contains(partId));
+        }
+
         public bool IsMain(DimensionPoint p) => p.Parents.Any(x => x.ModelId is { } id && MainIds.Contains(id));
         public IEnumerable<int> Parts(DimensionPoint p) =>
             p.Parents.Where(x => x.ModelId.HasValue).Select(x => x.ModelId!.Value).Distinct();
@@ -106,13 +128,14 @@ internal static class DimensionChainPreview
         if (main.Length > 0) picks.AddRange(Ends(main, ctx, "main-end", 2));
 
         var partIds = line.SelectMany(ctx.Parts).Where(id => !ctx.MainIds.Contains(id)).Distinct().ToArray();
-        foreach (var id in partIds)
+        var offeredOnOtherSide = partIds.Where(id => !ctx.LiesOnThisSide(id)).ToArray();
+        foreach (var id in partIds.Where(ctx.LiesOnThisSide))
         {
             var own = line.Where(p => ctx.Parts(p).Contains(id)).ToArray();
             var first = own.Min(ctx.Along);
             picks.Add(new Pick(Best(own.Where(p => Math.Abs(ctx.Along(p) - first) <= SameCoordinate), ctx), "part-edge", 1));
         }
-        return Result(side, "location", picks, ctx, [], minLength);
+        return Result(side, "location", picks, ctx, [], minLength, offeredOnOtherSide: offeredOnOtherSide);
     }
 
     // Chain across the main part: the parts that stick out past the main part's end on this
@@ -192,7 +215,8 @@ internal static class DimensionChainPreview
     }
 
     private static object Result(DimensionChainSide side, string kind, List<Pick> picks, Ctx ctx,
-        IReadOnlyCollection<int> skippedParts, double? minLength, int minPoints = 0, string? tooFewNote = null)
+        IReadOnlyCollection<int> skippedParts, double? minLength, int minPoints = 0, string? tooFewNote = null,
+        IReadOnlyCollection<int>? offeredOnOtherSide = null)
     {
         // One point per coordinate: the point farthest toward the dimension line wins, so the
         // witness line does not run along a part outline; then the strongest role. All roles are kept.
@@ -240,6 +264,7 @@ internal static class DimensionChainPreview
                 partIds = ctx.Parts(x.Point).ToArray()
             }).ToArray(),
             skippedPartIds = skipped,
+            offeredOnOtherSidePartIds = (offeredOnOtherSide ?? Array.Empty<int>()).ToArray(),
             droppedShortPointIds = dropped.Select(p => p.Id).ToArray(),
             note = (string?)null
         };
