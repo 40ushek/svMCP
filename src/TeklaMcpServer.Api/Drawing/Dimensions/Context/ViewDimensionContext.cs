@@ -111,14 +111,14 @@ public sealed class ViewDimensionContext
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
     {
         var requested = Split(questions);
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "diagnostics", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts, diagnostics or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
-            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain" and not "chaindetails");
+            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
         var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
-        var result = Header(shortAnswer: true);
+        var result = Header(shortAnswer: true, compact: !requested.Contains("diagnostics"));
         if (requested.Contains("contacts"))
         {
             if (_contacts == null)
@@ -237,8 +237,28 @@ public sealed class ViewDimensionContext
                 }).ToArray()
         }).ToArray();
 
-    private Dictionary<string, object?> Header(bool shortAnswer = false)
+    // The default short answer keeps only what differs from the norm: empty lists, a single-item
+    // main-part list, the fixed projection note and `success:true` are left out. The `diagnostics`
+    // question returns the full header.
+    private Dictionary<string, object?> CompactHeader()
     {
+        var result = new Dictionary<string, object?> {
+            ["viewId"] = ViewId, ["contextId"] = ContextId, ["isComplete"] = _complete
+        };
+        if (_exclusions.Length > 0) result["exclusions"] = _exclusions;
+        if (_mainPartIds.Length == 1) result["mainPart"] = _mainPartIds[0];
+        foreach (var property in _diagnostics.EnumerateObject())
+        {
+            if (property.Name == "mainPartModelIds" && _mainPartIds.Length == 1) continue;
+            if (property.Value.ValueKind == JsonValueKind.Array && property.Value.GetArrayLength() == 0) continue;
+            result[property.Name] = property.Value;
+        }
+        return result;
+    }
+
+    private Dictionary<string, object?> Header(bool shortAnswer = false, bool compact = false)
+    {
+        if (compact) return CompactHeader();
         var result = new Dictionary<string, object?> {
             ["success"] = true, ["viewId"] = ViewId, ["contextId"] = ContextId, ["isComplete"] = _complete,
             ["exclusions"] = _exclusions,

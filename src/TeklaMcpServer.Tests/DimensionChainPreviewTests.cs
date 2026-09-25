@@ -62,6 +62,25 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
+    public void ShortHeaderKeepsOnlyWhatIsNotEmptyAndDiagnosticsReturnsTheRest()
+    {
+        var context = Context(rightHalfHeight: 68);
+        var shortAnswer = context.Query("scale");
+        Assert.False(shortAnswer.TryGetProperty("success", out _));
+        Assert.False(shortAnswer.TryGetProperty("projectionVerification", out _));
+        Assert.False(shortAnswer.TryGetProperty("issues", out _));
+        Assert.False(shortAnswer.TryGetProperty("excludedModelIds", out _));
+        Assert.Equal(10, shortAnswer.GetProperty("mainPart").GetInt32());
+        Assert.True(shortAnswer.GetProperty("isComplete").GetBoolean());
+
+        var full = context.Query("diagnostics");
+        Assert.True(full.GetProperty("success").GetBoolean());
+        Assert.True(full.TryGetProperty("projectionVerification", out _));
+        Assert.True(full.TryGetProperty("issues", out _));
+        Assert.True(full.TryGetProperty("mainPartUnresolvedModelIds", out _));
+    }
+
+    [Fact]
     public void PreviewIsOptInAndNeverPartOfAll()
     {
         var context = Context(rightHalfHeight: 68);
