@@ -307,6 +307,31 @@ public sealed class DimensionChainPreviewTests
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
     [Fact]
+    public void SectionAnswerLeavesProfileThicknessesOut()
+    {
+        var context = ISectionContext();
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var top = rows.Single(r => r.GetProperty("side").GetString() == "Top").GetProperty("chains")[0];
+        Assert.Equal(new[] { 160d }, Segments(top));
+        var left = rows.Single(r => r.GetProperty("side").GetString() == "Left").GetProperty("chains")[0];
+        Assert.Equal(new[] { 200d }, Segments(left));
+        // the profile chain of the detailed answer keeps the web
+        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(DetailedChain(context, "Top", "profile")));
+    }
+
+    [Theory]
+    [InlineData(3, new[] { 193d, 7d })]   // 3 mm above the flange face: the part is located
+    [InlineData(1, new[] { 200d })]  // 1 mm: it abuts the flange, no dimension
+    public void NearProfilePointGoesToThePartOnlyBeyondTheAbuttingGap(double edge, double[] expected)
+    {
+        var context = ISectionContext(edgeAboveFlange: edge);
+        var vertical = context.Query("chain").GetProperty("chainPreview").EnumerateArray()
+            .Where(r => r.GetProperty("side").GetString() is "Left" or "Right")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.Contains(vertical, segments => segments.SequenceEqual(expected));
+    }
+
+    [Fact]
     public void SectionAnswerIsOneChainPerAxisWithoutMirrorSides()
     {
         var context = ISectionContext(endPlate: true);
@@ -325,7 +350,8 @@ public sealed class DimensionChainPreviewTests
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
     private static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
-        string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10)
+        string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
+        double? edgeAboveFlange = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -351,6 +377,11 @@ public sealed class DimensionChainPreviewTests
             parts.Add(13, Solid(13, 30 + shift, 35 + shift, 110, 120));
             included.Add(new PartRoleInView(12, "P12", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
             included.Add(new PartRoleInView(13, "P13", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        if (edgeAboveFlange is { } edge)
+        {
+            parts.Add(14, Solid(14, 30, 35, 90 + edge, 95));
+            included.Add(new PartRoleInView(14, "P14", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
         }
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, parts.Keys, new Solids(parts));
         return new ViewDimensionContext(7, scale, new StructuralOutline(outline, included, [], [], [], [], parts.Keys.ToArray()),

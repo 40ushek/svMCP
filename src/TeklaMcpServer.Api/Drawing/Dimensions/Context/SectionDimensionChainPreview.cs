@@ -13,6 +13,8 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class SectionDimensionChainPreview
 {
     private const double SameCoordinate = 0.01;
+    /// <summary>A part this close (view units, mm) to a profile face counts as abutting it.</summary>
+    private const double AbuttingGapViewUnits = 2.0;
     private readonly DimensionPointCatalog _catalog;
     private readonly int _mainId;
     private readonly int[] _secondaryIds;
@@ -205,27 +207,34 @@ internal sealed class SectionDimensionChainPreview
             Empty("overall", overallNote)], located.Distinct().ToArray(), MergeChain(profile, location, side), side);
     }
 
-    // Profile and location points as one chain along the side: one point per coordinate (the outermost),
-    // and points closer than the readable gap collapse, a profile point winning over a part point.
+    // The chain to place on a side: the profile's two outer faces and the parts located against them.
+    // Thicknesses inside the profile (web, flange faces) are left out, a part within a couple of
+    // millimetres of any profile face abuts it and needs no dimension, and points closer than the
+    // readable gap collapse into the first one, an outer face first.
     private DimensionPoint[] MergeChain(List<DimensionPoint> profile, List<DimensionPoint> location, DimensionChainSide side)
     {
         var profileIds = profile.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
-        var ordered = profile.Concat(location).GroupBy(p => Math.Round(Along(p, side), 2))
-            .Select(g => g.OrderByDescending(p => profileIds.Contains(p.Id)).ThenByDescending(p => Outside(p, side))
-                .ThenBy(p => p.Id, StringComparer.Ordinal).First())
-            .OrderBy(p => Along(p, side)).ToList();
-        var result = new List<DimensionPoint>();
-        foreach (var point in ordered)
+        var faces = profile.Select(p => Along(p, side)).ToArray();
+        var outer = profile.OrderBy(p => Along(p, side)).Take(1).Concat(profile.OrderByDescending(p => Along(p, side)).Take(1));
+        var parts = location.Where(p => !profileIds.Contains(p.Id)
+            && !faces.Any(f => Math.Abs(Along(p, side) - f) <= AbuttingGapViewUnits));
+        var ordered = outer.Select(p => (Point: p, IsOuter: true)).Concat(parts.Select(p => (Point: p, IsOuter: false)))
+            .GroupBy(x => Math.Round(Along(x.Point, side), 2))
+            .Select(g => g.OrderByDescending(x => x.IsOuter).ThenByDescending(x => Outside(x.Point, side))
+                .ThenBy(x => x.Point.Id, StringComparer.Ordinal).First())
+            .OrderBy(x => Along(x.Point, side)).ToList();
+        var result = new List<(DimensionPoint Point, bool IsOuter)>();
+        foreach (var candidate in ordered)
         {
-            if (result.Count > 0 && Along(point, side) - Along(result[result.Count - 1], side) < _readableGapViewUnits)
+            if (result.Count > 0 && Along(candidate.Point, side) - Along(result[result.Count - 1].Point, side) < _readableGapViewUnits)
             {
-                if (profileIds.Contains(point.Id) && !profileIds.Contains(result[result.Count - 1].Id))
-                    result[result.Count - 1] = point;
+                if (candidate.IsOuter && !result[result.Count - 1].IsOuter)
+                    result[result.Count - 1] = candidate;
                 continue;
             }
-            result.Add(point);
+            result.Add(candidate);
         }
-        return result.ToArray();
+        return result.Select(x => x.Point).ToArray();
     }
 
     public static SideResult Refused(string reason) => new(

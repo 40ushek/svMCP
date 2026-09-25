@@ -415,6 +415,15 @@ Open: the readability threshold in paper mm (the 3 view units above are not it),
 overall on a raked end, and whether a rib against a face may ever need its own
 dimension (default: no, listed instead).
 
+Decided on live runs (M.86 sections D, E, C and M.78): the section answer is one chain per
+axis; thicknesses inside the profile (web, flange faces) are left out unless a part
+needs them; a part within 2 mm of a profile face abuts it and gets no dimension (the
+1-2 mm gap of ribs is for the welds). Not decided, to revisit and then write into the
+dimensioning skill: a part is located by the one face that sticks out past the profile,
+while on M.78 the user also wanted the plate's second face (70, 10 mm short of the column
+top); options are both faces always, or the second only when it is within 10-20 mm of a
+profile face. The skill still says the assistant picks the points and asks for settings.
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now
