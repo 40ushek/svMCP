@@ -218,6 +218,78 @@ They require measured benefit and their own coverage/retry validation. Bolts and
 solid clipping retain their separate roadmaps. Do not reintroduce the removed
 plan commands or a second creation path as a prerequisite for this increment.
 
+### 4a. Dimension points as objects, so the assistant does not read coordinates
+
+Proposed direction, not implemented. Reading and choosing points as text is
+costly and error-prone (most of the time per view goes to the assistant picking
+points). The view context should hold the points as objects and answer by
+identifier; code selects, sorts and merges, and the assistant names the intent.
+
+Model, stored in `ViewDimensionContext`:
+
+- `DimensionPoints`: all dimension points of one view and four
+  `DimensionPointLine` (Top, Bottom, Left, Right).
+- `DimensionPointLine`: the order of point ids along one side. A point that lies
+  on two sides (a corner on Top and Left) is one `DimensionPoint` with one id,
+  referenced from both lines; the line keeps only the side and the order.
+- `DimensionPoint`: an identifier, coordinates, a list of parents (part model id
+  plus the source vertex or segment; a merged point or a contact has several), a
+  set of kinds (flags), and the distances to the previous and next point on its
+  line.
+- Identifiers live only in one snapshot. Each snapshot build issues a new
+  `contextId`, returned together with the points. `create_dimension` takes the
+  `contextId` and the ordered `pointIds`, checks that the snapshot is still
+  active and substitutes the coordinates itself; the order of the ids is the order
+  written. A `contextId` belongs to one snapshot, and the exclusion filters are
+  part of that snapshot, so `create_dimension` takes no filters together with it.
+  A request with other filters builds another snapshot with another `contextId`;
+  the earlier id stays valid while its snapshot is cached. All ids are refused
+  after `refresh` or a drawing or view change, which is when the provider clears
+  its cache. The source fingerprint is not used for this: it can stay the same
+  after a refresh.
+- `DimensionPointKind` (flags, listed in the answer so names are not guessed).
+  First stage: only the kinds the existing chains already give (group extent,
+  axis-aligned edge, tilted edge corner, segment end, point shape). Supports the
+  chains already mark with `isHole=true` are kept, not dropped, and get a general
+  `Hole` kind; it names the source of the support, not a hole centre or edge.
+  Later stages: contact (touching / gap / overlap), precise hole kinds (centre,
+  edge), bolt, grid axis; the context does not build these points yet. The existing
+  `DimensionChainPositionSupportKind` is the starting point.
+- `DimensionChain` keeps its meaning for a chain that a query selects from these
+  points (a list of point ids) and that `create_dimension` accepts instead of
+  coordinates. The old preliminary chains stop being a separate concept; their
+  data becomes part of `DimensionPoints`.
+
+Not a graph yet: ordered lines with neighbour distances cover dimensioning.
+Real links (contour adjacency, contact membership) are added only if a query
+needs them.
+
+Small questions the context should answer: points of one side with ids, kinds,
+parents and neighbour distances; the points of the main part; the contact points
+of a named pair; the outer extremes; a ready chain for a side with its computed
+offset. Coordinates stay available on request for checking and debugging, but an
+ordinary run never reads them.
+
+First slice, limited to the current chains: build the points from what they
+already give (position, part id, kind, extent), reuse the existing chain
+de-duplication, add ids, parents and kinds, and let `create_dimension` take
+`contextId` plus `pointIds`. Coordinates stay a second, mutually exclusive way
+to give points; the existing coordinate input is not changed. Contacts, bolts,
+new geometry kinds and automatic point choice are separate stages.
+
+Merging by tolerance (the Tekla rule dialog defaults its alignment tolerance to
+50 mm; see the source below) is not enabled automatically: it can glue different supports together. The tolerance is
+discussed and checked separately.
+
+Tekla's own dimensioning rules group points by object category (documented at
+https://support.tekla.com/doc/tekla-structures/2025/dra_dimensioning_rule_properties).
+The project owner's observation is that this works poorly on complex
+assemblies; that is an observation, not a documented limit, so the rules are not
+copied for point choice. Only the mechanical parts are taken, as documented
+there: line order (the first rule is placed closest to the part), the
+alignment tolerance (default 50 mm), the minimum dimension length, grouping by
+side.
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now
