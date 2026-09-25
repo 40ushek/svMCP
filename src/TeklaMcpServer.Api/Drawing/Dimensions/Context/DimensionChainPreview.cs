@@ -12,6 +12,30 @@ internal static class DimensionChainPreview
 {
     private const double SameCoordinate = 0.01;
 
+    /// <summary>
+    /// The default answer: side, kind, ids and segments, plus notes and lists only when they
+    /// have content. Roles and part ids stay behind the detailed question.
+    /// </summary>
+    public static object Short(object chain)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(chain));
+        var result = new Dictionary<string, object?>();
+        foreach (var property in doc.RootElement.EnumerateObject())
+        {
+            var value = property.Value;
+            if (property.Name is "points" or "side") continue;
+            if (value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
+            if (value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
+                && property.Name is "skippedPartIds" or "droppedShortPointIds") continue;
+            // Numbers go through decimal so the answer prints 1088.417, not its binary tail.
+            result[property.Name] = value.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? value.EnumerateArray().Select(e => e.ValueKind == System.Text.Json.JsonValueKind.Number
+                    ? (object)Math.Round((decimal)e.GetDouble(), 3) : e.Clone()).ToArray()
+                : value.Clone();
+        }
+        return result;
+    }
+
     /// <summary>Both chains of a side, refused with a reason instead of built.</summary>
     public static object[] Refused(DimensionChainSide side, string note) =>
         [Empty(side, "location", note), Empty(side, "overall", note)];

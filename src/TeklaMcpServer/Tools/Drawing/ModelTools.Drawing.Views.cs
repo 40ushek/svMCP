@@ -125,7 +125,8 @@ public static partial class ModelTools
 
     [McpServerTool, Description("Get all StraightDimensionSet objects from the active drawing (or a specific view). The response keeps the old segment points/distance fields and also includes view ownership, orientation, and bounding boxes for sets and segments.")]
     public static string GetDrawingDimensions(
-        [Description("View ID to read dimensions from (from get_drawing_views). Omit to get all dimensions on the drawing.")] int? viewId = null)
+        [Description("View ID to read dimensions from (from get_drawing_views). Omit to get all dimensions on the drawing.")] int? viewId = null,
+        [Description("true returns one short row per dimension (id, side, line position, range, segment lengths) instead of the full read model. Use it for a quick check after writing.")] bool compact = false)
     {
         var arg = viewId.HasValue ? viewId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
         var json = RunBridge("get_drawing_dimensions", arg);
@@ -135,12 +136,53 @@ public static partial class ModelTools
             if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("error", out var err))
                 return $"Error: {err.GetString()}";
 
+            if (compact) return CompactDimensions(doc.RootElement);
             return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true });
         }
         catch
         {
             return $"Bridge error: {json}";
         }
+    }
+
+    // One short row per dimension, on one line: read by a model, so no indentation.
+    internal static string CompactDimensions(JsonElement root)
+    {
+        var rows = new List<object>();
+        if (root.TryGetProperty("groups", out var groups))
+            foreach (var group in groups.EnumerateArray())
+            {
+                if (!group.TryGetProperty("items", out var items)) continue;
+                foreach (var item in items.EnumerateArray())
+                {
+                    var type = item.TryGetProperty("dimensionType", out var t) ? t.GetString() : null;
+                    var horizontal = string.Equals(type, "Horizontal", StringComparison.OrdinalIgnoreCase);
+                    var top = (item.TryGetProperty("topDirection", out var td) || group.TryGetProperty("topDirection", out td))
+                        && td.ValueKind == JsonValueKind.Number ? td.GetDouble() : 0;
+                    // topDirection 1: line above (horizontal) or left (vertical); -1: below or right.
+                    var side = horizontal ? (top >= 0 ? "Top" : "Bottom") : (top >= 0 ? "Left" : "Right");
+                    double? at = null;
+                    if (item.TryGetProperty("referenceLine", out var line) && line.ValueKind == JsonValueKind.Object)
+                        at = Math.Round(line.GetProperty(horizontal ? "startY" : "startX").GetDouble(), 3);
+                    var axis = new List<double>();
+                    if (item.TryGetProperty("pointList", out var points))
+                        foreach (var p in points.EnumerateArray())
+                            axis.Add(p.GetProperty(horizontal ? "x" : "y").GetDouble());
+                    axis.Sort();
+                    rows.Add(new {
+                        id = item.GetProperty("id").GetInt32(),
+                        view = item.TryGetProperty("viewId", out var v) ? v.GetInt32() : 0,
+                        side, at,
+                        from = axis.Count > 0 ? Math.Round(axis[0], 3) : (double?)null,
+                        to = axis.Count > 0 ? Math.Round(axis[axis.Count - 1], 3) : (double?)null,
+                        segments = axis.Zip(axis.Skip(1), (a, b) => Math.Round(b - a, 3)).ToArray()
+                    });
+                }
+            }
+        // The read model merges look-alike sets; say how many are not listed.
+        var onDrawing = root.TryGetProperty("drawingDimensionCount", out var count) && count.ValueKind == JsonValueKind.Number
+            ? count.GetInt32() : rows.Count;
+        return JsonSerializer.Serialize(new { total = rows.Count, merged = Math.Max(0, onDrawing - rows.Count), dimensions = rows });
     }
 
     [McpServerTool, Description("Move a StraightDimensionSet by changing its dimension line offset (Distance). Positive delta moves the line away from measured points, negative — closer. dimensionId from get_drawing_dimensions.")]

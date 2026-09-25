@@ -45,6 +45,23 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
+    public void DefaultAnswerIsShortAndDetailsAreOptIn()
+    {
+        var context = Context(rightHalfHeight: 68);
+        var shortChain = Chain(context, "Bottom", "location");
+        Assert.False(shortChain.TryGetProperty("points", out _));
+        Assert.False(shortChain.TryGetProperty("side", out _));
+        Assert.False(shortChain.TryGetProperty("note", out _));
+        Assert.False(shortChain.TryGetProperty("skippedPartIds", out _));
+        Assert.DoesNotContain("999", shortChain.GetRawText());
+        Assert.Equal("[20,200,800,10]", shortChain.GetProperty("segments").GetRawText());
+        var detailed = context.Query("chainDetails", "Bottom").GetProperty("chainPreview").EnumerateArray().Single()
+            .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == "location");
+        Assert.True(detailed.TryGetProperty("points", out var points));
+        Assert.Equal(5, points.GetArrayLength());
+    }
+
+    [Fact]
     public void PreviewIsOptInAndNeverPartOfAll()
     {
         var context = Context(rightHalfHeight: 68);

@@ -111,12 +111,13 @@ public sealed class ViewDimensionContext
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
     {
         var requested = Split(questions);
-        var allowed = new[] { "points", "dimensionpoints", "chain", "edges", "parts", "scale", "placement", "contacts", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, edges, parts, scale, placement, contacts or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
-            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain");
+            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain" and not "chaindetails");
+        var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
         var result = Header(shortAnswer: true);
         if (requested.Contains("contacts"))
         {
@@ -128,7 +129,7 @@ public sealed class ViewDimensionContext
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
-        if (Wants("points") || requested.Contains("dimensionpoints") || requested.Contains("chain"))
+        if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }
             catch (InvalidOperationException ex)
@@ -141,15 +142,17 @@ public sealed class ViewDimensionContext
         }
         if (requested.Contains("dimensionpoints"))
             result["dimensionPoints"] = GetDimensionPointCatalog().Project(selected);
-        if (requested.Contains("chain"))
+        if (wantsChain)
         {
             var refusal = ChainPreviewRefusal();
+            var detailed = requested.Contains("chaindetails");
             result["chainPreview"] = selected.Select(side => new {
                 side = side.ToString(),
-                chains = refusal != null
+                chains = (refusal != null
                     ? DimensionChainPreview.Refused(side, refusal)
                     : DimensionChainPreview.Build(GetDimensionPointCatalog(), side, _mainPartIds,
-                        DimensionPlacementSettings.MinimumChainSegmentViewUnits)
+                        DimensionPlacementSettings.MinimumChainSegmentViewUnits))
+                    .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
             }).ToArray();
         }
         if (Wants("points") || Wants("edges"))

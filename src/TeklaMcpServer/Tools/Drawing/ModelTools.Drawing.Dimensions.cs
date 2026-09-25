@@ -368,14 +368,42 @@ public static partial class ModelTools
             var created = doc.RootElement.TryGetProperty("created", out var c) && c.GetBoolean();
             var dimId   = doc.RootElement.TryGetProperty("dimensionId", out var d) ? d.GetInt32() : 0;
             var pts     = doc.RootElement.TryGetProperty("pointCount",  out var p) ? p.GetInt32() : 0;
-            return created
-                ? $"Created dimension {dimId} with {pts} points.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}"
-                : $"Failed to create dimension.\n{json}";
+            if (!created) return $"Failed to create dimension.\n{json}";
+            // A clean write is one short line; anything unusual returns the whole write state.
+            return SummarizeCreatedDimension(doc.RootElement, dimId, pts)
+                ?? $"Created dimension {dimId} with {pts} points.\n{JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions { WriteIndented = true })}";
         }
         catch
         {
             return $"Bridge error: {json}";
         }
+    }
+
+    // One line for a verified write with no failure detail, else null (caller returns everything).
+    internal static string? SummarizeCreatedDimension(JsonElement root, int dimensionId, int pointCount)
+    {
+        if (!root.TryGetProperty("writeState", out var state) || state.ValueKind != JsonValueKind.Object) return null;
+        if (!state.TryGetProperty("Verified", out var verified) || !verified.GetBoolean()) return null;
+        if (state.TryGetProperty("NewDimensionRemoved", out var removed) && removed.GetBoolean()) return null;
+        if (state.TryGetProperty("CleanupError", out var cleanup) && cleanup.ValueKind == JsonValueKind.String) return null;
+        if (state.TryGetProperty("ErrorDetail", out var detail) && detail.ValueKind == JsonValueKind.String) return null;
+
+        var status = "not verified";
+        if (state.TryGetProperty("RenderedLine", out var line) && line.TryGetProperty("Status", out var s))
+            status = s.GetString() ?? status;
+        if (status == "mismatch") return null;
+
+        var distance = root.TryGetProperty("distanceUsed", out var d) && d.ValueKind == JsonValueKind.Number ? d.GetDouble() : (double?)null;
+        var target = root.TryGetProperty("placement", out var p) && p.ValueKind == JsonValueKind.Object
+            && p.TryGetProperty("TargetLineCoordinate", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetDouble() : (double?)null;
+        var text = $"Created dimension {dimensionId}, {pointCount} points";
+        if (target.HasValue) text += $", line at {Math.Round(target.Value, 3).ToString(CultureInfo.InvariantCulture)}";
+        if (distance.HasValue) text += $" (distance {Math.Round(distance.Value, 3).ToString(CultureInfo.InvariantCulture)})";
+        text += $", rendered line {status}";
+        if (status == "not verified" && line.ValueKind == JsonValueKind.Object
+            && line.TryGetProperty("Reason", out var reason) && reason.ValueKind == JsonValueKind.String)
+            text += $" ({reason.GetString()})";
+        return text + ".";
     }
 
     // A string like `points`: array parameters are not bound reliably by this client.
