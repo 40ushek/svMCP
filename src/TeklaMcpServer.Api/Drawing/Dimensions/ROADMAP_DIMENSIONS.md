@@ -1,20 +1,27 @@
 # Dimensions Roadmap
 
-Updated 2026-09-24. This file is the active work order. Steps 1-3 now have a
-source implementation and automated tests; deployment and live acceptance are
-still pending. Step 4 remains design, not implemented functionality.
+Updated 2026-09-25. This file is the active work order. Steps 1-3 have source
+implementations and automated tests; placement/write acceptance still has live
+gates. Step 4 remains design. Contact candidate reuse is implemented, with the
+remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
 
 - Persistent `ViewDimensionContextProvider` shares frozen, filter-specific
   geometry between chain reads, short context queries and automatic creation.
   Chains are calculated lazily; explicit-distance creation needs no outline.
-- `get_view_dimension_context` answers points/edges/parts/scale/placement.
-  Queries return detached JSON; candidate choices cannot mutate the snapshot.
+- `get_view_dimension_context` answers points/edges/parts/scale/placement and
+  opt-in `contacts`. `all` deliberately excludes placement and contacts. Queries
+  return detached JSON; candidate choices cannot mutate the snapshot.
 - The context retains detached per-part solid DTOs (bbox, vertices, faces,
   loops and view hull) from the same successful reads used to build outlines.
   `GetPartSolidGeometry(modelId)` returns a copy so consumers cannot mutate the
   snapshot. Tekla `Solid` handles themselves are not retained.
+- Contact geometry and its candidate result use a separate view-scoped lazy
+  cache, independent of structural exclusion filters. On `contacts`, captured
+  solids are reused and missing depth-selected solids are read; the result is
+  reused until refresh or drawing/view switch. This includes parts excluded
+  from dimension extents.
 - Create accepts the same exclusions as reads. Explicit refresh clears lower
   geometry caches too; drawing/query-view changes end the active snapshot run.
 - Axis-aligned reference-line reconstruction uses a unique leftmost/lowest
@@ -27,6 +34,11 @@ still pending. Step 4 remains design, not implemented functionality.
   ambiguous bases and shortened views, then measure full-task time and response
   size on the agreed cases. No live speedup or placement guarantee is claimed.
   Trace events count context builds/hits, not individual solid reads.
+- Contact live comparison on M.505 matched the old command: 52 points, 9 parts,
+  matching participant pairs, anchor keys and contact states; no unread,
+  unflattened or unresolved items. Separate first-query timing, an excluded-part
+  case, full contact-shape output and degrees-of-freedom equivalence remain open
+  (see step 5).
 [The archive](ROADMAP_DIMENSIONS_ARCHIVE_2026-09-24.md) preserves the previous
 roadmap, measurements, rejected proposals and longer-term ideas. Its work orders
 do not compete with this one.
