@@ -136,7 +136,10 @@ with rule 4a judgement, not an inferred absence of a joint.
    own coordinate — see "Reading the preliminary chains" above.
 7. Remove a chain whose printed values are contained in another chain, except
    for an overall chain.
-8. On a wall, vertical chains start at the underside of the bottom plate.
+8. On the measured IW1.1 - 1 wall elevation, vertical chains start at the
+   lowest frame face: the underside of the end posts (-1278.5), not the bottom
+   plate underside (-1233.5). Treat this as fixture-specific until confirmed on
+   another wall; use the existing support at that face.
 
 ## Layers
 

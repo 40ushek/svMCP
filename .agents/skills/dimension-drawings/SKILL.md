@@ -53,6 +53,9 @@ For each target view:
    exclusions; steel excludes nothing unless agreed otherwise. Check `exclusions`,
    `isComplete`, issues and main-part identity. Pass the SAME exclusion lists to
    `create_dimension`; empty lists mean no exclusions, not the last query's filters.
+   For a measured timber wall elevation only, request its preliminary chain with
+   `questions="chain", ruleSet="panel"`; the default remains `steel`. Do not use
+   `panel` for roofs, floors or an unknown assembly type without an applicable rule.
 4. Read `get_drawing_dimensions <viewId>` once to identify chains to retain or
    change. These and the chain positions are the normal planning inputs.
 

@@ -155,6 +155,25 @@ public sealed class ViewDimensionContextTests
     }
 
     [Fact]
+    public void ChainRuleSetRejectsUnknownValuesAndDefaultsToSteel()
+    {
+        var context = Context();
+        Assert.Throws<ArgumentException>(() => context.Query("chain", ruleSet: "brick"));
+        var defaultAnswer = context.Query("chain", "Bottom");
+        var explicitSteel = context.Query("chain", "Bottom", ruleSet: "steel");
+        Assert.Equal(defaultAnswer.GetProperty("chainPreview").GetRawText(),
+            explicitSteel.GetProperty("chainPreview").GetRawText());
+    }
+
+    [Fact]
+    public void PanelRuleSetRoutesChainQuestionToTimberPreview()
+    {
+        var result = Context().Query("chainDetails", "Bottom", ruleSet: "panel");
+        var chain = result.GetProperty("chainPreview")[0].GetProperty("chains")[0];
+        Assert.Equal("not-requested", chain.GetProperty("contactStatus").GetString());
+    }
+
+    [Fact]
     public void ParserRetainsCreationFilterArguments()
     {
         var parse = DrawingCommandParsers.ParseCreateDimensionRequest(

@@ -2,7 +2,9 @@
 
 Updated 2026-09-25. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
-gates. Step 4 remains design. Contact candidate reuse is implemented, with the
+gates. Step 4's steel, section and timber-wall previews are implemented behind
+explicit rule-set selection; the timber preview still needs live validation.
+Contact candidate reuse is implemented, with the
 remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
@@ -424,7 +426,7 @@ while on M.78 the user also wanted the plate's second face (70, 10 mm short of t
 top); options are both faces always, or the second only when it is within 10-20 mm of a
 profile face. The skill still says the assistant picks the points and asks for settings.
 
-#### 4a, fourth stage: chain preview for timber panels (planned)
+#### 4a, fourth stage: chain preview for timber panels (implemented; live validation pending)
 
 The steel preview looks for one main part and refuses a panel ("no main part in this
 view"). A wall may still have a main part (a long plate), so absence of a main part is not
@@ -463,6 +465,17 @@ comes from (skill for now, a setting later).
 Plumbing: new parameter `ruleSet` through the MCP tool, the bridge command and
 `ViewDimensionContext.Query`; a `TimberPanelChainPreview` next to the section preview; tests
 on a synthetic wall with a doubled post, regular studs and a taller end.
+
+Implementation status (2026-09-25): `ruleSet=panel` is wired through MCP, bridge
+and context query; omission still selects `steel`, and unknown values are
+rejected. The preview uses only points from the captured catalog, reports missing
+supports rather than inventing IDs, computes the IW1.1 - 1 fixture chains, and
+uses contacts lazily only when touching vertical-member candidates exist. A full
+contact result must satisfy the exact rule 4b checks; incomplete contact data
+falls back to the geometric touching rule. Automated tests cover the fixture,
+missing support, contact gating and routing. The skill now selects `panel` only
+for the measured timber-wall domain and records the fixture-specific lowest
+frame-face datum. Live IW1.1 - 1 and a second wall have not been run.
 
 Made precise after a review (these are the working definitions for the code):
 

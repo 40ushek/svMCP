@@ -110,9 +110,14 @@ public sealed class ViewDimensionContext
 
     /// <summary>One or several small questions; answers never round or mutate stored points.</summary>
     public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
-        double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
+        double[]? points = null, string direction = "horizontal", double? paperGapMm = null,
+        string ruleSet = "steel")
     {
         var requested = Split(questions);
+        var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
+        if (normalizedRuleSet is not "steel" and not "panel")
+            throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
         var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "diagnostics", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
             throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts, diagnostics or all");
@@ -146,10 +151,15 @@ public sealed class ViewDimensionContext
             result["dimensionPoints"] = GetDimensionPointCatalog().Project(selected);
         if (wantsChain)
         {
-            var refusal = ChainPreviewRefusal();
+            var panel = normalizedRuleSet == "panel";
+            var refusal = panel ? PanelPreviewRefusal() : ChainPreviewRefusal();
             var detailed = requested.Contains("chaindetails");
             var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
             var section = viewType is "SectionView" or "EndView";
+            var panelPlans = panel && refusal == null
+                ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
+                    DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get())
+                : null;
             SectionDimensionChainPreview? sectionPreview = null;
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
                     GetDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
@@ -195,7 +205,11 @@ public sealed class ViewDimensionContext
             }
             result["chainPreview"] = selected.Select(side => new {
                 side = side.ToString(),
-                chains = (refusal != null
+                chains = panelPlans != null
+                    ? panelPlans.Where(row => StringComparer.Ordinal.Equals(row.side, side.ToString()))
+                        .SelectMany(row => row.chains)
+                        .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
+                    : (refusal != null
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetDimensionPointCatalog(), side,
                         _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits))
@@ -232,6 +246,16 @@ public sealed class ViewDimensionContext
             return _mainPartIds.Length == 0 ? "no main part in this view" : "more than one main part in this view";
         if (!_complete)
             return "the structural view context is incomplete; inspect issues and unresolvedDepthModelIds";
+        return null;
+    }
+
+    private string? PanelPreviewRefusal()
+    {
+        if (!_complete)
+            return "the structural view context is incomplete; inspect issues and unresolvedDepthModelIds";
+        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        if (viewType is not "FrontView" and not "BackView")
+            return "panel chain preview currently supports FrontView/BackView elevations only";
         return null;
     }
 
