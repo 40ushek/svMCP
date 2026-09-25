@@ -235,10 +235,36 @@ matching participant pairs, anchor keys, contact states, and empty unread,
 unflattened, and unresolved lists. Coordinates differed only below 0.001 mm;
 the display serializer was then corrected to emit the rounded decimal cleanly.
 
-Still required before considering this complete: compare a view where a part is
-excluded by dimension rules but still has a contact; include/compare full contact
+Live timing (first `contacts` question measured separately from context
+construction, from the perf log; all part solids were already captured):
+
+| View | Parts | Points | Context build (`refresh`) | First `contacts` | Whole call | Answer size |
+|---|---|---|---|---|---|---|
+| M.505 beam view | 9 | 52 | 433 ms whole call | 8 ms | 33 ms | 21 KB |
+| M.48 view, main part about 32 m | 21 | 92 | 1231 ms | 33 ms | 58 ms | 63 KB |
+
+Contact calculation is about 3% of context construction on these views, so
+laziness saves little time here; it only avoids work when contacts are not asked
+for. Both views are small: check a view with many parts before relying on this,
+because pairwise cost grows faster than the part count.
+
+Independence from dimension exclusions, checked on M.505 with `excludePrefixes=P`
+(the prefix of all 9 parts): the structural outline became empty
+(`isComplete=false`, "every part in this view was excluded by the filter") while
+contacts stayed at 52 points and the same pairs, `exclusionsApplied=false`.
+A partial exclusion (some parts excluded, the rest not) is still not checked.
+
+The `contacts` answer is too large to read: 21 KB for 52 points, 63 KB for 92.
+Adding contact shapes would grow it. Default to a short summary (pairs, counts,
+states) and return points or shapes only on request or for a named pair.
+
+The M.48 view returned contact state `Overlap` between a plate and the main part;
+confirm that it is expected.
+
+Still required before considering this complete: compare a view where some parts
+are excluded by dimension rules and others are not; include/compare full contact
 shapes and `contactId` (the context currently returns candidates and unresolved
 shapes, not every shape); expose/compare the constrained-axis summary from
-`get_part_degrees_of_freedom`; and measure the first contact query separately
-from refresh/context construction on a heavy live view. These checks remain open.
-Only after them decide whether to remove the old MCP tools.
+`get_part_degrees_of_freedom`; measure a view with many parts; and deploy the
+rounding fix to the bridge (the deployed bridge still printed values such as
+`4704.0010000000002`). Only after them decide whether to remove the old MCP tools.
