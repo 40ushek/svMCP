@@ -137,6 +137,26 @@ public sealed class DimensionChainPreviewTests
         Assert.NotEmpty(chain.GetProperty("skippedPartIds").EnumerateArray());
     }
 
+    [Fact]
+    public void CreatingFromIdsMovesTheWitnessPointToTheOutermostOnTheSameCoordinate()
+    {
+        var context = Context(rightHalfHeight: 68);
+        var ids = context.Query("dimensionPoints", "Bottom").GetProperty("dimensionPoints").GetProperty("sides").EnumerateArray().Single()
+            .GetProperty("points").EnumerateArray().Select(p => p.GetProperty("pointId").GetString()!).ToArray();
+        var xy = context.ResolvePointIds(ids, "horizontal-down");
+        var atX0 = Enumerable.Range(0, ids.Length).Where(i => Math.Abs(xy[i * 3]) < 1e-9).Select(i => xy[i * 3 + 1]).ToArray();
+        Assert.NotEmpty(atX0);
+        Assert.All(atX0, y => Assert.Equal(-170d, y));
+    }
+
+    [Fact]
+    public void RakedEndTakesTheCornerOnTheLineSideNotTheFarCorner()
+    {
+        var context = Context(rightHalfHeight: 68, rakedEnd: true);
+        Assert.Equal(970d, Segments(Chain(context, "Top", "location")).Sum());
+        Assert.Equal(1020d, Segments(Chain(context, "Bottom", "location")).Sum());
+    }
+
     private static double[] Segments(JsonElement chain) =>
         chain.GetProperty("segments").EnumerateArray().Select(x => x.GetDouble()).ToArray();
 
@@ -145,7 +165,8 @@ public sealed class DimensionChainPreviewTests
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
     private static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
-        bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false)
+        bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
+        bool rakedEnd = false)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -154,22 +175,30 @@ public sealed class DimensionChainPreviewTests
             [13] = Solid(13, 1000, 1010, -rightHalfHeight, rightHalfHeight)
         };
         if (closeRib) parts[15] = Solid(15, 201.5, 206, -66, 66);
+        if (rakedEnd)
+        {
+            parts.Remove(13);
+            parts[10] = Poly(10, (0, -76), (1000, -76), (950, 76), (0, 76));
+        }
         var ids = closeRib ? new[] { 10, 11, 12, 13, 15 } : new[] { 10, 11, 12, 13 };
+        if (rakedEnd) ids = ids.Where(id => id != 13).ToArray();
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts));
         var role = new PartRoleResult(PartRole.Included, "included", "test");
         var structural = new StructuralOutline(outline,
             (new[] { new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false),
              new(12, "P12", "P", role, secondMain), new(13, "P13", "P", role, false) })
-                .Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
+                .Where(p => !rakedEnd || p.ModelId != 13).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType });
     }
 
-    private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1)
+    private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>
+        Poly(id, (x0, y0), (x1, y0), (x1, y1), (x0, y1));
+
+    private static PartSolidGeometryInViewResult Poly(int id, params (double, double)[] points)
     {
         var geometry = new PartSolidGeometryInViewResult { Success = true, ModelId = id, ViewId = 7 };
-        var points = new[] { (x0, y0), (x1, y0), (x1, y1), (x0, y1) };
         for (var i = 0; i < points.Length; i++)
             geometry.Solid.Vertices.Add(new PartVertexGeometry { Index = i, Point = [points[i].Item1, points[i].Item2, 0] });
         var face = new PartFaceGeometry { Index = 0, Normal = [0, 0, 1] };

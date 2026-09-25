@@ -57,6 +57,21 @@ internal sealed class DimensionPointCatalog
         }).ToArray()
     };
 
+    // A witness line must not run along a part outline: on the same coordinate along the chain,
+    // the point farthest toward the dimension line is used, whichever part it belongs to.
+    private DimensionPoint Outermost(DimensionPoint point, DimensionChainSide side)
+    {
+        var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        double Along(DimensionPoint p) => alongX ? p.X : p.Y;
+        double Across(DimensionPoint p) => alongX ? p.Y : p.X;
+        return LinePoints(side)
+            .Where(p => Math.Abs(Along(p) - Along(point)) <= 0.01)
+            .OrderByDescending(p => outer * Across(p))
+            .ThenBy(p => p.Id == point.Id ? 0 : 1).ThenBy(p => p.Id, StringComparer.Ordinal)
+            .FirstOrDefault() ?? point;
+    }
+
     public double[] Resolve(IEnumerable<string> pointIds, DimensionChainSide side)
     {
         var ids = pointIds.ToArray();
@@ -73,6 +88,7 @@ internal sealed class DimensionPointCatalog
                 throw new ArgumentException($"Unknown pointId '{id}' for this context");
             if (!allowed.Contains(id))
                 throw new ArgumentException($"pointId '{id}' is not on the {side} dimension line");
+            point = Outermost(point, side);
             coordinates.Add(point.X);
             coordinates.Add(point.Y);
             coordinates.Add(0);

@@ -208,9 +208,14 @@ public sealed class ViewDimensionContextTests
         var context = provider.Get(7);
         var side = context.Query("dimensionPoints", "Top").GetProperty("dimensionPoints")
             .GetProperty("sides")[0].GetProperty("points");
-        var idPoints = side.EnumerateArray().Take(2).ToArray();
-        var coordinates = context.Query("points", "Top").GetProperty("sides")[0].GetProperty("points")
-            .EnumerateArray().Take(2).ToArray();
+        var allIdPoints = side.EnumerateArray().ToArray();
+        var allCoordinates = context.Query("points", "Top").GetProperty("sides")[0].GetProperty("points")
+            .EnumerateArray().ToArray();
+        // Two points on different coordinates along the line: on one coordinate the id form moves
+        // the point to the outermost one, so only the order and the along-coordinate are compared.
+        var second = Array.FindIndex(allCoordinates, p => p.GetProperty("x").GetDouble() != allCoordinates[0].GetProperty("x").GetDouble());
+        var idPoints = new[] { allIdPoints[0], allIdPoints[second] };
+        var coordinates = new[] { allCoordinates[0], allCoordinates[second] };
         var ids = idPoints.Reverse().Select(p => p.GetProperty("pointId").GetString()!).ToArray();
 
         Assert.True(provider.Create(new CreateDimensionRequest {
@@ -218,10 +223,8 @@ public sealed class ViewDimensionContextTests
         }).Created);
 
         Assert.Equal(1, reads);
-        var expected = coordinates.Reverse().SelectMany(p => new[] {
-            p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble(), 0d
-        });
-        Assert.Equal(expected, writtenPoints);
+        var expectedX = coordinates.Reverse().Select(p => p.GetProperty("x").GetDouble());
+        Assert.Equal(expectedX, new[] { writtenPoints![0], writtenPoints[3] });
     }
 
     [Fact]

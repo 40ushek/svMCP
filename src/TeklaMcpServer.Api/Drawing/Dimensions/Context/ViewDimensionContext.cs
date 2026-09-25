@@ -267,6 +267,7 @@ public sealed class ViewDimensionContext
             ["projectionVerification"] = "full-solid projection; section clipping is not verified"
         };
         foreach (var property in _diagnostics.EnumerateObject()) result[property.Name] = property.Value;
+        result["view"] = _metadata;
         if (!shortAnswer) { result["source"] = _source; result["extent"] = Extent(); }
         return result;
     }

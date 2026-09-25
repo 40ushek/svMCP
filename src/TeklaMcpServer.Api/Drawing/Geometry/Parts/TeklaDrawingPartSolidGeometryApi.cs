@@ -66,9 +66,17 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         if (DrawingViewPlane.IsModelPlane(viewCoordinateSystem))
             return Fail(viewId, modelId, DrawingViewPlane.ModelPlaneReason);
 
+        // Dimensions and the drawing itself sit in the display coordinate system. Its axes match
+        // the view's, but on some sections (M.86 section D) its origin is 152.6 view units away,
+        // and coordinates read in the view system then land that far off the drawn part.
+        var displayCoordinateSystem = view.DisplayCoordinateSystem;
+        var readSystem = displayCoordinateSystem != null && !DrawingViewPlane.IsModelPlane(displayCoordinateSystem)
+            ? displayCoordinateSystem
+            : viewCoordinateSystem;
+
         var workPlaneHandler = _model.GetWorkPlaneHandler();
         var originalPlane = workPlaneHandler.GetCurrentTransformationPlane();
-        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(viewCoordinateSystem));
+        workPlaneHandler.SetCurrentTransformationPlane(new TransformationPlane(readSystem));
 
         try
         {

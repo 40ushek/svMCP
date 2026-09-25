@@ -51,7 +51,7 @@ internal static class DimensionChainPreview
 
         var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
         var mainAlongX = main.Max(p => p.X) - main.Min(p => p.X) >= main.Max(p => p.Y) - main.Min(p => p.Y);
-        var ctx = new Ctx(alongX, side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1, mainPartIds);
+        var ctx = new Ctx(alongX, side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1, mainPartIds, line);
 
         // Across the main part the location chain already spans the whole width, so no overall.
         var overall = alongX == mainAlongX
@@ -63,8 +63,9 @@ internal static class DimensionChainPreview
         return [location, overall];
     }
 
-    private sealed class Ctx(bool alongX, int outer, IReadOnlyCollection<int> mainIds)
+    private sealed class Ctx(bool alongX, int outer, IReadOnlyCollection<int> mainIds, IReadOnlyList<DimensionPoint> line)
     {
+        public IReadOnlyList<DimensionPoint> Line { get; } = line;
         public bool AlongX { get; } = alongX;
         public int Outer { get; } = outer;
         public IReadOnlyCollection<int> MainIds { get; } = mainIds;
@@ -97,8 +98,11 @@ internal static class DimensionChainPreview
     {
         var picks = new List<Pick>();
         if (line.Count == 0) return Empty(side, "location", "no points on this side");
-        picks.AddRange(Ends(line, ctx, "extreme", 1));
-        var main = line.Where(ctx.IsMain).ToArray();
+        // Ends come from the half of the view on the dimension line's side, so a raked end does
+        // not pull in its far corner and send a witness line across the profile.
+        var outer = OuterHalf(line, ctx);
+        picks.AddRange(Ends(outer, ctx, "extreme", 1));
+        var main = outer.Where(ctx.IsMain).ToArray();
         if (main.Length > 0) picks.AddRange(Ends(main, ctx, "main-end", 2));
 
         var partIds = line.SelectMany(ctx.Parts).Where(id => !ctx.MainIds.Contains(id)).Distinct().ToArray();
@@ -148,6 +152,15 @@ internal static class DimensionChainPreview
             "the end part is flush with the main part; nothing to locate");
     }
 
+    // Points on the dimension line's side of the middle of the side's cross-axis extent; the whole
+    // set when none qualifies.
+    private static IReadOnlyList<DimensionPoint> OuterHalf(IReadOnlyList<DimensionPoint> line, Ctx ctx)
+    {
+        var middle = (line.Max(ctx.Across) + line.Min(ctx.Across)) / 2;
+        var outer = line.Where(p => ctx.Outer * (ctx.Across(p) - middle) >= -SameCoordinate).ToArray();
+        return outer.Length > 0 ? outer : line;
+    }
+
     private static IEnumerable<Pick> Ends(IEnumerable<DimensionPoint> points, Ctx ctx, string role, int priority)
     {
         var list = points.ToArray();
@@ -181,14 +194,15 @@ internal static class DimensionChainPreview
     private static object Result(DimensionChainSide side, string kind, List<Pick> picks, Ctx ctx,
         IReadOnlyCollection<int> skippedParts, double? minLength, int minPoints = 0, string? tooFewNote = null)
     {
-        // One point per coordinate: the strongest role wins, all roles are kept for the report.
+        // One point per coordinate: the point farthest toward the dimension line wins, so the
+        // witness line does not run along a part outline; then the strongest role. All roles are kept.
         var chosen = new List<(DimensionPoint Point, List<string> Roles)>();
         foreach (var group in ClusterPicks(picks, ctx))
         {
-            var winner = group.OrderByDescending(x => x.Priority)
-                .ThenByDescending(x => ctx.Outer * ctx.Across(x.Point))
+            var winner = group.OrderByDescending(x => ctx.Outer * ctx.Across(x.Point))
+                .ThenByDescending(x => x.Priority)
                 .ThenBy(x => x.Point.Id, StringComparer.Ordinal).First();
-            chosen.Add((winner.Point, group.Select(x => x.Role).Distinct().ToList()));
+            chosen.Add((Outermost(winner.Point, ctx), group.Select(x => x.Role).Distinct().ToList()));
         }
 
         var dropped = new List<DimensionPoint>();
@@ -201,7 +215,9 @@ internal static class DimensionChainPreview
                 }
 
         // A part whose only point was dropped for being too close is reported as skipped.
-        var kept = chosen.SelectMany(x => ctx.Parts(x.Point)).ToHashSet();
+        // A part with a point on a chosen coordinate is located by it, even when another part's point was taken.
+        var kept = chosen.SelectMany(x => ctx.Line.Where(p => Math.Abs(ctx.Along(p) - ctx.Along(x.Point)) <= SameCoordinate)
+            .SelectMany(ctx.Parts)).ToHashSet();
         var skipped = skippedParts.Concat(dropped.SelectMany(ctx.Parts).Where(id => !kept.Contains(id)))
             .Distinct().ToArray();
 
@@ -228,6 +244,14 @@ internal static class DimensionChainPreview
             note = (string?)null
         };
     }
+
+    // The witness line starts at the point farthest toward the dimension line on the same coordinate,
+    // whichever part it belongs to, so it does not run along a part outline.
+    private static DimensionPoint Outermost(DimensionPoint point, Ctx ctx) => ctx.Line
+        .Where(p => Math.Abs(ctx.Along(p) - ctx.Along(point)) <= SameCoordinate)
+        .OrderByDescending(p => ctx.Outer * ctx.Across(p))
+        .ThenBy(p => p.Id == point.Id ? 0 : 1).ThenBy(p => p.Id, StringComparer.Ordinal)
+        .FirstOrDefault() ?? point;
 
     private static IEnumerable<List<Pick>> ClusterPicks(List<Pick> picks, Ctx ctx)
     {
