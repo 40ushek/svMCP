@@ -279,6 +279,8 @@ one context-local ID across sides; no new tolerance-based merging is applied.
 and ordered point records; `create_dimension` accepts `contextId` plus ordered
 `pointIds`, resolves them in the cached snapshot, checks side membership, and
 preserves the requested order. Coordinates and IDs are mutually exclusive.
+An incomplete snapshot cannot be used for ID-based creation, even with an
+explicit `distance`; manual coordinate input remains available.
 Filters are part of the snapshot and cannot accompany the ID form. A different
 filter scope has its own ID while cached; refresh or a drawing/view switch
 invalidates these IDs. Contacts, bolts, new geometry kinds and automatic point
@@ -319,10 +321,11 @@ Rules of this first version (built from the M.505 hand-placed chains):
 - Segments shorter than 3 view units are dropped in the interior of the chain. The
   3 is in the units of the point coordinates, not on paper, so on paper it is
   3 divided by the view scale. Dropped points are listed in `droppedShortPointIds`
-  and a part left without any point is added to `skippedPartIds`.
+  and a part left without any point is added to `skippedPartIds`. A short first
+  segment is intentionally allowed.
 - The preview refuses instead of guessing: a section or end view (they need the
   section/end-view check), a main part that is not exactly one, or an unresolved
-  main part. The answer carries the reason in `note`.
+  main part, or an incomplete context. The answer carries the reason in `note`.
 
 Checked live on M.505 (back view): bottom 20 / 203.999 / 4500.002 / 348.094 / 142.5 / 10,
 left 94 / 152 / 94, right 8 / 136 / 8 and the bottom overall gave the same point

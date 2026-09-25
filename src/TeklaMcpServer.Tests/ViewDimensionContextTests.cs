@@ -95,6 +95,22 @@ public sealed class ViewDimensionContextTests
     }
 
     [Fact]
+    public void ExplicitDistanceCannotWritePointIdsFromIncompleteContext()
+    {
+        var provider = new ViewDimensionContextProvider(() => "a", (id, f) => Context(id, f, incomplete: true),
+            () => { }, (_, _) => throw new Exception("writer must not run"));
+        var context = provider.Get(7);
+        var ids = context.Query("dimensionPoints", "Top").GetProperty("dimensionPoints")
+            .GetProperty("sides")[0].GetProperty("points").EnumerateArray()
+            .Select(point => point.GetProperty("pointId").GetString()!).Take(2).ToArray();
+
+        var error = Assert.Throws<InvalidOperationException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = ids, Direction = "horizontal", Distance = 10
+        }));
+        Assert.Contains("incomplete view context", error.Message);
+    }
+
+    [Fact]
     public void CompactQuestionsRetainEveryOwnersEvidenceAndLeaveFullSourceUnchanged()
     {
         var context = Context();

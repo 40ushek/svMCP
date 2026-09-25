@@ -99,9 +99,24 @@ public sealed class DimensionChainPreviewTests
     [Fact]
     public void UnclassifiedPartStopsThePreview()
     {
-        var chain = Chain(Context(rightHalfHeight: 68, unclassified: true), "Bottom", "location");
+        var context = Context(rightHalfHeight: 68, unclassified: true);
+        var unresolved = context.Query("diagnostics").GetProperty("mainPartUnresolvedModelIds");
+        Assert.Equal(14, Assert.Single(unresolved.EnumerateArray()).GetInt32());
+        var chain = Chain(context, "Bottom", "location");
         Assert.Equal(0, chain.GetProperty("pointIds").GetArrayLength());
         Assert.Contains("main part could not be resolved", chain.GetProperty("note").GetString());
+    }
+
+    [Fact]
+    public void UnreadSecondaryPartStopsThePreviewEvenWhenTheMainPartIsKnown()
+    {
+        var context = Context(rightHalfHeight: 68, unread: true);
+        var response = context.Query("chain", "Bottom");
+        Assert.False(response.GetProperty("isComplete").GetBoolean());
+        var chain = response.GetProperty("chainPreview").EnumerateArray().Single()
+            .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == "location");
+        Assert.Empty(chain.GetProperty("pointIds").EnumerateArray());
+        Assert.Contains("incomplete", chain.GetProperty("note").GetString());
     }
 
     [Theory]
@@ -130,7 +145,7 @@ public sealed class DimensionChainPreviewTests
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
     private static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
-        bool secondMain = false, bool closeRib = false, bool unclassified = false)
+        bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -146,7 +161,8 @@ public sealed class DimensionChainPreviewTests
             (new[] { new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false),
              new(12, "P12", "P", role, secondMain), new(13, "P13", "P", role, false) })
                 .Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
-            [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [], [], [], ids);
+            [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
+            unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType });
     }
 

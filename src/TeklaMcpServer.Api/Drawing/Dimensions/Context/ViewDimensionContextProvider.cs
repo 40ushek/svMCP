@@ -107,6 +107,8 @@ public sealed class ViewDimensionContextProvider
             context = _contexts.Values.FirstOrDefault(candidate =>
                 StringComparer.Ordinal.Equals(candidate.ContextId, request.ContextId))
                 ?? throw new InvalidOperationException("Unknown or expired contextId; refresh the view context and retry");
+            if (!context.IsComplete)
+                throw new InvalidOperationException("Cannot create a dimension from pointIds in an incomplete view context; inspect diagnostics and refresh after fixing the source");
             request.Points = context.ResolvePointIds(request.PointIds, request.Direction);
         }
         else

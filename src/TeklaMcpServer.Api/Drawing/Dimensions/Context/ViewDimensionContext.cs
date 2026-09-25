@@ -32,6 +32,7 @@ public sealed class ViewDimensionContext
     public int ViewId { get; }
     public double Scale { get; }
     public string ContextId { get; } = "ctx_" + Guid.NewGuid().ToString("N");
+    internal bool IsComplete => _complete;
 
     /// <summary>Returns an isolated copy of a captured part solid, or null when it was not read.</summary>
     public PartSolidGeometryInViewResult? GetPartSolidGeometry(int modelId) =>
@@ -68,8 +69,7 @@ public sealed class ViewDimensionContext
                 isMainPart = p.IsMainPart, mainPartKnown = p.IsMainPartKnown }).ToArray());
         _diagnostics = Freeze(new {
             mainPartModelIds = outline.Included.Where(p => p.IsMainPart).Select(p => p.ModelId).ToArray(),
-            mainPartUnresolvedModelIds = outline.Included.Concat(outline.Excluded)
-                .Where(p => !p.IsMainPartKnown).Select(p => p.ModelId).ToArray(),
+            mainPartUnresolvedModelIds = _mainPartUnresolvedIds,
             excludedModelIds = outline.Excluded.Select(p => p.ModelId).ToArray(),
             outsideDepthModelIds = outline.OutsideDepthModelIds,
             unresolvedDepthModelIds = outline.Outline.UnresolvedDepthModelIds,
@@ -186,6 +186,8 @@ public sealed class ViewDimensionContext
             return "the main part could not be resolved for some parts";
         if (_mainPartIds.Length != 1)
             return _mainPartIds.Length == 0 ? "no main part in this view" : "more than one main part in this view";
+        if (!_complete)
+            return "the structural view context is incomplete; inspect issues and unresolvedDepthModelIds";
         return null;
     }
 
