@@ -157,11 +157,9 @@ public sealed class ViewDimensionContext
                     out sectionPreview, out var profileReason))
                 refusal = profileReason;
             if (section)
-            {
-                result["sectionProjectionVerification"] = "provisional: full-solid projection is not clipped to section depth; check every retained point against this view";
-                result["readabilityGapPaperMm"] = DimensionPlacementSettings.SectionReadabilityGapPaperMm;
-                result["sectionPreviewStatus"] = refusal == null ? "provisional" : "refused";
-            }
+                result["sectionPreviewStatus"] = refusal == null
+                    ? "provisional: full-solid projection is not clipped to section depth, check the points on the view"
+                    : "refused";
             var sectionPlans = section && refusal == null
                 ? ((DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide))).ToDictionary(
                     side => side, side => sectionPreview!.Build(side))
@@ -169,15 +167,31 @@ public sealed class ViewDimensionContext
             if (sectionPlans != null)
             {
                 var secondary = sectionPreview!.SecondaryIds;
-                result["unlocatedXModelIds"] = secondary.Except(sectionPlans[DimensionChainSide.Top].LocatedPartIds
+                var unlocatedX = secondary.Except(sectionPlans[DimensionChainSide.Top].LocatedPartIds
                     .Concat(sectionPlans[DimensionChainSide.Bottom].LocatedPartIds)).ToArray();
-                result["unlocatedYModelIds"] = secondary.Except(sectionPlans[DimensionChainSide.Left].LocatedPartIds
+                var unlocatedY = secondary.Except(sectionPlans[DimensionChainSide.Left].LocatedPartIds
                     .Concat(sectionPlans[DimensionChainSide.Right].LocatedPartIds)).ToArray();
+                if (unlocatedX.Length > 0) result["unlocatedXModelIds"] = unlocatedX;
+                if (unlocatedY.Length > 0) result["unlocatedYModelIds"] = unlocatedY;
             }
             else if (section)
             {
                 result["unlocatedXModelIds"] = _includedModelIds.Except(_mainPartIds).ToArray();
                 result["unlocatedYModelIds"] = _includedModelIds.Except(_mainPartIds).ToArray();
+            }
+            // A section answer is the chains to place, one per axis; the profile/location split and
+            // the mirror sides are folded in (detailed answers keep the split).
+            var consolidated = sectionPlans != null && !detailed
+                ? SectionDimensionChainPreview.Consolidate(sectionPlans.Values).Where(k => selected.Contains(k.Side)).ToArray()
+                : null;
+            if (consolidated != null && consolidated.Length > 0)
+            {
+                result["chainPreview"] = consolidated.Select(k => new {
+                    side = k.Side.ToString(),
+                    chains = new[] { SectionDimensionChainPreview.MergedChain(k) }
+                }).ToArray();
+                result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
+                return Freeze(result, display: true);
             }
             result["chainPreview"] = selected.Select(side => new {
                 side = side.ToString(),

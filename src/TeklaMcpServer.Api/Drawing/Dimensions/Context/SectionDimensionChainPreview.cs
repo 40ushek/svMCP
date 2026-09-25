@@ -35,11 +35,46 @@ internal sealed class SectionDimensionChainPreview
 
     public IReadOnlyList<int> SecondaryIds => _secondaryIds;
 
-    internal sealed class SideResult(object[] chains, int[] locatedPartIds)
+    internal sealed class SideResult(object[] chains, int[] locatedPartIds, DimensionPoint[]? merged = null,
+        DimensionChainSide side = DimensionChainSide.Top)
     {
         public object[] Chains { get; } = chains;
         public int[] LocatedPartIds { get; } = locatedPartIds;
+        /// <summary>Profile and part-location points of this side as one chain, ordered along it.</summary>
+        public DimensionPoint[] Merged { get; } = merged ?? [];
+        public DimensionChainSide Side { get; } = side;
+        public double AlongOf(DimensionPoint p) => AlongX(Side) ? p.X : p.Y;
     }
+
+    /// <summary>
+    /// One chain per axis: the merged chains of the sides, without a side whose coordinates another
+    /// kept chain of the same axis already carries (mirror sides, a profile repeated by a location chain).
+    /// </summary>
+    public static IReadOnlyList<SideResult> Consolidate(IEnumerable<SideResult> sides)
+    {
+        var kept = new List<SideResult>();
+        foreach (var axisX in new[] { true, false })
+        {
+            var axis = sides.Where(s => s.Merged.Length >= 2 && AlongX(s.Side) == axisX)
+                .OrderByDescending(s => s.Merged.Length).ThenBy(s => s.Side).ToList();
+            var carried = new List<double>();
+            foreach (var side in axis)
+            {
+                var coordinates = side.Merged.Select(side.AlongOf).ToArray();
+                if (carried.Count > 0 && coordinates.All(c => carried.Any(k => Math.Abs(k - c) <= SameCoordinate)))
+                    continue;
+                kept.Add(side);
+                carried.AddRange(coordinates);
+            }
+        }
+        return kept;
+    }
+
+    public static object MergedChain(SideResult side) => new {
+        kind = "chain",
+        pointIds = side.Merged.Select(p => p.Id).ToArray(),
+        segments = side.Merged.Zip(side.Merged.Skip(1), (a, b) => Math.Round(side.AlongOf(b) - side.AlongOf(a), 3)).ToArray()
+    };
 
     public static bool TryCreate(DimensionPointCatalog catalog, GeometryGroup group, int mainId,
         IEnumerable<int> includedIds, double minFeatureLength, double scale,
@@ -167,7 +202,30 @@ internal sealed class SectionDimensionChainPreview
         return new SideResult([
             Chain("profile", profile, side, [], [], []),
             Chain("location", location, side, locatedByProfile, otherSide, mergedNearby),
-            Empty("overall", overallNote)], located.Distinct().ToArray());
+            Empty("overall", overallNote)], located.Distinct().ToArray(), MergeChain(profile, location, side), side);
+    }
+
+    // Profile and location points as one chain along the side: one point per coordinate (the outermost),
+    // and points closer than the readable gap collapse, a profile point winning over a part point.
+    private DimensionPoint[] MergeChain(List<DimensionPoint> profile, List<DimensionPoint> location, DimensionChainSide side)
+    {
+        var profileIds = profile.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        var ordered = profile.Concat(location).GroupBy(p => Math.Round(Along(p, side), 2))
+            .Select(g => g.OrderByDescending(p => profileIds.Contains(p.Id)).ThenByDescending(p => Outside(p, side))
+                .ThenBy(p => p.Id, StringComparer.Ordinal).First())
+            .OrderBy(p => Along(p, side)).ToList();
+        var result = new List<DimensionPoint>();
+        foreach (var point in ordered)
+        {
+            if (result.Count > 0 && Along(point, side) - Along(result[result.Count - 1], side) < _readableGapViewUnits)
+            {
+                if (profileIds.Contains(point.Id) && !profileIds.Contains(result[result.Count - 1].Id))
+                    result[result.Count - 1] = point;
+                continue;
+            }
+            result.Add(point);
+        }
+        return result.ToArray();
     }
 
     public static SideResult Refused(string reason) => new(

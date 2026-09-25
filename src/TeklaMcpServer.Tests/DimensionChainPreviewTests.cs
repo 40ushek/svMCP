@@ -125,38 +125,37 @@ public sealed class DimensionChainPreviewTests
     public void SectionAndEndViewsReturnProvisionalChains(string viewType)
     {
         var context = Context(rightHalfHeight: 68, viewType: viewType);
-        var response = context.Query("chain", "Bottom");
-        Assert.Contains("provisional", response.GetProperty("sectionProjectionVerification").GetString());
-        Assert.Equal(0.5, response.GetProperty("readabilityGapPaperMm").GetDouble());
-        Assert.Equal(2, Chain(context, "Bottom", "profile").GetProperty("pointIds").GetArrayLength());
+        var response = context.Query("chainDetails", "Bottom");
+        Assert.Contains("provisional", response.GetProperty("sectionPreviewStatus").GetString());
+        Assert.Equal(2, DetailedChain(context, "Bottom", "profile").GetProperty("pointIds").GetArrayLength());
     }
 
     [Fact]
     public void IProfileUsesActualFlangeAndWebEdges()
     {
         var context = ISectionContext();
-        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(Chain(context, "Top", "profile")));
-        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(Chain(context, "Left", "profile")));
-        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
-        Assert.Empty(context.Query("chain").GetProperty("unlocatedYModelIds").EnumerateArray());
+        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(DetailedChain(context, "Top", "profile")));
+        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(DetailedChain(context, "Left", "profile")));
+        Assert.Empty(Unlocated(context, "X"));
+        Assert.Empty(Unlocated(context, "Y"));
     }
 
     [Fact]
     public void RoundedIProfileKeepsTheStraightFlangeAndWebLevels()
     {
         var context = ISectionContext(roundedMain: true);
-        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(Chain(context, "Top", "profile")));
-        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(Chain(context, "Left", "profile")));
+        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(DetailedChain(context, "Top", "profile")));
+        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(DetailedChain(context, "Left", "profile")));
     }
 
     [Fact]
     public void EndPlateIsLocatedByItsTwoOuterFacesAndTheMainProfileEdges()
     {
         var context = ISectionContext(endPlate: true, viewType: "EndView");
-        Assert.Equal(new[] { 50d, 160d, 50d }, Segments(Chain(context, "Bottom", "location")));
-        Assert.Equal(new[] { 70d, 200d, 70d }, Segments(Chain(context, "Left", "location")));
-        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
-        Assert.Empty(context.Query("chain").GetProperty("unlocatedYModelIds").EnumerateArray());
+        Assert.Equal(new[] { 50d, 160d, 50d }, Segments(DetailedChain(context, "Bottom", "location")));
+        Assert.Equal(new[] { 70d, 200d, 70d }, Segments(DetailedChain(context, "Left", "location")));
+        Assert.Empty(Unlocated(context, "X"));
+        Assert.Empty(Unlocated(context, "Y"));
     }
 
     [Fact]
@@ -192,19 +191,19 @@ public sealed class DimensionChainPreviewTests
     public void NearbySectionPartsMergeAtHalfAPaperMillimeterAndAreReported()
     {
         var context = ISectionContext(angleShift: 0.14);
-        var top = Chain(context, "Top", "location");
+        var top = DetailedChain(context, "Top", "location");
         Assert.Equal(13, Assert.Single(top.GetProperty("mergedNearbyPartIds").EnumerateArray()).GetInt32());
         Assert.DoesNotContain(top.GetProperty("segments").EnumerateArray(),
             segment => Math.Abs(segment.GetDouble() - 0.14) < 0.001);
-        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
+        Assert.Empty(Unlocated(context, "X"));
     }
 
     [Fact]
     public void SectionPartsBeyondHalfAPaperMillimeterStaySeparate()
     {
         var context = ISectionContext(angleShift: 6);
-        var top = Chain(context, "Top", "location");
-        Assert.False(top.TryGetProperty("mergedNearbyPartIds", out _));
+        var top = DetailedChain(context, "Top", "location");
+        Assert.Empty(top.GetProperty("mergedNearbyPartIds").EnumerateArray());
         Assert.Contains(top.GetProperty("segments").EnumerateArray(),
             segment => Math.Abs(segment.GetDouble() - 6) < 0.001);
     }
@@ -296,6 +295,26 @@ public sealed class DimensionChainPreviewTests
         var context = Context(rightHalfHeight: 68, rakedEnd: true);
         Assert.Equal(970d, Segments(Chain(context, "Top", "location")).Sum());
         Assert.Equal(1020d, Segments(Chain(context, "Bottom", "location")).Sum());
+    }
+
+    // The answer leaves an empty unlocated list out.
+    private static IEnumerable<JsonElement> Unlocated(ViewDimensionContext context, string axis) =>
+        context.Query("chainDetails").TryGetProperty($"unlocated{axis}ModelIds", out var list)
+            ? list.EnumerateArray() : Enumerable.Empty<JsonElement>();
+
+    private static JsonElement DetailedChain(ViewDimensionContext context, string side, string kind) =>
+        context.Query("chainDetails", side).GetProperty("chainPreview").EnumerateArray().Single()
+            .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
+
+    [Fact]
+    public void SectionAnswerIsOneChainPerAxisWithoutMirrorSides()
+    {
+        var context = ISectionContext(endPlate: true);
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var sides = rows.Select(r => r.GetProperty("side").GetString()).ToArray();
+        Assert.True(sides.Count(s => s is "Top" or "Bottom") <= 1, string.Join(",", sides));
+        Assert.True(sides.Count(s => s is "Left" or "Right") <= 1, string.Join(",", sides));
+        Assert.All(rows, r => Assert.Equal("chain", Assert.Single(r.GetProperty("chains").EnumerateArray()).GetProperty("kind").GetString()));
     }
 
     private static double[] Segments(JsonElement chain) =>
