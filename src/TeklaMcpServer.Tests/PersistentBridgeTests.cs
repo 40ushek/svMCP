@@ -20,7 +20,7 @@ public sealed class PersistentBridgeTests
     [Fact]
     public void SendRestartsProcessAfterFatalNotConnectedPayload()
     {
-        using var bridge = CreateBridge("fatal-then-ok", TimeSpan.FromSeconds(2), out var stateFile);
+        using var bridge = CreateBridge("fatal-then-ok", TimeSpan.FromSeconds(20), out var stateFile);
 
         var firstPayload = bridge.Send("check_connection");
         using (var firstDocument = JsonDocument.Parse(firstPayload))
@@ -36,7 +36,7 @@ public sealed class PersistentBridgeTests
     [Fact]
     public void SendRestartsProcessAfterMalformedProtocolResponse()
     {
-        using var bridge = CreateBridge("malformed-then-ok", TimeSpan.FromSeconds(3), out var stateFile);
+        using var bridge = CreateBridge("malformed-then-ok", TimeSpan.FromSeconds(20), out var stateFile);
 
         Assert.ThrowsAny<Exception>(() => bridge.Send("ping"));
 
@@ -53,7 +53,8 @@ public sealed class PersistentBridgeTests
 
         Assert.Throws<TimeoutException>(() => bridge.Send("ping"));
 
-        var payload = bridge.Send("ping");
+        // The restarted PowerShell process needs time to start; only the first call is meant to time out.
+        var payload = bridge.SendWithTimeout("ping", [], TimeSpan.FromSeconds(20));
         using var document = JsonDocument.Parse(payload);
         Assert.Equal("recovered", document.RootElement.GetProperty("status").GetString());
         Assert.Equal("2", File.ReadAllText(stateFile).Trim());
