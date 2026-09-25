@@ -335,6 +335,62 @@ a real welding relation, so contacts may be needed to tell attached parts from
 neighbours; mirrored sides (Top repeats Bottom) are not suppressed yet; a section
 or end view is not covered.
 
+Added after live runs on M.86 (raked girder, sections) and M.81 (column):
+
+- **Witness lines stay off part outlines.** On one coordinate the point farthest
+  toward the dimension line wins, from any part (not only the main part); ends of
+  a location chain come from the half of the view on the line's side, so a raked
+  end takes its near corner, not the far one that sends a line across the profile.
+  `create_dimension` with `contextId` and `pointIds` applies the same rule to
+  every id (`DimensionPointCatalog.Resolve`), so it holds even when a point was
+  named by hand. Not covered: the overall chain still runs between the true
+  extremes, so on a raked end its witness line can cross the profile; calls with
+  plain coordinates are unchanged.
+- **A part is located from the side of the main part it reaches.** The side lists
+  are assigned by the middle of the whole assembly, not by the main part's axis, so a
+  part on one side of a column showed up in both chains. A part reaching one side is
+  left out of the other only when the other preliminary chain offers its points, and
+  is then listed in `offeredOnOtherSidePartIds`. This field does not prove that the
+  points survived selection in the final chain. A part on the axis can be retained
+  on both sides; a part crossing the axis may be offered to only one side when the
+  assembly's middle is shifted. The accepted criterion is that it remains located
+  on at least one side.
+- **Coordinates of a section are read in `DisplayCoordinateSystem`.** Dimensions are
+  drawn in it; `ViewCoordinateSystem` has the same axes but on some sections a
+  different origin (M.86 section D: 152.6 view units apart, E and F identical), so
+  everything read in the view system landed that far from the drawn part. The
+  `diagnostics` answer now carries both systems and the depth window under `view`.
+  The depth filter is deliberately still read in the view system, where the window
+  and the solids agree. Other geometry readers (all parts, part points, marks) still
+  use the view system and need the same check.
+
+#### 4a, third stage: chain preview for sections and end views (planned)
+
+Today the preview refuses a section or end view, so the assistant picked the points
+by hand from about 50 listed points and skipped a part (the facade angle on section
+E), which made the drawing unmakeable; time and tokens went into that reading.
+The hand-placed sections that were accepted are the acceptance cases: M.86 D (main
+beam with a 430 end plate), E (beam with a small angle), F (beam, two ribs, a gusset,
+two overlapping angles), M.355 section (HEB800, four ribs, two gussets).
+
+Rules to implement, in this order:
+
+1. The main part is dimensioned by its profile: across it the flange width with the
+   web thickness, along it the height with the flange thicknesses.
+2. Every other part is located against the main part by at least one dimension on
+   each axis, from its own side of the main part's axis (same side rule as above).
+3. A part standing against a main-part face (gap under the readability threshold,
+   the ribs of F) counts as located by the profile and is listed as such in the
+   answer, not left out silently.
+4. Duplicates on one place (two angles 0.14 apart) collapse into one dimension.
+5. No separate overall when a chain already spans it.
+6. The answer lists the parts of the view without a locating dimension; an empty
+   list is the completeness check.
+
+Open: the readability threshold in paper mm (the 3 view units above are not it),
+overall on a raked end, and whether a rib against a face may ever need its own
+dimension (default: no, listed instead).
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now
