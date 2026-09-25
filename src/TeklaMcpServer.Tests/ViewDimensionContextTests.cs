@@ -167,6 +167,39 @@ public sealed class ViewDimensionContextTests
         Assert.NotNull(context.GetPartSolidGeometrySnapshot(10));
     }
 
+    [Fact]
+    public void ContactsAreOptInLazyAndCachedAcrossDimensionFilterContexts()
+    {
+        var solidReads = new List<(int ViewId, int ModelId)>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a",
+            (id, filters) => Context(id, filters), () => { },
+            readContactSolid: (viewId, modelId) => {
+                solidReads.Add((viewId, modelId));
+                return new PartSolidGeometryInViewResult {
+                    ViewId = viewId, ModelId = modelId, Success = false, Error = "test unread"
+                };
+            });
+
+        provider.Get(7).Query("all");
+        Assert.Empty(solidReads);
+
+        var contacts = provider.Get(7, "R").Query("contacts").GetProperty("contacts");
+        Assert.Equal("all-depth-visible", contacts.GetProperty("scope").GetString());
+        Assert.False(contacts.GetProperty("exclusionsApplied").GetBoolean());
+        Assert.Single(solidReads);
+        Assert.Equal((7, 20), solidReads[0]); // model 10 was reused from the captured outline
+
+        provider.Get(7).Query("contacts");
+        Assert.Single(solidReads); // both the extra solid read and contact result are cached
+    }
+
+    [Fact]
+    public void DisplayRoundingDoesNotSerializeBinaryFloatingPointTail()
+    {
+        var json = ViewDimensionContext.Freeze(new { point = 4704.0010000000002 }, display: true);
+        Assert.Equal("4704.001", json.GetProperty("point").GetRawText());
+    }
+
     private static string Evidence(double x, double y, JsonElement s) =>
         JsonSerializer.Serialize(new { x, y,
             model = s.TryGetProperty("modelId", out var id) && id.ValueKind != JsonValueKind.Null ? id.GetInt32() : (int?)null,
@@ -188,7 +221,7 @@ public sealed class ViewDimensionContextTests
         var role = new PartRoleResult(PartRole.Included, "included", "test");
         var structural = new StructuralOutline(outline,
             [new(10, "P10", "P", role, true)], [new(20, "R20", "R", new PartRoleResult(PartRole.Excluded, "excluded", "test"), false, false)], [],
-            incomplete ? [new UnreadPart(30, "unread")] : [], [99]);
+            incomplete ? [new UnreadPart(30, "unread")] : [], [99], [10, 20]);
         return new ViewDimensionContext(id, 10, structural, exclusions ?? [], new { drawingGuid = "test" }, new { viewType = "FrontView" });
     }
 

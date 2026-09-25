@@ -81,11 +81,15 @@ public sealed class PartRoleReadResult
     public PartRoleReadResult(
         IReadOnlyList<PartRoleInView> roles,
         IReadOnlyList<UnreadPart> unread,
-        IReadOnlyList<int>? outsideDepthModelIds = null)
+        IReadOnlyList<int>? outsideDepthModelIds = null,
+        IReadOnlyList<int>? depthSelectedModelIds = null,
+        IReadOnlyList<UnreadPart>? depthUnread = null)
     {
         Roles = roles;
         Unread = unread;
         OutsideDepthModelIds = outsideDepthModelIds ?? Array.Empty<int>();
+        DepthSelectedModelIds = depthSelectedModelIds ?? roles.Select(role => role.ModelId).ToArray();
+        DepthUnread = depthUnread ?? Array.Empty<UnreadPart>();
     }
 
     public IReadOnlyList<PartRoleInView> Roles { get; }
@@ -100,6 +104,12 @@ public sealed class PartRoleReadResult
     /// of looking identical to a candidate that was never named at all.
     /// </summary>
     public IReadOnlyList<int> OutsideDepthModelIds { get; }
+
+    /// <summary>All parts retained by the view-depth selection, before structural-role filters.</summary>
+    public IReadOnlyList<int> DepthSelectedModelIds { get; }
+
+    /// <summary>Depth-selection read failures, separated from role-property failures.</summary>
+    public IReadOnlyList<UnreadPart> DepthUnread { get; }
 
     public bool IsComplete => Unread.Count == 0;
 }
@@ -209,7 +219,8 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 materialRead ? material : null));
         }
 
-        return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds);
+        return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds,
+            selected.ModelIds, selected.Incomplete.ToList());
     }
 
     /// <summary>

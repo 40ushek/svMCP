@@ -208,38 +208,25 @@ plan commands or a second creation path as a prerequisite for this increment.
 
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
-Proposed follow-up; not implemented. The context now retains detached solid DTOs,
-so a contact graph can be built lazily from those values without another Tekla
-solid read for parts already captured. Cache the contact result in the same
-snapshot and keep its completeness/errors separate from outline completeness.
+Partially implemented. `get_view_dimension_context(questions="contacts")` now
+uses an explicit `all-depth-visible` scope, independent of structural dimension
+exclusions. On the first request it reuses captured solid DTOs and reads only
+missing depth-selected parts; it caches both those reads and the computed
+candidate/contact result until refresh or drawing/view change. Ordinary
+dimension questions and `all` do not trigger contact work. Contact completeness
+is reported separately from outline completeness. The old contact MCP tools and
+their debug-drawing path remain available.
 
-First define the contact selection scope. The context's solids currently cover
-parts included by its structural exclusion filters. `get_contact_candidate_points`
-currently searches all depth-selected parts by default, or a supplied `modelIds`
-subset. Replacing it directly with the current context would silently omit
-excluded parts. Either make the context query explicitly use its structural
-scope, or add a separately named all-depth-visible scope which reads and retains
-the additional solids. Record the memory and solid-read cost; do not silently
-change existing contact results or reintroduce parts the caller intentionally
-excluded.
+Live comparison reported on the M.505 beam view with `refresh=true`: the context
+and `get_contact_candidate_points` both returned 52 points across 9 parts, with
+matching participant pairs, anchor keys, contact states, and empty unread,
+unflattened, and unresolved lists. Coordinates differed only below 0.001 mm;
+the display serializer was then corrected to emit the rounded decimal cleanly.
 
-After scope is fixed, expose contact shapes/candidate points through
-`get_view_dimension_context`; expose the constrained-axis summary from
-`get_part_degrees_of_freedom` there as a separate optional question. Preserve
-participant IDs, contact/shape kinds and states, unresolved pairs, unread parts,
-depth exclusions and completeness. Contact calculation is lazy: ordinary
-dimension requests do not build a pairwise graph.
-
-Keep `get_contact_candidate_points` and `get_part_degrees_of_freedom` until the
-context answers have been compared against them for the same scope on tests and
-authorized live views. Preserve the contact debug-drawing capability (currently
-the `draw` option) through a debug tool or an explicitly retained command. Only
-then decide whether to remove the old MCP tools.
-
-Acceptance: for a declared scope, old and context paths return equivalent
-participant pairs, contact shapes/states, candidate points, degrees of freedom
-and incomplete-selection diagnostics; captured parts cause no additional Tekla
-solid reads; excluded parts cannot silently enter or disappear from the result.
-Measure the elapsed time of the first contact query on a heavy view, including
-solid reads and graph construction, to judge whether lazy on-demand calculation
-is acceptably fast.
+Still required before considering this complete: compare a view where a part is
+excluded by dimension rules but still has a contact; include/compare full contact
+shapes and `contactId` (the context currently returns candidates and unresolved
+shapes, not every shape); expose/compare the constrained-axis summary from
+`get_part_degrees_of_freedom`; and measure the first contact query separately
+from refresh/context construction on a heavy live view. These checks remain open.
+Only after them decide whether to remove the old MCP tools.

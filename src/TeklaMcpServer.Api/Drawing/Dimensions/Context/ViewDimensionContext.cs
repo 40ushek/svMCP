@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -21,6 +22,9 @@ public sealed class ViewDimensionContext
     private readonly JsonElement _metadata;
     private readonly string[] _exclusions;
     private readonly IReadOnlyDictionary<int, PartSolidGeometryInViewResult> _partSolids;
+    private readonly int[] _contactModelIds;
+    private readonly IReadOnlyList<UnreadPart> _contactSelectionUnread;
+    private ViewContactsSnapshot? _contacts;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
@@ -43,6 +47,8 @@ public sealed class ViewDimensionContext
         _complete = outline.IsComplete && _group.Completeness.IsComplete;
         _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
             outline.Outline.PartSolidGeometries.ToDictionary(pair => pair.Key, pair => pair.Value));
+        _contactModelIds = outline.ContactModelIds.Distinct().ToArray();
+        _contactSelectionUnread = outline.ContactSelectionUnread;
         _source = Freeze(source);
         _metadata = Freeze(metadata);
         _exclusions = exclusions.Select(x => x.Id).ToArray();
@@ -97,12 +103,18 @@ public sealed class ViewDimensionContext
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
     {
         var requested = Split(questions);
-        var allowed = new[] { "points", "edges", "parts", "scale", "placement", "all" };
+        var allowed = new[] { "points", "edges", "parts", "scale", "placement", "contacts", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, edges, parts, scale, placement or all");
+            throw new ArgumentException("questions must contain points, edges, parts, scale, placement, contacts or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains("all") || requested.Contains(q);
         var result = Header(shortAnswer: true);
+        if (requested.Contains("contacts"))
+        {
+            if (_contacts == null)
+                throw new InvalidOperationException("Contact snapshot is not attached to this view context");
+            result["contacts"] = ContactSummary(_contacts.Get());
+        }
         if (requested.Contains("placement"))
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
         if (Wants("scale")) result["scale"] = Scale;
@@ -128,6 +140,39 @@ public sealed class ViewDimensionContext
         result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
         return Freeze(result, display: true);
     }
+
+    internal void AttachContacts(ViewContactsSnapshot contacts)
+    {
+        if (contacts == null) throw new ArgumentNullException(nameof(contacts));
+        _contacts = contacts;
+        contacts.Seed(_partSolids);
+    }
+
+    internal int[] ContactModelIds => _contactModelIds;
+    internal IReadOnlyList<UnreadPart> ContactSelectionUnread => _contactSelectionUnread;
+
+    private static object ContactSummary(ViewContactCandidatePointsResult result) => new {
+        scope = "all-depth-visible",
+        exclusionsApplied = false,
+        success = result.Error == null,
+        isComplete = result.IsComplete,
+        searchComplete = result.SearchComplete,
+        error = result.Error,
+        requestedIds = result.RequestedIds,
+        pointCount = result.Points.Count,
+        points = result.Points.Select(point => new {
+            modelObjectIds = point.ModelObjectIds,
+            point = point.Point,
+            confidence = point.Confidence.ToString(),
+            anchorKind = point.Anchor.Kind.ToString(),
+            anchorKey = point.Anchor.Id,
+            reason = point.Reason.Code,
+            values = point.Reason.Values
+        }).ToArray(),
+        unread = result.Unread,
+        unflattened = result.Unflattened,
+        unresolved = result.Unresolved
+    };
 
     private object[] ShortPoints(DimensionChain chain) => chain.Positions
         .SelectMany(p => p.Supports).GroupBy(s => (s.Point.X, s.Point.Y))
@@ -238,7 +283,7 @@ public sealed class ViewDimensionContext
     {
         public override double Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) => reader.GetDouble();
         public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) =>
-            writer.WriteNumberValue(Math.Round(value, 3));
+            writer.WriteRawValue(Math.Round(value, 3).ToString("0.###", CultureInfo.InvariantCulture));
     }
 
     private static string[] Split(string value) => value.Split(',').Select(s => s.Trim().ToLowerInvariant())

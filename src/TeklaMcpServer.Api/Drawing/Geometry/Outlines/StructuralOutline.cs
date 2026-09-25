@@ -22,7 +22,9 @@ public sealed class StructuralOutline
         IReadOnlyList<PartRoleInView> excluded,
         IReadOnlyList<PartRoleInView> unclassified,
         IReadOnlyList<UnreadPart>? unreadRoles = null,
-        IReadOnlyList<int>? outsideDepthModelIds = null)
+        IReadOnlyList<int>? outsideDepthModelIds = null,
+        IReadOnlyList<int>? contactModelIds = null,
+        IReadOnlyList<UnreadPart>? contactSelectionUnread = null)
     {
         Outline = outline;
         Included = included;
@@ -30,6 +32,8 @@ public sealed class StructuralOutline
         Unclassified = unclassified;
         UnreadRoles = unreadRoles ?? Array.Empty<UnreadPart>();
         OutsideDepthModelIds = outsideDepthModelIds ?? Array.Empty<int>();
+        ContactModelIds = contactModelIds ?? included.Select(part => part.ModelId).ToArray();
+        ContactSelectionUnread = contactSelectionUnread ?? Array.Empty<UnreadPart>();
     }
 
     public ViewAssemblyOutlineResult Outline { get; }
@@ -61,6 +65,12 @@ public sealed class StructuralOutline
     /// <see cref="PartRoleReadResult.OutsideDepthModelIds"/>, which this is read from.
     /// </summary>
     public IReadOnlyList<int> OutsideDepthModelIds { get; }
+
+    /// <summary>Depth-selected parts before structural exclusion rules, for the contact search.</summary>
+    public IReadOnlyList<int> ContactModelIds { get; }
+
+    /// <summary>Failures while selecting the contact search's depth scope.</summary>
+    public IReadOnlyList<UnreadPart> ContactSelectionUnread { get; }
 
     /// <summary>
     /// True only when every part was read, every requested part was drawn, and every
@@ -164,6 +174,8 @@ public sealed class TeklaDrawingStructuralOutlineApi
             excluded,
             unclassified,
             read.Unread,
-            read.OutsideDepthModelIds);
+            read.OutsideDepthModelIds,
+            read.DepthSelectedModelIds,
+            read.DepthUnread);
     }
 }

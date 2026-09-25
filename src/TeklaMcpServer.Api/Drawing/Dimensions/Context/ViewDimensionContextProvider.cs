@@ -17,7 +17,9 @@ public sealed class ViewDimensionContextProvider
     private readonly Func<int, IReadOnlyList<PartExclusionRule>, ViewDimensionContext> _read;
     private readonly Action _invalidateGeometry;
     private readonly Func<CreateDimensionRequest, double, CreateDimensionResult> _write;
+    private readonly Func<int, int, PartSolidGeometryInViewResult> _readContactSolid;
     private readonly Dictionary<string, ViewDimensionContext> _contexts = new();
+    private ViewContactsSnapshot? _contacts;
     private string? _drawing;
     private int? _view;
 
@@ -26,18 +28,22 @@ public sealed class ViewDimensionContextProvider
         var reader = new TeklaViewDimensionContextReader(model);
         _drawingIdentity = reader.ActiveIdentity;
         _read = reader.Read;
+        _readContactSolid = reader.ReadPartSolidGeometry;
         _invalidateGeometry = DrawingPartGeometryCache.InvalidateAll;
         _write = Write;
     }
 
     internal ViewDimensionContextProvider(Func<string?> drawingIdentity,
         Func<int, IReadOnlyList<PartExclusionRule>, ViewDimensionContext> read, Action invalidateGeometry,
-        Func<CreateDimensionRequest, double, CreateDimensionResult>? write = null)
+        Func<CreateDimensionRequest, double, CreateDimensionResult>? write = null,
+        Func<int, int, PartSolidGeometryInViewResult>? readContactSolid = null)
     {
         _drawingIdentity = drawingIdentity;
         _read = read;
         _invalidateGeometry = invalidateGeometry;
         _write = write ?? Write;
+        _readContactSolid = readContactSolid ?? ((viewId, modelId) =>
+            throw new InvalidOperationException("Contact solid reader is unavailable"));
     }
 
     public void ObserveActiveDrawing()
@@ -64,12 +70,14 @@ public sealed class ViewDimensionContextProvider
         if (_contexts.TryGetValue(key, out var cached))
         {
             PerfTrace.Write("api-geometry", "dimension_context_hit", 0, $"viewId={viewId}");
+            AttachContacts(cached);
             return cached;
         }
         // Failed builds never enter the store. A later call can retry reading.
         var timer = System.Diagnostics.Stopwatch.StartNew();
         var context = _read(viewId, rules);
         _contexts.Add(key, context);
+        AttachContacts(context);
         PerfTrace.Write("api-geometry", "dimension_context_build", timer.ElapsedMilliseconds, $"viewId={viewId}");
         return context;
     }
@@ -100,7 +108,16 @@ public sealed class ViewDimensionContextProvider
     private void Clear()
     {
         _contexts.Clear();
+        _contacts = null;
         _invalidateGeometry();
+    }
+
+    private void AttachContacts(ViewDimensionContext context)
+    {
+        if (_contacts == null)
+            _contacts = new ViewContactsSnapshot(context.ViewId, context.ContactModelIds,
+                context.ContactSelectionUnread, modelId => _readContactSolid(context.ViewId, modelId));
+        context.AttachContacts(_contacts);
     }
 
     internal static IReadOnlyList<PartExclusionRule> Normalize(string? prefixes, string? materials) =>
@@ -157,6 +174,9 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
         };
         return new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata);
     }
+
+    public PartSolidGeometryInViewResult ReadPartSolidGeometry(int viewId, int modelId) =>
+        new TeklaDrawingPartSolidGeometryApi(model).GetPartSolidGeometryInView(viewId, modelId);
 
     private string ObjectGuid(int modelId)
     {
