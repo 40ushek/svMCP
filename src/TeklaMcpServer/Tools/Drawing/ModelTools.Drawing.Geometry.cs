@@ -57,10 +57,10 @@ public static partial class ModelTools
             verbose ? "verbose" : "compact", refresh.ToString());
     }
 
-    [McpServerTool, Description("Ask small questions of the captured structural view geometry. Shares its snapshot with get_structural_chain_positions and create_dimension. Source geometry is frozen until refresh or a drawing/view switch; external edits require refresh=true. Contacts are an explicit, lazy query over all depth-visible parts, independent of dimension exclusions, then cached in the view context. 'all' does not request contacts. Full source evidence remains available through get_structural_chain_positions(verbose=true).")]
+    [McpServerTool, Description("Ask small questions of the captured structural view geometry. Shares its snapshot with get_structural_chain_positions and create_dimension. Source geometry is frozen until refresh or a drawing/view switch; external edits require refresh=true. Use questions=dimensionPoints to get context-scoped point IDs for create_dimension; ordinary points still return coordinates. Contacts are explicit and lazy; 'all' excludes both dimensionPoints and contacts. Full source evidence remains available through get_structural_chain_positions(verbose=true).")]
     public static string GetViewDimensionContext(
         [Description("Drawing view ID")] int viewId,
-        [Description("Comma-separated questions: points, edges, parts, scale, placement, contacts, or all. Contacts are lazy and all-depth-visible; 'all' excludes placement and contacts.")] string questions = "points,edges,scale",
+        [Description("Comma-separated questions: points, dimensionPoints, edges, parts, scale, placement, contacts, or all. dimensionPoints returns point IDs without coordinates; contacts and dimensionPoints are opt-in and excluded from 'all'.")] string questions = "points,edges,scale",
         [Description("Top,Bottom,Left,Right or all")] string sides = "all",
         [Description("Same excluded prefixes as create_dimension")] string excludePrefixes = "",
         [Description("Same excluded material substrings as create_dimension")] string excludeMaterials = "",

@@ -336,16 +336,18 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create and read back a straight dimension set from view-local points [x0,y0,z0, ...]. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; paperGapMm overrides that. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
+    [McpServerTool, Description("Create and read back a straight dimension set. Supply either view-local coordinates in points, or contextId plus ordered pointIds from get_view_dimension_context(questions=dimensionPoints). The ID form uses that cached view/filter snapshot and accepts no exclusion filters. Existing coordinate calls are unchanged. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; paperGapMm overrides that. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,
-        [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers).")] string points,
+        [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers). Leave empty when using pointIds.")] string points = "",
         [Description("Direction of the dimension offset: 'horizontal' (offset up, dimension left-right), 'vertical' (offset right, dimension up-down), or custom 'dx,dy,dz' vector. Default: horizontal")] string direction = "horizontal",
         [Description("Optional explicit offset distance in view units. Omit to calculate it from the assembly outline and paperGapMm.")] double? distance = null,
         [Description("Dimension attributes file name (style). Default: standard")] string attributesFile = "standard",
 [Description("Paper-space gap beyond the assembly outline in mm when distance is omitted. Default: 8.")] double? paperGapMm = null,
         [Description("Excluded prefixes, as in the candidate query. Empty means none.")] string excludePrefixes = "",
-        [Description("Excluded material substrings, as in the candidate query. Empty means none.")] string excludeMaterials = "")
+        [Description("Excluded material substrings, as in the candidate query. Empty means none. Not used with contextId.")] string excludeMaterials = "",
+        [Description("Snapshot ID returned by get_view_dimension_context. Required with pointIds; expires on refresh or drawing/view change.")] string contextId = "",
+        [Description("Ordered point IDs returned in dimensionPoints for this context, as a JSON array of strings (\"[\\\"p0001\\\",\\\"p0002\\\"]\") or a comma-separated list. Required with contextId; order is preserved.")] string pointIds = "")
     {
         var json = RunBridge("create_dimension",
             viewId.ToString(CultureInfo.InvariantCulture),
@@ -354,7 +356,9 @@ public static partial class ModelTools
             distance?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             attributesFile,
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-            excludePrefixes, excludeMaterials);
+            excludePrefixes, excludeMaterials,
+            contextId ?? string.Empty,
+            NormalizePointIds(pointIds));
         try
         {
             var doc = JsonDocument.Parse(json);
@@ -372,6 +376,16 @@ public static partial class ModelTools
         {
             return $"Bridge error: {json}";
         }
+    }
+
+    // A string like `points`: array parameters are not bound reliably by this client.
+    private static string NormalizePointIds(string? pointIds)
+    {
+        if (string.IsNullOrWhiteSpace(pointIds)) return string.Empty;
+        var text = pointIds.Trim();
+        if (text.StartsWith("[", StringComparison.Ordinal)) return text;
+        var ids = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return JsonSerializer.Serialize(ids);
     }
 
     [McpServerTool, Description("Place one control diagonal dimension between farthest extreme points of the assembly in the target drawing view. If viewId is omitted, FrontView is preferred, otherwise the largest view is used. Uses real part solid geometry filtered by material type.")]

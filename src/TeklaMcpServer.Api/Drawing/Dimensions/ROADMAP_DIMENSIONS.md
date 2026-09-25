@@ -220,10 +220,12 @@ plan commands or a second creation path as a prerequisite for this increment.
 
 ### 4a. Dimension points as objects, so the assistant does not read coordinates
 
-Proposed direction, not implemented. Reading and choosing points as text is
-costly and error-prone (most of the time per view goes to the assistant picking
-points). The view context should hold the points as objects and answer by
-identifier; code selects, sorts and merges, and the assistant names the intent.
+First slice implemented: the view context now exposes IDs for points already
+present in the four preliminary chains, and `create_dimension` accepts those IDs
+instead of coordinates. This avoids sending coordinates when the caller chooses
+`questions=dimensionPoints`; the existing coordinate query and write contract
+remain available. Contacts, bolts, new geometry sources, automatic point choice,
+and replacing preliminary chains with the ID model are not implemented here.
 
 Model, stored in `ViewDimensionContext`:
 
@@ -264,18 +266,23 @@ Not a graph yet: ordered lines with neighbour distances cover dimensioning.
 Real links (contour adjacency, contact membership) are added only if a query
 needs them.
 
-Small questions the context should answer: points of one side with ids, kinds,
-parents and neighbour distances; the points of the main part; the contact points
-of a named pair; the outer extremes; a ready chain for a side with its computed
-offset. Coordinates stay available on request for checking and debugging, but an
-ordinary run never reads them.
+The implemented question is `dimensionPoints`: points of requested sides with
+IDs, kinds, parent evidence and neighbour distances, without coordinates. The
+existing `points` question still returns coordinates. Future questions may cover
+main-part points, contact points of a named pair, outer extremes, and a ready
+chain with its computed offset; those are not part of this slice.
 
-First slice, limited to the current chains: build the points from what they
-already give (position, part id, kind, extent), reuse the existing chain
-de-duplication, add ids, parents and kinds, and let `create_dimension` take
-`contextId` plus `pointIds`. Coordinates stay a second, mutually exclusive way
-to give points; the existing coordinate input is not changed. Contacts, bolts,
-new geometry kinds and automatic point choice are separate stages.
+First-slice behavior: points are built from the current chains' existing
+supports (2D position, part id, support kind, extent). Exact XY matches share
+one context-local ID across sides; no new tolerance-based merging is applied.
+`get_view_dimension_context(questions=dimensionPoints)` returns the `contextId`
+and ordered point records; `create_dimension` accepts `contextId` plus ordered
+`pointIds`, resolves them in the cached snapshot, checks side membership, and
+preserves the requested order. Coordinates and IDs are mutually exclusive.
+Filters are part of the snapshot and cannot accompany the ID form. A different
+filter scope has its own ID while cached; refresh or a drawing/view switch
+invalidates these IDs. Contacts, bolts, new geometry kinds and automatic point
+choice remain later stages.
 
 Merging by tolerance (the Tekla rule dialog defaults its alignment tolerance to
 50 mm; see the source below) is not enabled automatically: it can glue different supports together. The tolerance is

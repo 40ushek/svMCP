@@ -243,6 +243,8 @@ public sealed class CreateDimensionRequest
 {
     public int ViewId { get; set; }
     public double[] Points { get; set; } = Array.Empty<double>();
+    public string ContextId { get; set; } = string.Empty;
+    public string[] PointIds { get; set; } = Array.Empty<string>();
     public string Direction { get; set; } = "horizontal";
     public double? Distance { get; set; }
     public string AttributesFile { get; set; } = string.Empty;

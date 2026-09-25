@@ -91,9 +91,31 @@ public sealed class ViewDimensionContextProvider
 
     public CreateDimensionResult Create(CreateDimensionRequest request)
     {
+        ViewDimensionContext context;
+        if (request.PointIds.Length > 0 || !string.IsNullOrWhiteSpace(request.ContextId))
+        {
+            if (string.IsNullOrWhiteSpace(request.ContextId) || request.PointIds.Length == 0)
+                throw new ArgumentException("contextId and pointIds must be supplied together");
+            if (request.Points.Length > 0)
+                throw new ArgumentException("Supply either coordinates or contextId with pointIds, not both");
+            if (!string.IsNullOrWhiteSpace(request.ExcludePrefixes) || !string.IsNullOrWhiteSpace(request.ExcludeMaterials))
+                throw new ArgumentException("Exclusion filters are part of contextId; do not pass filters with point ids");
+
+            ObserveActiveDrawing();
+            if (_drawing == null) throw new InvalidOperationException("No drawing is currently open");
+            ObserveView(request.ViewId);
+            context = _contexts.Values.FirstOrDefault(candidate =>
+                StringComparer.Ordinal.Equals(candidate.ContextId, request.ContextId))
+                ?? throw new InvalidOperationException("Unknown or expired contextId; refresh the view context and retry");
+            request.Points = context.ResolvePointIds(request.PointIds, request.Direction);
+        }
+        else
+        {
+            context = request.Distance.HasValue ? null! : Get(request.ViewId, request.ExcludePrefixes, request.ExcludeMaterials);
+        }
+
         var placement = request.Distance.HasValue ? null
-            : Get(request.ViewId, request.ExcludePrefixes, request.ExcludeMaterials)
-                .Calculate(request.Direction, request.Points, request.PaperGapMm);
+            : context.Calculate(request.Direction, request.Points, request.PaperGapMm);
         var distance = request.Distance ?? placement!.Distance;
         var result = _write(request, distance);
         result.DistanceUsed = distance;

@@ -25,9 +25,11 @@ public sealed class ViewDimensionContext
     private readonly int[] _contactModelIds;
     private readonly IReadOnlyList<UnreadPart> _contactSelectionUnread;
     private ViewContactsSnapshot? _contacts;
+    private DimensionPointCatalog? _dimensionPointCatalog;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
+    public string ContextId { get; } = "ctx_" + Guid.NewGuid().ToString("N");
 
     /// <summary>Returns an isolated copy of a captured part solid, or null when it was not read.</summary>
     public PartSolidGeometryInViewResult? GetPartSolidGeometry(int modelId) =>
@@ -103,11 +105,12 @@ public sealed class ViewDimensionContext
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null)
     {
         var requested = Split(questions);
-        var allowed = new[] { "points", "edges", "parts", "scale", "placement", "contacts", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "edges", "parts", "scale", "placement", "contacts", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, edges, parts, scale, placement, contacts or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, edges, parts, scale, placement, contacts or all");
         var selected = ParseSides(sides);
-        bool Wants(string q) => requested.Contains("all") || requested.Contains(q);
+        bool Wants(string q) => requested.Contains(q) ||
+            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints");
         var result = Header(shortAnswer: true);
         if (requested.Contains("contacts"))
         {
@@ -119,7 +122,7 @@ public sealed class ViewDimensionContext
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
-        if (Wants("points"))
+        if (Wants("points") || requested.Contains("dimensionpoints"))
         {
             try { EnsureChains(); }
             catch (InvalidOperationException ex)
@@ -130,6 +133,8 @@ public sealed class ViewDimensionContext
                 return Freeze(result, display: true);
             }
         }
+        if (requested.Contains("dimensionpoints"))
+            result["dimensionPoints"] = GetDimensionPointCatalog().Project(selected);
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
                 var row = new Dictionary<string, object?> { ["side"] = side.ToString() };
@@ -150,6 +155,15 @@ public sealed class ViewDimensionContext
 
     internal int[] ContactModelIds => _contactModelIds;
     internal IReadOnlyList<UnreadPart> ContactSelectionUnread => _contactSelectionUnread;
+
+    internal double[] ResolvePointIds(IEnumerable<string> pointIds, string direction)
+    {
+        EnsureChains();
+        return GetDimensionPointCatalog().Resolve(pointIds, ParseSide(direction));
+    }
+
+    private DimensionPointCatalog GetDimensionPointCatalog() =>
+        _dimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);
 
     private static object ContactSummary(ViewContactCandidatePointsResult result) => new {
         scope = "all-depth-visible",
@@ -193,7 +207,7 @@ public sealed class ViewDimensionContext
     private Dictionary<string, object?> Header(bool shortAnswer = false)
     {
         var result = new Dictionary<string, object?> {
-            ["success"] = true, ["viewId"] = ViewId, ["isComplete"] = _complete,
+            ["success"] = true, ["viewId"] = ViewId, ["contextId"] = ContextId, ["isComplete"] = _complete,
             ["exclusions"] = _exclusions,
             ["projectionVerification"] = "full-solid projection; section clipping is not verified"
         };

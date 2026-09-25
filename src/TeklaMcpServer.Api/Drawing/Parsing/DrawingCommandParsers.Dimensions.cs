@@ -10,7 +10,7 @@ public static partial class DrawingCommandParsers
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
         {
-            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials]");
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson-or-empty> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials] [contextId] [pointIdsJson]");
         }
 
         var pointsJson = args.Length > 2 ? args[2] : "[]";
@@ -33,20 +33,49 @@ public static partial class DrawingCommandParsers
         if (distance.HasValue && paperGapMm.HasValue)
             return CreateDimensionParseResult.Fail("Specify either distance or paperGapMm, not both");
 
+        var contextId = args.Length > 9 ? args[9].Trim() : string.Empty;
+        var pointIdsJson = args.Length > 10 ? args[10] : string.Empty;
+        var hasContextId = contextId.Length > 0;
+        var hasPointIds = !string.IsNullOrWhiteSpace(pointIdsJson);
+        if (hasContextId != hasPointIds)
+            return CreateDimensionParseResult.Fail("contextId and pointIdsJson must be supplied together");
+
         double[] points;
+        string[] pointIds = Array.Empty<string>();
         try
         {
-            points = JsonSerializer.Deserialize<double[]>(pointsJson) ?? Array.Empty<double>();
+            points = string.IsNullOrWhiteSpace(pointsJson)
+                ? Array.Empty<double>()
+                : JsonSerializer.Deserialize<double[]>(pointsJson) ?? Array.Empty<double>();
         }
         catch
         {
             return CreateDimensionParseResult.Fail("pointsJson must be a JSON array of numbers");
         }
 
+        if (hasContextId)
+        {
+            try { pointIds = JsonSerializer.Deserialize<string[]>(pointIdsJson) ?? Array.Empty<string>(); }
+            catch { return CreateDimensionParseResult.Fail("pointIdsJson must be a JSON array of strings"); }
+            if (pointIds.Length < 2 || pointIds.Any(string.IsNullOrWhiteSpace))
+                return CreateDimensionParseResult.Fail("pointIdsJson must contain at least two non-empty point ids");
+            if (points.Length > 0)
+                return CreateDimensionParseResult.Fail("Supply either pointsJson or contextId with pointIdsJson, not both");
+            if ((args.Length > 7 && !string.IsNullOrWhiteSpace(args[7])) ||
+                (args.Length > 8 && !string.IsNullOrWhiteSpace(args[8])))
+                return CreateDimensionParseResult.Fail("excludePrefixes/excludeMaterials are part of contextId; do not pass filters with point ids");
+        }
+        else if (points.Length == 0)
+        {
+            return CreateDimensionParseResult.Fail("Supply pointsJson or contextId with pointIdsJson");
+        }
+
         return CreateDimensionParseResult.Success(new CreateDimensionRequest
         {
             ViewId = viewId,
             Points = points,
+            ContextId = contextId,
+            PointIds = pointIds,
             Direction = direction,
             Distance = distance,
             AttributesFile = attributesFile,

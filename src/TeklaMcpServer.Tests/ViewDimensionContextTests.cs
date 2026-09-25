@@ -149,6 +149,133 @@ public sealed class ViewDimensionContextTests
     }
 
     [Fact]
+    public void DimensionPointQueryReturnsContextScopedIdsWithoutCoordinatesAndSharesCornerIds()
+    {
+        var json = Context().Query("dimensionPoints");
+        var contextId = json.GetProperty("contextId").GetString();
+        Assert.StartsWith("ctx_", contextId);
+
+        var sides = json.GetProperty("dimensionPoints").GetProperty("sides").EnumerateArray().ToArray();
+        Assert.Equal(4, sides.Length);
+        var allIds = new List<string>();
+        foreach (var side in sides)
+        {
+            var points = side.GetProperty("points").EnumerateArray().ToArray();
+            Assert.True(points.Length >= 2);
+            foreach (var point in points)
+            {
+                Assert.True(point.TryGetProperty("pointId", out _));
+                Assert.False(point.TryGetProperty("x", out _));
+                Assert.False(point.TryGetProperty("y", out _));
+                Assert.True(point.TryGetProperty("kinds", out _));
+                Assert.True(point.TryGetProperty("parents", out _));
+                allIds.Add(point.GetProperty("pointId").GetString()!);
+            }
+        }
+
+        Assert.True(allIds.Count > allIds.Distinct(StringComparer.Ordinal).Count());
+        Assert.False(Context().Query("all").TryGetProperty("dimensionPoints", out _));
+    }
+
+    [Fact]
+    public void CreateResolvesIdsFromTheirCachedContextAndPreservesRequestedOrder()
+    {
+        var reads = 0;
+        double[]? writtenPoints = null;
+        var provider = new ViewDimensionContextProvider(() => "drawing-a",
+            (id, filters) => { reads++; return Context(id, filters); }, () => { },
+            (request, distance) => {
+                writtenPoints = request.Points;
+                Assert.Equal(12, distance);
+                return new() { Created = true };
+            });
+        var context = provider.Get(7);
+        var side = context.Query("dimensionPoints", "Top").GetProperty("dimensionPoints")
+            .GetProperty("sides")[0].GetProperty("points");
+        var idPoints = side.EnumerateArray().Take(2).ToArray();
+        var coordinates = context.Query("points", "Top").GetProperty("sides")[0].GetProperty("points")
+            .EnumerateArray().Take(2).ToArray();
+        var ids = idPoints.Reverse().Select(p => p.GetProperty("pointId").GetString()!).ToArray();
+
+        Assert.True(provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = ids, Direction = "horizontal", Distance = 12
+        }).Created);
+
+        Assert.Equal(1, reads);
+        var expected = coordinates.Reverse().SelectMany(p => new[] {
+            p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble(), 0d
+        });
+        Assert.Equal(expected, writtenPoints);
+    }
+
+    [Fact]
+    public void CreateRejectsExpiredContextUnknownIdsWrongSideAndCoordinateMix()
+    {
+        var provider = new ViewDimensionContextProvider(() => "drawing-a",
+            (id, filters) => Context(id, filters), () => { }, (_, _) => new() { Created = true });
+        var context = provider.Get(7);
+        var ids = context.Query("dimensionPoints", "Top").GetProperty("dimensionPoints")
+            .GetProperty("sides")[0].GetProperty("points").EnumerateArray()
+            .Select(p => p.GetProperty("pointId").GetString()!).Take(2).ToArray();
+
+        Assert.Throws<InvalidOperationException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = "ctx_expired", PointIds = ids, Direction = "horizontal", Distance = 10
+        }));
+        Assert.Throws<ArgumentException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = ids, Points = [1, 2, 0], Direction = "horizontal", Distance = 10
+        }));
+        Assert.Throws<ArgumentException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = [ids[0], "unknown"], Direction = "horizontal", Distance = 10
+        }));
+        Assert.Throws<ArgumentException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = [ids[0], ids[0]], Direction = "horizontal", Distance = 10
+        }));
+
+        var refreshContext = provider.Get(7, refresh: true);
+        Assert.NotEqual(context.ContextId, refreshContext.ContextId);
+        Assert.Throws<InvalidOperationException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = ids, Direction = "horizontal", Distance = 10
+        }));
+    }
+
+    [Fact]
+    public void DifferentFilterSnapshotsKeepIndependentContextIdsUntilRefresh()
+    {
+        var written = new List<double[]>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a",
+            (id, filters) => Context(id, filters), () => { },
+            (request, _) => { written.Add(request.Points); return new() { Created = true }; });
+        var unfiltered = provider.Get(7);
+        var filtered = provider.Get(7, "R");
+        Assert.NotEqual(unfiltered.ContextId, filtered.ContextId);
+        var ids = unfiltered.Query("dimensionPoints", "Top").GetProperty("dimensionPoints")
+            .GetProperty("sides")[0].GetProperty("points").EnumerateArray()
+            .Select(p => p.GetProperty("pointId").GetString()!).Take(2).ToArray();
+
+        Assert.True(provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = unfiltered.ContextId, PointIds = ids, Direction = "horizontal", Distance = 10
+        }).Created);
+        Assert.Single(written);
+    }
+
+    [Fact]
+    public void CreateDimensionParserAcceptsOnlyOneOfCoordinatesOrContextPointIds()
+    {
+        var byId = DrawingCommandParsers.ParseCreateDimensionRequest(
+            ["create_dimension", "7", "", "horizontal", "10", "standard", "", "", "", "ctx_abc", "[\"p0001\",\"p0002\"]"]);
+        Assert.True(byId.IsValid, byId.Error);
+        Assert.Equal(new[] { "p0001", "p0002" }, byId.Request.PointIds);
+
+        var withFilters = DrawingCommandParsers.ParseCreateDimensionRequest(
+            ["create_dimension", "7", "", "horizontal", "10", "standard", "", "R", "", "ctx_abc", "[\"p0001\",\"p0002\"]"]);
+        Assert.False(withFilters.IsValid);
+
+        var both = DrawingCommandParsers.ParseCreateDimensionRequest(
+            ["create_dimension", "7", "[0,0,0,1,0,0]", "horizontal", "10", "standard", "", "", "", "ctx_abc", "[\"p0001\",\"p0002\"]"]);
+        Assert.False(both.IsValid);
+    }
+
+    [Fact]
     public void SolidGeometryIsStoredAsAnIsolatedSnapshotAndMissingPartsReturnNull()
     {
         var context = Context();
