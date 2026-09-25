@@ -17,4 +17,10 @@ public static class DimensionPlacementSettings
     /// It sits above the 0.2-2 mm staircase of a polygonised rolled-profile radius.
     /// </summary>
     public const double MinimumChainSegmentViewUnits = 3.0;
+
+    /// <summary>
+    /// Section-preview positions closer than this on paper are represented by one
+    /// candidate and reported as merged. Separate from the model-unit segment cutoff.
+    /// </summary>
+    public const double SectionReadabilityGapPaperMm = 0.5;
 }

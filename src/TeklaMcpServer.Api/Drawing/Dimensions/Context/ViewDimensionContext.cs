@@ -28,6 +28,7 @@ public sealed class ViewDimensionContext
     private DimensionPointCatalog? _dimensionPointCatalog;
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
+    private readonly int[] _includedModelIds;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
@@ -53,6 +54,7 @@ public sealed class ViewDimensionContext
         _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
             outline.Outline.PartSolidGeometries.ToDictionary(pair => pair.Key, pair => pair.Value));
         _mainPartIds = outline.Included.Where(p => p.IsMainPart).Select(p => p.ModelId).ToArray();
+        _includedModelIds = outline.Included.Select(p => p.ModelId).Distinct().ToArray();
         // A part that was never classified could be the main part: count it as unresolved.
         _mainPartUnresolvedIds = outline.Included.Concat(outline.Excluded)
             .Where(p => !p.IsMainPartKnown).Concat(outline.Unclassified).Select(p => p.ModelId).Distinct().ToArray();
@@ -146,12 +148,43 @@ public sealed class ViewDimensionContext
         {
             var refusal = ChainPreviewRefusal();
             var detailed = requested.Contains("chaindetails");
+            var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+            var section = viewType is "SectionView" or "EndView";
+            SectionDimensionChainPreview? sectionPreview = null;
+            if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
+                    GetDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
+                    DimensionPlacementSettings.MinimumChainSegmentViewUnits, Scale,
+                    out sectionPreview, out var profileReason))
+                refusal = profileReason;
+            if (section)
+            {
+                result["sectionProjectionVerification"] = "provisional: full-solid projection is not clipped to section depth; check every retained point against this view";
+                result["readabilityGapPaperMm"] = DimensionPlacementSettings.SectionReadabilityGapPaperMm;
+                result["sectionPreviewStatus"] = refusal == null ? "provisional" : "refused";
+            }
+            var sectionPlans = section && refusal == null
+                ? ((DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide))).ToDictionary(
+                    side => side, side => sectionPreview!.Build(side))
+                : null;
+            if (sectionPlans != null)
+            {
+                var secondary = sectionPreview!.SecondaryIds;
+                result["unlocatedXModelIds"] = secondary.Except(sectionPlans[DimensionChainSide.Top].LocatedPartIds
+                    .Concat(sectionPlans[DimensionChainSide.Bottom].LocatedPartIds)).ToArray();
+                result["unlocatedYModelIds"] = secondary.Except(sectionPlans[DimensionChainSide.Left].LocatedPartIds
+                    .Concat(sectionPlans[DimensionChainSide.Right].LocatedPartIds)).ToArray();
+            }
+            else if (section)
+            {
+                result["unlocatedXModelIds"] = _includedModelIds.Except(_mainPartIds).ToArray();
+                result["unlocatedYModelIds"] = _includedModelIds.Except(_mainPartIds).ToArray();
+            }
             result["chainPreview"] = selected.Select(side => new {
                 side = side.ToString(),
                 chains = (refusal != null
-                    ? DimensionChainPreview.Refused(side, refusal)
-                    : DimensionChainPreview.Build(GetDimensionPointCatalog(), side, _mainPartIds,
-                        DimensionPlacementSettings.MinimumChainSegmentViewUnits))
+                    ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
+                    : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetDimensionPointCatalog(), side,
+                        _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits))
                     .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
             }).ToArray();
         }
@@ -179,9 +212,6 @@ public sealed class ViewDimensionContext
     // The preview stops instead of guessing when its assumptions do not hold.
     private string? ChainPreviewRefusal()
     {
-        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
-        if (viewType is "SectionView" or "EndView")
-            return $"the chain preview does not cover a {viewType}; it needs the section/end-view check";
         if (_mainPartUnresolvedIds.Length > 0)
             return "the main part could not be resolved for some parts";
         if (_mainPartIds.Length != 1)

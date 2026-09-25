@@ -122,11 +122,91 @@ public sealed class DimensionChainPreviewTests
     [Theory]
     [InlineData("SectionView")]
     [InlineData("EndView")]
-    public void SectionAndEndViewsAreRefused(string viewType)
+    public void SectionAndEndViewsReturnProvisionalChains(string viewType)
     {
-        var chain = Chain(Context(rightHalfHeight: 68, viewType: viewType), "Bottom", "location");
-        Assert.Equal(0, chain.GetProperty("pointIds").GetArrayLength());
-        Assert.Contains(viewType, chain.GetProperty("note").GetString());
+        var context = Context(rightHalfHeight: 68, viewType: viewType);
+        var response = context.Query("chain", "Bottom");
+        Assert.Contains("provisional", response.GetProperty("sectionProjectionVerification").GetString());
+        Assert.Equal(0.5, response.GetProperty("readabilityGapPaperMm").GetDouble());
+        Assert.Equal(2, Chain(context, "Bottom", "profile").GetProperty("pointIds").GetArrayLength());
+    }
+
+    [Fact]
+    public void IProfileUsesActualFlangeAndWebEdges()
+    {
+        var context = ISectionContext();
+        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(Chain(context, "Top", "profile")));
+        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(Chain(context, "Left", "profile")));
+        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
+        Assert.Empty(context.Query("chain").GetProperty("unlocatedYModelIds").EnumerateArray());
+    }
+
+    [Fact]
+    public void RoundedIProfileKeepsTheStraightFlangeAndWebLevels()
+    {
+        var context = ISectionContext(roundedMain: true);
+        Assert.Equal(new[] { 70d, 20d, 70d }, Segments(Chain(context, "Top", "profile")));
+        Assert.Equal(new[] { 10d, 180d, 10d }, Segments(Chain(context, "Left", "profile")));
+    }
+
+    [Fact]
+    public void EndPlateIsLocatedByItsTwoOuterFacesAndTheMainProfileEdges()
+    {
+        var context = ISectionContext(endPlate: true, viewType: "EndView");
+        Assert.Equal(new[] { 50d, 160d, 50d }, Segments(Chain(context, "Bottom", "location")));
+        Assert.Equal(new[] { 70d, 200d, 70d }, Segments(Chain(context, "Left", "location")));
+        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
+        Assert.Empty(context.Query("chain").GetProperty("unlocatedYModelIds").EnumerateArray());
+    }
+
+    [Fact]
+    public void SectionPreviewIdsResolveToTheReportedDimensionCoordinates()
+    {
+        var context = ISectionContext(endPlate: true, viewType: "EndView");
+        var ids = Chain(context, "Bottom", "location").GetProperty("pointIds")
+            .EnumerateArray().Select(p => p.GetString()!).ToArray();
+        var coordinates = context.ResolvePointIds(ids, "horizontal-down");
+        Assert.Equal(new[] { -130d, -80d, 80d, 130d },
+            Enumerable.Range(0, ids.Length).Select(i => coordinates[i * 3]).ToArray());
+    }
+
+    [Fact]
+    public void UnsupportedSectionProfileRefusesInsteadOfGuessing()
+    {
+        var context = ISectionContext(rakedMain: true);
+        var chain = Chain(context, "Top", "profile");
+        Assert.Empty(chain.GetProperty("pointIds").EnumerateArray());
+        Assert.Contains("profile", chain.GetProperty("note").GetString());
+    }
+
+    [Fact]
+    public void SectionPreviewRefusesAnInvalidScale()
+    {
+        var context = ISectionContext(scale: 0);
+        var response = context.Query("chain", "Top");
+        Assert.Equal("refused", response.GetProperty("sectionPreviewStatus").GetString());
+        Assert.Contains("scale", Chain(context, "Top", "profile").GetProperty("note").GetString());
+    }
+
+    [Fact]
+    public void NearbySectionPartsMergeAtHalfAPaperMillimeterAndAreReported()
+    {
+        var context = ISectionContext(angleShift: 0.14);
+        var top = Chain(context, "Top", "location");
+        Assert.Equal(13, Assert.Single(top.GetProperty("mergedNearbyPartIds").EnumerateArray()).GetInt32());
+        Assert.DoesNotContain(top.GetProperty("segments").EnumerateArray(),
+            segment => Math.Abs(segment.GetDouble() - 0.14) < 0.001);
+        Assert.Empty(context.Query("chain").GetProperty("unlocatedXModelIds").EnumerateArray());
+    }
+
+    [Fact]
+    public void SectionPartsBeyondHalfAPaperMillimeterStaySeparate()
+    {
+        var context = ISectionContext(angleShift: 6);
+        var top = Chain(context, "Top", "location");
+        Assert.False(top.TryGetProperty("mergedNearbyPartIds", out _));
+        Assert.Contains(top.GetProperty("segments").EnumerateArray(),
+            segment => Math.Abs(segment.GetDouble() - 6) < 0.001);
     }
 
     [Fact]
@@ -225,6 +305,39 @@ public sealed class DimensionChainPreviewTests
         context.Query("chain", side).GetProperty("chainPreview").EnumerateArray().Single()
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
+    private static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
+        string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10)
+    {
+        var main = rakedMain
+            ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
+            : roundedMain
+            ? Poly(10, (-80, -100), (80, -100), (80, -90), (20, -90),
+                (10, -80), (10, 80), (20, 90), (80, 90), (80, 100), (-80, 100),
+                (-80, 90), (-20, 90), (-10, 80), (-10, -80), (-20, -90), (-80, -90))
+            : Poly(10, (-80, -100), (80, -100), (80, -90), (10, -90),
+                (10, 90), (80, 90), (80, 100), (-80, 100), (-80, 90),
+                (-10, 90), (-10, -90), (-80, -90));
+        var parts = new Dictionary<int, PartSolidGeometryInViewResult> { [10] = main };
+        var included = new List<PartRoleInView> {
+            new(10, "P10", "P", new PartRoleResult(PartRole.Included, "included", "test"), true)
+        };
+        if (endPlate)
+        {
+            parts.Add(11, Solid(11, -130, 130, -170, 170));
+            included.Add(new PartRoleInView(11, "P11", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        if (angleShift is { } shift)
+        {
+            parts.Add(12, Solid(12, 30, 35, 110, 120));
+            parts.Add(13, Solid(13, 30 + shift, 35 + shift, 110, 120));
+            included.Add(new PartRoleInView(12, "P12", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+            included.Add(new PartRoleInView(13, "P13", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        var outline = TeklaDrawingAssemblyOutlineApi.Build(7, parts.Keys, new Solids(parts));
+        return new ViewDimensionContext(7, scale, new StructuralOutline(outline, included, [], [], [], [], parts.Keys.ToArray()),
+            [], new { drawingGuid = "test" }, new { viewType });
+    }
+
     private static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
         bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false)
@@ -269,7 +382,7 @@ public sealed class DimensionChainPreviewTests
         for (var i = 0; i < points.Length; i++)
             geometry.Solid.Vertices.Add(new PartVertexGeometry { Index = i, Point = [points[i].Item1, points[i].Item2, 0] });
         var face = new PartFaceGeometry { Index = 0, Normal = [0, 0, 1] };
-        face.Loops.Add(new PartLoopGeometry { Index = 0, VertexIndexes = [0, 1, 2, 3] });
+        face.Loops.Add(new PartLoopGeometry { Index = 0, VertexIndexes = Enumerable.Range(0, points.Length).ToList() });
         geometry.Solid.Faces.Add(face);
         return geometry;
     }

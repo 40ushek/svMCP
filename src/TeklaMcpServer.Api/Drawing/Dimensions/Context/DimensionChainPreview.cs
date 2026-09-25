@@ -26,7 +26,8 @@ internal static class DimensionChainPreview
             if (property.Name is "points" or "side") continue;
             if (value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
             if (value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
-                && property.Name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds") continue;
+                && property.Name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds"
+                    or "unlocatedPartIds" or "locatedByProfilePartIds" or "mergedNearbyPartIds") continue;
             // Numbers go through decimal so the answer prints 1088.417, not its binary tail.
             result[property.Name] = value.ValueKind == System.Text.Json.JsonValueKind.Array
                 ? value.EnumerateArray().Select(e => e.ValueKind == System.Text.Json.JsonValueKind.Number

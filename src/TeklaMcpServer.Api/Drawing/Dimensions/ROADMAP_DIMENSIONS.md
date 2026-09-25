@@ -364,16 +364,40 @@ Added after live runs on M.86 (raked girder, sections) and M.81 (column):
   and the solids agree. Other geometry readers (all parts, part points, marks) still
   use the view system and need the same check.
 
-#### 4a, third stage: chain preview for sections and end views (planned)
+#### 4a, third stage: chain preview for sections and end views (provisional)
 
-Today the preview refuses a section or end view, so the assistant picked the points
+Code status after this stage: `chain`/`chainDetails` now return **provisional**
+`profile` and `location` chains on a complete `SectionView`/`EndView` when the
+main part has one recognizable rectangular or I-shaped projected contour.
+The points still come from the context catalog, so `create_dimension` can resolve
+their IDs. Profile levels come from real straight contour edges, not a bounding
+box. The location chain includes the main profile limits and secondary-part
+outer faces; it reports `locatedByProfilePartIds`, `mergedNearbyPartIds`, and
+`offeredOnOtherSidePartIds`. Nearby secondary positions merge below **0.5 mm
+on paper** (the operator's chosen threshold), scaled to view units. The response
+also has `unlocatedXModelIds` / `unlocatedYModelIds`; an empty list means this
+candidate plan accounted for every part on that axis, either by a selected
+point, an exact profile coordinate or an explicitly reported nearby merge.
+It does **not** mean that the drawn section has been verified. The overall is
+suppressed when the location chain spans it; otherwise it remains a manual
+question.
+
+This implementation has synthetic tests only. It has **not** been compared on
+M.86 D/E/F or M.355, and cannot claim their acceptance yet. It still projects
+full solids rather than clipping them to the section depth. Each response says
+`sectionPreviewStatus=provisional` and requires visual verification before any
+dimension write. Unrecognized/multiple main contours refuse with a reason.
+The near-face rib exception is not inferred from a small coordinate gap alone:
+that requires contact or other face evidence and remains open.
+
+Before this stage the preview refused a section or end view, so the assistant picked the points
 by hand from about 50 listed points and skipped a part (the facade angle on section
 E), which made the drawing unmakeable; time and tokens went into that reading.
 The hand-placed sections that were accepted are the acceptance cases: M.86 D (main
 beam with a 430 end plate), E (beam with a small angle), F (beam, two ribs, a gusset,
 two overlapping angles), M.355 section (HEB800, four ribs, two gussets).
 
-Rules to implement, in this order:
+Acceptance rules to finish and verify, in this order:
 
 1. The main part is dimensioned by its profile: across it the flange width with the
    web thickness, along it the height with the flange thicknesses.
