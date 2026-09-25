@@ -424,6 +424,123 @@ while on M.78 the user also wanted the plate's second face (70, 10 mm short of t
 top); options are both faces always, or the second only when it is within 10-20 mm of a
 profile face. The skill still says the assistant picks the points and asks for settings.
 
+#### 4a, fourth stage: chain preview for timber panels (planned)
+
+The steel preview looks for one main part and refuses a panel ("no main part in this
+view"). A wall may still have a main part (a long plate), so absence of a main part is not
+the sign of a panel and the steel preview must not run on one. The mode is chosen
+explicitly: `get_view_dimension_context(questions="chain", ruleSet="panel")`; without
+`ruleSet` the behaviour is unchanged (steel). Which mode to use is read from the drawing
+(name and mark of the drawing, properties of the assembly, e.g. "Timber Wall Zone 0",
+"IW1.1 - 1") and written down in the dimensioning skill as a short mapping, not in code:
+plant conventions live in the skill and settings. The mode is `panel`, not `wall`,
+because panels differ (wall, roof, floor); the first kind implemented is the wall.
+
+First hand run on IW1.1 - 1 (frame of studs T 60x100, a glulam GLB 100x180 on top, a bottom
+plate; exclusions `R,S,M`; the two control diagonals were already on the view). It was
+accepted ("не плохо"). The rules it used, to be turned into code:
+
+- The reference body is every part left after the exclusions; no single member is the base.
+- X chain (Bottom side only; Top repeats it and is dropped): the two extremes, a touching
+  group of parts at an end (doubled post) as its outer face plus the far face of the group,
+  one face (the left) of every regular stud, the inner face of the end group. Result on
+  the panel: 120 / 427.5 / 625 / 625 / 625 / 535 / 120.
+- Y chains (Left and Right, each only if it differs from the other): the lowest face of the
+  frame first (-1278.5 on this panel, the underside of the end posts; the bottom plate
+  T-104 sits above it at -1233.5), the faces of the horizontal members (bottom plate, glulam), the top
+  of the end parts on that side. The right end was taller, so the right chain carried
+  one more segment (45 / 60 / 2227 / 180 / 220).
+- One overall along X, second row below the chain. No overall along Y: the chain sums to it.
+- Witness points use the outermost point of a coordinate (same rule as steel).
+- Control diagonals are not part of the preview (`place_control_diagonals`).
+
+Answer shape: like the section preview, a short list of chains (side, direction, point
+ids, segments). Not decided: openings (both faces bound an opening; none were in the
+panel used), which face of a stud family (left by default), raked tops on roof panels,
+floor joists and battens, sheathing joints, and where the exclusion list `R,S,M`
+comes from (skill for now, a setting later).
+
+Plumbing: new parameter `ruleSet` through the MCP tool, the bridge command and
+`ViewDimensionContext.Query`; a `TimberPanelChainPreview` next to the section preview; tests
+on a synthetic wall with a doubled post, regular studs and a taller end.
+
+Made precise after a review (these are the working definitions for the code):
+
+1. **Choosing the mode.** The caller chooses; the code never guesses. The skill carries the
+   mapping from the drawing's name, mark and assembly properties to `steel` or `panel`;
+   an unknown drawing type makes the skill ask, not pick. Without `ruleSet` the answer is the
+   steel preview, which refuses a panel with its usual note.
+2. **Geometry, in numbers.** A member's box comes from its own points. A member is vertical
+   when its Y extent is larger than its X extent, horizontal otherwise. Two vertical members
+   touch when the gap between their X faces is at most 1 mm and their Y ranges overlap. A
+   run of touching members is a group. An end group is one that reaches the panel's lowest or
+   highest X; its positions are the outer extreme and the far face of the group. An interior
+   group or a single interior stud contributes its left face. Two chains count as the same
+   when they have the same number of positions and every coordinate agrees within 0.5 mm; the
+   second is then dropped. Positions closer than 3 view units are collapsed as in steel.
+   Stated for the fixture: the left end pair (0.04 to 60.04 and 60.04 to 120.04) gives the
+   positions 0.04 and 120.04 and not 60.04; the right end pair gives 2957.54 and 3077.54
+   (the pair starts at 2957.54 and ends at the outer face 3077.54, with 3017.54 left out).
+   Only straight members are classified: an axis-aligned box from axis-aligned edges. A member
+   with a tilted edge (a brace, a raked plate) is not called vertical or horizontal; it is
+   listed as `tiltedPartIds` and left for manual choice, never silently treated as
+   horizontal. Units: the 1 mm for touching, the 0.5 mm for comparing positions and the 3 view
+   units below are coordinates of the view (model millimetres), not paper distances. The
+   short-segment rule is the steel one: an interior segment under 3 view units is dropped,
+   a short first or last segment is kept (the user confirmed that).
+3. **Order and datum.** Every chain runs in ascending coordinate order: X from left to
+   right, Y from bottom to top, so `points[0]` is the lowest coordinate. Distance is measured
+   from that first point. A vertical chain starts at the lowest face of the frame, which is
+   the underside of the wall (-1278.5 in the fixture, not the bottom plate face at -1233.5),
+   so `points[0]` of every Y chain is the point at that coordinate.
+4. **Completeness.** The answer lists every included part that has no position of its own
+   with its reason: `inGroup` (a member of a doubled post, located by the group's faces),
+   `onChainOfOtherSide`, `horizontalByFaces` (a plate or beam located by its Y faces),
+   `droppedShort` (its position was dropped as too close), `tiltedPartIds` (not classified).
+   Every regular stud has its own position, its left face, so there is no separate
+   "in family" reason. A part in no chain and in no list is a defect; a test checks on
+   every fixture that nothing disappears silently.
+   **Contacts decide the doubled post** (user's note). Two studs standing against each other
+   share a side face, and the view's contacts report that as a contact line (kind
+   `FaceToFace`, state `Touching`); they are computed from the captured solids, lazily. A
+   contact confirms a doubled post only when all of these hold: the contact selection is
+   complete (`selectionComplete=true`); both participants are vertical members of the panel;
+   the contact lies on a vertical face, that is its X coordinate is one shared X (not the
+   contact of two end faces, which would lie at one Y) and its Y span is at least half of
+   the shorter member; and that X coincides exactly with an existing position (the rule 4b of
+   the timber rules: contacts choose among positions that exist and never add one). An
+   incomplete or non-matching result proves nothing and the geometric test decides.
+   The geometric test (gap up to 1 mm, Y ranges overlap) is the fallback and the first
+   version. Contacts are requested only when the geometry finds a candidate: at least one
+   pair of vertical members whose X faces are within 1 mm of each other. A wall with only
+   isolated studs never asks for them, so it costs no contact work. Where contact and geometry
+   disagree the answer says so. A gap of 1 to 2 mm has no contact; the threshold settles it.
+5. **Order of work, with routing tests.** (a) the fixture and the failing test from the
+   table below; (b) `ruleSet` through the MCP tool, the bridge and `Query`, with routing
+   tests: no `ruleSet` gives the steel preview, `panel` the panel one, an unknown value is
+   rejected with the allowed values named; (c) `TimberPanelChainPreview`; (d) the skill: the
+   short mapping from drawing name, mark and assembly properties to `steel` or `panel`,
+   and "unknown type: ask"; (e) live check on IW1.1 - 1 and a second wall.
+
+Fixture from the accepted hand run (IW1.1 - 1, view coordinates in mm, exclusions `R,S,M`),
+to be stored with the tests so the code is compared with the live example and not only with
+synthetic walls:
+
+| Part | Role | X range | Y range |
+|---|---|---|---|
+| T-666 (3759265) | end post, left | 0.04 to 60.04 | -1278.5 to 1053.5 |
+| T-666 (3759385) | doubled post, left | 60.04 to 120.04 | -1278.5 to 1053.5 |
+| T-106 (4085631, 3759355, 3759325, 3759295) | studs at 625 spacing, left faces 547.54, 1172.54, 1797.54, 2422.54 | 60 wide | -1173.5 to 1053.5 |
+| T-666 (6987430) | end post, right | 2957.54 to 3017.54 | -1278.5 to 1053.5 |
+| T-105 (3759235) | end post, right, taller | 3017.54 to 3077.54 | -1278.5 to 1453.5 |
+| GLB-2 (3759205) | glulam on top | 0.04 to 3017.54 | 1053.5 to 1233.5 |
+| T-104 (3759175) | bottom plate | 120.04 to 2957.54 | -1233.5 to -1173.5 |
+
+Expected chains: Bottom X positions 0.04, 120.04, 547.54, 1172.54, 1797.54, 2422.54, 2957.54,
+3077.54 (120 / 427.5 / 625 / 625 / 625 / 535 / 120); overall 3077.5; Left Y positions
+-1278.5, -1233.5, -1173.5, 1053.5, 1233.5 (45 / 60 / 2227 / 180); Right Y positions
+-1278.5, -1233.5, -1173.5, 1053.5, 1233.5, 1453.5 (45 / 60 / 2227 / 180 / 220).
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now
