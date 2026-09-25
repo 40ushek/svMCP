@@ -205,3 +205,41 @@ Automatic templates, whole-view planning and batch writes remain later work.
 They require measured benefit and their own coverage/retry validation. Bolts and
 solid clipping retain their separate roadmaps. Do not reintroduce the removed
 plan commands or a second creation path as a prerequisite for this increment.
+
+### 5. Compute contacts from the view snapshot and consolidate MCP reads
+
+Proposed follow-up; not implemented. The context now retains detached solid DTOs,
+so a contact graph can be built lazily from those values without another Tekla
+solid read for parts already captured. Cache the contact result in the same
+snapshot and keep its completeness/errors separate from outline completeness.
+
+First define the contact selection scope. The context's solids currently cover
+parts included by its structural exclusion filters. `get_contact_candidate_points`
+currently searches all depth-selected parts by default, or a supplied `modelIds`
+subset. Replacing it directly with the current context would silently omit
+excluded parts. Either make the context query explicitly use its structural
+scope, or add a separately named all-depth-visible scope which reads and retains
+the additional solids. Record the memory and solid-read cost; do not silently
+change existing contact results or reintroduce parts the caller intentionally
+excluded.
+
+After scope is fixed, expose contact shapes/candidate points through
+`get_view_dimension_context`; expose the constrained-axis summary from
+`get_part_degrees_of_freedom` there as a separate optional question. Preserve
+participant IDs, contact/shape kinds and states, unresolved pairs, unread parts,
+depth exclusions and completeness. Contact calculation is lazy: ordinary
+dimension requests do not build a pairwise graph.
+
+Keep `get_contact_candidate_points` and `get_part_degrees_of_freedom` until the
+context answers have been compared against them for the same scope on tests and
+authorized live views. Preserve the contact debug-drawing capability (currently
+the `draw` option) through a debug tool or an explicitly retained command. Only
+then decide whether to remove the old MCP tools.
+
+Acceptance: for a declared scope, old and context paths return equivalent
+participant pairs, contact shapes/states, candidate points, degrees of freedom
+and incomplete-selection diagnostics; captured parts cause no additional Tekla
+solid reads; excluded parts cannot silently enter or disappear from the result.
+Measure the elapsed time of the first contact query on a heavy view, including
+solid reads and graph construction, to judge whether lazy on-demand calculation
+is acceptably fast.
