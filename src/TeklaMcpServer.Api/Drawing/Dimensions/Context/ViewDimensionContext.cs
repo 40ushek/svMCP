@@ -160,6 +160,15 @@ public sealed class ViewDimensionContext
                 ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get())
                 : null;
+            if (panelPlans != null)
+            {
+                var diagnostics = new Dictionary<string, object?> { ["contactStatus"] = panelPlans.ContactStatus };
+                if (panelPlans.ContactFallbackPairs.Length > 0) diagnostics["contactFallbackPairs"] = panelPlans.ContactFallbackPairs;
+                if (panelPlans.UnlocatedModelIds.Length > 0) diagnostics["unlocatedModelIds"] = panelPlans.UnlocatedModelIds;
+                if (panelPlans.MissingSupportModelIds.Length > 0) diagnostics["missingSupportModelIds"] = panelPlans.MissingSupportModelIds;
+                if (panelPlans.TiltedPartIds.Length > 0) diagnostics["tiltedPartIds"] = panelPlans.TiltedPartIds;
+                result["chainDiagnostics"] = diagnostics;
+            }
             SectionDimensionChainPreview? sectionPreview = null;
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
                     GetDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
@@ -206,7 +215,7 @@ public sealed class ViewDimensionContext
             result["chainPreview"] = selected.Select(side => new {
                 side = side.ToString(),
                 chains = panelPlans != null
-                    ? panelPlans.Where(row => StringComparer.Ordinal.Equals(row.side, side.ToString()))
+                    ? panelPlans.Rows.Where(row => StringComparer.Ordinal.Equals(row.side, side.ToString()))
                         .SelectMany(row => row.chains)
                         .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
                     : (refusal != null

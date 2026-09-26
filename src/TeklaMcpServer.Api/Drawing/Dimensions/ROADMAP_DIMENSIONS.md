@@ -550,9 +550,59 @@ synthetic walls:
 | T-104 (3759175) | bottom plate | 120.04 to 2957.54 | -1233.5 to -1173.5 |
 
 Expected chains: Bottom X positions 0.04, 120.04, 547.54, 1172.54, 1797.54, 2422.54, 2957.54,
-3077.54 (120 / 427.5 / 625 / 625 / 625 / 535 / 120); overall 3077.5; Left Y positions
--1278.5, -1233.5, -1173.5, 1053.5, 1233.5 (45 / 60 / 2227 / 180); Right Y positions
--1278.5, -1233.5, -1173.5, 1053.5, 1233.5, 1453.5 (45 / 60 / 2227 / 180 / 220).
+3077.54 (120 / 427.5 / 625 / 625 / 625 / 535 / 120); overall 3077.5; Y positions (rule 1 applied
+after the hand run: one face per horizontal member, so the 60 mm of the bottom plate and the
+180 mm of the glulam are not positions): Right -1278.5, -1233.5, 1233.5, 1453.5 (45 / 2467 / 220);
+Left is contained in Right and is not printed (rule 7). The hand-placed chains of the first run
+(Left 45 / 60 / 2227 / 180, Right 45 / 60 / 2227 / 180 / 220) are superseded.
+
+Live findings on panels after the first implementation (walls IW1.1 - 1, IW1.3 - 1, IW1.5 - 1
+and the frame RE.1 - 1, all timber, `ruleSet=panel`). What worked and what the preview still
+gets wrong, all confirmed on the drawings:
+
+- IW1.1 - 1 and IW1.5 - 1 came out complete and equal to the hand-placed chains (18 to 21 s and
+  about 3 to 5k tokens per drawing).
+- **Rule 1 of the timber rules is missing in the Y chains.** `BuildY` adds both faces of every
+  horizontal member (`MinY` and `MaxY`), so a 60 mm member gives two positions 60 apart. The
+  plant keeps one face, the span between two faces of one part being its own size: the lower
+  face of an interior member, the outer face of the top and the bottom plate. On IW1.3 the
+  Left chain went from 10 to 6 points and the Right from 12 to 7 (hand edit by the user), on
+  RE.1 - 1 from 10 to 5 (0 / 615 / 1230 / 1845 / 2445). The data carries the evidence
+  (`partExtentAlongChain: 60`).
+- **Rule 7 covers only equal chains.** A chain whose positions are all contained in another
+  (IW1.3: the Bottom chain inside the Top one) is not dropped, only an identical one is.
+- **`BuildX` refuses when it finds no end group** and reports every part as unlocated. On
+  RE.1 - 1 the leftmost members start at -41.97 with tilted corners, no end group matches the
+  panel edge, the answer is empty, and 25 parts are listed as "no support". The support test
+  is also too strict: the point catalog puts each point on the nearer of Top and Bottom, so a
+  stud of an upper row has points only on Top, while the columns repeat at the same X in every
+  row. The Bottom list of RE.1 - 1 does carry the column faces (164.955, 1360.555, 2523.158,
+  3814.955). The user's chain there was -42, 165, 1360.6, 2523.2, 3815, 4054.8.
+- **Fix decided:** when no end group is found, take the panel edges as the extreme positions and
+  the left face of every column of studs, one column (one X across all rows) being one
+  position; map each position to the side line by its coordinate, not by the owner part. The
+  support check becomes "a point exists at this X on this side", so a stud row that lies on
+  the other side no longer makes the part "unlocated".
+- **Answer size:** the contact fallback pairs, the unlocated and missing lists are repeated in
+  every chain of the answer (about half of the 2.7 KB on IW1.3). Print them once in the header.
+- Contacts: the pair of the doubled post is confirmed by a real contact (a vertical segment
+  at X 60.04, 2332 long) but the comparison with the position is exact and the contact reports
+  60.03999 and 60.0401. The tolerance for that comparison is 0.001 mm (measured difference
+  0.0001); until it is added every doubled post falls back to the geometric test.
+- **Implementation status (2026-09-25):** `BuildY` now selects one Y face per horizontal
+  member (outer face of the lowest/highest horizontal member, lower face for an intermediate
+  member); strict position containment suppresses the redundant side chain; `BuildX` falls
+  back to panel extremes plus column left faces when an end group is missing, matching points
+  by coordinate; the contact tolerance is 0.001; shared diagnostics are emitted once as
+  `chainDiagnostics`. This is code status only: the RE.1 - 1 and IW1.3 live fixtures below
+  have not yet been rerun against this implementation.
+- Not covered and not started: top views and sections of panels ("FrontView/BackView only");
+  the section of RE.1 - 1 is left undimensioned on the user's decision. Openings are still unseen
+  in a real panel.
+- Expected results for the tests: RE.1 - 1 view 4220 Bottom -42 / 165 / 1360.6 / 2523.2 / 3815 /
+  4054.8, Left 0 / 615 / 1230 / 1845 / 2445 (615 / 615 / 615 / 600), Right the same Y as Left;
+  IW1.3 view 4485 Left 6 points (-1388.5, -1343.5, -691.5, 906.5, 1063.5, 1343.5) and Right 7
+  (1343.5, 1063.5, 906.5, 588.5, -691.5, -1343.5, -1388.5).
 
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 

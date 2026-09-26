@@ -169,8 +169,7 @@ public sealed class ViewDimensionContextTests
     public void PanelRuleSetRoutesChainQuestionToTimberPreview()
     {
         var result = Context().Query("chainDetails", "Bottom", ruleSet: "panel");
-        var chain = result.GetProperty("chainPreview")[0].GetProperty("chains")[0];
-        Assert.Equal("not-requested", chain.GetProperty("contactStatus").GetString());
+        Assert.Equal("not-requested", result.GetProperty("chainDiagnostics").GetProperty("contactStatus").GetString());
     }
 
     [Fact]
