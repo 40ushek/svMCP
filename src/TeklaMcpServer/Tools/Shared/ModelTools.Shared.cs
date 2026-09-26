@@ -1,47 +1,16 @@
 using ModelContextProtocol.Server;
 using System.Diagnostics;
 using System.Linq;
-using System.Reflection;
 using System.Text.Json;
+using SvMcp.Bridge;
 
 namespace TeklaMcpServer.Tools;
 
 [McpServerToolType]
 public static partial class ModelTools
 {
-    private static readonly string BridgePath = ResolveBridgePath();
-    private static readonly PersistentBridge Bridge = new(
-        BridgePath,
-        Path.GetDirectoryName(BridgePath) ?? AppContext.BaseDirectory,
-        ["--loop"]);
-
-    static ModelTools()
-    {
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => Bridge.Dispose();
-    }
-
-    private static string ResolveBridgePath()
-    {
-        // For TS2025+: TeklaBridge must run from the Tekla extensions folder so that
-        // Tekla-generated (or manually created) exe.config loads installed DLLs with
-        // the correct channel name (FileVersion 2025.0.52577.0 instead of NuGet 2025.0.0.0).
-        var teklaBase = @"C:\TeklaStructures";
-        if (Directory.Exists(teklaBase))
-        {
-            var extensionsBridge = Directory.GetDirectories(teklaBase)
-                .Where(d => Version.TryParse(Path.GetFileName(d), out var v) && v.Major >= 2025)
-                .OrderByDescending(d => Version.Parse(Path.GetFileName(d)))
-                .Select(d => Path.Combine(d, "Environments", "common", "extensions", "svMCP", "TeklaBridge.exe"))
-                .FirstOrDefault(File.Exists);
-            if (extensionsBridge != null)
-                return extensionsBridge;
-        }
-
-        return Path.Combine(
-            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!,
-            "bridge",
-            "TeklaBridge.exe");
-    }
+    private static readonly string BridgePath = BridgePathResolver.Resolve(AppContext.BaseDirectory);
+    private static readonly BridgeControllerClient Bridge = new();
 
     private static string RunBridge(params string[] args)
     {
@@ -63,7 +32,7 @@ public static partial class ModelTools
         try
         {
             var timeout = ResolveBridgeResponseTimeout(command);
-            var result = Bridge.SendWithTimeout(command, args.Skip(1).ToArray(), timeout);
+            var result = Bridge.Execute(command, args.Skip(1).ToArray(), timeout);
             PerfTrace.Write("mcp", command, total.ElapsedMilliseconds, $"ok=true args={Math.Max(0, args.Length - 1)} timeoutMs={timeout.TotalMilliseconds} resultBytes={result.Length}");
             return result;
         }

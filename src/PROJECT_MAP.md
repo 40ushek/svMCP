@@ -285,6 +285,9 @@ cases/<category>/<drawing_guid>/
   - roadmap модуля марок
 - `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`
   - генерация чертежей
+- `TeklaBridge/ROADMAP_TRAY_CONTROL.md`
+  - отдельный план tray-интерфейса, управления жизненным циклом TeklaBridge,
+    локального IPC и интеграции с MCP-сервером
 
 По состоянию кода:
 
@@ -338,3 +341,4 @@ cases/<category>/<drawing_guid>/
 - `TeklaMcpServer.Api/Drawing/ROADMAP_REFACTOR_LARGE_FILES.md`
 - `TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`
 - `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`
+- `TeklaBridge/ROADMAP_TRAY_CONTROL.md`

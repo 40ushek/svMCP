@@ -48,6 +48,45 @@ internal sealed class PersistentBridge : IDisposable
     public string SendWithTimeout(string command, string[] args, TimeSpan responseTimeout)
         => SendCore(command, args, responseTimeout);
 
+    internal bool IsRunning
+    {
+        get
+        {
+            var process = _process;
+            if (process == null)
+                return false;
+
+            try { return !process.HasExited; }
+            catch (ObjectDisposedException) { return false; }
+            catch (InvalidOperationException) { return false; }
+        }
+    }
+
+    internal void Start()
+    {
+        _lock.Wait();
+        try { EnsureStarted(); }
+        finally { _lock.Release(); }
+    }
+
+    internal void Stop()
+    {
+        _lock.Wait();
+        try { KillProcess(); }
+        finally { _lock.Release(); }
+    }
+
+    internal void Restart()
+    {
+        _lock.Wait();
+        try
+        {
+            KillProcess();
+            EnsureStarted();
+        }
+        finally { _lock.Release(); }
+    }
+
     private string SendCore(string command, string[] args, TimeSpan? responseTimeout)
     {
         var total = Stopwatch.StartNew();
@@ -110,7 +149,18 @@ internal sealed class PersistentBridge : IDisposable
                 command,
                 total.ElapsedMilliseconds,
                 $"ok=false waitMs={wait.ElapsedMilliseconds} timeoutMs={effectiveResponseTimeout.TotalMilliseconds.ToString(CultureInfo.InvariantCulture)} errorType={ex.GetType().Name} message={ex.Message}");
-            KillProcess();
+            try
+            {
+                KillProcess();
+            }
+            catch (Exception cleanupException)
+            {
+                PerfTrace.Write(
+                    "transport",
+                    command + "_cleanup",
+                    total.ElapsedMilliseconds,
+                    $"ok=false errorType={cleanupException.GetType().Name} message={cleanupException.Message}");
+            }
             throw;
         }
         finally
@@ -121,7 +171,7 @@ internal sealed class PersistentBridge : IDisposable
 
     public void Dispose()
     {
-        KillProcess();
+        Stop();
         _lock.Dispose();
     }
 
@@ -184,10 +234,30 @@ internal sealed class PersistentBridge : IDisposable
 
     private void KillProcess()
     {
+        var process = _process;
+        if (process != null && !HasExited(process))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (HasExited(process))
+            {
+                // It exited between the HasExited check and Kill call.
+            }
+
+            if (!process.WaitForExit(TimeSpan.FromSeconds(10)) && !HasExited(process))
+                throw new TimeoutException("TeklaBridge did not exit within 10 seconds after the stop request.");
+        }
+
+        if (process != null && !HasExited(process))
+            throw new TimeoutException("TeklaBridge is still running; its files may still be in use.");
+
         try
         {
-            if (_process is { HasExited: false })
-                _process.Kill(entireProcessTree: true);
+            _stdin?.Dispose();
+            _stdout?.Dispose();
+            _stderr?.Dispose();
         }
         catch
         {
@@ -195,22 +265,24 @@ internal sealed class PersistentBridge : IDisposable
 
         try
         {
-            _stdin?.Dispose();
-            _stdout?.Dispose();
-            _stderr?.Dispose();
-            _process?.Dispose();
-        }
-        catch
-        {
+            process?.Dispose();
         }
         finally
         {
+            if (ReferenceEquals(_process, process))
+                _process = null;
             _stdin = null;
             _stdout = null;
             _stderr = null;
             _stderrDrainTask = null;
-            _process = null;
         }
+    }
+
+    private static bool HasExited(Process process)
+    {
+        try { return process.HasExited; }
+        catch (ObjectDisposedException) { return true; }
+        catch (InvalidOperationException) { return true; }
     }
 
     private static bool ShouldRestartAfterPayload(string payload)

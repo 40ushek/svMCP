@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.14.36930.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer", "TeklaMcpServer\TeklaMcpServer.csproj", "{17FC0E21-E60E-4FEC-95FC-EC40B22A3407}"
+	ProjectSection(ProjectDependencies) = postProject
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901} = {7AABB318-D54E-42E5-BEC3-8D7E23055901}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Api", "TeklaMcpServer.Api\TeklaMcpServer.Api.csproj", "{D7099ED8-4E60-4D01-BF0F-0C10AA674C5A}"
 EndProject
@@ -12,6 +15,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Tests", "TeklaMcpServer.Tests\TeklaMcpServer.Tests.csproj", "{A3C3F2E4-6E3B-4F7B-B1E3-9D1C9F4A36D7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaMcpServer.Host", "TeklaMcpServer.Host\TeklaMcpServer.Host.csproj", "{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TeklaBridge.Controller", "TeklaBridge.Controller\TeklaBridge.Controller.csproj", "{7AABB318-D54E-42E5-BEC3-8D7E23055901}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -83,6 +88,18 @@ Global
 		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x64.Build.0 = Release|Any CPU
 		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x86.ActiveCfg = Release|Any CPU
 		{4FB2BE9C-DF92-46B8-A18E-A18D739DF964}.Release|x86.Build.0 = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|x64.Build.0 = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Debug|x86.Build.0 = Debug|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|x64.ActiveCfg = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|x64.Build.0 = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|x86.ActiveCfg = Release|Any CPU
+		{7AABB318-D54E-42E5-BEC3-8D7E23055901}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\BridgePathResolver.cs" Link="Shared\BridgePathResolver.cs" />
+    <Compile Include="..\Shared\BridgeControllerProtocol.cs" Link="Shared\BridgeControllerProtocol.cs" />
+    <Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+    <Compile Include="..\TeklaMcpServer\Tools\Shared\PersistentBridge.cs" Link="Bridge\PersistentBridge.cs" />
+    <Compile Include="..\TeklaMcpServer\Tools\Shared\PerfTrace.cs" Link="Bridge\PerfTrace.cs" />
+  </ItemGroup>
+</Project>

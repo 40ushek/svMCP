@@ -7,8 +7,10 @@
 		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
-	<ItemGroup>
-		<Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+  <ItemGroup>
+    <Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+    <Compile Include="..\Shared\BridgePathResolver.cs" Link="Shared\BridgePathResolver.cs" />
+    <Compile Include="..\Shared\BridgeControllerProtocol.cs" Link="Shared\BridgeControllerProtocol.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -18,13 +20,26 @@
 	</ItemGroup>
 
 	<!-- Build TeklaBridge (net48) and copy to our output directory -->
-	<Target Name="BuildAndCopyTeklaBridge" AfterTargets="Build">
+  <Target Name="BuildAndCopyTeklaBridge" AfterTargets="Build">
 		<MSBuild Projects="$(MSBuildThisFileDirectory)..\TeklaBridge\TeklaBridge.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
 		<ItemGroup>
 			<BridgeFiles Include="$(MSBuildThisFileDirectory)..\TeklaBridge\bin\$(Configuration)\net48\*.*" />
 		</ItemGroup>
 		<!-- Copy to bridge\ subdirectory to avoid DLL version conflicts with net8 server -->
 		<Copy SourceFiles="@(BridgeFiles)" DestinationFolder="$(OutputPath)bridge\" SkipUnchangedFiles="true" />
-	</Target>
+  </Target>
+
+  <Target Name="BuildAndCopyBridgeController" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\TeklaBridge.Controller\TeklaBridge.Controller.csproj" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <PropertyGroup>
+      <ControllerOutputDir>$(MSBuildThisFileDirectory)..\TeklaBridge.Controller\bin\$(Configuration)\net8.0-windows\</ControllerOutputDir>
+      <ControllerDeployDir>$(OutputPath)controller\</ControllerDeployDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(ControllerDeployDir)" />
+    <ItemGroup>
+      <ControllerFiles Include="$(ControllerOutputDir)*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ControllerFiles)" DestinationFolder="$(ControllerDeployDir)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
