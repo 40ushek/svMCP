@@ -1,13 +1,23 @@
 # Dimensions Roadmap
 
-Updated 2026-09-25. This file is the active work order. Steps 1-3 have source
+Updated 2026-09-26. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
-explicit rule-set selection; the timber preview still needs live validation.
-Contact candidate reuse is implemented, with the
-remaining comparison and performance gates listed in step 5.
+explicit rule-set selection. Timber-wall live findings are recorded below; the latest
+fixes still need repeat live validation. The first two rule transfers in step 4b
+are complete; the next development step is incremental transfer of another current
+rule without changing its behavior. Contact candidate reuse is implemented, with
+the remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
+
+- **Next development step: continue 4b.** Overall dimensions and timber-panel part
+  location now use the common rule executor. Transfer one more current rule from a
+  different preview domain, preserving its existing output and routing.
+- **Open live acceptance for the latest panel fixes:** rerun RE.1 - 1 and IW1.3
+  against the implementation described below, and check the latest outline/extreme
+  selection changes on the relevant panel cases. Earlier successful hand runs and
+  live observations do not establish acceptance of later code changes.
 
 - Persistent `ViewDimensionContextProvider` shares frozen, filter-specific
   geometry between chain reads, short context queries and automatic creation.
@@ -32,15 +42,16 @@ remaining comparison and performance gates listed in step 5.
   write verification before deleting an original. Missing presentation,
   shortened views and ambiguous bases do not count as a match and do not alone
   reject the stored-value-verified write.
-- Next: deploy on an authorized test drawing, validate four sides and 1:5/1:10,
+- Open placement/write acceptance: deploy on an authorized test drawing, validate
+  four sides and 1:5/1:10,
   ambiguous bases and shortened views, then measure full-task time and response
   size on the agreed cases. No live speedup or placement guarantee is claimed.
   Trace events count context builds/hits, not individual solid reads.
 - Contact live comparison on M.505 matched the old command: 52 points, 9 parts,
   matching participant pairs, anchor keys and contact states; no unread,
-  unflattened or unresolved items. Separate first-query timing, an excluded-part
-  case, full contact-shape output and degrees-of-freedom equivalence remain open
-  (see step 5).
+  unflattened or unresolved items. First-query timings and a full-exclusion case
+  are recorded in step 5. Partial exclusions, full contact-shape output,
+  degrees-of-freedom equivalence and larger-view measurements remain open.
 [The archive](ROADMAP_DIMENSIONS_ARCHIVE_2026-09-24.md) preserves the previous
 roadmap, measurements, rejected proposals and longer-term ideas. Its work orders
 do not compete with this one.
@@ -604,50 +615,138 @@ gets wrong, all confirmed on the drawings:
   IW1.3 view 4485 Left 6 points (-1388.5, -1343.5, -691.5, 906.5, 1063.5, 1343.5) and Right 7
   (1343.5, 1063.5, 906.5, 588.5, -691.5, -1343.5, -1388.5).
 
-#### 4b. Step aside: rule classes and settings classes (planned, discussion)
+#### 4b. Extract an extensible rule architecture (in progress)
 
-The rules are now spread over two preview classes (`SectionDimensionChainPreview`,
-`TimberPanelChainPreview`), the thresholds are constants in them (touching 1 mm, abutting
-2 mm, position comparison 0.5 mm, minimum segment 3 view units, coincidence tolerance
-0.001 mm of a contact), and the plant conventions live in the skill (excluded prefixes
-`R,S,M`, one overall per drawing). Two live findings show the cost: the same 1 mm
-mismatch of an extreme had to be fixed in `BuildX` twice (Bottom, then Top), and the
-same rules (one face per member, contained chains, outline vertices) are needed in steel
-and in panels and exist as copies. The proposal, agreed in principle by the user
-("должны быть классы настроек и классы правил"), modelled on how Tekla does it:
+First slice implemented (2026-09-26): `IDimensionRule`, `DimensionRuleContext`,
+`DimensionRuleResult` and `DimensionRuleSet` establish the initial boundaries.
+`OverallDimensionRule` receives `OverallDimensionSettings`; the panel preview
+adapts its results to the existing chain response. Geometry is reused and the
+Tekla write path is unchanged. The initial extraction passed all four existing
+panel preview tests before adding the requested vertical extension.
 
-Tekla (checked in the user assistance, "Dimensioning rule properties"): a rule is a set of
-settings for **one dimension type**; a rule made for overall dimensions is valid for overall
-dimensions only; rules are chosen per view and saved as named settings files (`standard`).
-Groups inside a rule: *what is dimensioned* (overall, **edge shape** (the perimeter of the
-object), secondary parts, holes, recesses, distance to grid, filter, neighbour parts);
-*line locations and linking* (Top, Bottom, Left, Right, corner linking); *measure from*
-(assembly, main part, part name, filter, current part, none; bounding box, nearest edge,
-grid, midpoint); *combine on one line* (all, by name, by position number, no); numbers
-(tolerance for alignment, default 50 mm; minimum length, default 0; hole minimum; close lines;
-dimension to both ends or centre; dimension properties file). Our rules keep selecting
-positions by geometry, not by Tekla's categories, which the user saw work badly on complex
-assemblies; only the mechanics and the structure are taken.
+The panel defaults now propose horizontal overall on Bottom and vertical overall
+on Right, both in the second row. The former preserves its existing side-specific
+extreme selection; the latter uses the full panel MinY/MaxY. Missing catalog
+supports produce an empty proposal with a reason, never invented point IDs or a
+shorter height. Both directions can be disabled independently and their sides
+selected through the internal settings (no new MCP settings parameter or file UI).
+This user-requested extension supersedes the earlier horizontal-only / no-Y-overall
+policy recorded in the historical panel examples below step 4a.
 
-Proposed structure:
+Validation: API and test projects build. Build warnings remain in existing
+dependency/layout and test-analyzer code. The updated assembly has not been
+deployed or checked on a live drawing.
 
-- **Settings classes**, one per group, with a file per rule set (steel, panel, later roof,
-  floor): tolerances and thresholds (touching, abutting, comparison, minimum segment,
-  readability in paper mm, contact coincidence), sides and the free side, which face of a
-  family, exclusions by prefix and material, one overall per drawing and where, line offsets.
-- **Rule classes**, one per dimension type, like Tekla: overall; **outline shape** (every
-  vertex of the panel polygon, "edge shape" in Tekla's words, the user's requirement for a
-  trapezoid); part location (studs, groups of touching studs, plates); openings; one face
-  per horizontal member. A **rule set** is a list of rule classes plus its settings; the
-  view or drawing type chooses the set (the skill reads the drawing's name and mark).
-- Shared steps (contained chain dropped, outermost point of a position, extremes from the
-  half of the panel on the chain's side, groups by contact) live once in the rule classes
-  and are reused by both sets; a new panel kind is a new set and a settings file.
+Architecture boundary update (2026-09-26): the common `DimensionRuleResult` no
+longer contains a required Top/Bottom/Left/Right side. It carries a normalized
+view-plane direction and a separate placement intent. The current outside-outline
+placement and four-side preview response are handled by the overall rule and an
+axis-aligned compatibility adapter. The general context accepts detached rule
+points without requiring a four-side catalog; the current catalog is one provider.
+Each point carries extensible source evidence (`objectKind`, object id, geometry id
+and optional feature metadata), so future bolt, bolt-group, rebar and rebar-group
+providers do not change the executor contract. No reads or rules for those objects
+were added. Targeted validation now passes 31 panel-preview and view-context tests,
+including an inclined direction and future object-source kinds.
 
-Open: where the settings files live (next to the bridge, or in the model's settings),
-who edits them (the user or only the code), how a settings file is versioned, and how the
-existing constants map onto it without changing any current result (the tests of both
-previews are the regression fixture).
+Second rule transfer completed (2026-09-26): timber-panel part-location calculation
+now implements the same `IDimensionRule` contract and executes in one ordered rule
+set with `OverallDimensionRule`. `TimberPanelPartLocationSettings` owns the minimum
+segment setting, while `TimberPanelPartLocationInput` supplies the captured group,
+selected part IDs and lazy contact access. The rule returns four location proposals
+and one evaluation-level diagnostic set. The result evidence retains point roles,
+part ownership, dropped short parts and incomplete status so the compatibility
+adapter produces the unchanged preview response.
+
+This transfer exposed a real contract requirement: diagnostics belong to one rule
+evaluation rather than every chain. `DimensionRuleEvaluation` therefore contains
+the proposed chains and a single diagnostic dictionary; `DimensionRuleSet` combines
+evaluations and rejects duplicate diagnostic names. Geometry and lazy contacts are
+still reused from the captured context. Targeted validation after the transfer
+passes the same 31 panel-preview and view-context tests. No live Tekla check or
+deployment was performed.
+
+Goal: separate settings, rule calculation and writing dimensions to Tekla while
+preserving the current behavior. Existing preview classes combine these decisions
+and repeat some operations; extract boundaries from the working code rather than
+trying to anticipate every future dimension type.
+
+Tekla's dimensioning system is a source of examples only. Matching its internal
+architecture, rule classification or settings file format is not a requirement.
+The architecture must allow rules to evolve as actual drawing cases reveal needs.
+
+Architectural scope clarified by the user (2026-09-26): chains may follow an
+inclined face/edge and may lie inside an assembly. Top/Bottom/Left/Right and
+placement outside the outline describe the current rules, not all dimensions.
+
+- Keep chain direction separate from line placement. A future chain can have an
+  arbitrary direction in the view plane, with a reference and offset locating its
+  dimension line; neither property must be inferred solely from a cardinal side.
+- Keep the dimensioned geometry (assembly, part, face/edge, bolt or bolt group,
+  reinforcing bar or reinforcement group) separate from where
+  the dimension line is placed. Interior supports and interior lines are valid
+  future cases; an outer-outline gap is a placement policy for applicable rules.
+- Point provenance must be able to identify these object kinds and their relevant
+  geometric references. A part contour or part ID alone is not a universal source
+  contract. Add access to bolt/reinforcement geometry when an actual rule needs it;
+  existing rules must not trigger those reads merely because the context supports
+  additional object kinds.
+- Ordered points and the actual first point remain explicit, including for inclined
+  chains. Ascending X/Y ordering is a convention of current axis-aligned rules,
+  not a universal ordering requirement.
+- The current `DimensionRuleResult.Side`, side-indexed point catalog and context's
+  side-extreme helper are limitations of the first implementation. Do not make
+  them mandatory assumptions of the general executor or future rule contracts.
+  Revisit these boundaries as rules are transferred; direction/placement metadata
+  must be able to extend the result without rewriting every rule.
+
+Inclined and interior-chain calculation, bolt/reinforcement rule integration,
+placement and live validation are deferred in this architecture step.
+This is a constraint on the architecture now, not a request to implement those
+features or design all their settings in advance.
+
+Minimum boundaries:
+
+- **Settings:** parameters used by a rule; no geometry calculation. Initially keep
+  current values and units. No settings-file infrastructure is required for this step.
+- **Context:** access to the existing captured view geometry, point catalog and lazy
+  contacts. Reuse the current snapshot and its completeness/identity checks.
+- **Rule:** calculate a proposed result from the context and its settings, without
+  creating or modifying dimensions in Tekla.
+- **Result:** proposed dimension chains and enough evidence to retain current
+  coverage and unresolved-case diagnostics.
+- **Rule set:** the configured rules and their execution order.
+- **Tekla writing:** use the existing creation and verification path to apply the
+  selected result; preserve its failure handling and compensation boundaries.
+
+These are responsibilities, not a fixed list of classes or interfaces. Refine the
+concrete contracts while transferring existing logic. Extract shared operations
+when the transferred rules demonstrate a common need.
+
+Order of work:
+
+1. Select one small existing rule and its reference cases; record its current
+   output. Transfer its calculation and settings through the minimum boundaries.
+2. **Done:** transfer timber-panel part location. This added evaluation-level
+   diagnostics while preserving its response, point order and lazy contacts.
+3. **Next:** move another current rule from a different preview domain incrementally,
+   preserving existing
+   steel/panel routing and behavior. Keep behavioral fixes separate from extraction.
+
+Acceptance:
+
+- Existing reference cases produce the same chains, ordered points and diagnostics.
+- Geometry is reused; extracting rules does not introduce repeated geometry reads.
+- Existing write checks, correction and failure recovery remain in place.
+- A further rule can be added with its settings and connected to a rule set without
+  changing the shared execution or Tekla writing mechanism for that addition.
+- Latest panel fixes still have the separate live acceptance gates listed above;
+  passing extraction checks does not close those gates.
+
+Deferred until concrete needs justify them: an exhaustive catalog of rule classes,
+settings file format/location/versioning/editor, and support for roofs, floors,
+openings or other cases not yet established by the current implementation and
+reference drawings. These decisions must not block the first rule transfers.
 
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 

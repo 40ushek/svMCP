@@ -44,6 +44,17 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Empty(right.RootElement.GetProperty("segments").EnumerateArray());
         Assert.Contains("covered by Left", right.RootElement.GetProperty("note").GetString());
         Assert.Equal("overall", Read(rows.Single(r => r.side == "Bottom").chains[1]).RootElement.GetProperty("kind").GetString());
+        var width = Read(rows.Single(r => r.side == "Bottom").chains[1]).RootElement;
+        Assert.Equal(3077.5, width.GetProperty("segments")[0].GetDouble());
+        var height = Read(rows.Single(r => r.side == "Right").chains[1]).RootElement;
+        Assert.Equal("overall", height.GetProperty("kind").GetString());
+        Assert.Equal("second", height.GetProperty("row").GetString());
+        Assert.Equal(2732d, height.GetProperty("segments")[0].GetDouble());
+        var heightPoints = height.GetProperty("pointIds").EnumerateArray()
+            .Select(id => catalog.AllPoints.Single(p => p.Id == id.GetString())).ToArray();
+        Assert.Equal(-1278.5, heightPoints[0].Y);
+        Assert.Equal(1453.5, heightPoints[1].Y);
+
     }
 
     [Fact]
@@ -107,6 +118,100 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Contains(2243.9, Ys("Right"));
         Assert.Contains(-2234.6, Ys("Left"));
         Assert.Contains(-2234.6, Ys("Right"));
+    }
+
+    [Fact]
+    public void OverallDirectionsCanBeDisabledAndSidesSelected()
+    {
+        var shape = Part(1, 0, 200, 0, 500);
+        var group = new GeometryGroup("rectangle", [shape], [shape]);
+        CalcDimensionChains.Apply(group);
+        var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
+        var context = DimensionRuleContext.FromCatalog(catalog, group.Extent!);
+        var settings = new OverallDimensionSettings(horizontalSide: null, verticalSide: DimensionChainSide.Left);
+        var result = Assert.Single(new DimensionRuleSet(new OverallDimensionRule(settings)).Calculate(context).Results);
+        Assert.Equal(DimensionChainSide.Left, AxisAlignedDimensionRulePreviewAdapter.GetSide(result));
+        Assert.Equal(500d, Assert.Single(result.Segments));
+        Assert.Equal(0d, result.Points[0].Y);
+        Assert.Equal(500d, result.Points[1].Y);
+        Assert.Empty(new OverallDimensionRule(new OverallDimensionSettings(null, null)).Calculate(context).Results);
+
+        var top = Assert.Single(new OverallDimensionRule(
+            new OverallDimensionSettings(DimensionChainSide.Top, null)).Calculate(context).Results);
+        Assert.Equal(DimensionChainSide.Top, AxisAlignedDimensionRulePreviewAdapter.GetSide(top));
+        Assert.Equal(200d, Assert.Single(top.Segments));
+
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1], 3, () => null,
+            new OverallDimensionSettings(null, null));
+        Assert.All(preview.Rows, row => Assert.Single(row.chains));
+    }
+
+    [Fact]
+    public void OverallHeightRequiresFullPanelExtremesOnTheSelectedSide()
+    {
+        var boundary = Polygon("boundary", (0, 0), (200, 0), (200, 600), (0, 400));
+        var group = new GeometryGroup("sloped", [boundary], [Part(1, 0, 60, 0, 400), Part(2, 140, 200, 0, 600)]);
+        CalcDimensionChains.Apply(group);
+        var context = DimensionRuleContext.FromCatalog(DimensionPointCatalog.Build(group.DimensionChains!), group.Extent!);
+        var right = Assert.Single(new OverallDimensionRule(new OverallDimensionSettings(null, DimensionChainSide.Right)).Calculate(context).Results);
+        Assert.Null(right.Note);
+        Assert.Equal(600d, Assert.Single(right.Segments));
+        var left = Assert.Single(new OverallDimensionRule(new OverallDimensionSettings(null, DimensionChainSide.Left)).Calculate(context).Results);
+        // This catalog also exposes the high corner on Left; it must still use full height.
+        Assert.Null(left.Note);
+        Assert.Equal(600d, Assert.Single(left.Segments));
+        var shortShape = Part(3, 0, 200, 0, 400);
+        var shortGroup = new GeometryGroup("missing-top", [shortShape], [shortShape]);
+        CalcDimensionChains.Apply(shortGroup);
+        var incompleteContext = DimensionRuleContext.FromCatalog(
+            DimensionPointCatalog.Build(shortGroup.DimensionChains!), group.Extent!);
+        var missing = Assert.Single(new OverallDimensionRule(
+            new OverallDimensionSettings(null, DimensionChainSide.Right)).Calculate(incompleteContext).Results);
+        Assert.NotNull(missing.Note);
+        Assert.Empty(missing.Points);
+        Assert.Empty(missing.Segments);
+    }
+
+    [Fact]
+    public void OverallSettingsRejectSidesForTheWrongAxisAndInvalidTolerance()
+    {
+        Assert.Throws<ArgumentException>(() => new OverallDimensionSettings(DimensionChainSide.Left));
+        Assert.Throws<ArgumentException>(() => new OverallDimensionSettings(null, DimensionChainSide.Top));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OverallDimensionSettings(positionTolerance: double.NaN));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new OverallDimensionSettings(positionTolerance: -1));
+    }
+
+    [Fact]
+    public void RuleResultSupportsInclinedDirectionAndPlacementIndependentOfCardinalSides()
+    {
+        var direction = new DimensionDirection(3, 4);
+        var placement = new OutsideOutlineDimensionPlacement(new DimensionDirection(-4, 3), "first");
+        var result = new DimensionRuleResult(direction, placement, "future-inclined",
+            [new DimensionRulePoint("p1", 10, 20, [])], segments: [25]);
+
+        Assert.Equal(.6, result.Direction.X, 12);
+        Assert.Equal(.8, result.Direction.Y, 12);
+        Assert.Same(placement, result.Placement);
+        Assert.Equal("first", placement.Row);
+        Assert.Throws<NotSupportedException>(() => AxisAlignedDimensionRulePreviewAdapter.GetSide(result));
+    }
+
+    [Fact]
+    public void RulePointSourceAcceptsFutureObjectKindsWithoutChangingTheRuleContract()
+    {
+        var sources = new[] {
+            new DimensionPointSource("bolt", 10, "bolt:10", featureKind: "center"),
+            new DimensionPointSource("bolt-group", 11, "bolt-group:11"),
+            new DimensionPointSource("rebar", 12, "rebar:12", pointIndex: 1),
+            new DimensionPointSource("rebar-group", 13, "rebar-group:13")
+        };
+        var point = new DimensionRulePoint("future", 1, 2, sources);
+        var context = new DimensionRuleContext([point]);
+
+        Assert.Same(point, context.GetPoint("future"));
+        Assert.Equal(new[] { "bolt", "bolt-group", "rebar", "rebar-group" },
+            point.Sources.Select(source => source.ObjectKind));
+        Assert.Null(context.AxisAlignedGeometry);
     }
 
     private static GeometryGroupShape Polygon(string id, params (double X, double Y)[] points) =>

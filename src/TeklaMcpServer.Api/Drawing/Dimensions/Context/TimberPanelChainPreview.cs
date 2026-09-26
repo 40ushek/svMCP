@@ -74,67 +74,115 @@ internal static class TimberPanelChainPreview
 
     public static PreviewResult Build(DimensionPointCatalog catalog, GeometryGroup group,
         IReadOnlyCollection<int> includedIds, double minimumSegment,
-        Func<ViewContactCandidatePointsResult?> getContacts)
+        Func<ViewContactCandidatePointsResult?> getContacts, OverallDimensionSettings? overallSettings = null)
     {
         if (group.Extent == null)
             return new PreviewResult(Rows(side => [Empty(side, "location", "panel outline is empty")]),
                 [], [], [], [], "not-available");
 
-        var members = ReadMembers(group, includedIds);
-        var vertical = members.Where(m => m.Vertical && !m.Tilted).ToArray();
-        var horizontal = members.Where(m => !m.Vertical && !m.Tilted).ToArray();
-        var tiltedIds = members.Where(m => m.Tilted).Select(m => m.Id).ToArray();
-        var unresolvedIds = includedIds.Except(members.Select(m => m.Id)).ToArray();
-        var touching = FindTouchingPairs(vertical);
-        var contacts = touching.Count == 0 ? null : getContacts();
-        var contactCheckComplete = IsContactCheckComplete(contacts);
-        var confirmedPairs = contactCheckComplete ? ConfirmedPairs(contacts!, vertical, catalog) : null;
-        var groups = GroupVerticals(vertical, touching);
-        var contactFallbackPairs = contactCheckComplete
-            ? touching.Where(pair => !confirmedPairs!.Contains(Order(pair.A, pair.B)))
-                .Select(pair => new[] { pair.A, pair.B }).ToArray()
-            : Array.Empty<int[]>();
         var panel = group.Extent;
-        var outline = OutlineVertices(group);
+        var input = new TimberPanelPartLocationInput(group, includedIds, getContacts);
+        var context = DimensionRuleContext.FromCatalog(catalog, panel, input);
+        var evaluation = new DimensionRuleSet(
+            new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment)),
+            new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings())).Calculate(context);
+        var rows = Rows(side => evaluation.Results
+            .Where(result => AxisAlignedDimensionRulePreviewAdapter.GetSide(result) == side)
+            .Select(result => result.Kind == "location" ? Location(result) : AxisAlignedDimensionRulePreviewAdapter.ToPreview(result))
+            .ToArray());
+        return new PreviewResult(rows,
+            (int[][])evaluation.Diagnostics["contactFallbackPairs"],
+            (int[])evaluation.Diagnostics["unlocatedModelIds"],
+            (int[])evaluation.Diagnostics["missingSupportModelIds"],
+            (int[])evaluation.Diagnostics["tiltedPartIds"],
+            (string)evaluation.Diagnostics["contactStatus"]);
+    }
 
-        var bottom = BuildX(catalog, DimensionChainSide.Bottom, groups, vertical, panel, outline, minimumSegment);
-        var top = BuildX(catalog, DimensionChainSide.Top, groups, vertical, panel, outline, minimumSegment);
-        var topContained = CoordinatesContained(top.Coordinates(true), bottom.Coordinates(true));
-        var bottomContained = CoordinatesContained(bottom.Coordinates(true), top.Coordinates(true));
-        var left = BuildY(catalog, DimensionChainSide.Left, vertical, horizontal, groups, outline, minimumSegment);
-        var right = BuildY(catalog, DimensionChainSide.Right, vertical, horizontal, groups, outline, minimumSegment);
-        var leftContained = CoordinatesContained(left.Coordinates(false), right.Coordinates(false));
-        var rightContained = CoordinatesContained(right.Coordinates(false), left.Coordinates(false));
-        var contactStatus = touching.Count == 0 ? "not-requested"
-            : contactCheckComplete && contactFallbackPairs.Length == 0 ? "complete-contact-check"
-            : contactCheckComplete ? "complete-contact-check-geometry-fallback"
-            : "geometry-fallback-contact-result-incomplete";
+    private sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSettings settings) : IDimensionRule
+    {
+        public DimensionRuleEvaluation Calculate(DimensionRuleContext context)
+        {
+            var input = context.Require<TimberPanelPartLocationInput>();
+            var catalog = context.AxisAlignedGeometry?.Points
+                ?? throw new InvalidOperationException("Timber panel location requires axis-aligned snapshot geometry.");
+            var group = input.Group;
+            var panel = group.Extent
+                ?? throw new InvalidOperationException("Timber panel location requires a panel outline.");
+            var members = ReadMembers(group, input.IncludedIds);
+            var vertical = members.Where(m => m.Vertical && !m.Tilted).ToArray();
+            var horizontal = members.Where(m => !m.Vertical && !m.Tilted).ToArray();
+            var tiltedIds = members.Where(m => m.Tilted).Select(m => m.Id).ToArray();
+            var unresolvedIds = input.IncludedIds.Except(members.Select(m => m.Id)).ToArray();
+            var touching = FindTouchingPairs(vertical);
+            var contacts = touching.Count == 0 ? null : input.GetContacts();
+            var contactCheckComplete = IsContactCheckComplete(contacts);
+            var confirmedPairs = contactCheckComplete ? ConfirmedPairs(contacts!, vertical, catalog) : null;
+            var groups = GroupVerticals(vertical, touching);
+            var contactFallbackPairs = contactCheckComplete
+                ? touching.Where(pair => !confirmedPairs!.Contains(Order(pair.A, pair.B)))
+                    .Select(pair => new[] { pair.A, pair.B }).ToArray()
+                : Array.Empty<int[]>();
+            var outline = OutlineVertices(group);
+            var minimumSegment = settings.MinimumSegmentViewUnits;
 
-        var suppressTop = topContained;
-        var suppressBottom = bottomContained && !topContained;
-        var suppressLeft = leftContained && !rightContained;
-        var suppressRight = rightContained;
-        var rows = new[] {
-            new PreviewRow("Bottom", [suppressBottom
-                    ? Empty(DimensionChainSide.Bottom, "location", "all X positions are covered by Top")
-                    : Location(DimensionChainSide.Bottom, bottom, minimumSegment),
-                Overall(DimensionChainSide.Bottom, catalog, panel.MinX, panel.MaxX)]),
-            new PreviewRow("Top", [suppressTop
-                    ? Empty(DimensionChainSide.Top, "location", "all X positions are covered by Bottom")
-                    : Location(DimensionChainSide.Top, top, minimumSegment)]),
-            new PreviewRow("Left", [suppressLeft
-                    ? Empty(DimensionChainSide.Left, "location", "all Y positions are covered by Right")
-                    : Location(DimensionChainSide.Left, left, minimumSegment)]),
-            new PreviewRow("Right", [suppressRight
-                    ? Empty(DimensionChainSide.Right, "location", "all Y positions are covered by Left")
-                    : Location(DimensionChainSide.Right, right, minimumSegment)])
-        };
+            var bottom = BuildX(catalog, DimensionChainSide.Bottom, groups, vertical, panel, outline, minimumSegment);
+            var top = BuildX(catalog, DimensionChainSide.Top, groups, vertical, panel, outline, minimumSegment);
+            var left = BuildY(catalog, DimensionChainSide.Left, vertical, horizontal, groups, outline, minimumSegment);
+            var right = BuildY(catalog, DimensionChainSide.Right, vertical, horizontal, groups, outline, minimumSegment);
+            var topContained = CoordinatesContained(top.Coordinates(true), bottom.Coordinates(true));
+            var bottomContained = CoordinatesContained(bottom.Coordinates(true), top.Coordinates(true));
+            var leftContained = CoordinatesContained(left.Coordinates(false), right.Coordinates(false));
+            var rightContained = CoordinatesContained(right.Coordinates(false), left.Coordinates(false));
 
-        var allChains = new[] { bottom, top, left, right };
-        var allLocated = allChains.SelectMany(chain => chain.LocatedIds).ToHashSet();
-        var allMissing = allChains.SelectMany(chain => chain.MissingIds).Distinct().ToArray();
-        var unlocated = tiltedIds.Concat(unresolvedIds).Concat(allMissing).Except(allLocated).Distinct().ToArray();
-        return new PreviewResult(rows, contactFallbackPairs, unlocated, allMissing, tiltedIds, contactStatus);
+            var results = new[] {
+                Result(context, DimensionChainSide.Bottom, bottom, minimumSegment,
+                    bottomContained && !topContained ? "all X positions are covered by Top" : null),
+                Result(context, DimensionChainSide.Top, top, minimumSegment,
+                    topContained ? "all X positions are covered by Bottom" : null),
+                Result(context, DimensionChainSide.Left, left, minimumSegment,
+                    leftContained && !rightContained ? "all Y positions are covered by Right" : null),
+                Result(context, DimensionChainSide.Right, right, minimumSegment,
+                    rightContained ? "all Y positions are covered by Left" : null)
+            };
+            var allChains = new[] { bottom, top, left, right };
+            var allLocated = allChains.SelectMany(chain => chain.LocatedIds).ToHashSet();
+            var allMissing = allChains.SelectMany(chain => chain.MissingIds).Distinct().ToArray();
+            var unlocated = tiltedIds.Concat(unresolvedIds).Concat(allMissing).Except(allLocated).Distinct().ToArray();
+            var contactStatus = touching.Count == 0 ? "not-requested"
+                : contactCheckComplete && contactFallbackPairs.Length == 0 ? "complete-contact-check"
+                : contactCheckComplete ? "complete-contact-check-geometry-fallback"
+                : "geometry-fallback-contact-result-incomplete";
+            return new DimensionRuleEvaluation(results, new Dictionary<string, object> {
+                ["contactFallbackPairs"] = contactFallbackPairs,
+                ["unlocatedModelIds"] = unlocated,
+                ["missingSupportModelIds"] = allMissing,
+                ["tiltedPartIds"] = tiltedIds,
+                ["contactStatus"] = contactStatus
+            });
+        }
+
+        private static DimensionRuleResult Result(DimensionRuleContext context, DimensionChainSide side,
+            PickedPoint chain, double minimumSegment, string? note)
+        {
+            var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+            var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+            var direction = new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1);
+            var placement = new OutsideOutlineDimensionPlacement(
+                new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), "first");
+            if (note != null) return new DimensionRuleResult(direction, placement, "location", [], note);
+            var coordinates = chain.Coordinates(alongX);
+            var evidence = new Dictionary<string, object> {
+                ["pointPartIds"] = chain.Points.Select(PartIds).ToArray(),
+                ["pointRoles"] = chain.Points.Select((_, index) =>
+                    index == 0 || index == chain.Points.Length - 1 ? "extreme" : "member-face").ToArray(),
+                ["droppedShortPartIds"] = chain.DroppedIds,
+                ["minimumSegmentViewUnits"] = minimumSegment,
+                ["incomplete"] = chain.MissingIds.Length > 0 || chain.Points.Length < 2
+            };
+            return new DimensionRuleResult(direction, placement, "location",
+                chain.Points.Select(point => context.GetPoint(point.Id)),
+                segments: coordinates.Zip(coordinates.Skip(1), (a, b) => Math.Round(b - a, 3)), evidence: evidence);
+        }
     }
 
     private static PreviewRow[] Rows(Func<DimensionChainSide, object[]> chains) =>
@@ -300,40 +348,23 @@ internal static class TimberPanelChainPreview
     }
 
     private static (double Min, double Max) OuterExtremes(DimensionPointCatalog catalog, DimensionChainSide side,
-        bool alongX, double panelMin, double panelMax)
-    {
-        var line = catalog.LinePoints(side);
-        if (line.Count == 0) return (panelMin, panelMax);
-        double Across(DimensionPoint p) => alongX ? p.Y : p.X;
-        var middle = (line.Max(Across) + line.Min(Across)) / 2;
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
-        var half = line.Where(p => outer * (Across(p) - middle) >= -PositionTolerance).ToArray();
-        if (half.Length == 0) return (panelMin, panelMax);
-        return (half.Min(p => Coordinate(p, alongX)), half.Max(p => Coordinate(p, alongX)));
-    }
+        bool alongX, double panelMin, double panelMax) =>
+        AxisAlignedDimensionGeometry.SideExtremes(catalog, side, panelMin, panelMax, PositionTolerance);
 
-    private static object Location(DimensionChainSide side, PickedPoint chain, double minimumSegment)
+    private static object Location(DimensionRuleResult result)
     {
-        var coordinates = chain.Coordinates(side is DimensionChainSide.Top or DimensionChainSide.Bottom);
-        var segments = coordinates.Zip(coordinates.Skip(1), (a, b) => Math.Round(b - a, 3)).ToArray();
+        var side = AxisAlignedDimensionRulePreviewAdapter.GetSide(result);
+        if (result.Note != null) return Empty(side, result.Kind, result.Note);
+        var partIds = (int[][])result.Evidence["pointPartIds"];
+        var roles = (string[])result.Evidence["pointRoles"];
         return new {
-            side = side.ToString(), kind = "location", pointIds = chain.Points.Select(p => p.Id).ToArray(),
-            segments, points = chain.Points.Select((p, i) => new { pointId = p.Id, partIds = PartIds(p), role = i == 0 || i == chain.Points.Length - 1 ? "extreme" : "member-face" }).ToArray(),
-            droppedShortPartIds = chain.DroppedIds,
-            minimumSegmentViewUnits = minimumSegment,
-            incomplete = chain.MissingIds.Length > 0 || chain.Points.Length < 2
+            side = side.ToString(), kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
+            segments = result.Segments,
+            points = result.Points.Select((point, index) => new { pointId = point.Id, partIds = partIds[index], role = roles[index] }).ToArray(),
+            droppedShortPartIds = (int[])result.Evidence["droppedShortPartIds"],
+            minimumSegmentViewUnits = (double)result.Evidence["minimumSegmentViewUnits"],
+            incomplete = (bool)result.Evidence["incomplete"]
         };
-    }
-
-    private static object Overall(DimensionChainSide side, DimensionPointCatalog catalog, double panelMin, double panelMax)
-    {
-        var line = catalog.LinePoints(side);
-        var (min, max) = OuterExtremes(catalog, side, alongX: true, panelMin, panelMax);
-        var outer = side is DimensionChainSide.Top ? 1 : -1;
-        var first = line.Where(p => Math.Abs(p.X - min) <= PositionTolerance).OrderByDescending(p => outer * p.Y).FirstOrDefault();
-        var last = line.Where(p => Math.Abs(p.X - max) <= PositionTolerance).OrderByDescending(p => outer * p.Y).FirstOrDefault();
-        if (first == null || last == null) return Empty(side, "overall", "panel extremes are not supported by existing dimension points");
-        return new { side = side.ToString(), kind = "overall", pointIds = new[] { first.Id, last.Id }, segments = new[] { Math.Round(max - min, 3) }, points = Array.Empty<object>(), row = "second" };
     }
 
     private static object Empty(DimensionChainSide side, string kind, string note) => new {
