@@ -604,6 +604,51 @@ gets wrong, all confirmed on the drawings:
   IW1.3 view 4485 Left 6 points (-1388.5, -1343.5, -691.5, 906.5, 1063.5, 1343.5) and Right 7
   (1343.5, 1063.5, 906.5, 588.5, -691.5, -1343.5, -1388.5).
 
+#### 4b. Step aside: rule classes and settings classes (planned, discussion)
+
+The rules are now spread over two preview classes (`SectionDimensionChainPreview`,
+`TimberPanelChainPreview`), the thresholds are constants in them (touching 1 mm, abutting
+2 mm, position comparison 0.5 mm, minimum segment 3 view units, coincidence tolerance
+0.001 mm of a contact), and the plant conventions live in the skill (excluded prefixes
+`R,S,M`, one overall per drawing). Two live findings show the cost: the same 1 mm
+mismatch of an extreme had to be fixed in `BuildX` twice (Bottom, then Top), and the
+same rules (one face per member, contained chains, outline vertices) are needed in steel
+and in panels and exist as copies. The proposal, agreed in principle by the user
+("должны быть классы настроек и классы правил"), modelled on how Tekla does it:
+
+Tekla (checked in the user assistance, "Dimensioning rule properties"): a rule is a set of
+settings for **one dimension type**; a rule made for overall dimensions is valid for overall
+dimensions only; rules are chosen per view and saved as named settings files (`standard`).
+Groups inside a rule: *what is dimensioned* (overall, **edge shape** (the perimeter of the
+object), secondary parts, holes, recesses, distance to grid, filter, neighbour parts);
+*line locations and linking* (Top, Bottom, Left, Right, corner linking); *measure from*
+(assembly, main part, part name, filter, current part, none; bounding box, nearest edge,
+grid, midpoint); *combine on one line* (all, by name, by position number, no); numbers
+(tolerance for alignment, default 50 mm; minimum length, default 0; hole minimum; close lines;
+dimension to both ends or centre; dimension properties file). Our rules keep selecting
+positions by geometry, not by Tekla's categories, which the user saw work badly on complex
+assemblies; only the mechanics and the structure are taken.
+
+Proposed structure:
+
+- **Settings classes**, one per group, with a file per rule set (steel, panel, later roof,
+  floor): tolerances and thresholds (touching, abutting, comparison, minimum segment,
+  readability in paper mm, contact coincidence), sides and the free side, which face of a
+  family, exclusions by prefix and material, one overall per drawing and where, line offsets.
+- **Rule classes**, one per dimension type, like Tekla: overall; **outline shape** (every
+  vertex of the panel polygon, "edge shape" in Tekla's words, the user's requirement for a
+  trapezoid); part location (studs, groups of touching studs, plates); openings; one face
+  per horizontal member. A **rule set** is a list of rule classes plus its settings; the
+  view or drawing type chooses the set (the skill reads the drawing's name and mark).
+- Shared steps (contained chain dropped, outermost point of a position, extremes from the
+  half of the panel on the chain's side, groups by contact) live once in the rule classes
+  and are reused by both sets; a new panel kind is a new set and a settings file.
+
+Open: where the settings files live (next to the bridge, or in the model's settings),
+who edits them (the user or only the code), how a settings file is versioned, and how the
+existing constants map onto it without changing any current result (the tests of both
+previews are the regression fixture).
+
 ### 5. Compute contacts from the view snapshot and consolidate MCP reads
 
 Partially implemented. `get_view_dimension_context(questions="contacts")` now
