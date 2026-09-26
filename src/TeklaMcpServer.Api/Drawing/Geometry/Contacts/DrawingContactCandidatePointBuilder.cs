@@ -71,7 +71,8 @@ public static class DrawingContactCandidatePointBuilder
             geometry.ViewId, points, geometry.Unflattened, geometry.Unresolved,
             geometry.Unread, geometry.SearchComplete, geometry.Error,
             geometry.Restricted, geometry.RequestedIds, geometry.NotVisibleRequestedIds,
-            geometry.OutsideDepthRequestedIds, geometry.UnresolvedDepthRequestedIds);
+            geometry.OutsideDepthRequestedIds, geometry.UnresolvedDepthRequestedIds,
+            geometry.Shapes);
     }
 
     private static DrawingPartCandidatePoint Candidate(ContactShapeInView shape, int pointIndex)
@@ -141,7 +142,8 @@ public sealed class ViewContactCandidatePointsResult
         IReadOnlyList<int>? requestedIds = null,
         IReadOnlyList<int>? notVisibleRequestedIds = null,
         IReadOnlyList<int>? outsideDepthRequestedIds = null,
-        IReadOnlyList<int>? unresolvedDepthRequestedIds = null)
+        IReadOnlyList<int>? unresolvedDepthRequestedIds = null,
+        IReadOnlyList<ContactShapeInView>? shapes = null)
     {
         ViewId = viewId;
         Points = points;
@@ -155,6 +157,7 @@ public sealed class ViewContactCandidatePointsResult
         NotVisibleRequestedIds = notVisibleRequestedIds ?? Array.Empty<int>();
         OutsideDepthRequestedIds = outsideDepthRequestedIds ?? Array.Empty<int>();
         UnresolvedDepthRequestedIds = unresolvedDepthRequestedIds ?? Array.Empty<int>();
+        Shapes = shapes ?? Array.Empty<ContactShapeInView>();
     }
 
     public int ViewId { get; }
@@ -177,6 +180,9 @@ public sealed class ViewContactCandidatePointsResult
     /// candidate could claim them. The geometry is in here to be looked at, not lost.
     /// </summary>
     public IReadOnlyList<ContactShapeInView> Unresolved { get; }
+
+    /// <summary>Every flattened contact shape, retained for explicit detailed queries.</summary>
+    public IReadOnlyList<ContactShapeInView> Shapes { get; }
 
     /// <summary>Parts the view draws whose geometry never reached the contact search.</summary>
     public IReadOnlyList<UnreadPart> Unread { get; }

@@ -15,7 +15,8 @@ the remaining comparison and performance gates listed in step 5.
   use the common rule executor. The skill already performs final AI selection by
   passing the chosen existing point IDs to `create_dimension`; do not duplicate
   that mechanism. The inactive legacy steel location calculation has been removed.
-  Continue the contact-context comparison and response-size work listed in step 5.
+  The contact response is now compact by default; continue the live comparison and
+  performance gates listed in step 5.
 - **Open live acceptance for the latest panel fixes:** rerun RE.1 - 1 and IW1.3
   against the implementation described below, and check the latest outline/extreme
   selection changes on the relevant panel cases. Earlier successful hand runs and
@@ -834,17 +835,22 @@ Independence from dimension exclusions, checked on M.505 with `excludePrefixes=P
 contacts stayed at 52 points and the same pairs, `exclusionsApplied=false`.
 A partial exclusion (some parts excluded, the rest not) is still not checked.
 
-The `contacts` answer is too large to read: 21 KB for 52 points, 63 KB for 92.
-Adding contact shapes would grow it. Default to a short summary (pairs, counts,
-states) and return points or shapes only on request or for a named pair.
+Compact contact response implemented (2026-09-26): `questions=contacts` now
+returns pair/count/state summaries without point or shape arrays.
+`questions=contactDetails` explicitly returns every retained contact point and
+flattened shape, including `contactId`, shape id, participants, state, kind,
+normal and view-plane points. Supplying `contactPair="id1,id2"` with `contacts`
+returns those details only for the named pair. Resolved shapes are retained in the
+cached contact snapshot, so these modes reuse the same geometry read and contact
+calculation. The API, bridge and MCP server build successfully; 81 focused context,
+contact and tool-contract tests pass. Live answer sizes are not yet remeasured.
 
 The M.48 view returned contact state `Overlap` between a plate and the main part;
 confirm that it is expected.
 
 Still required before considering this complete: compare a view where some parts
-are excluded by dimension rules and others are not; include/compare full contact
-shapes and `contactId` (the context currently returns candidates and unresolved
-shapes, not every shape); expose/compare the constrained-axis summary from
+are excluded by dimension rules and others are not; live-compare the newly exposed
+full contact shapes and `contactId`; expose/compare the constrained-axis summary from
 `get_part_degrees_of_freedom`; measure a view with many parts; and deploy the
 rounding fix to the bridge (the deployed bridge still printed values such as
 `4704.0010000000002`). Only after them decide whether to remove the old MCP tools.

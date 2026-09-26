@@ -111,26 +111,27 @@ public sealed class ViewDimensionContext
     /// <summary>One or several small questions; answers never round or mutate stored points.</summary>
     public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null,
-        string ruleSet = "steel")
+        string ruleSet = "steel", string contactPair = "")
     {
         var requested = Split(questions);
         var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
         if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
         if (normalizedRuleSet is not "steel" and not "panel")
             throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "diagnostics", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts, diagnostics or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts, contactDetails, diagnostics or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
             (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
         var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
         var result = Header(shortAnswer: true, compact: !requested.Contains("diagnostics"));
-        if (requested.Contains("contacts"))
+        if (requested.Contains("contacts") || requested.Contains("contactdetails"))
         {
             if (_contacts == null)
                 throw new InvalidOperationException("Contact snapshot is not attached to this view context");
-            result["contacts"] = ContactSummary(_contacts.Get());
+            var pair = ParseContactPair(contactPair);
+            result["contacts"] = ContactAnswer(_contacts.Get(), requested.Contains("contactdetails") || pair != null, pair);
         }
         if (requested.Contains("placement"))
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
@@ -277,16 +278,45 @@ public sealed class ViewDimensionContext
     private DimensionPointCatalog GetDimensionPointCatalog() =>
         _dimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);
 
-    private static object ContactSummary(ViewContactCandidatePointsResult result) => new {
-        scope = "all-depth-visible",
-        exclusionsApplied = false,
-        success = result.Error == null,
-        isComplete = result.IsComplete,
-        searchComplete = result.SearchComplete,
-        error = result.Error,
-        requestedIds = result.RequestedIds,
-        pointCount = result.Points.Count,
-        points = result.Points.Select(point => new {
+    private static object ContactAnswer(ViewContactCandidatePointsResult result, bool detailed, int[]? pair)
+    {
+        static string PairKey(IEnumerable<int> ids) => string.Join(",", ids.OrderBy(id => id));
+        bool Matches(IEnumerable<int> ids) => pair == null || PairKey(ids) == PairKey(pair);
+
+        var shapes = result.Shapes.Where(shape => shape.Participants.Resolved
+            && Matches(shape.Participants.ModelObjectIds)).ToArray();
+        var points = result.Points.Where(point => Matches(point.ModelObjectIds)).ToArray();
+        var pairs = result.Shapes.Where(shape => shape.Participants.Resolved)
+            .GroupBy(shape => PairKey(shape.Participants.ModelObjectIds), StringComparer.Ordinal)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => new {
+                modelObjectIds = group.First().Participants.ModelObjectIds.OrderBy(id => id).ToArray(),
+                contactCount = group.Select(shape => shape.ContactId).Distinct(StringComparer.Ordinal).Count(),
+                shapeCount = group.Count(),
+                pointCount = result.Points.Count(point => PairKey(point.ModelObjectIds) == group.Key),
+                states = group.Select(shape => shape.State.ToString()).Distinct().OrderBy(state => state).ToArray(),
+                kinds = group.Select(shape => shape.Kind.ToString()).Distinct().OrderBy(kind => kind).ToArray()
+            }).ToArray();
+
+        var answer = new Dictionary<string, object?> {
+            ["scope"] = "all-depth-visible", ["exclusionsApplied"] = false,
+            ["detail"] = detailed ? (pair == null ? "all" : "pair") : "summary",
+            ["success"] = result.Error == null, ["isComplete"] = result.IsComplete,
+            ["searchComplete"] = result.SearchComplete,
+            ["selectionComplete"] = result.SelectionComplete, ["error"] = result.Error,
+            ["requestedIds"] = result.RequestedIds, ["pairCount"] = pairs.Length,
+            ["shapeCount"] = result.Shapes.Count, ["pointCount"] = result.Points.Count,
+            ["pairs"] = pairs
+        };
+        if (result.Unread.Count > 0) answer["unread"] = result.Unread;
+        if (result.Unflattened.Count > 0) answer["unflattened"] = result.Unflattened;
+        if (result.Unresolved.Count > 0) answer["unresolved"] = result.Unresolved;
+        if (!detailed) return answer;
+
+        if (pair != null) answer["modelObjectIds"] = pair;
+        answer["selectedShapeCount"] = shapes.Length;
+        answer["selectedPointCount"] = points.Length;
+        answer["points"] = points.Select(point => new {
             modelObjectIds = point.ModelObjectIds,
             point = point.Point,
             confidence = point.Confidence.ToString(),
@@ -294,11 +324,31 @@ public sealed class ViewDimensionContext
             anchorKey = point.Anchor.Id,
             reason = point.Reason.Code,
             values = point.Reason.Values
-        }).ToArray(),
-        unread = result.Unread,
-        unflattened = result.Unflattened,
-        unresolved = result.Unresolved
-    };
+        }).ToArray();
+        answer["shapes"] = shapes.Select(shape => new {
+            contactId = shape.ContactId,
+            shapeId = shape.ShapeId,
+            modelObjectIds = shape.Participants.ModelObjectIds,
+            contactKind = shape.Kind.ToString(),
+            contactState = shape.State.ToString(),
+            normal = new[] { shape.Normal.X, shape.Normal.Y, shape.Normal.Z },
+            shapeKind = shape.Shape.Kind.ToString(),
+            points = shape.Shape.Points.Select(point => new[] { point.X, point.Y }).ToArray()
+        }).ToArray();
+        return answer;
+    }
+
+    private static int[]? ParseContactPair(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var values = value.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(item => int.TryParse(item.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var id)
+                ? id : throw new ArgumentException("contactPair must contain exactly two integer model IDs"))
+            .Distinct().OrderBy(id => id).ToArray();
+        if (values.Length != 2)
+            throw new ArgumentException("contactPair must contain exactly two distinct model IDs");
+        return values;
+    }
 
     private object[] ShortPoints(DimensionChain chain) => chain.Positions
         .SelectMany(p => p.Supports).GroupBy(s => (s.Point.X, s.Point.Y))

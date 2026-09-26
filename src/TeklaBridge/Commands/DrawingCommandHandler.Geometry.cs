@@ -801,7 +801,8 @@ internal sealed partial class DrawingCommandHandler
                 args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,
                 args.Length > 8 ? args[8] : "horizontal",
                 args.Length > 9 && !string.IsNullOrWhiteSpace(args[9]) ? double.Parse(args[9], CultureInfo.InvariantCulture) : (double?)null,
-                args.Length > 10 ? args[10] : "steel"));
+                args.Length > 10 ? args[10] : "steel",
+                args.Length > 11 ? args[11] : string.Empty));
         }
         catch (Exception ex) { WriteError(ex.Message); }
         return true;

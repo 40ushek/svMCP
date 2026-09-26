@@ -57,10 +57,10 @@ public static partial class ModelTools
             verbose ? "verbose" : "compact", refresh.ToString());
     }
 
-    [McpServerTool, Description("Ask small questions of the captured structural view geometry. Shares its snapshot with get_structural_chain_positions and create_dimension. Source geometry is frozen until refresh or a drawing/view switch; external edits require refresh=true. Use questions=dimensionPoints to get context-scoped point IDs for create_dimension; ordinary points still return coordinates. Use questions=chain for a read-only preview; ruleSet selects steel (default) or panel. It never writes a dimension. Contacts are explicit and lazy; 'all' excludes dimensionPoints, chain and contacts. Full source evidence remains available through get_structural_chain_positions(verbose=true).")]
+    [McpServerTool, Description("Ask small questions of the captured structural view geometry. Shares its snapshot with get_structural_chain_positions and create_dimension. Source geometry is frozen until refresh or a drawing/view switch; external edits require refresh=true. Use questions=dimensionPoints to get context-scoped point IDs for create_dimension; ordinary points still return coordinates. Use questions=chain for a read-only preview; ruleSet selects steel (default) or panel. It never writes a dimension. contacts returns a compact pair/count/state summary; contactDetails returns all contact points and shapes, or pass contactPair with contacts for one pair. Contacts are explicit and lazy; 'all' excludes dimensionPoints, chain and contacts. Full source evidence remains available through get_structural_chain_positions(verbose=true).")]
     public static string GetViewDimensionContext(
         [Description("Drawing view ID")] int viewId,
-        [Description("Comma-separated questions: points, dimensionPoints, chain, edges, parts, scale, placement, contacts, diagnostics, or all. The answer header lists only what is non-empty; ask diagnostics for the full header. dimensionPoints returns point IDs without coordinates; chain previews standard chains; contacts, dimensionPoints and chain are opt-in and excluded from 'all'.")] string questions = "points,edges,scale",
+        [Description("Comma-separated questions: points, dimensionPoints, chain, edges, parts, scale, placement, contacts, contactDetails, diagnostics, or all. contacts is compact; contactDetails includes points and shapes. The answer header lists only what is non-empty; ask diagnostics for the full header. dimensionPoints returns point IDs without coordinates; chain previews standard chains; contact questions, dimensionPoints and chain are opt-in and excluded from 'all'.")] string questions = "points,edges,scale",
         [Description("Top,Bottom,Left,Right or all")] string sides = "all",
         [Description("Same excluded prefixes as create_dimension")] string excludePrefixes = "",
         [Description("Same excluded material substrings as create_dimension")] string excludeMaterials = "",
@@ -68,12 +68,14 @@ public static partial class ModelTools
         [Description("Flat XYZ JSON array, only for a placement question")] string points = "",
         [Description("Offset direction for a placement question")] string direction = "horizontal",
         [Description("Optional paper gap for a placement question, default 8 mm")] double? paperGapMm = null,
-        [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel")
+        [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel",
+        [Description("Optional two model IDs, for example 123,456. With contacts, returns detailed points and shapes only for this pair.")] string contactPair = "")
     {
         return RunBridge("get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
             questions, sides, excludePrefixes, excludeMaterials, refresh.ToString(), points, direction,
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
-            string.IsNullOrWhiteSpace(ruleSet) ? "steel" : ruleSet);
+            string.IsNullOrWhiteSpace(ruleSet) ? "steel" : ruleSet,
+            contactPair ?? string.Empty);
     }
 
     [McpServerTool, Description(
