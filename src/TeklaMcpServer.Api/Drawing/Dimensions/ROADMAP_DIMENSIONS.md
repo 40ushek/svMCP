@@ -4,16 +4,19 @@ Updated 2026-09-26. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
-fixes still need repeat live validation. The first two rule transfers in step 4b
-are complete; the next development step is incremental transfer of another current
-rule without changing its behavior. Contact candidate reuse is implemented, with
+fixes still need repeat live validation. Five rule transfers in step 4b are
+complete; the next development step is cleanup of the inactive duplicated steel
+location implementation without changing behavior. Contact candidate reuse is implemented, with
 the remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
 
-- **Next development step: continue 4b.** Overall dimensions and timber-panel part
-  location now use the common rule executor. Transfer one more current rule from a
-  different preview domain, preserving its existing output and routing.
+- **Next development step: finish 4b cleanup.** Overall dimensions,
+  timber-panel part location, section profile/location and steel part location now
+  use the common rule executor. The skill already performs final AI selection by
+  passing the chosen existing point IDs to `create_dimension`; do not duplicate
+  that mechanism. Remove the inactive legacy steel location calculation left in
+  `DimensionChainPreview` after confirming the extracted path preserves behavior.
 - **Open live acceptance for the latest panel fixes:** rerun RE.1 - 1 and IW1.3
   against the implementation described below, and check the latest outline/extreme
   selection changes on the relevant panel cases. Earlier successful hand runs and
@@ -666,6 +669,45 @@ still reused from the captured context. Targeted validation after the transfer
 passes the same 31 panel-preview and view-context tests. No live Tekla check or
 deployment was performed.
 
+Third rule transfer completed (2026-09-26): the verified rectangular/I-profile
+face selection in `SectionDimensionChainPreview` is now
+`SectionProfileDimensionRule`. Its immutable input contains the already verified
+main-part id and X/Y profile levels; its settings contain the current side and
+coordinate tolerance. It runs through `DimensionRuleSet`, returns the shared
+direction/placement/result contract, and the existing section preview consumes
+those points for its unchanged location and merged-chain calculations. The rule
+context is created once per section preview and reused for every requested side.
+The API project builds successfully. Existing dependency and nullable warnings
+remain; automated and live Tekla checks were not run in this transfer.
+
+Fourth rule transfer completed (2026-09-26): section part location is now
+`SectionPartLocationRule`. It consumes the preceding profile proposal, preserves
+side ownership, profile-located parts, readable-gap merging and located-part
+evidence, and feeds the unchanged section consolidation calculation. To support
+this real dependency, `DimensionRuleSet` now executes rules in order and supplies
+accumulated proposals through `DimensionRuleContext.PriorResults`; it still reuses
+the same detached points, geometry adapter and captured inputs. Independent rules
+ignore prior results. The API project builds successfully. Existing dependency and
+nullable warnings remain; automated and live Tekla checks were not run in this
+transfer.
+
+Fifth rule transfer completed (2026-09-26): the active standard steel location
+path now uses `SteelPartLocationRule`. It preserves point roles and part ownership,
+parts offered on the opposite side, skipped parts and points dropped by the minimum
+segment rule. `DimensionChainPreview` adapts the generic proposal to the existing
+detailed and short response; its overall chain is unchanged. The API project builds
+successfully. Existing dependency and nullable warnings remain; automated and live
+Tekla checks were not run in this transfer.
+
+Selection authority clarified by the user and the project skill (2026-09-26): a
+rule result is a safe base proposal, not the final dimension. The LLM remains
+responsible for the final chain plan and may remove proposed points with an explicit
+drawing reason. It may select only real captured support points and may not invent
+replacement coordinates. The bridge validates and writes the chosen chain, followed
+by read-back verification. This already works through the skill and the existing
+`create_dimension` point-ID input. Do not introduce a second selection or write-plan
+mechanism unless a concrete limitation of that workflow is demonstrated.
+
 Goal: separate settings, rule calculation and writing dimensions to Tekla while
 preserving the current behavior. Existing preview classes combine these decisions
 and repeat some operations; extract boundaries from the working code rather than
@@ -729,9 +771,17 @@ Order of work:
    output. Transfer its calculation and settings through the minimum boundaries.
 2. **Done:** transfer timber-panel part location. This added evaluation-level
    diagnostics while preserving its response, point order and lazy contacts.
-3. **Next:** move another current rule from a different preview domain incrementally,
-   preserving existing
-   steel/panel routing and behavior. Keep behavioral fixes separate from extraction.
+3. **Done:** transfer section-profile point selection from a different preview
+   domain while preserving the existing adapter and downstream merge calculation.
+4. **Done:** transfer section part location using the profile proposal as an input.
+   The executor now supports ordered dependencies without repeating geometry reads.
+5. **Done:** transfer the current steel location rule, including its skipped,
+   opposite-side and dropped-point evidence.
+6. **Next:** after behavioral verification, remove the inactive legacy steel
+   location calculation now duplicated by `SteelPartLocationRule`. Keep the current
+   skill-driven choice of ordered point IDs and the existing `create_dimension`
+   boundary; add no parallel selection mechanism. Keep behavioral fixes separate
+   from extraction.
 
 Acceptance:
 

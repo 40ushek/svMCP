@@ -58,10 +58,35 @@ internal static class DimensionChainPreview
         var overall = alongX == mainAlongX
             ? Overall(side, line, ctx)
             : Empty(side, "overall", "across the main part the location chain already spans the overall");
-        var location = alongX == mainAlongX
-            ? AlongMain(side, line, ctx, minSegmentLength)
-            : AcrossMain(side, line, all, main, mainAlongX, ctx, minSegmentLength);
+        var ruleContext = DimensionRuleContext.FromCatalog(catalog,
+            new SteelPartLocationInput(catalog, mainPartIds));
+        var locationResult = new DimensionRuleSet(new SteelPartLocationRule(
+            new SteelPartLocationSettings(side, minSegmentLength, SameCoordinate)))
+            .Calculate(ruleContext).Results.Single();
+        var location = SteelLocation(side, locationResult);
         return [location, overall];
+    }
+
+    private static object SteelLocation(DimensionChainSide side, DimensionRuleResult result)
+    {
+        var skipped = (int[])result.Evidence["skippedPartIds"];
+        var dropped = (string[])result.Evidence["droppedShortPointIds"];
+        if (result.Note != null)
+            return Empty(side, result.Kind, result.Note, skipped, dropped);
+        var roles = (string[][])result.Evidence["roles"];
+        var partIds = (int[][])result.Evidence["partIds"];
+        return new {
+            side = side.ToString(), kind = result.Kind,
+            pointIds = result.Points.Select(point => point.Id).ToArray(),
+            segments = result.Segments,
+            points = result.Points.Select((point, index) => new {
+                pointId = point.Id, roles = roles[index], partIds = partIds[index]
+            }).ToArray(),
+            skippedPartIds = skipped,
+            offeredOnOtherSidePartIds = (int[])result.Evidence["offeredOnOtherSidePartIds"],
+            droppedShortPointIds = dropped,
+            note = (string?)null
+        };
     }
 
     private static DimensionChainSide Opposite(DimensionChainSide side) => side switch {

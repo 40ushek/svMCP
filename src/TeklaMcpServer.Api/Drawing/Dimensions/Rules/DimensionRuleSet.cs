@@ -11,14 +11,19 @@ internal sealed class DimensionRuleSet(params IDimensionRule[] rules)
 
     public DimensionRuleEvaluation Calculate(DimensionRuleContext context)
     {
-        var evaluations = _rules.Select(rule => rule.Calculate(context)).ToArray();
+        var results = new List<DimensionRuleResult>();
         var diagnostics = new Dictionary<string, object>();
-        foreach (var item in evaluations.SelectMany(evaluation => evaluation.Diagnostics))
+        foreach (var rule in _rules)
         {
-            if (diagnostics.ContainsKey(item.Key))
-                throw new InvalidOperationException($"More than one dimension rule emitted diagnostic '{item.Key}'.");
-            diagnostics.Add(item.Key, item.Value);
+            var evaluation = rule.Calculate(context.WithPriorResults(results));
+            results.AddRange(evaluation.Results);
+            foreach (var item in evaluation.Diagnostics)
+            {
+                if (diagnostics.ContainsKey(item.Key))
+                    throw new InvalidOperationException($"More than one dimension rule emitted diagnostic '{item.Key}'.");
+                diagnostics.Add(item.Key, item.Value);
+            }
         }
-        return new DimensionRuleEvaluation(evaluations.SelectMany(evaluation => evaluation.Results), diagnostics);
+        return new DimensionRuleEvaluation(results, diagnostics);
     }
 }
