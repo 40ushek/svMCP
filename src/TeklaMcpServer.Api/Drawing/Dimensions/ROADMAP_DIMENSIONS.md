@@ -4,19 +4,18 @@ Updated 2026-09-26. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
-fixes still need repeat live validation. Five rule transfers in step 4b are
-complete; the next development step is cleanup of the inactive duplicated steel
-location implementation without changing behavior. Contact candidate reuse is implemented, with
+fixes still need repeat live validation. Five rule transfers and the legacy steel
+location cleanup in step 4b are complete. Contact candidate reuse is implemented, with
 the remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
 
-- **Next development step: finish 4b cleanup.** Overall dimensions,
+- **Next development step: continue step 5.** Overall dimensions,
   timber-panel part location, section profile/location and steel part location now
   use the common rule executor. The skill already performs final AI selection by
   passing the chosen existing point IDs to `create_dimension`; do not duplicate
-  that mechanism. Remove the inactive legacy steel location calculation left in
-  `DimensionChainPreview` after confirming the extracted path preserves behavior.
+  that mechanism. The inactive legacy steel location calculation has been removed.
+  Continue the contact-context comparison and response-size work listed in step 5.
 - **Open live acceptance for the latest panel fixes:** rerun RE.1 - 1 and IW1.3
   against the implementation described below, and check the latest outline/extreme
   selection changes on the relevant panel cases. Earlier successful hand runs and
@@ -777,8 +776,9 @@ Order of work:
    The executor now supports ordered dependencies without repeating geometry reads.
 5. **Done:** transfer the current steel location rule, including its skipped,
    opposite-side and dropped-point evidence.
-6. **Next:** after behavioral verification, remove the inactive legacy steel
-   location calculation now duplicated by `SteelPartLocationRule`. Keep the current
+6. **Done:** after behavioral verification, remove the inactive legacy steel
+   location calculation duplicated by `SteelPartLocationRule`. The remaining
+   overall-chain helper was reduced to its active behavior. Keep the current
    skill-driven choice of ordered point IDs and the existing `create_dimension`
    boundary; add no parallel selection mechanism. Keep behavioral fixes separate
    from extraction.
