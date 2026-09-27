@@ -78,6 +78,30 @@ public sealed class TimberPanelChainPreviewTests
     }
 
     [Fact]
+    public void CoincidentHorizontalMemberLevelsShareOneChainMarkWithoutBeingIncomplete()
+    {
+        var parts = new[]
+        {
+            Part(1, 0, 60, 0, 500),
+            Part(2, 140, 200, 0, 500),
+            Part(3, 60, 100, 200, 220),
+            Part(4, 100, 140, 200, 220)
+        };
+        var boundary = Rectangle("boundary", 0, 200, 0, 500);
+        var group = new GeometryGroup("shared-levels", [boundary], parts);
+        CalcDimensionChains.Apply(group);
+        var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
+
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2, 3, 4], 3, () => null);
+        var left = Read(preview.Rows.Single(r => r.side == "Left").chains[0]).RootElement;
+
+        Assert.False(left.GetProperty("incomplete").GetBoolean());
+        Assert.Equal(new[] { 200d, 300d }, left.GetProperty("segments").EnumerateArray().Select(x => x.GetDouble()));
+        Assert.DoesNotContain(3, preview.UnlocatedModelIds);
+        Assert.DoesNotContain(4, preview.UnlocatedModelIds);
+    }
+
+    [Fact]
     public void CompleteContactSearchFallsBackToGeometryForAnUnconfirmedDoublePost()
     {
         var left = Part(1, 0, 60, 0, 500);

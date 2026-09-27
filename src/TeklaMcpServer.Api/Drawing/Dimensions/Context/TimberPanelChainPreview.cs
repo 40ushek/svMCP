@@ -276,6 +276,7 @@ internal static class TimberPanelChainPreview
     private static PickedPoint Pick(DimensionPointCatalog catalog, DimensionChainSide side,
         IEnumerable<Candidate> candidates, bool alongX, double minimumSegment)
     {
+        var linePoints = catalog.LinePoints(side);
         var points = new List<DimensionPoint>();
         var owners = new List<int>();
         var missing = new List<int>();
@@ -283,13 +284,17 @@ internal static class TimberPanelChainPreview
         {
             if (points.Count > 0 && Math.Abs(Coordinate(points[points.Count - 1], alongX) - candidate.Coordinate) <= PositionTolerance)
             {
-                var existing = points[points.Count - 1];
-                var representedOwners = candidate.Owners.Where(id => Owns(existing, id)).ToArray();
-                if (representedOwners.Length == 0) missing.AddRange(candidate.Owners);
-                else owners.AddRange(representedOwners);
+                // One chain mark can represent several members at the same measured level.
+                // Require a real point for every owner at that coordinate, but do not require
+                // the point retained in the chain to belong to every coincident member.
+                var representedOwners = candidate.Owners.Where(id => linePoints.Any(point =>
+                    Math.Abs(Coordinate(point, alongX) - candidate.Coordinate) <= PositionTolerance
+                    && Owns(point, id))).ToArray();
+                missing.AddRange(candidate.Owners.Except(representedOwners));
+                owners.AddRange(representedOwners);
                 continue;
             }
-            var point = FindPoint(catalog.LinePoints(side), side, alongX, candidate);
+            var point = FindPoint(linePoints, side, alongX, candidate);
             if (point == null)
             {
                 missing.AddRange(candidate.Owners);
