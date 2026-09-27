@@ -29,6 +29,7 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
   - the manual step is deliberate: `TeklaBridge.exe.config` (with `<codeBase>` entries) lives in that folder and is created once by hand
   - after changing anything in `TeklaMcpServer.Api` that the bridge returns, copy **all three** of `TeklaBridge.exe`, `TeklaMcpServer.Api.dll` and `SolidContacts.Core.dll`, or the bridge keeps answering from the stale DLL with no error
   - `SolidContacts.Core.dll` joined that list when `TeklaMcpServer.Api` took a direct reference on it; missing, it is not a stale answer but a `FileNotFoundException` on the first contact call
+  - logging also requires `Serilog.dll`, `Serilog.Sinks.File.dll`, `System.Diagnostics.DiagnosticSource.dll` and `System.Threading.Channels.dll` beside `TeklaBridge.exe`; preserve the extensions copy of `TeklaBridge.exe.config` and merge the Serilog 4.3.0 binding redirect into it without removing Tekla entries
 
 ## Architecture
 
@@ -339,5 +340,13 @@ Tekla layout table bounds are read from the Presentation Model (`DrawingPresenta
 
 | File | Content |
 |------|---------|
-| `C:\temp\teklabridge_log.txt` | Last error details (JSON) |
-| `C:\temp\tekla_channel.txt` | IPC channel fix results (count + details) |
+| `%LOCALAPPDATA%\svMCP\Logs\operations-*.log` | MCP/bridge timings, connection errors, and channel fix diagnostics |
+| `%LOCALAPPDATA%\svMCP\Logs\dimensions-*.log` | Dimension tracing and context reads |
+| `%LOCALAPPDATA%\svMCP\Logs\views-*.log` | View layout tracing |
+| `%LOCALAPPDATA%\svMCP\Logs\marks-*.log` | Mark operations |
+| `%LOCALAPPDATA%\svMCP\Logs\geometry-*.log` | Geometry and cache tracing |
+
+Each stream rolls daily and at 4 MiB. Dimensions and views retain up to 32
+files; the others retain up to 16. All use a 14-day age limit. The tray
+`Open log` menu opens this directory. Bridge logger
+initialization failures fall back to `%TEMP%\svmcp-bridge-startup.log`.

@@ -16,10 +16,12 @@
 
 
   <ItemGroup>
-    <Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+    <Compile Include="..\Shared\Logging\SvMcpLogRouter.cs" Link="Shared\Logging\SvMcpLogRouter.cs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" />
     <PackageReference Include="Tekla.Application.Library" Version="2025.0.0" />
     <PackageReference Include="Tekla.Structures" Version="2025.0.0" />

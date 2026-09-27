@@ -336,6 +336,24 @@ public static partial class ModelTools
         }
     }
 
+    [McpServerTool, Description("Create several AI-reviewed dimension chains in one bridge call. All chains use the same cached view context; no point selection occurs inside this tool. Supply chainsJson as a JSON array of objects with unique key, ordered pointIds, direction, and optional paperGapMm, distance or attributesFile. The tool validates the whole plan before writing, uses the existing verified writer for each chain, and returns one compact final read-back with per-chain created/retained/merged/failed status. A merged overall is not a separate visible dimension.")]
+    public static string CreateDimensionsBatch(
+        [Description("Target drawing view ID.")] int viewId,
+        [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
+        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8}].")] string chainsJson)
+    {
+        var json = RunBridge("create_dimensions_batch",
+            viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty);
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var error) && error.GetString() is { Length: > 0 } message)
+                return $"Error: {message}";
+            return JsonSerializer.Serialize(doc.RootElement);
+        }
+        catch { return $"Bridge error: {json}"; }
+    }
+
     [McpServerTool, Description("Create and read back a straight dimension set. Supply either view-local coordinates in points, or contextId plus ordered pointIds from get_view_dimension_context(questions=dimensionPoints). The ID form uses that cached view/filter snapshot and accepts no exclusion filters. Existing coordinate calls are unchanged. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; paperGapMm overrides that. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,

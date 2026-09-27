@@ -2,6 +2,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using SvMcp.Bridge;
+using SvMcp.Shared.Logging;
 using TeklaMcpServer.Tools;
 
 namespace TeklaBridge.Controller;
@@ -149,8 +150,7 @@ internal sealed class BridgeControllerService : IDisposable
         StatusChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public string LogDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "svMCP", "logs");
+    public string LogDirectory => SvMcpLogRouter.LogDirectory;
 
     public void Dispose()
     {

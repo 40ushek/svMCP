@@ -7,16 +7,19 @@ using Tekla.Structures.Drawing;
 using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Model;
 using TeklaMcpServer.Api.Diagnostics;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>One active drawing/view run, with separate snapshots for each exclusion scope.</summary>
-public sealed class ViewDimensionContextProvider
+public sealed partial class ViewDimensionContextProvider
 {
     private readonly Func<string?> _drawingIdentity;
     private readonly Func<int, IReadOnlyList<PartExclusionRule>, ViewDimensionContext> _read;
     private readonly Action _invalidateGeometry;
     private readonly Func<CreateDimensionRequest, double, CreateDimensionResult> _write;
+    private readonly Func<int, GetDimensionsResult> _readDimensions;
+    private readonly Action<string> _validateAttributes;
     private readonly Func<int, int, PartSolidGeometryInViewResult> _readContactSolid;
     private readonly Dictionary<string, ViewDimensionContext> _contexts = new();
     private ViewContactsSnapshot? _contacts;
@@ -31,17 +34,23 @@ public sealed class ViewDimensionContextProvider
         _readContactSolid = reader.ReadPartSolidGeometry;
         _invalidateGeometry = DrawingPartGeometryCache.InvalidateAll;
         _write = Write;
+        _readDimensions = viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId);
+        _validateAttributes = file => { DimensionCreatePlacementHelper.CreateAttributes(file); };
     }
 
     internal ViewDimensionContextProvider(Func<string?> drawingIdentity,
         Func<int, IReadOnlyList<PartExclusionRule>, ViewDimensionContext> read, Action invalidateGeometry,
         Func<CreateDimensionRequest, double, CreateDimensionResult>? write = null,
-        Func<int, int, PartSolidGeometryInViewResult>? readContactSolid = null)
+        Func<int, int, PartSolidGeometryInViewResult>? readContactSolid = null,
+        Func<int, GetDimensionsResult>? readDimensions = null,
+        Action<string>? validateAttributes = null)
     {
         _drawingIdentity = drawingIdentity;
         _read = read;
         _invalidateGeometry = invalidateGeometry;
         _write = write ?? Write;
+        _readDimensions = readDimensions ?? (viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId));
+        _validateAttributes = validateAttributes ?? (file => { DimensionCreatePlacementHelper.CreateAttributes(file); });
         _readContactSolid = readContactSolid ?? ((viewId, modelId) =>
             throw new InvalidOperationException("Contact solid reader is unavailable"));
     }
@@ -91,6 +100,15 @@ public sealed class ViewDimensionContextProvider
 
     public CreateDimensionResult Create(CreateDimensionRequest request)
     {
+        var prepared = Prepare(request);
+        var result = _write(prepared.Request, prepared.Distance);
+        result.DistanceUsed = prepared.Distance;
+        result.Placement = prepared.Placement;
+        return result;
+    }
+
+    private PreparedDimensionWrite Prepare(CreateDimensionRequest request)
+    {
         ViewDimensionContext context;
         if (request.PointIds.Length > 0 || !string.IsNullOrWhiteSpace(request.ContextId))
         {
@@ -119,10 +137,22 @@ public sealed class ViewDimensionContextProvider
         var placement = request.Distance.HasValue ? null
             : context.Calculate(request.Direction, request.Points, request.PaperGapMm);
         var distance = request.Distance ?? placement!.Distance;
-        var result = _write(request, distance);
-        result.DistanceUsed = distance;
-        result.Placement = placement;
-        return result;
+        return new PreparedDimensionWrite(request, distance, placement);
+    }
+
+    private sealed class PreparedDimensionWrite
+    {
+        public CreateDimensionRequest Request { get; }
+        public double Distance { get; }
+        public DimensionPlacementCalculation? Placement { get; }
+
+        public PreparedDimensionWrite(CreateDimensionRequest request, double distance,
+            DimensionPlacementCalculation? placement)
+        {
+            Request = request;
+            Distance = distance;
+            Placement = placement;
+        }
     }
 
     private static CreateDimensionResult Write(CreateDimensionRequest request, double distance) =>

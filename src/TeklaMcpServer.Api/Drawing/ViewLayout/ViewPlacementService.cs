@@ -377,7 +377,7 @@ internal static class ViewPlacementService
 
     /// <summary>
     /// Trace one placement attempt to the shared view-layout log
-    /// (C:\temp\svmcp-view-layout.log), same channel as the rest of layout.
+    /// (%LOCALAPPDATA%\svMCP\Logs\views-*.log), same channel as the rest of layout.
     /// target is null for best-area mode; result is null on failure.
     /// tag is an optional caller-supplied context string for live acceptance.
     /// </summary>

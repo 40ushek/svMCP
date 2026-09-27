@@ -66,11 +66,11 @@ fetch structural positions only if the question requires them.
 
 The bridge treats source geometry as fixed while working on one view. Reuse it
 for all sides. After external model/view edits or uncertain source identity,
-request `refresh=true` on a context or chain-position read. Switching requested
+request refresh=true on a context or chain-position read. Switching requested
 view/drawing clears the snapshot; different filters resolve separate snapshots.
 External edits are not automatically detected during the run.
 A dimension-only write invalidates the dimension snapshot because of reflow;
-it does not by itself require another full solid/outline read.
+it does not by itself require another full solid/outline read. During one placement run, read source geometry once per target view and reuse that geometry snapshot for all chain planning and writes. Do not force refresh=true for each chain or after dimension-only writes. Use refresh=true only when model geometry or view properties changed since the snapshot, or when source identity is uncertain. Read back dimensions after writes without refreshing source geometry.
 
 `isComplete=false` stops automatic placement for that group, not independent
 complete groups. Report the actual issue: unread properties, no included parts,
@@ -142,11 +142,18 @@ returned new ID when Tekla renumbers a chain.
 
 Use available, known working tools; source code existing is not proof that the
 running bridge contains it. The experimental structural preview/apply commands
-were removed. Use `create_dimension`; omit `distance` for the automatic 8-paper-mm
-gap, or supply `paperGapMm`. Do not supply both distance and paperGapMm.
+were removed. For two or more reviewed chains on one view, use
+`create_dimensions_batch` once with the same current `contextId` and the final
+ordered point IDs, directions, gaps and attributes for every chain. It validates
+the full plan before writing and returns one final dimension read-back; inspect
+each chain status, especially `merged` and `uncertain`, before reporting success.
+Use `create_dimension` for one chain or when the batch tool is unavailable on the
+running server. Omit `distance` for the automatic 8-paper-mm gap, or supply
+`paperGapMm`. Do not supply both distance and paperGapMm.
 
-After each write that can reflow neighbours, re-read
-`get_drawing_dimensions <viewId>` and compare to the plan:
+After a single write that can reflow neighbours, re-read
+`get_drawing_dimensions <viewId>` and compare to the plan. For a batch, use its
+single final read-back for all chains and compare it to the complete plan:
 - kept coordinates present, removed ones absent from the planned chain;
 - each witness point uses its own intended support;
 - reference line on the correct side/offset: inspect `writeState.RenderedLine`

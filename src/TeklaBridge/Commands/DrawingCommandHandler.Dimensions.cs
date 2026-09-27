@@ -72,6 +72,9 @@ internal sealed partial class DrawingCommandHandler
             case "create_dimension":
                 return HandleCreateDimension(api, args);
 
+            case "create_dimensions_batch":
+                return HandleCreateDimensionsBatch(args);
+
             case "add_dimension_points":
                 return HandleAddDimensionPoints(api, args);
 
@@ -759,6 +762,40 @@ internal sealed partial class DrawingCommandHandler
         {
             var result = _dimensionContexts.Create(parseResult.Request);
             WriteCreateDimensionResult(result);
+        }
+        catch (Exception exception) { WriteError(exception.Message); }
+        return true;
+    }
+
+    private bool HandleCreateDimensionsBatch(string[] args)
+    {
+        if (args.Length < 4 ||
+            !int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var viewId))
+        {
+            WriteError("create_dimensions_batch requires viewId, contextId and chainsJson");
+            return true;
+        }
+
+        try
+        {
+            var chains = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<BatchDimensionChain>>(
+                args[3], new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var result = _dimensionContexts.CreateBatch(new CreateDimensionsBatchRequest {
+                ViewId = viewId, ContextId = args[2], Chains = chains ?? []
+            });
+            WriteJson(new {
+                viewId = result.ViewId,
+                chains = result.Chains.Select(item => new {
+                    key = item.Key, status = item.Status, dimensionId = item.DimensionId,
+                    mergedIntoDimensionId = item.MergedIntoDimensionId,
+                    renderedLineStatus = item.RenderedLineStatus, error = item.Error
+                }),
+                finalDimensions = result.FinalDimensions.Select(item => new {
+                    id = item.Id, side = item.Side, lineAt = item.LineAt,
+                    from = item.From, to = item.To, segments = item.Segments
+                }),
+                finalReadError = result.FinalReadError
+            });
         }
         catch (Exception exception) { WriteError(exception.Message); }
         return true;

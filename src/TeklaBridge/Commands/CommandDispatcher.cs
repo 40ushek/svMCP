@@ -23,7 +23,7 @@ internal sealed class CommandDispatcher
     {
         // These commands have a view ID in their first argument (not a dimension ID).
         // Merely reading dimensions on another view also ends the previous view run.
-        if (command is "get_drawing_dimensions" or "create_dimension" or "get_structural_chain_positions"
+        if (command is "get_drawing_dimensions" or "create_dimension" or "create_dimensions_batch" or "get_structural_chain_positions"
             or "get_view_dimension_context" or "get_structural_outline" or "get_assembly_outline"
             or "get_drawing_view_context" or "get_all_parts_geometry_in_view" or "get_part_geometry_in_view"
             or "get_contact_candidate_points" or "draw_structural_chain_positions"

@@ -12,7 +12,6 @@ public partial class App : Application
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "svMCP TeklaBridge Controller";
-    private const string PerformanceLogPath = @"C:\temp\svmcp-perf.log";
 
     private BridgeControllerService? _service;
     private BridgePipeServer? _pipeServer;
@@ -170,10 +169,11 @@ public partial class App : Application
 
     private void OpenLog()
     {
-        if (File.Exists(PerformanceLogPath))
-            Process.Start(new ProcessStartInfo("notepad.exe", $"\"{PerformanceLogPath}\"") { UseShellExecute = true });
-        else
-            Process.Start(new ProcessStartInfo("explorer.exe", @"C:\temp") { UseShellExecute = true });
+        var directory = _service!.LogDirectory;
+        Directory.CreateDirectory(directory);
+        var startInfo = new ProcessStartInfo("explorer.exe") { UseShellExecute = true };
+        startInfo.ArgumentList.Add(directory);
+        Process.Start(startInfo);
     }
 
     private void ExitController()

@@ -10,7 +10,7 @@
 	</PropertyGroup>
 
 	<!-- Shared logging comes from TeklaMcpServer.Api (internals are visible to this project).
-	     Do not link BoundedFileLogWriter.cs here again: a second copy causes CS0436 type conflicts. -->
+	     Do not link SvMcpLogRouter.cs here again: a second copy causes CS0436 type conflicts. -->
 	<ItemGroup>
 		<ProjectReference Include="..\TeklaMcpServer.Api\TeklaMcpServer.Api.csproj" />
 	</ItemGroup>

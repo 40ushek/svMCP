@@ -295,8 +295,8 @@ Do not add a generic command runner yet.
 Use `PerfTrace` to confirm whether the bridge is being killed by timeout:
 
 - run the slow drawing sequence;
-- check `C:\temp\svmcp-perf.log`;
-- for view layout commands, check `C:\temp\svmcp-view-layout.log`;
+- check `%LOCALAPPDATA%\svMCP\Logs\operations-*.log`;
+- for view layout commands, check `%LOCALAPPDATA%\svMCP\Logs\views-*.log`;
 - check `transport` events for timeout/error;
 - check whether `restarted=true` appears after heavy commands;
 - compare process ids in MCP/bridge trace if available.

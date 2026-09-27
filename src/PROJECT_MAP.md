@@ -288,6 +288,8 @@ cases/<category>/<drawing_guid>/
 - `TeklaBridge/ROADMAP_TRAY_CONTROL.md`
   - отдельный план tray-интерфейса, управления жизненным циклом TeklaBridge,
     локального IPC и интеграции с MCP-сервером
+- `ROADMAP_LOGGING.md`
+  - переход рабочих логов на Serilog, ротация/хранение и интеграция с tray и деплоем Tekla 2025
 
 По состоянию кода:
 
@@ -342,3 +344,4 @@ cases/<category>/<drawing_guid>/
 - `TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`
 - `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`
 - `TeklaBridge/ROADMAP_TRAY_CONTROL.md`
+- `ROADMAP_LOGGING.md`

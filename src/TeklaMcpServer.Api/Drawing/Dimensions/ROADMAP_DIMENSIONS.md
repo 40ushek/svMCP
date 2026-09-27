@@ -1,6 +1,6 @@
 # Dimensions Roadmap
 
-Updated 2026-09-26. This file is the active work order. Steps 1-3 have source
+Updated 2026-09-27. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
@@ -10,9 +10,11 @@ the remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
 
-- **Next development step: continue step 5.** Overall dimensions,
-  timber-panel part location, section profile/location and steel part location now
-  use the common rule executor. The skill already performs final AI selection by
+- **Next focused efficiency step: batch dimension writes (step 6).** Keep step 5's
+  remaining live comparison and performance gates open; batch writes do not replace
+  them. Overall dimensions, timber-panel part location, section profile/location
+  and steel part location now use the common rule executor. The skill already
+  performs final AI selection by
   passing the chosen existing point IDs to `create_dimension`; do not duplicate
   that mechanism. The inactive legacy steel location calculation has been removed.
   The contact response is now compact by default; continue the live comparison and
@@ -229,10 +231,10 @@ Record correct alternatives and wrong cases before encoding reusable rules.
 Keep measurement completeness separate from geometric completeness and write
 success. Unsupported relationships remain unresolved with a reason.
 
-Automatic templates, whole-view planning and batch writes remain later work.
-They require measured benefit and their own coverage/retry validation. Bolts and
-solid clipping retain their separate roadmaps. Do not reintroduce the removed
-plan commands or a second creation path as a prerequisite for this increment.
+Automatic templates and whole-view planning remain later work. Batch writes are
+tracked as step 6 below and require their own retry and merge validation. Bolts
+and solid clipping retain their separate roadmaps. Do not reintroduce the removed
+plan commands or a second point-selection mechanism.
 
 ### 4a. Dimension points as objects, so the assistant does not read coordinates
 
@@ -854,3 +856,38 @@ full contact shapes and `contactId`; expose/compare the constrained-axis summary
 `get_part_degrees_of_freedom`; measure a view with many parts; and deploy the
 rounding fix to the bridge (the deployed bridge still printed values such as
 `4704.0010000000002`). Only after them decide whether to remove the old MCP tools.
+
+### 6. Batch-write the reviewed dimension plan
+
+Implemented and deployed (2026-09-27); live drawing acceptance is pending.
+`create_dimensions_batch` accepts the final, AI-reviewed set of dimension
+chains for one view. The batch supplies one existing `contextId`; each chain
+supplies ordered `pointIds`, direction, paper gap or explicit distance, and attributes. The AI
+continues to choose the rule set, sides and kept/removed points; the batch tool
+must not silently select or prune candidates.
+
+The batch operation validates the full request before writing, then applies chains
+sequentially through the existing dimension-write protocol. Preserve per-chain
+read-back, correction and cleanup behavior. Return a compact per-chain status
+(`created`, `retained`, `merged`, `failed`, `skipped`, or `uncertain`) and perform one final compact view
+read to report what actually remains, including whether an overall chain merged
+with a location chain. A later chain failure must not make earlier successful
+writes ambiguous; report each result without speculative retries.
+
+The MCP server and bridge build, focused batch/context checks pass, and the MCP
+stdio tool-list check confirms the deployed server advertises this operation. The
+live drawing acceptance items below remain open until it is tried on an authorized
+drawing.
+
+Acceptance:
+
+- All chains in a reviewed plan can be submitted in one MCP call without changing
+  the current point-selection responsibility or write validation.
+- Invalid context/point IDs are rejected before the first write.
+- The final response identifies created, retained, merged and failed chains and
+  matches the compact read-back from Tekla.
+- On an authorized test drawing, compare the same placement before and after for
+  total elapsed time, MCP/bridge call count, response size, and token usage when
+  the runtime exposes it. Do not claim token savings from character count alone.
+- Verify retry behavior after partial success and verify overall/location merge
+  outcomes; never count a merged overall as a separate visible dimension.

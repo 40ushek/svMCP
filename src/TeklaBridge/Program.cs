@@ -5,6 +5,7 @@ using System.Text.Json;
 using Tekla.Structures.Drawing;
 using Tekla.Structures.Model;
 using TeklaBridge.Commands;
+using SvMcp.Shared.Logging;
 
 namespace TeklaBridge;
 
@@ -23,23 +24,59 @@ internal static class Program
         var teklaLog = new StringWriter();
         Console.SetOut(teklaLog);
 
-        var teklaRoot = ResolveTeklaRoot();
-        ConfigureTeklaEnvironment(teklaRoot);
-        ApplyTeklaChannelFixes(teklaRoot);
-
-        if (args.Length == 0)
+        var loggingReady = false;
+        try
         {
-            realOut.WriteLine("{\"error\":\"No command specified\"}");
-            return;
+            SvMcpLogRouter.Initialize();
+            loggingReady = true;
+        }
+        catch (Exception ex)
+        {
+            WriteStartupFallback(ex);
         }
 
-        if (string.Equals(args[0], "--loop", StringComparison.OrdinalIgnoreCase))
+        try
         {
-            RunPersistentLoop(realOut, teklaLog);
-            return;
-        }
+            var teklaRoot = ResolveTeklaRoot();
+            ConfigureTeklaEnvironment(teklaRoot);
+            ApplyTeklaChannelFixes(teklaRoot);
 
-        ExecuteLegacyCommand(args, realOut, teklaLog);
+            if (args.Length == 0)
+            {
+                realOut.WriteLine("{\"error\":\"No command specified\"}");
+                return;
+            }
+
+            if (string.Equals(args[0], "--loop", StringComparison.OrdinalIgnoreCase))
+            {
+                RunPersistentLoop(realOut, teklaLog);
+                return;
+            }
+
+            ExecuteLegacyCommand(args, realOut, teklaLog);
+        }
+        catch (Exception ex)
+        {
+            if (loggingReady)
+                PerfTrace.Write("bridge-startup", "fatal", 0, $"errorType={ex.GetType().Name} message={ex}");
+            else
+                WriteStartupFallback(ex);
+            Console.Error.WriteLine(ex);
+            Environment.ExitCode = 1;
+        }
+    }
+
+    private static void WriteStartupFallback(Exception ex)
+    {
+        try
+        {
+            var path = Path.Combine(Path.GetTempPath(), "svmcp-bridge-startup.log");
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O} pid={Process.GetCurrentProcess().Id} {ex}{Environment.NewLine}");
+        }
+        catch
+        {
+            // A failed fallback must not hide the startup error on stderr.
+        }
     }
 
     private static void ConfigureTeklaEnvironment(string? teklaRoot)
@@ -212,7 +249,7 @@ internal static class Program
                 teklaLog = teklaLog.ToString().Trim()
             });
             payloadWriter.Write(result);
-            TryWriteBridgeLog(result);
+            LogBridgeDiagnostic("command_exception", result);
         }
 
         var payload = payloadWriter.ToString().Trim();
@@ -242,19 +279,11 @@ internal static class Program
             teklaLog = teklaLog.ToString().Trim()
         });
         output.Write(result);
-        TryWriteBridgeLog(result);
+        LogBridgeDiagnostic("connection_error", result);
     }
 
-    private static void TryWriteBridgeLog(string payload)
-    {
-        try
-        {
-            File.WriteAllText(@"C:\temp\teklabridge_log.txt", payload);
-        }
-        catch
-        {
-        }
-    }
+    private static void LogBridgeDiagnostic(string operation, string payload)
+        => PerfTrace.Write("bridge-diagnostic", operation, 0, $"payload={payload}");
 
     private static string? DetectTeklaRoot()
     {
@@ -346,7 +375,8 @@ internal static class Program
 
             if (installedVersion == null)
             {
-                File.WriteAllText(@"C:\temp\tekla_channel.txt", "TS2025 fix: could not find channel version in installed DLL");
+                PerfTrace.Write("bridge-startup", "channel_fix", 0,
+                    "ok=false reason=installed_version_not_found");
                 return;
             }
 
@@ -396,10 +426,13 @@ internal static class Program
                     }
             }
 
+            PerfTrace.Write("bridge-startup", "channel_fix", 0,
+                $"ok=true version={installedVersion} fixedCount={fixedCount} changes={log.ToString().Trim()}");
         }
         catch (Exception ex)
         {
-            _ = ex;
+            PerfTrace.Write("bridge-startup", "channel_fix", 0,
+                $"ok=false errorType={ex.GetType().Name} message={ex.Message}");
         }
     }
 
@@ -467,11 +500,13 @@ internal static class Program
                     }
             }
 
-            File.WriteAllText(@"C:\temp\tekla_channel.txt", $"Fixed {fixedCount} channel(s):\n{log}");
+            PerfTrace.Write("bridge-startup", "channel_fix", 0,
+                $"ok=true fixedCount={fixedCount} changes={log.ToString().Trim()}");
         }
         catch (Exception ex)
         {
-            File.WriteAllText(@"C:\temp\tekla_channel.txt", "ChannelName fix error: " + ex.Message);
+            PerfTrace.Write("bridge-startup", "channel_fix", 0,
+                $"ok=false errorType={ex.GetType().Name} message={ex.Message}");
         }
     }
 

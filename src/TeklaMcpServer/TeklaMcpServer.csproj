@@ -8,13 +8,15 @@
 	</PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Shared\Logging\BoundedFileLogWriter.cs" Link="Shared\Logging\BoundedFileLogWriter.cs" />
+    <Compile Include="..\Shared\Logging\SvMcpLogRouter.cs" Link="Shared\Logging\SvMcpLogRouter.cs" />
     <Compile Include="..\Shared\BridgePathResolver.cs" Link="Shared\BridgePathResolver.cs" />
     <Compile Include="..\Shared\BridgeControllerProtocol.cs" Link="Shared\BridgeControllerProtocol.cs" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<!-- MCP SDK — requires net8+ for tool registration -->
+		<PackageReference Include="Serilog" Version="4.3.0" />
+		<PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
 		<PackageReference Include="ModelContextProtocol" Version="1.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
 	</ItemGroup>

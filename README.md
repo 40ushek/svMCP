@@ -297,13 +297,18 @@ src/
 
 | Файл | Содержимое |
 |---|---|
-| `C:\temp\teklabridge_log.txt` | Детали последней ошибки (JSON) |
-| `C:\temp\tekla_channel.txt` | Результат фикса IPC channel names (сколько каналов исправлено) |
-| `%TEMP%\svmcp-perf.log` | Профилирование по слоям `mcp/transport/bridge/api` |
+| `%LOCALAPPDATA%\svMCP\Logs\operations-*.log` | Вызовы MCP/bridge, тайминги, ошибки подключения и диагностика IPC channel |
+| `%LOCALAPPDATA%\svMCP\Logs\dimensions-*.log` | Краткие действия ИИ с размерами: команда, вид/ID, число цепочек или точек, результат |
+| `%LOCALAPPDATA%\svMCP\Logs\views-*.log` | Компоновка видов |
+| `%LOCALAPPDATA%\svMCP\Logs\marks-*.log` | Марки |
+| `%LOCALAPPDATA%\svMCP\Logs\geometry-*.log` | Геометрия и её кэш |
 
-Профилирование:
-- `SVMCP_PERF=1` — включить запись таймингов
-- `SVMCP_PERF_LOG=<path>` — путь к файлу логов (по умолчанию `%TEMP%\svmcp-perf.log`)
+Логи создаются при первом событии. Файлы сменяются ежедневно и при размере
+4 MiB; для `dimensions` и `views` хранятся до 32 файлов, для остальных — до
+16 файлов, все не старше 14 дней. Пункт `Open log` в tray открывает папку
+со всеми потоками. Если логгер не удалось
+инициализировать при запуске bridge, минимальный аварийный лог пишется в
+`%TEMP%\svmcp-bridge-startup.log`.
 
 ### Прямой вызов TeklaBridge без Claude
 
@@ -644,6 +649,15 @@ TS2025 заменил `.NET Remoting` (named pipes) на `Trimble.Remoting` по
 
 1. **TeklaBridge.exe** копируется в:
    `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\`
+
+   Вместе с ним скопируйте из `src/TeklaBridge/bin/Release/net48/`
+   `TeklaMcpServer.Api.dll`, `Serilog.dll`, `Serilog.Sinks.File.dll`,
+   `System.Diagnostics.DiagnosticSource.dll`, `System.Threading.Channels.dll`
+   и остальные DLL-зависимости сборки. Конфигурацию `TeklaBridge.exe.config`
+   из папки extensions сохраните: сборочный вариант не должен её перезаписывать.
+   В существующий `<assemblyBinding>` добавьте redirect для Serilog
+   (`0.0.0.0-4.3.0.0` → `4.3.0.0`), сохранив Tekla `<bindingRedirect>` и
+   `<codeBase>` записи.
 
 2. Рядом кладётся **`TeklaBridge.exe.config`** с `<codeBase>` записями для всех Tekla/Trimble DLL:
    ```xml
