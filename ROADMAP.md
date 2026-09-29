@@ -80,7 +80,9 @@
 - `get_dimension_contexts` — отдельный внутренний/context read path уже введён
 - `arrange_dimensions` — реализован, но **не является полноценным layout-движком**: сейчас это базовая раздвижка параллельных стеков через `Distance`, без нормализации distance и без полного учёта текста/меток
 - `combine_dimensions` — реализован как controlled combine path поверх grouping/reduction logic
-- Следующий реалистичный шаг: нормализация (убрать дубли, выровнять близкие линии) → умная раздвижка → учёт текста и меток (Phase 4 in progress)
+- Следующий этап layout-размещения размеров, отдельный от незакрытой live-приёмки в
+  подробном плане: нормализация (убрать дубли, выровнять близкие линии) → умная
+  раздвижка → учёт текста и меток (Phase 4 in progress)
 - `add_dimension_point` — Workaround: `delete` + `create` с новым набором точек
 - Размеры как препятствия для марок: `StraightDimension.GetObjectAlignedBoundingBox()` → `CanMove=false`
 

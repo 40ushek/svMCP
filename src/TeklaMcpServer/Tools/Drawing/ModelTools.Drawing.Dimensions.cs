@@ -336,11 +336,11 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create several AI-reviewed dimension chains in one bridge call. All chains use the same cached view context; no point selection occurs inside this tool. Supply chainsJson as a JSON array of objects with unique key, ordered pointIds, direction, and optional paperGapMm, distance or attributesFile. The tool validates the whole plan before writing, uses the existing verified writer for each chain, and returns one compact final read-back with per-chain created/retained/merged/failed status. A merged overall is not a separate visible dimension.")]
+    [McpServerTool, Description("Create several AI-reviewed dimension chains in one bridge call. All chains use the same cached view context; no point selection occurs inside this tool. Supply chainsJson as a JSON array of objects with unique key, ordered pointIds, direction, and optional paperGapMm, distance, attributesFile or dimensionType. dimensionType accepts Relative, Absolute, RelativeAndAbsolute or relative-and-absolute and overrides the row type in attributesFile. The tool validates the whole plan before writing, uses the existing verified writer for each chain, and returns one compact final read-back with per-chain created/retained/merged/failed status. A merged overall is not a separate visible dimension.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
-        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8}].")] string chainsJson)
+        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8,\"dimensionType\":\"Relative\"}]. dimensionType is optional and overrides the row type in attributesFile.")] string chainsJson)
     {
         var json = RunBridge("create_dimensions_batch",
             viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty);

@@ -60,6 +60,24 @@ internal static class DimensionCreatePlacementHelper
     internal static string? NormalizeAttributesFile(string? attributesFile)
         => string.IsNullOrWhiteSpace(attributesFile) ? null : attributesFile!.Trim();
 
+    internal static DimensionSetBaseAttributes.DimensionTypes? ParseDimensionType(string? dimensionType)
+    {
+        if (string.IsNullOrWhiteSpace(dimensionType)) return null;
+        return dimensionType!.Trim().ToLowerInvariant() switch
+        {
+            "relative" => DimensionSetBaseAttributes.DimensionTypes.Relative,
+            "absolute" => DimensionSetBaseAttributes.DimensionTypes.Absolute,
+            "relativeandabsolute" or "relative-and-absolute" => DimensionSetBaseAttributes.DimensionTypes.RelativeAndAbsolute,
+            _ => throw new System.ArgumentException("dimensionType must be Relative, Absolute or RelativeAndAbsolute")
+        };
+    }
+
+    internal static void ApplyDimensionType(
+        StraightDimensionSet.StraightDimensionSetAttributes attributes, string? dimensionType)
+    {
+        if (ParseDimensionType(dimensionType) is { } parsed)
+            attributes.DimensionType = parsed;
+    }
     internal static StraightDimensionSet.StraightDimensionSetAttributes CreateAttributes(string? attributesFile)
     {
 #pragma warning disable CS0618

@@ -1,28 +1,24 @@
 # Dimensions Roadmap
 
-Updated 2026-09-27. This file is the active work order. Steps 1-3 have source
+Updated 2026-09-28. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
-fixes still need repeat live validation. Five rule transfers and the legacy steel
-location cleanup in step 4b are complete. Contact candidate reuse is implemented, with
-the remaining comparison and performance gates listed in step 5.
+rules still need repeat validation on the named fixtures. Five rule transfers and the
+legacy steel location cleanup in step 4b are complete. Contact candidate reuse is
+implemented, with the remaining comparison and performance gates listed in step 5.
 
 ## Current delivery and next gate
 
-- **Next focused efficiency step: batch dimension writes (step 6).** Keep step 5's
-  remaining live comparison and performance gates open; batch writes do not replace
-  them. Overall dimensions, timber-panel part location, section profile/location
-  and steel part location now use the common rule executor. The skill already
-  performs final AI selection by
-  passing the chosen existing point IDs to `create_dimension`; do not duplicate
-  that mechanism. The inactive legacy steel location calculation has been removed.
-  The contact response is now compact by default; continue the live comparison and
-  performance gates listed in step 5.
-- **Open live acceptance for the latest panel fixes:** rerun RE.1 - 1 and IW1.3
-  against the implementation described below, and check the latest outline/extreme
-  selection changes on the relevant panel cases. Earlier successful hand runs and
-  live observations do not establish acceptance of later code changes.
+- **Next gate: finish live acceptance of batch writes (step 6).** The code is
+  implemented and deployed. A live run on view 7429 exposed a mismatch between the
+  batch status and subsequent drawing reads; see step 6. Fix that reconciliation and
+  verify partial success, retry, and overall/location merging. Keep step 5's contact
+  comparison and performance gates open as a separate track.
+- **Open panel acceptance:** rerun IW1.1 - 1, RE.1 - 1 and IW1.3 against the latest code, including
+  the full-position-set duplicate rule and the recent outline/extreme selection
+  changes. The live run on view 7429 checked a partial Top/Bottom match only; it did
+  not validate the exact-match suppression case or replace the named fixture checks.
 
 - Persistent `ViewDimensionContextProvider` shares frozen, filter-specific
   geometry between chain reads, short context queries and automatic creation.
@@ -462,7 +458,8 @@ accepted ("не плохо"). The rules it used, to be turned into code:
 - X chain (Bottom side only; Top repeats it and is dropped): the two extremes, a touching
   group of parts at an end (doubled post) as its outer face plus the far face of the group,
   one face (the left) of every regular stud, the inner face of the end group. Result on
-  the panel: 120 / 427.5 / 625 / 625 / 625 / 535 / 120.
+  the panel: 120 / 427.5 / 625 / 625 / 625 / 535 / 120. Keep this accepted Bottom
+  preference when Top repeats the complete X-position set.
 - Y chains (Left and Right, each only if it differs from the other): the lowest face of the
   frame first (-1278.5 on this panel, the underside of the end posts; the bottom plate
   T-104 sits above it at -1233.5), the faces of the horizontal members (bottom plate, glulam), the top
@@ -587,6 +584,11 @@ gets wrong, all confirmed on the drawings:
   (`partExtentAlongChain: 60`).
 - **Rule 7 covers only equal chains.** A chain whose positions are all contained in another
   (IW1.3: the Bottom chain inside the Top one) is not dropped, only an identical one is.
+  For identical X-position sets keep Bottom and suppress Top, preserving the accepted IW1.1
+  chain; keep both when the sets differ. For identical Y-position sets keep Left and suppress
+  Right. The 2026-09-28 change that kept Top on an exact match broke the IW1.1 fixture tests.
+  Source was corrected on 2026-09-29; the corrected branch still needs deployment and a live
+  check on IW1.1 - 1 and IW1.3.
 - **`BuildX` refuses when it finds no end group** and reports every part as unlocated. On
   RE.1 - 1 the leftmost members start at -41.97 with tilted corners, no end group matches the
   panel edge, the answer is empty, and 25 parts are listed as "no support". The support test
@@ -607,11 +609,21 @@ gets wrong, all confirmed on the drawings:
   0.0001); until it is added every doubled post falls back to the geometric test.
 - **Implementation status (2026-09-25):** `BuildY` now selects one Y face per horizontal
   member (outer face of the lowest/highest horizontal member, lower face for an intermediate
-  member); strict position containment suppresses the redundant side chain; `BuildX` falls
+  member); full position-set equality suppresses the redundant side chain, while partial
+  containment keeps both; `BuildX` falls
   back to panel extremes plus column left faces when an end group is missing, matching points
   by coordinate; the contact tolerance is 0.001; shared diagnostics are emitted once as
-  `chainDiagnostics`. This is code status only: the RE.1 - 1 and IW1.3 live fixtures below
-  have not yet been rerun against this implementation.
+  `chainDiagnostics`. The RE.1 - 1 and IW1.3 live fixtures below have not yet been rerun
+  against this implementation.
+- **Live check (2026-09-28, Timber Wall Zone 0, FrontView 7429):** Top returned 9 positions;
+  Bottom returned 7 plus a separate overall. The partial match correctly kept the Bottom
+  location proposal. Dimension 17622 was read back as a 7-point `Relative` chain at distance
+  200; overall 16998 remained a 2-point `RelativeAndAbsolute` set at distance 405. A batch
+  request for an `Absolute` overall reported ID 17683 as failed/absent, while the following
+  arrangement call saw that ID; a later drawing read no longer contained it. Final read-back
+  showed IDs 16998 and 17622. This confirms the partial-chain behavior, but not exact-match
+  suppression or rendered-line placement. Investigate the transient ID/status discrepancy in
+  step 6 before treating the live write as accepted.
 - Not covered and not started: top views and sections of panels ("FrontView/BackView only");
   the section of RE.1 - 1 is left undimensioned on the user's decision. Openings are still unseen
   in a real panel.
@@ -859,7 +871,8 @@ rounding fix to the bridge (the deployed bridge still printed values such as
 
 ### 6. Batch-write the reviewed dimension plan
 
-Implemented and deployed (2026-09-27); live drawing acceptance is pending.
+Implemented and deployed (2026-09-27); one live attempt made 2026-09-28, acceptance
+still pending.
 `create_dimensions_batch` accepts the final, AI-reviewed set of dimension
 chains for one view. The batch supplies one existing `contextId`; each chain
 supplies ordered `pointIds`, direction, paper gap or explicit distance, and attributes. The AI
@@ -867,7 +880,10 @@ continues to choose the rule set, sides and kept/removed points; the batch tool
 must not silently select or prune candidates.
 
 The batch operation validates the full request before writing, then applies chains
-sequentially through the existing dimension-write protocol. Preserve per-chain
+sequentially through the existing dimension-write protocol. Each chain can optionally
+request a Tekla row type (`Relative`, `Absolute`, or `RelativeAndAbsolute`); the MCP
+tool description documents this JSON field and its override of the attributes file.
+Preserve per-chain
 read-back, correction and cleanup behavior. Return a compact per-chain status
 (`created`, `retained`, `merged`, `failed`, `skipped`, or `uncertain`) and perform one final compact view
 read to report what actually remains, including whether an overall chain merged
@@ -885,9 +901,13 @@ Acceptance:
   the current point-selection responsibility or write validation.
 - Invalid context/point IDs are rejected before the first write.
 - The final response identifies created, retained, merged and failed chains and
-  matches the compact read-back from Tekla.
+  matches the compact read-back from Tekla. The 2026-09-28 run failed this gate: a
+  requested Absolute overall was reported absent, then briefly appeared to the arrange
+  command, and was absent from the subsequent read; the existing RelativeAndAbsolute
+  overall remained. Resolve this state/status mismatch before calling live acceptance.
 - On an authorized test drawing, compare the same placement before and after for
   total elapsed time, MCP/bridge call count, response size, and token usage when
   the runtime exposes it. Do not claim token savings from character count alone.
 - Verify retry behavior after partial success and verify overall/location merge
-  outcomes; never count a merged overall as a separate visible dimension.
+  outcomes, including a requested row type differing from an existing merged chain;
+  never count a merged overall as a separate visible dimension.

@@ -248,6 +248,7 @@ public sealed class CreateDimensionRequest
     public string Direction { get; set; } = "horizontal";
     public double? Distance { get; set; }
     public string AttributesFile { get; set; } = string.Empty;
+    public string? DimensionType { get; set; }
     public double? PaperGapMm { get; set; }
     public string ExcludePrefixes { get; set; } = string.Empty;
     public string ExcludeMaterials { get; set; } = string.Empty;

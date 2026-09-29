@@ -95,7 +95,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         => CreateDimension(viewId, points, direction, distance, attributesFile, null);
 
     public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance,
-        string attributesFile, string? expectedRowType)
+        string attributesFile, string? dimensionType)
     {
         var validationError = DimensionWriteProtocol.Validate(points, distance);
         if (validationError != null) return new CreateDimensionResult { Error = validationError };
@@ -108,8 +108,8 @@ public sealed partial class TeklaDrawingDimensionsApi
             ?? throw new ViewNotFoundException(viewId);
 
         var attr = DimensionCreatePlacementHelper.CreateAttributes(attributesFile);
-        if (expectedRowType != null && !string.Equals(attr.DimensionType.ToString(), expectedRowType, System.StringComparison.OrdinalIgnoreCase))
-            return new CreateDimensionResult { Error = $"Attributes row type is {attr.DimensionType}, plan requires {expectedRowType}; nothing created" };
+        DimensionCreatePlacementHelper.ApplyDimensionType(attr, dimensionType);
+
         var state = WriteVerifiedDimension(activeDrawing, view, points, dirVector, distance, attr);
 
         return new CreateDimensionResult

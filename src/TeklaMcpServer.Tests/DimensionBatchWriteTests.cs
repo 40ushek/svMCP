@@ -76,6 +76,28 @@ public sealed class DimensionBatchWriteTests
     }
 
     [Fact]
+    public void HyphenatedDimensionTypeMatchesTeklaReadback()
+    {
+        var context = ViewDimensionContextTests.Context();
+        var ids = BottomIds(context);
+        var resolved = context.ResolvePointIds(ids, "horizontal-down");
+        var writes = 0;
+        var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
+            (_, _) => { writes++; return new CreateDimensionResult { Created = true }; },
+            readDimensions: _ => Snapshot(101, resolved, 120, "RelativeAndAbsolute"),
+            validateAttributes: _ => { });
+        provider.Get(7);
+
+        var chain = Chain("location", ids, 120);
+        chain.DimensionType = "relative-and-absolute";
+        var result = provider.CreateBatch(Batch(context.ContextId, chain));
+
+        Assert.Equal(0, writes);
+        Assert.Equal("retained", result.Chains[0].Status);
+        Assert.Equal(101, result.Chains[0].DimensionId);
+    }
+
+    [Fact]
     public void FailedWriteStopsLaterChainsAndKeepsEarlierSuccessVisible()
     {
         var context = ViewDimensionContextTests.Context();
@@ -121,12 +143,12 @@ public sealed class DimensionBatchWriteTests
         ViewId = 7, ContextId = contextId, Chains = chains.ToList()
     };
 
-    private static GetDimensionsResult Snapshot(int id, double[] points, double distance) => new()
+    private static GetDimensionsResult Snapshot(int id, double[] points, double distance, string? teklaType = null) => new()
     {
         Groups = [new DimensionGroupInfo {
             DimensionType = "Horizontal", TopDirection = -1,
             Items = [new DimensionItemInfo {
-                Id = id, DimensionType = "Horizontal", Distance = distance,
+                Id = id, DimensionType = "Horizontal", TeklaDimensionType = teklaType ?? string.Empty, Distance = distance,
                 ReferenceLine = new DrawingLineInfo { StartY = -distance, EndY = -distance },
                 PointList = Enumerable.Range(0, points.Length / 3).Select(i => new DrawingPointInfo {
                     X = points[3 * i], Y = points[3 * i + 1], Order = i

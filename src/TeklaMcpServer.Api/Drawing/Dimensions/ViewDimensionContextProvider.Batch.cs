@@ -19,6 +19,7 @@ public sealed class BatchDimensionChain
     public double? Distance { get; set; }
     public double? PaperGapMm { get; set; }
     public string AttributesFile { get; set; } = "standard";
+    public string? DimensionType { get; set; }
 }
 
 public sealed class BatchDimensionItemResult
@@ -27,6 +28,8 @@ public sealed class BatchDimensionItemResult
     public string Status { get; set; } = string.Empty;
     public int? DimensionId { get; set; }
     public int? MergedIntoDimensionId { get; set; }
+    public int? MatchingDimensionId { get; set; }
+    public string? ActualDimensionType { get; set; }
     public string? RenderedLineStatus { get; set; }
     public string? Error { get; set; }
 }
@@ -34,6 +37,7 @@ public sealed class BatchDimensionItemResult
 public sealed class BatchDimensionReadback
 {
     public int Id { get; set; }
+    public string TeklaDimensionType { get; set; } = string.Empty;
     public string Side { get; set; } = string.Empty;
     public double? LineAt { get; set; }
     public double? From { get; set; }
@@ -111,15 +115,25 @@ public sealed partial class ViewDimensionContextProvider
         {
             var after = _readDimensions(batch.ViewId);
             result.FinalDimensions = ProjectReadback(after);
-            var remainingIds = after.Groups.SelectMany(group => group.Items)
-                .Select(item => item.Id).ToHashSet();
+            var finalItems = after.Groups.SelectMany(group => group.Items).ToList();
             for (var i = 0; i < prepared.Length; i++)
             {
                 var item = result.Chains[i];
                 if (item.Status is not ("pendingReadback" or "retained")) continue;
-                if (item.DimensionId.HasValue && remainingIds.Contains(item.DimensionId.Value))
+                var survivingItem = item.DimensionId.HasValue
+                    ? finalItems.FirstOrDefault(final => final.Id == item.DimensionId.Value) : null;
+                if (survivingItem != null)
                 {
-                    if (item.Status == "pendingReadback") item.Status = "created";
+                    item.ActualDimensionType = survivingItem.TeklaDimensionType;
+                    var requestedType = DimensionCreatePlacementHelper
+                        .ParseDimensionType(prepared[i].Write.Request.DimensionType)?.ToString();
+                    if (requestedType != null && !string.Equals(requestedType,
+                        survivingItem.TeklaDimensionType, StringComparison.OrdinalIgnoreCase))
+                    {
+                        item.Status = "uncertain";
+                        item.Error = "Dimension remains, but its Tekla dimension type differs from the requested type";
+                    }
+                    else if (item.Status == "pendingReadback") item.Status = "created";
                     continue;
                 }
                 var merged = FindMatching(after, prepared[i].Write, contained: true);
@@ -127,15 +141,29 @@ public sealed partial class ViewDimensionContextProvider
                 {
                     item.Status = "merged";
                     item.MergedIntoDimensionId = merged.Value.Item.Id;
+                    item.ActualDimensionType = merged.Value.Item.TeklaDimensionType;
                     item.Error = "No separate dimension remains after Tekla merged this chain";
                 }
                 else
                 {
-                    item.Status = Axis(prepared[i].Write.Request.Direction) == null
-                        ? "uncertain" : "failed";
-                    item.Error = item.Status == "uncertain"
-                        ? "Inclined dimension has no separate ID in the final read-back; inspect the view before retrying"
-                        : "Dimension is absent from the final drawing read-back";
+                    var otherType = FindMatching(after, prepared[i].Write, contained: true,
+                        requireRequestedType: false);
+                    if (otherType != null)
+                    {
+                        item.Status = "uncertain";
+                        item.MatchingDimensionId = otherType.Value.Item.Id;
+                        item.ActualDimensionType = otherType.Value.Item.TeklaDimensionType;
+                        item.Error = "No separate dimension remains; matching geometry has a different " +
+                            "Tekla dimension type. Inspect the view to confirm whether Tekla merged this chain";
+                    }
+                    else
+                    {
+                        item.Status = Axis(prepared[i].Write.Request.Direction) == null
+                            ? "uncertain" : "failed";
+                        item.Error = item.Status == "uncertain"
+                            ? "Inclined dimension has no separate ID in the final read-back; inspect the view before retrying"
+                            : "Dimension is absent from the final drawing read-back";
+                    }
                 }
             }
         }
@@ -164,12 +192,13 @@ public sealed partial class ViewDimensionContextProvider
             throw new ArgumentException($"Chain '{chain.Key}' has an invalid paperGapMm");
 
         DimensionCreatePlacementHelper.ResolveDirection(chain.Direction);
+        _ = DimensionCreatePlacementHelper.ParseDimensionType(chain.DimensionType);
         _validateAttributes(chain.AttributesFile);
         var request = new CreateDimensionRequest {
             ViewId = batch.ViewId, ContextId = batch.ContextId,
             PointIds = chain.PointIds, Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
-            AttributesFile = chain.AttributesFile
+            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType
         };
         var write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);
@@ -190,10 +219,12 @@ public sealed partial class ViewDimensionContextProvider
     }
 
     private static (DimensionGroupInfo Group, DimensionItemInfo Item)? FindMatching(
-        GetDimensionsResult snapshot, PreparedDimensionWrite write, bool contained)
+        GetDimensionsResult snapshot, PreparedDimensionWrite write, bool contained,
+        bool requireRequestedType = true)
     {
         var axis = Axis(write.Request.Direction);
         if (axis == null) return null;
+        var requestedTeklaType = DimensionCreatePlacementHelper.ParseDimensionType(write.Request.DimensionType)?.ToString();
         foreach (var group in snapshot.Groups)
         {
             if (!string.Equals(group.DimensionType, axis, StringComparison.OrdinalIgnoreCase)) continue;
@@ -201,6 +232,8 @@ public sealed partial class ViewDimensionContextProvider
             {
                 if (!SamePoints(write.Request.Points, item.PointList, contained)) continue;
                 if (!SameSide(write, item, axis)) continue;
+                if (requireRequestedType && requestedTeklaType != null && !string.Equals(item.TeklaDimensionType,
+                    requestedTeklaType, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!contained && Math.Abs(item.Distance - write.Distance) > 1) continue;
                 return (group, item);
             }
@@ -253,7 +286,7 @@ public sealed partial class ViewDimensionContextProvider
             var side = horizontal ? (group.TopDirection >= 0 ? "Top" : "Bottom")
                 : vertical ? (group.TopDirection >= 0 ? "Left" : "Right") : "Unknown";
             return new BatchDimensionReadback {
-                Id = item.Id, Side = side,
+                Id = item.Id, TeklaDimensionType = item.TeklaDimensionType, Side = side,
                 LineAt = item.ReferenceLine == null ? null
                     : horizontal ? item.ReferenceLine.StartY : vertical ? item.ReferenceLine.StartX : null,
                 From = coordinates.Length == 0 || (!horizontal && !vertical) ? null : coordinates.Min(),

@@ -157,7 +157,7 @@ public sealed partial class ViewDimensionContextProvider
 
     private static CreateDimensionResult Write(CreateDimensionRequest request, double distance) =>
         new TeklaDrawingDimensionsApi().CreateDimension(request.ViewId, request.Points,
-            request.Direction, distance, request.AttributesFile);
+            request.Direction, distance, request.AttributesFile, request.DimensionType);
 
     private void Clear()
     {

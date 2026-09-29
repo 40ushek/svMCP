@@ -33,6 +33,9 @@ public sealed class TimberPanelChainPreviewTests
         var rows = preview.Rows;
         var bottom = Read(rows.Single(r => r.side == "Bottom").chains[0]);
         Assert.Equal(new[] { 120d, 427.5, 625, 625, 625, 535, 120 }, bottom.RootElement.GetProperty("segments").EnumerateArray().Select(x => x.GetDouble()));
+        var top = Read(rows.Single(r => r.side == "Top").chains[0]);
+        Assert.Empty(top.RootElement.GetProperty("segments").EnumerateArray());
+        Assert.Contains("covered by Bottom", top.RootElement.GetProperty("note").GetString());
         Assert.Empty(preview.UnlocatedModelIds);
 
         var left = Read(rows.Single(r => r.side == "Left").chains[0]);
@@ -117,6 +120,8 @@ public sealed class TimberPanelChainPreviewTests
         var chain = Read(row.chains[0]);
 
         Assert.Equal(new[] { 120d }, chain.RootElement.GetProperty("segments").EnumerateArray().Select(x => x.GetDouble()));
+        Assert.Empty(Read(preview.Single(r => r.side == "Top").chains[0]).RootElement
+            .GetProperty("segments").EnumerateArray());
         Assert.Equal("complete-contact-check-geometry-fallback", preview.ContactStatus);
         Assert.Contains(preview.ContactFallbackPairs, pair => pair.SequenceEqual(new[] { 1, 2 }));
     }
