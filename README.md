@@ -54,13 +54,16 @@ dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 > Только прямые слэши: с обратными MSBuild создаёт мусорные папки прямо в `src`.
 >
 > **TeklaBridge пересобирается горячо, но не потому, что он короткоживущий.**
-> `PersistentBridge` запускает `TeklaBridge.exe --loop` и держит процесс всю сессию.
-> Сборка проходит потому, что для TS2025 работает копия из папки расширений Tekla,
-> а `dotnet build` пишет в `src/TeklaBridge/bin/`; результат копируется в `bridge/`
-> целью `BuildAndCopyTeklaBridge`.
+> `TeklaBridge.exe --loop` запускает и держит всю сессию не сам MCP-сервер, а отдельный
+> процесс `TeklaBridge.Controller.exe` (трей-приложение, см. «Дополнительно для Tekla
+> Structures 2025» ниже и `.agents/skills/tekla-bridge/SKILL.md`); MCP-сервер обращается
+> к нему по named pipe. Сборка проходит потому, что для TS2025 работает копия из папки
+> расширений Tekla, а `dotnet build` пишет в `src/TeklaBridge/bin/`; результат
+> копируется в `bridge/` целью `BuildAndCopyTeklaBridge`.
 >
-> А вот **разворачивание в папку расширений упрётся в блокировку файла** — процесс моста
-> надо сначала остановить. См. следующий раздел.
+> А вот **разворачивание в папку расширений упрётся в блокировку файла** — мост надо
+> сначала остановить через контроллер (не убивать процесс напрямую). См. следующий
+> раздел и `.agents/skills/tekla-bridge/SKILL.md`.
 
 ### Дополнительно для Tekla Structures 2025
 
@@ -72,11 +75,18 @@ TeklaBridge должен запускаться из папки расширен
 
 **Деплой TeklaBridge для TS2025:**
 
+Мостом с 2026-09-26 владеет не MCP-сервер, а отдельный процесс
+`TeklaBridge.Controller.exe` (трей-приложение, `TeklaMcpServer/bin/<Config>/net8.0-windows/controller/`).
+Перед копированием файлов в extensions-папку мост нужно остановить **через контроллер**
+(named pipe `svMcpTeklaBridgeController`), а не `Stop-Process` по `TeklaBridge.exe` —
+это расходится с внутренним состоянием контроллера и после Stop мост **не** поднимается
+сам собой на следующий вызов, нужен явный Resume. Рабочий скрипт для
+`status`/`stop`/`resume`/`restart` через pipe и объяснение — в
+`.agents/skills/tekla-bridge/SKILL.md`.
+
 ```powershell
 # Сборка TeklaBridge — сессию MCP-клиента закрывать не нужно.
-# Но перед копированием остановить работающий мост, иначе файлы заблокированы:
-#   Stop-Process -Name TeklaBridge -Force
-# PersistentBridge поднимет его заново при следующем вызове.
+# Перед копированием: остановить мост через контроллер (см. skill выше), не Stop-Process.
 dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 
 # Скопировать TeklaBridge.exe, TeklaMcpServer.Api.dll и SolidContacts.Core.dll
@@ -87,6 +97,7 @@ Copy-Item "$src\TeklaBridge.exe" $dst
 Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
 Copy-Item "$src\SolidContacts.Core.dll" $dst
 # Также скопировать сторонние зависимости (System.Text.Json, Newtonsoft.Json и т.д.)
+# Затем возобновить мост через контроллер (Resume/Restart) — сам он не запустится.
 ```
 
 Тот же шаг в bash:
@@ -120,7 +131,10 @@ Claude Desktop
     │  stdio (JSON-RPC / MCP)
     ▼
 TeklaMcpServer.exe  (net8.0-windows)
-    │  Process.Start → stdout pipe
+    │  named pipe (svMcpTeklaBridgeController)
+    ▼
+TeklaBridge.Controller.exe  (net8.0-windows, tray)
+    │  Process.Start → stdout pipe, sole owner of the child process
     ▼
 TeklaBridge.exe  (net48)
     │  .NET Remoting IPC (TS2021) / Trimble.Remoting MMF (TS2025)
@@ -128,10 +142,17 @@ TeklaBridge.exe  (net48)
 Tekla Structures 2021 / 2025
 ```
 
-### Почему два процесса?
+С 2026-09-26 (`TeklaBridge.Controller`, см. `src/TeklaBridge/ROADMAP_TRAY_CONTROL.md`)
+мостом владеет не MCP-сервер, а этот отдельный трей-процесс; MCP-сервер — тонкий
+pipe-клиент и сам его запускает, если pipe недоступен. Управление (`stop`/`resume`/
+`restart`) описано в `.agents/skills/tekla-bridge/SKILL.md`, включая сценарий деплоя.
+
+### Почему два процесса Tekla-моста?
 
 Tekla Structures Open API требует **net48**.
 MCP SDK требует **net8+**. Совместить в одном процессе невозможно — разные рантаймы, разные CLR.
+(Контроллер — третий процесс, но не из-за CLR: он нужен для владения жизненным циклом
+моста независимо от MCP-клиента, см. выше.)
 
 | Версия | IPC-механизм | Особенность запуска |
 |---|---|---|
@@ -570,8 +591,9 @@ error MSB3021: Unable to copy file ... Access to the path is denied.
 `-p:BaseOutputPath=` — см. [«Деплой после изменений»](#3-деплой-после-изменений).
 Если менялся только TeklaBridge — его можно **пересобирать** горячо: сборка пишет в
 `src/TeklaBridge/bin/`, а работает копия из папки расширений. Но **разворачивание**
-в папку расширений упрётся в блокировку — `PersistentBridge` держит `--loop` процесс
-всю сессию, его надо сначала остановить.
+в папку расширений упрётся в блокировку — `--loop`-процессом владеет `TeklaBridge.Controller.exe`,
+его надо сначала остановить через контроллер (pipe `stop`, не `Stop-Process` по
+`TeklaBridge.exe`) — см. `.agents/skills/tekla-bridge/SKILL.md`.
 
 #### NuGet restore после git rollback
 
