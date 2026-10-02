@@ -85,7 +85,7 @@ the original part name alongside prefix, profile and material. Classification re
 these captured values only; it does not read Tekla or change geometry selection.
 
 The typed `ViewDimensionContext.Query` accepts optional `layerRules`. The MCP/bridge
-JSON parameter is deferred to a separate commit. No built-in prefix table or default
+JSON transport is implemented below; runtime activation is separate. No built-in prefix table or default
 class is inferred. A `PartLayerRule` contains an explicit ID, class name, integer
 priority, AND conditions on `Name`, `Prefix`, `Profile`, `Material`, and arbitrary JSON `Data`.
 Each typed `PartLayerCondition` carries `Property`, `MatchKind` and `Value`.
@@ -104,7 +104,7 @@ unavailable properties and potentially deciding rules. Invalid/duplicate rule ID
 are refused in diagnostic projection. Rule conditions and JSON data are copied;
 additional data is preserved without interpretation. No interface is introduced yet.
 
-Example for direct typed callers (not an available MCP argument):
+Example for direct typed callers:
 
 ```csharp
 var rule = new PartLayerRule("batten-by-name", "batten", new[] {
@@ -133,6 +133,52 @@ verify exact legacy preview/decision parity, omitted tables without rules and di
 This completes diagnostic classification only: candidate selection by class,
 per-candidate inclusion/exclusion explanations, support resolution, compatibility and
 combination remain pending. No live drawing acceptance or deployment is claimed.
+
+## Classification rules through MCP/bridge (2026-10-02)
+
+`get_view_dimension_context` now accepts optional `layerRules`, a string containing
+a JSON array of rules. It is appended to the existing bridge arguments; older callers
+without that argument still work. Empty/whitespace or `[]` produces no classification
+tables. Classification is returned only for `ruleSet="panel"` with `chainDetails`;
+other questions retain their output even when valid rules are supplied.
+
+Example: request `viewId=<current view>`, `questions="chainDetails"`, `ruleSet="panel"`
+and pass this array serialized as the `layerRules` string:
+
+```json
+[
+  { "id": "timber-batten", "className": "batten", "priority": 10,
+    "conditions": [
+      { "property": "Name", "matchKind": "StartsWith", "value": "BATTEN" },
+      { "property": "Material", "value": "TIMBER" }
+    ], "data": { "label": "Timber battens" } },
+  { "id": "c24-batten", "className": "batten", "priority": 10,
+    "conditions": [
+      { "property": "Name", "matchKind": "StartsWith", "value": "BATTEN" },
+      { "property": "Material", "value": "C24" }
+    ] }
+]
+```
+
+Both rules deliberately assign the same class, without assuming a plant-specific
+meaning for B/T prefixes. Different class names can be configured explicitly.
+Property names in JSON are the shown camelCase names. Property/match vocabulary
+values ignore case; omitted `matchKind` is `Equals`, omitted priority is zero.
+`data` is an arbitrary JSON object copied without interpretation.
+
+One shared wire validator runs in MCP before contacting the bridge and in the bridge
+before fetching the view context. Invalid JSON/schema, missing fields, unsupported
+property/match values, duplicate IDs/fields and invalid priority/data are rejected
+explicitly. This is request validation; failures do not read geometry and are not
+reported as `compositionPlan.error`. Typed classification/projection failures retain
+the existing isolated plan error behavior. Rules are not stored in the geometry cache,
+used for structural inclusion, or passed to the writer.
+
+Synthetic transport tests verify exact argument/JSON preservation, defaults and older
+arguments, domain vocabulary coverage, malformed requests at both boundaries and
+parsed-rule-to-Query preview parity. Live use requires updated MCP and bridge binaries
+and refreshing the MCP tool schema; deployment/live acceptance has not been performed
+as part of this code stage.
 
 ## Foundation and boundaries
 

@@ -69,14 +69,24 @@ public static partial class ModelTools
         [Description("Legacy argument; unused by prepared-chain questions")] string direction = "horizontal",
         [Description("Legacy argument; unused by prepared-chain questions")] double? paperGapMm = null,
         [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel",
-        [Description("Legacy argument; contact questions are not supported by this tool.")] string contactPair = "")
+        [Description("Legacy argument; contact questions are not supported by this tool.")] string contactPair = "",
+        [Description("Diagnostic rules for panel chainDetails: JSON [{id,className,conditions:[{property,matchKind,value}],priority?,data?}]. Properties: Name,Prefix,Profile,Material. Matches: Equals (default),Contains,StartsWith. Conditions are AND, ignoring case. Empty disables classification. Does not change dimensions; examples in ROADMAP_CHAIN_COMPOSITION.md.")] string layerRules = "")
+    {
+        return RunBridge(BuildViewDimensionContextArgs(viewId, questions, sides, excludePrefixes, excludeMaterials,
+            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules));
+    }
+
+    internal static string[] BuildViewDimensionContextArgs(int viewId, string questions, string sides,
+        string excludePrefixes, string excludeMaterials, bool refresh, string points, string direction,
+        double? paperGapMm, string ruleSet, string contactPair, string layerRules)
     {
         questions = TeklaMcpServer.Shared.DimensionPreviewQuestions.Normalize(questions);
-        return RunBridge("get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
+        _ = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(layerRules);
+        return new[] { "get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
             questions, sides, excludePrefixes, excludeMaterials, refresh.ToString(), points, direction,
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             string.IsNullOrWhiteSpace(ruleSet) ? "steel" : ruleSet,
-            contactPair ?? string.Empty);
+            contactPair ?? string.Empty, layerRules ?? string.Empty };
     }
 
     [McpServerTool, Description(

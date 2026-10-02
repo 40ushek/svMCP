@@ -1,9 +1,28 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
 public static partial class DrawingCommandParsers
 {
+    public static IReadOnlyList<PartLayerRule> ParseViewDimensionLayerRules(string[] args)
+    {
+        var json = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(args.Length > 12 ? args[12] : null);
+        if (!json.HasValue) return Array.Empty<PartLayerRule>();
+        var rules = json.Value.EnumerateArray().Select(rule => new PartLayerRule(
+            rule.GetProperty("id").GetString()!, rule.GetProperty("className").GetString()!,
+            rule.GetProperty("conditions").EnumerateArray().Select(condition => new PartLayerCondition(
+                (PartLayerProperty)Enum.Parse(typeof(PartLayerProperty), condition.GetProperty("property").GetString()!, true),
+                condition.GetProperty("value").GetString()!,
+                condition.TryGetProperty("matchKind", out var match)
+                    ? (PartLayerMatchKind)Enum.Parse(typeof(PartLayerMatchKind), match.GetString()!, true) : PartLayerMatchKind.Equals)),
+            rule.TryGetProperty("priority", out var priority) ? priority.GetInt32() : 0,
+            rule.TryGetProperty("data", out var data)
+                ? data.EnumerateObject().ToDictionary(entry => entry.Name, entry => entry.Value) : null)).ToArray();
+        return PartRoleClassifier.ValidateLayerRules(rules);
+    }
+
     public static PartGeometryInViewParseResult ParsePartGeometryInViewRequest(string[] args)
     {
         if (args.Length < 3

@@ -794,6 +794,7 @@ internal sealed partial class DrawingCommandHandler
         try
         {
             var questions = DrawingCommandParsers.NormalizePreviewQuestions(args.Length > 2 ? args[2] : null);
+            var layerRules = DrawingCommandParsers.ParseViewDimensionLayerRules(args);
             var context = _dimensionContexts.Get(viewId,
                 args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
                 args.Length > 6 && bool.Parse(args[6]));
@@ -803,7 +804,7 @@ internal sealed partial class DrawingCommandHandler
                 args.Length > 8 ? args[8] : "horizontal",
                 args.Length > 9 && !string.IsNullOrWhiteSpace(args[9]) ? double.Parse(args[9], CultureInfo.InvariantCulture) : (double?)null,
                 args.Length > 10 ? args[10] : "steel",
-                args.Length > 11 ? args[11] : string.Empty));
+                args.Length > 11 ? args[11] : string.Empty, layerRules));
         }
         catch (Exception ex) { WriteError(ex.Message); }
         return true;

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\DimensionPreviewQuestions.cs" Link="Shared\DimensionPreviewQuestions.cs" />
+    <Compile Include="..\Shared\PartLayerRulesJson.cs" Link="Shared\PartLayerRulesJson.cs" />
     <!-- The contact search itself. netstandard2.0 and no Tekla reference of its own,
          which is what lets the adapter between the two be tested without a running
          model. -->
