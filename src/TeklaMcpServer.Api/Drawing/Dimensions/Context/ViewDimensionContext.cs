@@ -169,7 +169,8 @@ public sealed class ViewDimensionContext
             var section = viewType is "SectionView" or "EndView";
             var panelPlans = panel && refusal == null
                 ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
-                    DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get())
+                    DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get(),
+                    contextId: ContextId, viewId: ViewId)
                 : null;
             if (panelPlans != null)
             {
@@ -178,7 +179,9 @@ public sealed class ViewDimensionContext
                 if (panelPlans.UnlocatedModelIds.Length > 0) diagnostics["unlocatedModelIds"] = panelPlans.UnlocatedModelIds;
                 if (panelPlans.MissingSupportModelIds.Length > 0) diagnostics["missingSupportModelIds"] = panelPlans.MissingSupportModelIds;
                 if (panelPlans.TiltedPartIds.Length > 0) diagnostics["tiltedPartIds"] = panelPlans.TiltedPartIds;
+                if (panelPlans.UnsupportedProposalCount > 0) diagnostics["unsupportedProposalCount"] = panelPlans.UnsupportedProposalCount;
                 result["chainDiagnostics"] = diagnostics;
+                if (detailed) result["compositionPlan"] = panelPlans.ProjectCompositionPlan();
             }
             SectionDimensionChainPreview? sectionPreview = null;
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(

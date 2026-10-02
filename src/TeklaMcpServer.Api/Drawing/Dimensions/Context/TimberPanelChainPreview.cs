@@ -16,26 +16,39 @@ internal static class TimberPanelChainPreview
     }
 
     internal sealed class PreviewResult(PreviewRow[] rows, int[][] contactFallbackPairs,
-        int[] unlocatedModelIds, int[] missingSupportModelIds, int[] tiltedPartIds, string contactStatus)
+        int[] unlocatedModelIds, int[] missingSupportModelIds, int[] tiltedPartIds, string contactStatus,
+        Func<DimensionCompositionPlan> buildCompositionPlan, int unsupportedProposalCount = 0)
         : IEnumerable<PreviewRow>
     {
+        /// <summary>Proposals the four-side legacy rows cannot show; they remain in the plan as Blocked.</summary>
+        public int UnsupportedProposalCount { get; } = unsupportedProposalCount;
         public PreviewRow[] Rows { get; } = rows;
         public int[][] ContactFallbackPairs { get; } = contactFallbackPairs;
         public int[] UnlocatedModelIds { get; } = unlocatedModelIds;
         public int[] MissingSupportModelIds { get; } = missingSupportModelIds;
         public int[] TiltedPartIds { get; } = tiltedPartIds;
         public string ContactStatus { get; } = contactStatus;
+        private readonly Lazy<DimensionCompositionPlan> _compositionPlan = new(buildCompositionPlan);
+        public DimensionCompositionPlan CompositionPlan => _compositionPlan.Value;
+
+        // Only detailed diagnostics access the plan. Failures here cannot affect legacy rows.
+        public object ProjectCompositionPlan()
+        {
+            try { return CompositionPlan.Project(); }
+            catch (Exception ex) { return new { error = ex.Message }; }
+        }
         public IEnumerator<PreviewRow> GetEnumerator() => ((IEnumerable<PreviewRow>)Rows).GetEnumerator();
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     public static PreviewResult Build(DimensionPointCatalog catalog, GeometryGroup group,
         IReadOnlyCollection<int> includedIds, double minimumSegment,
-        Func<ViewContactCandidatePointsResult?> getContacts, OverallDimensionSettings? overallSettings = null)
+        Func<ViewContactCandidatePointsResult?> getContacts, string contextId, int viewId,
+        OverallDimensionSettings? overallSettings = null)
     {
         if (group.Extent == null)
             return new PreviewResult(Rows(side => [Empty(side, "location", "panel outline is empty")]),
-                [], [], [], [], "not-available");
+                [], [], [], [], "not-available", () => BuildCompositionPlan(new DimensionRuleEvaluation([]), contextId, viewId));
 
         var panel = group.Extent;
         var input = new TimberPanelPartLocationInput(group, includedIds, getContacts);
@@ -43,8 +56,13 @@ internal static class TimberPanelChainPreview
         var evaluation = new DimensionRuleSet(
             new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment)),
             new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings())).Calculate(context);
+        return FromEvaluation(evaluation, contextId, viewId);
+    }
+
+    internal static PreviewResult FromEvaluation(DimensionRuleEvaluation evaluation, string contextId, int viewId)
+    {
         var rows = Rows(side => evaluation.Results
-            .Where(result => AxisAlignedDimensionRulePreviewAdapter.GetSide(result) == side)
+            .Where(result => AxisAlignedDimensionRulePreviewAdapter.TryGetSide(result, out var resolvedSide) && resolvedSide == side)
             .Select(result => result.Kind == "location" ? Location(result) : AxisAlignedDimensionRulePreviewAdapter.ToPreview(result))
             .ToArray());
         return new PreviewResult(rows,
@@ -52,7 +70,28 @@ internal static class TimberPanelChainPreview
             (int[])evaluation.Diagnostics["unlocatedModelIds"],
             (int[])evaluation.Diagnostics["missingSupportModelIds"],
             (int[])evaluation.Diagnostics["tiltedPartIds"],
-            (string)evaluation.Diagnostics["contactStatus"]);
+            (string)evaluation.Diagnostics["contactStatus"], () => BuildCompositionPlan(evaluation, contextId, viewId),
+            evaluation.Results.Count(result => !AxisAlignedDimensionRulePreviewAdapter.TryGetSide(result, out _)));
+    }
+
+    private static DimensionCompositionPlan BuildCompositionPlan(DimensionRuleEvaluation evaluation, string contextId, int viewId)
+    {
+        if (string.IsNullOrWhiteSpace(contextId)) throw new ArgumentException("A frozen context ID is required.", nameof(contextId));
+        if (viewId <= 0) throw new ArgumentOutOfRangeException(nameof(viewId));
+        var proposals = evaluation.Results.Select(result => {
+            var hasSide = AxisAlignedDimensionRulePreviewAdapter.TryGetSide(result, out var side);
+            var proposal = result;
+            if (!hasSide)
+            {
+                var evidence = result.Evidence.ToDictionary(pair => pair.Key, pair => pair.Value);
+                evidence["legacyPreviewRefusal"] = "The panel four-side preview does not support this placement or direction.";
+                proposal = new DimensionRuleResult(result.Direction, result.Placement, result.Kind,
+                    result.Points, result.Note, result.Segments, evidence);
+            }
+            return proposal.WithProposal(DimensionProposalIdentity.Create(contextId, viewId, "panel",
+                hasSide ? side + "-" + result.Kind : null, proposal));
+        });
+        return DimensionChainComposer.Compose(proposals, evaluation.Diagnostics);
     }
 
     private static PreviewRow[] Rows(Func<DimensionChainSide, object[]> chains) =>

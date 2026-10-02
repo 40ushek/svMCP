@@ -243,8 +243,7 @@ public sealed partial class ViewDimensionContextProvider
         var answer = context.Query(chainView, "all", ruleSet: ruleSet);
         if (!answer.TryGetProperty("chainPreview", out var rows))
             throw new ArgumentException("Cannot resolve preview chains from this context");
-        var preview = rows.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray())
-            .ToDictionary(chain => chain.GetProperty("key").GetString()!, StringComparer.Ordinal);
+        var preview = IndexPreviewChains(rows, references.Select(chain => chain.Preview!));
         return batch.Chains.Select(chain => {
             if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
@@ -260,6 +259,25 @@ public sealed partial class ViewDimensionContextProvider
                 Distance = chain.Distance, PaperGapMm = chain.PaperGapMm, DimensionType = chain.DimensionType
             };
         }).ToArray();
+    }
+
+    // Legacy keys address one chain. Multiple proposals per key are valid in a diagnostic
+    // plan, but cannot be resolved by this reference form and must fail before any write.
+    internal static IReadOnlyDictionary<string, System.Text.Json.JsonElement> IndexPreviewChains(
+        System.Text.Json.JsonElement rows, IEnumerable<string> requestedKeys)
+    {
+        var requested = new HashSet<string>(requestedKeys, StringComparer.Ordinal);
+        if (requested.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException("Requested preview keys must be non-empty");
+        var groups = rows.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .Where(chain => requested.Contains(chain.GetProperty("key").GetString()!))
+            .GroupBy(chain => chain.GetProperty("key").GetString(), StringComparer.Ordinal).ToArray();
+        var ambiguous = groups.Where(group => group.Count() > 1).Select(group => group.Key)
+            .OrderBy(key => key, StringComparer.Ordinal).ToArray();
+        if (ambiguous.Length > 0)
+            throw new ArgumentException("Ambiguous preview keys: " + string.Join(",", ambiguous)
+                + ". Legacy preview references require exactly one chain per key.");
+        return groups.ToDictionary(group => group.Key!, group => group.Single(), StringComparer.Ordinal);
     }
 
     private static void ValidateBoltReferences(IEnumerable<BatchDimensionChain> chains)

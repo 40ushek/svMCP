@@ -168,8 +168,31 @@ public sealed class ViewDimensionContextTests
     [Fact]
     public void PanelRuleSetRoutesChainQuestionToTimberPreview()
     {
-        var result = Context().Query("chainDetails", "Bottom", ruleSet: "panel");
+        var context = Context();
+        var result = context.Query("chainDetails", "Bottom", ruleSet: "panel");
         Assert.Equal("not-requested", result.GetProperty("chainDiagnostics").GetProperty("contactStatus").GetString());
+        var plan = result.GetProperty("compositionPlan");
+        Assert.Equal(DimensionCompositionPlan.PolicyVersion, plan.GetProperty("policyVersion").GetString());
+        Assert.Equal(context.ContextId, plan.GetProperty("contextId").GetString());
+        Assert.Equal(context.ViewId, plan.GetProperty("viewId").GetInt32());
+        Assert.All(plan.GetProperty("proposals").EnumerateArray(), proposal => {
+            Assert.Equal("Unknown", proposal.GetProperty("reference").GetString());
+            Assert.True(proposal.TryGetProperty("previewKey", out _));
+            Assert.False(proposal.TryGetProperty("points", out _));
+            Assert.False(proposal.TryGetProperty("segments", out _));
+            Assert.False(proposal.TryGetProperty("evidence", out _));
+            Assert.False(proposal.TryGetProperty("placement", out _));
+        });
+        Assert.DoesNotContain("legacyRowHint", plan.GetRawText());
+        Assert.False(plan.TryGetProperty("chains", out _));
+        var keys = result.GetProperty("chainPreview")[0].GetProperty("chains").EnumerateArray()
+            .Select(chain => chain.GetProperty("key").GetString()).ToArray();
+        Assert.Contains(plan.GetProperty("proposals").EnumerateArray(), p => keys.Contains(p.GetProperty("previewKey").GetString()));
+        var repeated = context.Query("chainDetails", "Bottom", ruleSet: "panel");
+        Assert.Equal(plan.GetRawText(), repeated.GetProperty("compositionPlan").GetRawText());
+        var compact = context.Query("chain", "Bottom", ruleSet: "panel");
+        Assert.False(compact.TryGetProperty("compositionPlan", out _));
+        Assert.False(context.Query("chainDetails").TryGetProperty("compositionPlan", out _));
     }
 
     [Fact]

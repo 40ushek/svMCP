@@ -7,6 +7,50 @@ namespace TeklaMcpServer.Tests;
 
 public sealed class DimensionPreviewWorkflowTests
 {
+    [Fact]
+    public void LegacyPreviewIndexRejectsAmbiguousKeysWithExplicitDiagnostic()
+    {
+        var rows = ViewDimensionContext.Freeze(new[] {
+            new { chains = new[] { new { key = "Top-location", pointIds = new[] { "a", "b" } } } },
+            new { chains = new[] { new { key = "Top-location", pointIds = new[] { "c", "d" } } } }
+        });
+        var error = Assert.Throws<ArgumentException>(() => ViewDimensionContextProvider.IndexPreviewChains(rows, ["Top-location"]));
+        Assert.Contains("Ambiguous preview keys: Top-location", error.Message);
+        Assert.Contains("exactly one chain per key", error.Message);
+    }
+
+    [Fact]
+    public void LegacyPreviewIndexKeepsUniqueChainPointsAndRejectsEmptyKeys()
+    {
+        var rows = ViewDimensionContext.Freeze(new[] {
+            new { chains = new[] {
+                new { key = "Top-location", pointIds = new[] { "a", "b" } },
+                new { key = "Top-overall", pointIds = new[] { "a", "c" } }
+            } }
+        });
+        var index = ViewDimensionContextProvider.IndexPreviewChains(rows, ["Top-overall"]);
+        Assert.Equal(new[] { "a", "c" }, index["Top-overall"].GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()));
+        var invalid = ViewDimensionContext.Freeze(new[] { new { chains = new[] { new { key = " " } } } });
+        Assert.Equal("Requested preview keys must be non-empty", Assert.Throws<ArgumentException>(
+            () => ViewDimensionContextProvider.IndexPreviewChains(invalid, [" "])).Message);
+    }
+
+    [Fact]
+    public void UnrequestedAmbiguousPreviewKeyDoesNotBlockUniqueReference()
+    {
+        var rows = ViewDimensionContext.Freeze(new[] { new { chains = new[] {
+            new { key = "Top-location", pointIds = new[] { "a", "b" } },
+            new { key = "Top-location", pointIds = new[] { "c", "d" } },
+            new { key = "Bottom-overall", pointIds = new[] { "a", "d" } }
+        } } });
+        var index = ViewDimensionContextProvider.IndexPreviewChains(rows, ["Bottom-overall"]);
+        Assert.Equal("Bottom-overall", Assert.Single(index).Key);
+        Assert.Equal(new[] { "a", "d" }, index["Bottom-overall"].GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()));
+        Assert.Contains("Top-location", Assert.Throws<ArgumentException>(() =>
+            ViewDimensionContextProvider.IndexPreviewChains(rows, ["Bottom-overall", "Top-location"])).Message);
+        Assert.Empty(ViewDimensionContextProvider.IndexPreviewChains(rows, ["missing-key"]));
+    }
+
     [Theory]
     [InlineData("points")]
     [InlineData("chain,dimensionPoints")]

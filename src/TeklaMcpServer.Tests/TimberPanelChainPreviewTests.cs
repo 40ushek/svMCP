@@ -29,7 +29,7 @@ public sealed class TimberPanelChainPreviewTests
         CalcDimensionChains.Apply(group);
         var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, parts.Select(p => p.ModelId!.Value).ToArray(), 3, () => null);
+        var preview = TimberPanelChainPreview.Build(catalog, group, parts.Select(p => p.ModelId!.Value).ToArray(), 3, () => null, "snapshot", 7);
         var rows = preview.Rows;
         var bottom = Read(rows.Single(r => r.side == "Bottom").chains[0]);
         Assert.Equal(new[] { 120d, 427.5, 625, 625, 625, 535, 120 }, bottom.RootElement.GetProperty("segments").EnumerateArray().Select(x => x.GetDouble()));
@@ -58,6 +58,19 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Equal(-1278.5, heightPoints[0].Y);
         Assert.Equal(1453.5, heightPoints[1].Y);
 
+        var plan = preview.CompositionPlan;
+        Assert.Equal(6, plan.OriginalProposals.Count);
+        Assert.All(plan.OriginalProposals, p => {
+            Assert.Equal("snapshot", p.Proposal!.ContextId);
+            Assert.Equal(DimensionMeasurementReference.Unknown, p.Proposal.Reference);
+            Assert.Equal(DimensionReferenceSupport.Unspecified, p.Proposal.ReferenceSupport);
+        });
+        var bottomProposal = plan.OriginalProposals.Single(p => p.Kind == "location"
+            && AxisAlignedDimensionRulePreviewAdapter.GetSide(p) == DimensionChainSide.Bottom);
+        Assert.Equal(bottom.RootElement.GetProperty("pointIds").EnumerateArray().Select(p => p.GetString()),
+            bottomProposal.Points.Select(p => p.Id));
+        Assert.Equal(2, plan.Decisions.Count(d => d.Kind == DimensionCompositionDecisionKind.Blocked));
+
     }
 
     [Fact]
@@ -73,7 +86,7 @@ public sealed class TimberPanelChainPreviewTests
         CalcDimensionChains.Apply(unrelated);
         var catalog = DimensionPointCatalog.Build(unrelated.DimensionChains!);
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2], 3, () => null);
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2], 3, () => null, "snapshot", 7);
         var rows = preview.Rows;
         var bottom = Read(rows.Single(r => r.side == "Bottom").chains[0]);
         Assert.True(bottom.RootElement.GetProperty("incomplete").GetBoolean());
@@ -81,6 +94,10 @@ public sealed class TimberPanelChainPreviewTests
             bottom.RootElement.GetProperty("incompleteReason").GetString());
         Assert.NotEmpty(bottom.RootElement.GetProperty("missingSupportModelIds").EnumerateArray());
         Assert.NotEmpty(preview.UnlocatedModelIds);
+        Assert.Contains(preview.CompositionPlan.Decisions, d => d.Kind == DimensionCompositionDecisionKind.Blocked
+            && d.Issues.Any(issue => issue.Code == "missing-support" && issue.ModelIds.Count > 0));
+        Assert.Contains(preview.CompositionPlan.ViewIssues, issue => issue.Code == "unlocated-part"
+            && issue.ModelIds.SequenceEqual(preview.UnlocatedModelIds.OrderBy(id => id)));
     }
 
     [Fact]
@@ -98,7 +115,7 @@ public sealed class TimberPanelChainPreviewTests
         CalcDimensionChains.Apply(group);
         var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2, 3, 4], 3, () => null);
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2, 3, 4], 3, () => null, "snapshot", 7);
         var left = Read(preview.Rows.Single(r => r.side == "Left").chains[0]).RootElement;
 
         Assert.False(left.GetProperty("incomplete").GetBoolean());
@@ -118,7 +135,7 @@ public sealed class TimberPanelChainPreviewTests
         var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
         var completeNoContact = new ViewContactCandidatePointsResult(7, [], [], [], [], searchComplete: true);
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2], 3, () => completeNoContact);
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2], 3, () => completeNoContact, "snapshot", 7);
         var row = preview.Single(r => r.side == "Bottom");
         var chain = Read(row.chains[0]);
 
@@ -142,7 +159,7 @@ public sealed class TimberPanelChainPreviewTests
         CalcDimensionChains.Apply(group);
         var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, studs.Select(p => p.ModelId!.Value).ToArray(), 3, () => null);
+        var preview = TimberPanelChainPreview.Build(catalog, group, studs.Select(p => p.ModelId!.Value).ToArray(), 3, () => null, "snapshot", 7);
         double[] Ys(string side) => Read(preview.Rows.Single(r => r.side == side).chains[0]).RootElement
             .GetProperty("points").EnumerateArray().Select(p => p.GetProperty("pointId").GetString()!)
             .Select(id => Math.Round(catalog.AllPoints.Single(q => q.Id == id).Y, 1)).ToArray();
@@ -173,7 +190,7 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Equal(DimensionChainSide.Top, AxisAlignedDimensionRulePreviewAdapter.GetSide(top));
         Assert.Equal(200d, Assert.Single(top.Segments));
 
-        var preview = TimberPanelChainPreview.Build(catalog, group, [1], 3, () => null,
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1], 3, () => null, "snapshot", 7,
             new OverallDimensionSettings(null, null));
         Assert.All(preview.Rows, row => Assert.Single(row.chains));
     }
@@ -257,6 +274,107 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Equal(new[] { "bolt", "bolt-group", "rebar", "rebar-group" },
             point.Sources.Select(source => source.ObjectKind));
         Assert.Null(context.AxisAlignedGeometry);
+    }
+
+    [Fact]
+    public void InclinedAndUnlocatedPartsAreListedAsViewCauses()
+    {
+        var inclined = new GeometryGroupShape("inclined", RegionFlattener.Flatten(new[] {
+            new Vec3(70, 0, 0), new Vec3(90, 10, 0), new Vec3(110, 300, 0), new Vec3(90, 290, 0)
+        }.ToList()), modelId: 3);
+        var parts = new[] { Part(1, 0, 60, 0, 500), Part(2, 140, 200, 0, 500), inclined };
+        var group = new GeometryGroup("panel", [Rectangle("outline", 0, 200, 0, 500)], parts);
+        CalcDimensionChains.Apply(group);
+        var catalog = DimensionPointCatalog.Build(group.DimensionChains!);
+        var preview = TimberPanelChainPreview.Build(catalog, group, [1, 2, 3, 999], 3, () => null, "snapshot", 7);
+        Assert.Contains(preview.CompositionPlan.ViewIssues, issue => issue.Code == "unsupported-inclined-part"
+            && issue.ModelIds.SequenceEqual(new[] { 3 }));
+        Assert.Contains(preview.CompositionPlan.ViewIssues, issue => issue.Code == "unlocated-part"
+            && issue.ModelIds.Contains(999));
+    }
+
+    [Fact]
+    public void InvalidPlanContextDoesNotPreventLegacyPreview()
+    {
+        var group = new GeometryGroup("empty", []);
+        var catalog = DimensionPointCatalog.Build(new DimensionChainSet([]));
+        foreach (var scope in new[] { (ContextId: "", ViewId: 7), (ContextId: "snapshot", ViewId: 0) })
+        {
+            var preview = TimberPanelChainPreview.Build(catalog, group, [], 3, () => null, scope.ContextId, scope.ViewId);
+            Assert.Equal(4, preview.Rows.Length);
+            using var plan = Read(preview.ProjectCompositionPlan());
+            Assert.False(string.IsNullOrWhiteSpace(plan.RootElement.GetProperty("error").GetString()));
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void DiagnosticFailuresAreLazyAndDoNotChangeLegacyRows(bool duplicateIds)
+    {
+        var proposal = new DimensionRuleResult(new DimensionDirection(1, 0),
+            new OutsideOutlineDimensionPlacement(new DimensionDirection(0, -1), 1), "location", [],
+            proposal: new DimensionProposalIdentity("snapshot", 7, "panel:123456789abcdef0",
+                DimensionMeasurementPurpose.Location, DimensionMeasurementReference.Unknown,
+                DimensionReferenceSupport.Unspecified, "Bottom-location"));
+        var rows = new[] { new TimberPanelChainPreview.PreviewRow("Bottom", [new { kind = "location", pointIds = new[] { "p1", "p2" } }]) };
+        var calls = 0;
+        var preview = new TimberPanelChainPreview.PreviewResult(rows, [], [], [], [], "not-requested", () => {
+            calls++;
+            return duplicateIds ? DimensionChainComposer.Compose([proposal, proposal])
+                : DimensionChainComposer.Compose([proposal], new Dictionary<string, object> { ["missingSupportModelIds"] = "invalid" });
+        });
+        var legacy = JsonSerializer.Serialize(preview.Rows);
+        Assert.Single(preview);
+        Assert.Equal(0, calls);
+        using var plan = Read(preview.ProjectCompositionPlan());
+        Assert.Contains(duplicateIds ? "Duplicate proposal IDs" : "missingSupportModelIds",
+            plan.RootElement.GetProperty("error").GetString());
+        Assert.Equal(1, calls);
+        Assert.Equal(legacy, JsonSerializer.Serialize(preview.Rows));
+        using var repeated = Read(preview.ProjectCompositionPlan());
+        Assert.Equal(1, calls);
+        Assert.Equal(plan.RootElement.GetRawText(), repeated.RootElement.GetRawText());
+    }
+
+    [Fact]
+    public void MixedEvaluationKeepsUnsupportedProposalsInPlanWithoutBreakingLegacyRows()
+    {
+        var points = new[] {
+            new DimensionRulePoint("a", 0, 0, [new DimensionPointSource("part", 1, "contour:1")]),
+            new DimensionRulePoint("b", 100, 0, [new DimensionPointSource("part", 2, "contour:2")])
+        };
+        var top = new OutsideOutlineDimensionPlacement(new DimensionDirection(0, 1), 2);
+        var supported = new DimensionRuleResult(new DimensionDirection(1, 0), top, "overall", points, segments: [100d]);
+        var interior = new DimensionRuleResult(new DimensionDirection(1, 0), new FutureInteriorPlacement(), "location", points);
+        var skew = new DimensionRuleResult(new DimensionDirection(1, 1), top, "location", points);
+        var diagnostics = new Dictionary<string, object> {
+            ["contactFallbackPairs"] = Array.Empty<int[]>(), ["unlocatedModelIds"] = Array.Empty<int>(),
+            ["missingSupportModelIds"] = Array.Empty<int>(), ["tiltedPartIds"] = Array.Empty<int>(),
+            ["contactStatus"] = "not-requested"
+        };
+        var baseline = TimberPanelChainPreview.FromEvaluation(new DimensionRuleEvaluation([supported], diagnostics), "snapshot", 7);
+        var mixed = TimberPanelChainPreview.FromEvaluation(new DimensionRuleEvaluation([supported, interior, skew], diagnostics), "snapshot", 7);
+        Assert.Equal(JsonSerializer.Serialize(baseline.Rows), JsonSerializer.Serialize(mixed.Rows));
+        Assert.Equal(0, baseline.UnsupportedProposalCount);
+        Assert.Equal(2, mixed.UnsupportedProposalCount);
+        Assert.Equal(4, mixed.Rows.Length);
+        Assert.Single(mixed.Rows.Single(row => row.side == "Top").chains);
+        using var plan = Read(mixed.ProjectCompositionPlan());
+        Assert.False(plan.RootElement.TryGetProperty("error", out _));
+        Assert.Equal(3, mixed.CompositionPlan.OriginalProposals.Count);
+        Assert.Equal("Top-overall", mixed.CompositionPlan.OriginalProposals[0].Proposal!.PreviewKey);
+        Assert.Equal(DimensionCompositionDecisionKind.KeepSeparate, mixed.CompositionPlan.Decisions[0].Kind);
+        foreach (var proposal in mixed.CompositionPlan.OriginalProposals.Skip(1))
+        {
+            Assert.Null(proposal.Proposal!.PreviewKey);
+            Assert.Equal(points, proposal.Points);
+            var decision = mixed.CompositionPlan.Decisions.Single(d => d.ProposalId == proposal.Proposal.ProposalId);
+            Assert.Equal(DimensionCompositionDecisionKind.Blocked, decision.Kind);
+            Assert.Contains(decision.Issues, issue => issue.Code == "unsupported-legacy-preview");
+        }
+        Assert.Equal(2, plan.RootElement.GetProperty("proposals").EnumerateArray()
+            .Count(p => p.GetProperty("previewKey").ValueKind == JsonValueKind.Null));
     }
 
     private static GeometryGroupShape Polygon(string id, params (double X, double Y)[] points) =>

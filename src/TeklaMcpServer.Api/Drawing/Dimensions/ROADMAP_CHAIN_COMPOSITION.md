@@ -1,10 +1,81 @@
 # Dimension Chain Composition and Architecture Roadmap
 
-Updated 2026-10-02. Agreed design, not implemented. This is the canonical work
+Updated 2026-10-02. Agreed design; minimal architecture boundary implemented below.
+The full first delivery and later integrations remain pending. This is the canonical work
 order for proposal contracts, composition, plan identity and extensible placement.
 [Dimensions delivery](ROADMAP_DIMENSIONS.md#current-delivery-and-next-gate) owns
 runtime/deployment status; [targeted refactoring](ROADMAP_DIMENSIONS.md#targeted-refactoring-before-chain-composition-2026-10-02)
 owns independent correctness/performance work. Do not duplicate those statuses.
+
+## Minimal architectural step (2026-10-02)
+
+`DimensionRuleResult` now accepts optional typed proposal identity, measurement
+purpose and reference metadata. Existing rule callers and legacy preview rows are
+unchanged. `DimensionChainComposer` is a detached pure boundary with the explicit
+`preserve-proposals-v4` diagnostic policy: retain every original proposal, keep
+eligible proposals separate, and record concrete causes and affected model/point IDs.
+It does not assert combination, duplicate coverage or readiness for writing.
+
+`TimberPanelChainPreview` is the first adapter. Panel `chainDetails` returns an
+additive `compositionPlan` over the entire view's evaluation (independent of the
+legacy response's side filter), bound to an explicitly supplied context and positive
+view ID. The plan is lazy: ordinary `chain` and its batch-reference resolution do
+not compute it. Detailed plan construction/projection failures return
+`compositionPlan: {error}` without changing the legacy preview. Rule evaluation and
+legacy preview failures still propagate normally.
+Side detection is non-throwing for diagnostic adaptation. Proposals with unsupported
+placement/direction do not enter the four legacy rows but remain in the plan with
+`previewKey: null` and an explicit `unsupported-legacy-preview` refusal. Supported
+rows keep their existing values when such proposals are present.
+
+Content-derived proposal IDs include purpose, direction, reference,
+placement normal and ordered supported points with source evidence. They are local
+to the snapshot: catalog point IDs and exact double coordinates participate in the
+hash; IDs are not preserved across catalog rebuilds or coordinate changes and must
+not be stored as persistent references. IDs use a rule-family prefix and 16 hex
+digits of SHA-256; duplicate IDs, including shortened-hash collisions, are refused.
+Unsupported placement contributes its type and publicly serialized state to identity
+and remains explicitly blocked; this does not enable local/interior placement.
+This unsupported-placement identity is provisional: it depends on the CLR type
+name and reflection serialization, so renaming types or changing their serialized
+state changes IDs; unserializable state produces a diagnostic plan error.
+Result enumeration
+and source evidence enumeration do not determine identity. `previewKey` links each
+proposal to the existing preview independently of its ID; it is not a unique
+proposal address. Unknown kinds map to `Unknown` purpose, and unsupported reference
+semantics remain `Unknown`/`Unspecified` rather than inferred from panel geometry.
+The current panel adapter does not resolve reference or reference-support semantics:
+all its proposals carry these unknown values. Multiple proposals may share a
+`previewKey` in the diagnostic plan. Legacy batch references still require one
+chain per requested key; missing/ambiguous requested keys are rejected explicitly before preparation
+or drawing writes, instead of selecting an arbitrary proposal.
+An ambiguous unrequested key does not block resolution of a unique requested key.
+The compact projection contains semantic metadata, preview links and decisions;
+points, segments and evidence remain in the retained internal proposals and existing
+preview, not duplicated in the plan response. No row hint or artificial composed
+chain IDs are returned. No stored plan state or batch references are added.
+The existing rule's omitted mirror proposals remain visible as original refusals;
+their pre-suppression candidates are not reconstructed.
+
+Synthetic tests cover content identity under reordered proposals/sources, distinct
+datum/source/semantic inputs, unknown vocabulary, explicit context validation,
+order/source preservation, duplicate and cross-context rejection, missing evidence,
+too few points and incomplete/refused inputs. Part causes include missing support,
+unlocated members and unsupported inclined members. View-level causes are reported
+separately: they do not prove that every proposal is incomplete. Panel and query
+tests cover legacy point parity, concrete part diagnostics and compact projection.
+Additional tests cover lazy diagnostic failure isolation, ambiguous legacy preview
+keys, shortened-ID rejection and unsupported-placement type/state discrimination.
+Mixed-evaluation adapter tests cover unsupported placement and skew direction
+alongside unchanged legacy rows; reference tests distinguish requested ambiguity
+from unrequested ambiguity. Diagnostic scope validation remains lazy: invalid
+context/view arguments are reported only when the detailed plan is requested.
+
+This is the requested minimal architecture stage, not completion of the first
+delivery below. Configured layer classification, per-candidate inclusion/exclusion
+and requested/resolved-support diagnostics, compatibility/combination policies,
+explicit complete settings and fixture/live acceptance remain pending. Runtime
+deployment and live drawing changes are outside this step.
 
 ## Foundation and boundaries
 
