@@ -128,6 +128,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
                 index == 0 || index == chain.Points.Length - 1 ? "extreme" : "member-face").ToArray(),
             ["droppedShortPartIds"] = chain.DroppedIds,
             ["minimumSegmentViewUnits"] = minimumSegment,
+            ["missingSupportModelIds"] = chain.MissingIds,
             ["incomplete"] = chain.MissingIds.Length > 0 || chain.Points.Length < 2
         };
         return new DimensionRuleResult(direction, placement, "location",

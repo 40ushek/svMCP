@@ -46,16 +46,16 @@ For each target view:
    under several command names. Report the human view label as well as its ID.
 2. Read `get_drawing_parts` if needed to choose the subject/rule set or resolve
    unread roles. Reuse an existing current parts response.
-3. When deployed, use `get_view_dimension_context` with `questions="points,edges,scale"`
-   and the sides in scope. It shares the structural candidates and snapshot with
-   `get_structural_chain_positions` and `create_dimension`. Use the latter for
-   full evidence (`verbose=true`) or on an older bridge. Timber uses its rule-set
-   exclusions; steel excludes nothing unless agreed otherwise. Check `exclusions`,
-   `isComplete`, issues and main-part identity. Pass the SAME exclusion lists to
-   `create_dimension`; empty lists mean no exclusions, not the last query's filters.
-   For a measured timber wall elevation only, request its preliminary chain with
-   `questions="chain", ruleSet="panel"`; the default remains `steel`. Do not use
-   `panel` for roofs, floors or an unknown assembly type without an applicable rule.
+3. Use `get_view_dimension_context` with `questions="chain,scale"`, the sides
+   in scope and explicit `ruleSet` (`panel` for timber-wall elevations, `steel`
+   for steel). Review the prepared `chainPreview`: decide which chains to keep
+   or remove, preserving their ordered `pointIds`. Do not request all source
+   points or reconstruct chains from candidates in the normal placement run.
+   Read `chainDetails` only for a concrete unresolved question about a prepared
+   chain. Inspect completeness and reasons: no point IDs or an incomplete outline
+   blocks creation; missing supports or unlocated parts require an explicit
+   keep/remove judgement with the limitation reported. A missing valid proposal
+   is a preview capability issue, not permission to invent points.
 4. Read `get_drawing_dimensions <viewId>` once to identify chains to retain or
    change. These and the chain positions are the normal planning inputs.
 
@@ -84,23 +84,23 @@ The LLM chooses dimensions; tools validate/read/write those choices. A write
 that matches a bad plan does not make the plan good.
 
 For each side **in scope**, record create, recreate, retain an already verified
-chain, or intentionally no chain with a reason. For every candidate position
+chain, or intentionally no chain with a reason. For every prepared chain
 on a side being planned, record `Kept` or `Removed` and a short drawing reason.
+Use its selected points directly; do not enumerate raw candidates to rebuild it.
 Do not silently shorten an existing chain. For a full view, settle all four
 sides before writing; for a narrow request, do not expand to other sides.
 
 Keep one compact plan, not repeated prose copies:
 - purpose: size, location or overall;
 - reference body and measured subject, identified by model IDs;
-- selected support at each kept position; reasons for removed positions;
+- selected preview chain and its support evidence; reasons for removed chains;
 - closure endpoints, first point/datum, side, offset, attributes and row type;
 - chosen rule set and its policy settings.
 
-**Coordinates:** structural candidates from `get_view_dimension_context` or
-`get_structural_chain_positions` are the source. Use each
-position's own real support point, including its own cross-axis coordinate.
-Never reconstruct positions from bbox, raw vertices, axes or contacts.
-Geometry reads may verify a support; they do not invent replacement coordinates.
+**Prepared chains:** use the preview's ordered `pointIds` from the same
+`contextId`. Do not replace their coordinates with bbox, vertices, axes or
+contacts. Selecting a prepared chain and its dimension type is the normal
+decision boundary; fixing point selection belongs in the preview rules.
 
 **Reference is not closure.** The steel main part or timber frame is what
 locates the subject. For longitudinal/main-frame chains, use its real ends as
@@ -143,8 +143,13 @@ returned new ID when Tekla renumbers a chain.
 Use available, known working tools; source code existing is not proof that the
 running bridge contains it. The experimental structural preview/apply commands
 were removed. For two or more reviewed chains on one view, use
-`create_dimensions_batch` once with the same current `contextId` and the final
-ordered point IDs, directions, gaps and attributes for every chain. It validates
+`create_dimensions_batch` once with the same current `contextId` and the preview's
+ordered point IDs, directions and chosen attributes for every kept chain.
+On an empty side the batch assigns rows in submission order: 1, 2, 3, ...;
+a lone overall uses row 1. Do not forward a preview row. Without explicit offsets,
+repeated batches retain unique existing matches at their current distances.
+A new chain on an occupied side or an ambiguous existing match needs explicit
+`paperGapMm` or `distance`. It validates
 the full plan before writing and returns one final dimension read-back; inspect
 each chain status, especially `merged` and `uncertain`, before reporting success.
 Use `create_dimension` for one chain or when the batch tool is unavailable on the

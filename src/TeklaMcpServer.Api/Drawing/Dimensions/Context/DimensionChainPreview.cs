@@ -16,16 +16,16 @@ internal static class DimensionChainPreview
     /// The default answer: side, kind, ids and segments, plus notes and lists only when they
     /// have content. Roles and part ids stay behind the detailed question.
     /// </summary>
-    public static object Short(object chain)
+    public static object Short(object chain, bool detailed = false)
     {
         using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(chain));
         var result = new Dictionary<string, object?>();
         foreach (var property in doc.RootElement.EnumerateObject())
         {
             var value = property.Value;
-            if (property.Name is "points" or "side") continue;
+            if (property.Name == "row" || (!detailed && (property.Name is "points" or "side"))) continue;
             if (value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
-            if (value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
+            if (!detailed && value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
                 && property.Name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds"
                     or "unlocatedPartIds" or "locatedByProfilePartIds" or "mergedNearbyPartIds") continue;
             // Numbers go through decimal so the answer prints 1088.417, not its binary tail.
@@ -33,6 +33,15 @@ internal static class DimensionChainPreview
                 ? value.EnumerateArray().Select(e => e.ValueKind == System.Text.Json.JsonValueKind.Number
                     ? (object)Math.Round((decimal)e.GetDouble(), 3) : e.Clone()).ToArray()
                 : value.Clone();
+        }
+        if (!result.ContainsKey("incomplete"))
+        {
+            var incomplete = doc.RootElement.GetProperty("pointIds").GetArrayLength() < 2;
+            result["incomplete"] = incomplete;
+            if (incomplete)
+                result["incompleteReason"] = doc.RootElement.TryGetProperty("note", out var note)
+                    && note.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? note.GetString()! : "fewer than two selected points";
         }
         return result;
     }
@@ -77,7 +86,7 @@ internal static class DimensionChainPreview
         var roles = (string[][])result.Evidence["roles"];
         var partIds = (int[][])result.Evidence["partIds"];
         return new {
-            side = side.ToString(), kind = result.Kind, row = 1,
+            side = side.ToString(), kind = result.Kind,
             pointIds = result.Points.Select(point => point.Id).ToArray(),
             segments = result.Segments,
             points = result.Points.Select((point, index) => new {
@@ -139,7 +148,7 @@ internal static class DimensionChainPreview
 
         var ordered = chosen.OrderBy(x => ctx.Along(x.Point)).ToArray();
         return new {
-            side = side.ToString(), kind = "overall", row = 2,
+            side = side.ToString(), kind = "overall",
             pointIds = ordered.Select(x => x.Point.Id).ToArray(),
             segments = ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(ctx.Along(b.Point) - ctx.Along(a.Point), 3)).ToArray(),
             points = ordered.Select(x => new {

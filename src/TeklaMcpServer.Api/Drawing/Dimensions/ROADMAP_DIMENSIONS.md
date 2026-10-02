@@ -1,6 +1,6 @@
 # Dimensions Roadmap
 
-Updated 2026-09-28. This file is the active work order. Steps 1-3 have source
+Updated 2026-10-02. This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
@@ -9,6 +9,9 @@ legacy steel location cleanup in step 4b are complete. Contact candidate reuse i
 implemented, with the remaining comparison and performance gates listed in step 5.
 
 ## Creation row fix (2026-10-02)
+
+Historical deployed increment: step 7 below supersedes preview/batch row selection
+in the current source, while keeping the single-create numeric row contract.
 
 The reviewed numeric preview row now passes through single and batch creation.
 Rows are positive integers (1, 2, 3, ...); the default outline gap equals row
@@ -37,9 +40,10 @@ including neighbour reflow and text collisions.
 - Persistent `ViewDimensionContextProvider` shares frozen, filter-specific
   geometry between chain reads, short context queries and automatic creation.
   Chains are calculated lazily; explicit-distance creation needs no outline.
-- `get_view_dimension_context` answers points/edges/parts/scale/placement and
-  opt-in `contacts`. `all` deliberately excludes placement and contacts. Queries
-  return detached JSON; candidate choices cannot mutate the snapshot.
+- The source increment in step 7 restricts `get_view_dimension_context` to
+  prepared-chain questions with default `chain,scale`. Internal queries still
+  support points/edges/placement/contacts. Queries return detached JSON;
+  candidate choices cannot mutate the snapshot.
 - The context retains detached per-part solid DTOs (bbox, vertices, faces,
   loops and view hull) from the same successful reads used to build outlines.
   `GetPartSolidGeometry(modelId)` returns a copy so consumers cannot mutate the
@@ -926,11 +930,16 @@ Acceptance:
   outcomes, including a requested row type differing from an existing merged chain;
   never count a merged overall as a separate visible dimension.
 
-### 7. Preview-only context: no raw points for the assistant (proposed 2026-10-02)
+### 7. Preview-only context: no raw points for the assistant (source implemented 2026-10-02)
 
 Goal: the assistant takes the prepared chains from the preview and decides which
 to keep or remove, without reading every source candidate. This saves tokens and
-time; it is not an access-control measure. Not implemented.
+time; it is not an access-control measure. Implemented in source; not deployed.
+Automated coverage checks the shared question whitelist, MCP rejection before
+bridge dispatch, default preview output, per-side rows beyond two chains,
+retention at existing distances, ambiguous matches and occupied-side validation
+before any write. Deployment and same-view live performance/placement gates
+remain open.
 
 - `get_view_dimension_context` accepts only `chain`, `chainDetails`, `parts`,
   `scale`, `diagnostics`. `points`, `dimensionPoints`, `edges`, `all`,
@@ -960,7 +969,7 @@ time; it is not an access-control measure. Not implemented.
   (`get_structural_chain_positions`, `get_*_points_in_view`, raw `points` in
   `create_dimension`).
 
-Open points from review (2026-10-02, defaults stated, to confirm on fixtures):
+Review decisions implemented in source (2026-10-02; live fixture gates remain):
 
 - **Incomplete chains.** The preview must name the concrete reason per chain.
   Default: no `pointIds` or a failed outline blocks creation; a missing support
@@ -977,12 +986,13 @@ Open points from review (2026-10-02, defaults stated, to confirm on fixtures):
   side and offset (distance within 1 unit, `FindMatching` in
   `ViewDimensionContextProvider.Batch.cs`) all match, so a chain with a different
   offset is not retained. Order: recognise the chains to retain, then assign places
-  to the new ones. Proposed repeat behavior: when no explicit offset is supplied,
+  to the new ones. Implemented repeat behavior: when no explicit offset is supplied,
   first identify a unique existing match by points, side and requested dimension
   type, and retain its current offset. Do not guess if several existing chains
   match. An explicit offset must still match the existing placement for retention;
   requesting a different offset does not silently retain the old placement.
 - **Precedence.** `row`, `paperGapMm` and `distance` are all in the batch contract.
+  The old batch `row` input is ignored; preview rows are removed.
   Keep: `distance` over `paperGapMm` over the automatic row; `distance` together
   with `paperGapMm` stays rejected. Automatic rows apply only when neither is given.
 - **Measurement.** Measure the whole cycle: preview, keep/remove decision, create,

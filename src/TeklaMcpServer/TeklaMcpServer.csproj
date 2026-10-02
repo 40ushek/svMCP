@@ -8,6 +8,7 @@
 	</PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\DimensionPreviewQuestions.cs" Link="Shared\DimensionPreviewQuestions.cs" />
     <Compile Include="..\Shared\Logging\SvMcpLogRouter.cs" Link="Shared\Logging\SvMcpLogRouter.cs" />
     <Compile Include="..\Shared\BridgePathResolver.cs" Link="Shared\BridgePathResolver.cs" />
     <Compile Include="..\Shared\BridgeControllerProtocol.cs" Link="Shared\BridgeControllerProtocol.cs" />

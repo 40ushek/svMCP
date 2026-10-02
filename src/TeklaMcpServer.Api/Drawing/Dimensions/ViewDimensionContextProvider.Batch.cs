@@ -13,6 +13,7 @@ public sealed class CreateDimensionsBatchRequest
 
 public sealed class BatchDimensionChain
 {
+    // Accepted for older callers; batch placement assigns rows per side, ignoring this input.
     public int Row { get; set; } = 1;
     public string Key { get; set; } = string.Empty;
     public string[] PointIds { get; set; } = [];
@@ -67,8 +68,28 @@ public sealed partial class ViewDimensionContextProvider
             throw new ArgumentException("each chain needs a unique non-empty key");
 
         // Resolve every point and placement before the first drawing mutation.
-        var prepared = batch.Chains.Select(chain => PrepareBatchChain(batch, chain)).ToArray();
+        var prepared = batch.Chains.Select(chain => PrepareBatchChain(batch, chain, 1)).ToArray();
         var before = _readDimensions(batch.ViewId);
+        var rows = new Dictionary<string, int>();
+        for (var i = 0; i < prepared.Length; i++)
+        {
+            var entry = prepared[i];
+            var side = Side(entry.Chain.Direction);
+            rows.TryGetValue(side, out var row);
+            rows[side] = ++row;
+            if (entry.Chain.Distance.HasValue || entry.Chain.PaperGapMm.HasValue) continue;
+
+            var existing = FindMatching(before, entry.Write, contained: false,
+                ignoreDistance: true, requireUnique: true);
+            if (existing != null)
+            {
+                entry.Write = new PreparedDimensionWrite(entry.Write.Request, existing.Value.Item.Distance, null);
+                continue;
+            }
+            if (before.Groups.Any(group => GroupSide(group) == side && group.Items.Count > 0))
+                throw new ArgumentException($"Chain '{entry.Chain.Key}': new chains on occupied {side} require paperGapMm or distance");
+            prepared[i] = PrepareBatchChain(batch, entry.Chain, row);
+        }
         var result = new CreateDimensionsBatchResult { ViewId = batch.ViewId };
         var stopped = false;
 
@@ -180,7 +201,7 @@ public sealed partial class ViewDimensionContextProvider
         return result;
     }
 
-    private PreparedBatchChain PrepareBatchChain(CreateDimensionsBatchRequest batch, BatchDimensionChain chain)
+    private PreparedBatchChain PrepareBatchChain(CreateDimensionsBatchRequest batch, BatchDimensionChain chain, int row)
     {
         if (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace))
             throw new ArgumentException($"Chain '{chain.Key}' needs at least two pointIds");
@@ -199,7 +220,7 @@ public sealed partial class ViewDimensionContextProvider
             ViewId = batch.ViewId, ContextId = batch.ContextId,
             PointIds = chain.PointIds, Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
-            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType, Row = chain.Row
+            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType, Row = row
         };
         var write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);
@@ -210,7 +231,7 @@ public sealed partial class ViewDimensionContextProvider
     private sealed class PreparedBatchChain
     {
         public BatchDimensionChain Chain { get; }
-        public PreparedDimensionWrite Write { get; }
+        public PreparedDimensionWrite Write { get; set; }
 
         public PreparedBatchChain(BatchDimensionChain chain, PreparedDimensionWrite write)
         {
@@ -221,8 +242,9 @@ public sealed partial class ViewDimensionContextProvider
 
     private static (DimensionGroupInfo Group, DimensionItemInfo Item)? FindMatching(
         GetDimensionsResult snapshot, PreparedDimensionWrite write, bool contained,
-        bool requireRequestedType = true)
+        bool requireRequestedType = true, bool ignoreDistance = false, bool requireUnique = false)
     {
+        (DimensionGroupInfo Group, DimensionItemInfo Item)? match = null;
         var axis = Axis(write.Request.Direction);
         if (axis == null) return null;
         var requestedTeklaType = DimensionCreatePlacementHelper.ParseDimensionType(write.Request.DimensionType)?.ToString();
@@ -235,12 +257,26 @@ public sealed partial class ViewDimensionContextProvider
                 if (!SameSide(write, item, axis)) continue;
                 if (requireRequestedType && requestedTeklaType != null && !string.Equals(item.TeklaDimensionType,
                     requestedTeklaType, StringComparison.OrdinalIgnoreCase)) continue;
-                if (!contained && Math.Abs(item.Distance - write.Distance) > 1) continue;
-                return (group, item);
+                if (!contained && !ignoreDistance && Math.Abs(item.Distance - write.Distance) > 1) continue;
+                if (requireUnique && match != null)
+                    throw new ArgumentException("Several existing dimensions match this chain; specify paperGapMm or distance");
+                match = (group, item);
+                if (!requireUnique) return match;
             }
         }
-        return null;
+        return match;
     }
+
+    private static string Side(string direction)
+    {
+        var vector = DimensionCreatePlacementHelper.ResolveDirection(direction);
+        return Axis(direction) == "Horizontal" ? (vector.Y > 0 ? "Top" : "Bottom")
+            : Axis(direction) == "Vertical" ? (vector.X > 0 ? "Right" : "Left") : "Unknown";
+    }
+
+    private static string GroupSide(DimensionGroupInfo group) =>
+        group.DimensionType == "Horizontal" ? (group.TopDirection >= 0 ? "Top" : "Bottom")
+        : group.DimensionType == "Vertical" ? (group.TopDirection >= 0 ? "Left" : "Right") : "Unknown";
 
     private static string? Axis(string direction)
     {

@@ -208,7 +208,7 @@ public sealed class ViewDimensionContext
             {
                 result["chainPreview"] = consolidated.Select(k => new {
                     side = k.Side.ToString(),
-                    chains = new[] { SectionDimensionChainPreview.MergedChain(k) }
+                    chains = new[] { DimensionChainPreview.Short(SectionDimensionChainPreview.MergedChain(k), detailed) }
                 }).ToArray();
                 result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
                 return Freeze(result, display: true);
@@ -218,12 +218,12 @@ public sealed class ViewDimensionContext
                 chains = panelPlans != null
                     ? panelPlans.Rows.Where(row => StringComparer.Ordinal.Equals(row.side, side.ToString()))
                         .SelectMany(row => row.chains)
-                        .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
+                        .Select(chain => DimensionChainPreview.Short(chain, detailed)).ToArray()
                     : (refusal != null
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetDimensionPointCatalog(), side,
                         _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits))
-                    .Select(chain => detailed ? chain : DimensionChainPreview.Short(chain)).ToArray()
+                    .Select(chain => DimensionChainPreview.Short(chain, detailed)).ToArray()
             }).ToArray();
         }
         if (Wants("points") || Wants("edges"))

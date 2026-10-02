@@ -38,8 +38,7 @@ internal static class AxisAlignedDimensionRulePreviewAdapter
                 segments = Array.Empty<double>(), points = Array.Empty<object>(), note = result.Note };
         return new {
             side, kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
-            segments = result.Segments, points = Array.Empty<object>(),
-            row = GetRow(result)
+            segments = result.Segments, points = Array.Empty<object>()
         };
     }
 }

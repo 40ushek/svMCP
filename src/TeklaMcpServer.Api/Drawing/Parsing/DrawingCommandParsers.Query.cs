@@ -6,6 +6,9 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public static partial class DrawingCommandParsers
 {
+    public static string NormalizePreviewQuestions(string? questions) =>
+        TeklaMcpServer.Shared.DimensionPreviewQuestions.Normalize(questions);
+
     public static FindDrawingsParseResult ParseFindDrawingsRequest(string[] args)
     {
         var nameContains = args.Length > 1 ? args[1] : string.Empty;

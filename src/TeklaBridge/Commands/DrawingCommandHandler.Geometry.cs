@@ -793,10 +793,11 @@ internal sealed partial class DrawingCommandHandler
         }
         try
         {
+            var questions = DrawingCommandParsers.NormalizePreviewQuestions(args.Length > 2 ? args[2] : null);
             var context = _dimensionContexts.Get(viewId,
                 args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
                 args.Length > 6 && bool.Parse(args[6]));
-            WriteJson(context.Query(args.Length > 2 ? args[2] : "points,edges,scale",
+            WriteJson(context.Query(questions,
                 args.Length > 3 ? args[3] : "all",
                 args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,
                 args.Length > 8 ? args[8] : "horizontal",

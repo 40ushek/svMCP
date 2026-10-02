@@ -66,12 +66,16 @@ internal static class TimberPanelChainPreview
         var partIds = (int[][])result.Evidence["pointPartIds"];
         var roles = (string[])result.Evidence["pointRoles"];
         return new {
-            side = side.ToString(), kind = result.Kind, row = AxisAlignedDimensionRulePreviewAdapter.GetRow(result), pointIds = result.Points.Select(point => point.Id).ToArray(),
+            side = side.ToString(), kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
             segments = result.Segments,
             points = result.Points.Select((point, index) => new { pointId = point.Id, partIds = partIds[index], role = roles[index] }).ToArray(),
             droppedShortPartIds = (int[])result.Evidence["droppedShortPartIds"],
             minimumSegmentViewUnits = (double)result.Evidence["minimumSegmentViewUnits"],
-            incomplete = (bool)result.Evidence["incomplete"]
+            incomplete = (bool)result.Evidence["incomplete"],
+            missingSupportModelIds = (int[])result.Evidence["missingSupportModelIds"],
+            incompleteReason = ((int[])result.Evidence["missingSupportModelIds"]).Length > 0
+                ? "No selected support for model IDs: " + string.Join(",", (int[])result.Evidence["missingSupportModelIds"])
+                : result.Points.Count < 2 ? "fewer than two selected points" : null
         };
     }
 

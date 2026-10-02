@@ -131,7 +131,7 @@ public sealed class DimensionRowPlacementTests
     }
 
     [Fact]
-    public void BatchRowsReachWriterAndInvalidLaterRowPreventsAllWrites()
+    public void BatchAssignsRowsPerSideIgnoringLegacyRowInput()
     {
         var context = ViewDimensionContextTests.Context();
         var ids = context.Query("dimensionPoints", "Bottom").GetProperty("dimensionPoints")
@@ -158,7 +158,7 @@ public sealed class DimensionRowPlacementTests
         Assert.Equal(new[] { 80d, 190d, 240d, 320d }, distances);
         distances.Clear();
         batch.Chains[1].Distance = null;
-        Assert.Throws<ArgumentOutOfRangeException>(() => provider.CreateBatch(batch));
-        Assert.Empty(distances);
+        provider.CreateBatch(batch);
+        Assert.Equal(new[] { 80d, 160d, 240d, 320d }, distances);
     }
 }

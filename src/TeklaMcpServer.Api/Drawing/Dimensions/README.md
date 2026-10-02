@@ -32,10 +32,11 @@ New work beyond the historical v1 baseline below:
   bbox, vertices, faces/loops and view hull. `GetPartSolidGeometry(modelId)`
   returns a deep copy. Excluded or unread parts retain their separate role and
   diagnostic records. Memory use grows with the captured solid geometry.
-- `get_view_dimension_context` accepts `questions=points,edges,parts,scale`
-  (or `all`) and `sides=Top,Bottom,Left,Right` (or `all`). Optional
-  `placement` additionally needs flat XYZ `points`, `direction` and optional
-  `paperGapMm`; it uses the creation calculator without writing.
+- In the new source increment, `get_view_dimension_context` defaults to
+  `questions=chain,scale`; allowed questions are `chain`, `chainDetails`,
+  `parts`, `scale`, `diagnostics`. Source-point, edge, placement and contact
+  questions are rejected in both MCP and bridge before reading geometry.
+  Internal context queries and other geometry readers remain available.
 - `writeState.RenderedLine` independently compares segment presentation lines:
   `matched`, `mismatch`, or `not verified` with a reason. A mismatch fails the
   existing verified-write protocol before deleting an original. Unsupported
@@ -45,20 +46,28 @@ New work beyond the historical v1 baseline below:
   calculation, now labelled `referenceLineSource`, not a presentation observation.
 - These changes have automated coverage; new runtime observation and reuse
   still require live validation. See the active roadmap.
-## Line rows in creation (2026-10-02)
+## Prepared-chain batch increment (2026-10-02, not deployed)
 
-Chain previews expose numeric `row=1` for location and `row=2` for overall
-chains. Forward the reviewed positive integer row to `create_dimension` or each
-entry in `create_dimensions_batch`. The default outline gap equals row number
-x `DefaultPaperGapMm`: 8, 16, 24, 32, ... paper mm. Omitting the row uses 1.
-Explicit `paperGapMm` or `distance` overrides the gap calculation; the unused
-row is ignored. Row placement is distinct from the Relative/Absolute Tekla
-dimension type. Text aliases are not accepted. This separates the planned rows
-at creation; it is not text collision detection or automatic allocation around
-existing annotations. The bridge and MCP server were deployed and hash-verified on 2026-10-02.
-The installed MCP schema was verified to expose numeric row, and the installed
-server connected to Tekla successfully. Existing clients must reconnect to reload
-the tool schema. Live placement acceptance remains open.
+Previews return ordered `pointIds`, segments and incompleteness reasons; they
+do not prescribe a row. The assistant keeps or removes prepared chains and
+submits the retained selection with the same `contextId`.
+
+On an empty side, `create_dimensions_batch` assigns rows 1, 2, 3, ... in submission
+order, independently per side. A lone overall uses row 1. The gap is row number
+x `DimensionPlacementSettings.DefaultPaperGapMm` (currently 8 paper mm).
+The batch ignores the former `row` input. Explicit `paperGapMm` or `distance`
+takes precedence; supplying both remains invalid.
+
+A repeated batch without offsets retains a unique existing match by points,
+side and requested dimension type at its current distance. Ambiguous matches
+require an explicit offset. A new chain on an occupied side also requires an
+explicit offset; the entire batch is checked before any write. No free-space
+search or text-collision detection is added.
+
+Single `create_dimension` retains its positive integer `row` contract and
+explicit-offset precedence. The previous numeric-row release was deployed on
+2026-10-02; this prepared-chain increment has automated coverage but still
+requires deployment and live placement/performance validation.
 
 ## Purpose
 

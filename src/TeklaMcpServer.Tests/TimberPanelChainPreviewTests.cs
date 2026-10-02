@@ -51,7 +51,7 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Equal(3077.5, width.GetProperty("segments")[0].GetDouble());
         var height = Read(rows.Single(r => r.side == "Right").chains[1]).RootElement;
         Assert.Equal("overall", height.GetProperty("kind").GetString());
-        Assert.Equal(2, height.GetProperty("row").GetInt32());
+        Assert.False(height.TryGetProperty("row", out _));
         Assert.Equal(2732d, height.GetProperty("segments")[0].GetDouble());
         var heightPoints = height.GetProperty("pointIds").EnumerateArray()
             .Select(id => catalog.AllPoints.Single(p => p.Id == id.GetString())).ToArray();
@@ -77,6 +77,9 @@ public sealed class TimberPanelChainPreviewTests
         var rows = preview.Rows;
         var bottom = Read(rows.Single(r => r.side == "Bottom").chains[0]);
         Assert.True(bottom.RootElement.GetProperty("incomplete").GetBoolean());
+        Assert.Contains("No selected support for model IDs:",
+            bottom.RootElement.GetProperty("incompleteReason").GetString());
+        Assert.NotEmpty(bottom.RootElement.GetProperty("missingSupportModelIds").EnumerateArray());
         Assert.NotEmpty(preview.UnlocatedModelIds);
     }
 
