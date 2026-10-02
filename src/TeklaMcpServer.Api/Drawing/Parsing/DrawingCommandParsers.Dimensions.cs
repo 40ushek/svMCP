@@ -23,7 +23,8 @@ public static partial class DrawingCommandParsers
             Chains = JsonSerializer.Deserialize<System.Collections.Generic.List<BatchDimensionChain>>(
                 args[3], new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
                 ?? throw new ArgumentException("chainsJson must be an array"),
-            RuleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(args.Length > 4 ? args[4] : null),
+            RuleSet = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4])
+                ? TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(args[4]) : string.Empty,
             ChainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(args.Length > 5 ? args[5] : null)
         };
     }

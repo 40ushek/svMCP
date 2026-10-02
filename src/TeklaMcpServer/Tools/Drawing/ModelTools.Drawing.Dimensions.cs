@@ -341,10 +341,10 @@ public static partial class ModelTools
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
         [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
-        [Description("Same ruleSet as the preview read: steel or panel.")] string ruleSet = "steel",
+        [Description("Same ruleSet as the preview read: steel or panel. Required when an entry uses preview; there is no default because both rule sets use the same chain keys with different points.")] string ruleSet = "",
         [Description("Same preview variant as the read: chain (default; consolidated sections) or chainDetails (split sections).")] string chainView = "chain")
     {
-        ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
+        ruleSet = string.IsNullOrWhiteSpace(ruleSet) ? string.Empty : TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
         chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(chainView);
         var json = RunBridge("create_dimensions_batch",
             viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty,

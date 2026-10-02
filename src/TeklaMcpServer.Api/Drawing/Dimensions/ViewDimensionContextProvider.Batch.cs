@@ -8,7 +8,9 @@ public sealed class CreateDimensionsBatchRequest
 {
     public int ViewId { get; set; }
     public string ContextId { get; set; } = string.Empty;
-    public string RuleSet { get; set; } = "steel";
+    // Required (steel or panel) when an entry uses "preview": the same chain key exists in both
+    // rule sets with different points, so a forgotten value must not silently resolve to steel.
+    public string RuleSet { get; set; } = string.Empty;
     public string ChainView { get; set; } = "chain";
     public List<BatchDimensionChain> Chains { get; set; } = [];
 }
@@ -214,9 +216,12 @@ public sealed partial class ViewDimensionContextProvider
 
     private BatchDimensionChain[] ResolveBatchChains(CreateDimensionsBatchRequest batch)
     {
-        var ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(batch.RuleSet);
-        var chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(batch.ChainView);
         var references = batch.Chains.Where(chain => chain?.Preview != null).ToArray();
+        if (references.Length > 0 && string.IsNullOrWhiteSpace(batch.RuleSet))
+            throw new ArgumentException("ruleSet (steel or panel) is required when an entry uses preview; pass the one used to read the preview");
+        var ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(
+            string.IsNullOrWhiteSpace(batch.RuleSet) ? "steel" : batch.RuleSet);
+        var chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(batch.ChainView);
         if (batch.Chains.Any(chain => chain == null))
             throw new ArgumentException("chains cannot contain null entries");
         if (references.Any(chain => string.IsNullOrWhiteSpace(chain.Preview) || chain.PointIdsSpecified ||

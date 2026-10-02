@@ -166,7 +166,7 @@ public sealed class DimensionBatchPreviewReferenceTests
         var request = DrawingCommandParsers.ParseCreateDimensionsBatchRequest([
             "create_dimensions_batch", "7", "ctx", "[{\"key\":\"old\",\"pointIds\":[\"p1\",\"p2\"],\"direction\":\"horizontal\"}]"
         ]);
-        Assert.Equal("steel", request.RuleSet);
+        Assert.Equal(string.Empty, request.RuleSet);
         Assert.Equal("chain", request.ChainView);
         Assert.Null(request.Chains[0].Preview);
         var context = Context("steel");
@@ -186,11 +186,25 @@ public sealed class DimensionBatchPreviewReferenceTests
         var context = Context("steel");
         var json = JsonSerializer.Serialize(new[] { new BatchDimensionChain { Preview = "Bottom-overall" } });
         var request = DrawingCommandParsers.ParseCreateDimensionsBatchRequest([
-            "create_dimensions_batch", "7", context.ContextId, json
+            "create_dimensions_batch", "7", context.ContextId, json, "steel"
         ]);
         var harness = new Harness(context);
         harness.Provider.CreateBatch(request);
         Assert.Equal("overall", harness.Writes.Single().Request.AttributesFile);
+    }
+
+    [Fact]
+    public void PreviewReferenceWithoutRuleSetIsRejectedBeforeAnyWrite()
+    {
+        var context = Context("steel");
+        var json = JsonSerializer.Serialize(new[] { new BatchDimensionChain { Preview = "Bottom-overall" } });
+        var request = DrawingCommandParsers.ParseCreateDimensionsBatchRequest([
+            "create_dimensions_batch", "7", context.ContextId, json
+        ]);
+        var harness = new Harness(context);
+        var error = Assert.Throws<ArgumentException>(() => harness.Provider.CreateBatch(request));
+        Assert.Contains("ruleSet", error.Message);
+        Assert.Empty(harness.Writes);
     }
 
     [Theory]

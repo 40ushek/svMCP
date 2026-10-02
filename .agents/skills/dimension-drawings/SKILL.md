@@ -148,7 +148,7 @@ Use available, known working tools; source code existing is not proof that the
 running bridge contains it. The experimental structural preview/apply commands
 were removed. For two or more reviewed chains on one view, use
 `create_dimensions_batch` once with the same current `contextId`. Prefer entries
-such as `{"preview":"Top-location"}` with the matching `ruleSet` and `chainView`
+such as `{"preview":"Top-location"}` with the matching `ruleSet` (required, no default: a forgotten value is rejected) and `chainView`
 when supported by the running schema; omit chains to remove them. References
 resolve ordered points and direction on the server; do not pass `pointIds` or
 direction with a reference. Keep per-entry attribute, row-type and offset choices.
