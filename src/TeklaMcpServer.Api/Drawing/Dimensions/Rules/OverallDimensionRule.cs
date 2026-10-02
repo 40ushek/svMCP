@@ -21,7 +21,7 @@ internal sealed class OverallDimensionRule(OverallDimensionSettings settings) : 
         var direction = new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1);
         var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
         var placement = new OutsideOutlineDimensionPlacement(
-            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), "second");
+            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 2);
         var geometry = context.AxisAlignedGeometry;
         if (geometry == null)
             return new(direction, placement, "overall", [], "axis-aligned snapshot geometry is unavailable");

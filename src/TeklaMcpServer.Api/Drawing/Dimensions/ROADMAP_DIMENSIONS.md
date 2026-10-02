@@ -8,6 +8,20 @@ rules still need repeat validation on the named fixtures. Five rule transfers an
 legacy steel location cleanup in step 4b are complete. Contact candidate reuse is
 implemented, with the remaining comparison and performance gates listed in step 5.
 
+## Creation row fix (2026-10-02)
+
+The reviewed numeric preview row now passes through single and batch creation.
+Rows are positive integers (1, 2, 3, ...); the default outline gap equals row
+number x default gap. Explicit `paperGapMm` or `distance` takes precedence over
+the calculation and bypasses the unused row. Omitting row uses 1. No
+text aliases are retained in this undeployed increment. The existing writer and
+presentation checks are unchanged. Steel and timber location previews expose
+row 1; nonempty overall previews expose row 2. Callers must forward the chosen
+row; no rule or point selection is added to the writer. The bridge and MCP server were deployed and hash-verified on 2026-10-02.
+The installed numeric row schema and Tekla connection were verified. Existing
+clients need to reconnect to reload schemas. Live acceptance remains open,
+including neighbour reflow and text collisions.
+
 ## Current delivery and next gate
 
 - **Next gate: finish live acceptance of batch writes (step 6).** The code is

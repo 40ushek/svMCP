@@ -109,6 +109,8 @@ public sealed partial class ViewDimensionContextProvider
 
     private PreparedDimensionWrite Prepare(CreateDimensionRequest request)
     {
+        var paperGapMm = request.Distance.HasValue ? (double?)null
+            : DimensionPlacementSettings.ResolvePaperGapMm(request.Row, request.PaperGapMm);
         ViewDimensionContext context;
         if (request.PointIds.Length > 0 || !string.IsNullOrWhiteSpace(request.ContextId))
         {
@@ -135,7 +137,7 @@ public sealed partial class ViewDimensionContextProvider
         }
 
         var placement = request.Distance.HasValue ? null
-            : context.Calculate(request.Direction, request.Points, request.PaperGapMm);
+            : context.Calculate(request.Direction, request.Points, paperGapMm);
         var distance = request.Distance ?? placement!.Distance;
         return new PreparedDimensionWrite(request, distance, placement);
     }

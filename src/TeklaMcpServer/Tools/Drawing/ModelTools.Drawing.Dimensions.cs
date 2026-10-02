@@ -336,11 +336,11 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create several AI-reviewed dimension chains in one bridge call. All chains use the same cached view context; no point selection occurs inside this tool. Supply chainsJson as a JSON array of objects with unique key, ordered pointIds, direction, and optional paperGapMm, distance, attributesFile or dimensionType. dimensionType accepts Relative, Absolute, RelativeAndAbsolute or relative-and-absolute and overrides the row type in attributesFile. The tool validates the whole plan before writing, uses the existing verified writer for each chain, and returns one compact final read-back with per-chain created/retained/merged/failed status. A merged overall is not a separate visible dimension.")]
+    [McpServerTool, Description("Create several AI-reviewed dimension chains in one bridge call. All chains use the same cached view context; no point selection occurs inside this tool. Supply chainsJson as a JSON array of objects with unique key, ordered pointIds, direction, and optional row, paperGapMm, distance, attributesFile or dimensionType. row is a positive integer (1, 2, 3, ...) from the reviewed plan: default outline gap is row number times 8 paper mm. Explicit paperGapMm or distance ignores row and overrides row placement. dimensionType accepts Relative, Absolute, RelativeAndAbsolute or relative-and-absolute and overrides the row type in attributesFile. The tool validates the whole plan before writing, uses the existing verified writer for each chain, and returns one compact final read-back with per-chain created/retained/merged/failed status. A merged overall is not a separate visible dimension.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
-        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8,\"dimensionType\":\"Relative\"}]. dimensionType is optional and overrides the row type in attributesFile.")] string chainsJson)
+        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8,\"dimensionType\":\"Relative\"}]. Pass row as a positive integer (1, 2, 3, ...) from the reviewed plan; explicit paperGapMm or distance ignores row and overrides its gap. dimensionType is optional and overrides the row type in attributesFile.")] string chainsJson)
     {
         var json = RunBridge("create_dimensions_batch",
             viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty);
@@ -354,7 +354,7 @@ public static partial class ModelTools
         catch { return $"Bridge error: {json}"; }
     }
 
-    [McpServerTool, Description("Create and read back a straight dimension set. Supply either view-local coordinates in points, or contextId plus ordered pointIds from get_view_dimension_context(questions=dimensionPoints). The ID form uses that cached view/filter snapshot and accepts no exclusion filters. Existing coordinate calls are unchanged. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; paperGapMm overrides that. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
+    [McpServerTool, Description("Create and read back a straight dimension set. Supply either view-local coordinates in points, or contextId plus ordered pointIds from get_view_dimension_context(questions=dimensionPoints). The ID form uses that cached view/filter snapshot and accepts no exclusion filters. Existing coordinate calls are unchanged. By default calculates distance so the line sits 8 paper mm beyond the assembly outline; row multiplies that gap by its positive integer value. Pass the row from the reviewed chain preview; paperGapMm overrides the row gap. Supply distance to use an explicit view-unit distance instead. If read-back fails, the new set is deleted and its absence confirmed (writeState.newDimensionRemoved, dimensionId 0); if that cleanup itself fails the error says the set may still be on the sheet, so re-read the view before retrying.")]
     public static string CreateDimension(
         [Description("ID of the drawing view to place the dimension in")] int viewId,
         [Description("Flat JSON array of view-local coordinates: [x0,y0,z0, x1,y1,z1, ...]. Minimum 2 points (6 numbers). Leave empty when using pointIds.")] string points = "",
@@ -365,7 +365,8 @@ public static partial class ModelTools
         [Description("Excluded prefixes, as in the candidate query. Empty means none.")] string excludePrefixes = "",
         [Description("Excluded material substrings, as in the candidate query. Empty means none. Not used with contextId.")] string excludeMaterials = "",
         [Description("Snapshot ID returned by get_view_dimension_context. Required with pointIds; expires on refresh or drawing/view change.")] string contextId = "",
-        [Description("Ordered point IDs returned in dimensionPoints for this context, as a JSON array of strings (\"[\\\"p0001\\\",\\\"p0002\\\"]\") or a comma-separated list. Required with contextId; order is preserved.")] string pointIds = "")
+        [Description("Ordered point IDs returned in dimensionPoints for this context, as a JSON array of strings (\"[\\\"p0001\\\",\\\"p0002\\\"]\") or a comma-separated list. Required with contextId; order is preserved.")] string pointIds = "",
+        [Description("Line placement row: positive integer (1, 2, 3, ...). Default outline gap is row number times 8 paper mm. Explicit paperGapMm or distance ignores row and overrides it. This is separate from the Relative/Absolute dimension type.")] int row = 1)
     {
         var json = RunBridge("create_dimension",
             viewId.ToString(CultureInfo.InvariantCulture),
@@ -376,7 +377,7 @@ public static partial class ModelTools
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             excludePrefixes, excludeMaterials,
             contextId ?? string.Empty,
-            NormalizePointIds(pointIds));
+            NormalizePointIds(pointIds), row.ToString(CultureInfo.InvariantCulture));
         try
         {
             var doc = JsonDocument.Parse(json);

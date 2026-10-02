@@ -66,7 +66,7 @@ internal static class TimberPanelChainPreview
         var partIds = (int[][])result.Evidence["pointPartIds"];
         var roles = (string[])result.Evidence["pointRoles"];
         return new {
-            side = side.ToString(), kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
+            side = side.ToString(), kind = result.Kind, row = AxisAlignedDimensionRulePreviewAdapter.GetRow(result), pointIds = result.Points.Select(point => point.Id).ToArray(),
             segments = result.Segments,
             points = result.Points.Select((point, index) => new { pointId = point.Id, partIds = partIds[index], role = roles[index] }).ToArray(),
             droppedShortPartIds = (int[])result.Evidence["droppedShortPartIds"],

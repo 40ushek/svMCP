@@ -45,6 +45,21 @@ New work beyond the historical v1 baseline below:
   calculation, now labelled `referenceLineSource`, not a presentation observation.
 - These changes have automated coverage; new runtime observation and reuse
   still require live validation. See the active roadmap.
+## Line rows in creation (2026-10-02)
+
+Chain previews expose numeric `row=1` for location and `row=2` for overall
+chains. Forward the reviewed positive integer row to `create_dimension` or each
+entry in `create_dimensions_batch`. The default outline gap equals row number
+x `DefaultPaperGapMm`: 8, 16, 24, 32, ... paper mm. Omitting the row uses 1.
+Explicit `paperGapMm` or `distance` overrides the gap calculation; the unused
+row is ignored. Row placement is distinct from the Relative/Absolute Tekla
+dimension type. Text aliases are not accepted. This separates the planned rows
+at creation; it is not text collision detection or automatic allocation around
+existing annotations. The bridge and MCP server were deployed and hash-verified on 2026-10-02.
+The installed MCP schema was verified to expose numeric row, and the installed
+server connected to Tekla successfully. Existing clients must reconnect to reload
+the tool schema. Live placement acceptance remains open.
+
 ## Purpose
 
 `Drawing/Dimensions` is the line-first dimension module for drawing runtime.

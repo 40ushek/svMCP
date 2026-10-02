@@ -241,6 +241,7 @@ public sealed class MoveViewParseResult
 
 public sealed class CreateDimensionRequest
 {
+    public int Row { get; set; } = 1;
     public int ViewId { get; set; }
     public double[] Points { get; set; } = Array.Empty<double>();
     public string ContextId { get; set; } = string.Empty;

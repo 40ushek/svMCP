@@ -12,12 +12,12 @@ internal abstract class DimensionLinePlacement { }
 internal sealed class OutsideOutlineDimensionPlacement : DimensionLinePlacement
 {
     public DimensionDirection OutwardNormal { get; }
-    public string Row { get; }
+    public int Row { get; }
 
-    public OutsideOutlineDimensionPlacement(DimensionDirection outwardNormal, string row)
+    public OutsideOutlineDimensionPlacement(DimensionDirection outwardNormal, int row)
     {
         OutwardNormal = outwardNormal ?? throw new ArgumentNullException(nameof(outwardNormal));
-        if (string.IsNullOrWhiteSpace(row)) throw new ArgumentException("A placement row is required.", nameof(row));
+        if (row < 1) throw new ArgumentOutOfRangeException(nameof(row), "A positive placement row is required.");
         Row = row;
     }
 }

@@ -13,6 +13,7 @@ public sealed class CreateDimensionsBatchRequest
 
 public sealed class BatchDimensionChain
 {
+    public int Row { get; set; } = 1;
     public string Key { get; set; } = string.Empty;
     public string[] PointIds { get; set; } = [];
     public string Direction { get; set; } = string.Empty;
@@ -198,7 +199,7 @@ public sealed partial class ViewDimensionContextProvider
             ViewId = batch.ViewId, ContextId = batch.ContextId,
             PointIds = chain.PointIds, Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
-            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType
+            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType, Row = chain.Row
         };
         var write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);

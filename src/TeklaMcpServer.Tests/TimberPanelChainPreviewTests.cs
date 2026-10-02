@@ -51,7 +51,7 @@ public sealed class TimberPanelChainPreviewTests
         Assert.Equal(3077.5, width.GetProperty("segments")[0].GetDouble());
         var height = Read(rows.Single(r => r.side == "Right").chains[1]).RootElement;
         Assert.Equal("overall", height.GetProperty("kind").GetString());
-        Assert.Equal("second", height.GetProperty("row").GetString());
+        Assert.Equal(2, height.GetProperty("row").GetInt32());
         Assert.Equal(2732d, height.GetProperty("segments")[0].GetDouble());
         var heightPoints = height.GetProperty("pointIds").EnumerateArray()
             .Select(id => catalog.AllPoints.Single(p => p.Id == id.GetString())).ToArray();
@@ -214,15 +214,28 @@ public sealed class TimberPanelChainPreviewTests
     public void RuleResultSupportsInclinedDirectionAndPlacementIndependentOfCardinalSides()
     {
         var direction = new DimensionDirection(3, 4);
-        var placement = new OutsideOutlineDimensionPlacement(new DimensionDirection(-4, 3), "first");
+        var placement = new OutsideOutlineDimensionPlacement(new DimensionDirection(-4, 3), 1);
         var result = new DimensionRuleResult(direction, placement, "future-inclined",
             [new DimensionRulePoint("p1", 10, 20, [])], segments: [25]);
 
         Assert.Equal(.6, result.Direction.X, 12);
         Assert.Equal(.8, result.Direction.Y, 12);
         Assert.Same(placement, result.Placement);
-        Assert.Equal("first", placement.Row);
+        Assert.Equal(1, placement.Row);
         Assert.Throws<NotSupportedException>(() => AxisAlignedDimensionRulePreviewAdapter.GetSide(result));
+    }
+
+    private sealed class FutureInteriorPlacement : DimensionLinePlacement { }
+
+    [Fact]
+    public void PreviewAdapterRejectsUnsupportedPlacementWithAnExplicitReason()
+    {
+        var result = new DimensionRuleResult(new DimensionDirection(1, 0),
+            new FutureInteriorPlacement(), "future-interior", []);
+        var error = Assert.Throws<NotSupportedException>(() => AxisAlignedDimensionRulePreviewAdapter.GetRow(result));
+        Assert.Contains("outside-outline", error.Message);
+        Assert.Throws<NotSupportedException>(() => AxisAlignedDimensionRulePreviewAdapter.ToPreview(result));
+        Assert.Throws<ArgumentNullException>(() => new DimensionRuleResult(new DimensionDirection(1, 0), null!, "invalid", []));
     }
 
     [Fact]

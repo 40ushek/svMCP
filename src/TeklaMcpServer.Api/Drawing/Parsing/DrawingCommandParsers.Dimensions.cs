@@ -10,7 +10,7 @@ public static partial class DrawingCommandParsers
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
         {
-            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson-or-empty> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials] [contextId] [pointIdsJson]");
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson-or-empty> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials] [contextId] [pointIdsJson] [row]");
         }
 
         var pointsJson = args.Length > 2 ? args[2] : "[]";
@@ -32,6 +32,12 @@ public static partial class DrawingCommandParsers
         }
         if (distance.HasValue && paperGapMm.HasValue)
             return CreateDimensionParseResult.Fail("Specify either distance or paperGapMm, not both");
+
+        var row = 1;
+        if (!distance.HasValue && !paperGapMm.HasValue &&
+            args.Length > 11 && !string.IsNullOrWhiteSpace(args[11]) &&
+            (!int.TryParse(args[11], NumberStyles.None, CultureInfo.InvariantCulture, out row) || row < 1))
+            return CreateDimensionParseResult.Fail("row must be a positive integer");
 
         var contextId = args.Length > 9 ? args[9].Trim() : string.Empty;
         var pointIdsJson = args.Length > 10 ? args[10] : string.Empty;
@@ -80,6 +86,7 @@ public static partial class DrawingCommandParsers
             Distance = distance,
             AttributesFile = attributesFile,
             PaperGapMm = paperGapMm,
+            Row = row,
             ExcludePrefixes = args.Length > 7 ? args[7] : string.Empty,
             ExcludeMaterials = args.Length > 8 ? args[8] : string.Empty
         });

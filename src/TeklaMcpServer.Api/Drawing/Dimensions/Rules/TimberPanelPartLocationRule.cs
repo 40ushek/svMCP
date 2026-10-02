@@ -119,7 +119,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
         var direction = new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1);
         var placement = new OutsideOutlineDimensionPlacement(
-            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), "first");
+            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
         if (note != null) return new DimensionRuleResult(direction, placement, "location", [], note);
         var coordinates = chain.Coordinates(alongX);
         var evidence = new Dictionary<string, object> {

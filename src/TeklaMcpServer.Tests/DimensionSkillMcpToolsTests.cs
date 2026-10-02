@@ -13,7 +13,8 @@ public sealed class DimensionSkillMcpToolsTests
         Path.Combine(BridgeTestHelpers.FindRepoRoot(), "src", "TeklaMcpServer", "Tools", "Drawing", "ModelTools.Drawing.Geometry.cs"));
 
     private static string DimensionsToolsSource() => File.ReadAllText(
-        Path.Combine(BridgeTestHelpers.FindRepoRoot(), "src", "TeklaMcpServer", "Tools", "Drawing", "ModelTools.Drawing.Dimensions.cs"));
+        Path.Combine(BridgeTestHelpers.FindRepoRoot(), "src", "TeklaMcpServer", "Tools", "Drawing", "ModelTools.Drawing.Dimensions.cs"))
+        .Replace("\r\n", "\n");
 
     [Fact]
     public void StructuralChainPositionsIsPublishedAsAnMcpTool()

@@ -8,6 +8,16 @@ namespace TeklaMcpServer.Api.Drawing.Dimensions;
 public static class DimensionPlacementSettings
 {
     public const double DefaultPaperGapMm = 8.0;
+
+    /// <summary>Resolve the preview's line row; explicit offsets override this default.</summary>
+    public static double ResolvePaperGapMm(int row, double? paperGapMm)
+    {
+        if (paperGapMm.HasValue) return paperGapMm.Value;
+        if (row < 1)
+            throw new System.ArgumentOutOfRangeException(nameof(row), "row must be a positive integer");
+        return row * DefaultPaperGapMm;
+    }
+
     public const double VerificationToleranceViewUnits = 0.6;
     public const double MinimumDistanceViewUnits = 0.001;
 

@@ -119,7 +119,7 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
     {
         var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
         return new OutsideOutlineDimensionPlacement(
-            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), "first");
+            new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
     }
 
     private static DimensionChainSide Opposite(DimensionChainSide side) => side switch {

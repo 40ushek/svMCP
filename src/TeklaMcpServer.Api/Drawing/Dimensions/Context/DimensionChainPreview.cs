@@ -77,7 +77,7 @@ internal static class DimensionChainPreview
         var roles = (string[][])result.Evidence["roles"];
         var partIds = (int[][])result.Evidence["partIds"];
         return new {
-            side = side.ToString(), kind = result.Kind,
+            side = side.ToString(), kind = result.Kind, row = 1,
             pointIds = result.Points.Select(point => point.Id).ToArray(),
             segments = result.Segments,
             points = result.Points.Select((point, index) => new {
@@ -139,7 +139,7 @@ internal static class DimensionChainPreview
 
         var ordered = chosen.OrderBy(x => ctx.Along(x.Point)).ToArray();
         return new {
-            side = side.ToString(), kind = "overall",
+            side = side.ToString(), kind = "overall", row = 2,
             pointIds = ordered.Select(x => x.Point.Id).ToArray(),
             segments = ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(ctx.Along(b.Point) - ctx.Along(a.Point), 3)).ToArray(),
             points = ordered.Select(x => new {
