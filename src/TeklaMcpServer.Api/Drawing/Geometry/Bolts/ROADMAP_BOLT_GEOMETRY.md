@@ -215,8 +215,8 @@ The roadmap is considered successfully implemented when:
 
 For the drawing-dimension gap, follow the explicit logic in **Bolt dimension
 logic** below. Do not add more point kinds or a second bolt reader before the
-view command and the planner contract exist. Generic axis/reference-line work
-remains useful to the geometry module, but it is not a substitute for deciding
+view dimension context integration and the planner contract exist. Generic
+axis/reference-line work remains useful to the geometry module, but it is not a substitute for deciding
 which bolt dimensions the drawing actually needs.
 
 ## Open: bolt dimensions have no path to the drawing at all (2026-08-23)
@@ -241,17 +241,17 @@ Confirmed live: `get_part_points_in_view` and `get_all_parts_geometry_in_view` b
 a bolt model id (`BoltGroup` is not a `Part`), and grepping
 `TeklaBridge/Commands/` for `BoltGeometryApi`/`get_bolt_geometry` returns nothing - the
 raw geometry layer is real, but genuinely unreachable from any MCP tool today. That is a
-smaller, mechanical gap (bridge command + MCP wrapper, same shape as every other
-`Get...InView` API already wired) - separate from and prerequisite to the larger one.
+smaller, mechanical gap (integrating the existing reader into the shared view
+dimension context) - separate from and prerequisite to the larger one.
 
-**What is still missing after that.** Wiring the existing API to a command only gets bolt
-*positions* out. Steel-rules.md's own list of unmet bolt needs stays open: edge-distance
+**What is still missing after that.** Integrating the existing API into the view
+dimension context only gets bolt *positions* out. Steel-rules.md's own list of unmet bolt needs stays open: edge-distance
 and spacing checks, extreme-bolt selection for a dimension chain, and the "which hole
 pattern would a fitter actually need called out" judgment a plant applies to bolts, which
-this skill has not worked out for any other geometry type either. Treat MCP exposure as
-phase 1 of closing this gap, not the whole of it.
+this skill has not worked out for any other geometry type either. Treat context
+integration as phase 1 of closing this gap, not the whole of it.
 
-### Planned command: `get_bolt_groups_in_view <viewId>` (not built)
+### Planned integration: bolt groups in the view dimension context (not built)
 
 **Decision (2026-08-23): read via `BoltPositions`/`FirstPosition`/`SecondPosition`, not
 via `BoltGroup.GetSolid()`.** A bolt hole is fully described by a centre point and a
@@ -262,8 +262,11 @@ beams - `NORMAL` vs `HIGH_ACCURACY` facet count, a convex hull losing real shape
 polygonized fillets - for a shape that never needed any of it. `BoltPositions` is also
 the canonical definition Tekla itself uses to place a bolt group, not a derived
 approximation, so reading it is not "less accurate," it is the more direct source.
-Build `get_bolt_groups_in_view` against the position API family already listed in
-"Current relevant sources" above.
+Populate `ViewDimensionContext` through the existing bolt geometry API and the
+position API family listed in "Current relevant sources" above. No separate
+`get_bolt_groups_in_view` bridge command or MCP tool is needed at this stage.
+The groups belong to the same view geometry snapshot as the part geometry;
+consumers reuse that snapshot instead of making a separate bolt read.
 
 **Must not repeat Bug 1 from `ROADMAP_SECTION_CROSS_SECTIONS.md`.** That bug was
 `view.GetObjects()`/`IsHidden` answering with the whole drawing database instead of what
@@ -271,38 +274,43 @@ the view actually draws, for parts. The same failure mode already reproduces for
 today, live: `filter_drawing_objects` with `objectType=Bolt` and `viewId=1709` (M.505, an
 `EndView`) returned 28 drawing-object entries on 2026-08-23, but only **4 distinct model
 ids** among them - the same 4 repeated across every view on the sheet, not the ones
-`1709` draws. Whatever reads bolts for this command must go through the same
+`1709` draws. Whatever reads bolts for this context must go through the same
 `GetDepthFilteredParts`-style depth-aware selection already built for parts, not a bare
 `view.GetObjects()` pass repeated for `BoltGroup`.
 
-**Response shape**, mirroring `AssemblyOutlineResponse`/`ViewAssemblyOutlineResult` so a
-future bolt dimension chain can reuse the same completeness reasoning parts already have:
+**Bolt data in the view dimension context**, mirroring
+`AssemblyOutlineResponse`/`ViewAssemblyOutlineResult` so a future bolt dimension
+chain can reuse the same completeness reasoning parts already have. Depth and
+read outcomes below belong to the bolt section, separate from part outcomes:
 
-- `viewId`, `isComplete`
+- the owning context supplies `viewId` and snapshot identity; bolt selection/read
+  completeness is recorded explicitly and must contribute to the relevant plan
+  completeness without hiding failures in otherwise complete part geometry
 - `boltGroups`: one entry per bolt group actually drawn in the view - group id,
-  `FirstPosition`/`SecondPosition`, individual `BoltPositions`, related part ids
-  (`PartToBeBoltedId`, `PartToBoltToId`)
+  `FirstPosition`/`SecondPosition`, individual `BoltPositions` with original indices and
+  view-local XYZ coordinates,
+  related part ids (`PartToBeBoltedId`, `PartToBoltToId`, `OtherPartIds`)
 - `outsideDepthModelIds` - bolt groups the depth window excludes, same meaning as the
   part-level field of the same name
 - `unresolvedDepthModelIds` - bolt groups whose depth relation could not be read safely
 - `unread` - a bolt group whose geometry read failed outright, with a reason, same
   `UnreadPart`-shaped list already used elsewhere
 
-**Live target for the eventual command, recorded now as a check to run once it exists.**
+**Live target for the eventual context integration.**
 M.505, `EndView` `1709`: the end plate carries 4 bolts (model ids `10104522`, `10097208`,
-`10100573`, `10128680`, confirmed above). `get_bolt_groups_in_view 1709` should return
+`10100573`, `10128680`, confirmed above). The dimension context for view `1709` should contain
 exactly these 4, not the whole model's bolts, and not the base plate's own bolts from a
 different view on the same sheet.
 
 ### Order of work
 
 1. This roadmap entry (done).
-2. Bridge command + MCP wrapper for `get_bolt_groups_in_view`, verified against the
-   M.505/1709 live target above.
+2. Integrate bolt groups into `ViewDimensionContext` using the existing geometry
+   reader, verified against the M.505/1709 live target above. No separate command.
 3. Edge-distance/spacing dimension logic on top of it - not started, not designed yet.
 
-The raw `TeklaDrawingBoltGeometryApi` already exists. The bridge command, the pure
-bolt-pattern planner, and dimension creation/verification remain to be written.
+The raw `TeklaDrawingBoltGeometryApi` already exists. The view dimension context
+integration, the pure bolt-pattern planner, and dimension creation/verification remain to be written.
 
 ### Before designing phase 3: Tekla rules are the input, not our implementation
 
@@ -335,7 +343,7 @@ drawing-dimension API. Both are useful reference behavior, not an implementation
 
 The Open API contract we have confirmed is lower-level: `BoltGroup.BoltPositions` are
 in the XY-plane of the bolt-group coordinate system and are relative to the
-transformation plane in which the group was selected. The future bridge command must
+transformation plane in which the group was selected. The view dimension context reader must
 therefore preserve the selected view coordinate system and return the raw positions,
 group endpoints, related parts, and read state. It must not pretend that raw positions
 already encode Tekla's dimensioning policy.
@@ -357,19 +365,19 @@ are **not** invokable as a ready engine from this bridge:
   own *Dimensioning rule properties* dialog for a person working in the Tekla UI - but
   the None/Internal/All, By-bolt/By-part, and extreme-bolt logic above would still have
   to be written by this project *inside that plugin*, using the raw
-  `get_bolt_groups_in_view` data this roadmap already targets. It changes *where* the
+  view dimension context bolt data this roadmap already targets. It changes *where* the
   logic would run (inside a Tekla-invoked plugin vs. inside this bridge), not *whether*
   it has to be written, and it only fires when a person runs Integrated Dimensioning
   from the Tekla UI - this bridge cannot call it on demand either way.
 
 Conclusion for phase 3: implement the None/Necessary/Internal/All, position-mode, and
-extreme-bolt mapping explicitly on top of `get_bolt_groups_in_view`, as already planned.
+extreme-bolt mapping explicitly on top of the view dimension context bolt groups, as planned.
 Do not build against `ObjectDimensioningPlugin` expecting it to remove that work - it
 does not, and it targets the Tekla UI, not this bridge's MCP flow.
 
 ## Bolt dimension logic (design only; not implemented)
 
-This is the logic to freeze before writing the bridge command or creating a drawing
+This is the logic to freeze before integrating the context or creating a drawing
 dimension. It separates four things that are easy to mix up:
 
 1. **which bolt groups belong to the view**;
@@ -379,19 +387,18 @@ dimension. It separates four things that are easy to mix up:
 
 ### 1. Selection gate: only bolt groups belonging to this view
 
-The input is the depth-aware result of `get_bolt_groups_in_view`, not a raw
+The input is the depth-aware bolt-group data in `ViewDimensionContext`, not a raw
 `view.GetObjects()` enumeration and not `get_structural_chain_positions`.
 
-The command must:
+The context reader must:
 
 1. start from the parts selected for the requested view and collect their bolt
    groups through `Part.GetBolts()`;
 2. deduplicate groups by bolt-group model id;
 3. preserve `PartToBeBoltedId`, `PartToBoltToId`, and `OtherPartIds` so the group can
    be classified as main-part, secondary-part, or connection-wide;
-4. apply the view depth test to the bolt group itself or to a documented equivalent
-   anchor/solid test; a group is not visible merely because one related part is
-   visible;
+4. apply the view restriction/depth test to the bolts themselves, as described
+   below; a group is not visible merely because one related part is visible;
 5. return excluded and unresolved groups explicitly. An unreadable group never
    becomes an included group by default.
 
@@ -403,6 +410,93 @@ view depth belongs in `outsideDepthModelIds`, not in `boltGroups`.
 The selection gate is complete only when every candidate group has one of these
 outcomes: `Included`, `OutsideDepth`, `Unread`, or `UnresolvedDepth`. A dimension
 plan must stop for that group when the outcome is `Unread` or `UnresolvedDepth`.
+
+#### Reference idea from x_drawer: test bolts against the view restriction box
+
+ILSpy inspection of `applications/x_Drawer_2023.exe` (2026-10-02) found this
+approach in bolt geometry preparation:
+
+- bolt positions are transformed into the requested view coordinate system;
+- the view geometry context stores `View.RestrictionBox`;
+- face-on bolt positions are tested with `RestrictionBox.IsInside(point)`;
+- for the side-on representation, two points offset along the bolt axis are
+  tested against the same box.
+
+This is evidence of a geometric restriction test, including Z/depth, not proof
+that every x_drawer dimension path uses that test or that it accounts for hidden
+objects and occlusion. The obfuscated report-property name supplying the axial
+extent has not been identified; do not copy an assumed bolt length from it.
+
+Apply the idea inside the view dimension context, using the existing bolt reader:
+
+1. Keep raw view-local XYZ until selection is complete. Do not flatten Z to zero
+   before testing against the restriction box.
+2. Record the restriction outcome for each bolt by group ID and original index.
+   A partially included group must not make all of its bolts dimension candidates.
+3. Use the center-point test for a face-on representation. For a side-on bolt,
+   use a documented axial segment only when its direction and extent are known.
+   Test segment/box intersection as well as endpoints: both endpoints can lie
+   outside while the segment crosses the view depth window.
+4. If the required axis/extent cannot be read, report `UnresolvedDepth` rather
+   than assuming inclusion. Preserve raw positions separately from selected
+   dimension candidates.
+5. Define boundary tolerance explicitly and verify the coordinate basis of the
+   points and box. A restriction-box hit establishes geometric inclusion;
+   drawing visibility settings require a separate check when relevant.
+
+Acceptance checks must include centers inside/outside the Z range, a partially
+included group, a side-on segment crossing the box with both endpoints outside,
+and an unresolved axial extent. Reuse the existing M.505/1709 live case to prove
+that bolts from another view are not included.
+
+#### Experimental visibility probe: Drawing.Bolt.CheckVisibility(index)
+
+Installed Tekla 2025 DLL inspection (2026-10-02) found
+`Tekla.Structures.Drawing.Bolt.CheckVisibility(int index)`, described in the XML
+documentation as getting line visibility information. The method is `internal`;
+its implementation reads `ListExporter.ImportIntList()[index] != 0`. This is a
+research lead, not a confirmed public API or a proven per-bolt occlusion result.
+
+Before adopting it:
+
+1. Trace how the visibility list is populated and what `index` identifies. Do not
+   assume it matches the original `BoltPositions` index.
+2. Resolve the drawing bolt to its model group through `ModelIdentifier`, retaining
+   the requested view and drawing-object identity for the probe.
+3. Compare results on known visible, fully covered, and partially covered bolts,
+   including multiple bolts in one group and different view representations.
+   Separate occlusion by other parts from restriction-box exclusion and manual hiding.
+4. Check whether a supported public API or presentation primitive exposes the
+   same result. Internal access remains an isolated experiment until its runtime
+   behavior, required query sequence, and version dependencies are established.
+5. If validated, capture visibility evidence in the view dimension context alongside
+   group ID and the verified position/primitive mapping. Keep visibility separate
+   from depth inclusion; missing or ambiguous evidence remains unresolved.
+
+Rendered mark lines can help validate the experiment, but are not unconditional
+visibility evidence: `XS_BOLT_MARK_IS_ALWAYS_VISIBLE=FALSE` draws marks of bolts
+covered by other objects with dashed leader lines and frames; `TRUE` forces solid
+lines even for those hidden bolts. Record that setting when comparing results.
+See [XS_BOLT_MARK_IS_ALWAYS_VISIBLE](https://support.tekla.com/doc/tekla-structures/2025/xs_bolt_mark_is_always_visible).
+
+Status: not tried live; no visibility reader or internal API dependency implemented.
+
+Reference search results (2026-10-02):
+
+- In the inspected `x_Drawer_2023.exe`, no calls to `CheckVisibility` or reads of
+  rendered bolt line types were found. Restriction-box tests were found, together
+  with solid/segment intersection helpers used to determine free directions.
+  These do not establish a per-bolt occlusion test along the view direction.
+  This finding applies to the inspected 2023 version, not all x_drawer binaries.
+- The root `dim` sample (`ObjectDimensioningTool`) resolves drawing parts to model
+  parts through `ModelIdentifier` in `PartTypes.cs` and works with solids and
+  contours. No bolt occlusion check, `CheckVisibility` call, or hidden-line result
+  reader was found there.
+- If the Tekla visibility probe cannot supply reliable results, investigate
+  line-of-sight intersections with part solids already captured by the view
+  dimension context. Its solid snapshots are geometry DTOs, not live Tekla
+  `Solid` instances: using `Solid.Intersect` requires a live read during capture,
+  or intersection logic over the stored geometry. Neither fallback is implemented.
 
 ### 2. Normalize the raw geometry before choosing dimensions
 
@@ -561,8 +655,9 @@ The first live checks are:
 ### 8. Implementation order
 
 1. Freeze the policy object and candidate/result states in unit-testable code.
-2. Expose `get_bolt_groups_in_view` with raw geometry, related parts, depth outcomes,
-   and read errors.
+2. Add bolt groups to the view dimension context: raw positions with indices,
+   related parts, depth outcomes, and read errors, sharing its geometry snapshot.
+   A separate bolt command is not part of this stage.
 3. Add a pure bolt-pattern planner with fixtures for rectangular, asymmetric,
    symmetric, skewed, duplicate, and incomplete groups.
 4. Validate the planner against the three live cases above without writing dimensions.

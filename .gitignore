@@ -53,6 +53,11 @@ src/.claude/
 # Codex build artifacts
 .codex-build/
 
+# Local analysis and diagnostic artifacts
+/.codex-analysis/
+/src/.codex/diagnostics/
+/src/front-full-pass-timing.json
+
 # Local reference project
 markAligner/
 
