@@ -6,14 +6,15 @@ namespace TeklaMcpServer.Api.Drawing;
 internal static class BoltEdgeDistancePreview
 {
     internal static object Build(int groupId, int partId, string rowId, BoltPointGeometry[] sources,
-        int axis, int sign, IReadOnlyList<OutlineTreeNodeResult>? contours, bool centersInside)
+        int axis, int sign, IReadOnlyList<OutlineTreeNodeResult>? contours, bool centersInside,
+        double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
     {
         var center = sources[0].Point;
         var reason = centersInside ? null : "not every source center is inside the view restriction; axial extent is unverified";
         double[]? edge = null;
         var contourIndex = -1;
         if (reason == null)
-            reason = FindEdge(contours, center, axis, sign, out edge, out contourIndex);
+            reason = FindEdge(contours, center, axis, sign, out edge, out contourIndex, tolerance);
         var distance = edge == null ? (double?)null : Math.Abs(edge[axis] - center[axis]);
         return new {
             proposalId = $"{rowId}-part-{partId}-edge-{(sign < 0 ? "min" : "max")}",
@@ -30,7 +31,7 @@ internal static class BoltEdgeDistancePreview
     }
 
     internal static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
-        int axis, int sign, out double[]? edge, out int contourIndex)
+        int axis, int sign, out double[]? edge, out int contourIndex, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
     {
         edge = null;
         contourIndex = -1;
@@ -46,7 +47,7 @@ internal static class BoltEdgeDistancePreview
         var polygon = matches[0].node.Polygon;
         var across = 1 - axis;
         // Avoid choosing a crossing through a vertex or along a boundary from rounded evidence.
-        if (polygon.Any(p => Math.Abs(p[across] - center[across]) <= BoltDimensionChainPreview.CoordinateTolerance))
+        if (polygon.Any(p => Math.Abs(p[across] - center[across]) <= tolerance))
             return "axis ray aligns with a contour vertex; edge crossing requires review";
         var crossings = new List<double>();
         for (var index = 0; index < polygon.Count; index++)
@@ -55,9 +56,9 @@ internal static class BoltEdgeDistancePreview
             var b = polygon[(index + 1) % polygon.Count];
             if ((a[across] > center[across]) == (b[across] > center[across])) continue;
             var along = a[axis] + (center[across] - a[across]) * (b[axis] - a[axis]) / (b[across] - a[across]);
-            if (Math.Abs(along - center[axis]) <= BoltDimensionChainPreview.CoordinateTolerance)
+            if (Math.Abs(along - center[axis]) <= tolerance)
                 return "bolt center lies on or too close to the projected part edge";
-            if (sign * (along - center[axis]) > BoltDimensionChainPreview.CoordinateTolerance) crossings.Add(along);
+            if (sign * (along - center[axis]) > tolerance) crossings.Add(along);
         }
         if (crossings.Count == 0) return "no external contour crossing in the requested axis direction";
         var selected = crossings.OrderBy(value => sign * (value - center[axis])).First();

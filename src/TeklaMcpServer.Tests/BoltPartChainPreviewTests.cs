@@ -29,9 +29,9 @@ public sealed class BoltPartChainPreviewTests
     }
 
     [Theory]
-    [InlineData(0.009, 1)]
-    [InlineData(0.01, 1)]
-    [InlineData(0.011, 2)]
+    [InlineData(0.09, 1)]
+    [InlineData(0.1, 1)]
+    [InlineData(0.11, 2)]
     public void CoordinateToleranceHasExplicitBoundary(double separation, int count)
     {
         var chain = Preview(points: [[0, -20, 0], [separation, -30, 0]])[0];
@@ -41,7 +41,7 @@ public sealed class BoltPartChainPreviewTests
     [Fact]
     public void ClusteringIsNotTransitiveAndDoesNotDependOnInputOrder()
     {
-        double[][] points = [[0, -30, 0], [0.009, -20, 0], [0.018, -10, 0]];
+        double[][] points = [[0, -30, 0], [0.09, -20, 0], [0.18, -10, 0]];
         var forward = Preview(points: points)[0];
         var reversed = Preview(points: points.Reverse().ToArray())[0];
         Assert.Equal(2, forward.GetProperty("projectedPositions").GetArrayLength());

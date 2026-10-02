@@ -15,10 +15,12 @@ internal sealed class DimensionRuleResult
     public IReadOnlyList<double> Segments { get; }
     public IReadOnlyDictionary<string, object> Evidence { get; }
     public DimensionProposalIdentity? Proposal { get; }
+    public DimensionCompositionIntent? CompositionIntent { get; }
 
     public DimensionRuleResult(DimensionDirection direction, DimensionLinePlacement placement, string kind,
         IEnumerable<DimensionRulePoint> points, string? note = null, IEnumerable<double>? segments = null,
-        IReadOnlyDictionary<string, object>? evidence = null, DimensionProposalIdentity? proposal = null)
+        IReadOnlyDictionary<string, object>? evidence = null, DimensionProposalIdentity? proposal = null,
+        DimensionCompositionIntent? compositionIntent = null)
     {
         Direction = direction ?? throw new ArgumentNullException(nameof(direction));
         Placement = placement ?? throw new ArgumentNullException(nameof(placement));
@@ -27,6 +29,7 @@ internal sealed class DimensionRuleResult
         Segments = Array.AsReadOnly((segments ?? Array.Empty<double>()).ToArray());
         Note = note;
         Proposal = proposal;
+        CompositionIntent = compositionIntent;
         var copy = new Dictionary<string, object>();
         if (evidence != null)
             foreach (var item in evidence)
@@ -35,5 +38,5 @@ internal sealed class DimensionRuleResult
     }
 
     public DimensionRuleResult WithProposal(DimensionProposalIdentity proposal) =>
-        new(Direction, Placement, Kind, Points, Note, Segments, Evidence, proposal);
+        new(Direction, Placement, Kind, Points, Note, Segments, Evidence, proposal, CompositionIntent);
 }

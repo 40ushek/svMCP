@@ -7,7 +7,7 @@ internal static class BoltPartChainPreview
 {
     internal static object[] Build(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
         IReadOnlyCollection<DimensionChainSide> sides,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
     {
         if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<object>();
         var sources = new List<Source>();
@@ -19,7 +19,7 @@ internal static class BoltPartChainPreview
                 .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds).Distinct()
                 .Where(includedParts.Contains);
             var restriction = row.GetProperty("restriction").EnumerateArray().ToArray();
-            var refusal = BoltDimensionChainPreview.PatternRefusal(group);
+            var refusal = BoltDimensionChainPreview.PatternRefusal(group, tolerance);
             foreach (var partId in related)
                 foreach (var position in group.Positions)
                 {
@@ -31,11 +31,11 @@ internal static class BoltPartChainPreview
                 }
         }
         return sources.GroupBy(source => source.PartId).OrderBy(part => part.Key)
-            .SelectMany(part => sides.Distinct().Select(side => BuildChain(part.Key, part.ToArray(), side, contours))).ToArray();
+            .SelectMany(part => sides.Distinct().Select(side => BuildChain(part.Key, part.ToArray(), side, contours, tolerance))).ToArray();
     }
 
     private static object BuildChain(int partId, Source[] sources, DimensionChainSide side,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance)
     {
         var axis = side is DimensionChainSide.Top or DimensionChainSide.Bottom ? 0 : 1;
         var across = 1 - axis;
@@ -49,7 +49,7 @@ internal static class BoltPartChainPreview
             foreach (var source in sources.OrderBy(source => source.Point[axis]).ThenBy(source => source.GroupId).ThenBy(source => source.Index))
             {
                 if (clusters.Count == 0 || source.Point[axis] - clusters[clusters.Count - 1][0].Point[axis]
-                    > BoltDimensionChainPreview.CoordinateTolerance) clusters.Add(new List<Source>());
+                    > tolerance) clusters.Add(new List<Source>());
                 clusters[clusters.Count - 1].Add(source);
             }
         var representatives = clusters.Select(cluster => cluster.OrderByDescending(source => sign * source.Point[across])
@@ -61,17 +61,17 @@ internal static class BoltPartChainPreview
         contours?.TryGetValue(partId, out outline);
         if (reason == null && representatives.Length > 0)
         {
-            reason = BoltEdgeDistancePreview.FindEdge(outline, representatives[0].Point, axis, -1, out min, out minContour);
+            reason = BoltEdgeDistancePreview.FindEdge(outline, representatives[0].Point, axis, -1, out min, out minContour, tolerance);
             if (reason == null)
                 reason = BoltEdgeDistancePreview.FindEdge(outline, representatives[representatives.Length - 1].Point,
-                    axis, 1, out max, out maxContour);
+                    axis, 1, out max, out maxContour, tolerance);
             if (reason == null && minContour != maxContour) reason = "endpoints belong to different outer contours";
         }
         var points = reason == null && min != null && max != null
             ? new[] { min }.Concat(representatives.Select(source => source.Point)).Concat(new[] { max }).ToArray()
             : Array.Empty<double[]>();
         var segments = points.Skip(1).Select((point, index) => point[axis] - points[index][axis]).ToArray();
-        if (reason == null && (segments.Length == 0 || segments.Any(value => value <= BoltDimensionChainPreview.CoordinateTolerance)))
+        if (reason == null && (segments.Length == 0 || segments.Any(value => value <= tolerance)))
             reason = "edge endpoints do not bound all projected bolt coordinates";
         return new {
             proposalId = $"bolt-part-{partId}-{side}", kind = "part", partId,

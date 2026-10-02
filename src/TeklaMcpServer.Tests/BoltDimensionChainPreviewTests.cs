@@ -139,7 +139,7 @@ public sealed class BoltDimensionChainPreviewTests
     {
         var group = Rectangle();
         group.Positions = [new() { Index = 1, Point = [10, 20, 0] },
-            new() { Index = 2, Point = [10.009, 20, 0] }, new() { Index = 3, Point = [10.018, 20, 0] }];
+            new() { Index = 2, Point = [10.09, 20, 0] }, new() { Index = 3, Point = [10.18, 20, 0] }];
         var chain = Assert.Single(Preview(group).GetProperty("groups")[0].GetProperty("chains").EnumerateArray());
         Assert.Equal(2, chain.GetProperty("points").GetArrayLength());
         Assert.Equal(new[] { 1, 3 }, Indices(chain));
@@ -155,6 +155,32 @@ public sealed class BoltDimensionChainPreviewTests
 
     private static readonly DimensionChainSide[] AllSides = [DimensionChainSide.Top, DimensionChainSide.Bottom,
         DimensionChainSide.Left, DimensionChainSide.Right];
+
+    [Fact]
+    public void RequestToleranceReachesBoltPatternChecks()
+    {
+        var group = Rectangle();
+        group.Positions[0].Point[2] = 0.05;
+        var snapshot = Snapshot(group).Answer;
+        var coarse = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.1)));
+        var fine = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.01)));
+        Assert.Equal("Candidate", coarse.GetProperty("groups")[0].GetProperty("status").GetString());
+        Assert.Equal("Blocked", fine.GetProperty("groups")[0].GetProperty("status").GetString());
+        Assert.Equal(0.01, fine.GetProperty("coordinateTolerance").GetDouble());
+    }
+
+    [Fact]
+    public void QuerySharesSettingsBetweenPlansAndKeepsToleranceCachesSeparate()
+    {
+        var context = ViewDimensionContextTests.Context();
+        var fine = context.Query("boltChains,chainDetails", ruleSet: "panel", coordinateSettings: new(0.01));
+        var coarse = context.Query("boltChains,chainDetails", ruleSet: "panel", coordinateSettings: new(0.1));
+        Assert.Equal(0.01, fine.GetProperty("boltChainPreview").GetProperty("coordinateTolerance").GetDouble());
+        Assert.Equal(0.01, fine.GetProperty("compositionPlan").GetProperty("coordinateToleranceViewUnits").GetDouble());
+        Assert.Equal(0.1, coarse.GetProperty("boltChainPreview").GetProperty("coordinateTolerance").GetDouble());
+        Assert.Equal(0.1, coarse.GetProperty("compositionPlan").GetProperty("coordinateToleranceViewUnits").GetDouble());
+        Assert.Equal(fine.GetRawText(), context.Query("boltChains,chainDetails", ruleSet: "panel", coordinateSettings: new(0.01)).GetRawText());
+    }
 
     private static JsonElement Preview(BoltGroupGeometry group, string restriction = "inside", int[]? includedParts = null) =>
         Freeze(BoltDimensionChainPreview.Build(Snapshot(group, restriction).Answer, includedParts ?? [10], AllSides));

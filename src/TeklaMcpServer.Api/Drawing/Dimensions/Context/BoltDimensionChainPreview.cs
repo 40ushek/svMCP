@@ -6,18 +6,20 @@ namespace TeklaMcpServer.Api.Drawing;
 internal static class BoltDimensionChainPreview
 {
     // Model/view units, independent of view scale and display rounding.
-    internal const double CoordinateTolerance = 0.01;
+    internal const double CoordinateTolerance = DimensionCoordinateSettings.DefaultToleranceMm;
 
     internal static object Build(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null,
+        DimensionCoordinateSettings? coordinateSettings = null)
     {
+        var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var groups = snapshot.TryGetProperty("boltGroups", out var rows)
-            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours)).ToArray()
+            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours, tolerance)).ToArray()
             : Array.Empty<object>();
         return new {
             scope = "bolt-chain-proposals", coordinateSystem = "display",
-            coordinateTolerance = CoordinateTolerance,
+            coordinateTolerance = tolerance,
             geometryReadComplete = Flag(snapshot, "isComplete"),
             selectionComplete = Flag(snapshot, "selectionComplete"),
             visibilityVerified = Flag(snapshot, "visibilityVerified"),
@@ -27,7 +29,7 @@ internal static class BoltDimensionChainPreview
             unread = snapshot.TryGetProperty("unread", out var unread) ? unread : default(JsonElement?),
             error = snapshot.TryGetProperty("error", out var error) ? error : default(JsonElement?),
             groups,
-            partChains = BoltPartChainPreview.Build(snapshot, includedPartIds, sides, partContours)
+            partChains = BoltPartChainPreview.Build(snapshot, includedPartIds, sides, partContours, tolerance)
         };
     }
 
@@ -36,7 +38,7 @@ internal static class BoltDimensionChainPreview
 
     private static object BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance)
     {
         var geometry = row.GetProperty("geometry");
         var group = JsonSerializer.Deserialize<BoltGroupGeometry>(geometry.GetRawText(),
@@ -49,7 +51,7 @@ internal static class BoltDimensionChainPreview
             .GroupBy(value => value.GetProperty("index").GetInt32())
             .ToDictionary(values => values.Key, values => values.Count() == 1
                 ? values.First().GetProperty("centerState").GetString() : "Unresolved");
-        var reason = PatternRefusal(group);
+        var reason = PatternRefusal(group, tolerance);
         var chains = new List<object>();
         var edgeChains = new List<object>();
         var candidateChainCount = 0;
@@ -61,8 +63,8 @@ internal static class BoltDimensionChainPreview
         }
         else
         {
-            var x = Cluster(group.Positions, 0);
-            var y = Cluster(group.Positions, 1);
+            var x = Cluster(group.Positions, 0, tolerance);
+            var y = Cluster(group.Positions, 1, tolerance);
             var cells = group.Positions.GroupBy(p => (X: x[p.Index], Y: y[p.Index]))
                 .OrderBy(cell => cell.Key.Y).ThenBy(cell => cell.Key.X)
                 .Select(cell => new Cell(cell.Key.X, cell.Key.Y, cell.OrderBy(p => p.Index).ToArray())).ToArray();
@@ -89,12 +91,12 @@ internal static class BoltDimensionChainPreview
                 if (sides.Any(side => side is DimensionChainSide.Top or DimensionChainSide.Bottom))
                 {
                     candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
-                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours);
+                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours, tolerance);
                 }
                 if (sides.Any(side => side is DimensionChainSide.Left or DimensionChainSide.Right))
                 {
                     candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers);
-                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours);
+                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours, tolerance);
                 }
             }
         }
@@ -114,35 +116,35 @@ internal static class BoltDimensionChainPreview
         };
     }
 
-    internal static string? PatternRefusal(BoltGroupGeometry group)
+    internal static string? PatternRefusal(BoltGroupGeometry group, double tolerance = CoordinateTolerance)
     {
         if (group.Positions.Count == 0 || group.Positions.Any(p => !ValidPoint(p.Point)))
             return "missing or invalid bolt positions";
         if (group.Positions.Select(p => p.Index).Distinct().Count() != group.Positions.Count)
             return "source bolt indices are not unique";
         if (group.Shape != "BoltArray") return "only BoltArray is supported by this first preview";
-        if (group.Positions.Max(p => p.Point[2]) - group.Positions.Min(p => p.Point[2]) > CoordinateTolerance)
+        if (group.Positions.Max(p => p.Point[2]) - group.Positions.Min(p => p.Point[2]) > tolerance)
             return "bolt centers span view depth; a face-on planar pattern is not established";
         if (!ValidPoint(group.FirstPosition) || !ValidPoint(group.SecondPosition))
             return "bolt-group reference direction is missing";
         var dx = Math.Abs(group.SecondPosition[0] - group.FirstPosition[0]);
         var dy = Math.Abs(group.SecondPosition[1] - group.FirstPosition[1]);
-        if (dx <= CoordinateTolerance && dy <= CoordinateTolerance)
+        if (dx <= tolerance && dy <= tolerance)
             return "bolt-group reference direction has no stable XY projection";
-        if (dx > CoordinateTolerance && dy > CoordinateTolerance)
+        if (dx > tolerance && dy > tolerance)
             return "skewed bolt-group reference requires an explicit direction policy";
         return null;
     }
 
     // Cluster against the first coordinate, not transitively against the previous point.
-    private static Dictionary<int, int> Cluster(IEnumerable<BoltPointGeometry> points, int axis)
+    private static Dictionary<int, int> Cluster(IEnumerable<BoltPointGeometry> points, int axis, double tolerance)
     {
         var result = new Dictionary<int, int>();
         var number = -1;
         var first = double.NegativeInfinity;
         foreach (var point in points.OrderBy(p => p.Point[axis]).ThenBy(p => p.Index))
         {
-            if (point.Point[axis] - first > CoordinateTolerance) { first = point.Point[axis]; number++; }
+            if (point.Point[axis] - first > tolerance) { first = point.Point[axis]; number++; }
             result.Add(point.Index, number);
         }
         return result;
@@ -177,7 +179,7 @@ internal static class BoltDimensionChainPreview
 
     private static void AddEdgeChains(List<object> chains, IEnumerable<IGrouping<int, Cell>> rows,
         int axis, int groupId, IReadOnlyDictionary<int, string?> centers, int[] partIds,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance)
     {
         foreach (var row in rows.OrderBy(row => row.Key))
         {
@@ -189,8 +191,8 @@ internal static class BoltDimensionChainPreview
                 IReadOnlyList<OutlineTreeNodeResult>? contours = null;
                 partContours?.TryGetValue(partId, out contours);
                 var rowId = $"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}";
-                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[0].Sources, axis, -1, contours, rowInside));
-                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[points.Length - 1].Sources, axis, 1, contours, rowInside));
+                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[0].Sources, axis, -1, contours, rowInside, tolerance));
+                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[points.Length - 1].Sources, axis, 1, contours, rowInside, tolerance));
             }
         }
     }

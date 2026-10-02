@@ -12,9 +12,9 @@ owns independent correctness/performance work. Do not duplicate those statuses.
 `DimensionRuleResult` now accepts optional typed proposal identity, measurement
 purpose and reference metadata. Existing rule callers and legacy preview rows are
 unchanged. `DimensionChainComposer` is a detached pure boundary with the explicit
-`preserve-proposals-v4` diagnostic policy: retain every original proposal, keep
-eligible proposals separate, and record concrete causes and affected model/point IDs.
-It does not assert combination, duplicate coverage or readiness for writing.
+`shared-datum-union-v2` diagnostic policy: retain every original proposal, combine
+only explicitly compatible supported proposals, and record concrete causes and
+affected model/point IDs. It does not assert duplicate coverage or readiness for writing.
 
 `TimberPanelChainPreview` is the first adapter. Panel `chainDetails` returns an
 additive `compositionPlan` over the entire view's evaluation (independent of the
@@ -52,8 +52,9 @@ or drawing writes, instead of selecting an arbitrary proposal.
 An ambiguous unrequested key does not block resolution of a unique requested key.
 The compact projection contains semantic metadata, preview links and decisions;
 points, segments and evidence remain in the retained internal proposals and existing
-preview, not duplicated in the plan response. No row hint or artificial composed
-chain IDs are returned. No stored plan state or batch references are added.
+preview, not duplicated in the plan response. Only genuine unions add a `chains`
+block with source proposal IDs, ordered point IDs, datum ID and recomputed segments.
+No row hint, stored plan state or batch references are added.
 The existing rule's omitted mirror proposals remain visible as original refusals;
 their pre-suppression candidates are not reconstructed.
 
@@ -219,6 +220,64 @@ command failed and three fit commands succeeded. All five current dimension sets
 and loaded standard/overall attributes report `Fixed` placement. Historical placement
 was not captured; neither layout-command timing nor current placement establishes
 the cause. Controlled update/layout reproduction is a separate pending investigation.
+
+## First conservative union policy (2026-10-02)
+
+`DimensionRuleResult.CompositionIntent` is optional explicit rule evidence: subject
+category (Part/Bolt), units, reference identity, local/layer scope, measurement type
+(Relative/Absolute/RelativeAndAbsolute) and open/closed closure. Intent participates
+in content identity only when supplied; proposals without it retain the previous ID
+formula. Known purpose/reference/support are required independently of intent.
+Classification, display keys and coordinate proximity never fill these fields.
+
+The first union policy requires equal category, kind/purpose, units, signed direction,
+reference semantics and identity, scope, measurement type and outside-outline normal.
+It supports open Location/Internal/Edge chains with an identical supported first
+point, matching complete source evidence and strictly monotonic endpoint-datum order
+extending on the same side. Overall, Check and closed chains remain separate.
+`DimensionCoordinateSettings` supplies a positive finite tolerance in model/view mm,
+default 0.1 mm. Typed `Query` passes the same per-request settings to bolt preview and
+composition; bolt pattern, clustering and edge checks receive it, and cached bolt
+previews include it in their key. MCP transport of custom settings remains a later
+step; existing MCP requests use the default. This explicitly changes the previous
+bolt default of 0.01 mm to 0.1 mm; it is not a change to steel/panel point-selection
+thresholds. The plan reports the actual `coordinateToleranceViewUnits`.
+Exact supported-point identity/coordinates remain required when deduplicating;
+near-equal projected coordinates within tolerance or reused point IDs with different
+positions/supports prevent union. Adjacent projected points must exceed the tolerance. Sources
+are compared independent of enumeration order. No witness point is relocated or
+substituted; concrete legacy rows do not participate in placement intent.
+
+Eligible proposals form a pairwise compatibility graph. Only connected components
+whose every pair is compatible are combined. Non-transitive components (A compatible
+with B and C, but B conflicting with C) retain all proposals separately and report
+`ambiguous-composition` with the affected proposal IDs; no hash ordering chooses a
+winner. Independent compatible components can still combine. The union retains each unique supported
+point in datum order and recomputes projected segments; original proposals and their
+evidence remain intact. A snapshot-local `composed:` ID hashes the policy, tolerance and ordered
+source proposal IDs, with shortened-ID collision rejection. `Combined` decisions
+reference that ID. Refused inputs retain `Blocked` issues; unresolved/incompatible
+inputs retain `KeepSeparate` with reasons. This is not duplicate suppression.
+
+The panel diagnostic adapter preserves supplied intent/reference metadata, so a
+synthetic compatible pair exercises its actual detailed-preview path. Current panel
+rules still do not supply resolved bases or intent, so their real proposals remain
+separate. Legacy rows, compact responses and batch writing use the original proposals.
+Production rule enrichment and read-only live union acceptance remain pending; no
+new composition policy has been deployed during this code stage.
+
+Tests cover compatible pairs/triples, reordered inputs/sources, arbitrary vectors,
+backward datum order, category/purpose/units/reference/scope/type/normal mismatches,
+conflicting point identity/support, opposite spans, unresolved metadata, closure,
+nonmonotonic order, blocked inputs, tolerance boundaries/configuration, ambiguous
+components under permuted addresses, independent unions and diagnostic-adapter
+legacy parity. Bolt tests verify the new default and request-specific pattern checks;
+Query tests cover settings propagation and cache separation.
+
+The dimension-position investigation is deferred: the user reported a possible model
+change and consequent drawing update during the earlier capture. This is a plausible
+explanation, not a verified cause, and the position difference is not treated as an
+established dimension-writer defect.
 
 ## Foundation and boundaries
 

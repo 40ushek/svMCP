@@ -79,6 +79,9 @@ internal sealed class DimensionProposalIdentity
             // Empty refusals still have distinct content. Nonempty chains use their supports.
             emptyRefusal = result.Points.Count == 0 ? result.Note : null
         });
+        // Existing proposals without explicit intent retain their previous content identity.
+        if (result.CompositionIntent != null)
+            content = JsonSerializer.Serialize(new { proposal = content, compositionIntent = result.CompositionIntent.Project() });
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(content));
         var id = ruleFamily + ":" + BitConverter.ToString(hash, 0, 8).Replace("-", "").ToLowerInvariant();

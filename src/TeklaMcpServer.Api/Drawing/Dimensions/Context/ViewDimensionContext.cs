@@ -120,7 +120,8 @@ public sealed class ViewDimensionContext
     /// <summary>One or several small questions; answers never round or mutate stored points.</summary>
     public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null,
-        string ruleSet = "steel", string contactPair = "", IReadOnlyList<PartLayerRule>? layerRules = null)
+        string ruleSet = "steel", string contactPair = "", IReadOnlyList<PartLayerRule>? layerRules = null,
+        DimensionCoordinateSettings? coordinateSettings = null)
     {
         var requested = Split(questions);
         var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
@@ -148,7 +149,7 @@ public sealed class ViewDimensionContext
         if (Wants("parts")) result["parts"] = _parts;
         if (Wants("bolts")) result["bolts"] = _bolts;
         if (requested.Contains("boltchains"))
-            result["boltChainPreview"] = BuildBoltPreview(selected);
+            result["boltChainPreview"] = BuildBoltPreview(selected, coordinateSettings);
         if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }
@@ -172,7 +173,7 @@ public sealed class ViewDimensionContext
             var panelPlans = panel && refusal == null
                 ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get(),
-                    contextId: ContextId, viewId: ViewId)
+                    contextId: ContextId, viewId: ViewId, coordinateSettings: coordinateSettings)
                 : null;
             if (panelPlans != null)
             {
@@ -285,14 +286,15 @@ public sealed class ViewDimensionContext
         return null;
     }
 
-    internal JsonElement BuildBoltPreview(IReadOnlyCollection<DimensionChainSide> sides)
+    internal JsonElement BuildBoltPreview(IReadOnlyCollection<DimensionChainSide> sides, DimensionCoordinateSettings? coordinateSettings = null)
     {
+        var settings = coordinateSettings ?? new DimensionCoordinateSettings();
         var selected = sides.Distinct().OrderBy(side => side).ToArray();
-        var key = string.Join(",", selected);
+        var key = string.Join(",", selected) + ":" + settings.ToleranceMm.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
         if (!_boltPreviews.TryGetValue(key, out var preview))
         {
             preview = Freeze(BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected,
-                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText())));
+                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()), settings));
             _boltPreviews.Add(key, preview);
         }
         return preview;

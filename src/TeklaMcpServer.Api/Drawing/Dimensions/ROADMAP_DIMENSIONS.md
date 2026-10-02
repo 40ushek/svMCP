@@ -27,6 +27,21 @@ including neighbour reflow and text collisions.
 
 ## Current delivery and next gate
 
+### Conservative composition preview (2026-10-02)
+
+The pure composer now supports explicit shared-datum union in diagnostic preview.
+Synthetic pairs/triples exercise compatibility and the panel adapter; current panel
+rules still have unresolved reference semantics and therefore remain separate.
+Compatibility components with competing unions remain explicitly ambiguous rather
+than selecting a subset by ID ordering. Shared per-request `DimensionCoordinateSettings`
+now supplies bolt and composition tolerance (default 0.1 mm; previous bolt default
+0.01 mm). Typed Query exposes the setting; MCP transport of custom values is pending.
+This code stage adds no batch writing and has not been deployed or accepted live.
+See [union policy](ROADMAP_CHAIN_COMPOSITION.md#first-conservative-union-policy-2026-10-02)
+for contract, exact-coordinate policy and restrictions. The earlier position anomaly
+is deferred after the user's report of a possible model/drawing update; cause remains
+unverified.
+
 ### Diagnostic part classification: runtime review (2026-10-02)
 
 The internal classification stage (`1ec9c40`) and MCP/bridge transport (`c61128e`)

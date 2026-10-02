@@ -44,11 +44,11 @@ internal static class TimberPanelChainPreview
     public static PreviewResult Build(DimensionPointCatalog catalog, GeometryGroup group,
         IReadOnlyCollection<int> includedIds, double minimumSegment,
         Func<ViewContactCandidatePointsResult?> getContacts, string contextId, int viewId,
-        OverallDimensionSettings? overallSettings = null)
+        OverallDimensionSettings? overallSettings = null, DimensionCoordinateSettings? coordinateSettings = null)
     {
         if (group.Extent == null)
             return new PreviewResult(Rows(side => [Empty(side, "location", "panel outline is empty")]),
-                [], [], [], [], "not-available", () => BuildCompositionPlan(new DimensionRuleEvaluation([]), contextId, viewId));
+                [], [], [], [], "not-available", () => BuildCompositionPlan(new DimensionRuleEvaluation([]), contextId, viewId, coordinateSettings));
 
         var panel = group.Extent;
         var input = new TimberPanelPartLocationInput(group, includedIds, getContacts);
@@ -56,10 +56,11 @@ internal static class TimberPanelChainPreview
         var evaluation = new DimensionRuleSet(
             new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment)),
             new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings())).Calculate(context);
-        return FromEvaluation(evaluation, contextId, viewId);
+        return FromEvaluation(evaluation, contextId, viewId, coordinateSettings);
     }
 
-    internal static PreviewResult FromEvaluation(DimensionRuleEvaluation evaluation, string contextId, int viewId)
+    internal static PreviewResult FromEvaluation(DimensionRuleEvaluation evaluation, string contextId, int viewId,
+        DimensionCoordinateSettings? coordinateSettings = null)
     {
         var rows = Rows(side => evaluation.Results
             .Where(result => AxisAlignedDimensionRulePreviewAdapter.TryGetSide(result, out var resolvedSide) && resolvedSide == side)
@@ -70,11 +71,12 @@ internal static class TimberPanelChainPreview
             (int[])evaluation.Diagnostics["unlocatedModelIds"],
             (int[])evaluation.Diagnostics["missingSupportModelIds"],
             (int[])evaluation.Diagnostics["tiltedPartIds"],
-            (string)evaluation.Diagnostics["contactStatus"], () => BuildCompositionPlan(evaluation, contextId, viewId),
+            (string)evaluation.Diagnostics["contactStatus"], () => BuildCompositionPlan(evaluation, contextId, viewId, coordinateSettings),
             evaluation.Results.Count(result => !AxisAlignedDimensionRulePreviewAdapter.TryGetSide(result, out _)));
     }
 
-    private static DimensionCompositionPlan BuildCompositionPlan(DimensionRuleEvaluation evaluation, string contextId, int viewId)
+    private static DimensionCompositionPlan BuildCompositionPlan(DimensionRuleEvaluation evaluation, string contextId, int viewId,
+        DimensionCoordinateSettings? coordinateSettings)
     {
         if (string.IsNullOrWhiteSpace(contextId)) throw new ArgumentException("A frozen context ID is required.", nameof(contextId));
         if (viewId <= 0) throw new ArgumentOutOfRangeException(nameof(viewId));
@@ -86,12 +88,14 @@ internal static class TimberPanelChainPreview
                 var evidence = result.Evidence.ToDictionary(pair => pair.Key, pair => pair.Value);
                 evidence["legacyPreviewRefusal"] = "The panel four-side preview does not support this placement or direction.";
                 proposal = new DimensionRuleResult(result.Direction, result.Placement, result.Kind,
-                    result.Points, result.Note, result.Segments, evidence);
+                    result.Points, result.Note, result.Segments, evidence, result.Proposal, result.CompositionIntent);
             }
             return proposal.WithProposal(DimensionProposalIdentity.Create(contextId, viewId, "panel",
-                hasSide ? side + "-" + result.Kind : null, proposal));
+                hasSide ? side + "-" + result.Kind : null, proposal,
+                result.Proposal?.Reference ?? DimensionMeasurementReference.Unknown,
+                result.Proposal?.ReferenceSupport ?? DimensionReferenceSupport.Unspecified));
         });
-        return DimensionChainComposer.Compose(proposals, evaluation.Diagnostics);
+        return DimensionChainComposer.Compose(proposals, evaluation.Diagnostics, coordinateSettings);
     }
 
     private static PreviewRow[] Rows(Func<DimensionChainSide, object[]> chains) =>
