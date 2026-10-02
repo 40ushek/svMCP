@@ -925,3 +925,69 @@ Acceptance:
 - Verify retry behavior after partial success and verify overall/location merge
   outcomes, including a requested row type differing from an existing merged chain;
   never count a merged overall as a separate visible dimension.
+
+### 7. Preview-only context: no raw points for the assistant (proposed 2026-10-02)
+
+Goal: the assistant takes the prepared chains from the preview and decides which
+to keep or remove, without reading every source candidate. This saves tokens and
+time; it is not an access-control measure. Not implemented.
+
+- `get_view_dimension_context` accepts only `chain`, `chainDetails`, `parts`,
+  `scale`, `diagnostics`. `points`, `dimensionPoints`, `edges`, `all`,
+  `contacts` and `contactDetails` are rejected
+  before the snapshot is built, not ignored. Default becomes `chain,scale`;
+  `viewId`, `sides`, `ruleSet`, exclusions and `refresh` stay.
+- Restrict in the MCP wrapper and bridge handler, not in `ViewDimensionContext.Query`:
+  tests build point IDs through `Query("dimensionPoints")` and the check inside
+  `Query` runs after the snapshot exists. Keep `chainDetails` for targeted
+  inspection of a prepared chain; contacts are not exposed by this tool.
+- Each chain returns purpose, side, selected `pointIds`, segments and an
+  incompleteness flag with the concrete reason. An incomplete chain is not rebuilt
+  automatically, but keeps its `pointIds` so it can still be placed.
+- Rows are assigned when a batch is created: per side, in order among the kept
+  chains; a single chain gets row 1, and `overall` alone does not imply row 2.
+  This replaces the preview `row` field added on 2026-10-02. A row does not
+  prevent Tekla from merging an overall into a location chain.
+- Update `.agents/skills/dimension-drawings/SKILL.md` step 3 to
+  `questions="chain,scale"`. Check that steel chains closing on plate edges
+  (steel-rules) are still reachable from the preview.
+- Gates: a rejected question fails before geometry is read; `chain,scale`
+  returns ready chains; a call without `questions` returns no source points.
+  Repeating the same batch without explicit offsets retains matching chains;
+  a new chain on an occupied side requires an explicit offset before any write.
+  Measure response size and call time before and after on the same view.
+- Out of scope: closing other readers of source candidates
+  (`get_structural_chain_positions`, `get_*_points_in_view`, raw `points` in
+  `create_dimension`).
+
+Open points from review (2026-10-02, defaults stated, to confirm on fixtures):
+
+- **Incomplete chains.** The preview must name the concrete reason per chain.
+  Default: no `pointIds` or a failed outline blocks creation; a missing support
+  for some parts or unlocated parts (as on EW.7 Left, `missingSupportModelIds`)
+  lets the assistant choose, with the reason shown in the answer.
+- **Row scope on partial creation.** Existing dimensions have no stored `row`,
+  only a distance and a line position, so a free row cannot be found by counting
+  dimensions on a side, and manual offsets make counting wrong. Default: automatic
+  row numbering applies only to a side with no existing dimension. Only NEW
+  chains on an occupied side require `paperGapMm` or `distance`; retained chains
+  keep their existing placement without requiring a repeated offset. A free-space
+  search rule is a later decision.
+- **Retained chains come first.** The batch retains a chain only if its points,
+  side and offset (distance within 1 unit, `FindMatching` in
+  `ViewDimensionContextProvider.Batch.cs`) all match, so a chain with a different
+  offset is not retained. Order: recognise the chains to retain, then assign places
+  to the new ones. Proposed repeat behavior: when no explicit offset is supplied,
+  first identify a unique existing match by points, side and requested dimension
+  type, and retain its current offset. Do not guess if several existing chains
+  match. An explicit offset must still match the existing placement for retention;
+  requesting a different offset does not silently retain the old placement.
+- **Precedence.** `row`, `paperGapMm` and `distance` are all in the batch contract.
+  Keep: `distance` over `paperGapMm` over the automatic row; `distance` together
+  with `paperGapMm` stays rejected. Automatic rows apply only when neither is given.
+- **Measurement.** Measure the whole cycle: preview, keep/remove decision, create,
+  verify. Report separately: server time, permission-review time and decision time,
+  plus call count and response size. On 2026-10-02 five `delete_dimension` calls took
+  about 50 ms each on the server but were spaced 3-6 s apart; the Codex diagnostics
+  (`.codex/diagnostics/codex-mcp-latency-20261002.md`) attribute that to automatic
+  approval review before dispatch, not to Tekla and not shown to be model turns.
