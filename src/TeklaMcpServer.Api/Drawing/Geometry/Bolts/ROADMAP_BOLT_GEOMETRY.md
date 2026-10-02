@@ -2,21 +2,14 @@
 
 ## Current status and next work (2026-10-02)
 
-Raw display-coordinate bolt groups, indexed positions and related-part IDs are
-captured in the view dimension context. Internal, projected part-edge and combined
-per-part proposals plus explicit batch creation are implemented. M.81 Sections
-G (1908) and E (1409) have live coordinate/offset read-back evidence, not verified
-occlusion or depth-clipped section geometry. E's 126 mm edge segment remains
-provisional against the section contour.
-
-The latest source contract/cache/diagnostic/test cleanup is tested but undeployed
-and uncommitted. The operational contract is maintained only in the
+The canonical delivery status, live evidence and remaining acceptance gates are in the
+[Dimensions roadmap](../../Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+Do not duplicate deployment or commit status here. The operational contract is in the
 [Dimensions README](../../Dimensions/README.md#explicit-bolt-chain-creation-2026-10-02).
 
-Next dimension-planning stage: keep structural and bolt proposals independent,
-then apply an explicit, pure composition policy before placement and writing.
-The canonical work order, compatibility rules and acceptance cases are in
-[Dimensions roadmap](../../Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+The composition foundation, initial panel adapter, later bolt integration and
+compatibility/acceptance rules are in
+[Chain Composition roadmap](../../Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
 This geometry module supplies facts/provenance; it does not own composition policy.
 
 Remaining geometry checks: occlusion evidence, depth-clipped contours, and live

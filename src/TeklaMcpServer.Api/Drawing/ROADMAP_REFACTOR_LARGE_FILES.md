@@ -10,6 +10,24 @@ dimension, and bridge-command changes easier to review and safer to modify.
 
 ## Current Hotspots
 
+### Dimension-module audit update (2026-10-02)
+
+Proposal/plan architecture and composition migration are in
+[Chain Composition roadmap](Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
+Independent priorities and acceptance criteria for incremental batch extraction,
+final reconciliation and measured performance work are in
+[Dimensions roadmap](Dimensions/ROADMAP_DIMENSIONS.md#targeted-refactoring-before-chain-composition-2026-10-02).
+They are distinct from this document's mechanical file splitting. Final
+reconciliation fixes and algorithm optimizations must not be disguised as
+behavior-preserving moves.
+
+Current source sizes include `DrawingCommandHandler.Dimensions.cs` (1760 lines),
+`TeklaDrawingDimensionsApi.cs` (1242), `DimensionOperations.cs` (1200),
+`DimensionGroupFactory.cs` (1121) and `TeklaDrawingDimensionsApi.Query.cs` (1032).
+These are maintenance indicators, not elapsed-time measurements. The dimension
+commands were already split into partial files; the original counts below are
+historical. Do not repeat completed splits solely to satisfy those old counts.
+
 Largest files found during the first audit:
 
 ```text

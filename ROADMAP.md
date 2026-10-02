@@ -73,6 +73,7 @@
 ### Размеры
 
 Подробный план: [`src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md)
+Архитектура цепочек и композиция: [отдельный roadmap](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
 Общий drawing-level план: [`src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`](src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md)
 
 Краткое состояние:
@@ -80,11 +81,9 @@
 - `get_dimension_contexts` — отдельный внутренний/context read path уже введён
 - `arrange_dimensions` — реализован, но **не является полноценным layout-движком**: сейчас это базовая раздвижка параллельных стеков через `Distance`, без нормализации distance и без полного учёта текста/меток
 - `combine_dimensions` — реализован как controlled combine path поверх grouping/reduction logic
-- Болтовые цепочки и явное создание реализованы; есть live read-back на M.81 G/E.
-  Проверки видимости и обрезки сечением остаются открытыми. Следующий согласованный
-  этап — отдельная компоновка готовых цепочек деталей и болтов до записи размеров;
-  это не существующий `combine_dimensions`. Единый план и статусы:
-  [размеры и компоновка цепочек](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+- Состояние болтовых цепочек и проверки: [roadmap размеров](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+- Контракт предложений, read-only план композиции и дальнейшее расширение:
+  [roadmap композиции](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
 - Следующий этап layout-размещения размеров, отдельный от незакрытой live-приёмки в
   подробном плане: нормализация (убрать дубли, выровнять близкие линии) → умная
   раздвижка → учёт текста и меток (Phase 4 in progress)

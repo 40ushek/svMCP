@@ -47,45 +47,84 @@ projected contour; its correspondence to the section edge remains unverified.
 
 **Latest source cleanup:** explicit-selection contract, side-set preview caching,
 all blocked-source diagnostics, boundary tests and shorter tool descriptions are
-implemented and tested, but not deployed. Live evidence above belongs to the
-previous deployed increment. These changes remain uncommitted.
+implemented and tested. Deployment and runtime acceptance of that cleanup remain
+open; live evidence above belongs to the previous deployed increment. This section
+is the canonical status for bolt-chain delivery; other roadmaps link here.
+Composition design/work order lives in [Chain Composition roadmap](ROADMAP_CHAIN_COMPOSITION.md).
+Commit/push history belongs in Git, not roadmap status.
 
-**Next design stage: a separate chain-composition service, not yet implemented.**
-The agreed flow is:
+### Targeted refactoring before chain composition (2026-10-02)
 
-`frozen geometry -> separate part/bolt planners -> chain composition -> placement -> verified writer`
+Status: review findings and proposed work, not implemented. Preserve the public
+MCP/bridge contracts and verified-write protocol. Prefer existing domain models;
+do not replace the whole dimension module or introduce a new framework.
 
-1. Define a common proposal contract using existing chain/domain components where
-   possible: view/context identity, source part and bolt-group/index identities,
-   reference body, purpose (location/internal/edge/overall/check), axis, datum,
-   closure and ordered supported points, eligibility and verification limits.
-   Keep source geometry and source-chain provenance intact.
-2. Define explicit compatibility rules: same view/context and units; compatible
-   axis, reference body, datum, closure, dimension type and placement-side intent.
-   Geometric proximity alone cannot justify merging. Deduplicate supported
-   coordinates without losing sources; never infer a missing edge or datum.
-3. Return a pure plan with keep-separate, combine, suppress-duplicate or blocked
-   decisions and reasons, referencing every input chain. Suppression requires
-   proven equivalent measurement coverage, not merely equal numeric values.
-   Default to keeping separate when policy or compatibility is unresolved.
-4. Keep three policies distinct: combining location/internal/edge roles; grouping
-   identical objects by selected identity properties; repeated-spacing notation
-   such as `3*60=180`. Combining model bolt sources inside a part chain is already
-   implemented and is not the proposed cross-role composition service.
-5. Test compatible and incompatible references/datums, mixed parts, duplicated
-   coordinates with different supports, partial overlap, preserved closure,
-   deterministic decisions and rejected/blocked source chains. Review proposed
-   plans on G/E before changing any drawing, then validate an authorized write.
+| Priority | Area | Proposed change and acceptance |
+|---|---|---|
+| High | `ViewDimensionContext`, bolt preview/resolution | Define only the minimal typed proposal contract needed by the first composition use case, reusing existing models and adapters. Preserve supported point order, provenance, eligibility, IDs, precision and refusal diagnostics; JSON remains an output boundary. Do not require migration of all preview families before composition starts. |
+| Incremental | `ViewDimensionContextProvider.Batch.cs` | Extract phases only where the composition integration needs them. Avoid repeated source resolution and attribute validation; recalculate only placement for the actual row. Full batch restructuring is a separate task, not a prerequisite. Preserve complete preflight, retention, stop-on-failure and partial-success reporting. |
+| High, separate correctness fix | Final batch reconciliation | Compare final observed points, side, offset and type with the prepared plan, including retained and merged cases. Keep rendered-line observation distinct from calculated reference lines. Add unchanged-ID reflow regressions and the false-merged regression specified below. |
+| High, measured | Verified-write lookup | `FindDimensionSet` enumerates sets across the whole sheet and repeats on verification/correction/cleanup. Baseline below confirms a major remaining per-chain cost. Evaluate view-scoped or ID-based lookup with a fresh read after each commit; preserve ownership/deletion/cleanup checks and never trust stale drawing handles. |
+| Hypothesis, measure before prioritizing | `DimensionGroupFactory`, `DimensionOperations` | Nested connected-group scans give a quadratic worst case, but elapsed-time impact is unmeasured. Ordinary `GetDimensions` disables reduction decisions; reduction is not an established hot path. Measure grouping and debug materialization separately before any optimization; preserve connected-component semantics and deterministic output. |
+| Low | `DrawingCommandHandler.Dimensions.cs` | Split handlers by responsibility using existing partial-class conventions: queries, writes, arrangement/combine and debug. Keep argument parsing, responses and command names unchanged. File size alone is not evidence of runtime slowness. |
 
-The service does not read Tekla geometry, calculate new source points or create
-drawing objects. It runs before placement/writing; existing `combine_dimensions`
-operates on actual drawing dimensions and is not proof that this service exists.
-Service name and exact DTOs remain design choices; no new framework is required.
+The single first composition delivery and minimum proposal/plan contract are
+defined in [Chain Composition roadmap](ROADMAP_CHAIN_COMPOSITION.md#single-first-delivery-read-only-composition-plan).
+A full typed-preview migration, complete batch phase extraction and broad
+optimization are not prerequisites; extract more only for a demonstrated need.
 
-Tekla reference: [combination examples](https://support.tekla.com/doc/tekla-structures/2020/dra_examples_of_combining_dimensions),
-[2025 integrated dimensioning properties](https://support.tekla.com/doc/tekla-structures/2025/dra_general_dimensioning_properties),
-[identical-object grouping](https://support.tekla.com/doc/tekla-structures/2022/dra_grouping_objects_to_same_dimension_line).
-These inform our policy; they do not establish a callable Open API rule engine.
+Measured lookup optimization and final-readback correctness are independent High
+tracks; mechanical bridge splitting stays Low. Neither requires rebuilding all
+planners, and neither should defer the first composition plan indefinitely.
+
+**Baseline measurements from the dimension-write/read review dated 2026-10-02:**
+
+Attribution: these are the review author's measurements, reproduced from the
+supplied review report, not measurements performed during this roadmap edit.
+
+| Log event / measurement | Observed result | Drawing / scale / sample metadata |
+|---|---|---|
+| `verified_write`: `findMs` / `verifyMs` | Lookup 27–254 ms, approximately 90% of the verification stage in the measured writes. | Drawing, scale and number of writes not specified in the supplied report. |
+| `snapshot_read_phases`: first read of five dimensions | 2.2 s, approximately 78% attributable to text bounds; 0.2 s after the read-path correction. | Five dimensions; drawing, scale and repeated-run count not specified. |
+| `rendered_line`: rendered-line verification | 4.3 s before the correction, 5 ms after it. | Drawing, scale and sample count not specified. |
+
+These are existing measurements, not estimates or new measurements by this roadmap
+edit. Attach the review author's original logs and missing fixture/scale/sample
+metadata before a new performance comparison; do not assign these timings to
+M.81 or the panel fixtures without evidence. Lookup is a
+confirmed remaining cost in those cases. The other two rows document improvements
+already made, not open optimization targets. Use existing `PerfTrace`/stage timers
+for before/after comparisons and broader small/large-sheet and batch cases.
+`DimensionStableReadHelper` performs 2–3 reads; its isolated contribution and
+grouping/reduction costs are still unmeasured. Preserve stable reads, verification
+and compensation. Do not claim a general speedup from these few cases.
+
+**False-merged regression:** inject `_readDimensions` snapshots where an overall
+still exists alongside a covering location chain. Complete final read-back must
+retain the overall ID and must not report `merged` merely because reduction could
+hide it. Also simulate a filtered/incomplete response omitting that ID while an
+independent raw lookup still finds it: absence/merge must not be claimed. A filtered
+snapshot alone cannot distinguish hiding from actual deletion/merging; without
+complete or independent absence evidence, return `uncertain`. Cover a genuine
+confirmed merge separately. Add a pure read-projection test that ordinary reads
+preserve all set IDs with reduction disabled; fake-provider tests alone do not
+prove the live Tekla reader contract.
+
+Acceptance: preserve structural and bolt preview contracts with regression tests,
+exercise batch retention/merge/partial failure and expired contexts, preserve
+replacement-before-original-deletion and cleanup checks, then perform authorized
+live acceptance on assembly drawing M.81 (`Stütze`), Section G (view 1908, scale
+1:5) and Section E (view 1409, scale 1:5), plus larger cases for lookup costs. Geometric
+visibility/section-clipping and text collision gaps are separate capabilities,
+not problems that mechanical refactoring alone resolves. Keep behavior-preserving
+extraction, correctness fixes and performance changes in separate reviewable steps.
+
+### Chain architecture and composition
+
+The canonical proposal/plan contract, single first read-only composition delivery,
+later fixture capture, batch addressing, section migration and skew/interior expansion
+are in [Chain Composition roadmap](ROADMAP_CHAIN_COMPOSITION.md).
+Keep this file focused on dimension delivery and independent acceptance gates.
 
 **Parallel/deferred checks:** occlusion (`Drawing.Bolt.CheckVisibility(int index)`
 is still an unproven candidate), depth-clipped section contours, refusal rates
