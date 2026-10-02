@@ -1001,3 +1001,74 @@ Review decisions implemented in source (2026-10-02; live fixture gates remain):
   about 50 ms each on the server but were spaced 3-6 s apart; the Codex diagnostics
   (`.codex/diagnostics/codex-mcp-latency-20261002.md`) attribute that to automatic
   approval review before dispatch, not to Tekla and not shown to be model turns.
+
+### 8. Reference prepared chains in the batch (proposed 2026-10-02, not implemented)
+
+Goal: stop retyping preview point IDs into `create_dimensions_batch`. On 2026-10-02
+(CE.4, five chains) the server needed 3.9 s of a 15.5 s run; the longest observed pause
+before a call was about 7.4 s. These timings alone do not establish how much of that
+pause was composing `chainsJson`, model inference, client processing or approval review.
+Removing repeated point-ID output is an expected optimization; its actual benefit, in
+seconds or in tokens, must be measured.
+
+Historical measurements for five-chain batches on different drawings: batch 25.2 s, then
+8.1 s after the shared presentation connection, then 2.2-2.9 s after reading dimensions
+without text bounds (`0e940ae`). These runs are context, not a controlled same-view
+before/after baseline.
+
+Stage 1: extend `create_dimensions_batch`, no new tool.
+
+- **Entry form.** An entry is either `{"preview":"<chain key>"}` or has `pointIds`;
+  passing both is an error. `direction` of a reference comes from the preview and cannot
+  be overridden. `key` defaults to the `preview` value; two entries naming the same chain
+  are rejected before any write. The existing rule that each entry has a unique
+  non-empty `key` still applies to `pointIds` entries.
+- **Resolution is explicit.** A context stores geometry only: `ruleSet` and the section
+  variant are chosen per query, so one `contextId` can yield different previews. The batch
+  therefore takes `ruleSet` (default `steel`, as in the preview) and `chainView`
+  (`chain`, the default, or `chainDetails` for the split section chains) as batch-level
+  arguments and recomputes the preview from the frozen context with them. No `previewId`.
+  The same context, `ruleSet` and `chainView` give the same chains and point order, so
+  the assistant must pass the values it used when it read the preview. The panel preview
+  is built for all sides and `sides` only filters its output, so `sides` is not an input
+  of the resolution. (Steel per-side independence is not verified; check before relying on it.)
+- **Keys** are `<Side>-<kind>`: `Top-location`, `Bottom-overall`, `Right-overall`, and
+  `Top-chain` for a consolidated section chain. Direction follows the side (`horizontal`,
+  `horizontal-down`, `vertical-left`, `vertical`); overall chains default to the
+  `overall` attributes file, other chains to `standard`.
+- Per-entry `paperGapMm`, `distance`, `attributesFile` and `dimensionType` keep their
+  current batch meaning, so no separate overrides structure is needed. Rows, retention of
+  existing dimensions, the explicit-offset rule on occupied sides, verification and
+  read-back are those of the existing batch.
+- Nothing is placed that the caller does not name: removing a whole chain means not
+  listing it (for example the empty `Right-location` that the preview marks as covered
+  by Left).
+- Unknown key, a key whose chain has no `pointIds`, a `contextId` that expired or was
+  invalidated (drawing/view switched, refreshed), or a `ruleSet`/`chainView` value that is
+  not valid is rejected before any write.
+- An entry with `pointIds` keeps working unchanged, so steel chains that close on plate
+  edges (see `steel-rules.md`) are unaffected.
+
+Point selection stays with the preview rules. Extra points that recur are fixed in the rule
+(for example `TimberPanelPartLocationRule`). Excluding parts with `excludePrefixes` or
+`excludeMaterials` is a different thing: it chooses which parts are dimensioned at all.
+It can remove supports that are needed or change the overall, and it makes a different
+context, so the batch must then use the `contextId` of that filtered read. It is not a way
+to remove one extra point.
+
+Stage 2, only if a concrete need appears: `dropPointIds` on an entry, by point ID and not
+by index (`{"preview":"Top-location","dropPointIds":["p0012"]}`). It would need a
+validate-only mode that returns the chain and its segments after the drop before any
+write, protection for the first and last point of every chain (the first point is the
+datum, see `SKILL.md`), and a rule for repeat runs (retention matches points, so a rerun
+without the same drops would not recognise the earlier chain). Not designed further now.
+
+Gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
+invalid `ruleSet`/`chainView` writes nothing; references and explicit `pointIds`
+produce identical dimensions for the same chain; a repeated batch retains a referenced
+chain as it does an explicit one. Performance gate: compare equivalent
+manual-batch and referenced-batch runs on the same view, with identical initial
+dimensions, chains, attributes and offsets, and report wall-clock, call count and request
+size. Separate cold and warm connection runs and use client telemetry to distinguish
+model, transport, approval and tool time where available; unexplained gaps stay
+unexplained. Do not promise a fixed saving.
