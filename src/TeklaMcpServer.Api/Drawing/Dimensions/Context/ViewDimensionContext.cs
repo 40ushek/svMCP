@@ -29,6 +29,7 @@ public sealed class ViewDimensionContext
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
     private readonly int[] _includedModelIds;
+    private readonly JsonElement _bolts;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
@@ -45,10 +46,13 @@ public sealed class ViewDimensionContext
         _partSolids.TryGetValue(modelId, out var geometry) ? geometry : null;
 
     internal ViewDimensionContext(int viewId, double scale, StructuralOutline outline,
-        IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata)
+        IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata,
+        ViewBoltGeometrySnapshot? bolts = null)
     {
         ViewId = viewId;
         Scale = scale;
+        _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,
+            visibilityVerified = false, error = "Bolt geometry was not captured" });
         _group = StructuralGeometryGroupBuilder.Build(outline);
         _complete = outline.IsComplete && _group.Completeness.IsComplete;
         _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
@@ -118,12 +122,12 @@ public sealed class ViewDimensionContext
         if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
         if (normalizedRuleSet is not "steel" and not "panel")
             throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, scale, placement, contacts, contactDetails, diagnostics or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, bolts, scale, placement, contacts, contactDetails, diagnostics or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
-            (requested.Contains("all") && q is not "contacts" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
+            (requested.Contains("all") && q is not "contacts" and not "bolts" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
         var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
         var result = Header(shortAnswer: true, compact: !requested.Contains("diagnostics"));
         if (requested.Contains("contacts") || requested.Contains("contactdetails"))
@@ -137,6 +141,7 @@ public sealed class ViewDimensionContext
             result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
+        if (Wants("bolts")) result["bolts"] = _bolts;
         if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }
@@ -417,7 +422,7 @@ public sealed class ViewDimensionContext
         if (_fingerprint != null) return _fingerprint;
         using var hash = SHA256.Create();
         var text = JsonSerializer.Serialize(new { source = _source, metadata = _metadata, Scale,
-            exclusions = _exclusions, extent = Extent(), parts = _parts,
+            exclusions = _exclusions, extent = Extent(), parts = _parts, bolts = _bolts,
             chains = _group.DimensionChains!.Chains.Select(c => new { c.Side, positions = VerbosePositions(c) }) });
         return _fingerprint = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLowerInvariant();
     }

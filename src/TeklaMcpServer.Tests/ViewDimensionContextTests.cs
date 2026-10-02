@@ -372,7 +372,7 @@ public sealed class ViewDimensionContextTests
 
     private static CreateDimensionRequest Request() => new() { ViewId = 7, Points = [0, 0, 0, 260, 0, 0], Direction = "horizontal" };
 
-    internal static ViewDimensionContext Context(int id = 7, IReadOnlyList<PartExclusionRule>? exclusions = null, bool incomplete = false)
+    internal static ViewDimensionContext Context(int id = 7, IReadOnlyList<PartExclusionRule>? exclusions = null, bool incomplete = false, ViewBoltGeometrySnapshot? bolts = null)
     {
         var geometry = new PartSolidGeometryInViewResult { Success = true, ModelId = 10, ViewId = id };
         var points = new[] { (0d, 0d), (260d, 0d), (260d, 340d), (0d, 340d) };
@@ -386,7 +386,7 @@ public sealed class ViewDimensionContextTests
         var structural = new StructuralOutline(outline,
             [new(10, "P10", "P", role, true)], [new(20, "R20", "R", new PartRoleResult(PartRole.Excluded, "excluded", "test"), false, false)], [],
             incomplete ? [new UnreadPart(30, "unread")] : [], [99], [10, 20]);
-        return new ViewDimensionContext(id, 10, structural, exclusions ?? [], new { drawingGuid = "test" }, new { viewType = "FrontView" });
+        return new ViewDimensionContext(id, 10, structural, exclusions ?? [], new { drawingGuid = "test" }, new { viewType = "FrontView" }, bolts);
     }
 
     private sealed class Solid(PartSolidGeometryInViewResult geometry) : IDrawingPartSolidGeometryApi

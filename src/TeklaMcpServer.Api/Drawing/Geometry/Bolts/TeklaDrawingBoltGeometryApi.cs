@@ -40,7 +40,10 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
         });
     }
 
-    public PartBoltGeometryInViewResult GetPartBoltGeometryInView(int viewId, int partId)
+    public PartBoltGeometryInViewResult GetPartBoltGeometryInView(int viewId, int partId) =>
+        GetPartBoltGeometryInView(viewId, partId, includeSolidBbox: true);
+
+    internal PartBoltGeometryInViewResult GetPartBoltGeometryInView(int viewId, int partId, bool includeSolidBbox)
     {
         if (!TryGetView(viewId, out var view, out var error))
             return FailPart(viewId, partId, error);
@@ -75,7 +78,7 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
                 if (!seenBoltGroups.Add(boltGroupId))
                     continue;
 
-                result.BoltGroups.Add(BuildBoltGroupGeometry(boltGroup));
+                result.BoltGroups.Add(BuildBoltGroupGeometry(boltGroup, includeSolidBbox));
             }
 
             return result;
@@ -124,8 +127,10 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
         }
     }
 
-    private static BoltGroupGeometry BuildBoltGroupGeometry(BoltGroup boltGroup)
+    private static BoltGroupGeometry BuildBoltGroupGeometry(BoltGroup boltGroup, bool includeSolidBbox = true)
     {
+        if (!boltGroup.Select())
+            throw new InvalidOperationException($"Cannot select bolt group {boltGroup.Identifier.ID} in the view plane.");
         var result = new BoltGroupGeometry
         {
             ModelId = boltGroup.Identifier.ID,
@@ -144,12 +149,13 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
             var pointIndex = 0;
             foreach (var item in boltGroup.BoltPositions)
             {
+                var originalIndex = pointIndex++;
                 if (item is not Point point)
-                    continue;
+                    throw new InvalidOperationException($"Bolt position {originalIndex} is not a point.");
 
                 result.Positions.Add(new BoltPointGeometry
                 {
-                    Index = pointIndex++,
+                    Index = originalIndex,
                     Point = ToArray(point)
                 });
             }
@@ -168,7 +174,7 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
             }
         }
 
-        TryPopulateSolidBbox(boltGroup, result);
+        if (includeSolidBbox) TryPopulateSolidBbox(boltGroup, result);
         return result;
     }
 

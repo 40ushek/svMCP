@@ -251,7 +251,22 @@ pattern would a fitter actually need called out" judgment a plant applies to bol
 this skill has not worked out for any other geometry type either. Treat context
 integration as phase 1 of closing this gap, not the whole of it.
 
-### Planned integration: bolt groups in the view dimension context (not built)
+### Planned integration: bolt groups in the view dimension context (raw capture implemented)
+
+**Implementation status (2026-10-02):** `ViewDimensionContext` now captures a frozen
+bolt snapshot through the existing part bolt geometry reader, scoped to included
+parts. `get_view_dimension_context(questions=bolts)` returns deduplicated raw groups,
+original position indices, display-coordinate XYZ, part relations, read failures,
+and per-center restriction evidence. Restriction checks transform display coordinates
+into the coordinate system of the captured view restriction box. Repeated queries
+reuse the context snapshot; refresh replaces it.
+
+This is raw evidence, not the finished selection gate: `selectionComplete=false`
+and `visibilityVerified=false` remain explicit. Outside centers remain in the raw
+snapshot; a side-on bolt can cross the box despite its center being outside.
+No bolt dimension candidates are created. Bolt read completeness is separate from
+structural part completeness. Axial extent selection, occlusion, bolt planning,
+and live acceptance against M.505/1709 remain open.
 
 **Decision (2026-08-23): read via `BoltPositions`/`FirstPosition`/`SecondPosition`, not
 via `BoltGroup.GetSolid()`.** A bolt hole is fully described by a centre point and a

@@ -234,7 +234,17 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
             displayCoordinates = new[] { display.Origin.X, display.Origin.Y, display.Origin.Z, display.AxisX.X, display.AxisX.Y, display.AxisX.Z, display.AxisY.X, display.AxisY.Y, display.AxisY.Z },
             depthWindow = depth.Box, depthError = depth.Error
         };
-        return new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata);
+        var boltApi = new TeklaDrawingBoltGeometryApi(model);
+        var displayToGlobal = new TransformationPlane(display).TransformationMatrixToGlobal;
+        var globalToView = new TransformationPlane(cs).TransformationMatrixToLocal;
+        var bolts = ViewBoltGeometrySnapshot.Capture(viewId, outline.Included.Select(part => part.ModelId),
+            partId => boltApi.GetPartBoltGeometryInView(viewId, partId, includeSolidBbox: false), depth.Box,
+            point => {
+                var local = globalToView.Transform(displayToGlobal.Transform(
+                    new Tekla.Structures.Geometry3d.Point(point[0], point[1], point[2])));
+                return new[] { local.X, local.Y, local.Z };
+            }, outline.IsComplete, depth.Error);
+        return new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata, bolts);
     }
 
     public PartSolidGeometryInViewResult ReadPartSolidGeometry(int viewId, int modelId) =>
