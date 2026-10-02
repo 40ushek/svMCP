@@ -129,7 +129,7 @@ public static partial class ModelTools
         [Description("true returns one short row per dimension (id, side, line position, range, segment lengths) instead of the full read model. Use it for a quick check after writing.")] bool compact = false)
     {
         var arg = viewId.HasValue ? viewId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty;
-        var json = RunBridge("get_drawing_dimensions", arg);
+        var json = RunBridge("get_drawing_dimensions", arg, compact ? "compact" : string.Empty);
         try
         {
             var doc = JsonDocument.Parse(json);

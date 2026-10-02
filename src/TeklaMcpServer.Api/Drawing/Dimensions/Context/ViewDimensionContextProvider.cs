@@ -34,7 +34,7 @@ public sealed partial class ViewDimensionContextProvider
         _readContactSolid = reader.ReadPartSolidGeometry;
         _invalidateGeometry = DrawingPartGeometryCache.InvalidateAll;
         _write = Write;
-        _readDimensions = viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId);
+        _readDimensions = viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId, includeTextBounds: false);
         _validateAttributes = file => { DimensionCreatePlacementHelper.CreateAttributes(file); };
     }
 
@@ -49,7 +49,7 @@ public sealed partial class ViewDimensionContextProvider
         _read = read;
         _invalidateGeometry = invalidateGeometry;
         _write = write ?? Write;
-        _readDimensions = readDimensions ?? (viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId));
+        _readDimensions = readDimensions ?? (viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId, includeTextBounds: false));
         _validateAttributes = validateAttributes ?? (file => { DimensionCreatePlacementHelper.CreateAttributes(file); });
         _readContactSolid = readContactSolid ?? ((viewId, modelId) =>
             throw new InvalidOperationException("Contact solid reader is unavailable"));

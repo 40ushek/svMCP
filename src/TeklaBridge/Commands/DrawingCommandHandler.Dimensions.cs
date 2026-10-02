@@ -101,7 +101,8 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDrawingDimensions(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var result = api.GetDimensions(viewId);
+        var compact = args.Length > 2 && string.Equals(args[2], "compact", StringComparison.Ordinal);
+        var result = api.GetDimensions(viewId, includeTextBounds: !compact);
         WriteGetDimensionsResult(result);
         return true;
     }
