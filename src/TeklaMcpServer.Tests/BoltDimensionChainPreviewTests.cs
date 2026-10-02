@@ -16,13 +16,13 @@ public sealed class BoltDimensionChainPreviewTests
         Assert.Equal(4, chains.GetArrayLength());
         Assert.All(chains.EnumerateArray(), chain => {
             Assert.Equal("Candidate", chain.GetProperty("state").GetString());
-            Assert.False(chain.GetProperty("writeReady").GetBoolean());
+            Assert.Equal("explicitSelectionOnly", chain.GetProperty("creationMode").GetString());
             Assert.Equal(2, chain.GetProperty("points").GetArrayLength());
         });
         Assert.Equal(new[] { 3, 8 }, Indices(chains[0]));
         Assert.Equal(60, chains[0].GetProperty("segments")[0].GetDouble());
         Assert.Equal(40, chains[2].GetProperty("segments")[0].GetDouble());
-        Assert.False(result.GetProperty("writeReady").GetBoolean());
+        Assert.Equal("explicitSelectionOnly", result.GetProperty("creationMode").GetString());
         Assert.False(result.GetProperty("selectionComplete").GetBoolean());
         Assert.False(result.GetProperty("visibilityVerified").GetBoolean());
     }

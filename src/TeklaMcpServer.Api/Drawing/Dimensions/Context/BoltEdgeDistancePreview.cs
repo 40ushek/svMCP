@@ -21,7 +21,7 @@ internal static class BoltEdgeDistancePreview
             axis = axis == 0 ? "X" : "Y", direction = axis == 0 ? "horizontal" : "vertical",
             edgeSide = sign < 0 ? "min" : "max",
             state = reason == null ? "Candidate" : "Blocked", reason,
-            writeReady = false, sourceIndices = sources.Select(p => p.Index).ToArray(),
+            creationMode = "explicitSelectionOnly", sourceIndices = sources.Select(p => p.Index).ToArray(),
             center, edgePoint = edge, distance, contourIndex,
             points = edge == null ? Array.Empty<double[]>() : sign < 0 ? new[] { edge, center } : new[] { center, edge },
             contourSource = "captured full-solid projected outer contour; section clipping is unverified",
@@ -29,7 +29,7 @@ internal static class BoltEdgeDistancePreview
         };
     }
 
-    private static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
+    internal static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
         int axis, int sign, out double[]? edge, out int contourIndex)
     {
         edge = null;

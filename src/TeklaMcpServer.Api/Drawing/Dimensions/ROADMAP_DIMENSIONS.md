@@ -27,6 +27,74 @@ including neighbour reflow and text collisions.
 
 ## Current delivery and next gate
 
+### Bolt chains and composition: current work order (2026-10-02)
+
+This update supplements the structural/panel work order below. It does not close
+the independent batch, contact, layout or panel acceptance gates.
+
+**Implemented:** frozen raw bolt groups in the view dimension context; internal
+row/column and actual projected part-edge proposals; combined per-part chains
+across model bolt groups, preserving group/index provenance; explicit selection
+through the existing batch writer and final read-back. Structural and bolt
+chains remain independent proposals. The runtime contract lives in
+[Dimensions README](README.md#explicit-bolt-chain-creation-2026-10-02).
+
+**Live evidence:** M.81 Section G (1908) and E (1409) were dimensioned with separate
+structural and bolt chains. Coordinates and rendered offsets were read back.
+This does not prove occlusion, section clipping, collision-free text or equivalence
+to Tekla Integrated dimensioning. In E, the 126 mm segment uses the full-solid
+projected contour; its correspondence to the section edge remains unverified.
+
+**Latest source cleanup:** explicit-selection contract, side-set preview caching,
+all blocked-source diagnostics, boundary tests and shorter tool descriptions are
+implemented and tested, but not deployed. Live evidence above belongs to the
+previous deployed increment. These changes remain uncommitted.
+
+**Next design stage: a separate chain-composition service, not yet implemented.**
+The agreed flow is:
+
+`frozen geometry -> separate part/bolt planners -> chain composition -> placement -> verified writer`
+
+1. Define a common proposal contract using existing chain/domain components where
+   possible: view/context identity, source part and bolt-group/index identities,
+   reference body, purpose (location/internal/edge/overall/check), axis, datum,
+   closure and ordered supported points, eligibility and verification limits.
+   Keep source geometry and source-chain provenance intact.
+2. Define explicit compatibility rules: same view/context and units; compatible
+   axis, reference body, datum, closure, dimension type and placement-side intent.
+   Geometric proximity alone cannot justify merging. Deduplicate supported
+   coordinates without losing sources; never infer a missing edge or datum.
+3. Return a pure plan with keep-separate, combine, suppress-duplicate or blocked
+   decisions and reasons, referencing every input chain. Suppression requires
+   proven equivalent measurement coverage, not merely equal numeric values.
+   Default to keeping separate when policy or compatibility is unresolved.
+4. Keep three policies distinct: combining location/internal/edge roles; grouping
+   identical objects by selected identity properties; repeated-spacing notation
+   such as `3*60=180`. Combining model bolt sources inside a part chain is already
+   implemented and is not the proposed cross-role composition service.
+5. Test compatible and incompatible references/datums, mixed parts, duplicated
+   coordinates with different supports, partial overlap, preserved closure,
+   deterministic decisions and rejected/blocked source chains. Review proposed
+   plans on G/E before changing any drawing, then validate an authorized write.
+
+The service does not read Tekla geometry, calculate new source points or create
+drawing objects. It runs before placement/writing; existing `combine_dimensions`
+operates on actual drawing dimensions and is not proof that this service exists.
+Service name and exact DTOs remain design choices; no new framework is required.
+
+Tekla reference: [combination examples](https://support.tekla.com/doc/tekla-structures/2020/dra_examples_of_combining_dimensions),
+[2025 integrated dimensioning properties](https://support.tekla.com/doc/tekla-structures/2025/dra_general_dimensioning_properties),
+[identical-object grouping](https://support.tekla.com/doc/tekla-structures/2022/dra_grouping_objects_to_same_dimension_line).
+These inform our policy; they do not establish a callable Open API rule engine.
+
+**Parallel/deferred checks:** occlusion (`Drawing.Bolt.CheckVisibility(int index)`
+is still an unproven candidate), depth-clipped section contours, refusal rates
+for vertex-aligned edge rays on complex/rounded profiles, and broader live
+acceptance. Record refusals with source IDs before relaxing the edge algorithm.
+Bolt-group position/datum, centered/skewed rules and extreme-bolt checks remain
+separate unimplemented policy roles. Geometry-specific work is tracked in
+[Bolt Geometry roadmap](../Geometry/Bolts/ROADMAP_BOLT_GEOMETRY.md).
+
 - **Next gate: finish live acceptance of batch writes (step 6).** The code is
   implemented and deployed. A live run on view 7429 exposed a mismatch between the
   batch status and subsequent drawing reads; see step 6. Fix that reconciliation and

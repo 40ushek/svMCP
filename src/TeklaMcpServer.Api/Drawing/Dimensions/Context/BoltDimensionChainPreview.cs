@@ -21,13 +21,13 @@ internal static class BoltDimensionChainPreview
             geometryReadComplete = Flag(snapshot, "isComplete"),
             selectionComplete = Flag(snapshot, "selectionComplete"),
             visibilityVerified = Flag(snapshot, "visibilityVerified"),
-            writeReady = false,
-            status = "provisional: geometry proposals, not plant-policy selections or write references",
+            creationMode = "explicitSelectionOnly",
             pending = new[] { "part scope and internal-dimension policy", "bolt-plane orientation and selection verification",
                 "placement side and offset", "edge-dimension policy", "group-position datum and chains" },
             unread = snapshot.TryGetProperty("unread", out var unread) ? unread : default(JsonElement?),
             error = snapshot.TryGetProperty("error", out var error) ? error : default(JsonElement?),
-            groups
+            groups,
+            partChains = BoltPartChainPreview.Build(snapshot, includedPartIds, sides, partContours)
         };
     }
 
@@ -114,7 +114,7 @@ internal static class BoltDimensionChainPreview
         };
     }
 
-    private static string? PatternRefusal(BoltGroupGeometry group)
+    internal static string? PatternRefusal(BoltGroupGeometry group)
     {
         if (group.Positions.Count == 0 || group.Positions.Any(p => !ValidPoint(p.Point)))
             return "missing or invalid bolt positions";
@@ -163,7 +163,7 @@ internal static class BoltDimensionChainPreview
             chains.Add(new {
                 proposalId = $"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}", kind = "internal",
                 axis = axis == 0 ? "X" : "Y", direction = axis == 0 ? "horizontal" : "vertical",
-                state = blocked.Length == 0 ? "Candidate" : "Blocked", writeReady = false,
+                state = blocked.Length == 0 ? "Candidate" : "Blocked", creationMode = "explicitSelectionOnly",
                 reason = blocked.Length == 0 ? "ordered adjacent bolt centers; policy and visibility are not verified"
                     : "restriction evidence does not admit every source; the chain is not shortened",
                 blockedIndices = blocked, startIndex = points[0].Point.Index,

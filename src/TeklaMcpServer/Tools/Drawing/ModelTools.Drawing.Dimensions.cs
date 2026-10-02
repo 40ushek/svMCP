@@ -336,11 +336,11 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create selected chains in one bridge call with one contextId. Each chainsJson entry uses either preview (a key from chainPreview, e.g. Top-location) or unique key, ordered pointIds and direction. A preview reference resolves points, direction and default attributes using the same ruleSet and chainView as the context read; key defaults to preview. Do not supply pointIds or direction with preview, or reference a chain twice. Optional paperGapMm, distance, attributesFile and dimensionType work in either form. Rows follow array order per empty side; a sole overall gets row 1. Existing unique matches retain their placement. New chains on occupied sides need an explicit offset. distance and paperGapMm cannot be combined. All chains are validated before writes, with one final read-back.")]
+    [McpServerTool, Description("Create 1–32 reviewed chains from one context. Entries use preview, pointIds plus direction, or boltProposal plus partId and direction. Bolt proposals require explicit selection; visibility and section clipping remain unverified. Preview entries require the read ruleSet and chainView. All entries are validated before writes; returns verified results and final dimensions.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
-        [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
-        [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
+        [Description("Cached context ID returned by get_view_dimension_context(questions=chain or boltChains). All pointIds must belong to this context.")] string contextId,
+        [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Bolt selection example: {\"boltProposal\":\"bolt-42-X-0\",\"partId\":10,\"direction\":\"horizontal-down\",\"distance\":80}. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
         [Description("Same ruleSet as the preview read: steel or panel. Required when an entry uses preview; there is no default because both rule sets use the same chain keys with different points.")] string ruleSet = "",
         [Description("Same preview variant as the read: chain (default; consolidated sections) or chainDetails (split sections).")] string chainView = "chain")
     {

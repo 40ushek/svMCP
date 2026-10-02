@@ -1,5 +1,31 @@
 # Roadmap Bolt Geometry
 
+## Current status and next work (2026-10-02)
+
+Raw display-coordinate bolt groups, indexed positions and related-part IDs are
+captured in the view dimension context. Internal, projected part-edge and combined
+per-part proposals plus explicit batch creation are implemented. M.81 Sections
+G (1908) and E (1409) have live coordinate/offset read-back evidence, not verified
+occlusion or depth-clipped section geometry. E's 126 mm edge segment remains
+provisional against the section contour.
+
+The latest source contract/cache/diagnostic/test cleanup is tested but undeployed
+and uncommitted. The operational contract is maintained only in the
+[Dimensions README](../../Dimensions/README.md#explicit-bolt-chain-creation-2026-10-02).
+
+Next dimension-planning stage: keep structural and bolt proposals independent,
+then apply an explicit, pure composition policy before placement and writing.
+The canonical work order, compatibility rules and acceptance cases are in
+[Dimensions roadmap](../../Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+This geometry module supplies facts/provenance; it does not own composition policy.
+
+Remaining geometry checks: occlusion evidence, depth-clipped contours, and live
+refusal frequency of vertex-aligned contour rays on rounded/complex profiles.
+Do not silently drop a doubtful bolt or relax refusal rules without evidence.
+Group-position/datum, centered/skewed and extreme-bolt dimension policies remain
+future work in the dimension planner. Earlier increments below are historical
+milestones, not an instruction to repeat completed preview/creation stages.
+
 ## Goal
 
 Introduce a canonical bolt-aware geometry library under
@@ -693,7 +719,7 @@ proposals from the captured snapshot for axis-aligned, constant-depth rectangula
 `BoltArray` projections. It preserves all source indices, does not merge separate
 groups/rows, and blocks unsupported patterns or chains with outside/unresolved
 center evidence without trimming them. Related part candidates are shown without
-inventing ownership. All proposals remain `writeReady=false`; final selection,
+inventing ownership. Proposals require explicit selection; final selection,
 plane orientation, plant policy, placement, edge and position chains are pending.
 Automated coverage includes rectangular/unequal spacing, duplicate sources,
 non-transitive tolerance, skewed/staggered/incomplete/depth-spanning patterns,
@@ -707,7 +733,9 @@ retains part ID, original bolt indices, projected edge point and contour provena
 Concave boundaries and chamfers use axis intersections, not a bbox/hull. Missing
 or ambiguous contours, centers outside them, vertex-aligned rays and restriction
 failures block the proposal with a reason. Part/edge policy, depth-clipped section
-verification, placement and group-position chains remain open; `writeReady=false`.
+verification, placement and group-position chains remain open.
+
+Explicit creation and combined part chains are implemented, with live read-back checks on M.81 Section G and E. The contract, cache lifetime, source diagnostics and remaining verification limits are documented in [Dimensions README](../../Dimensions/README.md#explicit-bolt-chain-creation-2026-10-02).
 
 Official references inspected for this decision:
 
@@ -739,7 +767,12 @@ The first live checks are:
 - one skewed/staggered group, to prove that the planner does not accidentally treat
   it as an axis-aligned rectangle.
 
-### 8. Implementation order
+### 8. Original implementation order (historical)
+
+Raw context capture, restricted pattern/edge/part-chain planning, explicit writing
+and read-back are implemented. The complete policy object and all pattern families
+are not. Follow the current work order at the top for remaining work; the sequence
+below records the original staged plan.
 
 1. Freeze the policy object and candidate/result states in unit-testable code.
 2. Add bolt groups to the view dimension context: raw positions with indices,

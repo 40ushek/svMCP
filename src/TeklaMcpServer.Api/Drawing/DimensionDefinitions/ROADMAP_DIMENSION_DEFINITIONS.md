@@ -213,7 +213,11 @@ Preset должен быть агрегатом:
 
 - bridge from `DimensionDefinitions` to `Dimensions`;
 - apply preset during dimension generation flow;
-- handoff to grouping/arrangement only after actual dimensions exist.
+- definition-level policy may feed a pure composition stage over separate part/bolt
+  proposals before dimensions exist; see the canonical
+  [composition work order](../Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+- handoff to runtime grouping/arrangement of actual drawing dimensions remains
+  after writing. This is distinct from proposal composition and does not replace it.
 
 ### Phase 5. Config/persistence
 

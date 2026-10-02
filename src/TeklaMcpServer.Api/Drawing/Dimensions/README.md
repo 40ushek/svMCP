@@ -63,8 +63,7 @@ Outside/unresolved center evidence blocks the whole affected chain instead of
 silently shortening it. Related part candidates are reported; shared-group
 ownership is not inferred. Read completeness, selection and visibility are separate.
 
-All proposals have `writeReady=false`: this is geometry review, not plant-policy
-selection. `proposalId` is not a structural batch preview key or a writable point
+All proposals expose `creationMode="explicitSelectionOnly"`: Candidate proposals can be created by explicit selection; Blocked proposals cannot. `proposalId` is not a structural batch preview key or a writable point
 ID. Bolt-plane orientation, final selection, part policy, placement, edge-dimension policy
 and group-position chains remain pending. The default structural preview and
 its creation path are unchanged; `all` does not include bolt proposals.
@@ -81,7 +80,7 @@ Concave boundaries and chamfers are preserved; holes are not used as outer edges
 Missing/ambiguous contours, centers outside the contour, vertex-aligned rays and
 failed restriction evidence return `Blocked` with a reason. Full-solid projection
 is explicitly not verified as a depth-clipped section contour. These proposals
-remain read-only and are not batch preview references.
+are separate from structural preview references; see explicit bolt-chain creation below.
 
 Live read-only checks on M.81 views 6110, 1409 and 2814 produced 60 mm spacing
 proposals and a front-view row with six 453.33 mm spacings. The same row in 6110
@@ -92,6 +91,37 @@ returned part-specific proposals of 20, 30/30.001, 50 and 126 mm for groups
 10783887/10893930. Other proposals remained blocked by restriction or contour
 containment evidence. These are full-solid projected candidates, not verified
 section edges or created dimensions.
+
+Bolt previews also expose `partChains`: one side-specific chain per included related
+part, from its actual outer contour through all distinct projected bolt coordinates
+to the opposite contour. Sources retain both model bolt-group ID and position index;
+coincident axis coordinates merge across groups. Select the proposal explicitly with
+`boltProposal`, `partId` and the matching placement direction. Restriction failures block the whole part chain; `blockedSources` lists each problematic bolt by group ID, position index and reason. Visibility and section clipping remain unverified.
+
+## Explicit bolt-chain creation (2026-10-02)
+
+After reviewing `boltChainPreview`, submit a Candidate proposal independently of
+structural part chains, using the same `contextId`:
+
+```json
+[{"boltProposal":"bolt-42-X-0","partId":10,"direction":"horizontal-down","distance":80}]
+```
+
+`boltProposal` is the exact `proposalId` of an internal, part-edge or combined part-chain proposal.
+`partId` explicitly selects an included related part (and must match the edge
+proposal's part). `direction` chooses the placement side and must match the
+proposal's X/Y axis (and exact placement side for `partChains`). `key` defaults to `boltProposal`. Attributes, dimension type
+and offsets retain the existing batch behavior. Bolt entries cannot also supply
+`preview` or `pointIds`; separate structural and bolt entries can share a batch.
+Unknown/blocked proposals, wrong parts/axes, duplicate selections and expired
+contexts stop before writes. Previews are cached per normalized side set for the lifetime of the context. Coordinates are resolved from the unrounded frozen
+snapshot, not copied from the displayed JSON or the structural point catalog.
+
+The ordinary verified dimension writer, offset/occupied-side checks and final
+read-back are reused. `BoltGeometryVerification` preserves that bolt-plane
+orientation, visibility and section clipping remain unverified. The preview exposes `creationMode="explicitSelectionOnly"`. Automatic policy selection, group-position chains and occlusion remain deferred.
+
+Creation has automated coverage and live read-back checks on M.81 Section G (1908) and E (1409). Rendered offsets and chain coordinates were checked; occlusion and depth-clipped section contours remain unverified.
 
 ## Prepared-chain batch increment (2026-10-02, not deployed)
 

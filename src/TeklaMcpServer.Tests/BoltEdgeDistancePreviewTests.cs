@@ -18,7 +18,7 @@ public sealed class BoltEdgeDistancePreviewTests
         Assert.Equal(expected, result.GetProperty("distance").GetDouble());
         Assert.Equal(17, result.GetProperty("edgePoint")[2].GetDouble());
         Assert.Equal(10, result.GetProperty("partId").GetInt32());
-        Assert.False(result.GetProperty("writeReady").GetBoolean());
+        Assert.Equal("explicitSelectionOnly", result.GetProperty("creationMode").GetString());
         var points = result.GetProperty("points");
         Assert.True(points[0][axis].GetDouble() < points[1][axis].GetDouble());
     }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -21,6 +22,8 @@ public sealed class BatchDimensionChain
     public int Row { get; set; } = 1;
     public string Key { get; set; } = string.Empty;
     public string? Preview { get; set; }
+    public string? BoltProposal { get; set; }
+    public int? PartId { get; set; }
     private string[]? _pointIds;
     internal bool PointIdsSpecified { get; private set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -45,6 +48,8 @@ public sealed class BatchDimensionItemResult
     public int? MatchingDimensionId { get; set; }
     public string? ActualDimensionType { get; set; }
     public string? RenderedLineStatus { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? BoltGeometryVerification { get; set; }
     public string? Error { get; set; }
 }
 
@@ -108,7 +113,9 @@ public sealed partial class ViewDimensionContextProvider
 
         foreach (var entry in prepared)
         {
-            var item = new BatchDimensionItemResult { Key = entry.Chain.Key };
+            var item = new BatchDimensionItemResult { Key = entry.Chain.Key,
+                BoltGeometryVerification = entry.Chain.BoltProposal == null ? null
+                    : "explicitly selected provisional proposal; bolt-plane orientation, visibility and section clipping are unverified" };
             result.Chains.Add(item);
             if (stopped)
             {
@@ -229,7 +236,8 @@ public sealed partial class ViewDimensionContextProvider
             throw new ArgumentException("A preview reference cannot include pointIds or direction and needs a non-empty preview key");
         if (references.Select(chain => chain.Preview).Distinct(StringComparer.Ordinal).Count() != references.Length)
             throw new ArgumentException("Each preview chain may only be referenced once");
-        if (references.Length == 0) return batch.Chains.ToArray();
+        ValidateBoltReferences(batch.Chains);
+        if (references.Length == 0) return batch.Chains.Select(WithBoltKey).ToArray();
 
         var context = RequireContext(batch.ViewId, batch.ContextId);
         var answer = context.Query(chainView, "all", ruleSet: ruleSet);
@@ -238,7 +246,7 @@ public sealed partial class ViewDimensionContextProvider
         var preview = rows.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray())
             .ToDictionary(chain => chain.GetProperty("key").GetString()!, StringComparer.Ordinal);
         return batch.Chains.Select(chain => {
-            if (chain.Preview == null) return chain;
+            if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
                 throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
             var ids = selected.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
@@ -254,9 +262,29 @@ public sealed partial class ViewDimensionContextProvider
         }).ToArray();
     }
 
+    private static void ValidateBoltReferences(IEnumerable<BatchDimensionChain> chains)
+    {
+        var bolts = chains.Where(chain => chain.BoltProposal != null).ToArray();
+        if (bolts.Any(chain => string.IsNullOrWhiteSpace(chain.BoltProposal) || chain.Preview != null
+            || chain.PointIdsSpecified || chain.PartId is not > 0 || string.IsNullOrWhiteSpace(chain.Direction)))
+            throw new ArgumentException("boltProposal requires partId and direction, and cannot include preview or pointIds");
+        if (bolts.Select(chain => chain.BoltProposal).Distinct(StringComparer.Ordinal).Count() != bolts.Length)
+            throw new ArgumentException("Each bolt proposal may only be referenced once in a batch");
+        if (chains.Any(chain => chain.BoltProposal == null && chain.PartId.HasValue))
+            throw new ArgumentException("partId is only supported with boltProposal");
+    }
+
+    private static BatchDimensionChain WithBoltKey(BatchDimensionChain chain) =>
+        chain.BoltProposal == null ? chain : new BatchDimensionChain {
+            Key = string.IsNullOrWhiteSpace(chain.Key) ? chain.BoltProposal : chain.Key,
+            BoltProposal = chain.BoltProposal, PartId = chain.PartId, Direction = chain.Direction,
+            Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
+            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType
+        };
+
     private PreparedBatchChain PrepareBatchChain(CreateDimensionsBatchRequest batch, BatchDimensionChain chain, int row)
     {
-        if (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace))
+        if (chain.BoltProposal == null && (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace)))
             throw new ArgumentException($"Chain '{chain.Key}' needs at least two pointIds");
         if (string.IsNullOrWhiteSpace(chain.Direction))
             throw new ArgumentException($"Chain '{chain.Key}' needs a direction");
@@ -271,11 +299,20 @@ public sealed partial class ViewDimensionContextProvider
         _validateAttributes(chain.AttributesFile ?? "standard");
         var request = new CreateDimensionRequest {
             ViewId = batch.ViewId, ContextId = batch.ContextId,
-            PointIds = chain.PointIds, Direction = chain.Direction,
+            PointIds = chain.PointIds ?? [], Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
             AttributesFile = chain.AttributesFile ?? "standard", DimensionType = chain.DimensionType, Row = row
         };
-        var write = Prepare(request);
+        PreparedDimensionWrite write;
+        if (chain.BoltProposal != null)
+        {
+            var context = RequireContext(batch.ViewId, batch.ContextId);
+            request.Points = context.ResolveBoltProposal(chain.BoltProposal, chain.PartId!.Value, chain.Direction);
+            var placement = chain.Distance.HasValue ? null : context.Calculate(chain.Direction, request.Points,
+                DimensionPlacementSettings.ResolvePaperGapMm(row, chain.PaperGapMm));
+            write = new PreparedDimensionWrite(request, chain.Distance ?? placement!.Distance, placement);
+        }
+        else write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);
         if (error != null) throw new ArgumentException($"Chain '{chain.Key}': {error}");
         return new PreparedBatchChain(chain, write);

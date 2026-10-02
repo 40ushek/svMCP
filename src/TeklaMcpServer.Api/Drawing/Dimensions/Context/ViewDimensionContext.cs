@@ -26,6 +26,7 @@ public sealed class ViewDimensionContext
     private readonly IReadOnlyList<UnreadPart> _contactSelectionUnread;
     private ViewContactsSnapshot? _contacts;
     private DimensionPointCatalog? _dimensionPointCatalog;
+    private readonly Dictionary<string, JsonElement> _boltPreviews = new(StringComparer.Ordinal);
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
     private readonly int[] _includedModelIds;
@@ -145,8 +146,7 @@ public sealed class ViewDimensionContext
         if (Wants("parts")) result["parts"] = _parts;
         if (Wants("bolts")) result["bolts"] = _bolts;
         if (requested.Contains("boltchains"))
-            result["boltChainPreview"] = BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected,
-                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()));
+            result["boltChainPreview"] = BuildBoltPreview(selected);
         if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }
@@ -277,6 +277,59 @@ public sealed class ViewDimensionContext
         if (viewType is not "FrontView" and not "BackView")
             return "panel chain preview currently supports FrontView/BackView elevations only";
         return null;
+    }
+
+    internal JsonElement BuildBoltPreview(IReadOnlyCollection<DimensionChainSide> sides)
+    {
+        var selected = sides.Distinct().OrderBy(side => side).ToArray();
+        var key = string.Join(",", selected);
+        if (!_boltPreviews.TryGetValue(key, out var preview))
+        {
+            preview = Freeze(BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected,
+                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText())));
+            _boltPreviews.Add(key, preview);
+        }
+        return preview;
+    }
+
+    internal double[] ResolveBoltProposal(string proposalId, int partId, string direction)
+    {
+        var side = ParseSide(direction);
+        var axis = side is DimensionChainSide.Top or DimensionChainSide.Bottom ? "X" : "Y";
+        var preview = BuildBoltPreview((DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide)));
+        foreach (var chain in preview.GetProperty("partChains").EnumerateArray())
+        {
+            if (chain.GetProperty("proposalId").GetString() != proposalId) continue;
+            if (chain.GetProperty("state").GetString() != "Candidate")
+                throw new ArgumentException("Bolt proposal is blocked: " + chain.GetProperty("reason").GetString());
+            if (chain.GetProperty("partId").GetInt32() != partId)
+                throw new ArgumentException("Bolt proposal does not belong to the selected included related part");
+            if (chain.GetProperty("placementSide").GetString() != side.ToString())
+                throw new ArgumentException("Bolt proposal placement side does not match the requested direction");
+            return chain.GetProperty("points").EnumerateArray().SelectMany(point =>
+                point.EnumerateArray().Select(coordinate => coordinate.GetDouble())).ToArray();
+        }
+        foreach (var group in preview.GetProperty("groups").EnumerateArray())
+        {
+            foreach (var chain in group.GetProperty("chains").EnumerateArray()
+                .Concat(group.GetProperty("edgeChains").EnumerateArray()))
+            {
+                if (chain.GetProperty("proposalId").GetString() != proposalId) continue;
+                if (chain.GetProperty("state").GetString() != "Candidate")
+                    throw new ArgumentException("Bolt proposal is blocked: " + chain.GetProperty("reason").GetString());
+                if (chain.GetProperty("axis").GetString() != axis)
+                    throw new ArgumentException("Bolt proposal axis does not match the requested placement direction");
+                if (!group.GetProperty("partCandidates").EnumerateArray().Any(id => id.GetInt32() == partId)
+                    || (chain.TryGetProperty("partId", out var owner) && owner.GetInt32() != partId))
+                    throw new ArgumentException("Bolt proposal does not belong to the selected included related part");
+                var points = chain.GetProperty("points").EnumerateArray().SelectMany(point =>
+                    (point.ValueKind == JsonValueKind.Array ? point : point.GetProperty("point"))
+                    .EnumerateArray().Select(coordinate => coordinate.GetDouble())).ToArray();
+                if (points.Length < 6) throw new ArgumentException("Bolt proposal needs at least two points");
+                return points;
+            }
+        }
+        throw new ArgumentException("Unknown boltProposal in this context; query boltChains again");
     }
 
     internal double[] ResolvePointIds(IEnumerable<string> pointIds, string direction)
