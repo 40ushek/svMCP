@@ -57,7 +57,7 @@ internal static class DimensionRenderedLineVerification
             var expected = baseProjection + distance;
             var step = System.Diagnostics.Stopwatch.StartNew();
             PresentationConnection connection;
-            try { connection = GetConnection(); }
+            try { connection = DrawingPresentationConnections.Get(); }
             finally { connectionDone(step.ElapsedMilliseconds); }
             step.Restart();
             var observations = new List<double?>();
@@ -68,7 +68,7 @@ internal static class DimensionRenderedLineVerification
                 {
                     if (segments.Current is not StraightDimension segment) continue;
                     segmentSeen();
-                    var presentation = connection.Service.GetObjectPresentation(segment.GetIdentifier().ID);
+                    var presentation = DrawingPresentationConnections.GetPresentation(connection, segment.GetIdentifier().ID);
                     var lines = new List<(double X1, double Y1, double X2, double Y2)>();
                     Collect(presentation?.Primitives, scale, lines, 0);
                     observations.Add(IdentifyLine(lines, (segment.StartPoint.X, segment.StartPoint.Y),
@@ -80,27 +80,8 @@ internal static class DimensionRenderedLineVerification
         }
         catch (Exception ex)
         {
-            ResetConnection();
+            DrawingPresentationConnections.Reset();
             return Unknown("Presentation read failed: " + ex.Message);
-        }
-    }
-
-    // Creating a connection costs seconds and the bridge process is persistent, so one is kept;
-    // any failure drops it and the next read connects again (for example after Tekla restarts).
-    private static readonly object ConnectionLock = new();
-    private static PresentationConnection? _connection;
-
-    private static PresentationConnection GetConnection()
-    {
-        lock (ConnectionLock) return _connection ??= new PresentationConnection();
-    }
-
-    private static void ResetConnection()
-    {
-        lock (ConnectionLock)
-        {
-            try { _connection?.Dispose(); } catch { }
-            _connection = null;
         }
     }
 

@@ -11,14 +11,7 @@ internal static class DimensionTextBoxContextLoader
 {
     internal static PresentationConnection? TryCreatePresentationConnection()
     {
-        try
-        {
-            return new PresentationConnection();
-        }
-        catch
-        {
-            return null;
-        }
+        return DrawingPresentationConnections.TryGet();
     }
 
     internal static void PopulateDimensionTextBoxes(
@@ -47,12 +40,21 @@ internal static class DimensionTextBoxContextLoader
         context.AppliedDimensionTextBoxShorteningMode = effectiveMode.ToString().ToLowerInvariant();
 
         var sources = CollectDimensionTextBoxSources(view);
-        var textBoxes = DimensionDrawingTextBoxCollector.CollectDistinct(
-            presentationConnection,
-            sources,
-            view,
-            shorteningMapper,
-            effectiveMode);
+        List<DrawingTextBox> textBoxes;
+        try
+        {
+            textBoxes = DimensionDrawingTextBoxCollector.CollectDistinct(
+                presentationConnection,
+                sources,
+                view,
+                shorteningMapper,
+                effectiveMode);
+        }
+        catch
+        {
+            DrawingPresentationConnections.Reset();
+            throw;
+        }
         if (textBoxes.Count == 0)
             textBoxes.AddRange(CollectRuntimeFallbackTextBoxes(view, shorteningMapper, effectiveMode));
 

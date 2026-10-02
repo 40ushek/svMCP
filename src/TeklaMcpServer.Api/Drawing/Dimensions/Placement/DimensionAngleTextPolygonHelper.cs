@@ -72,7 +72,7 @@ internal static class DimensionAngleTextPolygonHelper
 
         try
         {
-            var segment = presentationConnection.Service.GetObjectPresentation(dimensionId);
+            var segment = DrawingPresentationConnections.GetPresentation(presentationConnection, dimensionId);
             if (segment?.Primitives == null)
                 return false;
 

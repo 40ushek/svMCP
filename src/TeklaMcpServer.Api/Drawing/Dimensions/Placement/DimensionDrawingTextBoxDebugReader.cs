@@ -11,7 +11,7 @@ public static class DimensionDrawingTextBoxDebugReader
         if (view == null)
             throw new ArgumentNullException(nameof(view));
 
-        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
+        var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
         if (presentationConnection == null)
             return [];
 

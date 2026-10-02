@@ -43,7 +43,7 @@ internal static class DimensionPresentationTextBoxCollector
 
         try
         {
-            var segment = connection.Service.GetObjectPresentation(sourceObjectId);
+            var segment = DrawingPresentationConnections.GetPresentation(connection, sourceObjectId);
             if (segment?.Primitives == null)
                 return [];
 

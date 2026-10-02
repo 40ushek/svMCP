@@ -238,7 +238,7 @@ public sealed partial class TeklaDrawingMarkApi
             ViewId = viewId,
             ViewScale = viewScale
         };
-        using var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
+        var presentationConnection = DimensionTextBoxContextLoader.TryCreatePresentationConnection();
         DimensionTextBoxContextLoader.PopulateDimensionTextBoxes(dimensionContext, view, presentationConnection);
 
         var context = builder.Build(viewId, viewScale, view.ViewType.ToString());

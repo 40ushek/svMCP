@@ -154,7 +154,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             }
 
             var result = new List<DimensionTextPlacementDebugInfo>();
-            using var presentationConnection = TryCreatePresentationConnection();
+            var presentationConnection = DrawingPresentationConnections.TryGet();
 
             while (dimObjects.MoveNext())
             {
@@ -240,7 +240,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             var segmentCount = 0;
             var presentationTextBoxDiagnostics = new List<DimensionPresentationTextBoxDebugInfo>();
             var presentationDiagnostics = new List<string>();
-            using var presentationConnection = TryCreatePresentationConnection();
+            var presentationConnection = DrawingPresentationConnections.TryGet();
             presentationDiagnostics.Add(presentationConnection == null ? "presentation=null" : "presentation=connected");
 
             Tekla.Structures.Drawing.View? targetView = null;
@@ -511,7 +511,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         try
         {
-            var segment = presentationConnection.Service.GetObjectPresentation(objectId);
+            var segment = DrawingPresentationConnections.GetPresentation(presentationConnection, objectId);
             if (segment == null)
             {
                 diagnostics.Add($"{label}: presentation segment=null");
@@ -618,7 +618,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         var presentationDiagnostics = new List<string>();
         var targetView = viewId.HasValue ? ResolveTargetView(activeDrawing, viewId) : null;
         var selectedAngleDimensions = new List<AngleDimension>();
-        using var presentationConnection = TryCreatePresentationConnection();
+        var presentationConnection = DrawingPresentationConnections.TryGet();
         presentationDiagnostics.Add(presentationConnection == null ? "presentation=null" : "presentation=connected");
         var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
 
@@ -719,7 +719,7 @@ public sealed partial class TeklaDrawingDimensionsApi
 
             try
             {
-                var segment = presentationConnection.Service.GetObjectPresentation(dim.GetIdentifier().ID);
+                var segment = DrawingPresentationConnections.GetPresentation(presentationConnection, dim.GetIdentifier().ID);
                 if (segment == null)
                 {
                     presentationDiagnostics.Add($"dim={dim.GetIdentifier().ID}: segment=null");
@@ -811,17 +811,6 @@ public sealed partial class TeklaDrawingDimensionsApi
         return builder.ToString();
     }
 
-    private static PresentationConnection? TryCreatePresentationConnection()
-    {
-        try
-        {
-            return new PresentationConnection();
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     private static void CollectPrimitivesDiagnostics(
         System.Collections.Generic.IList<PrimitiveBase> primitives,
@@ -918,7 +907,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         Segment? segment;
         try
         {
-            segment = connection.Service.GetObjectPresentation(objectId);
+            segment = DrawingPresentationConnections.GetPresentation(connection, objectId);
         }
         catch
         {
