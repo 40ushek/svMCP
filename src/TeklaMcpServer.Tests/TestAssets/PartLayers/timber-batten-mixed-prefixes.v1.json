@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "scope": "Selected captured attributes and point-owner links only; no geometry or planner golden.",
+  "normalRules": [
+    {
+      "id": "batten-by-name",
+      "className": "batten",
+      "priority": 0,
+      "conditions": [
+        {
+          "property": "Name",
+          "matchKind": "StartsWith",
+          "value": "BATTEN"
+        }
+      ]
+    },
+    {
+      "id": "timber-batten",
+      "className": "batten",
+      "priority": 10,
+      "conditions": [
+        {
+          "property": "Name",
+          "matchKind": "StartsWith",
+          "value": "BATTEN"
+        },
+        {
+          "property": "Material",
+          "value": "TIMBER"
+        }
+      ]
+    },
+    {
+      "id": "c24-batten",
+      "className": "batten",
+      "priority": 10,
+      "conditions": [
+        {
+          "property": "Name",
+          "matchKind": "StartsWith",
+          "value": "BATTEN"
+        },
+        {
+          "property": "Material",
+          "value": "C24"
+        }
+      ]
+    }
+  ],
+  "conflictRules": [
+    {
+      "id": "batten-by-name",
+      "className": "batten",
+      "priority": 0,
+      "conditions": [
+        {
+          "property": "Name",
+          "matchKind": "StartsWith",
+          "value": "BATTEN"
+        }
+      ]
+    },
+    {
+      "id": "diagnostic-prefix-conflict",
+      "className": "diagnostic-other",
+      "priority": 0,
+      "conditions": [
+        {
+          "property": "Prefix",
+          "value": "B"
+        }
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "modelId": 1,
+      "alias": "frame-beam",
+      "captureScope": "Front",
+      "expectedSource": "observed",
+      "name": "BEAM",
+      "prefix": "T",
+      "profile": "45X145",
+      "material": "C24",
+      "expectedNormal": {
+        "classStatus": "Unknown",
+        "className": null,
+        "matchedRuleIds": [],
+        "selectedRuleIds": [],
+        "unresolvedRuleIds": []
+      },
+      "expectedConflict": {
+        "classStatus": "Unknown",
+        "className": null,
+        "matchedRuleIds": [],
+        "selectedRuleIds": [],
+        "unresolvedRuleIds": []
+      }
+    },
+    {
+      "modelId": 2,
+      "alias": "timber-batten",
+      "captureScope": "Front",
+      "expectedSource": "observed",
+      "name": "BATTEN",
+      "prefix": "B",
+      "profile": "28X70",
+      "material": "TIMBER",
+      "expectedNormal": {
+        "classStatus": "Classified",
+        "className": "batten",
+        "matchedRuleIds": [
+          "batten-by-name",
+          "timber-batten"
+        ],
+        "selectedRuleIds": [
+          "timber-batten"
+        ],
+        "unresolvedRuleIds": []
+      },
+      "expectedConflict": {
+        "classStatus": "Conflict",
+        "className": null,
+        "matchedRuleIds": [
+          "batten-by-name",
+          "diagnostic-prefix-conflict"
+        ],
+        "selectedRuleIds": [],
+        "unresolvedRuleIds": []
+      }
+    },
+    {
+      "modelId": 3,
+      "alias": "c24-batten",
+      "captureScope": "Top",
+      "expectedSource": "evaluated",
+      "name": "BATTEN",
+      "prefix": "T",
+      "profile": "45X70",
+      "material": "C24",
+      "expectedNormal": {
+        "classStatus": "Classified",
+        "className": "batten",
+        "matchedRuleIds": [
+          "batten-by-name",
+          "c24-batten"
+        ],
+        "selectedRuleIds": [
+          "c24-batten"
+        ],
+        "unresolvedRuleIds": []
+      },
+      "expectedConflict": {
+        "classStatus": "Classified",
+        "className": "batten",
+        "matchedRuleIds": [
+          "batten-by-name"
+        ],
+        "selectedRuleIds": [
+          "batten-by-name"
+        ],
+        "unresolvedRuleIds": []
+      }
+    },
+    {
+      "modelId": 4,
+      "alias": "sheathing",
+      "captureScope": "Top",
+      "expectedSource": "evaluated",
+      "name": "SHEET",
+      "prefix": "S",
+      "profile": "12",
+      "material": "OSB-3",
+      "expectedNormal": {
+        "classStatus": "Unknown",
+        "className": null,
+        "matchedRuleIds": [],
+        "selectedRuleIds": [],
+        "unresolvedRuleIds": []
+      },
+      "expectedConflict": {
+        "classStatus": "Unknown",
+        "className": null,
+        "matchedRuleIds": [],
+        "selectedRuleIds": [],
+        "unresolvedRuleIds": []
+      }
+    }
+  ],
+  "points": [
+    {
+      "pointId": "anchor-01",
+      "sources": [
+        {
+          "objectKind": "part",
+          "modelId": 1
+        },
+        {
+          "objectKind": "geometry",
+          "modelId": null
+        }
+      ],
+      "expected": {
+        "pointId": "anchor-01",
+        "partModelIds": [
+          1
+        ],
+        "missingPartModelIds": [],
+        "unidentifiedPartSourceCount": 0,
+        "nonPartSourceKinds": [
+          "geometry"
+        ]
+      }
+    },
+    {
+      "pointId": "anchor-02",
+      "sources": [
+        {
+          "objectKind": "part",
+          "modelId": 2
+        }
+      ],
+      "expected": {
+        "pointId": "anchor-02",
+        "partModelIds": [
+          2
+        ],
+        "missingPartModelIds": [],
+        "unidentifiedPartSourceCount": 0,
+        "nonPartSourceKinds": []
+      }
+    },
+    {
+      "pointId": "anchor-03",
+      "sources": [
+        {
+          "objectKind": "part",
+          "modelId": 2
+        }
+      ],
+      "expected": {
+        "pointId": "anchor-03",
+        "partModelIds": [
+          2
+        ],
+        "missingPartModelIds": [],
+        "unidentifiedPartSourceCount": 0,
+        "nonPartSourceKinds": []
+      }
+    },
+    {
+      "pointId": "anchor-04",
+      "sources": [
+        {
+          "objectKind": "part",
+          "modelId": 2
+        }
+      ],
+      "expected": {
+        "pointId": "anchor-04",
+        "partModelIds": [
+          2
+        ],
+        "missingPartModelIds": [],
+        "unidentifiedPartSourceCount": 0,
+        "nonPartSourceKinds": []
+      }
+    },
+    {
+      "pointId": "anchor-05",
+      "sources": [
+        {
+          "objectKind": "part",
+          "modelId": 1
+        },
+        {
+          "objectKind": "geometry",
+          "modelId": null
+        }
+      ],
+      "expected": {
+        "pointId": "anchor-05",
+        "partModelIds": [
+          1
+        ],
+        "missingPartModelIds": [],
+        "unidentifiedPartSourceCount": 0,
+        "nonPartSourceKinds": [
+          "geometry"
+        ]
+      }
+    }
+  ]
+}

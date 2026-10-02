@@ -177,8 +177,48 @@ used for structural inclusion, or passed to the writer.
 Synthetic transport tests verify exact argument/JSON preservation, defaults and older
 arguments, domain vocabulary coverage, malformed requests at both boundaries and
 parsed-rule-to-Query preview parity. Live use requires updated MCP and bridge binaries
-and refreshing the MCP tool schema; deployment/live acceptance has not been performed
-as part of this code stage.
+and refreshing the MCP tool schema. Runtime status is recorded in
+[Dimensions delivery](ROADMAP_DIMENSIONS.md#current-delivery-and-next-gate).
+
+## Read-only classification review (2026-10-02)
+
+Reviewed EW.1 - 6, Front, scale 1:25 through a fresh MCP process with the new
+`layerRules` schema. No structural exclusions were supplied. Name-based BATTEN rules
+with explicit TIMBER/C24 refinements classified four visible TIMBER battens; ten
+BEAM parts stayed `Unknown` because no rule matched them. Deliberately contradictory
+name/prefix rules at equal priority produced four `Conflict` results. In all runs,
+legacy preview, composition decisions and chain diagnostics were identical; the
+repeated normal request reproduced the same response and context identity. All 15
+point bindings resolved to the plan's part table. Existing missing-support, unlocated
+and inclined-part issues remained reported; classification did not repair them.
+
+The two C24 battens are present in the drawing/Top attributes but not in the Front
+snapshot. Top panel preview is explicitly refused (only Front/Back supported).
+Their classification is therefore covered by replay of captured attributes, not
+claimed as a live Top composition-plan result. The small versioned
+[classification fixture](../../../TeklaMcpServer.Tests/TestAssets/PartLayers/timber-batten-mixed-prefixes.v1.json)
+retains four representative part records and five owner links with local IDs;
+its [capture notes](../../../TeklaMcpServer.Tests/TestAssets/PartLayers/README.md)
+separate observed Front results from pure evaluation of Top attributes. It does not
+contain geometry or prove full planner/support correctness.
+Each record declares `expectedSource: observed|evaluated`. Observed Front results
+are regression expectations; Top attributes are exercised by a separate pure-rule
+test and are not counted as observed composition-plan acceptance.
+
+Five existing dimension IDs were retained in successive reads. One Bottom overall
+line's position differed between the first and second read (-422.5 to -575.885 view
+units); its measured span/length stayed 1168, and a third read matched the second.
+No dimension write/arrange commands were called. The cause is unestablished;
+drawing-position invariance is not proven by this run. Full first-delivery
+classification-driven selection, compatibility/composition and live placement gates
+remain open.
+
+The read-only follow-up audit placed the differing reads at 21:40:39 and 21:41:44
+local time (UTC+2); logged layout commands at 19:49–19:50 were earlier. The arrange
+command failed and three fit commands succeeded. All five current dimension sets
+and loaded standard/overall attributes report `Fixed` placement. Historical placement
+was not captured; neither layout-command timing nor current placement establishes
+the cause. Controlled update/layout reproduction is a separate pending investigation.
 
 ## Foundation and boundaries
 

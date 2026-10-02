@@ -27,6 +27,20 @@ including neighbour reflow and text collisions.
 
 ## Current delivery and next gate
 
+### Diagnostic part classification: runtime review (2026-10-02)
+
+The internal classification stage (`1ec9c40`) and MCP/bridge transport (`c61128e`)
+were deployed; bridge/API/contact-core hashes and the new-process MCP `layerRules`
+schema were verified. Existing clients must reconnect to refresh their tool schema.
+The read-only EW.1 - 6 Front review preserved preview/decisions and exposed configured
+classes/conflicts. C24 battens absent from that Front snapshot are covered only by
+captured Top attributes and pure classification replay; Top panel planning is unsupported.
+One existing overall line changed its read position during the session without an
+issued write command; cause is unestablished, so drawing-position invariance is not
+claimed. See [classification review](ROADMAP_CHAIN_COMPOSITION.md#read-only-classification-review-2026-10-02)
+for evidence, capture scope and remaining gates. No classification-driven point
+selection or dimension placement was added.
+
 ### Bolt chains and composition: current work order (2026-10-02)
 
 This update supplements the structural/panel work order below. It does not close
