@@ -688,6 +688,17 @@ Extreme-bolt checks remain a separate optional role as described above. Selectio
 and visibility evidence remain explicit; unknown occlusion must not be reported
 as verified visibility. This step does not reopen the deferred occlusion work.
 
+First source increment: `questions=boltChains` now previews internal row/column
+proposals from the captured snapshot for axis-aligned, constant-depth rectangular
+`BoltArray` projections. It preserves all source indices, does not merge separate
+groups/rows, and blocks unsupported patterns or chains with outside/unresolved
+center evidence without trimming them. Related part candidates are shown without
+inventing ownership. All proposals remain `writeReady=false`; final selection,
+plane orientation, plant policy, placement, edge and position chains are pending.
+Automated coverage includes rectangular/unequal spacing, duplicate sources,
+non-transitive tolerance, skewed/staggered/incomplete/depth-spanning patterns,
+restriction failures, shared part scope and immutable context reuse.
+
 Official references inspected for this decision:
 
 - [Tekla 2025 integrated dimensioning properties](https://support.tekla.com/doc/tekla-structures/2025/dra_general_dimensioning_properties)

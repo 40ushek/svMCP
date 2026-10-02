@@ -122,12 +122,12 @@ public sealed class ViewDimensionContext
         if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
         if (normalizedRuleSet is not "steel" and not "panel")
             throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "boltchains", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, bolts, scale, placement, contacts, contactDetails, diagnostics or all");
+            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, bolts, boltChains, scale, placement, contacts, contactDetails, diagnostics or all");
         var selected = ParseSides(sides);
         bool Wants(string q) => requested.Contains(q) ||
-            (requested.Contains("all") && q is not "contacts" and not "bolts" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
+            (requested.Contains("all") && q is not "contacts" and not "bolts" and not "boltchains" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
         var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
         var result = Header(shortAnswer: true, compact: !requested.Contains("diagnostics"));
         if (requested.Contains("contacts") || requested.Contains("contactdetails"))
@@ -142,6 +142,8 @@ public sealed class ViewDimensionContext
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
         if (Wants("bolts")) result["bolts"] = _bolts;
+        if (requested.Contains("boltchains"))
+            result["boltChainPreview"] = BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected);
         if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }

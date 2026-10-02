@@ -46,6 +46,33 @@ New work beyond the historical v1 baseline below:
   calculation, now labelled `referenceLineSource`, not a presentation observation.
 - These changes have automated coverage; new runtime observation and reuse
   still require live validation. See the active roadmap.
+## Provisional bolt-chain preview (2026-10-02)
+
+`get_view_dimension_context(questions="boltChains,scale")` returns a separate
+`boltChainPreview` from the frozen bolt snapshot. It proposes internal-spacing
+rows/columns for axis-aligned, constant-depth `BoltArray` projections with a full
+Cartesian pattern. A single row/column and unequal spacings are supported.
+Skewed, staggered, incomplete, circular and depth-spanning patterns are refused
+with reasons. Coordinates are clustered within 0.01 model/view units, independent
+of view scale; merged points retain all original source indices.
+
+`sides` filters axes only (Top/Bottom = X, Left/Right = Y), without duplicating
+mirror-side chains or choosing placement. Every proposal retains ordered XYZ,
+source indices, adjacent projected distances and a geometric start index.
+Outside/unresolved center evidence blocks the whole affected chain instead of
+silently shortening it. Related part candidates are reported; shared-group
+ownership is not inferred. Read completeness, selection and visibility are separate.
+
+All proposals have `writeReady=false`: this is geometry review, not plant-policy
+selection. `proposalId` is not a structural batch preview key or a writable point
+ID. Bolt-plane orientation, final selection, part policy, placement, edge-distance
+and group-position chains remain pending. The default structural preview and
+its creation path are unchanged; `all` does not include bolt proposals.
+
+Live read-only checks on M.81 views 6110, 1409 and 2814 produced 60 mm spacing
+proposals and a front-view row with six 453.33 mm spacings. The same row in 6110
+remained blocked by restriction evidence. Depth-spanning groups were refused.
+
 ## Prepared-chain batch increment (2026-10-02, not deployed)
 
 Previews return ordered `pointIds`, segments and incompleteness reasons; they
