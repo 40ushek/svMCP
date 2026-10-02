@@ -68,7 +68,7 @@ public sealed class DimensionPreviewWorkflowTests
     {
         var context = ViewDimensionContextTests.Context();
         var chain = Chain(context, "bottom", "Bottom", "horizontal-down");
-        var points = context.ResolvePointIds(chain.PointIds, chain.Direction);
+        var points = context.ResolvePointIds(chain.PointIds!, chain.Direction);
         var writes = 0;
         var provider = Provider(context, () => Snapshot(101, points, 275), (_, _) => writes++);
         var result = provider.CreateBatch(Batch(context, chain));
@@ -82,7 +82,7 @@ public sealed class DimensionPreviewWorkflowTests
     {
         var context = ViewDimensionContextTests.Context();
         var bottom = Chain(context, "new-bottom", "Bottom", "horizontal-down");
-        var points = context.ResolvePointIds(bottom.PointIds, bottom.Direction);
+        var points = context.ResolvePointIds(bottom.PointIds!, bottom.Direction);
         var writes = 0;
         // Existing chain on the same side has different points.
         var shifted = points.Select((v, i) => i % 3 == 0 ? v + 10 : v).ToArray();
@@ -101,7 +101,7 @@ public sealed class DimensionPreviewWorkflowTests
     {
         var context = ViewDimensionContextTests.Context();
         var chain = Chain(context, "bottom", "Bottom", "horizontal-down");
-        var points = context.ResolvePointIds(chain.PointIds, chain.Direction);
+        var points = context.ResolvePointIds(chain.PointIds!, chain.Direction);
         var snapshot = Snapshot(101, points, 120);
         snapshot.Groups.Add(Snapshot(102, points, 240).Groups[0]);
         var writes = 0;
@@ -120,7 +120,7 @@ public sealed class DimensionPreviewWorkflowTests
     {
         var context = ViewDimensionContextTests.Context();
         var chain = Chain(context, "bottom", "Bottom", "horizontal-down");
-        var points = context.ResolvePointIds(chain.PointIds, chain.Direction);
+        var points = context.ResolvePointIds(chain.PointIds!, chain.Direction);
         chain.Distance = 240;
         var writes = new List<double>();
         var provider = Provider(context, () => Snapshot(101, points, 120),
@@ -136,7 +136,7 @@ public sealed class DimensionPreviewWorkflowTests
         var context = ViewDimensionContextTests.Context();
         var chain = Chain(context, "bottom", "Bottom", "horizontal-down");
         chain.DimensionType = "Absolute";
-        var points = context.ResolvePointIds(chain.PointIds, chain.Direction);
+        var points = context.ResolvePointIds(chain.PointIds!, chain.Direction);
         var provider = Provider(context, () => Snapshot(101, points, 120),
             (_, _) => throw new Exception("Unexpected write"));
         Assert.Throws<ArgumentException>(() => provider.CreateBatch(Batch(context, chain)));

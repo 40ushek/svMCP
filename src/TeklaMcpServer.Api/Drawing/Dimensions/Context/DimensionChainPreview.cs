@@ -16,10 +16,21 @@ internal static class DimensionChainPreview
     /// The default answer: side, kind, ids and segments, plus notes and lists only when they
     /// have content. Roles and part ids stay behind the detailed question.
     /// </summary>
-    public static object Short(object chain, bool detailed = false)
+    public static object Short(object chain, bool detailed = false, string? side = null)
     {
         using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(chain));
         var result = new Dictionary<string, object?>();
+        if (side != null)
+        {
+            var kind = doc.RootElement.GetProperty("kind").GetString();
+            result["key"] = side + "-" + kind;
+            result["direction"] = side switch {
+                "Top" => "horizontal", "Bottom" => "horizontal-down",
+                "Left" => "vertical-left", "Right" => "vertical",
+                _ => throw new ArgumentException("Unknown preview side")
+            };
+            result["attributesFile"] = kind == "overall" ? "overall" : "standard";
+        }
         foreach (var property in doc.RootElement.EnumerateObject())
         {
             var value = property.Value;

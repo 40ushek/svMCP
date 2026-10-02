@@ -57,7 +57,7 @@ public static partial class ModelTools
             verbose ? "verbose" : "compact", refresh.ToString());
     }
 
-    [McpServerTool, Description("Read prepared dimension chains from the captured view context. Default questions=chain,scale; optional chainDetails inspects only prepared chains. Choose which chains to keep or remove and submit their ordered pointIds to create_dimensions_batch. ruleSet selects steel (default) or panel. points, dimensionPoints, edges, all, placement and contacts are rejected before geometry is read. Source geometry is cached; use refresh=true only after external geometry or view changes.")]
+    [McpServerTool, Description("Read prepared dimension chains from the captured view context. Default questions=chain,scale; chainDetails returns detailed chains (split chains for sections). Submit selected chain keys as preview references to create_dimensions_batch with the same ruleSet and chainView, without retyping pointIds. ruleSet selects steel (default) or panel. Source-point, edge, placement and contact questions are rejected before geometry is read. Source geometry is cached; refresh only after external geometry or view changes.")]
     public static string GetViewDimensionContext(
         [Description("Drawing view ID")] int viewId,
         [Description("Comma-separated questions: chain, chainDetails, parts, scale, diagnostics. Default chain,scale returns prepared chains for keep/remove review. Source candidates (points, dimensionPoints, edges, all), placement and contacts are rejected before geometry is read.")] string questions = "chain,scale",

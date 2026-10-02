@@ -779,11 +779,7 @@ internal sealed partial class DrawingCommandHandler
 
         try
         {
-            var chains = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.List<BatchDimensionChain>>(
-                args[3], new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            var result = _dimensionContexts.CreateBatch(new CreateDimensionsBatchRequest {
-                ViewId = viewId, ContextId = args[2], Chains = chains ?? []
-            });
+            var result = _dimensionContexts.CreateBatch(DrawingCommandParsers.ParseCreateDimensionsBatchRequest(args));
             WriteJson(new {
                 viewId = result.ViewId,
                 chains = result.Chains.Select(item => new {

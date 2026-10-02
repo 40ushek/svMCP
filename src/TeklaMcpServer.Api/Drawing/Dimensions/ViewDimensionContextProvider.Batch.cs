@@ -8,6 +8,8 @@ public sealed class CreateDimensionsBatchRequest
 {
     public int ViewId { get; set; }
     public string ContextId { get; set; } = string.Empty;
+    public string RuleSet { get; set; } = "steel";
+    public string ChainView { get; set; } = "chain";
     public List<BatchDimensionChain> Chains { get; set; } = [];
 }
 
@@ -16,11 +18,19 @@ public sealed class BatchDimensionChain
     // Accepted for older callers; batch placement assigns rows per side, ignoring this input.
     public int Row { get; set; } = 1;
     public string Key { get; set; } = string.Empty;
-    public string[] PointIds { get; set; } = [];
+    public string? Preview { get; set; }
+    private string[]? _pointIds;
+    internal bool PointIdsSpecified { get; private set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? PointIds {
+        get => _pointIds;
+        set { PointIdsSpecified = true; _pointIds = value; }
+    }
     public string Direction { get; set; } = string.Empty;
     public double? Distance { get; set; }
     public double? PaperGapMm { get; set; }
-    public string AttributesFile { get; set; } = "standard";
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AttributesFile { get; set; }
     public string? DimensionType { get; set; }
 }
 
@@ -63,12 +73,13 @@ public sealed partial class ViewDimensionContextProvider
             throw new ArgumentException("viewId and contextId are required");
         if (batch.Chains is not { Count: > 0 and <= 32 })
             throw new ArgumentException("chains must contain 1 to 32 entries");
-        if (batch.Chains.Any(chain => string.IsNullOrWhiteSpace(chain.Key)) ||
-            batch.Chains.Select(chain => chain.Key).Distinct(StringComparer.Ordinal).Count() != batch.Chains.Count)
+        var chains = ResolveBatchChains(batch);
+        if (chains.Any(chain => string.IsNullOrWhiteSpace(chain.Key)) ||
+            chains.Select(chain => chain.Key).Distinct(StringComparer.Ordinal).Count() != chains.Length)
             throw new ArgumentException("each chain needs a unique non-empty key");
 
         // Resolve every point and placement before the first drawing mutation.
-        var prepared = batch.Chains.Select(chain => PrepareBatchChain(batch, chain, 1)).ToArray();
+        var prepared = chains.Select(chain => PrepareBatchChain(batch, chain, 1)).ToArray();
         var before = _readDimensions(batch.ViewId);
         var rows = new Dictionary<string, int>();
         for (var i = 0; i < prepared.Length; i++)
@@ -201,6 +212,43 @@ public sealed partial class ViewDimensionContextProvider
         return result;
     }
 
+    private BatchDimensionChain[] ResolveBatchChains(CreateDimensionsBatchRequest batch)
+    {
+        var ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(batch.RuleSet);
+        var chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(batch.ChainView);
+        var references = batch.Chains.Where(chain => chain?.Preview != null).ToArray();
+        if (batch.Chains.Any(chain => chain == null))
+            throw new ArgumentException("chains cannot contain null entries");
+        if (references.Any(chain => string.IsNullOrWhiteSpace(chain.Preview) || chain.PointIdsSpecified ||
+                !string.IsNullOrEmpty(chain.Direction)))
+            throw new ArgumentException("A preview reference cannot include pointIds or direction and needs a non-empty preview key");
+        if (references.Select(chain => chain.Preview).Distinct(StringComparer.Ordinal).Count() != references.Length)
+            throw new ArgumentException("Each preview chain may only be referenced once");
+        if (references.Length == 0) return batch.Chains.ToArray();
+
+        var context = RequireContext(batch.ViewId, batch.ContextId);
+        var answer = context.Query(chainView, "all", ruleSet: ruleSet);
+        if (!answer.TryGetProperty("chainPreview", out var rows))
+            throw new ArgumentException("Cannot resolve preview chains from this context");
+        var preview = rows.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .ToDictionary(chain => chain.GetProperty("key").GetString()!, StringComparer.Ordinal);
+        return batch.Chains.Select(chain => {
+            if (chain.Preview == null) return chain;
+            if (!preview.TryGetValue(chain.Preview, out var selected))
+                throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
+            var ids = selected.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+            if (ids.Length < 2)
+                throw new ArgumentException($"Preview chain '{chain.Preview}' needs at least two pointIds" +
+                    (selected.TryGetProperty("incompleteReason", out var reason) ? ": " + reason.GetString() : ""));
+            return new BatchDimensionChain {
+                Key = string.IsNullOrWhiteSpace(chain.Key) ? chain.Preview : chain.Key,
+                PointIds = ids, Direction = selected.GetProperty("direction").GetString()!,
+                AttributesFile = chain.AttributesFile ?? selected.GetProperty("attributesFile").GetString()!,
+                Distance = chain.Distance, PaperGapMm = chain.PaperGapMm, DimensionType = chain.DimensionType
+            };
+        }).ToArray();
+    }
+
     private PreparedBatchChain PrepareBatchChain(CreateDimensionsBatchRequest batch, BatchDimensionChain chain, int row)
     {
         if (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace))
@@ -215,12 +263,12 @@ public sealed partial class ViewDimensionContextProvider
 
         DimensionCreatePlacementHelper.ResolveDirection(chain.Direction);
         _ = DimensionCreatePlacementHelper.ParseDimensionType(chain.DimensionType);
-        _validateAttributes(chain.AttributesFile);
+        _validateAttributes(chain.AttributesFile ?? "standard");
         var request = new CreateDimensionRequest {
             ViewId = batch.ViewId, ContextId = batch.ContextId,
             PointIds = chain.PointIds, Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
-            AttributesFile = chain.AttributesFile, DimensionType = chain.DimensionType, Row = row
+            AttributesFile = chain.AttributesFile ?? "standard", DimensionType = chain.DimensionType, Row = row
         };
         var write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);

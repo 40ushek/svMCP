@@ -49,7 +49,10 @@ For each target view:
 3. Use `get_view_dimension_context` with `questions="chain,scale"`, the sides
    in scope and explicit `ruleSet` (`panel` for timber-wall elevations, `steel`
    for steel). Review the prepared `chainPreview`: decide which chains to keep
-   or remove, preserving their ordered `pointIds`. Do not request all source
+   or remove, preserving their ordered `pointIds`. When the running batch schema
+   supports preview references, submit the selected chain keys instead of copying
+   IDs, with the same `ruleSet` and `chainView` (`chain` or `chainDetails`) as the read.
+   Do not request all source
    points or reconstruct chains from candidates in the normal placement run.
    Read `chainDetails` only for a concrete unresolved question about a prepared
    chain. Inspect completeness and reasons: no point IDs or an incomplete outline
@@ -97,8 +100,9 @@ Keep one compact plan, not repeated prose copies:
 - closure endpoints, first point/datum, side, offset, attributes and row type;
 - chosen rule set and its policy settings.
 
-**Prepared chains:** use the preview's ordered `pointIds` from the same
-`contextId`. Do not replace their coordinates with bbox, vertices, axes or
+**Prepared chains:** use the preview's chain keys from the same `contextId`,
+`ruleSet` and `chainView` when the running batch supports references; otherwise
+forward its ordered `pointIds`. Do not replace their coordinates with bbox, vertices, axes or
 contacts. Selecting a prepared chain and its dimension type is the normal
 decision boundary; fixing point selection belongs in the preview rules.
 
@@ -143,8 +147,13 @@ returned new ID when Tekla renumbers a chain.
 Use available, known working tools; source code existing is not proof that the
 running bridge contains it. The experimental structural preview/apply commands
 were removed. For two or more reviewed chains on one view, use
-`create_dimensions_batch` once with the same current `contextId` and the preview's
-ordered point IDs, directions and chosen attributes for every kept chain.
+`create_dimensions_batch` once with the same current `contextId`. Prefer entries
+such as `{"preview":"Top-location"}` with the matching `ruleSet` and `chainView`
+when supported by the running schema; omit chains to remove them. References
+resolve ordered points and direction on the server; do not pass `pointIds` or
+direction with a reference. Keep per-entry attribute, row-type and offset choices.
+Otherwise forward the preview's ordered point IDs and directions. Explicit-point
+entries remain available for reviewed steel cases beyond the prepared preview.
 On an empty side the batch assigns rows in submission order: 1, 2, 3, ...;
 a lone overall uses row 1. Do not forward a preview row. Without explicit offsets,
 repeated batches retain unique existing matches at their current distances.

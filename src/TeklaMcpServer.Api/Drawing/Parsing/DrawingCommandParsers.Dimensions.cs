@@ -6,6 +6,28 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public static partial class DrawingCommandParsers
 {
+    public static CreateDimensionsBatchRequest ParseCreateDimensionsBatchRequest(string[] args)
+    {
+        if (args.Length < 4 || !int.TryParse(args[1], NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out var viewId) || viewId <= 0)
+            throw new ArgumentException("create_dimensions_batch requires viewId, contextId and chainsJson");
+        using var document = JsonDocument.Parse(args[3]);
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+            throw new ArgumentException("chainsJson must be an array");
+        if (document.RootElement.EnumerateArray().Any(entry => entry.ValueKind == JsonValueKind.Object &&
+            entry.EnumerateObject().Any(property => property.Name.Equals("dropPoints", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.Equals("dropPointIds", StringComparison.OrdinalIgnoreCase))))
+            throw new ArgumentException("Per-point removals are not supported; select a prepared chain or supply explicit pointIds");
+        return new CreateDimensionsBatchRequest {
+            ViewId = viewId, ContextId = args[2],
+            Chains = JsonSerializer.Deserialize<System.Collections.Generic.List<BatchDimensionChain>>(
+                args[3], new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new ArgumentException("chainsJson must be an array"),
+            RuleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(args.Length > 4 ? args[4] : null),
+            ChainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(args.Length > 5 ? args[5] : null)
+        };
+    }
+
     public static CreateDimensionParseResult ParseCreateDimensionRequest(string[] args)
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))

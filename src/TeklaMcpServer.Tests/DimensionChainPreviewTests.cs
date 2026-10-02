@@ -349,7 +349,7 @@ public sealed class DimensionChainPreviewTests
         context.Query("chain", side).GetProperty("chainPreview").EnumerateArray().Single()
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
-    private static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
+    internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
         double? edgeAboveFlange = null)
     {
@@ -388,7 +388,7 @@ public sealed class DimensionChainPreviewTests
             [], new { drawingGuid = "test" }, new { viewType });
     }
 
-    private static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
+    internal static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
         bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false)
     {

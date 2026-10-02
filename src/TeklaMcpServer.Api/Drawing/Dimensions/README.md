@@ -69,6 +69,25 @@ explicit-offset precedence. The previous numeric-row release was deployed on
 2026-10-02; this prepared-chain increment has automated coverage but still
 requires deployment and live placement/performance validation.
 
+## Preview references in batch (2026-10-02, source implemented; not deployed)
+
+Each preview chain now exposes `key`, `direction` and default `attributesFile`.
+`create_dimensions_batch` accepts an entry such as `{"preview":"Top-location"}`
+instead of repeating ordered point IDs. Pass the same `contextId`, `ruleSet`
+(`steel` or `panel`) and `chainView` (`chain` or `chainDetails`) as the preview read.
+Section `chain` uses consolidated keys such as `Top-chain`; `chainDetails` uses
+split profile/location keys. Only the listed chains are submitted, in list order.
+
+References may specify `key`, `paperGapMm`, `distance`, `attributesFile` and
+`dimensionType`. Without an attributes override, overall uses `overall` and other
+chains use `standard`. References cannot include `pointIds` or override direction.
+Unknown/empty proposals, duplicate references and expired contexts fail before
+writes. Explicit `pointIds` entries and legacy bridge arguments remain supported,
+including mixed batches. Existing row, occupied-side, retention and read-back
+checks run after reference resolution. No per-point removal is implemented.
+
+Deployment and live same-view performance validation remain pending.
+
 ## Purpose
 
 `Drawing/Dimensions` is the line-first dimension module for drawing runtime.

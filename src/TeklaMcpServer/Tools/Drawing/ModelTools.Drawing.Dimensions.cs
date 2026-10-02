@@ -336,14 +336,19 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create selected prepared dimension chains in one bridge call with one contextId. Supply chainsJson with unique key, ordered pointIds, direction and optional paperGapMm, distance, attributesFile or dimensionType. On each empty side, automatic rows follow array order (8, 16, 24 paper mm using the configured step); a sole overall gets the first row. Batch row input is ignored. Existing uniquely matching chains retain their placement on repeat. New chains on occupied sides require paperGapMm or distance. Explicit offsets override automatic placement; distance and paperGapMm cannot be combined. All chains are validated before any write, with one final read-back and per-chain status.")]
+    [McpServerTool, Description("Create selected chains in one bridge call with one contextId. Each chainsJson entry uses either preview (a key from chainPreview, e.g. Top-location) or unique key, ordered pointIds and direction. A preview reference resolves points, direction and default attributes using the same ruleSet and chainView as the context read; key defaults to preview. Do not supply pointIds or direction with preview, or reference a chain twice. Optional paperGapMm, distance, attributesFile and dimensionType work in either form. Rows follow array order per empty side; a sole overall gets row 1. Existing unique matches retain their placement. New chains on occupied sides need an explicit offset. distance and paperGapMm cannot be combined. All chains are validated before writes, with one final read-back.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain). All pointIds must belong to this context.")] string contextId,
-        [Description("JSON array of reviewed chains, e.g. [{\"key\":\"bottom-location\",\"pointIds\":[\"p0001\",\"p0002\"],\"direction\":\"horizontal-down\",\"paperGapMm\":8,\"dimensionType\":\"Relative\"}]. Rows are assigned automatically per empty side in array order. New chains on occupied sides require an explicit offset. dimensionType is optional and overrides the row type in attributesFile.")] string chainsJson)
+        [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
+        [Description("Same ruleSet as the preview read: steel or panel.")] string ruleSet = "steel",
+        [Description("Same preview variant as the read: chain (default; consolidated sections) or chainDetails (split sections).")] string chainView = "chain")
     {
+        ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
+        chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(chainView);
         var json = RunBridge("create_dimensions_batch",
-            viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty);
+            viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty,
+            ruleSet, chainView);
         try
         {
             var doc = JsonDocument.Parse(json);

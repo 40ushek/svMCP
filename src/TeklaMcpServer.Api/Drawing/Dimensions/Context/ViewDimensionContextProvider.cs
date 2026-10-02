@@ -121,14 +121,7 @@ public sealed partial class ViewDimensionContextProvider
             if (!string.IsNullOrWhiteSpace(request.ExcludePrefixes) || !string.IsNullOrWhiteSpace(request.ExcludeMaterials))
                 throw new ArgumentException("Exclusion filters are part of contextId; do not pass filters with point ids");
 
-            ObserveActiveDrawing();
-            if (_drawing == null) throw new InvalidOperationException("No drawing is currently open");
-            ObserveView(request.ViewId);
-            context = _contexts.Values.FirstOrDefault(candidate =>
-                StringComparer.Ordinal.Equals(candidate.ContextId, request.ContextId))
-                ?? throw new InvalidOperationException("Unknown or expired contextId; refresh the view context and retry");
-            if (!context.IsComplete)
-                throw new InvalidOperationException("Cannot create a dimension from pointIds in an incomplete view context; inspect diagnostics and refresh after fixing the source");
+            context = RequireContext(request.ViewId, request.ContextId);
             request.Points = context.ResolvePointIds(request.PointIds, request.Direction);
         }
         else
@@ -160,6 +153,19 @@ public sealed partial class ViewDimensionContextProvider
     private static CreateDimensionResult Write(CreateDimensionRequest request, double distance) =>
         new TeklaDrawingDimensionsApi().CreateDimension(request.ViewId, request.Points,
             request.Direction, distance, request.AttributesFile, request.DimensionType);
+
+    private ViewDimensionContext RequireContext(int viewId, string contextId)
+    {
+        ObserveActiveDrawing();
+        if (_drawing == null) throw new InvalidOperationException("No drawing is currently open");
+        ObserveView(viewId);
+        var context = _contexts.Values.FirstOrDefault(candidate =>
+            StringComparer.Ordinal.Equals(candidate.ContextId, contextId))
+            ?? throw new InvalidOperationException("Unknown or expired contextId; refresh the view context and retry");
+        if (!context.IsComplete)
+            throw new InvalidOperationException("Cannot create a dimension from pointIds in an incomplete view context; inspect diagnostics and refresh after fixing the source");
+        return context;
+    }
 
     private void Clear()
     {

@@ -1002,7 +1002,7 @@ Review decisions implemented in source (2026-10-02; live fixture gates remain):
   (`.codex/diagnostics/codex-mcp-latency-20261002.md`) attribute that to automatic
   approval review before dispatch, not to Tekla and not shown to be model turns.
 
-### 8. Reference prepared chains in the batch (proposed 2026-10-02, not implemented)
+### 8. Reference prepared chains in the batch (stage 1 source implemented 2026-10-02; not deployed)
 
 Goal: stop retyping preview point IDs into `create_dimensions_batch`. On 2026-10-02
 (CE.4, five chains) the server needed 3.9 s of a 15.5 s run; the longest observed pause
@@ -1016,7 +1016,7 @@ Historical measurements for five-chain batches on different drawings: batch 25.2
 without text bounds (`0e940ae`). These runs are context, not a controlled same-view
 before/after baseline.
 
-Stage 1: extend `create_dimensions_batch`, no new tool.
+Stage 1 is implemented in source: extend `create_dimensions_batch`, no new tool.
 
 - **Entry form.** An entry is either `{"preview":"<chain key>"}` or has `pointIds`;
   passing both is an error. `direction` of a reference comes from the preview and cannot
@@ -1031,7 +1031,9 @@ Stage 1: extend `create_dimensions_batch`, no new tool.
   The same context, `ruleSet` and `chainView` give the same chains and point order, so
   the assistant must pass the values it used when it read the preview. The panel preview
   is built for all sides and `sides` only filters its output, so `sides` is not an input
-  of the resolution. (Steel per-side independence is not verified; check before relying on it.)
+  of the resolution. Automated steel, panel and section checks compare a Top-only answer
+  to the Top chains from an all-side answer, including both section variants. Steel reads
+  the opposite side's catalog, independently of which sides were requested for output.
 - **Keys** are `<Side>-<kind>`: `Top-location`, `Bottom-overall`, `Right-overall`, and
   `Top-chain` for a consolidated section chain. Direction follows the side (`horizontal`,
   `horizontal-down`, `vertical-left`, `vertical`); overall chains default to the
@@ -1063,10 +1065,15 @@ write, protection for the first and last point of every chain (the first point i
 datum, see `SKILL.md`), and a rule for repeat runs (retention matches points, so a rerun
 without the same drops would not recognise the earlier chain). Not designed further now.
 
-Gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
+Automated gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
 invalid `ruleSet`/`chainView` writes nothing; references and explicit `pointIds`
 produce identical dimensions for the same chain; a repeated batch retains a referenced
-chain as it does an explicit one. Performance gate: compare equivalent
+chain as it does an explicit one. Explicit entries can be mixed with references and keep
+their standard attributes default. Preview references expose keys, directions and default
+attributes; serialized references preserve the overall default. The bridge rejects deferred
+`dropPoints`/`dropPointIds` instead of silently ignoring them.
+
+Deployment and live placement/performance gates remain open. Performance gate: compare equivalent
 manual-batch and referenced-batch runs on the same view, with identical initial
 dimensions, chains, attributes and offsets, and report wall-clock, call count and request
 size. Separate cold and warm connection runs and use client telemetry to distinguish
