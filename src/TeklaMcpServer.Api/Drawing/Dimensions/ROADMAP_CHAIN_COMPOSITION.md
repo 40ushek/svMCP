@@ -72,10 +72,67 @@ from unrequested ambiguity. Diagnostic scope validation remains lazy: invalid
 context/view arguments are reported only when the detailed plan is requested.
 
 This is the requested minimal architecture stage, not completion of the first
-delivery below. Configured layer classification, per-candidate inclusion/exclusion
+delivery below. Per-candidate inclusion/exclusion
 and requested/resolved-support diagnostics, compatibility/combination policies,
 explicit complete settings and fixture/live acceptance remain pending. Runtime
 deployment and live drawing changes are outside this step.
+
+## Diagnostic part classification (2026-10-02)
+
+`PartRoleClassifier.ClassifyLayer` is static and extends the existing classifier independently of
+its structural inclusion/exclusion policy. The frozen `PartRoleInView` now retains
+the original part name alongside prefix, profile and material. Classification reads
+these captured values only; it does not read Tekla or change geometry selection.
+
+The typed `ViewDimensionContext.Query` accepts optional `layerRules`. The MCP/bridge
+JSON parameter is deferred to a separate commit. No built-in prefix table or default
+class is inferred. A `PartLayerRule` contains an explicit ID, class name, integer
+priority, AND conditions on `Name`, `Prefix`, `Profile`, `Material`, and arbitrary JSON `Data`.
+Each typed `PartLayerCondition` carries `Property`, `MatchKind` and `Value`.
+`Equals` (the default), `Contains` and `StartsWith` all ignore case.
+`Contains` is a literal substring search without word boundaries: `Name Contains "B"`
+matches both `BEAM` and `BATTEN`. Use a sufficiently specific value or additional
+AND conditions when that coverage is unintended. No arbitrary minimum length is imposed.
+The original
+property/value dictionary constructor remains shorthand for `Equals` conditions.
+Multiple conditions may target the same property; all must match. Class names and rule IDs are exact
+identifiers. Larger priority wins. Equal-priority matching rules assigning different
+classes produce `Conflict`; agreeing rules retain all winning rule IDs. Missing
+properties produce `Unknown` if they could affect the winning class; a known mismatch
+disproves an AND rule even if another condition's value is absent. Reasons name the
+unavailable properties and potentially deciding rules. Invalid/duplicate rule IDs
+are refused in diagnostic projection. Rule conditions and JSON data are copied;
+additional data is preserved without interpretation. No interface is introduced yet.
+
+Example for direct typed callers (not an available MCP argument):
+
+```csharp
+var rule = new PartLayerRule("batten-by-name", "batten", new[] {
+    new PartLayerCondition(PartLayerProperty.Name, "BATTEN", PartLayerMatchKind.StartsWith)
+});
+var answer = context.Query("chainDetails", ruleSet: "panel", layerRules: new[] { rule });
+```
+
+Only panel `chainDetails` with a non-empty `layerRules` list adds this diagnostic projection.
+Absent or empty rules skip classification and omit all three additional blocks,
+preserving the compact plan. The plan returns one
+`partClassification` table with policy `part-layer-diagnostics-v2`, explicit rules,
+raw part attributes, class/status/reason, matched/winning/unresolved rule IDs and the
+existing structural inclusion reason. `proposalPointIds` links each proposal's ordered
+point IDs to `pointPartBindings`; bindings reference all source-part model IDs,
+report absent/unidentified part owners and distinguish non-part source kinds.
+Coordinates, segments and full source evidence are not repeated. These IDs remain
+snapshot-local. Classification failures use the existing `compositionPlan.error`
+isolation; compact `chain`, steel diagnostics, legacy preview and composition
+decisions retain their behavior. Classification is recalculated from explicit Query
+settings; it is not stored as mutable context state or incorporated in proposal IDs.
+
+Synthetic tests cover comparison kinds, suffixes, captured material, conditions, explicit precedence, conflicts, unavailable values,
+immutable JSON data, source ownership and deterministic projection. Integration tests
+verify exact legacy preview/decision parity, omitted tables without rules and diagnostic failure isolation.
+This completes diagnostic classification only: candidate selection by class,
+per-candidate inclusion/exclusion explanations, support resolution, compatibility and
+combination remain pending. No live drawing acceptance or deployment is claimed.
 
 ## Foundation and boundaries
 

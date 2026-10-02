@@ -50,19 +50,31 @@ internal sealed class DimensionCompositionPlan
         ViewIssues = Array.AsReadOnly(viewIssues);
     }
 
-    public object Project() => new {
-        policyVersion = PolicyVersion,
-        policy = "preserve-proposals",
-        scope = "view",
-        contextId = OriginalProposals.FirstOrDefault()?.Proposal?.ContextId,
-        viewId = OriginalProposals.FirstOrDefault()?.Proposal?.ViewId,
-        viewIssues = ViewIssues.Select(issue => issue.Project()).ToArray(),
-        proposals = OriginalProposals.Select(p => new {
-            proposalId = p.Proposal!.ProposalId, previewKey = p.Proposal.PreviewKey,
-            purpose = p.Proposal.Purpose.ToString(), reference = p.Proposal.Reference.ToString(),
-            referenceSupport = p.Proposal.ReferenceSupport.ToString()
-        }).ToArray(),
-        decisions = Decisions.Select(d => new { proposalId = d.ProposalId,
-            decision = d.Kind.ToString(), reason = d.Reason, issues = d.Issues.Select(issue => issue.Project()).ToArray() }).ToArray()
-    };
+    public object Project(PartLayerSnapshot? layers = null)
+    {
+        var result = new Dictionary<string, object?> {
+            ["policyVersion"] = PolicyVersion,
+            ["policy"] = "preserve-proposals",
+            ["scope"] = "view",
+            ["contextId"] = OriginalProposals.FirstOrDefault()?.Proposal?.ContextId,
+            ["viewId"] = OriginalProposals.FirstOrDefault()?.Proposal?.ViewId,
+            ["viewIssues"] = ViewIssues.Select(issue => issue.Project()).ToArray(),
+            ["proposals"] = OriginalProposals.Select(p => new {
+                proposalId = p.Proposal!.ProposalId, previewKey = p.Proposal.PreviewKey,
+                purpose = p.Proposal.Purpose.ToString(), reference = p.Proposal.Reference.ToString(),
+                referenceSupport = p.Proposal.ReferenceSupport.ToString()
+            }).ToArray(),
+            ["decisions"] = Decisions.Select(d => new { proposalId = d.ProposalId,
+                decision = d.Kind.ToString(), reason = d.Reason, issues = d.Issues.Select(issue => issue.Project()).ToArray() }).ToArray()
+        };
+        if (layers != null)
+        {
+            result["partClassification"] = layers.Project();
+            result["pointPartBindings"] = layers.BindPoints(OriginalProposals.SelectMany(proposal => proposal.Points));
+            result["proposalPointIds"] = OriginalProposals.Select(proposal => new {
+                proposalId = proposal.Proposal!.ProposalId, pointIds = proposal.Points.Select(point => point.Id).ToArray()
+            }).ToArray();
+        }
+        return result;
+    }
 }

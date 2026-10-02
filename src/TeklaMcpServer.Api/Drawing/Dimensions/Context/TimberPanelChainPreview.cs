@@ -32,9 +32,9 @@ internal static class TimberPanelChainPreview
         public DimensionCompositionPlan CompositionPlan => _compositionPlan.Value;
 
         // Only detailed diagnostics access the plan. Failures here cannot affect legacy rows.
-        public object ProjectCompositionPlan()
+        public object ProjectCompositionPlan(Func<DimensionCompositionPlan, object>? project = null)
         {
-            try { return CompositionPlan.Project(); }
+            try { return project == null ? CompositionPlan.Project() : project(CompositionPlan); }
             catch (Exception ex) { return new { error = ex.Message }; }
         }
         public IEnumerator<PreviewRow> GetEnumerator() => ((IEnumerable<PreviewRow>)Rows).GetEnumerator();

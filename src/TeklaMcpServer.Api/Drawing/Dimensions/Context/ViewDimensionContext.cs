@@ -17,6 +17,7 @@ public sealed class ViewDimensionContext
     private readonly GeometryGroup _group;
     private readonly bool _complete;
     private readonly JsonElement _parts;
+    private readonly IReadOnlyList<PartRoleInView> _partAttributes;
     private readonly JsonElement _diagnostics;
     private readonly JsonElement _source;
     private readonly JsonElement _metadata;
@@ -70,10 +71,11 @@ public sealed class ViewDimensionContext
         _source = Freeze(source);
         _metadata = Freeze(metadata);
         _exclusions = exclusions.Select(x => x.Id).ToArray();
-        _parts = Freeze(outline.Included.Concat(outline.Excluded).Concat(outline.Unclassified)
-            .GroupBy(p => p.ModelId).Select(g => g.First())
+        _partAttributes = Array.AsReadOnly(outline.Included.Concat(outline.Excluded).Concat(outline.Unclassified)
+            .GroupBy(p => p.ModelId).Select(g => g.First()).ToArray());
+        _parts = Freeze(_partAttributes
             .Select(p => new { modelId = p.ModelId, partPos = p.PartPos, partPrefix = p.PartPrefix,
-                profile = p.Profile, material = p.Material,
+                name = p.Name, profile = p.Profile, material = p.Material,
                 role = p.Role.Role.ToString(), classified = p.Role.IsClassified, ruleId = p.Role.RuleId, reason = p.Role.Reason,
                 isMainPart = p.IsMainPart, mainPartKnown = p.IsMainPartKnown }).ToArray());
         _diagnostics = Freeze(new {
@@ -118,7 +120,7 @@ public sealed class ViewDimensionContext
     /// <summary>One or several small questions; answers never round or mutate stored points.</summary>
     public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null,
-        string ruleSet = "steel", string contactPair = "")
+        string ruleSet = "steel", string contactPair = "", IReadOnlyList<PartLayerRule>? layerRules = null)
     {
         var requested = Split(questions);
         var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
@@ -181,7 +183,8 @@ public sealed class ViewDimensionContext
                 if (panelPlans.TiltedPartIds.Length > 0) diagnostics["tiltedPartIds"] = panelPlans.TiltedPartIds;
                 if (panelPlans.UnsupportedProposalCount > 0) diagnostics["unsupportedProposalCount"] = panelPlans.UnsupportedProposalCount;
                 result["chainDiagnostics"] = diagnostics;
-                if (detailed) result["compositionPlan"] = panelPlans.ProjectCompositionPlan();
+                if (detailed) result["compositionPlan"] = panelPlans.ProjectCompositionPlan(
+                    plan => plan.Project(layerRules is { Count: > 0 } ? new PartLayerSnapshot(_partAttributes, layerRules) : null));
             }
             SectionDimensionChainPreview? sectionPreview = null;
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(

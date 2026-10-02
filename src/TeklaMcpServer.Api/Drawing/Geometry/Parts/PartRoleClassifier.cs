@@ -18,7 +18,7 @@ namespace TeklaMcpServer.Api.Drawing;
 /// Properties only: no geometry, no view, no coordinates. That is what makes it a pure
 /// function, testable on a list of marks with nothing running.
 /// </summary>
-public sealed class PartRoleClassifier
+public sealed partial class PartRoleClassifier
 {
     /// <summary>
     /// The empty set. It is the default because exclusions belong to a model, not to this
