@@ -643,6 +643,57 @@ The chain start, side, row type, closure, and datum are recorded exactly like ot
 dimension chains. A bolt group does not get a special permission to infer start from
 the order returned by `BoltPositions`.
 
+### Agreed first step: separate bolt-chain preview (2026-10-02)
+
+Keep raw bolt groups and indexed positions in the view dimension context. Derive
+candidate facts, policy decisions, and chains in the dimension planner. Do not
+store preselected dimension chains as canonical bolt geometry.
+
+Start with three independently reviewable chain roles:
+
+- internal spacing: ordered bolt centers on each retained row/column;
+- edge distance: outermost bolt centers and the actual projected edge of the
+  explicitly identified related part;
+- group position: bolt/group reference points relative to a declared main-part
+  reference line or working point.
+
+Internal and edge-distance chains are scoped to a particular part. Preserve both
+that part identity and the source bolt-group/index identities; a bolt group can
+connect several parts, so ownership must not be guessed. Position chains can span
+beyond that part to their declared datum. Part scope describes the sources and
+meaning of the dimension, not a requirement to draw its dimension line inside
+the part contour.
+
+Tekla rule nuances to preserve:
+
+- centered bolt groups have a dedicated internal/position rule which overrides
+  the general secondary-part internal setting for centrally placed bolts;
+- skewed groups can be dimensioned in the part direction or bolt-group direction,
+  or omitted according to the explicit policy;
+- nearby model bolt groups can be combined into a dimension group: one model
+  group does not necessarily correspond to one dimension chain;
+- combining internal, edge, and position chains is a separate policy decision;
+  repeated-value notation (for example `3*60`) also has its own format/minimum
+  count settings and must not be confused with merging source groups;
+- Tekla's preferred dimension side selects a preferred front/side view; it does
+  not alone determine the placement side of our chain inside the selected view;
+- `Hole dimensions` handles cut-created holes, not bolt holes; Tekla directs bolt
+  holes to `Integrated dimensions`.
+
+Implementation sequence: preview the three roles separately, exposing direction,
+datum, related part, source positions, and kept/removed/blocked reasons. Validate
+this preview on real views before creating dimensions. Add cross-group/role
+combination only after the separate chains are verified and its policy is agreed.
+Extreme-bolt checks remain a separate optional role as described above. Selection
+and visibility evidence remain explicit; unknown occlusion must not be reported
+as verified visibility. This step does not reopen the deferred occlusion work.
+
+Official references inspected for this decision:
+
+- [Tekla 2025 integrated dimensioning properties](https://support.tekla.com/doc/tekla-structures/2025/dra_general_dimensioning_properties)
+- [Tekla 2025 dimension selection and combination](https://support.tekla.com/doc/tekla-structures/2025/dra_setting_which_dimensions_to_create)
+- [Hole dimensions and bolt holes](https://support.tekla.com/article/hole-dimensions-and-bolt-holes)
+
 ### 7. Verification requirements
 
 After creating a bolt dimension, read the drawing back and verify all of the following:
