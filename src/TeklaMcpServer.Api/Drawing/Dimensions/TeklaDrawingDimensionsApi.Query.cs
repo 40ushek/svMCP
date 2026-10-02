@@ -91,7 +91,14 @@ public sealed partial class TeklaDrawingDimensionsApi
     public GetDimensionsResult GetDimensions(int? viewId)
     {
         var snapshots = GetDimensionSnapshots(viewId);
-        var groups = DimensionGroupFactory.BuildGroups(snapshots);
+        // A plain read reports every dimension: reduction hid a created overall behind a chain
+        // with the same extent, so the batch read-back declared it merged.
+        var groups = DimensionGroupFactory.BuildGroups(snapshots, reductionPolicy: new DimensionReductionPolicy
+        {
+            EnableEquivalentSimpleReduction = false,
+            EnableCoverageReduction = false,
+            EnableRepresentativeSelection = false
+        });
         return BuildGetDimensionsResult(snapshots.Count, groups);
     }
 

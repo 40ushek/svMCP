@@ -24,6 +24,8 @@ public sealed partial class TeklaDrawingDimensionsApi
             double? observedDistance = null;
             double? initialDistance = null;
             DimensionRenderedLineResult? renderedLine = null;
+            long findMs = 0, correctionMs = 0, segmentsMs = 0, renderedMs = 0;
+            var total = System.Diagnostics.Stopwatch.StartNew();
             var state = DimensionWriteProtocol.Execute(
                 () => new StraightDimensionSetHandler()
                     .CreateDimensionSet(view, ToPointList(points), direction, distance, attributes)
@@ -31,21 +33,26 @@ public sealed partial class TeklaDrawingDimensionsApi
                 () => drawing.CommitChanges("(MCP) Verified dimension write"),
                 id =>
                 {
+                    var step = System.Diagnostics.Stopwatch.StartNew();
                     var read = FindDimensionSet(drawing, id);
                     if (read == null || !read.Select()) return "Replacement cannot be read back";
+                    findMs += step.ElapsedMilliseconds;
                     if (read.GetView()?.GetIdentifier().ID != viewId) return "Replacement is in a different view";
                     if (!DimensionWriteProtocol.Finite(read.Distance)) return "Replacement offset is not finite";
                     observedDistance = read.Distance;
                     initialDistance ??= observedDistance;
                     if (Math.Abs(read.Distance - distance) > 1e-6)
                     {
+                        step.Restart();
                         read.Distance = distance;
                         if (!read.Modify()) return "Replacement offset Modify() returned false";
                         if (!drawing.CommitChanges("(MCP) Dimension offset correction"))
                             return "Replacement offset CommitChanges() returned false";
                         read = FindDimensionSet(drawing, id);
                         if (read == null || !read.Select()) return "Corrected replacement cannot be read back";
+                        correctionMs += step.ElapsedMilliseconds;
                     }
+                    step.Restart();
                     if (!DimensionWriteProtocol.Finite(read.Distance) || Math.Abs(read.Distance - distance) > 1e-6)
                         return "Replacement offset differs from request";
                     observedDistance = read.Distance;
@@ -73,12 +80,15 @@ public sealed partial class TeklaDrawingDimensionsApi
                                 actual.Add((p.X, p.Y));
                         }
                     }
+                    segmentsMs += step.ElapsedMilliseconds;
                     var pointError = DimensionWriteVerification.CheckPoints(points, actual, segmentCount);
                     if (pointError != null) return pointError;
                     var datumError = expectedRowType == DimensionSetBaseAttributes.DimensionTypes.Relative
                         ? null : DimensionWriteVerification.CheckDatum(points[0], points[1], links);
                     if (datumError != null) return datumError;
+                    step.Restart();
                     renderedLine = DimensionRenderedLineVerification.Read(view, read, points, direction, distance);
+                    renderedMs += step.ElapsedMilliseconds;
                     // An observed mismatch follows the existing compensation path, before
                     // deletion of an original. Unavailable observation keeps its own status.
                     return renderedLine.Status == "mismatch" ? renderedLine.Reason : null;
@@ -90,6 +100,10 @@ public sealed partial class TeklaDrawingDimensionsApi
             state.ObservedDistance = observedDistance;
             state.InitialDistance = initialDistance;
             state.RenderedLine = renderedLine;
+            Diagnostics.PerfTrace.Write("api-dimensions", "verified_write", total.ElapsedMilliseconds,
+                $"viewId={viewId} dimensionId={state.NewDimensionId} stage={state.Stage} " +
+                string.Join(" ", state.StageMs.Select(kv => $"{kv.Key}Ms={kv.Value}")) +
+                $" findMs={findMs} offsetCorrectionMs={correctionMs} segmentsMs={segmentsMs} renderedLineMs={renderedMs}");
             return state;
         }
         finally { DrawingEnumeratorBase.AutoFetch = previousAutoFetch; }

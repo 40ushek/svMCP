@@ -24,6 +24,20 @@ internal static class DimensionRenderedLineVerification
     internal static DimensionRenderedLineResult Read(ViewBase viewBase, StraightDimensionSet set,
         double[] points, Vector direction, double distance)
     {
+        var total = System.Diagnostics.Stopwatch.StartNew();
+        long connectionMs = 0, presentationMs = 0;
+        var segmentCount = 0;
+        var result = ReadCore(viewBase, set, points, direction, distance, total,
+            ms => connectionMs = ms, ms => presentationMs = ms, () => segmentCount++);
+        Diagnostics.PerfTrace.Write("api-dimensions", "rendered_line", total.ElapsedMilliseconds,
+            $"status={result.Status} connectionMs={connectionMs} presentationMs={presentationMs} segments={segmentCount} reason={result.Reason}");
+        return result;
+    }
+
+    private static DimensionRenderedLineResult ReadCore(ViewBase viewBase, StraightDimensionSet set,
+        double[] points, Vector direction, double distance, System.Diagnostics.Stopwatch total,
+        Action<long> connectionDone, Action<long> presentationDone, Action segmentSeen)
+    {
         try
         {
             if (viewBase is not Tekla.Structures.Drawing.View view)
@@ -41,21 +55,53 @@ internal static class DimensionRenderedLineVerification
             if (!DimensionProjectionHelper.TryBaseProjection(xy, up, out var baseProjection))
                 return Unknown("Only axis-aligned dimensions with an unambiguous base are supported");
             var expected = baseProjection + distance;
-            using var connection = new PresentationConnection();
+            var step = System.Diagnostics.Stopwatch.StartNew();
+            PresentationConnection connection;
+            try { connection = GetConnection(); }
+            finally { connectionDone(step.ElapsedMilliseconds); }
+            step.Restart();
             var observations = new List<double?>();
-            var segments = set.GetObjects();
-            while (segments.MoveNext())
+            try
             {
-                if (segments.Current is not StraightDimension segment) continue;
-                var presentation = connection.Service.GetObjectPresentation(segment.GetIdentifier().ID);
-                var lines = new List<(double X1, double Y1, double X2, double Y2)>();
-                Collect(presentation?.Primitives, scale, lines, 0);
-                observations.Add(IdentifyLine(lines, (segment.StartPoint.X, segment.StartPoint.Y),
-                    (segment.EndPoint.X, segment.EndPoint.Y), up));
+                var segments = set.GetObjects();
+                while (segments.MoveNext())
+                {
+                    if (segments.Current is not StraightDimension segment) continue;
+                    segmentSeen();
+                    var presentation = connection.Service.GetObjectPresentation(segment.GetIdentifier().ID);
+                    var lines = new List<(double X1, double Y1, double X2, double Y2)>();
+                    Collect(presentation?.Primitives, scale, lines, 0);
+                    observations.Add(IdentifyLine(lines, (segment.StartPoint.X, segment.StartPoint.Y),
+                        (segment.EndPoint.X, segment.EndPoint.Y), up));
+                }
             }
+            finally { presentationDone(step.ElapsedMilliseconds); }
             return Compare(expected, observations);
         }
-        catch (Exception ex) { return Unknown("Presentation read failed: " + ex.Message); }
+        catch (Exception ex)
+        {
+            ResetConnection();
+            return Unknown("Presentation read failed: " + ex.Message);
+        }
+    }
+
+    // Creating a connection costs seconds and the bridge process is persistent, so one is kept;
+    // any failure drops it and the next read connects again (for example after Tekla restarts).
+    private static readonly object ConnectionLock = new();
+    private static PresentationConnection? _connection;
+
+    private static PresentationConnection GetConnection()
+    {
+        lock (ConnectionLock) return _connection ??= new PresentationConnection();
+    }
+
+    private static void ResetConnection()
+    {
+        lock (ConnectionLock)
+        {
+            try { _connection?.Dispose(); } catch { }
+            _connection = null;
+        }
     }
 
     // Identify by orientation and measured span, never by proximity to the expected offset.

@@ -30,6 +30,15 @@ public sealed class DimensionWriteState
     public DimensionRenderedLineResult? RenderedLine { get; set; }
     public string Stage { get; set; } = "notStarted";
     public string? Error { get; set; }
+    /// <summary>Milliseconds spent per stage (repeated stages are summed), for diagnostics only.</summary>
+    public System.Collections.Generic.Dictionary<string, long> StageMs { get; } = new();
+
+    internal T Timed<T>(string stage, Func<T> action)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        try { return action(); }
+        finally { StageMs[stage] = (StageMs.TryGetValue(stage, out var ms) ? ms : 0) + timer.ElapsedMilliseconds; }
+    }
 }
 
 internal static class DimensionWriteProtocol
@@ -43,32 +52,32 @@ internal static class DimensionWriteProtocol
         try
         {
             state.Stage = "creating";
-            state.NewDimensionId = create();
+            state.NewDimensionId = state.Timed("create", create);
             if (state.NewDimensionId <= 0)
                 throw new InvalidOperationException("CreateDimensionSet returned no usable ID");
             state.Stage = "committingReplacement";
-            if (!commit()) throw new InvalidOperationException("Replacement CommitChanges() returned false");
+            if (!state.Timed("commit", commit)) throw new InvalidOperationException("Replacement CommitChanges() returned false");
             state.Stage = "verifyingReplacement";
-            var error = verify(state.NewDimensionId);
+            var error = state.Timed("verify", () => verify(state.NewDimensionId));
             if (error != null) throw new InvalidOperationException(error);
             state.Verified = true;
             if (deleteOriginal != null)
             {
                 state.Stage = "deletingOriginal";
                 state.OriginalDeleteAttempted = true;
-                state.OriginalDeleteAccepted = deleteOriginal();
+                state.OriginalDeleteAccepted = state.Timed("deleteOriginal", deleteOriginal);
                 if (!state.OriginalDeleteAccepted)
                     throw new InvalidOperationException("Original Delete() returned false; inspect both IDs");
                 state.Verified = false;
                 state.Stage = "committingDeletion";
-                if (!commit()) throw new InvalidOperationException("Deletion CommitChanges() returned false");
+                if (!state.Timed("commit", commit)) throw new InvalidOperationException("Deletion CommitChanges() returned false");
                 state.Stage = "verifyingDeletion";
-                if (originalIsAbsent == null || !originalIsAbsent())
+                if (originalIsAbsent == null || !state.Timed("confirmDeletion", originalIsAbsent))
                     throw new InvalidOperationException("Original deletion could not be confirmed");
                 state.OriginalDeletionVerified = true;
                 // Deletion/commit can reflow neighbours, including the replacement.
                 state.Verified = false;
-                error = verify(state.NewDimensionId);
+                error = state.Timed("verify", () => verify(state.NewDimensionId));
                 if (error != null) throw new InvalidOperationException(error);
                 state.Verified = true;
             }
