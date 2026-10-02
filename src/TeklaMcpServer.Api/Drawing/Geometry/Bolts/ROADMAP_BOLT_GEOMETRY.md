@@ -699,6 +699,16 @@ Automated coverage includes rectangular/unequal spacing, duplicate sources,
 non-transitive tolerance, skewed/staggered/incomplete/depth-spanning patterns,
 restriction failures, shared part scope and immutable context reuse.
 
+Second source increment: `groups[].edgeChains` now proposes min/max distances
+from row/column extremes to the captured projected outer contour of each included
+related part. Single-center rows are supported. The context freezes the existing
+per-part contours; no additional bolt/solid reader is introduced. Every proposal
+retains part ID, original bolt indices, projected edge point and contour provenance.
+Concave boundaries and chamfers use axis intersections, not a bbox/hull. Missing
+or ambiguous contours, centers outside them, vertex-aligned rays and restriction
+failures block the proposal with a reason. Part/edge policy, depth-clipped section
+verification, placement and group-position chains remain open; `writeReady=false`.
+
 Official references inspected for this decision:
 
 - [Tekla 2025 integrated dimensioning properties](https://support.tekla.com/doc/tekla-structures/2025/dra_general_dimensioning_properties)

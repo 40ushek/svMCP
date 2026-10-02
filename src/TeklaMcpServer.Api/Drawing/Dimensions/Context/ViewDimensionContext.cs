@@ -30,6 +30,7 @@ public sealed class ViewDimensionContext
     private readonly int[] _mainPartUnresolvedIds;
     private readonly int[] _includedModelIds;
     private readonly JsonElement _bolts;
+    private readonly JsonElement _partContours;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
@@ -50,6 +51,7 @@ public sealed class ViewDimensionContext
         ViewBoltGeometrySnapshot? bolts = null)
     {
         ViewId = viewId;
+        _partContours = Freeze(outline.Outline.PartNodes);
         Scale = scale;
         _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,
             visibilityVerified = false, error = "Bolt geometry was not captured" });
@@ -143,7 +145,8 @@ public sealed class ViewDimensionContext
         if (Wants("parts")) result["parts"] = _parts;
         if (Wants("bolts")) result["bolts"] = _bolts;
         if (requested.Contains("boltchains"))
-            result["boltChainPreview"] = BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected);
+            result["boltChainPreview"] = BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected,
+                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()));
         if (Wants("points") || requested.Contains("dimensionpoints") || wantsChain)
         {
             try { EnsureChains(); }

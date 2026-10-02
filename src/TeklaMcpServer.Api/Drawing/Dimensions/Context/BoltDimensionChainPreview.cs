@@ -2,20 +2,21 @@ using System.Text.Json;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-/// <summary>Pure, provisional internal-spacing proposals from the frozen bolt snapshot.</summary>
+/// <summary>Pure, provisional internal-spacing and part-edge proposals from the frozen bolt snapshot.</summary>
 internal static class BoltDimensionChainPreview
 {
     // Model/view units, independent of view scale and display rounding.
     internal const double CoordinateTolerance = 0.01;
 
     internal static object Build(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
-        IReadOnlyCollection<DimensionChainSide> sides)
+        IReadOnlyCollection<DimensionChainSide> sides,
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null)
     {
         var groups = snapshot.TryGetProperty("boltGroups", out var rows)
-            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides)).ToArray()
+            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours)).ToArray()
             : Array.Empty<object>();
         return new {
-            scope = "internal-spacing-proposals", coordinateSystem = "display",
+            scope = "bolt-chain-proposals", coordinateSystem = "display",
             coordinateTolerance = CoordinateTolerance,
             geometryReadComplete = Flag(snapshot, "isComplete"),
             selectionComplete = Flag(snapshot, "selectionComplete"),
@@ -23,7 +24,7 @@ internal static class BoltDimensionChainPreview
             writeReady = false,
             status = "provisional: geometry proposals, not plant-policy selections or write references",
             pending = new[] { "part scope and internal-dimension policy", "bolt-plane orientation and selection verification",
-                "placement side and offset", "edge-distance chains", "group-position datum and chains" },
+                "placement side and offset", "edge-dimension policy", "group-position datum and chains" },
             unread = snapshot.TryGetProperty("unread", out var unread) ? unread : default(JsonElement?),
             error = snapshot.TryGetProperty("error", out var error) ? error : default(JsonElement?),
             groups
@@ -34,7 +35,8 @@ internal static class BoltDimensionChainPreview
         value.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.True;
 
     private static object BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
-        IReadOnlyCollection<DimensionChainSide> sides)
+        IReadOnlyCollection<DimensionChainSide> sides,
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null)
     {
         var geometry = row.GetProperty("geometry");
         var group = JsonSerializer.Deserialize<BoltGroupGeometry>(geometry.GetRawText(),
@@ -49,6 +51,7 @@ internal static class BoltDimensionChainPreview
                 ? values.First().GetProperty("centerState").GetString() : "Unresolved");
         var reason = PatternRefusal(group);
         var chains = new List<object>();
+        var edgeChains = new List<object>();
         var candidateChainCount = 0;
         var decisions = new List<object>();
         if (reason != null)
@@ -84,9 +87,15 @@ internal static class BoltDimensionChainPreview
                     }
                 }
                 if (sides.Any(side => side is DimensionChainSide.Top or DimensionChainSide.Bottom))
+                {
                     candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
+                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours);
+                }
                 if (sides.Any(side => side is DimensionChainSide.Left or DimensionChainSide.Right))
+                {
                     candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers);
+                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours);
+                }
             }
         }
         if (reason == null && chains.Count > 0 && candidateChainCount == 0)
@@ -99,7 +108,9 @@ internal static class BoltDimensionChainPreview
             status = reason != null || (chains.Count > 0 && candidateChainCount == 0)
                 ? "Blocked" : chains.Count == 0 ? "NoInternalSpacing" : "Candidate",
             candidateChainCount, blockedChainCount = chains.Count - candidateChainCount,
-            reason, points = decisions, chains
+            reason, points = decisions, chains, edgeChains,
+            edgeScopeStatus = partCandidates.Length == 0 ? "Blocked: no included related part"
+                : "separate proposals per related part; choose part and edge policy before creation"
         };
     }
 
@@ -162,6 +173,26 @@ internal static class BoltDimensionChainPreview
             });
         }
         return candidates;
+    }
+
+    private static void AddEdgeChains(List<object> chains, IEnumerable<IGrouping<int, Cell>> rows,
+        int axis, int groupId, IReadOnlyDictionary<int, string?> centers, int[] partIds,
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours)
+    {
+        foreach (var row in rows.OrderBy(row => row.Key))
+        {
+            var points = row.OrderBy(cell => cell.Point.Point[axis]).ToArray();
+            var rowInside = points.SelectMany(cell => cell.Sources).All(p =>
+                centers.TryGetValue(p.Index, out var state) && state == "Inside");
+            foreach (var partId in partIds)
+            {
+                IReadOnlyList<OutlineTreeNodeResult>? contours = null;
+                partContours?.TryGetValue(partId, out contours);
+                var rowId = $"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}";
+                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[0].Sources, axis, -1, contours, rowInside));
+                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[points.Length - 1].Sources, axis, 1, contours, rowInside));
+            }
+        }
     }
 
     private sealed class Cell(int x, int y, BoltPointGeometry[] sources)

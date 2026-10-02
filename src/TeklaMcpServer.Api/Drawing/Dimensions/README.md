@@ -65,13 +65,33 @@ ownership is not inferred. Read completeness, selection and visibility are separ
 
 All proposals have `writeReady=false`: this is geometry review, not plant-policy
 selection. `proposalId` is not a structural batch preview key or a writable point
-ID. Bolt-plane orientation, final selection, part policy, placement, edge-distance
+ID. Bolt-plane orientation, final selection, part policy, placement, edge-dimension policy
 and group-position chains remain pending. The default structural preview and
 its creation path are unchanged; `all` does not include bolt proposals.
+
+The second increment adds `groups[].edgeChains`: separate min/max edge-distance
+proposals for each retained row/column and each included related part, including
+single-center rows. Every entry carries `partId`, original bolt indices, center,
+projected edge point, distance and contour provenance. No part ownership or edge
+policy is inferred when a group connects several parts.
+
+The context freezes the existing per-part projected outline; no extra Tekla read
+is made. Axis rays meet the nearest crossing of the containing outer contour.
+Concave boundaries and chamfers are preserved; holes are not used as outer edges.
+Missing/ambiguous contours, centers outside the contour, vertex-aligned rays and
+failed restriction evidence return `Blocked` with a reason. Full-solid projection
+is explicitly not verified as a depth-clipped section contour. These proposals
+remain read-only and are not batch preview references.
 
 Live read-only checks on M.81 views 6110, 1409 and 2814 produced 60 mm spacing
 proposals and a front-view row with six 453.33 mm spacings. The same row in 6110
 remained blocked by restriction evidence. Depth-spanning groups were refused.
+
+Live edge-preview checks on M.81 views 6110, 1409 and 2814: Section E (1409)
+returned part-specific proposals of 20, 30/30.001, 50 and 126 mm for groups
+10783887/10893930. Other proposals remained blocked by restriction or contour
+containment evidence. These are full-solid projected candidates, not verified
+section edges or created dimensions.
 
 ## Prepared-chain batch increment (2026-10-02, not deployed)
 
