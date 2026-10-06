@@ -76,6 +76,7 @@ public sealed class ViewDimensionContext
         _parts = Freeze(_partAttributes
             .Select(p => new { modelId = p.ModelId, partPos = p.PartPos, partPrefix = p.PartPrefix,
                 name = p.Name, profile = p.Profile, material = p.Material,
+                zone = p.Zone, zoneKnown = p.ZoneKnown,
                 role = p.Role.Role.ToString(), classified = p.Role.IsClassified, ruleId = p.Role.RuleId, reason = p.Role.Reason,
                 isMainPart = p.IsMainPart, mainPartKnown = p.IsMainPartKnown }).ToArray());
         _diagnostics = Freeze(new {

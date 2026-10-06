@@ -25,6 +25,20 @@ public sealed class DrawingPartInfo
     public string Profile     { get; set; } = string.Empty;
     public string Material    { get; set; } = string.Empty;
     public string Name        { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The plant's user-defined attribute `ZONE`, e.g. "0" for a frame layer or "2" for an
+    /// overlay layer on the same wall. Not a report property - read with GetUserProperty,
+    /// never GetReportProperty. The code gives no meaning to a value: which zone is the
+    /// frame and which is an overlay is the plant's own convention.
+    /// </summary>
+    public string Zone        { get; set; } = string.Empty;
+
+    /// <summary>
+    /// False when Tekla refused ZONE, or the model has no such UDA at all. An empty zone is
+    /// an answer; an unread one is not - the same distinction PartPrefixKnown draws.
+    /// </summary>
+    public bool ZoneKnown { get; set; } = true;
 }
 
 public sealed class GetDrawingPartsResult

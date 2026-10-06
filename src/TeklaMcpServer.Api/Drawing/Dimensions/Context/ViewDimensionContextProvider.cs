@@ -218,10 +218,15 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
             ? ObjectGuid(assembly.AssemblyIdentifier.ID) : null;
         var unresolved = identities.Where(p => p.Guid.Length == 0).Select(p => p.ModelId).ToArray();
         var drawingGuid = drawing.GetIdentifier().GUID;
+        var drawingZone = TeklaUserPropertyReader.ReadAsString(drawing, "ZONE");
         var source = new {
             drawingGuid = drawingGuid == Guid.Empty ? "" : drawingGuid.ToString(),
             drawingMark = drawing.Mark, drawingName = drawing.Name,
             drawingModified = drawing.ModificationDate.ToString("O", CultureInfo.InvariantCulture),
+            // The plant's UDA on the drawing itself (never a report property/Title3 text).
+            // A part whose own ZONE equals this one is this drawing's leading/measured
+            // subject; any other read ZONE is context (e.g. the frame beneath an overlay).
+            drawingZone = drawingZone.Value, drawingZoneKnown = drawingZone.Read,
             assemblyGuid, fromActiveSheetOnly = false,
             isComplete = drawingGuid != Guid.Empty && unresolved.Length == 0
                 && (drawing is not AssemblyDrawing || !string.IsNullOrEmpty(assemblyGuid)),

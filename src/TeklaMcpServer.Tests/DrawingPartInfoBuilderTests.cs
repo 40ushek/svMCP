@@ -108,4 +108,49 @@ public sealed class DrawingPartInfoBuilderTests
         Assert.Throws<ArgumentNullException>(() => DrawingPartInfoBuilder.Build(1, "Beam", null!, reader.Read));
         Assert.Throws<ArgumentNullException>(() => DrawingPartInfoBuilder.Build(1, "Beam", reader.Select, null!));
     }
+
+    [Fact]
+    public void ZoneIsAUserPropertyNotAReportProperty()
+    {
+        // ZONE must come from GetUserProperty, never GetReportProperty: a plant that sets
+        // the UDA but never maps a report property of the same name must still see it.
+        var reader = WithProperties(("PART_PREFIX", "B"));
+        var userProperties = new Dictionary<string, DrawingPartInfoBuilder.PropertyRead>
+        {
+            ["ZONE"] = new(true, "2")
+        };
+
+        var info = DrawingPartInfoBuilder.Build(5, "Beam", reader.Select, reader.Read,
+            property => userProperties.TryGetValue(property, out var value)
+                ? value
+                : new DrawingPartInfoBuilder.PropertyRead(true, string.Empty));
+
+        Assert.Equal("2", info.Zone);
+        Assert.True(info.ZoneKnown);
+    }
+
+    [Fact]
+    public void AnUnreadableZoneIsNotReportedAsAnEmptyOne()
+    {
+        var reader = WithProperties(("PART_PREFIX", "T"));
+
+        var info = DrawingPartInfoBuilder.Build(5, "Beam", reader.Select, reader.Read,
+            _ => new DrawingPartInfoBuilder.PropertyRead(false, string.Empty));
+
+        Assert.False(info.ZoneKnown);
+        Assert.Equal(string.Empty, info.Zone);
+    }
+
+    [Fact]
+    public void NoUserPropertyReaderAnswersZoneAsUnreadRatherThanGuessing()
+    {
+        // No model has a universal ZONE UDA by default; omitting the reader must fail
+        // closed the same way an unread prefix does, not silently say "no zone".
+        var reader = WithProperties(("PART_PREFIX", "T"));
+
+        var info = DrawingPartInfoBuilder.Build(5, "Beam", reader.Select, reader.Read);
+
+        Assert.False(info.ZoneKnown);
+        Assert.Equal(string.Empty, info.Zone);
+    }
 }

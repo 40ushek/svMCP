@@ -10,10 +10,10 @@ namespace TeklaMcpServer.Api.Drawing;
 /// 1. Leaves out object types that are not parts a dimension is planned from - bolt arrays, edge
 ///    chamfers, reference models and connections - but counts every hidden object by type, so the
 ///    omission is visible rather than silent. `includeTypes` names types to bring back.
-/// 2. Merges records that are identical in EVERY read field, `partPrefix` and `partPrefixKnown`
-///    included, into one entry listing all their model ids. Two parts with the same position and
-///    profile but a differently read prefix are never merged: an unread prefix must stay visible
-///    as unread.
+/// 2. Merges records that are identical in EVERY read field, `partPrefix`/`partPrefixKnown` and
+///    `zone`/`zoneKnown` included, into one entry listing all their model ids. Two parts with the
+///    same position and profile but a differently read prefix or zone are never merged: an unread
+///    field must stay visible as unread.
 ///
 /// The list is the whole drawing's objects, not those of one view; `scope` says so.
 /// `total` keeps its old meaning (objects before any filtering); the other counts are explicit.
@@ -38,9 +38,9 @@ public static class CompactDrawingParts
 
         var hidden = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var order = new List<(string Type, string PartPos, string PartPrefix, bool PrefixKnown,
-            string AssemblyPos, string Profile, string Material, string Name)>();
+            string AssemblyPos, string Profile, string Material, string Name, string Zone, bool ZoneKnown)>();
         var groups = new Dictionary<(string Type, string PartPos, string PartPrefix, bool PrefixKnown,
-            string AssemblyPos, string Profile, string Material, string Name), List<int>>();
+            string AssemblyPos, string Profile, string Material, string Name, string Zone, bool ZoneKnown), List<int>>();
 
         foreach (var part in parts)
         {
@@ -52,7 +52,7 @@ public static class CompactDrawingParts
             }
 
             var key = (part.Type, part.PartPos, part.PartPrefix, part.PartPrefixKnown,
-                part.AssemblyPos, part.Profile, part.Material, part.Name);
+                part.AssemblyPos, part.Profile, part.Material, part.Name, part.Zone, part.ZoneKnown);
             if (!groups.TryGetValue(key, out var ids))
             {
                 order.Add(key);
@@ -72,6 +72,8 @@ public static class CompactDrawingParts
             ["profile"] = key.Profile,
             ["material"] = key.Material,
             ["name"] = key.Name,
+            ["zone"] = key.Zone,
+            ["zoneKnown"] = key.ZoneKnown,
             ["count"] = groups[key].Count,
             ["modelIds"] = groups[key]
         }).ToList();

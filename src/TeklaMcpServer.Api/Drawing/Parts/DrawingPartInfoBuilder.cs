@@ -36,11 +36,18 @@ public static class DrawingPartInfoBuilder
     /// after a missed select answers blank, and a drawing full of blank prefixes reads
     /// exactly like a model whose parts have none.
     /// </summary>
+    /// <summary>
+    /// <paramref name="readUserProperty"/> is separate from <paramref name="read"/>: ZONE is
+    /// a user-defined attribute, read with GetUserProperty, not a report property, and the
+    /// two Tekla calls are not interchangeable. Omitting it (null) answers ZONE as unread -
+    /// the same fail-closed default as a model that has no such UDA at all.
+    /// </summary>
     public static DrawingPartInfo Build(
         int modelId,
         string type,
         Action select,
-        Func<string, PropertyRead> read)
+        Func<string, PropertyRead> read,
+        Func<string, PropertyRead>? readUserProperty = null)
     {
         if (select == null) throw new ArgumentNullException(nameof(select));
         if (read == null) throw new ArgumentNullException(nameof(read));
@@ -48,6 +55,7 @@ public static class DrawingPartInfoBuilder
         select();
 
         var prefix = read("PART_PREFIX");
+        var zone = readUserProperty?.Invoke("ZONE") ?? new PropertyRead(false, string.Empty);
 
         return new DrawingPartInfo
         {
@@ -59,7 +67,9 @@ public static class DrawingPartInfoBuilder
             AssemblyPos = read("ASSEMBLY_POS").Value,
             Profile = read("PROFILE").Value,
             Material = read("MATERIAL").Value,
-            Name = read("NAME").Value
+            Name = read("NAME").Value,
+            Zone = zone.Value,
+            ZoneKnown = zone.Read
         };
     }
 }

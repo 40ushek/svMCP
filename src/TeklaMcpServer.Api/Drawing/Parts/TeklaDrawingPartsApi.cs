@@ -55,5 +55,6 @@ public sealed class TeklaDrawingPartsApi : IDrawingPartsApi
                 var value = string.Empty;
                 var read = mo.GetReportProperty(property, ref value);
                 return new DrawingPartInfoBuilder.PropertyRead(read, value);
-            });
+            },
+            property => TeklaUserPropertyReader.ReadAsString(mo, property));
 }

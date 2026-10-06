@@ -13,10 +13,11 @@ namespace TeklaMcpServer.Tests;
 public sealed class CompactDrawingPartsTests
 {
     private static DrawingPartInfo Part(int id, string type, string pos = "P/1", string prefix = "P",
-        bool prefixKnown = true, string profile = "BLE10*100") => new()
+        bool prefixKnown = true, string profile = "BLE10*100", string zone = "", bool zoneKnown = true) => new()
     {
         ModelId = id, Type = type, PartPos = pos, PartPrefix = prefix, PartPrefixKnown = prefixKnown,
-        AssemblyPos = "M/1", Profile = profile, Material = "S235JR", Name = "Rippe"
+        AssemblyPos = "M/1", Profile = profile, Material = "S235JR", Name = "Rippe",
+        Zone = zone, ZoneKnown = zoneKnown
     };
 
     private static JsonElement Run(IReadOnlyList<DrawingPartInfo> parts, string? include = null) =>
@@ -48,6 +49,21 @@ public sealed class CompactDrawingPartsTests
         var wire = Run([Part(1, "Beam"), Part(2, "Beam", profile: "BLE20*100"), Part(3, "ContourPlate")]);
 
         Assert.Equal(3, wire.GetProperty("returnedGroups").GetInt32());
+    }
+
+    [Fact]
+    public void DifferentZonesKeepRecordsApartAndAnUnreadZoneIsNeverMergedWithAReadOne()
+    {
+        // A frame part (zone "0") and an overlay part (zone "2") must never merge just
+        // because every other property happens to match.
+        var wire = Run([Part(1, "Beam", zone: "0"), Part(2, "Beam", zone: "2"),
+            Part(3, "Beam", zone: "", zoneKnown: false)]);
+
+        var entries = wire.GetProperty("parts").EnumerateArray().ToList();
+        Assert.Equal(3, entries.Count);
+        Assert.Single(entries, e => !e.GetProperty("zoneKnown").GetBoolean());
+        Assert.Contains(entries, e => e.GetProperty("zone").GetString() == "0");
+        Assert.Contains(entries, e => e.GetProperty("zone").GetString() == "2");
     }
 
     [Fact]

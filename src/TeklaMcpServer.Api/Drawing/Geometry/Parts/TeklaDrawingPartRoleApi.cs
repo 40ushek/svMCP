@@ -26,7 +26,9 @@ public sealed class PartRoleInView
         bool isMainPartKnown = true,
         string? profile = null,
         string? material = null,
-        string? name = null)
+        string? name = null,
+        string? zone = null,
+        bool zoneKnown = true)
     {
         ModelId = modelId;
         PartPos = partPos;
@@ -37,6 +39,8 @@ public sealed class PartRoleInView
         Profile = profile;
         Material = material;
         Name = name;
+        Zone = zone;
+        ZoneKnown = zoneKnown;
     }
 
     public int ModelId { get; }
@@ -45,6 +49,16 @@ public sealed class PartRoleInView
     public string? Profile { get; }
     public string? Material { get; }
     public string? Name { get; }
+
+    /// <summary>
+    /// The plant's UDA `ZONE`, read with GetUserProperty (see TeklaUserPropertyReader) -
+    /// never a report property. Which zone number is a frame and which is an overlay is the
+    /// plant's convention; nothing here reads a meaning into the value.
+    /// </summary>
+    public string? Zone { get; }
+
+    /// <summary>False when Tekla refused ZONE. An empty zone is an answer; an unread one is not.</summary>
+    public bool ZoneKnown { get; }
     public PartRoleResult Role { get; }
 
     /// <summary>
@@ -179,6 +193,7 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
             // property nobody asked about is the blocker this redesign removed.
             var prefixRead = part.GetReportProperty("PART_PREFIX", ref partPrefix);
             var materialRead = part.GetReportProperty("MATERIAL", ref material);
+            var zone = TeklaUserPropertyReader.ReadAsString(part, "ZONE");
 
             var missing = new List<string>();
             if (_classifier.NeedsPrefix && !prefixRead) missing.Add("PART_PREFIX");
@@ -199,7 +214,8 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                     prefixRead ? NullIfEmpty(partPrefix) : null,
                     PartRoleResult.Unclassified,
                     mainPart,
-                    mainPartKnown, part.Profile?.ProfileString, materialRead ? material : null, part.Name));
+                    mainPartKnown, part.Profile?.ProfileString, materialRead ? material : null, part.Name,
+                    zone.Value, zone.Read));
                 continue;
             }
 
@@ -219,7 +235,8 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 mainPart,
                 mainPartKnown,
                 profile,
-                materialRead ? material : null, part.Name));
+                materialRead ? material : null, part.Name,
+                zone.Value, zone.Read));
         }
 
         return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds,
