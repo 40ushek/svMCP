@@ -1201,6 +1201,62 @@ write, protection for the first and last point of every chain (the first point i
 datum, see `SKILL.md`), and a rule for repeat runs (retention matches points, so a rerun
 without the same drops would not recognise the earlier chain). Not designed further now.
 
+**Zone=0 reference polygon for timber panels (discussion only, 2026-10-06):** idea is to
+read the ZONE user attribute now on `DrawingPartInfo`/`PartRoleInView`/`ViewDimensionContext`
+(frame=0, OSB=1, counter-batten=2, cladding=3 in the plants seen so far) and mix a reference
+polygon built from the frame's own parts into `TimberPanelPartLocationRule`'s existing
+`OutlineCoordinates` candidate mixing, the same mechanism the rule already uses for its own
+panel outline.
+
+ZONE is signed like a building's floors counted from ground level: 0 is the frame itself,
+positive zones are layers built outward from it (siding, cladding), negative zones are layers
+built inward (like underground floors). A set-valued `referenceZones` (see below) should be
+read with this in mind — `zone > 0` / `zone < 0` is as natural a selection as an explicit list,
+not just "zone equals 0". Each zone's polygon is effectively its own floor plan: a flat,
+per-zone projection of that layer's parts, the same way a building's floor plan is a
+horizontal slice at one elevation — which is exactly what `ProjectedOutlineBuilder` already
+produces per filtered part set, one zone at a time.
+
+**Why:** a higher-zone part (e.g. an OSB sheet, zone 1) is fastened to the frame (zone 0) and
+is not self-locating — like a ship's superstructure on its deck, its own outline only says
+where the plate itself ends, not whether that edge lines up with, overhangs, or falls short of
+the frame it is nailed to. The point of mixing in the frame's outline is not "draw the frame
+too" but to put a frame coordinate next to the plate's own coordinate on the same chain side,
+so the dimension shows the installer the actual offset/overlap between plate edge and frame
+edge — the number someone on site would otherwise have to measure by hand. The dependency is
+one-directional: the frame (zone 0) is the datum the plate (zone 1) is fastened to and measured
+against, never the reverse. Open points, none implemented:
+- the reference zone must be a caller-supplied collection (e.g. `referenceZones`), not a
+  literal "0" in the rule, matching the no-plant-conventions-in-code rule elsewhere
+  (`PartExclusionRule`, `PartLayerRule`); a union of several zones is a plausible later need
+  but not required now
+- "Zone=0" alone is not the frame geometry: insulation/sealant parts can carry Zone=0 too and
+  must still drop out through the same `excludePrefixes`/`excludeMaterials` the panel itself
+  uses, not just a zone match
+- the zone-filtered ID source should be `_partAttributes` (all depth-selected parts: Included +
+  Excluded + Unclassified), not `outline.Included`, since the frame is typically excluded from
+  the panel's own outline by the very filter that isolates the panel
+- avoid reading any part's solid twice: one `GetAssemblyOutline` call over the union of the
+  panel's IDs and the zone-filtered IDs reads each unique solid once; the panel outline and the
+  zone-reference outline are then two separate, Tekla-free calls to
+  `ProjectedOutlineBuilder.BuildAssembly` over disjoint subsets of the same already-read
+  `PartOutlines`/`PartNodes`
+- side-filtering of the zone polygon's vertices (`OutlineCoordinates`'s `panel.MinX/MaxX` cut)
+  must use the current panel's own bounds, not a global cut, so a neighbouring panel's frame
+  vertices are never pulled in
+- a reference-zone point must not be tagged with the frame part's `modelId` as an `Owner`:
+  `Owners` feeds `missing` directly, and a frame part is not one of this panel's members.
+  ReferenceZone candidates therefore have no owners. `CandidateKind` is implemented in
+  `TimberPanelPartLocationRule`; it is retained on each selected point and exposed in the preview.
+  When candidates at one coordinate coalesce, the point keeps every contributing kind; there is
+  no precedence between them. `located`/`dropped` use `AccountedPartIds`, which reads the chosen
+  `DimensionPoint`'s `Parents`, limits IDs to the panel's included member IDs, and skips a point
+  sourced only from ReferenceZone. Thus a coincident panel candidate still accounts for its own
+  panel IDs, while the frame ID is never reported as a panel member. The polygon and producer for
+  ReferenceZone candidates remain future work. The enum currently has `Member`, `PanelOutline`,
+  and `ReferenceZone`, and can be extended for another point source if a concrete need appears.
+  This change stays inside `TimberPanelPartLocationRule`; bolt chains build points through an
+  unrelated mechanism and remain out of scope unless a concrete need to unify them appears.
 Automated gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
 invalid `ruleSet`/`chainView` writes nothing; references and explicit `pointIds`
 produce identical dimensions for the same chain; a repeated batch retains a referenced

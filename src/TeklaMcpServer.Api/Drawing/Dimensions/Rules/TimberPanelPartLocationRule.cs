@@ -12,6 +12,13 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     private const double TouchTolerance = 1.0;
     private const double ContactPositionTolerance = 0.001;
 
+    private enum CandidateKind
+    {
+        Member,
+        PanelOutline,
+        ReferenceZone
+    }
+
     private sealed class Member(int id, double minX, double maxX, double minY, double maxY, bool vertical, bool tilted)
     {
         public int Id { get; } = id;
@@ -35,16 +42,20 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         public int[] Ids => Members.Select(m => m.Id).ToArray();
     }
 
-    private sealed class Candidate(double coordinate, int[] owners, bool coordinateOnly = false)
+    private sealed class Candidate(double coordinate, int[] owners, CandidateKind kind = CandidateKind.Member,
+        bool matchByCoordinate = false)
     {
         public double Coordinate { get; } = coordinate;
         public int[] Owners { get; } = owners;
-        public bool CoordinateOnly { get; } = coordinateOnly;
+        public CandidateKind Kind { get; } = kind;
+        public bool MatchByCoordinate { get; } = matchByCoordinate;
     }
 
-    private sealed class PickedPoint(DimensionPoint[] points, int[] locatedIds, int[] droppedIds, int[] missingIds)
+    private sealed class PickedPoint(DimensionPoint[] points, CandidateKind[][] candidateKinds,
+        int[] locatedIds, int[] droppedIds, int[] missingIds)
     {
         public DimensionPoint[] Points { get; } = points;
+        public CandidateKind[][] CandidateKinds { get; } = candidateKinds;
         public int[] LocatedIds { get; } = locatedIds;
         public int[] DroppedIds { get; } = droppedIds;
         public int[] MissingIds { get; } = missingIds;
@@ -59,6 +70,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var group = input.Group;
         var panel = group.Extent
             ?? throw new InvalidOperationException("Timber panel location requires a panel outline.");
+        var panelPartIds = new HashSet<int>(input.IncludedIds);
         var members = ReadMembers(group, input.IncludedIds);
         var vertical = members.Where(m => m.Vertical && !m.Tilted).ToArray();
         var horizontal = members.Where(m => !m.Vertical && !m.Tilted).ToArray();
@@ -76,10 +88,10 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var outline = OutlineVertices(group);
         var minimumSegment = settings.MinimumSegmentViewUnits;
 
-        var bottom = BuildX(catalog, DimensionChainSide.Bottom, groups, vertical, panel, outline, minimumSegment);
-        var top = BuildX(catalog, DimensionChainSide.Top, groups, vertical, panel, outline, minimumSegment);
-        var left = BuildY(catalog, DimensionChainSide.Left, vertical, horizontal, groups, outline, minimumSegment);
-        var right = BuildY(catalog, DimensionChainSide.Right, vertical, horizontal, groups, outline, minimumSegment);
+        var bottom = BuildX(catalog, DimensionChainSide.Bottom, groups, vertical, panel, outline, panelPartIds, minimumSegment);
+        var top = BuildX(catalog, DimensionChainSide.Top, groups, vertical, panel, outline, panelPartIds, minimumSegment);
+        var left = BuildY(catalog, DimensionChainSide.Left, vertical, horizontal, groups, outline, panelPartIds, minimumSegment);
+        var right = BuildY(catalog, DimensionChainSide.Right, vertical, horizontal, groups, outline, panelPartIds, minimumSegment);
         // Only exact duplicates are suppressed. IW1.1's accepted X chain is on Bottom;
         // a contained Bottom chain such as IW1.3 remains alongside the longer Top chain.
         var sameHorizontalPositions = CoordinatesEqual(top.Coordinates(true), bottom.Coordinates(true));
@@ -124,6 +136,8 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var coordinates = chain.Coordinates(alongX);
         var evidence = new Dictionary<string, object> {
             ["pointPartIds"] = chain.Points.Select(PartIds).ToArray(),
+            ["candidateKinds"] = chain.CandidateKinds
+                .Select(kinds => kinds.Select(kind => kind.ToString()).ToArray()).ToArray(),
             ["pointRoles"] = chain.Points.Select((_, index) =>
                 index == 0 || index == chain.Points.Length - 1 ? "extreme" : "member-face").ToArray(),
             ["droppedShortPartIds"] = chain.DroppedIds,
@@ -137,7 +151,8 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     }
 
     private static PickedPoint BuildX(DimensionPointCatalog catalog, DimensionChainSide side,
-        MemberGroup[] groups, Member[] vertical, GeometryGroupExtent panel, (double X, double Y)[] outline, double minimumSegment)
+        MemberGroup[] groups, Member[] vertical, GeometryGroupExtent panel, (double X, double Y)[] outline,
+        HashSet<int> panelPartIds, double minimumSegment)
     {
         var ordered = groups.OrderBy(g => g.MinX).ToArray();
         // The end groups are matched against the extremes of this side, not the panel's overall extent: a
@@ -146,25 +161,26 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var leftEnd = ordered.FirstOrDefault(g => Math.Abs(g.MinX - edgeMin) <= PositionTolerance);
         var rightEnd = ordered.LastOrDefault(g => Math.Abs(g.MaxX - edgeMax) <= PositionTolerance);
         if (leftEnd == null || rightEnd == null)
-            return BuildXFromColumns(catalog, side, vertical, panel, outline, minimumSegment);
+            return BuildXFromColumns(catalog, side, vertical, panel, outline, panelPartIds, minimumSegment);
 
         var candidates = new List<Candidate> { new(edgeMin, leftEnd.Ids) };
         Add(leftEnd.MaxX, leftEnd.Ids);
         foreach (var item in ordered.Where(g => g != leftEnd && g != rightEnd)) Add(item.MinX, item.Ids);
         if (rightEnd != leftEnd) Add(rightEnd.MinX, rightEnd.Ids);
         Add(edgeMax, rightEnd.Ids);
-        foreach (var x in OutlineCoordinates(outline, side, alongX: true)) Add(x, []);
-        return Pick(catalog, side, candidates, alongX: true, minimumSegment);
+        foreach (var x in OutlineCoordinates(outline, side, alongX: true))
+            Add(x, [], CandidateKind.PanelOutline, matchByCoordinate: true);
+        return Pick(catalog, side, candidates, alongX: true, panelPartIds, minimumSegment);
 
-        void Add(double x, int[] owners)
+        void Add(double x, int[] owners, CandidateKind kind = CandidateKind.Member, bool matchByCoordinate = false)
         {
-            if (candidates.Any(c => Math.Abs(c.Coordinate - x) <= PositionTolerance)) return;
-            candidates.Add(new Candidate(x, owners));
+            candidates.Add(new Candidate(x, owners, kind, matchByCoordinate));
         }
     }
 
     private static PickedPoint BuildXFromColumns(DimensionPointCatalog catalog, DimensionChainSide side,
-        Member[] vertical, GeometryGroupExtent panel, (double X, double Y)[] outline, double minimumSegment)
+        Member[] vertical, GeometryGroupExtent panel, (double X, double Y)[] outline,
+        HashSet<int> panelPartIds, double minimumSegment)
     {
         var columns = new List<List<Member>>();
         foreach (var member in vertical.OrderBy(m => m.MinX).ThenBy(m => m.MinY))
@@ -176,23 +192,27 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         }
 
         var (edgeMin, edgeMax) = OuterExtremes(catalog, side, alongX: true, panel.MinX, panel.MaxX);
-        var candidates = new List<Candidate> { new(edgeMin, [], coordinateOnly: true) };
+        var candidates = new List<Candidate> {
+            new(edgeMin, [], CandidateKind.PanelOutline, matchByCoordinate: true)
+        };
         foreach (var column in columns)
         {
             var x = column.Min(member => member.MinX);
             if (x <= edgeMin + PositionTolerance || x >= edgeMax - PositionTolerance) continue;
-            candidates.Add(new Candidate(x, column.Select(member => member.Id).Distinct().ToArray(), coordinateOnly: true));
+            candidates.Add(new Candidate(x, column.Select(member => member.Id).Distinct().ToArray(),
+                CandidateKind.Member, matchByCoordinate: true));
         }
-        candidates.Add(new Candidate(edgeMax, [], coordinateOnly: true));
+        candidates.Add(new Candidate(edgeMax, [], CandidateKind.PanelOutline, matchByCoordinate: true));
         candidates.AddRange(OutlineCoordinates(outline, side, alongX: true)
-            .Select(x => new Candidate(x, [], coordinateOnly: true)));
-        return Pick(catalog, side, candidates, alongX: true, minimumSegment);
+            .Select(x => new Candidate(x, [], CandidateKind.PanelOutline, matchByCoordinate: true)));
+        return Pick(catalog, side, candidates, alongX: true, panelPartIds, minimumSegment);
     }
 
     private static PickedPoint BuildY(DimensionPointCatalog catalog, DimensionChainSide side,
-        Member[] vertical, Member[] horizontal, MemberGroup[] groups, (double X, double Y)[] outline, double minimumSegment)
+        Member[] vertical, Member[] horizontal, MemberGroup[] groups, (double X, double Y)[] outline,
+        HashSet<int> panelPartIds, double minimumSegment)
     {
-        if (vertical.Length == 0 || groups.Length == 0) return new([], [], [], []);
+        if (vertical.Length == 0 || groups.Length == 0) return new([], [], [], [], []);
         var end = side == DimensionChainSide.Left ? groups.OrderBy(g => g.MinX).First() : groups.OrderByDescending(g => g.MaxX).First();
         var lowest = vertical.Min(m => m.MinY);
         var lowestHorizontal = horizontal.Length == 0 ? double.NaN : horizontal.Min(m => m.MinY);
@@ -216,15 +236,16 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         if (!horizontal.Any(m => Math.Abs(m.MinY - end.MaxY) <= PositionTolerance))
             candidates.Add(new Candidate(end.MaxY, end.Ids));
         candidates.AddRange(OutlineCoordinates(outline, side, alongX: false)
-            .Select(y => new Candidate(y, [], coordinateOnly: true)));
-        return Pick(catalog, side, candidates, alongX: false, minimumSegment);
+            .Select(y => new Candidate(y, [], CandidateKind.PanelOutline, matchByCoordinate: true)));
+        return Pick(catalog, side, candidates, alongX: false, panelPartIds, minimumSegment);
     }
 
     private static PickedPoint Pick(DimensionPointCatalog catalog, DimensionChainSide side,
-        IEnumerable<Candidate> candidates, bool alongX, double minimumSegment)
+        IEnumerable<Candidate> candidates, bool alongX, HashSet<int> panelPartIds, double minimumSegment)
     {
         var linePoints = catalog.LinePoints(side);
         var points = new List<DimensionPoint>();
+        var candidateKinds = new List<HashSet<CandidateKind>>();
         var owners = new List<int>();
         var missing = new List<int>();
         foreach (var candidate in candidates.OrderBy(c => c.Coordinate))
@@ -239,6 +260,8 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
                     && Owns(point, id))).ToArray();
                 missing.AddRange(candidate.Owners.Except(representedOwners));
                 owners.AddRange(representedOwners);
+                if (candidate.Owners.Length == 0 || representedOwners.Length > 0)
+                    candidateKinds[points.Count - 1].Add(candidate.Kind);
                 continue;
             }
             var point = FindPoint(linePoints, side, alongX, candidate);
@@ -248,7 +271,8 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
                 continue;
             }
             points.Add(point);
-            owners.AddRange(candidate.CoordinateOnly ? candidate.Owners : candidate.Owners.Where(id => Owns(point, id)));
+            candidateKinds.Add([candidate.Kind]);
+            owners.AddRange(candidate.MatchByCoordinate ? candidate.Owners : candidate.Owners.Where(id => Owns(point, id)));
         }
 
         var dropped = new List<int>();
@@ -256,12 +280,20 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         {
             var gap = Coordinate(points[i + 1], alongX) - Coordinate(points[i], alongX);
             if (gap >= minimumSegment) continue;
-            dropped.AddRange(PartIds(points[i]));
+            dropped.AddRange(AccountedPartIds(points[i], candidateKinds[i], panelPartIds));
             points.RemoveAt(i);
+            candidateKinds.RemoveAt(i);
         }
-        var located = points.SelectMany(PartIds).Concat(owners).Distinct().ToArray();
-        return new(points.ToArray(), located, dropped.Distinct().ToArray(), missing.Distinct().ToArray());
+        var located = points.SelectMany((point, index) => AccountedPartIds(point, candidateKinds[index], panelPartIds))
+            .Concat(owners).Distinct().ToArray();
+        var kinds = candidateKinds.Select(set => set.OrderBy(kind => kind).ToArray()).ToArray();
+        return new(points.ToArray(), kinds, located, dropped.Distinct().ToArray(), missing.Distinct().ToArray());
     }
+
+    private static int[] AccountedPartIds(DimensionPoint point, IEnumerable<CandidateKind> kinds,
+        HashSet<int> panelPartIds) => kinds.Any(kind => kind != CandidateKind.ReferenceZone)
+        ? PartIds(point).Where(panelPartIds.Contains).ToArray()
+        : Array.Empty<int>();
 
     // The point of a position that lies farthest toward the dimension line, so the witness line does not
     // run across the panel; the exact coordinate only breaks ties.
@@ -270,7 +302,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
         var owners = candidate.Owners.ToHashSet();
         var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
         return line.Where(p => Math.Abs(Coordinate(p, alongX) - candidate.Coordinate) <= PositionTolerance
-                && (candidate.CoordinateOnly || p.Parents.Any(parent => parent.ModelId.HasValue && owners.Contains(parent.ModelId.Value))))
+                && (candidate.MatchByCoordinate || p.Parents.Any(parent => parent.ModelId.HasValue && owners.Contains(parent.ModelId.Value))))
             .OrderByDescending(p => outer * (alongX ? p.Y : p.X))
             .ThenBy(p => Math.Abs(Coordinate(p, alongX) - candidate.Coordinate))
             .FirstOrDefault();
