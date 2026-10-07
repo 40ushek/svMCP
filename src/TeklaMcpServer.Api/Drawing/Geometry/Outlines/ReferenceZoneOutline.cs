@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using SolidContacts;
+using Clipper2Lib;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -38,17 +39,42 @@ public sealed class ReferenceZoneOutline
     {
         var wanted = Normalize(zones);
         var eligible = attributes.GroupBy(part => part.ModelId).Select(group => group.First())
-            .Where(part => !exclusions.Any(rule => rule.Matches(part.PartPrefix, part.Material))).ToArray();
+            .Where(part => !exclusions.Any(rule => (rule.Kind == PartExclusionKind.Prefix ? part.PartPrefixKnown : part.MaterialKnown)
+                && rule.Matches(part.PartPrefix, part.Material))).ToArray();
         // An unread zone cannot safely be ruled out of the caller's selection.
         var unknown = eligible.Where(part => !part.ZoneKnown).Select(part => part.ModelId).ToArray();
         if (unknown.Length > 0)
             return new(wanted, Array.Empty<int>(), error: "ZONE could not be read for model IDs: " + string.Join(",", unknown));
         var selected = eligible.Where(part => part.Zone != null && wanted.Contains(part.Zone, StringComparer.Ordinal)).ToArray();
-        var unclassified = selected.Where(part => !part.Role.IsClassified).Select(part => part.ModelId).ToArray();
+        var needsPrefix = exclusions.Any(rule => rule.Kind == PartExclusionKind.Prefix);
+        var needsMaterial = exclusions.Any(rule => rule.Kind == PartExclusionKind.Material);
+        // The panel role was classified using different rules. Verify the reference rules
+        // against the actual read flags instead of treating that role as evidence.
+        var unclassified = selected.Where(part => needsPrefix && !part.PartPrefixKnown
+            || needsMaterial && !part.MaterialKnown).Select(part => part.ModelId).ToArray();
         if (unclassified.Length > 0)
             return new(wanted, Array.Empty<int>(), error: "Reference exclusions could not be verified for model IDs: " + string.Join(",", unclassified));
         var ids = selected.Select(part => part.ModelId).Distinct().OrderBy(id => id).ToArray();
         return new(wanted, ids, error: ids.Length == 0 ? "No parts survived the reference-zone selection" : null);
+    }
+
+    // Keep complete outer components that overlap the measured panel. Cropping individual
+    // vertices to its rectangle would erase offsets whenever the frame surrounds the sheet.
+    internal static (double X, double Y)[] VerticesForPanel(GeometryGroup reference, GeometryGroupExtent panel)
+    {
+        const double tolerance = .5;
+        var window = new PathD { new(panel.MinX - tolerance, panel.MinY - tolerance),
+            new(panel.MaxX + tolerance, panel.MinY - tolerance),
+            new(panel.MaxX + tolerance, panel.MaxY + tolerance),
+            new(panel.MinX - tolerance, panel.MaxY + tolerance) };
+        return reference.BoundaryShapes.Where(shape => !shape.IsHole).Where(shape => {
+            var clipper = new ClipperD();
+            clipper.AddSubject(new PathsD { new(shape.Shape.Points.Select(point => new PointD(point.X, point.Y))) });
+            clipper.AddClip(new PathsD { window });
+            var intersection = new PolyTreeD();
+            clipper.Execute(ClipType.Intersection, FillRule.NonZero, intersection);
+            return intersection.Count > 0;
+        }).SelectMany(shape => shape.Shape.Points).Select(point => (point.X, point.Y)).Distinct().ToArray();
     }
 
     /// <summary>Rebuilds a subset union from detached per-part trees; no Tekla call.</summary>

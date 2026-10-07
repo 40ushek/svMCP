@@ -86,6 +86,7 @@ public sealed class ViewDimensionContext
         _parts = Freeze(_partAttributes
             .Select(p => new { modelId = p.ModelId, partPos = p.PartPos, partPrefix = p.PartPrefix,
                 name = p.Name, profile = p.Profile, material = p.Material,
+                partPrefixKnown = p.PartPrefixKnown, materialKnown = p.MaterialKnown,
                 zone = p.Zone, zoneKnown = p.ZoneKnown,
                 role = p.Role.Role.ToString(), classified = p.Role.IsClassified, ruleId = p.Role.RuleId, reason = p.Role.Reason,
                 isMainPart = p.IsMainPart, mainPartKnown = p.IsMainPartKnown }).ToArray());
@@ -376,7 +377,8 @@ public sealed class ViewDimensionContext
         var reference = UsableReferenceGroup();
         if (reference == null) return _dimensionPointCatalog = panel;
         if (reference.DimensionChains == null) CalcDimensionChains.Apply(reference);
-        return _dimensionPointCatalog = panel.WithReference(DimensionPointCatalog.Build(reference.DimensionChains!), _group.Extent!);
+        return _dimensionPointCatalog = panel.WithReference(DimensionPointCatalog.Build(reference.DimensionChains!), _group.Extent!,
+            ReferenceZoneOutline.VerticesForPanel(reference, _group.Extent!));
     }
 
     private static object ContactAnswer(ViewContactCandidatePointsResult result, bool detailed, int[]? pair)

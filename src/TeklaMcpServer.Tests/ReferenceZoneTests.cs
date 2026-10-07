@@ -56,8 +56,9 @@ public sealed class ReferenceZoneTests
             [11] = Rectangle(-100, 500, -100, 600) };
         if (neighbours) { parts.Add(Part(12, "datum", false)); trees.Add(12, Rectangle(250, 400, 10, 490)); }
         var reader = new Outlines(trees, failedReference ? 10 : null);
+        var insulation = PartExclusionRule.ByPrefix("INS");
         var outline = new TeklaDrawingStructuralOutlineApi(new Roles(parts.ToArray()), reader).Get(7,
-            referenceZones: zones, exclusions: [PartExclusionRule.ByPrefix("INS")]);
+            referenceZones: zones, exclusions: [insulation], referenceExclusions: [insulation]);
         return (outline, reader);
     }
 
@@ -92,7 +93,7 @@ public sealed class ReferenceZoneTests
         double[]? writtenPoints = null;
         var provider = new ViewDimensionContextProvider(() => "drawing", (_, _) => context, () => { },
             write: (request, _) => { writtenPoints = request.Points; return new() { Created = true }; },
-            referenceRead: (_, _, _) => context);
+            referenceRead: (_, _, _, _) => context);
         Assert.Same(context, provider.Get(7, referenceZones: ["datum"]));
         Assert.True(provider.Create(new CreateDimensionRequest {
             ViewId = 7, ContextId = context.ContextId, PointIds = ids,
@@ -147,7 +148,8 @@ public sealed class ReferenceZoneTests
         var referenceGroup = StructuralGeometryGroupBuilder.Build(referenceOutline);
         CalcDimensionChains.Apply(referenceGroup);
         var combined = DimensionPointCatalog.Build(group.DimensionChains!).WithReference(
-            DimensionPointCatalog.Build(referenceGroup.DimensionChains!), group.Extent!);
+            DimensionPointCatalog.Build(referenceGroup.DimensionChains!), group.Extent!,
+            ReferenceZoneOutline.VerticesForPanel(referenceGroup, group.Extent!));
         var combinedPoint = combined.AllPoints.First(p => p.Parents.Any(parent => parent.ModelId == 1)
             && p.Parents.Any(parent => parent.ModelId == 10));
         Assert.Equal(new[] { 1 }, TimberPanelPartLocationRule.AccountedPartIds(combinedPoint,
@@ -196,6 +198,57 @@ public sealed class ReferenceZoneTests
     }
 
     [Fact]
+    public void ExcludingTheFrameFromTheMeasuredLayerDoesNotBlockItAsReference()
+    {
+        // Reproduces a live case (PR2613, EW/2, view 1213, 2026-10-07): measuring the cladding
+        // (prefix S) against the frame (prefix T, zone 0) needs excludePrefixes=T so the frame is
+        // not counted as the cladding panel's own member. That exclusion must not also remove the
+        // frame from being eligible as the reference - the frame is still part of the same panel,
+        // only not part of the layer being measured.
+        var parts = new[] { Part(1, "3", prefix: "S"), Part(10, "0", included: false, prefix: "T"),
+            Part(12, "0", included: false, prefix: "T") };
+        var trees = new Dictionary<int, PolyTreeD> {
+            [1] = Rectangle(0, 1200, 0, 3000), [10] = Rectangle(-50, 1250, -50, 3050),
+            [12] = Rectangle(1400, 2500, -100, 3200) };
+        var outline = new TeklaDrawingStructuralOutlineApi(new Roles(parts), new Outlines(trees)).Get(7,
+            referenceZones: ["0"], exclusions: [PartExclusionRule.ByPrefix("T")]);
+        Assert.Equal(new[] { 1 }, outline.Included.Select(part => part.ModelId));
+        Assert.Null(outline.ReferenceZone!.Error);
+        Assert.Equal(new[] { 10, 12 }, outline.ReferenceZone!.ModelIds);
+        var context = Context(outline);
+        var answer = context.Query("chainDetails", ruleSet: "panel");
+        var bottom = Chain(answer, "Bottom");
+        Assert.Equal(new[] { 50d, 1200, 50 }, bottom.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
+        Assert.Equal(new[] { 50d, 3000, 50 }, Chain(answer, "Left").GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
+        Assert.Equal(1200, Chain(answer, "Bottom", "overall").GetProperty("segments")[0].GetDouble());
+        Assert.Equal(3000, Chain(answer, "Right", "overall").GetProperty("segments")[0].GetDouble());
+        Assert.Empty(bottom.GetProperty("missingSupportModelIds").EnumerateArray());
+        Assert.DoesNotContain(bottom.GetProperty("droppedShortPartIds").EnumerateArray(), id => id.GetInt32() == 10);
+        var ids = bottom.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+        Assert.Equal(new[] { -50d, 0, 1200, 1250 }, context.ResolvePointIds(ids, "horizontal-down")
+            .Where((_, index) => index % 3 == 0).Select(value => Math.Round(value, 6)));
+    }
+
+    [Fact]
+    public void ReferenceExclusionsDropJunkFromTheReferenceLayerIndependentlyOfThePanelExclusions()
+    {
+        // The same frame (zone 0) can itself carry junk (insulation stapled inside it) that must
+        // still drop out of the reference polygon - but through its own filter, not the panel's.
+        var parts = new[] { Part(1, "3", prefix: "S"), Part(10, "0", included: false, prefix: "T"),
+            Part(11, "0", included: false, prefix: "INS") };
+        var trees = new Dictionary<int, PolyTreeD> {
+            [1] = Rectangle(0, 1200, 0, 3000), [10] = Rectangle(-50, 1250, -50, 3050),
+            [11] = Rectangle(-50, 1250, -50, 3050) };
+        var withoutReferenceExclusions = new TeklaDrawingStructuralOutlineApi(new Roles(parts), new Outlines(trees))
+            .Get(7, referenceZones: ["0"], exclusions: [PartExclusionRule.ByPrefix("T")]);
+        Assert.Equal(new[] { 10, 11 }, withoutReferenceExclusions.ReferenceZone!.ModelIds.OrderBy(id => id));
+        var withReferenceExclusions = new TeklaDrawingStructuralOutlineApi(new Roles(parts), new Outlines(trees))
+            .Get(7, referenceZones: ["0"], exclusions: [PartExclusionRule.ByPrefix("T")],
+                referenceExclusions: [PartExclusionRule.ByPrefix("INS")]);
+        Assert.Equal(new[] { 10 }, withReferenceExclusions.ReferenceZone!.ModelIds);
+    }
+
+    [Fact]
     public void SelectionUsesBothCallerExclusionsAndDoesNotAssumeNumericZones()
     {
         var selected = ReferenceZoneOutline.Select(new[] { Part(1, "datum"), Part(2, "datum", prefix: "INS"),
@@ -209,12 +262,47 @@ public sealed class ReferenceZoneTests
         Assert.Throws<ArgumentException>(() => new TimberPanelPartLocationSettings(3, [""]));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void UnreadPropertyRequiredOnlyByReferenceFilterSuppressesReferenceMix(bool materialFilter)
+    {
+        var frame = new PartRoleInView(10, "T10", materialFilter ? "T" : null,
+            new PartRoleResult(PartRole.Excluded, "panel-prefix", "fixture"),
+            material: null, zone: "0", partPrefixKnown: materialFilter, materialKnown: false);
+        var reader = new Outlines(new Dictionary<int, PolyTreeD> {
+            [1] = Rectangle(0, 1200, 0, 3000), [10] = Rectangle(-50, 1250, -50, 3050) });
+        var referenceRule = materialFilter ? PartExclusionRule.ByMaterial("INS") : PartExclusionRule.ByPrefix("INS");
+        var outline = new TeklaDrawingStructuralOutlineApi(new Roles(Part(1, "3"), frame), reader).Get(7,
+            referenceZones: ["0"], referenceExclusions: [referenceRule]);
+        Assert.True(outline.IsComplete);
+        Assert.NotNull(outline.ReferenceZone!.Error);
+        Assert.Empty(outline.ReferenceZone.ModelIds);
+        Assert.Equal(new[] { 1 }, reader.Asked);
+        var answer = Context(outline).Query("chainDetails", ruleSet: "panel");
+        Assert.Equal("suppressed", answer.GetProperty("chainDiagnostics").GetProperty("referenceZone").GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public void ReferenceFilterUsesItsOwnReadRequirementsAndAcceptsKnownEmptyValues()
+    {
+        var part = new PartRoleInView(10, "T10", null, PartRoleResult.Unclassified,
+            material: "", zone: "0", partPrefixKnown: false, materialKnown: true);
+        var selected = ReferenceZoneOutline.Select([part], ["0"], [PartExclusionRule.ByMaterial("INS")]);
+        Assert.Null(selected.Error);
+        Assert.Equal(new[] { 10 }, selected.ModelIds);
+        var excluded = ReferenceZoneOutline.Select([part], ["0"], [PartExclusionRule.ByPrefix("INS")]);
+        Assert.NotNull(excluded.Error);
+        var knownEmpty = new PartRoleInView(10, "T10", "", PartRoleResult.Unclassified, zone: "0", partPrefixKnown: true);
+        Assert.Null(ReferenceZoneOutline.Select([knownEmpty], ["0"], [PartExclusionRule.ByPrefix("INS")]).Error);
+    }
+
     [Fact]
     public void ReferenceScopeHasCanonicalCacheKeyAndTransportPreservesOpaqueZoneStrings()
     {
         var reads = 0;
         var provider = new ViewDimensionContextProvider(() => "drawing", (_, _) => throw new Exception("unused"), () => { },
-            referenceRead: (id, rules, zones) => { reads++; return Context(Capture(zones.ToArray()).Outline); });
+            referenceRead: (id, rules, zones, referenceExclusions) => { reads++; return Context(Capture(zones.ToArray()).Outline); });
         var first = provider.Get(7, referenceZones: ["datum", "aux", "datum"]);
         Assert.Same(first, provider.Get(7, referenceZones: [" aux ", "datum"]));
         Assert.NotSame(first, provider.Get(7, referenceZones: ["datum"]));

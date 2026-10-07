@@ -87,7 +87,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
             : Array.Empty<int[]>();
         var outline = OutlineVertices(group);
         var reference = settings.ReferenceZones.Count > 0 && input.ReferenceGroup is { Extent: not null }
-            && input.ReferenceGroup.Completeness.IsComplete ? OutlineVertices(input.ReferenceGroup) : Array.Empty<(double X, double Y)>();
+            && input.ReferenceGroup.Completeness.IsComplete ? ReferenceZoneOutline.VerticesForPanel(input.ReferenceGroup, panel) : Array.Empty<(double X, double Y)>();
         var extentCatalog = input.PanelCatalog ?? catalog;
         var minimumSegment = settings.MinimumSegmentViewUnits;
 
@@ -355,11 +355,9 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     {
         var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
         var middle = alongX ? (panel.MinY + panel.MaxY) / 2 : (panel.MinX + panel.MaxX) / 2;
-        // The current panel supplies both the crop and the side cut, even when the reference
-        // union contains several neighbouring panels or disconnected components.
-        return outline.Where(point => point.X >= panel.MinX - PositionTolerance && point.X <= panel.MaxX + PositionTolerance
-                && point.Y >= panel.MinY - PositionTolerance && point.Y <= panel.MaxY + PositionTolerance
-                && outer * ((alongX ? point.Y : point.X) - middle) >= -PositionTolerance)
+        // Components were selected against the panel before reaching this method. Keep their
+        // overhanging vertices and use the measured panel's midpoint to select the chain side.
+        return outline.Where(point => outer * ((alongX ? point.Y : point.X) - middle) >= -PositionTolerance)
             .Select(point => alongX ? point.X : point.Y).Distinct();
     }
 

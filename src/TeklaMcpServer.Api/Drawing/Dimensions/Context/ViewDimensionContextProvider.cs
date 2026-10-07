@@ -15,7 +15,8 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed partial class ViewDimensionContextProvider
 {
     private readonly Func<string?> _drawingIdentity;
-    private readonly Func<int, IReadOnlyList<PartExclusionRule>, IReadOnlyCollection<string>, ViewDimensionContext> _read;
+    private readonly Func<int, IReadOnlyList<PartExclusionRule>, IReadOnlyCollection<string>,
+        IReadOnlyList<PartExclusionRule>, ViewDimensionContext> _read;
     private readonly Action _invalidateGeometry;
     private readonly Func<CreateDimensionRequest, double, CreateDimensionResult> _write;
     private readonly Func<int, GetDimensionsResult> _readDimensions;
@@ -44,10 +45,11 @@ public sealed partial class ViewDimensionContextProvider
         Func<int, int, PartSolidGeometryInViewResult>? readContactSolid = null,
         Func<int, GetDimensionsResult>? readDimensions = null,
         Action<string>? validateAttributes = null,
-        Func<int, IReadOnlyList<PartExclusionRule>, IReadOnlyCollection<string>, ViewDimensionContext>? referenceRead = null)
+        Func<int, IReadOnlyList<PartExclusionRule>, IReadOnlyCollection<string>,
+            IReadOnlyList<PartExclusionRule>, ViewDimensionContext>? referenceRead = null)
     {
         _drawingIdentity = drawingIdentity;
-        _read = referenceRead ?? ((id, rules, zones) => zones.Count == 0 ? read(id, rules)
+        _read = referenceRead ?? ((id, rules, zones, referenceExclusions) => zones.Count == 0 ? read(id, rules)
             : throw new InvalidOperationException("Reference-zone reader is unavailable"));
         _invalidateGeometry = invalidateGeometry;
         _write = write ?? Write;
@@ -67,7 +69,8 @@ public sealed partial class ViewDimensionContextProvider
     }
 
     public ViewDimensionContext Get(int viewId, string? excludePrefixes = null,
-        string? excludeMaterials = null, bool refresh = false, IReadOnlyCollection<string>? referenceZones = null)
+        string? excludeMaterials = null, bool refresh = false, IReadOnlyCollection<string>? referenceZones = null,
+        string? referenceExcludePrefixes = null, string? referenceExcludeMaterials = null)
     {
         ObserveActiveDrawing();
         if (_drawing == null) throw new InvalidOperationException("No drawing is currently open");
@@ -78,7 +81,15 @@ public sealed partial class ViewDimensionContextProvider
         ObserveView(viewId);
         var rules = Normalize(excludePrefixes, excludeMaterials);
         var zones = ReferenceZoneOutline.Normalize(referenceZones);
-        var key = JsonSerializer.Serialize(new { rules = rules.Select(r => new { r.Kind, r.Value }), zones });
+        // Independent from the panel's own exclusions: a part kept out of the measured layer by
+        // `rules` (e.g. the frame, excluded so it is not counted as the cladding's own member) must
+        // still be eligible as the reference layer. referenceRules only drops reference candidates
+        // that are not real geometry at all (insulation, sealant), never the layer being measured.
+        var referenceRules = Normalize(referenceExcludePrefixes, referenceExcludeMaterials);
+        var key = JsonSerializer.Serialize(new {
+            rules = rules.Select(r => new { r.Kind, r.Value }), zones,
+            referenceRules = referenceRules.Select(r => new { r.Kind, r.Value })
+        });
         if (_contexts.TryGetValue(key, out var cached))
         {
             PerfTrace.Write("api-geometry", "dimension_context_hit", 0, $"viewId={viewId}");
@@ -87,7 +98,7 @@ public sealed partial class ViewDimensionContextProvider
         }
         // Failed builds never enter the store. A later call can retry reading.
         var timer = System.Diagnostics.Stopwatch.StartNew();
-        var context = _read(viewId, rules, zones);
+        var context = _read(viewId, rules, zones, referenceRules);
         _contexts.Add(key, context);
         AttachContacts(context);
         PerfTrace.Write("api-geometry", "dimension_context_build", timer.ElapsedMilliseconds, $"viewId={viewId}");
@@ -203,7 +214,8 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
         return model.GetInfo().ModelPath + "|" + id.GUID + "|" + id.ID;
     }
 
-    public ViewDimensionContext Read(int viewId, IReadOnlyList<PartExclusionRule> exclusions, IReadOnlyCollection<string> referenceZones)
+    public ViewDimensionContext Read(int viewId, IReadOnlyList<PartExclusionRule> exclusions,
+        IReadOnlyCollection<string> referenceZones, IReadOnlyList<PartExclusionRule> referenceExclusions)
     {
         var drawing = new DrawingHandler().GetActiveDrawing()
             ?? throw new InvalidOperationException("No drawing is currently open");
@@ -215,7 +227,8 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
         var depth = ViewDepthWindow.Read(model, view);
         var outline = new TeklaDrawingStructuralOutlineApi(
             new TeklaDrawingPartRoleApi(model, new PartRoleClassifier(exclusions)),
-            new TeklaDrawingAssemblyOutlineApi(model)).Get(viewId, referenceZones: referenceZones, exclusions: exclusions);
+            new TeklaDrawingAssemblyOutlineApi(model)).Get(viewId, referenceZones: referenceZones, exclusions: exclusions,
+            referenceExclusions: referenceExclusions);
         var identities = outline.Included.Select(p => new { ModelId = p.ModelId, Guid = ObjectGuid(p.ModelId) }).ToArray();
         var assemblyGuid = drawing is AssemblyDrawing assembly && assembly.AssemblyIdentifier != null
             ? ObjectGuid(assembly.AssemblyIdentifier.ID) : null;

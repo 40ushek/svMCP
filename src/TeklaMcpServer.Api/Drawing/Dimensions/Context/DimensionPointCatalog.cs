@@ -136,15 +136,20 @@ internal sealed class DimensionPointCatalog
 
     // Keep the original panel IDs while adding detached reference supports. Exact coincident
     // points merge their geometric parents; candidate kinds are kept separately by the rule.
-    internal DimensionPointCatalog WithReference(DimensionPointCatalog reference, GeometryGroupExtent panel)
+    internal DimensionPointCatalog WithReference(DimensionPointCatalog reference, GeometryGroupExtent panel,
+        IReadOnlyCollection<(double X, double Y)> vertices)
     {
         var points = _points.Values.ToDictionary(point => point.Id, point => point.Copy(point.Id), StringComparer.Ordinal);
         var byCoordinates = points.Values.ToDictionary(point => (point.X, point.Y));
         var mapped = new Dictionary<string, DimensionPoint>(StringComparer.Ordinal);
-        foreach (var source in reference.AllPoints)
+        var referencePoints = reference.AllPoints.ToDictionary(point => (point.X, point.Y));
+        var nextVertex = 1;
+        foreach (var vertex in vertices.Distinct().OrderBy(point => point.X).ThenBy(point => point.Y))
         {
-            if (source.X < panel.MinX - .5 || source.X > panel.MaxX + .5
-                || source.Y < panel.MinY - .5 || source.Y > panel.MaxY + .5) continue;
+            // A chain built over several reference components can omit an inner component's
+            // extreme. The selected polygon vertex itself is still a real captured support.
+            var source = referencePoints.TryGetValue(vertex, out var captured) ? captured
+                : new DimensionPoint($"v{nextVertex++:D4}", vertex.X, vertex.Y);
             if (!byCoordinates.TryGetValue((source.X, source.Y), out var point))
             {
                 point = source.Copy("r" + source.Id);
@@ -159,7 +164,12 @@ internal sealed class DimensionPointCatalog
         {
             var side = pair.Key;
             var entries = pair.Value.Entries.Select(entry => points[entry.PointId])
-                .Concat(reference.LinePoints(side).Where(point => mapped.ContainsKey(point.Id)).Select(point => mapped[point.Id]))
+                .Concat(mapped.Values.Where(point => {
+                    var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+                    var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+                    var middle = alongX ? (panel.MinY + panel.MaxY) / 2 : (panel.MinX + panel.MaxX) / 2;
+                    return outer * ((alongX ? point.Y : point.X) - middle) >= -.5;
+                }))
                 .Distinct().OrderBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.X : point.Y)
                 .ThenBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.Y : point.X).ToArray();
             lines.Add(side, new DimensionPointLine(entries.Select((point, index) => new DimensionPointLineEntry(

@@ -161,7 +161,8 @@ public sealed class TeklaDrawingStructuralOutlineApi
         int viewId,
         OutlineOptions? options = null,
         System.Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null,
-        IReadOnlyCollection<string>? referenceZones = null, IReadOnlyList<PartExclusionRule>? exclusions = null)
+        IReadOnlyCollection<string>? referenceZones = null, IReadOnlyList<PartExclusionRule>? exclusions = null,
+        IReadOnlyList<PartExclusionRule>? referenceExclusions = null)
     {
         var read = _roles.GetRolesInView(viewId);
 
@@ -173,8 +174,14 @@ public sealed class TeklaDrawingStructuralOutlineApi
         beforeOutlineRead?.Invoke(included);
 
         var zones = ReferenceZoneOutline.Normalize(referenceZones);
+        // A caller measuring one layer against another, e.g. cladding against the frame, excludes
+        // the frame's own prefix from the measured layer's selection - that exclusion must not
+        // also remove the frame from being eligible as a reference: the frame is still part of
+        // the same panel, only not part of what this call measures. referenceExclusions is a
+        // separate, independent filter - "not real geometry" for the reference side - and is
+        // never defaulted to the panel's own exclusions.
         var reference = zones.Length == 0 ? null : ReferenceZoneOutline.Select(
-            included.Concat(excluded).Concat(unclassified), zones, exclusions ?? PartRoleClassifier.NoExclusions);
+            included.Concat(excluded).Concat(unclassified), zones, referenceExclusions ?? PartRoleClassifier.NoExclusions);
         var captured = _outline.GetAssemblyOutline(viewId, options,
             ids.Concat(reference?.ModelIds ?? Array.Empty<int>()).Distinct().ToArray());
         var panelOutline = reference == null ? captured : ReferenceZoneOutline.Subset(captured, ids, options);

@@ -28,7 +28,8 @@ public sealed class PartRoleInView
         string? material = null,
         string? name = null,
         string? zone = null,
-        bool zoneKnown = true)
+        bool zoneKnown = true,
+        bool partPrefixKnown = true, bool materialKnown = true)
     {
         ModelId = modelId;
         PartPos = partPos;
@@ -41,6 +42,8 @@ public sealed class PartRoleInView
         Name = name;
         Zone = zone;
         ZoneKnown = zoneKnown;
+        PartPrefixKnown = partPrefixKnown;
+        MaterialKnown = materialKnown;
     }
 
     public int ModelId { get; }
@@ -48,6 +51,9 @@ public sealed class PartRoleInView
     public string? PartPrefix { get; }
     public string? Profile { get; }
     public string? Material { get; }
+    /// <summary>Whether Tekla successfully read the exclusion properties, including empty values.</summary>
+    public bool PartPrefixKnown { get; }
+    public bool MaterialKnown { get; }
     public string? Name { get; }
 
     /// <summary>
@@ -215,7 +221,7 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                     PartRoleResult.Unclassified,
                     mainPart,
                     mainPartKnown, part.Profile?.ProfileString, materialRead ? material : null, part.Name,
-                    zone.Value, zone.Read));
+                    zone.Value, zone.Read, prefixRead, materialRead));
                 continue;
             }
 
@@ -236,7 +242,7 @@ public sealed class TeklaDrawingPartRoleApi : IDrawingPartRoleApi
                 mainPartKnown,
                 profile,
                 materialRead ? material : null, part.Name,
-                zone.Value, zone.Read));
+                zone.Value, zone.Read, prefixRead, materialRead));
         }
 
         return new PartRoleReadResult(roles, unread, selected.OutsideDepthModelIds,

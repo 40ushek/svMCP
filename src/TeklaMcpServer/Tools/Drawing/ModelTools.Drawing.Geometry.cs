@@ -71,31 +71,42 @@ public static partial class ModelTools
         [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel",
         [Description("Legacy argument; contact questions are not supported by this tool.")] string contactPair = "",
         [Description("Diagnostic rules for panel chainDetails: JSON [{id,className,conditions:[{property,matchKind,value}],priority?,data?}]. Properties: Name,Prefix,Profile,Material. Matches: Equals (default),Contains,StartsWith. Conditions are AND, ignoring case. Empty disables classification. Does not change dimensions; examples in ROADMAP_CHAIN_COMPOSITION.md.")] string layerRules = "",
-        [Description("Explicit ZONE values for the panel reference polygon, e.g. [\"0\"]. Only with ruleSet=panel. Empty disables mixing; the same prefix/material exclusions apply. An unread zone suppresses reference geometry.")] string[]? referenceZones = null)
+        [Description("Explicit ZONE values for the reference layer to mix in (e.g. the frame), e.g. [\"0\"]. Only with ruleSet=panel. Empty disables mixing. An unread zone suppresses reference geometry.")] string[]? referenceZones = null,
+        [Description("Comma-separated prefixes to drop from the reference layer's own candidates - e.g. insulation inside the frame. Independent of excludePrefixes: a part excluded there (to keep it out of the layer being measured) stays eligible as reference unless also named here. Only with referenceZones.")] string referenceExcludePrefixes = "",
+        [Description("Comma-separated material substrings to drop from the reference layer's own candidates. Independent of excludeMaterials, same reasoning as referenceExcludePrefixes. Only with referenceZones.")] string referenceExcludeMaterials = "")
     {
         return RunBridge(BuildViewDimensionContextArgs(viewId, questions, sides, excludePrefixes, excludeMaterials,
-            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules, referenceZones));
+            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules, referenceZones,
+            referenceExcludePrefixes, referenceExcludeMaterials));
     }
 
     internal static string[] BuildViewDimensionContextArgs(int viewId, string questions, string sides,
         string excludePrefixes, string excludeMaterials, bool refresh, string points, string direction,
-        double? paperGapMm, string ruleSet, string contactPair, string layerRules, string[]? referenceZones = null)
+        double? paperGapMm, string ruleSet, string contactPair, string layerRules, string[]? referenceZones = null,
+        string referenceExcludePrefixes = "", string referenceExcludeMaterials = "")
     {
         questions = TeklaMcpServer.Shared.DimensionPreviewQuestions.Normalize(questions);
         _ = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(layerRules);
-        if (referenceZones is { Length: > 0 })
+        var hasReferenceZones = referenceZones is { Length: > 0 };
+        if (hasReferenceZones)
         {
-            if (referenceZones.Any(string.IsNullOrWhiteSpace))
+            if (referenceZones!.Any(string.IsNullOrWhiteSpace))
                 throw new ArgumentException("referenceZones must contain non-empty zone values");
             if (!string.Equals(ruleSet?.Trim(), "panel", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("referenceZones requires ruleSet=panel");
+        }
+        else if (!string.IsNullOrWhiteSpace(referenceExcludePrefixes) || !string.IsNullOrWhiteSpace(referenceExcludeMaterials))
+        {
+            throw new ArgumentException("referenceExcludePrefixes/referenceExcludeMaterials require referenceZones");
         }
         var args = new[] { "get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
             questions, sides, excludePrefixes, excludeMaterials, refresh.ToString(), points, direction,
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             string.IsNullOrWhiteSpace(ruleSet) ? "steel" : ruleSet,
             contactPair ?? string.Empty, layerRules ?? string.Empty };
-        return referenceZones is { Length: > 0 } ? [.. args, JsonSerializer.Serialize(referenceZones)] : args;
+        return hasReferenceZones
+            ? [.. args, JsonSerializer.Serialize(referenceZones), referenceExcludePrefixes ?? string.Empty, referenceExcludeMaterials ?? string.Empty]
+            : args;
     }
 
     [McpServerTool, Description(

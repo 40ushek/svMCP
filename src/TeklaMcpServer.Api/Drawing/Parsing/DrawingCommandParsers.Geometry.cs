@@ -19,6 +19,14 @@ public static partial class DrawingCommandParsers
         return zones;
     }
 
+    /// <summary>
+    /// Independent of the panel's own excludePrefixes/excludeMaterials (args[4]/args[5]): a part
+    /// kept out of the measured layer there must still be eligible as the reference layer, since
+    /// it is only excluded from what is measured, not from the panel itself.
+    /// </summary>
+    public static (string? Prefixes, string? Materials) ParseViewDimensionReferenceExclusions(string[] args) =>
+        (args.Length > 14 ? args[14] : null, args.Length > 15 ? args[15] : null);
+
     public static IReadOnlyList<PartLayerRule> ParseViewDimensionLayerRules(string[] args)
     {
         var json = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(args.Length > 12 ? args[12] : null);

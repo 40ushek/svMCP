@@ -1231,12 +1231,35 @@ live drawing acceptance remains open:
   literal "0" in the rule, matching the no-plant-conventions-in-code rule elsewhere
   (`PartExclusionRule`, `PartLayerRule`); several requested zones produce one reference union
 - "Zone=0" alone is not the frame geometry: insulation/sealant parts can carry Zone=0 too and
-  must still drop out through the same `excludePrefixes`/`excludeMaterials` the panel itself
-  uses, not just a zone match
+  must still drop out through `referenceExcludePrefixes`/`referenceExcludeMaterials`,
+  independently of the measured layer, not just a zone match
 - the zone-filtered ID source should be `_partAttributes` (all depth-selected parts: Included +
-  Excluded + Unclassified), not just `outline.Included`. The same exclusions are then applied
-  to the reference selection. The existing panel selection stays unchanged: selecting a
-  reference zone does not remove those parts from Included or select a drawing zone implicitly.
+  Excluded + Unclassified), not just `outline.Included`.
+  **Live check (PR2613, EW/2, view 1213, 2026-10-07) found that reusing the panel's own
+  exclusions for the reference selection blocks the feature's own main case, and this is now
+  fixed.** Dimensioning the cladding (S/78, zone 3) against the frame (T/*, zone 0) needs
+  `excludePrefixes=T` so the frame is not counted as the cladding panel's own member - but that
+  same `T` exclusion used to also remove every frame part from `ReferenceZoneOutline.Select`'s
+  `eligible` set before the zone filter ran, so `referenceZones=["0"]` came back
+  `"status":"suppressed","reason":"No parts survived the reference-zone selection"` even though
+  every T part had `zone:"0"` and `zoneKnown:true`. The frame is part of the same panel as the
+  cladding, not a separate thing to be excluded from it - it was only ever meant to be kept out
+  of the layer being measured, never out of the panel.
+
+  Fixed by splitting the one shared `exclusions` list into two independent ones:
+  `TeklaDrawingStructuralOutlineApi.Get` takes a new `referenceExclusions` parameter, used only by
+  `ReferenceZoneOutline.Select`, never defaulted to the panel's own `exclusions`. Threaded through
+  `ViewDimensionContextProvider.Get`/`TeklaViewDimensionContextReader.Read` as
+  `referenceExcludePrefixes`/`referenceExcludeMaterials`, through the bridge args protocol
+  (`DrawingCommandParsers.ParseViewDimensionReferenceExclusions`, args[14]/args[15], only present
+  when `referenceZones` is), and exposed on `get_view_dimension_context`. Both new MCP parameters
+  require `referenceZones`; passing them without it is rejected before any read. The cache key
+  includes the reference exclusions alongside `zones`. Junk inside the frame itself (insulation,
+  sealant) still needs its own entry in `referenceExcludePrefixes`/`referenceExcludeMaterials` -
+  it is not inherited from the panel's exclusions and is not filtered by default. Regression
+  tests: `ExcludingTheFrameFromTheMeasuredLayerDoesNotBlockItAsReference`,
+  `ReferenceExclusionsDropJunkFromTheReferenceLayerIndependentlyOfThePanelExclusions`. Not yet
+  re-verified live after this fix; the 2026-10-07 live check above predates it.
   An eligible part with an unread ZONE suppresses the entire reference mix; incomplete reference
   geometry also suppresses it, with a reason in `chainDiagnostics.referenceZone`
 - avoid reading any part's solid twice: one `GetAssemblyOutline` call over the union of the
@@ -1244,9 +1267,15 @@ live drawing acceptance remains open:
   zone-reference outline are then two separate, Tekla-free calls to
   `ProjectedOutlineBuilder.BuildAssembly` over subsets of the same already-read
   `PartOutlines`/`PartNodes`; those subsets may overlap without another solid read
-- side-filtering of the zone polygon's vertices (`OutlineCoordinates`'s `panel.MinX/MaxX` cut)
-  must use the current panel's own bounds, not a global cut, so a neighbouring panel's frame
-  vertices are never pulled in
+- reference components are selected by intersection of their outer polygon with the current
+  measured panel's bounds. Their full vertices are retained, including overhangs, so a frame
+  surrounding the cladding still supplies offset dimensions. Disjoint neighbouring components
+  are omitted. Chain sides use the measured panel's midpoint, and overall dimensions keep its
+  original catalog and bounds. The overhang regression checks 50 mm offsets, point-ID resolution
+  and unchanged overall dimensions with a neighbouring reference component present.
+- `PartRoleInView` retains separate `PartPrefixKnown`/`MaterialKnown` read results. Reference
+  exclusions check their own required properties, independently of the panel role. An unread
+  required property suppresses the reference mix; a successfully read empty value is valid.
 - a reference-zone point must not be tagged with the frame part's `modelId` as an `Owner`:
   `Owners` feeds `missing` directly, and a frame part is not one of this panel's members.
   ReferenceZone candidates therefore have no owners. `CandidateKind` is implemented in
