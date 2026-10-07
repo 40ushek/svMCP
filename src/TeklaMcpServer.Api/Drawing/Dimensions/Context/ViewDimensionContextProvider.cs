@@ -125,6 +125,9 @@ public sealed partial class ViewDimensionContextProvider
     {
         var paperGapMm = request.Distance.HasValue ? (double?)null
             : DimensionPlacementSettings.ResolvePaperGapMm(request.Row, request.PaperGapMm);
+        var usePanelReference = request.UsePanelReference;
+        if (!string.IsNullOrWhiteSpace(request.RuleSet))
+            usePanelReference = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(request.RuleSet) == "panel";
         ViewDimensionContext context;
         if (request.PointIds.Length > 0 || !string.IsNullOrWhiteSpace(request.ContextId))
         {
@@ -136,7 +139,9 @@ public sealed partial class ViewDimensionContextProvider
                 throw new ArgumentException("Exclusion filters are part of contextId; do not pass filters with point ids");
 
             context = RequireContext(request.ViewId, request.ContextId);
-            request.Points = context.ResolvePointIds(request.PointIds, request.Direction);
+            if (!usePanelReference.HasValue && context.HasScopedReferenceGeometry)
+                throw new ArgumentException("ruleSet (steel or panel) is required with pointIds from a reference-zone context");
+            request.Points = context.ResolvePointIds(request.PointIds, request.Direction, usePanelReference == true);
         }
         else
         {
@@ -144,7 +149,8 @@ public sealed partial class ViewDimensionContextProvider
         }
 
         var placement = request.Distance.HasValue ? null
-            : context.Calculate(request.Direction, request.Points, paperGapMm);
+            : context.Calculate(request.Direction, request.Points, paperGapMm,
+                usePanelReference == true);
         var distance = request.Distance ?? placement!.Distance;
         return new PreparedDimensionWrite(request, distance, placement);
     }

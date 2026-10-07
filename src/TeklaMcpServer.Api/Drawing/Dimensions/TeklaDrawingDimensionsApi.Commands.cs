@@ -153,6 +153,9 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
     }
 
+    public IReadOnlyList<DeleteDimensionResult> DeleteDimensions(IReadOnlyList<int> dimensionIds) =>
+        dimensionIds.Select(DeleteDimension).ToArray();
+
     /// <summary>
     /// Merges extra points into an existing straight dimension set.
     ///

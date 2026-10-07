@@ -146,6 +146,21 @@ explicit-offset precedence. The previous numeric-row release was deployed on
 2026-10-02; this prepared-chain increment has automated coverage but still
 requires deployment and live placement/performance validation.
 
+## Panel reference placement scope (2026-10-07, source implemented)
+
+With selected reference geometry, pass `ruleSet="panel"` to both
+`create_dimensions_batch` and single `create_dimension` calls using `contextId`
+and `pointIds`. Explicit steel chains use `ruleSet="steel"`. Omitting the rule set
+in such a context is rejected before writing, including with an explicit distance;
+point resolution and placement share the same declared scope. Older calls without
+selected reference geometry retain their default measured-part scope.
+
+Panel overall dimensions use the combined MinX/MaxX and MinY/MaxY bounding box of
+the measured layer and its selected reference components. Actual extreme contour
+vertices remain addressable even when they are on the opposite side of the panel.
+Disjoint neighbouring reference components do not enlarge this box. Live acceptance
+of this placement change is still pending.
+
 ## Preview references in batch (2026-10-02, source implemented; not deployed)
 
 Each preview chain now exposes `key`, `direction` and default `attributesFile`.

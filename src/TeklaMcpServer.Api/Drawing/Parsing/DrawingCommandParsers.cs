@@ -242,6 +242,9 @@ public sealed class MoveViewParseResult
 public sealed class CreateDimensionRequest
 {
     public int Row { get; set; } = 1;
+    // The batch writer carries the already validated scope here.
+    internal bool? UsePanelReference { get; set; }
+    public string RuleSet { get; set; } = string.Empty;
     public int ViewId { get; set; }
     public double[] Points { get; set; } = Array.Empty<double>();
     public string ContextId { get; set; } = string.Empty;
@@ -434,6 +437,24 @@ public sealed class CombineDimensionsParseResult
         new() { IsValid = true, Request = request };
 
     public static CombineDimensionsParseResult Fail(string error) =>
+        new() { IsValid = false, Error = error };
+}
+
+public sealed class DeleteDimensionsBatchRequest
+{
+    public IReadOnlyList<int> DimensionIds { get; set; } = Array.Empty<int>();
+}
+
+public sealed class DeleteDimensionsBatchParseResult
+{
+    public bool IsValid { get; private set; }
+    public string Error { get; private set; } = string.Empty;
+    public DeleteDimensionsBatchRequest Request { get; private set; } = new();
+
+    public static DeleteDimensionsBatchParseResult Success(DeleteDimensionsBatchRequest request) =>
+        new() { IsValid = true, Request = request };
+
+    public static DeleteDimensionsBatchParseResult Fail(string error) =>
         new() { IsValid = false, Error = error };
 }
 

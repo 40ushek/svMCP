@@ -28,18 +28,20 @@ internal sealed class OverallDimensionRule(OverallDimensionSettings settings) : 
         // Preserve the horizontal preview's side-specific extremes. Height is the
         // entire panel extent, including a taller end on an asymmetric panel.
         var (min, max) = alongX
-            ? geometry.SideExtremes(side, settings.PositionTolerance)
+            ? settings.UseExtentBounds ? (geometry.Extent.MinX, geometry.Extent.MaxX)
+                : geometry.SideExtremes(side, settings.PositionTolerance)
             : (geometry.Extent.MinY, geometry.Extent.MaxY);
         double Coordinate(DimensionPoint p) => alongX ? p.X : p.Y;
         var line = geometry.Points.LinePoints(side);
         DimensionPoint? Find(double value) => line
             .Where(p => Math.Abs(Coordinate(p) - value) <= settings.PositionTolerance)
-            .OrderByDescending(p => outer * (alongX ? p.Y : p.X)).FirstOrDefault();
+            .OrderBy(p => Math.Abs(Coordinate(p) - value))
+            .ThenByDescending(p => outer * (alongX ? p.Y : p.X)).FirstOrDefault();
         var first = Find(min);
         var last = Find(max);
         if (first == null || last == null)
             return new(direction, placement, "overall", [], "panel extremes are not supported by existing dimension points");
         return new(direction, placement, "overall", [context.GetPoint(first.Id), context.GetPoint(last.Id)],
-            segments: new[] { Math.Round(max - min, 3) });
+            segments: new[] { Math.Round(Coordinate(last) - Coordinate(first), 3) });
     }
 }

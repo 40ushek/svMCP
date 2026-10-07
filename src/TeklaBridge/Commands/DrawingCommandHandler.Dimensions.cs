@@ -84,6 +84,9 @@ internal sealed partial class DrawingCommandHandler
             case "delete_dimension":
                 return HandleDeleteDimension(api, args);
 
+            case "delete_dimensions_batch":
+                return HandleDeleteDimensionsBatch(api, args);
+
             case "place_control_diagonals":
                 return HandlePlaceControlDiagonals(api, args);
 
@@ -933,6 +936,29 @@ internal sealed partial class DrawingCommandHandler
         }
 
         WriteDeleteDimensionResult(result);
+        return true;
+    }
+
+    private bool HandleDeleteDimensionsBatch(TeklaDrawingDimensionsApi api, string[] args)
+    {
+        var parseResult = DrawingCommandParsers.ParseDeleteDimensionsBatchRequest(args);
+        if (!parseResult.IsValid)
+        {
+            WriteError(parseResult.Error);
+            return true;
+        }
+
+        var results = api.DeleteDimensions(parseResult.Request.DimensionIds);
+        if (results.Count > 0 && !results[0].HasActiveDrawing)
+        {
+            WriteRawJson(NoActiveDrawingErrorJson);
+            return true;
+        }
+
+        WriteJson(new
+        {
+            results = results.Select(result => new { deleted = result.Deleted, dimensionId = result.DimensionId }).ToArray()
+        });
         return true;
     }
 

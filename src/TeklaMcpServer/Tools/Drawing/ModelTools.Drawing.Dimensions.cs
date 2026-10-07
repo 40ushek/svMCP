@@ -95,6 +95,26 @@ public static partial class ModelTools
         catch { return $"Bridge error: {json}"; }
     }
 
+    [McpServerTool, Description("Delete several straight dimension sets by ID in one call, e.g. after a test batch or a tidy-up pass. Reports deleted/not-found per ID; one bridge round trip instead of one delete_dimension call per ID.")]
+    public static string DeleteDimensionsBatch(
+        [Description("IDs of the StraightDimensionSets to delete (from get_drawing_dimensions)")] int[] dimensionIds)
+    {
+        var json = RunBridge("delete_dimensions_batch", JsonSerializer.Serialize(dimensionIds));
+        try
+        {
+            var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var err) && err.GetString() is { Length: > 0 } e)
+                return $"Error: {e}";
+            var results = doc.RootElement.GetProperty("results").EnumerateArray()
+                .Select(item => (id: item.GetProperty("dimensionId").GetInt32(), deleted: item.GetProperty("deleted").GetBoolean()))
+                .ToArray();
+            var deletedIds = results.Where(r => r.deleted).Select(r => r.id).ToArray();
+            var notFoundIds = results.Where(r => !r.deleted).Select(r => r.id).ToArray();
+            return JsonSerializer.Serialize(new { deletedCount = deletedIds.Length, deletedIds, notFoundIds });
+        }
+        catch { return $"Bridge error: {json}"; }
+    }
+
     [McpServerTool, Description(
         "Draw debug polygon rectangles around dimension text in the active drawing. " +
         "Uses measured text geometry and the dimension line direction to draw overlay polygons around each text box. " +
@@ -341,7 +361,7 @@ public static partial class ModelTools
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain or boltChains). All pointIds must belong to this context.")] string contextId,
         [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Bolt selection example: {\"boltProposal\":\"bolt-42-X-0\",\"partId\":10,\"direction\":\"horizontal-down\",\"distance\":80}. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
-        [Description("Same ruleSet as the preview read: steel or panel. Required when an entry uses preview; there is no default because both rule sets use the same chain keys with different points.")] string ruleSet = "",
+        [Description("Same ruleSet as the preview read: steel or panel. Required for preview entries and explicit pointIds in a reference-zone context. Both rule sets use the same chain keys with different geometry and placement scopes.")] string ruleSet = "",
         [Description("Same preview variant as the read: chain (default; consolidated sections) or chainDetails (split sections).")] string chainView = "chain")
     {
         ruleSet = string.IsNullOrWhiteSpace(ruleSet) ? string.Empty : TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
@@ -371,8 +391,10 @@ public static partial class ModelTools
         [Description("Excluded material substrings, as in the candidate query. Empty means none. Not used with contextId.")] string excludeMaterials = "",
         [Description("Snapshot ID returned by get_view_dimension_context. Required with pointIds; expires on refresh or drawing/view change.")] string contextId = "",
         [Description("Ordered point IDs returned in dimensionPoints for this context, as a JSON array of strings (\"[\\\"p0001\\\",\\\"p0002\\\"]\") or a comma-separated list. Required with contextId; order is preserved.")] string pointIds = "",
-        [Description("Line placement row: positive integer (1, 2, 3, ...). Default outline gap is row number times 8 paper mm. Explicit paperGapMm or distance ignores row and overrides it. This is separate from the Relative/Absolute dimension type.")] int row = 1)
+        [Description("Line placement row: positive integer (1, 2, 3, ...). Default outline gap is row number times 8 paper mm. Explicit paperGapMm or distance ignores row and overrides it. This is separate from the Relative/Absolute dimension type.")] int row = 1,
+        [Description("Placement and point scope: panel uses the panel/reference bounding box; steel uses the measured parts only. Required with pointIds from a context containing reference geometry.")] string ruleSet = "")
     {
+        ruleSet = string.IsNullOrWhiteSpace(ruleSet) ? string.Empty : TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
         var json = RunBridge("create_dimension",
             viewId.ToString(CultureInfo.InvariantCulture),
             points,
@@ -382,7 +404,7 @@ public static partial class ModelTools
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             excludePrefixes, excludeMaterials,
             contextId ?? string.Empty,
-            NormalizePointIds(pointIds), row.ToString(CultureInfo.InvariantCulture));
+            NormalizePointIds(pointIds), row.ToString(CultureInfo.InvariantCulture), ruleSet);
         try
         {
             var doc = JsonDocument.Parse(json);

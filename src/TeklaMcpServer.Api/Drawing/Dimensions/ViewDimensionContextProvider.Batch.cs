@@ -319,7 +319,9 @@ public sealed partial class ViewDimensionContextProvider
             ViewId = batch.ViewId, ContextId = batch.ContextId,
             PointIds = chain.PointIds ?? [], Direction = chain.Direction,
             Distance = chain.Distance, PaperGapMm = chain.PaperGapMm,
-            AttributesFile = chain.AttributesFile ?? "standard", DimensionType = chain.DimensionType, Row = row
+            AttributesFile = chain.AttributesFile ?? "standard", DimensionType = chain.DimensionType, Row = row,
+            UsePanelReference = chain.BoltProposal != null ? false : string.IsNullOrWhiteSpace(batch.RuleSet) ? null
+                : TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(batch.RuleSet) == "panel"
         };
         PreparedDimensionWrite write;
         if (chain.BoltProposal != null)

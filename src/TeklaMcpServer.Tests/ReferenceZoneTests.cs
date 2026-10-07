@@ -97,7 +97,7 @@ public sealed class ReferenceZoneTests
         Assert.Same(context, provider.Get(7, referenceZones: ["datum"]));
         Assert.True(provider.Create(new CreateDimensionRequest {
             ViewId = 7, ContextId = context.ContextId, PointIds = ids,
-            Direction = "horizontal-down", Distance = 12
+            Direction = "horizontal-down", Distance = 12, RuleSet = "panel"
         }).Created);
         Assert.Equal(new[] { 0d, 5, 20, 180, 195, 200 }, writtenPoints!
             .Where((_, index) => index % 3 == 0).Select(value => Math.Round(value, 6)));
@@ -220,13 +220,159 @@ public sealed class ReferenceZoneTests
         var bottom = Chain(answer, "Bottom");
         Assert.Equal(new[] { 50d, 1200, 50 }, bottom.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
         Assert.Equal(new[] { 50d, 3000, 50 }, Chain(answer, "Left").GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
-        Assert.Equal(1200, Chain(answer, "Bottom", "overall").GetProperty("segments")[0].GetDouble());
-        Assert.Equal(3000, Chain(answer, "Right", "overall").GetProperty("segments")[0].GetDouble());
+        Assert.Equal(1300, Chain(answer, "Bottom", "overall").GetProperty("segments")[0].GetDouble());
+        Assert.Equal(3100, Chain(answer, "Right", "overall").GetProperty("segments")[0].GetDouble());
         Assert.Empty(bottom.GetProperty("missingSupportModelIds").EnumerateArray());
         Assert.DoesNotContain(bottom.GetProperty("droppedShortPartIds").EnumerateArray(), id => id.GetInt32() == 10);
         var ids = bottom.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
         Assert.Equal(new[] { -50d, 0, 1200, 1250 }, context.ResolvePointIds(ids, "horizontal-down")
             .Where((_, index) => index % 3 == 0).Select(value => Math.Round(value, 6)));
+    }
+
+    private static (ViewDimensionContext Context, Outlines Reader) OverhangingContext()
+    {
+        var reader = new Outlines(new Dictionary<int, PolyTreeD> {
+            [1] = Rectangle(0, 1200, 0, 3000), [10] = Rectangle(-50, 1250, -50, 3050),
+            [12] = Rectangle(1400, 2500, -100, 3200) });
+        var outline = new TeklaDrawingStructuralOutlineApi(new Roles(Part(1, "3"),
+            Part(10, "0", false), Part(12, "0", false)), reader).Get(7, referenceZones: ["0"]);
+        return (Context(outline), reader);
+    }
+
+    [Theory]
+    [InlineData("horizontal-down", -50, -50, 1250, -50, -60)]
+    [InlineData("horizontal", -50, 3050, 1250, 3050, 3060)]
+    [InlineData("vertical-left", -50, -50, -50, 3050, -60)]
+    [InlineData("vertical", 1250, -50, 1250, 3050, 1260)]
+    public void PanelPlacementUsesScopedUnionOnEverySideWhileSteelKeepsItsOwnBounds(
+        string direction, double x1, double y1, double x2, double y2, double target)
+    {
+        var (context, reader) = OverhangingContext();
+        double[] points = [x1, y1, 0, x2, y2, 0];
+        Assert.Throws<ArgumentException>(() => context.Calculate(direction, points, 1));
+        var placement = context.Query("placement", points: points, direction: direction, paperGapMm: 1, ruleSet: "panel")
+            .GetProperty("placement");
+        Assert.Equal(10, Math.Round(placement.GetProperty("Distance").GetDouble(), 6));
+        Assert.Equal(target, Math.Round(placement.GetProperty("TargetLineCoordinate").GetDouble(), 6));
+        Assert.Throws<ArgumentException>(() => context.Query("placement", points: points, direction: direction, paperGapMm: 1, ruleSet: "steel"));
+        Assert.Equal(1, reader.Reads);
+    }
+
+    [Fact]
+    public void AutomaticPanelWritesUseUnionForPreviewAndExplicitIdsWithoutAnotherSolidRead()
+    {
+        var (context, reader) = OverhangingContext();
+        var dimensions = new GetDimensionsResult();
+        var writes = new List<(double[] Points, double Distance)>();
+        var provider = new ViewDimensionContextProvider(() => "drawing", (_, _) => context, () => { },
+            write: (request, distance) => {
+                writes.Add((request.Points, distance));
+                var id = 100 + writes.Count;
+                var points = Enumerable.Range(0, request.Points.Length / 3).Select(i => new DrawingPointInfo {
+                    X = request.Points[i * 3], Y = request.Points[i * 3 + 1], Order = i }).ToList();
+                dimensions.Groups.Add(new DimensionGroupInfo { DimensionType = "Horizontal", TopDirection = -1,
+                    Items = [new DimensionItemInfo { Id = id, Distance = distance, PointList = points,
+                        TeklaDimensionType = "Relative",
+                        ReferenceLine = new DrawingLineInfo { StartY = points.Min(point => point.Y) - distance },
+                        LengthList = points.Zip(points.Skip(1), (a, b) => Math.Abs(b.X - a.X)).ToList() }] });
+                return new CreateDimensionResult { Created = true, DimensionId = id };
+            }, referenceRead: (_, _, _, _) => context, readDimensions: _ => dimensions, validateAttributes: _ => { });
+        provider.Get(7, referenceZones: ["0"]);
+        var result = provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId,
+            RuleSet = "panel", Chains = [new BatchDimensionChain { Preview = "Bottom-location", PaperGapMm = 1 }] });
+        Assert.Equal("created", result.Chains.Single().Status);
+        Assert.Equal(10, writes.Single().Distance);
+        var answer = context.Query("chainDetails", ruleSet: "panel");
+        var ids = Chain(answer, "Bottom", "overall").GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+        var created = provider.Create(new CreateDimensionRequest { ViewId = 7, ContextId = context.ContextId,
+            PointIds = ids, Direction = "horizontal-down", PaperGapMm = 2, RuleSet = "panel" });
+        Assert.True(created.Created);
+        Assert.Equal(20, Math.Round(Convert.ToDouble(created.DistanceUsed), 6));
+        Assert.Equal(new[] { -50d, 1250 }, writes.Last().Points.Where((_, index) => index % 3 == 0).Select(value => Math.Round(value, 6)));
+        // An explicit steel batch on the same captured context keeps both the original
+        // supports and placement bounds, even though this context also has reference geometry.
+        var ownIds = Chain(answer, "Bottom").GetProperty("points").EnumerateArray()
+            .Where(point => point.GetProperty("candidateKinds").EnumerateArray().Any(kind => kind.GetString() != "ReferenceZone"))
+            .Select(point => point.GetProperty("pointId").GetString()!).ToArray();
+        var steel = provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId,
+            RuleSet = "steel", Chains = [new BatchDimensionChain { Key = "own", PointIds = ownIds,
+                Direction = "horizontal-down", PaperGapMm = 1 }] });
+        Assert.Equal("created", steel.Chains.Single().Status);
+        Assert.Equal(10, writes.Last().Distance);
+        Assert.Equal(new[] { 0d, 1200 }, writes.Last().Points.Where((_, index) => index % 3 == 0));
+        Assert.Equal(1, reader.Reads);
+    }
+
+    [Fact]
+    public void ExplicitRuleSetPlacesPanelOwnedOverallEndpointsAgainstTheReferenceBounds()
+    {
+        var reader = new Outlines(new Dictionary<int, PolyTreeD> {
+            [1] = Rectangle(0, 1200, 0, 3000), [10] = Rectangle(50, 1150, -50, 3050) });
+        var outline = new TeklaDrawingStructuralOutlineApi(new Roles(Part(1, "3"), Part(10, "0", false)), reader)
+            .Get(7, referenceZones: ["0"]);
+        var context = Context(outline);
+        var answer = context.Query("chainDetails", ruleSet: "panel");
+        var ids = Chain(answer, "Bottom", "overall").GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+        Assert.All(ids, id => Assert.StartsWith("p", id));
+        var writes = 0;
+        var provider = new ViewDimensionContextProvider(() => "drawing", (_, _) => context, () => { },
+            write: (_, _) => { writes++; return new() { Created = true }; }, referenceRead: (_, _, _, _) => context);
+        provider.Get(7, referenceZones: ["0"]);
+        Assert.Throws<ArgumentException>(() => provider.Create(new CreateDimensionRequest {
+            ViewId = 7, ContextId = context.ContextId, PointIds = ids, Direction = "horizontal-down", PaperGapMm = 1 }));
+        Assert.Equal(0, writes);
+        var panel = provider.Create(new CreateDimensionRequest { ViewId = 7, ContextId = context.ContextId,
+            PointIds = ids, Direction = "horizontal-down", PaperGapMm = 1, RuleSet = "panel" });
+        Assert.Equal(60, Math.Round(Convert.ToDouble(panel.DistanceUsed), 6));
+        Assert.Equal(-60, Math.Round(panel.Placement!.TargetLineCoordinate, 6));
+        var steel = provider.Create(new CreateDimensionRequest { ViewId = 7, ContextId = context.ContextId,
+            PointIds = ids, Direction = "horizontal-down", PaperGapMm = 1, RuleSet = "steel" });
+        Assert.Equal(10, Math.Round(Convert.ToDouble(steel.DistanceUsed), 6));
+        Assert.Equal(-10, steel.Placement!.TargetLineCoordinate);
+        Assert.Equal(1, reader.Reads);
+    }
+
+    [Fact]
+    public void AsymmetricReferenceUsesGlobalOverallBoundsAndResolvesOppositeSideVertices()
+    {
+        var clipper = new ClipperD();
+        clipper.AddSubject(new PathsD { new() { new(-50, -50), new(1200, -50), new(1300, 3050), new(-50, 3050) } });
+        var frame = new PolyTreeD();
+        clipper.Execute(ClipType.Union, FillRule.NonZero, frame);
+        var reader = new Outlines(new Dictionary<int, PolyTreeD> { [1] = Rectangle(0, 1200, 0, 3000), [10] = frame });
+        var outline = new TeklaDrawingStructuralOutlineApi(new Roles(Part(1, "3"), Part(10, "0", false)), reader)
+            .Get(7, referenceZones: ["0"]);
+        var context = Context(outline);
+        var answer = context.Query("chainDetails", ruleSet: "panel");
+        var overall = Chain(answer, "Bottom", "overall");
+        Assert.Equal(1350, overall.GetProperty("segments")[0].GetDouble());
+        Assert.Equal(3100, Chain(answer, "Right", "overall").GetProperty("segments")[0].GetDouble());
+        var ids = overall.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+        var resolved = context.ResolvePointIds(ids, "horizontal-down");
+        Assert.Equal(new[] { -50d, 1300 }, resolved.Where((_, index) => index % 3 == 0).Select(value => Math.Round(value, 6)));
+        Assert.Equal(3050, Math.Round(resolved[4], 6));
+        double[]? written = null;
+        var provider = new ViewDimensionContextProvider(() => "drawing", (_, _) => context, () => { },
+            write: (request, _) => { written = request.Points; return new() { Created = true }; },
+            referenceRead: (_, _, _, _) => context);
+        provider.Get(7, referenceZones: ["0"]);
+        Assert.True(provider.Create(new CreateDimensionRequest { ViewId = 7, ContextId = context.ContextId,
+            PointIds = ids, Direction = "horizontal-down", PaperGapMm = 1, RuleSet = "panel" }).Created);
+        Assert.Equal(resolved, written);
+        Assert.Equal(1, reader.Reads);
+    }
+
+    [Fact]
+    public void SingleChainTransportCarriesExplicitPlacementScopeAndAcceptsLegacyArguments()
+    {
+        string[] args = ["create_dimension", "7", "", "horizontal-down", "", "standard", "1", "", "",
+            "ctx_fixture", "[\"p0001\",\"p0002\"]", "1", " PANEL "];
+        var parsed = DrawingCommandParsers.ParseCreateDimensionRequest(args);
+        Assert.True(parsed.IsValid);
+        Assert.Equal("panel", parsed.Request.RuleSet);
+        Assert.True(DrawingCommandParsers.ParseCreateDimensionRequest(args.Take(12).ToArray()).IsValid);
+        args[12] = "unknown";
+        Assert.False(DrawingCommandParsers.ParseCreateDimensionRequest(args).IsValid);
     }
 
     [Fact]

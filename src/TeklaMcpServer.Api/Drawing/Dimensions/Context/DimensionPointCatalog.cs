@@ -67,7 +67,9 @@ internal sealed class DimensionPointCatalog
         double Across(DimensionPoint p) => alongX ? p.Y : p.X;
         return LinePoints(side)
             .Where(p => Math.Abs(Along(p) - Along(point)) <= 0.01)
-            .OrderByDescending(p => outer * Across(p))
+            // Prefer the requested coordinate before choosing an outward witness support.
+            .OrderBy(p => Math.Abs(Along(p) - Along(point)))
+            .ThenByDescending(p => outer * Across(p))
             .ThenBy(p => p.Id == point.Id ? 0 : 1).ThenBy(p => p.Id, StringComparer.Ordinal)
             .FirstOrDefault() ?? point;
     }
@@ -178,6 +180,27 @@ internal sealed class DimensionPointCatalog
         }
         foreach (var point in points.Values) point.Finish();
         return new DimensionPointCatalog(points, lines);
+    }
+
+    // Global overall bounds may be supported only on the opposite contour side. Retain
+    // those real points on each requested axis so their IDs resolve during creation.
+    internal DimensionPointCatalog WithExtentSupports(GeometryGroupExtent extent)
+    {
+        var lines = new Dictionary<DimensionChainSide, DimensionPointLine>();
+        foreach (var side in _lines.Keys)
+        {
+            var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+            double Along(DimensionPoint point) => alongX ? point.X : point.Y;
+            var min = alongX ? extent.MinX : extent.MinY;
+            var max = alongX ? extent.MaxX : extent.MaxY;
+            var entries = LinePoints(side).Concat(AllPoints.Where(point =>
+                    Math.Abs(Along(point) - min) <= .5 || Math.Abs(Along(point) - max) <= .5))
+                .Distinct().OrderBy(Along).ThenBy(point => alongX ? point.Y : point.X).ToArray();
+            lines.Add(side, new DimensionPointLine(entries.Select((point, index) => new DimensionPointLineEntry(
+                point.Id, index == 0 ? null : AxisDistance(side, entries[index - 1], point),
+                index + 1 == entries.Length ? null : AxisDistance(side, point, entries[index + 1]))).ToArray()));
+        }
+        return new DimensionPointCatalog(_points.ToDictionary(pair => pair.Key, pair => pair.Value), lines);
     }
 
     private static double AxisDistance(DimensionChainSide side, DimensionPoint a, DimensionPoint b) =>

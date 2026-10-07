@@ -16,6 +16,9 @@ public interface IDrawingDimensionsApi
     CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile);
     DeleteDimensionResult  DeleteDimension(int dimensionId);
 
+    /// <summary>Deletes each dimension by id and reports the per-id result; one bridge round trip.</summary>
+    IReadOnlyList<DeleteDimensionResult> DeleteDimensions(IReadOnlyList<int> dimensionIds);
+
     /// <summary>
     /// Merges extra points into an existing dimension set. Style and offset carry over and the
     /// chain is not torn down, but Tekla RENUMBERS it — read MergedDimensionId, because the id

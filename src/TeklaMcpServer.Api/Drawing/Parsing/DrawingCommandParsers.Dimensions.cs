@@ -33,9 +33,15 @@ public static partial class DrawingCommandParsers
     {
         if (args.Length < 4 || !int.TryParse(args[1], out var viewId))
         {
-            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson-or-empty> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials] [contextId] [pointIdsJson] [row]");
+            return CreateDimensionParseResult.Fail("Usage: create_dimension <viewId> <pointsJson-or-empty> <direction> [distance] [attributesFile] [paperGapMm] [excludePrefixes] [excludeMaterials] [contextId] [pointIdsJson] [row] [ruleSet]");
         }
 
+        var ruleSet = args.Length > 12 ? args[12].Trim() : string.Empty;
+        if (ruleSet.Length > 0)
+        {
+            try { ruleSet = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet); }
+            catch (ArgumentException ex) { return CreateDimensionParseResult.Fail(ex.Message); }
+        }
         var pointsJson = args.Length > 2 ? args[2] : "[]";
         var direction = args.Length > 3 ? args[3] : "horizontal";
         double? distance = null;
@@ -110,6 +116,7 @@ public static partial class DrawingCommandParsers
             AttributesFile = attributesFile,
             PaperGapMm = paperGapMm,
             Row = row,
+            RuleSet = ruleSet,
             ExcludePrefixes = args.Length > 7 ? args[7] : string.Empty,
             ExcludeMaterials = args.Length > 8 ? args[8] : string.Empty
         });
@@ -268,6 +275,29 @@ public static partial class DrawingCommandParsers
         return DeleteDimensionParseResult.Success(new DeleteDimensionRequest
         {
             DimensionId = dimensionId
+        });
+    }
+
+    public static DeleteDimensionsBatchParseResult ParseDeleteDimensionsBatchRequest(string[] args)
+    {
+        if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+            return DeleteDimensionsBatchParseResult.Fail("Usage: delete_dimensions_batch <dimensionIdsJson>");
+        int[] ids;
+        try
+        {
+            ids = System.Text.Json.JsonSerializer.Deserialize<int[]>(args[1])
+                ?? throw new ArgumentException("dimensionIds must be a JSON array of integers");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return DeleteDimensionsBatchParseResult.Fail("dimensionIds must be a JSON array of integers");
+        }
+        if (ids.Length == 0)
+            return DeleteDimensionsBatchParseResult.Fail("dimensionIds must not be empty");
+
+        return DeleteDimensionsBatchParseResult.Success(new DeleteDimensionsBatchRequest
+        {
+            DimensionIds = ids
         });
     }
 

@@ -30,6 +30,8 @@ public sealed class ViewDimensionContext
     private DimensionPointCatalog? _panelDimensionPointCatalog;
     private readonly ReferenceZoneOutline? _referenceZone;
     private readonly GeometryGroup? _referenceGroup;
+    private (double X, double Y)[]? _referenceVertices;
+    private GeometryGroupExtent? _panelReferenceExtent;
     private readonly Dictionary<string, JsonElement> _boltPreviews = new(StringComparer.Ordinal);
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
@@ -100,11 +102,13 @@ public sealed class ViewDimensionContext
         });
     }
 
-    public DimensionPlacementCalculation Calculate(string direction, double[] points, double? paperGapMm = null)
+    public DimensionPlacementCalculation Calculate(string direction, double[] points, double? paperGapMm = null,
+        bool usePanelReference = false)
     {
         if (!_complete || _group.Extent == null)
             throw new InvalidOperationException("Cannot calculate automatic dimension offset: assembly outline is incomplete or empty");
-        return DimensionPlacementCalculator.Calculate(ParseSide(direction), points, _group.Extent,
+        return DimensionPlacementCalculator.Calculate(ParseSide(direction), points,
+            usePanelReference ? PanelReferenceExtent() : _group.Extent,
             Scale, paperGapMm ?? DimensionPlacementSettings.DefaultPaperGapMm);
     }
 
@@ -156,7 +160,8 @@ public sealed class ViewDimensionContext
             result["contacts"] = ContactAnswer(_contacts.Get(), requested.Contains("contactdetails") || pair != null, pair);
         }
         if (requested.Contains("placement"))
-            result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm);
+            result["placement"] = Calculate(direction, points ?? throw new ArgumentException("placement requires points"), paperGapMm,
+                usePanelReference: normalizedRuleSet == "panel");
         if (Wants("scale")) result["scale"] = Scale;
         if (Wants("parts")) result["parts"] = _parts;
         if (Wants("bolts")) result["bolts"] = _bolts;
@@ -174,7 +179,8 @@ public sealed class ViewDimensionContext
             }
         }
         if (requested.Contains("dimensionpoints"))
-            result["dimensionPoints"] = GetDimensionPointCatalog().Project(selected);
+            result["dimensionPoints"] = (normalizedRuleSet == "panel"
+                ? GetDimensionPointCatalog() : GetPanelDimensionPointCatalog()).Project(selected);
         if (wantsChain)
         {
             var panel = normalizedRuleSet == "panel";
@@ -358,11 +364,24 @@ public sealed class ViewDimensionContext
         throw new ArgumentException("Unknown boltProposal in this context; query boltChains again");
     }
 
-    internal double[] ResolvePointIds(IEnumerable<string> pointIds, string direction)
+    internal double[] ResolvePointIds(IEnumerable<string> pointIds, string direction, bool usePanelReference = true)
     {
         EnsureChains();
-        return GetDimensionPointCatalog().Resolve(pointIds, ParseSide(direction));
+        return (usePanelReference ? GetDimensionPointCatalog() : GetPanelDimensionPointCatalog()).Resolve(pointIds, ParseSide(direction));
     }
+
+    private (double X, double Y)[] ReferenceVertices()
+    {
+        if (_referenceVertices != null) return _referenceVertices;
+        var reference = UsableReferenceGroup();
+        return _referenceVertices = reference == null || _group.Extent == null ? []
+            : ReferenceZoneOutline.VerticesForPanel(reference, _group.Extent);
+    }
+
+    private GeometryGroupExtent PanelReferenceExtent() =>
+        _panelReferenceExtent ??= _group.Extent!.Include(ReferenceVertices());
+
+    internal bool HasScopedReferenceGeometry => ReferenceVertices().Length > 0;
 
     private GeometryGroup? UsableReferenceGroup() => _referenceGroup is { Extent: not null }
         && _referenceGroup.Completeness.IsComplete ? _referenceGroup : null;
@@ -378,7 +397,7 @@ public sealed class ViewDimensionContext
         if (reference == null) return _dimensionPointCatalog = panel;
         if (reference.DimensionChains == null) CalcDimensionChains.Apply(reference);
         return _dimensionPointCatalog = panel.WithReference(DimensionPointCatalog.Build(reference.DimensionChains!), _group.Extent!,
-            ReferenceZoneOutline.VerticesForPanel(reference, _group.Extent!));
+            ReferenceVertices()).WithExtentSupports(PanelReferenceExtent());
     }
 
     private static object ContactAnswer(ViewContactCandidatePointsResult result, bool detailed, int[]? pair)

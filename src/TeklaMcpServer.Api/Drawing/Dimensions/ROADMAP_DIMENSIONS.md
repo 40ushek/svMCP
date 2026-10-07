@@ -1270,9 +1270,10 @@ live drawing acceptance remains open:
 - reference components are selected by intersection of their outer polygon with the current
   measured panel's bounds. Their full vertices are retained, including overhangs, so a frame
   surrounding the cladding still supplies offset dimensions. Disjoint neighbouring components
-  are omitted. Chain sides use the measured panel's midpoint, and overall dimensions keep its
-  original catalog and bounds. The overhang regression checks 50 mm offsets, point-ID resolution
-  and unchanged overall dimensions with a neighbouring reference component present.
+  are omitted. Location-chain sides use the measured panel's midpoint. When reference geometry
+  is mixed in, overall dimensions use the combined catalog and scoped bounding box. The overhang
+  regression checks 50 mm offsets, point-ID resolution and the combined overall dimensions
+  with a neighbouring reference component present.
 - `PartRoleInView` retains separate `PartPrefixKnown`/`MaterialKnown` read results. Reference
   exclusions check their own required properties, independently of the panel role. An unread
   required property suppresses the reference mix; a successfully read empty value is valid.
@@ -1308,6 +1309,48 @@ live drawing acceptance remains open:
   view's depth window suppresses reference mixing for every panel measured in that view, not just
   the one it belongs to - is accepted as a known, deliberate cost of staying fail-closed, not a bug
   to silently work around.
+
+**Live write acceptance (PR2613/EW.2/view 1213, 2026-10-07):** `create_dimensions_batch` created
+`Bottom-location`, `Left-location`, `Right-location`, `Bottom-overall` and `Right-overall` from
+this context without error, with the real cladding/frame offsets read back on the drawing
+(e.g. Bottom `[4, 1204, 1208]`). One gap found: automatic placement of the three `-location`
+chains carrying `ReferenceZone` points failed with `"Calculated dimension distance is not
+positive or the points lie beyond the target side"`. A point outside the measured panel's
+extent does not by itself cause this error. `DimensionPlacementCalculator.Calculate` chooses
+the unique support at the minimum coordinate along the chain, computes the target line from
+the supplied extent plus the paper gap converted to view units, and measures the outward
+distance from that support. The error occurs when this distance is not finite or is at most
+`MinimumDistanceViewUnits`; an overhanging reference support can already lie beyond the target
+line computed from the measured panel alone. `OutsideOutlineDimensionPlacement` stores only
+the outward direction and row; it does not calculate distance or sign.
+The two `-overall` chains needed an explicit `distance` too, but for the ordinary, unrelated
+reason that their side was already occupied by the just-created location dimension, not because
+of any reference point. Fix direction given by the user (2026-10-07): both the placement/distance
+calculation and the `-overall` chain should use the union of the measured panel's own polygon
+and only the reference components selected for that panel by `VerticesForPanel`. The full
+reference polygon captured for the view can also contain neighbouring panels and must not be
+used wholesale: those unselected components must not enlarge the combined bounds or move the
+dimension line. `DimensionPlacementCalculator` and the overall chain should use the bounds of
+this scoped union when reference geometry is mixed in. Apply that scope only to the relevant
+panel/reference chains; steel assemblies and chains without reference mixing keep their current
+placement and overall behaviour.
+
+Implemented using min/max bounds of the measured panel and the selected reference vertices;
+no additional polygon union or Tekla geometry read is needed for these bounds.
+`GeometryGroupExtent.Include` computes the combined box. Panel overall previews use that box
+and the combined point catalog. Placement queries explicitly select the panel scope; batch
+writes carry it from `ruleSet`, and explicit steel batches resolve points from the original
+panel catalog. Single-chain ID writes now carry an explicit `ruleSet` through MCP and the
+bridge; it is required when a captured context has selected reference geometry, including
+explicit-ID batches. No coordinate-coincidence inference remains. Panel overall rules use
+global MinX/MaxX bounds, and the combined catalog exposes real extreme vertices on both
+axis sides so an opposite-side extreme can be resolved for creation. Bolt placement retains
+its original scope. Suppressed or empty
+reference geometry falls back to the measured panel. Regression tests cover four-side placement,
+preview batch writes, explicit point-ID writes, steel scope isolation, a frame narrower than
+the cladding but overhanging vertically, and an asymmetric reference whose rightmost corner
+is only on its top side. The automatic-placement
+fix has not yet been re-verified on a live drawing.
 
 Automated gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
 invalid `ruleSet`/`chainView` writes nothing; references and explicit `pointIds`

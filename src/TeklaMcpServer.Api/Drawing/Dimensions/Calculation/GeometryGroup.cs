@@ -129,6 +129,12 @@ public sealed class GeometryGroupExtent
     public double MinY { get; }
     public double MaxY { get; }
 
+    // Bounds of a polygon union equal the bounds of all its vertices; no geometry read is needed.
+    internal GeometryGroupExtent Include(IReadOnlyCollection<(double X, double Y)> points) => points.Count == 0
+        ? this : new GeometryGroupExtent(
+            Math.Min(MinX, points.Min(point => point.X)), Math.Max(MaxX, points.Max(point => point.X)),
+            Math.Min(MinY, points.Min(point => point.Y)), Math.Max(MaxY, points.Max(point => point.Y)));
+
     internal static GeometryGroupExtent? TryCreate(IReadOnlyList<GeometryGroupShape> shapes)
     {
         var points = shapes.SelectMany(shape => shape.Shape.Points).ToList();

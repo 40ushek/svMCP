@@ -56,8 +56,17 @@ internal static class TimberPanelChainPreview
         var input = new TimberPanelPartLocationInput(group, includedIds, getContacts, referenceGroup, panelCatalog);
         var context = DimensionRuleContext.FromCatalog(catalog, panel, input);
         var location = new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment, referenceZones)).Calculate(context);
-        var overall = new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings()).Calculate(
-            DimensionRuleContext.FromCatalog(panelCatalog ?? catalog, panel));
+        var referenceVertices = referenceZones is { Count: > 0 } && referenceGroup is { Extent: not null }
+            && referenceGroup.Completeness.IsComplete
+            ? ReferenceZoneOutline.VerticesForPanel(referenceGroup, panel) : Array.Empty<(double X, double Y)>();
+        var combinedExtent = panel.Include(referenceVertices);
+        var overallPolicy = overallSettings ?? new OverallDimensionSettings();
+        if (referenceVertices.Length > 0)
+            overallPolicy = new OverallDimensionSettings(overallPolicy.HorizontalSide, overallPolicy.VerticalSide,
+                overallPolicy.PositionTolerance, useExtentBounds: true);
+        var overall = new OverallDimensionRule(overallPolicy).Calculate(
+            DimensionRuleContext.FromCatalog(referenceVertices.Length > 0 ? catalog.WithExtentSupports(combinedExtent)
+                : panelCatalog ?? catalog, combinedExtent));
         var evaluation = new DimensionRuleEvaluation(location.Results.Concat(overall.Results), location.Diagnostics);
         return FromEvaluation(evaluation, contextId, viewId, coordinateSettings);
     }
