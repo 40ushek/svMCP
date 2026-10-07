@@ -24,9 +24,11 @@ public sealed class StructuralOutline
         IReadOnlyList<UnreadPart>? unreadRoles = null,
         IReadOnlyList<int>? outsideDepthModelIds = null,
         IReadOnlyList<int>? contactModelIds = null,
-        IReadOnlyList<UnreadPart>? contactSelectionUnread = null)
+        IReadOnlyList<UnreadPart>? contactSelectionUnread = null,
+        ReferenceZoneOutline? referenceZone = null)
     {
         Outline = outline;
+        ReferenceZone = referenceZone;
         Included = included;
         Excluded = excluded;
         Unclassified = unclassified;
@@ -37,6 +39,7 @@ public sealed class StructuralOutline
     }
 
     public ViewAssemblyOutlineResult Outline { get; }
+    public ReferenceZoneOutline? ReferenceZone { get; }
 
     /// <summary>The parts measured over.</summary>
     public IReadOnlyList<PartRoleInView> Included { get; }
@@ -157,7 +160,8 @@ public sealed class TeklaDrawingStructuralOutlineApi
     public StructuralOutline Get(
         int viewId,
         OutlineOptions? options = null,
-        System.Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null)
+        System.Action<IReadOnlyList<PartRoleInView>>? beforeOutlineRead = null,
+        IReadOnlyCollection<string>? referenceZones = null, IReadOnlyList<PartExclusionRule>? exclusions = null)
     {
         var read = _roles.GetRolesInView(viewId);
 
@@ -168,14 +172,28 @@ public sealed class TeklaDrawingStructuralOutlineApi
         var ids = included.Select(part => part.ModelId).Distinct().ToList();
         beforeOutlineRead?.Invoke(included);
 
+        var zones = ReferenceZoneOutline.Normalize(referenceZones);
+        var reference = zones.Length == 0 ? null : ReferenceZoneOutline.Select(
+            included.Concat(excluded).Concat(unclassified), zones, exclusions ?? PartRoleClassifier.NoExclusions);
+        var captured = _outline.GetAssemblyOutline(viewId, options,
+            ids.Concat(reference?.ModelIds ?? Array.Empty<int>()).Distinct().ToArray());
+        var panelOutline = reference == null ? captured : ReferenceZoneOutline.Subset(captured, ids, options);
+        if (reference is { Error: null })
+        {
+            var referenceOutline = ReferenceZoneOutline.Subset(captured, reference.ModelIds, options);
+            reference = new ReferenceZoneOutline(zones, reference.ModelIds, referenceOutline);
+            if (!reference.IsComplete)
+                reference = new ReferenceZoneOutline(zones, reference.ModelIds, referenceOutline,
+                    "Reference-zone geometry is incomplete; no reference polygon was mixed");
+        }
         return new StructuralOutline(
-            _outline.GetAssemblyOutline(viewId, options, ids),
+            panelOutline,
             included,
             excluded,
             unclassified,
             read.Unread,
             read.OutsideDepthModelIds,
             read.DepthSelectedModelIds,
-            read.DepthUnread);
+            read.DepthUnread, reference);
     }
 }

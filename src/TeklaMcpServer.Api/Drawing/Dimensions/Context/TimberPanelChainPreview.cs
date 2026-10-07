@@ -44,18 +44,21 @@ internal static class TimberPanelChainPreview
     public static PreviewResult Build(DimensionPointCatalog catalog, GeometryGroup group,
         IReadOnlyCollection<int> includedIds, double minimumSegment,
         Func<ViewContactCandidatePointsResult?> getContacts, string contextId, int viewId,
-        OverallDimensionSettings? overallSettings = null, DimensionCoordinateSettings? coordinateSettings = null)
+        OverallDimensionSettings? overallSettings = null, DimensionCoordinateSettings? coordinateSettings = null,
+        IReadOnlyCollection<string>? referenceZones = null, GeometryGroup? referenceGroup = null,
+        DimensionPointCatalog? panelCatalog = null)
     {
         if (group.Extent == null)
             return new PreviewResult(Rows(side => [Empty(side, "location", "panel outline is empty")]),
                 [], [], [], [], "not-available", () => BuildCompositionPlan(new DimensionRuleEvaluation([]), contextId, viewId, coordinateSettings));
 
         var panel = group.Extent;
-        var input = new TimberPanelPartLocationInput(group, includedIds, getContacts);
+        var input = new TimberPanelPartLocationInput(group, includedIds, getContacts, referenceGroup, panelCatalog);
         var context = DimensionRuleContext.FromCatalog(catalog, panel, input);
-        var evaluation = new DimensionRuleSet(
-            new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment)),
-            new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings())).Calculate(context);
+        var location = new TimberPanelPartLocationRule(new TimberPanelPartLocationSettings(minimumSegment, referenceZones)).Calculate(context);
+        var overall = new OverallDimensionRule(overallSettings ?? new OverallDimensionSettings()).Calculate(
+            DimensionRuleContext.FromCatalog(panelCatalog ?? catalog, panel));
+        var evaluation = new DimensionRuleEvaluation(location.Results.Concat(overall.Results), location.Diagnostics);
         return FromEvaluation(evaluation, contextId, viewId, coordinateSettings);
     }
 

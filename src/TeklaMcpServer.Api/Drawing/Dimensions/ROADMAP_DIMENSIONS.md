@@ -1225,22 +1225,25 @@ too" but to put a frame coordinate next to the plate's own coordinate on the sam
 so the dimension shows the installer the actual offset/overlap between plate edge and frame
 edge — the number someone on site would otherwise have to measure by hand. The dependency is
 one-directional: the frame (zone 0) is the datum the plate (zone 1) is fastened to and measured
-against, never the reverse. Open points, none implemented:
+against, never the reverse. Reference-zone mixing is implemented with these contracts;
+live drawing acceptance remains open:
 - the reference zone must be a caller-supplied collection (e.g. `referenceZones`), not a
   literal "0" in the rule, matching the no-plant-conventions-in-code rule elsewhere
-  (`PartExclusionRule`, `PartLayerRule`); a union of several zones is a plausible later need
-  but not required now
+  (`PartExclusionRule`, `PartLayerRule`); several requested zones produce one reference union
 - "Zone=0" alone is not the frame geometry: insulation/sealant parts can carry Zone=0 too and
   must still drop out through the same `excludePrefixes`/`excludeMaterials` the panel itself
   uses, not just a zone match
 - the zone-filtered ID source should be `_partAttributes` (all depth-selected parts: Included +
-  Excluded + Unclassified), not `outline.Included`, since the frame is typically excluded from
-  the panel's own outline by the very filter that isolates the panel
+  Excluded + Unclassified), not just `outline.Included`. The same exclusions are then applied
+  to the reference selection. The existing panel selection stays unchanged: selecting a
+  reference zone does not remove those parts from Included or select a drawing zone implicitly.
+  An eligible part with an unread ZONE suppresses the entire reference mix; incomplete reference
+  geometry also suppresses it, with a reason in `chainDiagnostics.referenceZone`
 - avoid reading any part's solid twice: one `GetAssemblyOutline` call over the union of the
   panel's IDs and the zone-filtered IDs reads each unique solid once; the panel outline and the
   zone-reference outline are then two separate, Tekla-free calls to
-  `ProjectedOutlineBuilder.BuildAssembly` over disjoint subsets of the same already-read
-  `PartOutlines`/`PartNodes`
+  `ProjectedOutlineBuilder.BuildAssembly` over subsets of the same already-read
+  `PartOutlines`/`PartNodes`; those subsets may overlap without another solid read
 - side-filtering of the zone polygon's vertices (`OutlineCoordinates`'s `panel.MinX/MaxX` cut)
   must use the current panel's own bounds, not a global cut, so a neighbouring panel's frame
   vertices are never pulled in
@@ -1252,11 +1255,31 @@ against, never the reverse. Open points, none implemented:
   no precedence between them. `located`/`dropped` use `AccountedPartIds`, which reads the chosen
   `DimensionPoint`'s `Parents`, limits IDs to the panel's included member IDs, and skips a point
   sourced only from ReferenceZone. Thus a coincident panel candidate still accounts for its own
-  panel IDs, while the frame ID is never reported as a panel member. The polygon and producer for
-  ReferenceZone candidates remain future work. The enum currently has `Member`, `PanelOutline`,
+  panel IDs. A reference-only point never accounts for members; if a reference part is also in
+  the existing Included selection, it retains that panel-member role on a mixed point.
+  Reference polygon vertices now produce ownerless candidates matched by coordinate.
+  The enum currently has `Member`, `PanelOutline`,
   and `ReferenceZone`, and can be extended for another point source if a concrete need appears.
   This change stays inside `TimberPanelPartLocationRule`; bolt chains build points through an
   unrelated mechanism and remain out of scope unless a concrete need to unify them appears.
+- `TeklaDrawingStructuralOutlineApi.Get` now constructs a `ReferenceZoneOutline` and reads its
+  `IsComplete` getter to decide whether to report incomplete reference geometry. The duplicated
+  inline completeness check has been removed.
+- `ReferenceZoneOutline.Select`'s `ZoneKnown` fail-closed check (confirmed by
+  `SelectionUsesBothCallerExclusionsAndDoesNotAssumeNumericZones`) scans every exclusion-surviving
+  part in the view's depth-selected `ModelPart` set, before any zone filter, and blocks the whole
+  reference mix on one unreadable part regardless of whether it could plausibly belong to the
+  requested zones. Narrowing the check to only the zone-matched subset (as `unclassified` already
+  does a few lines below) is unsafe, not just inconsistent: a part whose ZONE read failed also has
+  an empty `Zone` string, so it would never reach that matched subset at all, and the frame would
+  silently lose a member with no error instead of refusing to mix - exactly what fail-closed exists
+  to prevent. A safe narrowing needs a signal for "plausibly in scope for this reference selection"
+  that does not itself depend on ZONE (assembly membership is one candidate, not committed to).
+  Until such a signal exists, the wide blast radius - one unreadable `ModelPart` anywhere in the
+  view's depth window suppresses reference mixing for every panel measured in that view, not just
+  the one it belongs to - is accepted as a known, deliberate cost of staying fail-closed, not a bug
+  to silently work around.
+
 Automated gates: an unknown or stale chain key, an entry with both forms, a repeated chain or an
 invalid `ruleSet`/`chainView` writes nothing; references and explicit `pointIds`
 produce identical dimensions for the same chain; a repeated batch retains a referenced

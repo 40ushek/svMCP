@@ -134,6 +134,42 @@ internal sealed class DimensionPointCatalog
         return new DimensionPointCatalog(points, lines);
     }
 
+    // Keep the original panel IDs while adding detached reference supports. Exact coincident
+    // points merge their geometric parents; candidate kinds are kept separately by the rule.
+    internal DimensionPointCatalog WithReference(DimensionPointCatalog reference, GeometryGroupExtent panel)
+    {
+        var points = _points.Values.ToDictionary(point => point.Id, point => point.Copy(point.Id), StringComparer.Ordinal);
+        var byCoordinates = points.Values.ToDictionary(point => (point.X, point.Y));
+        var mapped = new Dictionary<string, DimensionPoint>(StringComparer.Ordinal);
+        foreach (var source in reference.AllPoints)
+        {
+            if (source.X < panel.MinX - .5 || source.X > panel.MaxX + .5
+                || source.Y < panel.MinY - .5 || source.Y > panel.MaxY + .5) continue;
+            if (!byCoordinates.TryGetValue((source.X, source.Y), out var point))
+            {
+                point = source.Copy("r" + source.Id);
+                points.Add(point.Id, point);
+                byCoordinates.Add((point.X, point.Y), point);
+            }
+            else point.Merge(source);
+            mapped.Add(source.Id, point);
+        }
+        var lines = new Dictionary<DimensionChainSide, DimensionPointLine>();
+        foreach (var pair in _lines)
+        {
+            var side = pair.Key;
+            var entries = pair.Value.Entries.Select(entry => points[entry.PointId])
+                .Concat(reference.LinePoints(side).Where(point => mapped.ContainsKey(point.Id)).Select(point => mapped[point.Id]))
+                .Distinct().OrderBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.X : point.Y)
+                .ThenBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.Y : point.X).ToArray();
+            lines.Add(side, new DimensionPointLine(entries.Select((point, index) => new DimensionPointLineEntry(
+                point.Id, index == 0 ? null : AxisDistance(side, entries[index - 1], point),
+                index + 1 == entries.Length ? null : AxisDistance(side, point, entries[index + 1]))).ToArray()));
+        }
+        foreach (var point in points.Values) point.Finish();
+        return new DimensionPointCatalog(points, lines);
+    }
+
     private static double AxisDistance(DimensionChainSide side, DimensionPoint a, DimensionPoint b) =>
         Math.Abs(side is DimensionChainSide.Top or DimensionChainSide.Bottom ? b.X - a.X : b.Y - a.Y);
 
@@ -187,6 +223,23 @@ internal sealed class DimensionPoint(string id, double x, double y)
         if (_parentKeys.Add(key))
             _parents.Add(new DimensionPointParent(support.ModelId, support.Source.Id,
                 support.PointIndex, support.Kind, support.Source.IsHole, span));
+    }
+
+    internal DimensionPoint Copy(string id)
+    {
+        var copy = new DimensionPoint(id, X, Y);
+        copy.Merge(this);
+        return copy;
+    }
+
+    internal void Merge(DimensionPoint source)
+    {
+        _kinds |= source._kinds;
+        foreach (var parent in source.Parents)
+        {
+            var key = (parent.ModelId, parent.SourceId, parent.PointIndex, parent.Kind, parent.IsHole, parent.PartExtentAlongChain);
+            if (_parentKeys.Add(key)) _parents.Add(parent);
+        }
     }
 
     public void Finish() => _parents.Sort((a, b) => {

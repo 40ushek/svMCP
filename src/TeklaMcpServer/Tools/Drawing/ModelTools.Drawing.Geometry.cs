@@ -70,23 +70,32 @@ public static partial class ModelTools
         [Description("Legacy argument; unused by prepared-chain questions")] double? paperGapMm = null,
         [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel",
         [Description("Legacy argument; contact questions are not supported by this tool.")] string contactPair = "",
-        [Description("Diagnostic rules for panel chainDetails: JSON [{id,className,conditions:[{property,matchKind,value}],priority?,data?}]. Properties: Name,Prefix,Profile,Material. Matches: Equals (default),Contains,StartsWith. Conditions are AND, ignoring case. Empty disables classification. Does not change dimensions; examples in ROADMAP_CHAIN_COMPOSITION.md.")] string layerRules = "")
+        [Description("Diagnostic rules for panel chainDetails: JSON [{id,className,conditions:[{property,matchKind,value}],priority?,data?}]. Properties: Name,Prefix,Profile,Material. Matches: Equals (default),Contains,StartsWith. Conditions are AND, ignoring case. Empty disables classification. Does not change dimensions; examples in ROADMAP_CHAIN_COMPOSITION.md.")] string layerRules = "",
+        [Description("Explicit ZONE values for the panel reference polygon, e.g. [\"0\"]. Only with ruleSet=panel. Empty disables mixing; the same prefix/material exclusions apply. An unread zone suppresses reference geometry.")] string[]? referenceZones = null)
     {
         return RunBridge(BuildViewDimensionContextArgs(viewId, questions, sides, excludePrefixes, excludeMaterials,
-            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules));
+            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules, referenceZones));
     }
 
     internal static string[] BuildViewDimensionContextArgs(int viewId, string questions, string sides,
         string excludePrefixes, string excludeMaterials, bool refresh, string points, string direction,
-        double? paperGapMm, string ruleSet, string contactPair, string layerRules)
+        double? paperGapMm, string ruleSet, string contactPair, string layerRules, string[]? referenceZones = null)
     {
         questions = TeklaMcpServer.Shared.DimensionPreviewQuestions.Normalize(questions);
         _ = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(layerRules);
-        return new[] { "get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
+        if (referenceZones is { Length: > 0 })
+        {
+            if (referenceZones.Any(string.IsNullOrWhiteSpace))
+                throw new ArgumentException("referenceZones must contain non-empty zone values");
+            if (!string.Equals(ruleSet?.Trim(), "panel", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("referenceZones requires ruleSet=panel");
+        }
+        var args = new[] { "get_view_dimension_context", viewId.ToString(CultureInfo.InvariantCulture),
             questions, sides, excludePrefixes, excludeMaterials, refresh.ToString(), points, direction,
             paperGapMm?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
             string.IsNullOrWhiteSpace(ruleSet) ? "steel" : ruleSet,
             contactPair ?? string.Empty, layerRules ?? string.Empty };
+        return referenceZones is { Length: > 0 } ? [.. args, JsonSerializer.Serialize(referenceZones)] : args;
     }
 
     [McpServerTool, Description(

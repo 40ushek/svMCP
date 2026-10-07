@@ -8,12 +8,17 @@ namespace TeklaMcpServer.Api.Drawing;
 internal sealed class TimberPanelPartLocationInput
 {
     public GeometryGroup Group { get; }
+    public GeometryGroup? ReferenceGroup { get; }
+    public DimensionPointCatalog? PanelCatalog { get; }
     public IReadOnlyCollection<int> IncludedIds { get; }
     public Func<ViewContactCandidatePointsResult?> GetContacts { get; }
 
     public TimberPanelPartLocationInput(GeometryGroup group, IReadOnlyCollection<int> includedIds,
-        Func<ViewContactCandidatePointsResult?> getContacts)
+        Func<ViewContactCandidatePointsResult?> getContacts, GeometryGroup? referenceGroup = null,
+        DimensionPointCatalog? panelCatalog = null)
     {
+        ReferenceGroup = referenceGroup;
+        PanelCatalog = panelCatalog;
         Group = group ?? throw new ArgumentNullException(nameof(group));
         IncludedIds = includedIds ?? throw new ArgumentNullException(nameof(includedIds));
         GetContacts = getContacts ?? throw new ArgumentNullException(nameof(getContacts));

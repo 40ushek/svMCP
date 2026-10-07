@@ -27,6 +27,9 @@ public sealed class ViewDimensionContext
     private readonly IReadOnlyList<UnreadPart> _contactSelectionUnread;
     private ViewContactsSnapshot? _contacts;
     private DimensionPointCatalog? _dimensionPointCatalog;
+    private DimensionPointCatalog? _panelDimensionPointCatalog;
+    private readonly ReferenceZoneOutline? _referenceZone;
+    private readonly GeometryGroup? _referenceGroup;
     private readonly Dictionary<string, JsonElement> _boltPreviews = new(StringComparer.Ordinal);
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
@@ -58,9 +61,16 @@ public sealed class ViewDimensionContext
         _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,
             visibilityVerified = false, error = "Bolt geometry was not captured" });
         _group = StructuralGeometryGroupBuilder.Build(outline);
+        _referenceZone = outline.ReferenceZone;
+        if (_referenceZone is { IsComplete: true })
+            _referenceGroup = StructuralGeometryGroupBuilder.Build(new StructuralOutline(_referenceZone.Outline!,
+                outline.Included.Concat(outline.Excluded).Concat(outline.Unclassified)
+                    .Where(part => _referenceZone.ModelIds.Contains(part.ModelId)).ToArray(), [], []), "reference-zone");
         _complete = outline.IsComplete && _group.Completeness.IsComplete;
         _partSolids = new ReadOnlyDictionary<int, PartSolidGeometryInViewResult>(
-            outline.Outline.PartSolidGeometries.ToDictionary(pair => pair.Key, pair => pair.Value));
+            outline.Outline.PartSolidGeometries
+                .Concat(outline.ReferenceZone?.Outline?.PartSolidGeometries ?? new Dictionary<int, PartSolidGeometryInViewResult>())
+                .GroupBy(pair => pair.Key).ToDictionary(group => group.Key, group => group.First().Value));
         _mainPartIds = outline.Included.Where(p => p.IsMainPart).Select(p => p.ModelId).ToArray();
         _includedModelIds = outline.Included.Select(p => p.ModelId).Distinct().ToArray();
         // A part that was never classified could be the main part: count it as unresolved.
@@ -174,11 +184,17 @@ public sealed class ViewDimensionContext
             var panelPlans = panel && refusal == null
                 ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, () => _contacts?.Get(),
-                    contextId: ContextId, viewId: ViewId, coordinateSettings: coordinateSettings)
+                    contextId: ContextId, viewId: ViewId, coordinateSettings: coordinateSettings, referenceZones: _referenceZone?.Zones,
+                    referenceGroup: UsableReferenceGroup(), panelCatalog: GetPanelDimensionPointCatalog())
                 : null;
             if (panelPlans != null)
             {
                 var diagnostics = new Dictionary<string, object?> { ["contactStatus"] = panelPlans.ContactStatus };
+                if (_referenceZone != null) diagnostics["referenceZone"] = new {
+                    zones = _referenceZone.Zones, modelIds = _referenceZone.ModelIds,
+                    status = UsableReferenceGroup() != null ? "complete" : "suppressed",
+                    reason = _referenceZone.Error ?? (UsableReferenceGroup() == null ? "Reference polygon is incomplete or empty" : null)
+                };
                 if (panelPlans.ContactFallbackPairs.Length > 0) diagnostics["contactFallbackPairs"] = panelPlans.ContactFallbackPairs;
                 if (panelPlans.UnlocatedModelIds.Length > 0) diagnostics["unlocatedModelIds"] = panelPlans.UnlocatedModelIds;
                 if (panelPlans.MissingSupportModelIds.Length > 0) diagnostics["missingSupportModelIds"] = panelPlans.MissingSupportModelIds;
@@ -190,7 +206,7 @@ public sealed class ViewDimensionContext
             }
             SectionDimensionChainPreview? sectionPreview = null;
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
-                    GetDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
+                    GetPanelDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, Scale,
                     out sectionPreview, out var profileReason))
                 refusal = profileReason;
@@ -239,7 +255,7 @@ public sealed class ViewDimensionContext
                         .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
                     : (refusal != null
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
-                    : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetDimensionPointCatalog(), side,
+                    : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetPanelDimensionPointCatalog(), side,
                         _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits))
                     .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
             }).ToArray();
@@ -347,8 +363,21 @@ public sealed class ViewDimensionContext
         return GetDimensionPointCatalog().Resolve(pointIds, ParseSide(direction));
     }
 
-    private DimensionPointCatalog GetDimensionPointCatalog() =>
-        _dimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);
+    private GeometryGroup? UsableReferenceGroup() => _referenceGroup is { Extent: not null }
+        && _referenceGroup.Completeness.IsComplete ? _referenceGroup : null;
+
+    private DimensionPointCatalog GetPanelDimensionPointCatalog() =>
+        _panelDimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);
+
+    private DimensionPointCatalog GetDimensionPointCatalog()
+    {
+        if (_dimensionPointCatalog != null) return _dimensionPointCatalog;
+        var panel = GetPanelDimensionPointCatalog();
+        var reference = UsableReferenceGroup();
+        if (reference == null) return _dimensionPointCatalog = panel;
+        if (reference.DimensionChains == null) CalcDimensionChains.Apply(reference);
+        return _dimensionPointCatalog = panel.WithReference(DimensionPointCatalog.Build(reference.DimensionChains!), _group.Extent!);
+    }
 
     private static object ContactAnswer(ViewContactCandidatePointsResult result, bool detailed, int[]? pair)
     {
@@ -490,6 +519,7 @@ public sealed class ViewDimensionContext
         using var hash = SHA256.Create();
         var text = JsonSerializer.Serialize(new { source = _source, metadata = _metadata, Scale,
             exclusions = _exclusions, extent = Extent(), parts = _parts, bolts = _bolts,
+            referenceZones = _referenceZone?.Zones, referenceNodes = _referenceZone?.Outline?.AssemblyNodes,
             chains = _group.DimensionChains!.Chains.Select(c => new { c.Side, positions = VerbosePositions(c) }) });
         return _fingerprint = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLowerInvariant();
     }

@@ -795,9 +795,10 @@ internal sealed partial class DrawingCommandHandler
         {
             var questions = DrawingCommandParsers.NormalizePreviewQuestions(args.Length > 2 ? args[2] : null);
             var layerRules = DrawingCommandParsers.ParseViewDimensionLayerRules(args);
+            var referenceZones = DrawingCommandParsers.ParseViewDimensionReferenceZones(args);
             var context = _dimensionContexts.Get(viewId,
                 args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
-                args.Length > 6 && bool.Parse(args[6]));
+                args.Length > 6 && bool.Parse(args[6]), referenceZones);
             WriteJson(context.Query(questions,
                 args.Length > 3 ? args[3] : "all",
                 args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,

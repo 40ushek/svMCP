@@ -6,6 +6,19 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public static partial class DrawingCommandParsers
 {
+    public static IReadOnlyCollection<string> ParseViewDimensionReferenceZones(string[] args)
+    {
+        if (args.Length <= 13 || string.IsNullOrWhiteSpace(args[13])) return Array.Empty<string>();
+        string[] zones;
+        try { zones = System.Text.Json.JsonSerializer.Deserialize<string[]>(args[13])
+            ?? throw new ArgumentException("referenceZones must be a JSON array of strings"); }
+        catch (System.Text.Json.JsonException ex) { throw new ArgumentException("referenceZones must be a JSON array of strings", ex); }
+        zones = ReferenceZoneOutline.Normalize(zones);
+        if (zones.Length > 0 && (args.Length <= 10 || !string.Equals(args[10].Trim(), "panel", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("referenceZones requires ruleSet=panel");
+        return zones;
+    }
+
     public static IReadOnlyList<PartLayerRule> ParseViewDimensionLayerRules(string[] args)
     {
         var json = TeklaMcpServer.Shared.PartLayerRulesJson.Parse(args.Length > 12 ? args[12] : null);
