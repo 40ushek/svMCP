@@ -776,7 +776,7 @@ internal sealed partial class DrawingCommandHandler
         {
             var context = _dimensionContexts.Get(viewId,
                 args.Length > 2 ? args[2] : null, args.Length > 3 ? args[3] : null,
-                args.Length > 5 && bool.Parse(args[5]));
+                ReadBoolArg(args, 5, "refresh"));
             var verbose = args.Length > 4 && string.Equals(args[4], "verbose", StringComparison.OrdinalIgnoreCase);
             WriteJson(context.ChainPositions(verbose));
         }
@@ -799,13 +799,13 @@ internal sealed partial class DrawingCommandHandler
             var referenceExclusions = DrawingCommandParsers.ParseViewDimensionReferenceExclusions(args);
             var context = _dimensionContexts.Get(viewId,
                 args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
-                args.Length > 6 && bool.Parse(args[6]), referenceZones,
+                ReadBoolArg(args, 6, "refresh"), referenceZones,
                 referenceExclusions.Prefixes, referenceExclusions.Materials);
             WriteJson(context.Query(questions,
                 args.Length > 3 ? args[3] : "all",
                 args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,
                 args.Length > 8 ? args[8] : "horizontal",
-                args.Length > 9 && !string.IsNullOrWhiteSpace(args[9]) ? double.Parse(args[9], CultureInfo.InvariantCulture) : (double?)null,
+                ReadOptionalDoubleArg(args, 9, "paperGapMm"),
                 args.Length > 10 ? args[10] : "steel",
                 args.Length > 11 ? args[11] : string.Empty, layerRules));
         }
@@ -1731,6 +1731,36 @@ internal sealed partial class DrawingCommandHandler
     }
 
     private static double Round2(double value) => Math.Round(value, 2);
+
+    // Absent or empty means false. Anything that is not a boolean is an error the caller can
+    // read, not the bare FormatException text of bool.Parse. Callers sit inside a try that
+    // reports the message.
+    private static bool ReadBoolArg(string[] args, int index, string name)
+    {
+        if (args.Length <= index || string.IsNullOrWhiteSpace(args[index]))
+            return false;
+
+        var raw = args[index].Trim();
+        if (bool.TryParse(raw, out var parsed))
+            return parsed;
+
+        return raw switch
+        {
+            "1" => true,
+            "0" => false,
+            _ => throw new ArgumentException($"{name} (argument {index}) must be true or false, got '{raw}'")
+        };
+    }
+
+    private static double? ReadOptionalDoubleArg(string[] args, int index, string name)
+    {
+        if (args.Length <= index || string.IsNullOrWhiteSpace(args[index]))
+            return null;
+
+        return double.TryParse(args[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : throw new ArgumentException($"{name} (argument {index}) must be a number, got '{args[index].Trim()}'");
+    }
 
     private static bool ParseOptionalBoolArg(string[] args, int index, bool defaultValue)
     {
