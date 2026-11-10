@@ -40,6 +40,16 @@ internal sealed class ConstraintLayoutViewInput
     public bool IsProjection { get; set; }
 
     /// <summary>
+    /// Where this view's frame center sits relative to the base view's frame center
+    /// when the two are projection-aligned: X for a view above or below the base
+    /// view, Y for a view beside it. Zero aligns the frame centers.
+    /// </summary>
+    public double AlignmentOffsetX { get; set; }
+
+    /// <inheritdoc cref="AlignmentOffsetX"/>
+    public double AlignmentOffsetY { get; set; }
+
+    /// <summary>
     /// Position of the view's section line on the base view. Ascending is reading
     /// order: left to right in a row, top to bottom in a column.
     /// </summary>
@@ -268,8 +278,9 @@ internal static class ConstraintLayoutPlanner
             foreach (var view in inline)
             {
                 relations.Add(Outward(side, outermost, view.Id));
-                relations.Add(new LayoutRelation(
-                    horizontal ? LayoutRelationKind.AlignCenterY : LayoutRelationKind.AlignCenterX, baseId, view.Id));
+                relations.Add(horizontal
+                    ? new LayoutRelation(LayoutRelationKind.AlignCenterY, baseId, view.Id, view.AlignmentOffsetY)
+                    : new LayoutRelation(LayoutRelationKind.AlignCenterX, baseId, view.Id, view.AlignmentOffsetX));
                 outermost = view.Id;
             }
 

@@ -77,7 +77,8 @@ public sealed class ConstraintLayoutCorpusTests
         => string.Format(
             CultureInfo.InvariantCulture,
             "{0} [{1}]: views={2} skipped={3} | current: feasible={4} fallbackViews={5} score={6:0.###} | " +
-            "planner: {7} deviations={8} score={9:0.###} topologies={10}{11} preferredNeeds={12:0.#}x{13:0.#}",
+            "planner: {7} deviations={8} score={9:0.###} topologies={10}{11} preferredNeeds={12:0.#}x{13:0.#} | " +
+            "alignmentChecked={14} alignmentResidualMax={15:0.###}",
             Path.GetFileName(file),
             layoutCase.Reference.Drawing.Name ?? "unnamed",
             result.IncludedViews,
@@ -91,7 +92,9 @@ public sealed class ConstraintLayoutCorpusTests
             result.Plan.EvaluatedTopologies,
             result.Plan.Truncated ? "(truncated)" : string.Empty,
             result.Plan.PreferredRequiredWidth,
-            result.Plan.PreferredRequiredHeight);
+            result.Plan.PreferredRequiredHeight,
+            result.AlignmentCheckedViews,
+            result.AlignmentResidualMax);
 
     private static List<(int Id, double MinX, double MinY, double MaxX, double MaxY)> Rects(DrawingLayoutCandidate candidate)
         => candidate.Views

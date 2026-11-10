@@ -21,6 +21,19 @@ internal sealed class ConstraintLayoutShadowResult
     public DrawingLayoutCandidateEvaluation? Best { get; set; }
 
     public ConstraintLayoutPlanCandidate? BestPlan { get; set; }
+
+    /// <summary>
+    /// Views of the current layout that sit in line on their preferred side and have
+    /// a model anchor, i.e. views the current path has projection-aligned itself.
+    /// </summary>
+    public int AlignmentCheckedViews { get; set; }
+
+    /// <summary>
+    /// Largest gap, over those views, between the offset the model anchors predict
+    /// and the offset the current layout actually has. Near zero means the anchors
+    /// describe the same alignment the current path produces.
+    /// </summary>
+    public double AlignmentResidualMax { get; set; }
 }
 
 /// <summary>
@@ -54,6 +67,13 @@ internal static class ConstraintLayoutShadow
         var included = new List<DrawingLayoutCandidateView> { baseView };
         included.AddRange(planned);
 
+        var modelAnchors = layoutCase.ModelAnchors
+            .GroupBy(static anchor => anchor.ViewId)
+            .ToDictionary(static group => group.Key, static group => group.First());
+        var plannerViews = planned
+            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, baseViewId))
+            .ToList();
+
         var margin = Math.Max(reference.ReservedLayout.Margin, 0.0);
         var plan = ConstraintLayoutPlanner.Plan(new ConstraintLayoutPlannerInput
         {
@@ -61,11 +81,20 @@ internal static class ConstraintLayoutShadow
             Gap = layoutCase.Gap,
             ReservedAreas = reference.ReservedLayout.Areas,
             BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
-            Views = planned.Select(view => ToPlannerView(view, sectionLineAnchors)).ToList()
+            Views = plannerViews
         });
+
+        var residuals = planned
+            .Zip(plannerViews, static (view, input) => (view, input))
+            .Where(pair => modelAnchors.ContainsKey(baseViewId) && modelAnchors.ContainsKey(pair.view.Id))
+            .Where(static pair => IsInLineOnPreferredSide(pair.view, pair.input.PreferredSide))
+            .Select(pair => GetAlignmentResidual(baseView.LayoutRect, pair.view.LayoutRect!, pair.input))
+            .ToList();
 
         var result = new ConstraintLayoutShadowResult
         {
+            AlignmentCheckedViews = residuals.Count,
+            AlignmentResidualMax = residuals.Count == 0 ? 0.0 : residuals.Max(),
             Plan = plan,
             IncludedViews = included.Count,
             SkippedViews = reference.Views.Count - included.Count,
@@ -96,14 +125,20 @@ internal static class ConstraintLayoutShadow
 
     private static ConstraintLayoutViewInput ToPlannerView(
         DrawingLayoutCandidateView view,
-        IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors)
+        IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors,
+        IReadOnlyDictionary<int, ConstraintLayoutCaseModelAnchor> modelAnchors,
+        int baseViewId)
     {
         var side = ResolvePreferredSide(view);
         sectionLineAnchors.TryGetValue(view.Id, out var anchor);
+        var hasModelAnchors = modelAnchors.TryGetValue(view.Id, out var own)
+            & modelAnchors.TryGetValue(baseViewId, out var ofBase);
 
         return new ConstraintLayoutViewInput
         {
             Id = view.Id,
+            AlignmentOffsetX = hasModelAnchors ? own!.X - ofBase!.X : 0.0,
+            AlignmentOffsetY = hasModelAnchors ? own!.Y - ofBase!.Y : 0.0,
             Width = view.LayoutRect!.Width,
             Height = view.LayoutRect.Height,
             PreferredSide = side,
@@ -118,6 +153,19 @@ internal static class ConstraintLayoutShadow
                 : anchor?.X ?? 0.0
         };
     }
+
+    private static bool IsInLineOnPreferredSide(DrawingLayoutCandidateView view, SectionPlacementSide preferredSide)
+        => preferredSide != SectionPlacementSide.Unknown
+            && !view.PlacementFallbackUsed
+            && string.Equals(view.ActualPlacementSide, preferredSide.ToString(), StringComparison.OrdinalIgnoreCase);
+
+    private static double GetAlignmentResidual(
+        ReservedRect baseRect,
+        ReservedRect viewRect,
+        ConstraintLayoutViewInput input)
+        => input.PreferredSide is SectionPlacementSide.Top or SectionPlacementSide.Bottom
+            ? Math.Abs((((viewRect.MinX + viewRect.MaxX) - (baseRect.MinX + baseRect.MaxX)) / 2.0) - input.AlignmentOffsetX)
+            : Math.Abs((((viewRect.MinY + viewRect.MaxY) - (baseRect.MinY + baseRect.MaxY)) / 2.0) - input.AlignmentOffsetY);
 
     private static SectionPlacementSide ResolvePreferredSide(DrawingLayoutCandidateView view)
     {

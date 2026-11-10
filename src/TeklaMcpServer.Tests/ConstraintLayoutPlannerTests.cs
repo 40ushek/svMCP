@@ -115,6 +115,23 @@ public sealed class ConstraintLayoutPlannerTests
     }
 
     [Fact]
+    public void AlignmentOffset_PlacesInLineViewOffTheBaseViewCenterLine()
+    {
+        var bounds = new ReservedRect(0, 0, 400, 300);
+        var section = Section(SectionA, orderKey: 10, strength: ProjectionStrength.Strong);
+        section.AlignmentOffsetY = 12;
+        section.AlignmentOffsetX = 99; // not used for a view beside the base view
+
+        var best = Assert.Single(ConstraintLayoutPlanner.Plan(Input(bounds, section)).Candidates);
+
+        var front = best.RectsById[Front];
+        var placed = best.RectsById[SectionA];
+        Assert.Equal(12, ((placed.MinY + placed.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        Assert.Equal(Gap, placed.MinX - front.MaxX, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
     public void ReservedAreaUnderCenteredLayout_LayoutMovesAside()
     {
         var bounds = new ReservedRect(0, 0, 400, 300);

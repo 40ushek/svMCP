@@ -65,6 +65,66 @@ public sealed class ConstraintLayoutSolverTests
     }
 
     [Fact]
+    public void Axis_AlignmentOffset_ShiftsSecondItem_AndWidensTheSpan()
+    {
+        var solution = AxisConstraintSolver.Solve(
+            0, 300,
+            new[] { new AxisItem(1, 100), new AxisItem(2, 100) },
+            NoSeparations,
+            new[] { new AxisAlignment(1, 2, offset: 30) });
+
+        Assert.True(solution.IsFeasible);
+        // Item 1 spans -50..50 around its center, item 2 spans -20..80.
+        Assert.Equal(130, solution.RequiredSize, 9);
+        Assert.Equal(30, solution.Centers[2] - solution.Centers[1], 9);
+        Assert.Equal(solution.Centers[1] - 50, 300 - (solution.Centers[2] + 50), 9);
+    }
+
+    [Fact]
+    public void Axis_AlignmentOffsetsThatDisagree_AreContradiction()
+    {
+        var items = new[] { new AxisItem(1, 10), new AxisItem(2, 10) };
+
+        var agreeing = AxisConstraintSolver.Solve(
+            0, 100, items, NoSeparations,
+            new[] { new AxisAlignment(1, 2, offset: 10), new AxisAlignment(2, 1, offset: -10) });
+        var disagreeing = AxisConstraintSolver.Solve(
+            0, 100, items, NoSeparations,
+            new[] { new AxisAlignment(1, 2, offset: 10), new AxisAlignment(2, 1, offset: 5) });
+
+        Assert.True(agreeing.IsFeasible);
+        Assert.Equal(AxisFailure.Contradiction, disagreeing.Failure);
+    }
+
+    [Fact]
+    public void Axis_SeparationInsideAlignedGroup_HoldsWhenTheOffsetIsLargeEnough()
+    {
+        var solution = AxisConstraintSolver.Solve(
+            0, 100,
+            new[] { new AxisItem(1, 10), new AxisItem(2, 10) },
+            new[] { new AxisSeparation(1, 2, Gap) },
+            new[] { new AxisAlignment(1, 2, offset: 20) });
+
+        Assert.True(solution.IsFeasible);
+        Assert.Equal(30, solution.RequiredSize, 9);
+    }
+
+    [Fact]
+    public void Axis_SeparationAcrossGroups_CountsTheOffsets()
+    {
+        // Item 2 sits 30 past item 1 in their group; item 3 must clear item 2.
+        var solution = AxisConstraintSolver.Solve(
+            0, 300,
+            new[] { new AxisItem(1, 100), new AxisItem(2, 100), new AxisItem(3, 20) },
+            new[] { new AxisSeparation(2, 3, Gap) },
+            new[] { new AxisAlignment(1, 2, offset: 30) });
+
+        Assert.True(solution.IsFeasible);
+        Assert.Equal(Gap, (solution.Centers[3] - 10) - (solution.Centers[2] + 50), 9);
+        Assert.Equal(154, solution.RequiredSize, 9);
+    }
+
+    [Fact]
     public void Axis_Cycle_IsContradiction()
     {
         var solution = AxisConstraintSolver.Solve(

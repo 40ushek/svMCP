@@ -267,6 +267,9 @@ cases/<category>/<drawing_guid>/
 
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_DRAWING_LAYOUT.md`
   - активный roadmap по компоновке чертежа и lightweight layout workspace
+- `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_CONSTRAINT_LAYOUT.md`
+  - предложение: альтернативное ядро компоновки (топология + ограничения);
+    сейчас работает только в теневом режиме рядом с действующим путём
 - `TeklaMcpServer.Api/Drawing/ViewLayout/HISTORY_DRAWING_LAYOUT.md`
   - история реализованных фаз/подшагов компоновки (вынесена из активного roadmap)
 - `TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_VIEWS.md`

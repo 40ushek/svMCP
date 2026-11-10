@@ -12,20 +12,21 @@ internal enum LayoutRelationKind
     /// <summary>First is below Second, at least one gap apart.</summary>
     Below,
 
-    /// <summary>First and Second share a vertical center line.</summary>
+    /// <summary>Second's center is Offset to the right of First's; zero puts them on one vertical line.</summary>
     AlignCenterX,
 
-    /// <summary>First and Second share a horizontal center line.</summary>
+    /// <summary>Second's center is Offset above First's; zero puts them on one horizontal line.</summary>
     AlignCenterY
 }
 
 internal readonly struct LayoutRelation
 {
-    public LayoutRelation(LayoutRelationKind kind, int firstId, int secondId)
+    public LayoutRelation(LayoutRelationKind kind, int firstId, int secondId, double offset = 0.0)
     {
         Kind = kind;
         FirstId = firstId;
         SecondId = secondId;
+        Offset = offset;
     }
 
     public LayoutRelationKind Kind { get; }
@@ -33,6 +34,9 @@ internal readonly struct LayoutRelation
     public int FirstId { get; }
 
     public int SecondId { get; }
+
+    /// <summary>Used by the alignment kinds only.</summary>
+    public double Offset { get; }
 }
 
 internal readonly struct ConstraintLayoutView
@@ -164,7 +168,7 @@ internal static class ConstraintLayoutSolver
                 .ToList(),
             problem.Relations
                 .Where(relation => relation.Kind == alignmentKind)
-                .Select(static relation => new AxisAlignment(relation.FirstId, relation.SecondId))
+                .Select(static relation => new AxisAlignment(relation.FirstId, relation.SecondId, relation.Offset))
                 .ToList(),
             problem.AnchorViewId);
 

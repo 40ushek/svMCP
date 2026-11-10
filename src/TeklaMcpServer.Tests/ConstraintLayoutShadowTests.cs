@@ -96,6 +96,58 @@ public sealed class ConstraintLayoutShadowTests
         => Assert.Null(Evaluate(Reference(), baseViewId: 99));
 
     [Fact]
+    public void ModelAnchors_SetTheAlignmentOffset_AndReportHowFarTheCurrentLayoutIsFromIt()
+    {
+        var layoutCase = Case(Reference());
+        layoutCase.ModelAnchors =
+        [
+            new ConstraintLayoutCaseModelAnchor { ViewId = Front, X = 1, Y = 5 },
+            new ConstraintLayoutCaseModelAnchor { ViewId = SectionA, X = 40, Y = 8 },
+            new ConstraintLayoutCaseModelAnchor { ViewId = Top, X = 1, Y = 70 }
+        ];
+
+        var result = ConstraintLayoutShadow.Evaluate(layoutCase)!;
+
+        var front = result.Best!.Candidate.Views.Single(static view => view.Id == Front).LayoutRect!;
+        var a = result.Best.Candidate.Views.Single(static view => view.Id == SectionA).LayoutRect!;
+        var b = result.Best.Candidate.Views.Single(static view => view.Id == SectionB).LayoutRect!;
+        var top = result.Best.Candidate.Views.Single(static view => view.Id == Top).LayoutRect!;
+        // A is beside the base view: only the Y difference of the anchors applies.
+        Assert.Equal(3, ((a.MinY + a.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        // B has no anchor and falls back to frame centers.
+        Assert.Equal(0, ((b.MinY + b.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        // Top is above the base view: only the X difference applies, and it is zero.
+        Assert.Equal(0, ((top.MinX + top.MaxX) - (front.MinX + front.MaxX)) / 2, 9);
+
+        // In the current layout A and Top are centered on the base view; the anchors
+        // ask for 3 and 0, so the worst disagreement is 3. B is not checked.
+        Assert.Equal(2, result.AlignmentCheckedViews);
+        Assert.Equal(3, result.AlignmentResidualMax, 9);
+    }
+
+    [Fact]
+    public void ModelAnchor_IsFrameCenterMinusWhereTheModelOriginLands()
+    {
+        // View looking along -Y: view X is model X, view Y is model Z.
+        var anchor = ConstraintLayoutCaseModelAnchor.FromViewCoordinateSystem(
+            viewId: 7,
+            frame: new ReservedRect(100, 50, 300, 150),
+            viewOriginX: 120,
+            viewOriginY: 60,
+            scale: 10,
+            coordinateSystemOrigin: (-500, 0, -200),
+            axisX: (2, 0, 0),
+            axisY: (0, 0, 1));
+
+        // The model origin is at (500, 200) in view coordinates, 50 x 20 on paper.
+        Assert.NotNull(anchor);
+        Assert.Equal(200 - (120 + 50), anchor.X, 9);
+        Assert.Equal(100 - (60 + 20), anchor.Y, 9);
+        Assert.Null(ConstraintLayoutCaseModelAnchor.FromViewCoordinateSystem(
+            7, new ReservedRect(0, 0, 1, 1), 0, 0, scale: 0, (0, 0, 0), (1, 0, 0), (0, 1, 0)));
+    }
+
+    [Fact]
     public void RunningAgainOnItsOwnResult_MovesNothing()
     {
         var first = Evaluate(Reference())!.Best!.Candidate;

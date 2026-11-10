@@ -45,18 +45,21 @@ internal readonly struct AxisSeparation
     public double Gap { get; }
 }
 
-/// <summary><c>center(First) == center(Second)</c>.</summary>
+/// <summary><c>center(Second) - center(First) == Offset</c>.</summary>
 internal readonly struct AxisAlignment
 {
-    public AxisAlignment(int firstId, int secondId)
+    public AxisAlignment(int firstId, int secondId, double offset = 0.0)
     {
         FirstId = firstId;
         SecondId = secondId;
+        Offset = offset;
     }
 
     public int FirstId { get; }
 
     public int SecondId { get; }
+
+    public double Offset { get; }
 }
 
 internal sealed class AxisSolution
@@ -88,8 +91,8 @@ internal sealed class AxisSolution
 
 /// <summary>
 /// Places items along one axis under separation and center-alignment constraints.
-/// Aligned items share one center; separations form a DAG whose longest path
-/// gives the tightest packing.
+/// Aligned items move as one group, each at a fixed offset from the group's
+/// position; separations form a DAG whose longest path gives the tightest packing.
 /// </summary>
 internal static class AxisConstraintSolver
 {
@@ -109,14 +112,22 @@ internal static class AxisConstraintSolver
     {
         var available = max - min;
         var indexById = BuildIndex(items);
-        var groupOf = BuildAlignmentGroups(items.Count, alignments, indexById);
+        var groupOf = new int[items.Count];
+        var offsetInGroup = new double[items.Count];
+        if (!TryBuildAlignmentGroups(alignments, indexById, groupOf, offsetInGroup))
+            return Contradiction(available);
+
         var groups = groupOf.Distinct().ToList();
 
-        var half = new Dictionary<int, double>(groups.Count);
+        // Extent of every group around its position: [position + Low, position + High].
+        var extent = new Dictionary<int, (double Low, double High)>(groups.Count);
         for (var i = 0; i < items.Count; i++)
         {
-            half.TryGetValue(groupOf[i], out var current);
-            half[groupOf[i]] = Math.Max(current, items[i].Size / 2.0);
+            var low = offsetInGroup[i] - (items[i].Size / 2.0);
+            var high = offsetInGroup[i] + (items[i].Size / 2.0);
+            extent[groupOf[i]] = extent.TryGetValue(groupOf[i], out var current)
+                ? (Math.Min(current.Low, low), Math.Max(current.High, high))
+                : (low, high);
         }
 
         var successors = groups.ToDictionary(static g => g, static _ => new Dictionary<int, double>());
@@ -127,10 +138,16 @@ internal static class AxisConstraintSolver
             var after = Index(indexById, separation.AfterId);
             var from = groupOf[before];
             var to = groupOf[after];
+            var centerDistance = ((items[before].Size + items[after].Size) / 2.0) + separation.Gap;
             if (from == to)
-                return Contradiction(available);
+            {
+                // Both are fixed inside one group: the separation either already holds or never can.
+                if (offsetInGroup[after] - offsetInGroup[before] < centerDistance - Epsilon)
+                    return Contradiction(available);
+                continue;
+            }
 
-            var distance = ((items[before].Size + items[after].Size) / 2.0) + separation.Gap;
+            var distance = centerDistance + offsetInGroup[before] - offsetInGroup[after];
             successors[from][to] = successors[from].TryGetValue(to, out var known) ? Math.Max(known, distance) : distance;
             predecessors[to][from] = successors[from][to];
         }
@@ -139,17 +156,20 @@ internal static class AxisConstraintSolver
         if (order.Count < groups.Count)
             return Contradiction(available);
 
-        var earliest = PackForward(order, predecessors, half, min, fixedPositions: null);
-        var required = Span(earliest, half, min);
+        var earliest = PackForward(order, predecessors, extent, min, fixedPositions: null);
+        var required = Span(earliest, extent, min);
         if (required > available + Epsilon)
-            return new AxisSolution(AxisFailure.Oversize, required, available, ToCenters(items, groupOf, earliest, 0.0));
+        {
+            return new AxisSolution(
+                AxisFailure.Oversize, required, available, ToCenters(items, groupOf, offsetInGroup, earliest, 0.0));
+        }
 
         var positions = earliest;
         if (anchorId.HasValue)
         {
             var gathered = GatherAroundAnchor(
-                groupOf[Index(indexById, anchorId.Value)], order, successors, predecessors, half, min, earliest);
-            if (Span(gathered, half, min) <= available + Epsilon)
+                groupOf[Index(indexById, anchorId.Value)], order, successors, predecessors, extent, min, earliest);
+            if (Span(gathered, extent, min) <= available + Epsilon)
                 positions = gathered;
         }
 
@@ -157,7 +177,7 @@ internal static class AxisConstraintSolver
             AxisFailure.None,
             required,
             available,
-            ToCenters(items, groupOf, positions, CenteringShift(positions, half, min, max)));
+            ToCenters(items, groupOf, offsetInGroup, positions, CenteringShift(positions, extent, min, max)));
     }
 
     private static Dictionary<int, int> BuildIndex(IReadOnlyList<AxisItem> items)
@@ -181,30 +201,59 @@ internal static class AxisConstraintSolver
             ? index
             : throw new ArgumentException($"Constraint refers to unknown item {id}.");
 
-    /// <summary>Union-find over alignments; returns the group representative of every item.</summary>
-    private static int[] BuildAlignmentGroups(
-        int count,
+    /// <summary>
+    /// Walks the alignments from the first item of every connected set, giving each
+    /// item its group and its offset from that first item. False when two alignment
+    /// paths give one item different offsets.
+    /// </summary>
+    private static bool TryBuildAlignmentGroups(
         IReadOnlyList<AxisAlignment> alignments,
-        Dictionary<int, int> indexById)
+        Dictionary<int, int> indexById,
+        int[] groupOf,
+        double[] offsetInGroup)
     {
-        var parent = Enumerable.Range(0, count).ToArray();
-
-        int Find(int i)
-        {
-            while (parent[i] != i)
-                i = parent[i] = parent[parent[i]];
-            return i;
-        }
-
+        var links = Enumerable.Range(0, groupOf.Length).Select(static _ => new List<(int To, double Offset)>()).ToArray();
         foreach (var alignment in alignments)
         {
-            var first = Find(Index(indexById, alignment.FirstId));
-            var second = Find(Index(indexById, alignment.SecondId));
-            if (first != second)
-                parent[Math.Max(first, second)] = Math.Min(first, second);
+            var first = Index(indexById, alignment.FirstId);
+            var second = Index(indexById, alignment.SecondId);
+            links[first].Add((second, alignment.Offset));
+            links[second].Add((first, -alignment.Offset));
         }
 
-        return Enumerable.Range(0, count).Select(Find).ToArray();
+        var visited = new bool[groupOf.Length];
+        for (var start = 0; start < groupOf.Length; start++)
+        {
+            if (visited[start])
+                continue;
+
+            visited[start] = true;
+            groupOf[start] = start;
+            offsetInGroup[start] = 0.0;
+            var pending = new Queue<int>();
+            pending.Enqueue(start);
+            while (pending.Count > 0)
+            {
+                var item = pending.Dequeue();
+                foreach (var (to, offset) in links[item])
+                {
+                    var expected = offsetInGroup[item] + offset;
+                    if (visited[to])
+                    {
+                        if (Math.Abs(offsetInGroup[to] - expected) > Epsilon)
+                            return false;
+                        continue;
+                    }
+
+                    visited[to] = true;
+                    groupOf[to] = start;
+                    offsetInGroup[to] = expected;
+                    pending.Enqueue(to);
+                }
+            }
+        }
+
+        return true;
     }
 
     private static List<int> TopologicalOrder(
@@ -233,7 +282,7 @@ internal static class AxisConstraintSolver
     private static Dictionary<int, double> PackForward(
         List<int> order,
         Dictionary<int, Dictionary<int, double>> predecessors,
-        Dictionary<int, double> half,
+        Dictionary<int, (double Low, double High)> extent,
         double min,
         Dictionary<int, double>? fixedPositions)
     {
@@ -246,7 +295,7 @@ internal static class AxisConstraintSolver
                 continue;
             }
 
-            var position = min + half[group];
+            var position = min - extent[group].Low;
             foreach (var predecessor in predecessors[group])
                 position = Math.Max(position, positions[predecessor.Key] + predecessor.Value);
             positions[group] = position;
@@ -264,7 +313,7 @@ internal static class AxisConstraintSolver
         List<int> order,
         Dictionary<int, Dictionary<int, double>> successors,
         Dictionary<int, Dictionary<int, double>> predecessors,
-        Dictionary<int, double> half,
+        Dictionary<int, (double Low, double High)> extent,
         double min,
         Dictionary<int, double> earliest)
     {
@@ -291,35 +340,39 @@ internal static class AxisConstraintSolver
                 .Min(next => fixedPositions[next.Key] - next.Value);
         }
 
-        return PackForward(order, predecessors, half, min, fixedPositions);
+        return PackForward(order, predecessors, extent, min, fixedPositions);
     }
 
-    private static double Span(Dictionary<int, double> positions, Dictionary<int, double> half, double min)
-        => positions.Count == 0 ? 0.0 : positions.Max(p => p.Value + half[p.Key]) - min;
+    private static double Span(
+        Dictionary<int, double> positions,
+        Dictionary<int, (double Low, double High)> extent,
+        double min)
+        => positions.Count == 0 ? 0.0 : positions.Max(p => p.Value + extent[p.Key].High) - min;
 
     private static double CenteringShift(
         Dictionary<int, double> positions,
-        Dictionary<int, double> half,
+        Dictionary<int, (double Low, double High)> extent,
         double min,
         double max)
     {
         if (positions.Count == 0)
             return 0.0;
 
-        var blockMin = positions.Min(p => p.Value - half[p.Key]);
-        var blockMax = positions.Max(p => p.Value + half[p.Key]);
+        var blockMin = positions.Min(p => p.Value + extent[p.Key].Low);
+        var blockMax = positions.Max(p => p.Value + extent[p.Key].High);
         return ((min + max) - (blockMin + blockMax)) / 2.0;
     }
 
     private static Dictionary<int, double> ToCenters(
         IReadOnlyList<AxisItem> items,
         int[] groupOf,
+        double[] offsetInGroup,
         Dictionary<int, double> positions,
         double shift)
     {
         var centers = new Dictionary<int, double>(items.Count);
         for (var i = 0; i < items.Count; i++)
-            centers[items[i].Id] = positions[groupOf[i]] + shift;
+            centers[items[i].Id] = positions[groupOf[i]] + offsetInGroup[i] + shift;
         return centers;
     }
 

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -43,7 +44,8 @@ public sealed partial class TeklaDrawingViewApi
                             X = view.ParentAnchorX,
                             Y = view.ParentAnchorY
                         })
-                        .ToList()
+                        .ToList(),
+                    ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference)
                 };
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
@@ -65,7 +67,8 @@ public sealed partial class TeklaDrawingViewApi
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "result={0} views={1} skippedViews={2} topologies={3} truncated={4} fitting={5} preferredNeeds={6:0.#}x{7:0.#} " +
-                    "shadowFeasible={8} shadowScore={9:0.###} shadowDeviations={10} referenceCandidate={11} referenceFeasible={12} referenceScore={13:0.###} slots={14}",
+                    "shadowFeasible={8} shadowScore={9:0.###} shadowDeviations={10} referenceCandidate={11} referenceFeasible={12} referenceScore={13:0.###} " +
+                    "alignmentChecked={15} alignmentResidualMax={16:0.###} slots={14}",
                     result.Best == null ? "no-fit" : "ok",
                     result.IncludedViews,
                     result.SkippedViews,
@@ -80,7 +83,9 @@ public sealed partial class TeklaDrawingViewApi
                     string.IsNullOrWhiteSpace(reference.Name) ? "none" : reference.Name,
                     result.Reference.IsFeasible ? 1 : 0,
                     result.Reference.Score.TotalScore,
-                    slots));
+                    slots,
+                    result.AlignmentCheckedViews,
+                    result.AlignmentResidualMax));
         }
         catch (System.Exception exception)
         {
@@ -90,6 +95,38 @@ public sealed partial class TeklaDrawingViewApi
                 stopwatch.ElapsedMilliseconds,
                 $"result=error type={exception.GetType().Name} message={exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// One model anchor per view that has a frame and a readable coordinate system.
+    /// Not verified on a live drawing: alignmentResidualMax in the trace compares
+    /// these anchors with the alignment the current path produced.
+    /// </summary>
+    private static List<ConstraintLayoutCaseModelAnchor> BuildConstraintLayoutModelAnchors(
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutCandidate reference)
+    {
+        var anchors = new List<ConstraintLayoutCaseModelAnchor>();
+        foreach (var view in reference.Views)
+        {
+            var coordinateSystem = workspace.TryGetRuntimeView(view.Id)?.ViewCoordinateSystem;
+            if (view.LayoutRect == null || coordinateSystem == null)
+                continue;
+
+            var anchor = ConstraintLayoutCaseModelAnchor.FromViewCoordinateSystem(
+                view.Id,
+                view.LayoutRect,
+                view.OriginX,
+                view.OriginY,
+                view.Scale,
+                (coordinateSystem.Origin.X, coordinateSystem.Origin.Y, coordinateSystem.Origin.Z),
+                (coordinateSystem.AxisX.X, coordinateSystem.AxisX.Y, coordinateSystem.AxisX.Z),
+                (coordinateSystem.AxisY.X, coordinateSystem.AxisY.Y, coordinateSystem.AxisY.Z));
+            if (anchor != null)
+                anchors.Add(anchor);
+        }
+
+        return anchors;
     }
 
     /// <summary>
