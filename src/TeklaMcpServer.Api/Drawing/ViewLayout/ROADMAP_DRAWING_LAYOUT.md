@@ -6,6 +6,10 @@
 инфраструктура готова, но live validation и safety-gate для selected-candidate
 `Apply` не закрыты (см. «Фаза 5 — остаток» ниже).
 
+Альтернативное ядро размещения (топология + ограничения вместо цепочки
+упаковщиков) описано в `ROADMAP_CONSTRAINT_LAYOUT.md`. Это предложение; данный
+файл остаётся источником истины для действующего пути.
+
 ## Goal
 
 Make drawing view composition use one lightweight, connected layout context
