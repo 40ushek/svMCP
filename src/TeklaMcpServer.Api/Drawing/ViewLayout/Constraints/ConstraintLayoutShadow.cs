@@ -32,17 +32,17 @@ internal static class ConstraintLayoutShadow
 {
     public const string CandidateName = "constraint-layout:shadow";
 
-    /// <param name="reference">The candidate the current path selected.</param>
-    /// <param name="sectionLineAnchors">Midpoint of each section's line on its owner view, by section view id.</param>
-    /// <returns>Null when the base view is not in <paramref name="reference"/> or has no frame rectangle.</returns>
-    public static ConstraintLayoutShadowResult? Evaluate(
-        DrawingLayoutCandidate reference,
-        int baseViewId,
-        double gap,
-        IReadOnlyDictionary<int, (double? X, double? Y)> sectionLineAnchors)
+    /// <returns>Null when the base view is not among the case's views or has no frame rectangle.</returns>
+    public static ConstraintLayoutShadowResult? Evaluate(ConstraintLayoutCase layoutCase)
     {
-        if (reference == null)
-            throw new ArgumentNullException(nameof(reference));
+        if (layoutCase == null)
+            throw new ArgumentNullException(nameof(layoutCase));
+
+        var reference = layoutCase.Reference;
+        var baseViewId = layoutCase.BaseViewId;
+        var sectionLineAnchors = layoutCase.SectionLineAnchors
+            .GroupBy(static anchor => anchor.ViewId)
+            .ToDictionary(static group => group.Key, static group => group.First());
 
         var baseView = reference.Views.FirstOrDefault(view => view.Id == baseViewId);
         if (baseView?.LayoutRect == null)
@@ -58,7 +58,7 @@ internal static class ConstraintLayoutShadow
         var plan = ConstraintLayoutPlanner.Plan(new ConstraintLayoutPlannerInput
         {
             Bounds = new ReservedRect(margin, margin, reference.Sheet.Width - margin, reference.Sheet.Height - margin),
-            Gap = gap,
+            Gap = layoutCase.Gap,
             ReservedAreas = reference.ReservedLayout.Areas,
             BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
             Views = planned.Select(view => ToPlannerView(view, sectionLineAnchors)).ToList()
@@ -96,7 +96,7 @@ internal static class ConstraintLayoutShadow
 
     private static ConstraintLayoutViewInput ToPlannerView(
         DrawingLayoutCandidateView view,
-        IReadOnlyDictionary<int, (double? X, double? Y)> sectionLineAnchors)
+        IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors)
     {
         var side = ResolvePreferredSide(view);
         sectionLineAnchors.TryGetValue(view.Id, out var anchor);
@@ -114,8 +114,8 @@ internal static class ConstraintLayoutShadow
             // Sections placed left or right are cut by vertical lines and differ in X;
             // sections placed above or below differ in Y, read top down.
             OrderKey = side is SectionPlacementSide.Top or SectionPlacementSide.Bottom
-                ? -(anchor.Y ?? 0.0)
-                : anchor.X ?? 0.0
+                ? -(anchor?.Y ?? 0.0)
+                : anchor?.X ?? 0.0
         };
     }
 

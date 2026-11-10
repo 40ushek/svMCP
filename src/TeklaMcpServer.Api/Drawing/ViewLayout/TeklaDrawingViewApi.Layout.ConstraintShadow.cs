@@ -28,12 +28,27 @@ public sealed partial class TeklaDrawingViewApi
         try
         {
             var baseView = BaseViewSelection.Select(workspace.RuntimeViews).View;
-            var anchors = workspace.Views
-                .Where(static view => view.ParentRelationKind == DrawingLayoutWorkspace.RelationKindSectionMark)
-                .ToDictionary(static view => view.Id, static view => (view.ParentAnchorX, view.ParentAnchorY));
-            var result = baseView == null
+            var layoutCase = baseView == null
                 ? null
-                : ConstraintLayoutShadow.Evaluate(reference, baseView.GetIdentifier().ID, gap, anchors);
+                : new ConstraintLayoutCase
+                {
+                    Reference = reference,
+                    BaseViewId = baseView.GetIdentifier().ID,
+                    Gap = gap,
+                    SectionLineAnchors = workspace.Views
+                        .Where(static view => view.ParentRelationKind == DrawingLayoutWorkspace.RelationKindSectionMark)
+                        .Select(static view => new ConstraintLayoutCaseAnchor
+                        {
+                            ViewId = view.Id,
+                            X = view.ParentAnchorX,
+                            Y = view.ParentAnchorY
+                        })
+                        .ToList()
+                };
+            if (layoutCase != null)
+                SaveConstraintLayoutCase(layoutCase);
+
+            var result = layoutCase == null ? null : ConstraintLayoutShadow.Evaluate(layoutCase);
             if (result == null)
             {
                 PerfTrace.Write("api-view", "constraint_layout_shadow", stopwatch.ElapsedMilliseconds, "result=skipped reason=no-base-view");
@@ -73,6 +88,27 @@ public sealed partial class TeklaDrawingViewApi
                 "api-view",
                 "constraint_layout_shadow",
                 stopwatch.ElapsedMilliseconds,
+                $"result=error type={exception.GetType().Name} message={exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Keeps the run's input for offline replay (phase 3 corpus). One file per
+    /// drawing, overwritten on every run; a failed write is traced and ignored.
+    /// </summary>
+    private static void SaveConstraintLayoutCase(ConstraintLayoutCase layoutCase)
+    {
+        try
+        {
+            var path = ConstraintLayoutCaseStore.Save(ConstraintLayoutCaseStore.DefaultDirectory, layoutCase);
+            PerfTrace.Write("api-view", "constraint_layout_case", 0, $"result=saved path={path}");
+        }
+        catch (System.Exception exception)
+        {
+            PerfTrace.Write(
+                "api-view",
+                "constraint_layout_case",
+                0,
                 $"result=error type={exception.GetType().Name} message={exception.Message}");
         }
     }

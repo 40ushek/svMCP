@@ -15,16 +15,26 @@ public sealed class ConstraintLayoutShadowTests
     private const int Detail = 5;
     private const double Gap = 4;
 
-    private static readonly Dictionary<int, (double? X, double? Y)> Anchors = new()
-    {
-        [SectionA] = (150.0, 100.0),
-        [SectionB] = (80.0, 100.0)
-    };
+    private static ConstraintLayoutShadowResult? Evaluate(DrawingLayoutCandidate reference, int baseViewId = Front)
+        => ConstraintLayoutShadow.Evaluate(Case(reference, baseViewId));
+
+    private static ConstraintLayoutCase Case(DrawingLayoutCandidate reference, int baseViewId = Front)
+        => new()
+        {
+            Reference = reference,
+            BaseViewId = baseViewId,
+            Gap = Gap,
+            SectionLineAnchors =
+            [
+                new ConstraintLayoutCaseAnchor { ViewId = SectionA, X = 150, Y = 100 },
+                new ConstraintLayoutCaseAnchor { ViewId = SectionB, X = 80, Y = 100 }
+            ]
+        };
 
     [Fact]
     public void LaysOutSkeletonViews_AndScoresBothLayoutsOnTheSameViews()
     {
-        var result = ConstraintLayoutShadow.Evaluate(Reference(), Front, Gap, Anchors);
+        var result = Evaluate(Reference());
 
         Assert.NotNull(result);
         Assert.Equal(4, result.IncludedViews);
@@ -41,7 +51,7 @@ public sealed class ConstraintLayoutShadowTests
     [Fact]
     public void SectionsFollowTheirSectionLines_AndKeepPreferredSide()
     {
-        var best = ConstraintLayoutShadow.Evaluate(Reference(), Front, Gap, Anchors)!.Best!.Candidate;
+        var best = Evaluate(Reference())!.Best!.Candidate;
 
         var front = best.Views.Single(static view => view.Id == Front).LayoutRect!;
         var a = best.Views.Single(static view => view.Id == SectionA);
@@ -59,7 +69,7 @@ public sealed class ConstraintLayoutShadowTests
     {
         var reference = Reference();
         var before = reference.Views.Single(static view => view.Id == SectionA);
-        var after = ConstraintLayoutShadow.Evaluate(reference, Front, Gap, Anchors)!
+        var after = Evaluate(reference)!
             .Best!.Candidate.Views.Single(static view => view.Id == SectionA);
 
         Assert.Equal(before.OriginX - before.LayoutRect!.MinX, after.OriginX - after.LayoutRect!.MinX, 9);
@@ -72,7 +82,7 @@ public sealed class ConstraintLayoutShadowTests
         var reference = Reference();
         reference.Sheet = new DrawingSheetContext { Width = 150, Height = 120 };
 
-        var result = ConstraintLayoutShadow.Evaluate(reference, Front, Gap, Anchors);
+        var result = Evaluate(reference);
 
         Assert.NotNull(result);
         Assert.Null(result.Best);
@@ -83,7 +93,52 @@ public sealed class ConstraintLayoutShadowTests
 
     [Fact]
     public void BaseViewNotInReference_ReturnsNull()
-        => Assert.Null(ConstraintLayoutShadow.Evaluate(Reference(), baseViewId: 99, Gap, Anchors));
+        => Assert.Null(Evaluate(Reference(), baseViewId: 99));
+
+    [Fact]
+    public void RunningAgainOnItsOwnResult_MovesNothing()
+    {
+        var first = Evaluate(Reference())!.Best!.Candidate;
+        var second = Evaluate(first)!.Best!.Candidate;
+
+        foreach (var view in first.Views)
+        {
+            var again = second.Views.Single(other => other.Id == view.Id);
+            Assert.Equal(view.LayoutRect!.MinX, again.LayoutRect!.MinX, 9);
+            Assert.Equal(view.LayoutRect.MinY, again.LayoutRect.MinY, 9);
+            Assert.Equal(view.OriginX, again.OriginX, 9);
+            Assert.Equal(view.OriginY, again.OriginY, 9);
+        }
+    }
+
+    [Fact]
+    public void SavedCase_ReplaysToTheSameLayout()
+    {
+        var directory = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), "svmcp-layout-case-" + System.Guid.NewGuid().ToString("N"));
+        try
+        {
+            var reference = Reference();
+            reference.Drawing = new DrawingInfo { Guid = "11111111-2222-3333-4444-555555555555", Name = "M.1" };
+            reference.ReservedLayout.Areas.Add(new ReservedRect(300, 10, 410, 60));
+            var original = Case(reference);
+
+            var path = ConstraintLayoutCaseStore.Save(directory, original);
+            var loaded = ConstraintLayoutCaseStore.Load(path);
+
+            Assert.EndsWith("11111111-2222-3333-4444-555555555555.json", path);
+            var expected = ConstraintLayoutShadow.Evaluate(original)!.Best!.Candidate;
+            var actual = ConstraintLayoutShadow.Evaluate(loaded)!.Best!.Candidate;
+            Assert.Equal(
+                expected.Views.Select(static view => (view.Id, view.LayoutRect!.MinX, view.LayoutRect.MinY, view.ActualPlacementSide)),
+                actual.Views.Select(static view => (view.Id, view.LayoutRect!.MinX, view.LayoutRect.MinY, view.ActualPlacementSide)));
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(directory))
+                System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
 
     private static DrawingLayoutCandidate Reference()
         => new()
