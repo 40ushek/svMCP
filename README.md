@@ -121,6 +121,28 @@ cp src/TeklaBridge/bin/Release/net48/TeklaBridge.exe \
 Содержит `<bindingRedirect>` + `<codeBase>` для всех Tekla DLL, указывающие на `C:\TeklaStructures\2025.0\bin\`.
 Исходник-генератор: `C:\temp\GenConfig2.ps1`.
 
+**Развёртывание на новой машине (опыт 2026-11-10).**
+
+- Конфиг можно взять с другой машины, но **версии системных сборок в нём нужно сверить** с
+  `C:\TeklaStructures\2025.0\bin\`. При том же `FileVersion` Tekla (`2025.0.52577.0`) там оказались
+  другие `System.Memory` (4.0.1.2, в чужом конфиге 4.0.5.0), `System.Buffers` (4.0.3.0, было 4.0.5.0) и
+  `System.Runtime.CompilerServices.Unsafe` (6.0.0.0, было 6.0.3.0). Несовпадение даёт мост, который
+  падает при запуске с `FileLoadException ... System.Memory` и в контроллере виден как
+  `TeklaBridge closed stdout before returning a response`. Проверка без контроллера:
+  `cd <extensions>\svMCP && TeklaBridge.exe check_connection`.
+- Кроме трёх файлов выше положите в папку остальные зависимости из `src/TeklaBridge/bin/Release/net48/`
+  (Serilog, `System.Text.Json` и т.д.), **кроме** тех, на которые в `exe.config` есть `<codeBase>`:
+  их грузят из установленной Tekla.
+- **Контроллер определяет путь к мосту один раз при старте** (`BridgeControllerService`). Если папку
+  расширений создали, когда контроллер уже работал, он продолжит запускать мост из `bridge/`
+  (симптом: в ошибке канал `...Console:2025.0.0.0`). Нужно перезапустить сам контроллер (пункт «Exit»
+  в трее или `Stop-Process -Name TeklaBridge.Controller`) и запустить заново.
+- Верный признак успеха: в ошибке подключения имя канала содержит `2025.0.52577.0`, а при
+  открытой модели `check_connection` возвращает `status: connected`. Без запущенной Tekla с открытой
+  моделью сервис канала не существует, и ответ будет `Not connected`, даже если мост настроен верно.
+- В `.mcp.json` путь к `TeklaMcpServer.exe` абсолютный: при другой раскладке дисков (`D:` или `E:`)
+  его нужно поправить, иначе MCP-сервер `tekla` не стартует.
+
 TeklaMcpServer автоматически определяет наличие TS2025 и запускает мост из extensions-папки,
 если файл существует (`ResolveBridgePath()` в `ModelTools.Shared.cs`).
 

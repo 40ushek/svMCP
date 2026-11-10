@@ -32,9 +32,13 @@
 - `TeklaMcpServer.Tests`
   - `net8.0-windows`
   - unit/integration tests для layout, geometry, dimensions, bridge
-- `svMCP`
-  - `netstandard2.0`
-  - сейчас фактически заглушка
+- `TeklaBridge.Controller`
+  - `net8.0-windows`, трей-приложение
+  - владеет процессом `TeklaBridge.exe --loop`; MCP-сервер обращается к нему по named pipe
+- `Shared`
+  - общий код: протокол контроллера, пути, логирование
+
+Проекта `svMCP` в `src/` больше нет (его нет и в `svMCP.sln`): так называется репозиторий.
 
 ## Архитектурные слои
 
@@ -281,6 +285,8 @@ cases/<category>/<drawing_guid>/
   - массовые сценарии: background open, timeout hardening, warm cache
 - `TeklaMcpServer.Api/Drawing/ROADMAP_REFACTOR_LARGE_FILES.md`
   - разбиение крупных файлов
+- `TeklaBridge/ROADMAP_BRIDGE_REFACTORING.md`
+  - упрощение моста: логика из хэндлеров в `Api`, таблица команд, итоги ревью
 - `TeklaMcpServer.Api/Drawing/Marks/ROADMAP_MARKS.md`
   - roadmap модуля марок
 - `TeklaMcpServer.Api/Drawing/DrawingGeneration/ROADMAP_DRAWING_GENERATION.md`

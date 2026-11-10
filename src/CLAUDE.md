@@ -64,7 +64,10 @@ TeklaBridge accepts a command as the first CLI argument, calls Tekla API, and re
 - **TeklaMcpServer/** — MCP server (net8.0-windows). Entry point: [Program.cs](TeklaMcpServer/Program.cs)
 - **TeklaBridge/** — Bridge subprocess (net48). Entry point: [TeklaBridge/Program.cs](TeklaBridge/Program.cs)
 - **TeklaMcpServer.Api/** — All Tekla API logic (net48): interfaces, DTOs, and implementations. The single place for all Tekla interaction code.
-- **svMCP/** — Unused placeholder library (netstandard2.0)
+- **TeklaBridge.Controller/** — Tray app (net8.0-windows) that owns the `TeklaBridge.exe --loop` process; the MCP server reaches it over a named pipe. See [TeklaBridge/ROADMAP_TRAY_CONTROL.md](TeklaBridge/ROADMAP_TRAY_CONTROL.md)
+- **Shared/** — Code shared by the server, bridge and controller (protocol, paths, logging)
+
+There is no `svMCP` project under `src/` any more (it is not in `svMCP.sln`); `svMCP` is the repository name.
 
 ### Responsibility split
 
@@ -113,7 +116,8 @@ src/
 │   └── Commands/
 │       ├── ModelCommandHandler.cs
 │       └── DrawingCommandHandler*.cs
-└── svMCP/                    # Unused stub
+├── TeklaBridge.Controller/   # Tray app, owns the bridge process
+└── Shared/                   # Protocol, paths, logging shared by the processes
 ```
 
 ## Available Tools
@@ -324,7 +328,7 @@ Tekla layout table bounds are read from the Presentation Model (`DrawingPresenta
 
 **Do not** replace step 1 with step 2 for templates that emit canvas markers — markers give exact frame corners in O(1).
 
-**Cache lifetime**: `ReadLayoutInfo()` caches by `drawingId` in a static field on `DrawingReservedAreaReader`. TeklaBridge is a subprocess launched per MCP call and exits after the response — so the cache is always cold at the start of each MCP call. Within a single call (e.g. `fit_views_to_sheet`) repeated reads hit the cache. Invalidated explicitly on `open_drawing` and `close_drawing`.
+**Cache lifetime**: `ReadLayoutInfo()` caches by `drawingId` in a static field on `DrawingReservedAreaReader`. TeklaBridge is a persistent process (`--loop`), not one launched per MCP call, so the cache survives between calls. It is invalidated explicitly on `open_drawing` and `close_drawing`; whether other changes to the drawing invalidate it has not been verified — treat a stale table bound as possible after editing the layout table outside those two commands.
 
 ## Key Dependencies
 
