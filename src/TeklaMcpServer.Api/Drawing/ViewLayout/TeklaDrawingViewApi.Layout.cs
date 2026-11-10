@@ -658,6 +658,7 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
+        TraceConstraintLayoutShadow(layoutWorkspace, passiveSelection.Selected?.Candidate, gap);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
         TraceLayoutCandidateApplyPlan(applyPlan, layoutWorkspace);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(runtimeBaselineCandidate, applyPlan);
