@@ -39,6 +39,23 @@ internal sealed class ConstraintLayoutPolicy
     public bool AllowOppositeSide { get; set; } = true;
 
     /// <summary>
+    /// Whether a main view of the assembly -- a projection of the base view: the
+    /// view above it, below it, the back view -- may slide along its row off the
+    /// base view's axis when a free view (a 3D view, a detail) has no room
+    /// otherwise. It stays on its side and in its row, and slides no further than
+    /// the room asked for. Off by default: the projection link comes first, and
+    /// this is what the user does by hand only "если очень нужно" (2026-11-11,
+    /// drawing M.51). The old planner did the like on its own, in its relaxed mode.
+    /// </summary>
+    public bool AllowMainViewShift { get; set; }
+
+    /// <summary>
+    /// What a main view slid off the base view's axis costs. Dearer than a section
+    /// that lost its link: it is tried when nothing else fits.
+    /// </summary>
+    public double MainViewShiftCost { get; set; } = 2.0;
+
+    /// <summary>
     /// A section beside the view that carries its section mark, level with its own
     /// section line: off the side its arrows point to, but next to the place where
     /// it is cut, where the reader looks for it first. Cheaper than any other
@@ -181,6 +198,7 @@ internal sealed class ConstraintLayoutPolicy
         SideDeviationCost = double.PositiveInfinity,
         BesideCutCost = double.PositiveInfinity,
         OwnSideStackCost = double.PositiveInfinity,
-        LinkBreakCost = double.PositiveInfinity
+        LinkBreakCost = double.PositiveInfinity,
+        MainViewShiftCost = double.PositiveInfinity
     };
 }

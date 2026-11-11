@@ -64,7 +64,7 @@ public sealed partial class TeklaDrawingViewApi
                     stopwatch.ElapsedMilliseconds,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5} fill={6:0.###} emptiness={7:0.##} variant={8} variants={9} slots={10}",
+                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5} fill={6:0.###} emptiness={7:0.##} variant={8} variants={9} slots={10} shift={11}",
                         scale,
                         plannerMode,
                         result.Best.IsFeasible ? 1 : 0,
@@ -75,7 +75,10 @@ public sealed partial class TeklaDrawingViewApi
                         emptiness,
                         variant,
                         result.Plan.Candidates.Count,
-                        string.Join(",", result.BestPlan.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}"))));
+                        string.Join(",", result.BestPlan.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}")),
+                        result.BestPlan.ShiftedViewId is { } shiftedId
+                            ? string.Format(CultureInfo.InvariantCulture, "{0}:{1:0.#}", shiftedId, result.BestPlan.Shift)
+                            : "none"));
                 return (result.Best, result.BestPlan.Cost, emptiness, false, layoutCase);
             }
         }
@@ -88,7 +91,7 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
-            string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} oppositeSide={3} result={2}", scale, plannerMode, outcome, PlannerAllowOppositeSide ? 1 : 0));
+            string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} oppositeSide={3} mainViewShift={4} result={2}", scale, plannerMode, outcome, PlannerAllowOppositeSide ? 1 : 0, PlannerAllowMainViewShift ? 1 : 0));
         return (null, 0.0, 0.0, noFit, layoutCase);
     }
 
@@ -99,6 +102,13 @@ public sealed partial class TeklaDrawingViewApi
     /// </summary>
     public bool PlannerAllowOppositeSide { get; set; } = true;
 
+    /// <summary>
+    /// Constraint planner setting: whether a main view may slide along its row off
+    /// the base view's axis to make room for a free view. Off unless the caller
+    /// sets it.
+    /// </summary>
+    public bool PlannerAllowMainViewShift { get; set; }
+
     private ConstraintLayoutPolicy ResolveConstraintLayoutPolicy(DrawingLayoutPlannerMode plannerMode)
     {
         var policy = plannerMode switch
@@ -108,6 +118,7 @@ public sealed partial class TeklaDrawingViewApi
             _ => ConstraintLayoutPolicy.Balanced
         };
         policy.AllowOppositeSide = PlannerAllowOppositeSide;
+        policy.AllowMainViewShift = PlannerAllowMainViewShift;
         return policy;
     }
 

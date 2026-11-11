@@ -419,6 +419,9 @@ public sealed class FitViewsToSheetRequest
     /// <summary>False when the caller forbade sections on the side opposite their own.</summary>
     public bool PlannerAllowOppositeSide { get; set; } = true;
 
+    /// <summary>True when the caller let main views slide off the base view's axis to make room.</summary>
+    public bool PlannerAllowMainViewShift { get; set; }
+
     /// <summary>True when the caller named a planner; false when the default stands.</summary>
     public bool PlannerGiven { get; set; }
 

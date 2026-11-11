@@ -354,6 +354,53 @@ public sealed class ConstraintLayoutPlannerTests
     }
 
     [Fact]
+    public void WhenAllowed_AMainViewSlidesAlongItsRow_JustFarEnoughToLetAFreeViewIn()
+    {
+        // A row of section, base view and section (308 wide) with a view below the
+        // base view, on a sheet with no room above or below. The free view, 120
+        // wide, finds at most 72 beside the lower view while that one is on the axis.
+        const int Free = 5;
+        var bounds = new ReservedRect(0, 0, 330, 164);
+        ConstraintLayoutPlannerInput Build(bool allowShift)
+        {
+            var left = Section(SectionA, orderKey: 10, strength: ProjectionStrength.Strong);
+            left.PreferredSide = SectionPlacementSide.Left;
+            var input = Input(
+                bounds,
+                left,
+                Section(SectionB, orderKey: 20, strength: ProjectionStrength.Strong),
+                new ConstraintLayoutViewInput
+                {
+                    Id = Top,
+                    Width = 200,
+                    Height = 60,
+                    PreferredSide = SectionPlacementSide.Bottom,
+                    ProjectionStrength = ProjectionStrength.Strong,
+                    IsProjection = true
+                });
+            input.FreeViews = new[] { new ConstraintLayoutFreeViewInput { Id = Free, Width = 120, Height = 50 } };
+            input.Policy = new ConstraintLayoutPolicy { AllowMainViewShift = allowShift };
+            return input;
+        }
+
+        Assert.Empty(ConstraintLayoutPlanner.Plan(Build(allowShift: false)).Candidates);
+
+        var best = Assert.Single(ConstraintLayoutPlanner.Plan(Build(allowShift: true)).Candidates);
+
+        Assert.Equal(Top, best.ShiftedViewId);
+        // 120 for the free view and 4 of gap, less the 76 the lower view already
+        // had beside it with the block at the edge of the sheet.
+        Assert.Equal(48, Math.Abs(best.Shift), 0);
+        Assert.Equal(ConstraintLayoutPolicy.Balanced.MainViewShiftCost, best.Cost, 9);
+        // Still under the base view, off its axis; the sections have not moved from it.
+        Assert.Equal(Gap, best.RectsById[Front].MinY - best.RectsById[Top].MaxY, 9);
+        Assert.NotEqual(best.RectsById[Front].MinX, best.RectsById[Top].MinX, 0);
+        Assert.Equal(Gap, best.RectsById[Front].MinX - best.RectsById[SectionA].MaxX, 9);
+        Assert.Equal(Gap, best.RectsById[SectionB].MinX - best.RectsById[Front].MaxX, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
     public void SecondViewOfASide_StandsUnderTheFirst_BesideTheBaseView()
     {
         // Two sections belong on the right; in a row they need 312 of width.

@@ -77,6 +77,16 @@ public sealed class FitViewsToSheetRequestParserTests
     }
 
     [Fact]
+    public void MainViewsStayOnTheAxis_UnlessTheTokenLetsThemSlide()
+    {
+        var byDefault = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0"]);
+        var allowed = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0", "allow-main-view-shift"]);
+
+        Assert.False(byDefault.PlannerAllowMainViewShift);
+        Assert.True(allowed.PlannerAllowMainViewShift);
+    }
+
+    [Fact]
     public void VariantToken_PicksALaterLayout_AndGarbageIsIgnored()
     {
         var chosen = DrawingCommandParsers.ParseFitViewsToSheetRequest(

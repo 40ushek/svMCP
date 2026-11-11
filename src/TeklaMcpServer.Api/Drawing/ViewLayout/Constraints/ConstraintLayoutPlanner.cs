@@ -146,6 +146,15 @@ internal sealed class ConstraintLayoutPlanCandidate
     public double CutDistanceCost { get; set; }
 
     public double RankCost => Cost + CutDistanceCost;
+
+    /// <summary>
+    /// The main view that was slid along its row, off the base view's axis, to make
+    /// room for a free view; null when none was.
+    /// </summary>
+    public int? ShiftedViewId { get; set; }
+
+    /// <summary>How far it was slid, in sheet millimeters: positive to the right or up.</summary>
+    public double Shift { get; set; }
 }
 
 internal sealed class ConstraintLayoutPlan
@@ -188,6 +197,15 @@ internal static class ConstraintLayoutPlanner
 
     private static readonly StackPlacement[] OtherStackPlacements = [StackPlacement.Above, StackPlacement.Beyond];
 
+    private static readonly StackPlacement[] AllStackPlacements =
+        [StackPlacement.Under, StackPlacement.Above, StackPlacement.Beyond];
+
+    /// <summary>
+    /// Added to the room a slid view opens, so that the free view fits it for
+    /// certain and not by the last digit of a sum.
+    /// </summary>
+    private const double ShiftClearance = 0.1;
+
     public static ConstraintLayoutPlan Plan(ConstraintLayoutPlannerInput input)
     {
         if (input == null)
@@ -218,14 +236,14 @@ internal static class ConstraintLayoutPlanner
             // A stack beside the base view first goes under the views in line there,
             // then above them; when neither works out, beyond them.
             var solution = SolveTopology(input, slots, StackPlacement.Under);
-            var rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
+            var placed = solution.IsFeasible ? PlaceOnSheet(input, slots, solution.RectsById, shiftMainView: false) : null;
             foreach (var placement in OtherStackPlacements)
             {
-                if (rects != null)
+                if (placed != null)
                     break;
 
                 solution = SolveTopology(input, slots, placement);
-                rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
+                placed = solution.IsFeasible ? PlaceOnSheet(input, slots, solution.RectsById, shiftMainView: false) : null;
             }
             if (plan.EvaluatedTopologies == 1)
             {
@@ -233,16 +251,33 @@ internal static class ConstraintLayoutPlanner
                 plan.PreferredRequiredHeight = solution.RequiredHeight;
             }
 
-            if (rects == null)
+            // The last resort, when the policy allows it: the same topology with one
+            // main view slid along its row to let a free view in.
+            if (placed == null && MayShiftMainView(input))
+            {
+                foreach (var placement in AllStackPlacements)
+                {
+                    var retried = SolveTopology(input, slots, placement);
+                    placed = retried.IsFeasible ? PlaceOnSheet(input, slots, retried.RectsById, shiftMainView: true) : null;
+                    if (placed != null)
+                        break;
+                }
+            }
+
+            if (placed is not { } onSheet)
                 continue;
 
+            var rects = onSheet.Rects;
+            var shifted = onSheet.ShiftedViewId != null;
             plan.Candidates.Add(new ConstraintLayoutPlanCandidate
             {
                 Slots = slots,
                 RectsById = rects,
-                Deviations = choice.Count(static c => c != 0),
-                Cost = cost + GetCutBehindViewCost(input, slots),
-                CutDistanceCost = GetCutDistanceCost(input, rects)
+                Deviations = choice.Count(static c => c != 0) + (shifted ? 1 : 0),
+                Cost = cost + GetCutBehindViewCost(input, slots) + (shifted ? input.Policy.MainViewShiftCost : 0.0),
+                CutDistanceCost = GetCutDistanceCost(input, rects),
+                ShiftedViewId = onSheet.ShiftedViewId,
+                Shift = onSheet.Shift
             });
             if (plan.Candidates.Count >= input.Policy.MaxCandidates * input.Policy.CandidatePoolFactor)
                 break;
@@ -621,14 +656,22 @@ internal static class ConstraintLayoutPlanner
     /// pushed to each edge and corner. Returns the rectangles with the free views
     /// added; null when no position works.
     /// </summary>
-    private static IReadOnlyDictionary<int, ReservedRect>? PlaceOnSheet(
+    /// <param name="shiftMainView">
+    /// Look for a position where the free views fit once one main view is slid
+    /// along its row, and take the smallest slide found. Asked for only after the
+    /// search without it found nothing.
+    /// </param>
+    private static (IReadOnlyDictionary<int, ReservedRect> Rects, int? ShiftedViewId, double Shift)? PlaceOnSheet(
         ConstraintLayoutPlannerInput input,
-        IReadOnlyDictionary<int, ReservedRect> rects)
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        IReadOnlyDictionary<int, ReservedRect> rects,
+        bool shiftMainView)
     {
         if (input.ReservedAreas.Count == 0 && input.FreeViews.Count == 0)
-            return rects;
+            return shiftMainView ? null : (rects, null, 0.0);
 
         var blocked = input.ReservedAreas.Select(area => Expand(area, input.Gap)).ToList();
+        (IReadOnlyDictionary<int, ReservedRect> Rects, int? ShiftedViewId, double Shift)? bestShift = null;
         double[] shiftsX = [0.0, input.Bounds.MinX - rects.Values.Min(static r => r.MinX), input.Bounds.MaxX - rects.Values.Max(static r => r.MaxX)];
         double[] shiftsY = [0.0, input.Bounds.MinY - rects.Values.Min(static r => r.MinY), input.Bounds.MaxY - rects.Values.Max(static r => r.MaxY)];
         var shifts = shiftsX
@@ -643,11 +686,98 @@ internal static class ConstraintLayoutPlanner
                     item.Value.MinX + dx, item.Value.MinY + dy, item.Value.MaxX + dx, item.Value.MaxY + dy));
             if (moved.Values.Any(rect => ViewPlacementValidator.IntersectsAny(rect, blocked)))
                 continue;
-            if (TryPlaceFreeViews(input, moved))
-                return moved;
+            if (!shiftMainView)
+            {
+                if (TryPlaceFreeViews(input, moved))
+                    return (moved, null, 0.0);
+
+                continue;
+            }
+
+            // Smallest slide first; one that is no smaller than the best so far
+            // cannot win, and neither can the ones after it.
+            foreach (var (viewId, delta, slid) in EnumerateMainViewShifts(input, slots, moved, blocked)
+                .OrderBy(static shift => Math.Abs(shift.Delta)))
+            {
+                if (bestShift != null && Math.Abs(delta) >= Math.Abs(bestShift.Value.Shift) - 1e-9)
+                    break;
+
+                var withSlid = new Dictionary<int, ReservedRect>(moved) { [viewId] = slid };
+                if (TryPlaceFreeViews(input, withSlid))
+                {
+                    bestShift = (withSlid, viewId, delta);
+                    break;
+                }
+            }
         }
 
-        return null;
+        return bestShift;
+    }
+
+    private static bool MayShiftMainView(ConstraintLayoutPlannerInput input)
+        => input.Policy.AllowMainViewShift
+            && !double.IsPositiveInfinity(input.Policy.MainViewShiftCost)
+            && input.FreeViews.Count > 0;
+
+    /// <summary>
+    /// The slides that would open room for a free view: a main view standing in
+    /// line above or below its host moves sideways, one beside it up or down, just
+    /// far enough for one free view to stand between it and what it had on that
+    /// side -- another view, a table, the edge of the sheet. Only slides that keep
+    /// the view on the sheet and clear of the others are returned.
+    /// </summary>
+    private static IEnumerable<(int ViewId, double Delta, ReservedRect Slid)> EnumerateMainViewShifts(
+        ConstraintLayoutPlannerInput input,
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        IReadOnlyDictionary<int, ReservedRect> rects,
+        IReadOnlyList<ReservedRect> blocked)
+    {
+        var bounds = input.Bounds;
+        foreach (var view in input.Views.Where(view => view.IsProjection && slots[view.Id] is { IsStack: false, IsAtCut: false }))
+        {
+            var alongX = !IsHorizontal(slots[view.Id].Side);
+            var rect = rects[view.Id];
+            var others = rects.Where(item => item.Key != view.Id).Select(static item => item.Value)
+                .Concat(input.ReservedAreas)
+                .ToList();
+            double Min(ReservedRect r) => alongX ? r.MinX : r.MinY;
+            double Max(ReservedRect r) => alongX ? r.MaxX : r.MaxY;
+
+            // What bounds the view's own band on either side.
+            var low = Min(bounds);
+            var high = Max(bounds);
+            foreach (var other in others)
+            {
+                var sharesBand = alongX
+                    ? other.MinY < rect.MaxY && rect.MinY < other.MaxY
+                    : other.MinX < rect.MaxX && rect.MinX < other.MaxX;
+                if (!sharesBand)
+                    continue;
+
+                if (Max(other) <= Min(rect) + 1e-9)
+                    low = Math.Max(low, Max(other) + input.Gap);
+                else if (Min(other) >= Max(rect) - 1e-9)
+                    high = Math.Min(high, Min(other) - input.Gap);
+            }
+
+            var clearOf = others.Select(other => Expand(other, input.Gap)).Concat(blocked).ToList();
+            foreach (var free in input.FreeViews)
+            {
+                var room = (alongX ? free.Width : free.Height) + input.Gap + ShiftClearance;
+                var deltas = new[] { low + room - Min(rect), high - room - Max(rect) };
+                foreach (var delta in deltas.Where((delta, i) => i == 0 ? delta > 1e-9 : delta < -1e-9))
+                {
+                    var slid = alongX
+                        ? new ReservedRect(rect.MinX + delta, rect.MinY, rect.MaxX + delta, rect.MaxY)
+                        : new ReservedRect(rect.MinX, rect.MinY + delta, rect.MaxX, rect.MaxY + delta);
+                    if (ViewPlacementValidator.IsWithinArea(slid, bounds.MinX - 1e-9, bounds.MaxX + 1e-9, bounds.MinY - 1e-9, bounds.MaxY + 1e-9)
+                        && !ViewPlacementValidator.IntersectsAny(slid, clearOf))
+                    {
+                        yield return (view.Id, delta, slid);
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>

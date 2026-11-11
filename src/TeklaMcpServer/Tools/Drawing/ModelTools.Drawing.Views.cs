@@ -404,7 +404,8 @@ public static partial class ModelTools
         [Description("Layout planner. Default=Balanced on an assembly drawing, Legacy on other drawing kinds. Balanced=constraint planner, a section may change sides but keeps the projection link where it can. KeepProjection=constraint planner, no view leaves its side or the base view's axis. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. Legacy=the deprecated planner used before the constraint planner; kept as the fallback. The constraint planner handles the base view, its projections, sections, details and a 3D view; where it has no layout the legacy planner's result is used.")] string planner = "Default",
         [Description("With a constraint planner: which of the layouts that fit to use. 0=the planner's own choice, 1, 2, ...=the next ones, each giving up a little more. Run with dryRun=true to look at a variant before applying it.")] int plannerVariant = 0,
         [Description("With a constraint planner the views keep their scales by default. Set true to let it choose the scales of the assembly views and of the sections.")] bool plannerRescale = false,
-        [Description("With a constraint planner: whether a section may stand on the side of the base view opposite its own (a section whose arrows point left put to the right). Default: true. Set false to forbid it; the section then stays on its side, under or above the views there, or beside its cut.")] bool plannerAllowOppositeSide = true)
+        [Description("With a constraint planner: whether a section may stand on the side of the base view opposite its own (a section whose arrows point left put to the right). Default: true. Set false to forbid it; the section then stays on its side, under or above the views there, or beside its cut.")] bool plannerAllowOppositeSide = true,
+        [Description("With a constraint planner: whether a main view of the assembly (the view above or below the base view, the back view) may slide along its row off the base view's axis when a 3D view or a detail has no room otherwise. Default: false, the projection link is kept. The slide is the smallest that lets the view in, and is used only when nothing else fits.")] bool plannerAllowMainViewShift = false)
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
@@ -428,6 +429,8 @@ public static partial class ModelTools
             tokens.Add("planner-variant:" + plannerVariant.ToString(CultureInfo.InvariantCulture));
         if (!plannerAllowOppositeSide)
             tokens.Add("no-opposite-side");
+        if (plannerAllowMainViewShift)
+            tokens.Add("allow-main-view-shift");
         var json = RunBridge(tokens.ToArray());
         try
         {
