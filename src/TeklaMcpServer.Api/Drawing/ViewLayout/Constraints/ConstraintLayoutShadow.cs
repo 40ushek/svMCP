@@ -82,7 +82,13 @@ internal static class ConstraintLayoutShadow
                 ? Evaluate(layoutCase, policy, 0, tightGap)
                 : null;
             if (tight?.BestPlan != null && (normal!.BestPlan == null || tight.BestPlan.Cost < normal.BestPlan.Cost - 1e-9))
+            {
+                // The planner's own choice at the tight gap is already worked out.
+                if (variant == 0)
+                    return tight;
+
                 gap = tightGap;
+            }
             else if (variant == 0)
                 return normal;
         }

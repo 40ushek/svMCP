@@ -178,7 +178,19 @@ internal static class DrawingReservedAreaReader
         }
 
         if (tableIds == null || tableIds.Count == 0)
-            return (sheetMargin, Array.Empty<LayoutTableGeometryInfo>());
+        {
+            // A layout without tables is an answer too: without remembering it, every
+            // pass over such a drawing opened the layout editor again (1-2 s each).
+            var noTables = (sheetMargin, (IReadOnlyList<LayoutTableGeometryInfo>)Array.Empty<LayoutTableGeometryInfo>());
+            if (tableIds != null && drawingId >= 0)
+            {
+                _cachedDrawingId = drawingId;
+                _cachedLayoutInfo = noTables;
+            }
+
+            PerfTrace.Write("api-view", "reserved_tables_summary", 0, "count=0 reserved=0");
+            return noTables;
+        }
 
         // Phase 2: read table geometry via PresentationConnection.
         // PresentationConnection (DrawingPresentationModelInterface.Connection) opens the Layout

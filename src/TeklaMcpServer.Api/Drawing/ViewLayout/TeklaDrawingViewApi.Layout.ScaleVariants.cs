@@ -52,12 +52,14 @@ public sealed partial class TeklaDrawingViewApi
     /// Two passes. Dry: the planner lays the drawing out at several combinations of
     /// assembly scale and section scale, with frame sizes estimated, and the
     /// combinations are ordered -- fits the sheet, then fill ratio, then the price
-    /// of deviations. On the drawing: the best one is set in Tekla and laid out
-    /// with the real frames. Every such try also measures the frames, so the
-    /// estimates are corrected and the rest ordered again; the next one is tried
-    /// when this one did not fit, or when the corrected figures promise a clearly
-    /// fuller sheet than the one in hand. Null when the planner has nothing to
-    /// offer here.
+    /// of deviations. On the drawing: the best one is set in Tekla, laid out with
+    /// the real frames and the views moved there at once -- the try is the apply,
+    /// so a drawing whose first try holds costs one pass after the measurement.
+    /// A try also measures the frames. When it came out as estimated, the other
+    /// estimates stand; otherwise they are corrected and the rest ordered again.
+    /// The next one is tried when this one did not fit, or when the figures
+    /// promise a clearly fuller sheet than the one in hand. Null when the planner
+    /// has nothing to offer here.
     /// </summary>
     private FitViewsResult? TryFitWithScaleVariants(
         double? margin,
@@ -131,6 +133,10 @@ public sealed partial class TeklaDrawingViewApi
 
         var tried = new HashSet<string>();
         ConstraintScaleVariant? best = null;
+
+        // The result of the pass that moved the views to the best layout, while the
+        // drawing still stands as that pass left it; null once it has moved on.
+        FitViewsResult? bestOnDrawing = null;
         while (variants.Count > 0 && tried.Count < policy.MaxScaleProbes)
         {
             var variant = variants[0];
@@ -144,9 +150,10 @@ public sealed partial class TeklaDrawingViewApi
                 foreach (var pair in variant.ScalesById)
                     scalesOnDrawing[pair.Key] = pair.Value;
 
-                layoutOnDrawing = AtPresentScales(DrawingLayoutApplyMode.DebugPreview);
+                layoutOnDrawing = AtPresentScales(DrawingLayoutApplyMode.FinalOnly);
                 if (layoutOnDrawing?.PlannerCase != null)
                     RecordFrameSizes(estimator, layoutOnDrawing.PlannerCase);
+                bestOnDrawing = null;
             }
 
             var probe = layoutOnDrawing;
@@ -166,6 +173,7 @@ public sealed partial class TeklaDrawingViewApi
                 && (best == null || ConstraintScaleVariants.Order(new[] { best, measuredVariant }, policy.ScaleFillTie)[0] == measuredVariant))
             {
                 best = measuredVariant;
+                bestOnDrawing = alreadyMeasured ? null : probe;
             }
             PerfTrace.Write(
                 "api-view",
@@ -182,10 +190,15 @@ public sealed partial class TeklaDrawingViewApi
                     fits ? "fits" : "no-fit",
                     measuredVariant?.Fill ?? 0.0,
                     probe?.PlannerCost?.ToString("0.##", CultureInfo.InvariantCulture) ?? "none",
-                    alreadyMeasured ? "reused" : "drawing"));
+                    alreadyMeasured ? "reused" : "applied"));
 
-            variants = Rank().Where(next => !tried.Contains(next.Key)).ToList();
-            TraceScaleVariants("after-measure", variants, stopwatch.ElapsedMilliseconds);
+            // Nothing new was measured, or the try came out as estimated: the other
+            // estimates stand as they are. Otherwise they are worked out again.
+            var asEstimated = alreadyMeasured
+                || (measuredVariant != null
+                    && System.Math.Abs(measuredVariant.Fill - variant.Fill) <= policy.ScaleFillTie);
+            variants = (asEstimated ? variants : Rank()).Where(next => !tried.Contains(next.Key)).ToList();
+            TraceScaleVariants(asEstimated ? "as-estimated" : "after-measure", variants, stopwatch.ElapsedMilliseconds);
 
             // With a layout in hand, another is worth a try on the drawing only when
             // the corrected estimate promises a clearly fuller sheet.
@@ -195,8 +208,15 @@ public sealed partial class TeklaDrawingViewApi
 
         if (best != null)
         {
-            SetViewScales(best.ScalesById);
-            var applied = AtPresentScales(DrawingLayoutApplyMode.FinalOnly);
+            // The views already stand as the best try put them, unless a later try
+            // moved the drawing on or the best was read off the first measurement.
+            var applied = bestOnDrawing;
+            if (applied == null)
+            {
+                SetViewScales(best.ScalesById);
+                applied = AtPresentScales(DrawingLayoutApplyMode.FinalOnly);
+            }
+
             if (applied != null)
             {
                 applied.OptimalScale = best.MainScale;
