@@ -94,7 +94,8 @@ public sealed partial class TeklaDrawingViewApi
         double titleBlockHeight,
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
         DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
-        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain)
+        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain,
+        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current)
     {
         var total = Stopwatch.StartNew();
         using var layoutTrace = PerfTrace.BeginViewLayoutRun(
@@ -496,6 +497,7 @@ public sealed partial class TeklaDrawingViewApi
 
         DrawingLayoutVariantResult? variantResult = null;
         DrawingLayoutCandidateSelection? passiveSelection = null;
+        var constraintPlannerSelected = false;
         var allCandidates = System.Array.Empty<DrawingLayoutCandidate>();
         var scaleAttemptViews = currentViews;
         var scaleAttemptRects = actualRects;
@@ -604,6 +606,23 @@ public sealed partial class TeklaDrawingViewApi
 
             allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
             passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
+
+            // Constraint planner, when asked for: its layout at this scale takes over
+            // if it is feasible; otherwise the current planner's selection stands and
+            // the loop may go on to the next scale as before.
+            constraintPlannerSelected = false;
+            if (plannerMode != DrawingLayoutPlannerMode.Current)
+            {
+                var plannerEvaluation = TryEvaluateConstraintLayoutCandidate(
+                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale);
+                if (plannerEvaluation?.IsFeasible == true)
+                {
+                    allCandidates = allCandidates.Append(plannerEvaluation.Candidate).ToArray();
+                    passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(new[] { plannerEvaluation.Candidate });
+                    constraintPlannerSelected = true;
+                }
+            }
+
             var anyFeasible = passiveSelection.Selected?.IsFeasible == true;
 
             PerfTrace.Write("api-view", "layout_internal", 0,
@@ -658,8 +677,15 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
-        TraceConstraintLayoutShadow(layoutWorkspace, passiveSelection.Selected?.Candidate, gap, projectionResult);
+        if (plannerMode == DrawingLayoutPlannerMode.Current)
+            TraceConstraintLayoutShadow(layoutWorkspace, passiveSelection.Selected?.Candidate, gap, projectionResult);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
+
+        // The winning variant's arranged list is the current planner's. When the
+        // constraint planner's candidate was selected, report its positions instead,
+        // in a dry run as well as after an apply.
+        if (constraintPlannerSelected)
+            arranged = BuildArrangedFromApplyPlan(arranged, layoutWorkspace, applyPlan);
         TraceLayoutCandidateApplyPlan(applyPlan, layoutWorkspace);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(runtimeBaselineCandidate, applyPlan);
         TraceLayoutCandidateApplyDeltas(applyDeltas);
@@ -783,7 +809,10 @@ public sealed partial class TeklaDrawingViewApi
 
         var result = new FitViewsResult
         {
-            OptimalScale = optimalScale.Value,
+            // The current planner reports its first scale choice even when the scale
+            // loop moved past it; that is left as it was. The constraint planner
+            // reports the scale its layout was built for.
+            OptimalScale = constraintPlannerSelected ? selectedScale ?? optimalScale.Value : optimalScale.Value,
             ScalePreserved = preserveExistingScales,
             ScalePolicy = scalePolicy.ToString(),
             ApplyMode = applyMode.ToString(),

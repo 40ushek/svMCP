@@ -97,6 +97,18 @@ public static partial class DrawingCommandParsers
                 continue;
             }
 
+            if (string.Equals(args[i], "planner:keepprojection", StringComparison.OrdinalIgnoreCase))
+            {
+                request.PlannerMode = DrawingLayoutPlannerMode.ConstraintKeepProjection;
+                continue;
+            }
+
+            if (string.Equals(args[i], "planner:preferscale", StringComparison.OrdinalIgnoreCase))
+            {
+                request.PlannerMode = DrawingLayoutPlannerMode.ConstraintPreferScale;
+                continue;
+            }
+
             if (string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;

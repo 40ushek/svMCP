@@ -116,10 +116,8 @@ internal sealed class DrawingLayoutScorer
         var availableSheetArea = Math.Max(sheetArea - reservedAreaUnion, 0.0);
         var totalViewArea = scoredViews.Sum(static view => view.Rect.Width * view.Rect.Height);
 
-        // Union, not sum: overlapping views must not count their shared area twice.
-        var viewAreaUnion = ComputeUnionArea(scoredViews.Select(static view => view.Rect).ToList());
         var fillRatioRaw = availableSheetArea > Epsilon
-            ? viewAreaUnion / availableSheetArea
+            ? totalViewArea / availableSheetArea
             : 0.0;
         var fillRatioScore = availableSheetArea > Epsilon
             ? Math.Min(fillRatioRaw, 1.0)

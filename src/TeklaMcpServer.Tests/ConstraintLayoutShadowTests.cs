@@ -157,7 +157,7 @@ public sealed class ConstraintLayoutShadowTests
         reference.Views.Add(View(
             7, "EndView", "BaseProjected", "MainProjected", new ReservedRect(385, 20, 410, 120), "", "Strong"));
         var layoutCase = Case(reference);
-        layoutCase.ProjectionSides = [new ConstraintLayoutCaseSide { ViewId = 6, Side = "Left" }];
+        layoutCase.ViewSides = [new ConstraintLayoutCaseSide { ViewId = 6, Side = "Left" }];
 
         var slots = ConstraintLayoutShadow.Evaluate(layoutCase)!.BestPlan!.Slots;
 
@@ -166,6 +166,66 @@ public sealed class ConstraintLayoutShadowTests
         Assert.Equal("inline-Right", slots[7].ToString());
         // A side the current path recorded on the view itself is kept.
         Assert.Equal("inline-Right", slots[SectionA].ToString());
+    }
+
+    [Fact]
+    public void SectionDrawnLargerThanTheBaseView_IsAlignedByFrameCenter_NotByItsModelAnchor()
+    {
+        var reference = Reference();
+        reference.Views.Single(static view => view.Id == SectionA).Scale = 5; // base view is 1:10
+        var layoutCase = Case(reference);
+        layoutCase.ModelAnchors =
+        [
+            new ConstraintLayoutCaseModelAnchor { ViewId = Front, X = 1, Y = 5 },
+            new ConstraintLayoutCaseModelAnchor { ViewId = SectionA, X = 40, Y = 500 },
+            new ConstraintLayoutCaseModelAnchor { ViewId = SectionB, X = 40, Y = 8 }
+        ];
+
+        var result = ConstraintLayoutShadow.Evaluate(layoutCase)!;
+
+        var front = result.Best!.Candidate.Views.Single(static view => view.Id == Front).LayoutRect!;
+        var a = result.Best.Candidate.Views.Single(static view => view.Id == SectionA);
+        var b = result.Best.Candidate.Views.Single(static view => view.Id == SectionB).LayoutRect!;
+        Assert.Equal(0, ((a.LayoutRect!.MinY + a.LayoutRect.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        Assert.Equal(3, ((b.MinY + b.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        // The section keeps its own scale in the layout that would be applied.
+        Assert.Equal(5, a.Scale);
+        // Only the view at the base view's scale is compared with the current layout.
+        Assert.Equal(1, result.AlignmentCheckedViews);
+    }
+
+    [Fact]
+    public void EndViewWithASectionMark_IsASection_AndMayLeaveItsSide_WhileOneWithoutStaysPut()
+    {
+        // Usable width 300. In line on the right the base view (200) and two end
+        // views (2 x 30) need 268; with both sections as well, 376.
+        var reference = Reference();
+        reference.Sheet = new DrawingSheetContext { Width = 320, Height = 420 };
+        reference.Views.Add(View(
+            6, "EndView", "BaseProjected", "MainProjected", new ReservedRect(350, 20, 380, 120), "", "Strong"));
+        reference.Views.Add(View(
+            7, "EndView", "BaseProjected", "MainProjected", new ReservedRect(385, 20, 415, 120), "", "Strong"));
+        var layoutCase = Case(reference);
+        layoutCase.SectionLineAnchors.Add(new ConstraintLayoutCaseAnchor { ViewId = 6, X = 200, Y = 100 });
+
+        var slots = ConstraintLayoutShadow.Evaluate(layoutCase)!.BestPlan!.Slots;
+
+        // View 7 has no section mark: a projection, it keeps its side whatever happens.
+        Assert.Equal("inline-Right", slots[7].ToString());
+        // View 6 has one: a section like A and B, so something had to give among the three.
+        Assert.Contains(new[] { SectionA, SectionB, 6 }, id => slots[id].ToString() != "inline-Right");
+    }
+
+    [Fact]
+    public void SideFromTheCase_WinsOverTheSideTheCurrentPathRecorded()
+    {
+        var layoutCase = Case(Reference());
+        layoutCase.ViewSides = [new ConstraintLayoutCaseSide { ViewId = SectionA, Side = "Left" }];
+
+        var slots = ConstraintLayoutShadow.Evaluate(layoutCase)!.BestPlan!.Slots;
+
+        Assert.Equal("inline-Left", slots[SectionA].ToString());
+        Assert.Equal("inline-Right", slots[SectionB].ToString());
     }
 
     [Fact]

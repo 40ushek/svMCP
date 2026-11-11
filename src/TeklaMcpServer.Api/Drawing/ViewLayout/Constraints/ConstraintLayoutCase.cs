@@ -65,7 +65,7 @@ internal sealed class ConstraintLayoutCaseModelAnchor
     }
 }
 
-/// <summary>The side of the base view a projection of it belongs on.</summary>
+/// <summary>The side of the base view a view belongs on by the planner's own rules.</summary>
 internal sealed class ConstraintLayoutCaseSide
 {
     public int ViewId { get; set; }
@@ -87,6 +87,10 @@ internal sealed class ConstraintLayoutCase
 
     public double Gap { get; set; }
 
+    /// <summary>
+    /// One entry per view that has a section mark on another view. Being listed
+    /// here is what makes a view a section for the planner, whatever its Tekla type.
+    /// </summary>
     public List<ConstraintLayoutCaseAnchor> SectionLineAnchors { get; set; } = new();
 
     /// <summary>
@@ -96,10 +100,11 @@ internal sealed class ConstraintLayoutCase
     public List<ConstraintLayoutCaseModelAnchor> ModelAnchors { get; set; } = new();
 
     /// <summary>
-    /// Sides for views whose reference entry carries none: the current path records
-    /// a preferred side for sections only, not for projections of the base view.
+    /// Sides by the planner's rules: a section or an end view where its arrows
+    /// point, another projection where the topology puts it. They take precedence
+    /// over the side the current path recorded on the reference view.
     /// </summary>
-    public List<ConstraintLayoutCaseSide> ProjectionSides { get; set; } = new();
+    public List<ConstraintLayoutCaseSide> ViewSides { get; set; } = new();
 
     /// <summary>
     /// What projection alignment the current path ran on the reference:

@@ -87,7 +87,7 @@ public sealed class ConstraintLayoutCorpusTests
                 Gap = layoutCase.Gap,
                 SectionLineAnchors = layoutCase.SectionLineAnchors,
                 ModelAnchors = layoutCase.ModelAnchors,
-                ProjectionSides = layoutCase.ProjectionSides,
+                ViewSides = layoutCase.ViewSides,
                 ReferenceProjectionMode = layoutCase.ReferenceProjectionMode
             });
             Assert.Equal(Rects(result.Best.Candidate), Rects(settled!.Best!.Candidate));

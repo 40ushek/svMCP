@@ -242,7 +242,8 @@ internal sealed partial class DrawingCommandHandler
                 request.TitleBlockHeight,
                 request.ScalePolicy,
                 request.ApplyMode,
-                request.SecondaryScalePolicy);
+                request.SecondaryScalePolicy,
+                request.PlannerMode);
             WriteFitViewsToSheetResult(result, result.ReservedAreas);
         }
         catch (DrawingFitFailedException ex)

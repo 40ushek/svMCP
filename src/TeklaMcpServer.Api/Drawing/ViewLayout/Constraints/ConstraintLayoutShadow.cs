@@ -51,7 +51,7 @@ internal sealed class ConstraintLayoutShadowResult
 /// </summary>
 internal static class ConstraintLayoutShadow
 {
-    public const string CandidateName = "constraint-layout:shadow";
+    public const string CandidateName = "constraint-layout:planner";
 
     /// <summary>Sheet millimeters within which a predicted and an actual offset count as the same.</summary>
     private const double AlignmentMatchTolerance = 0.05;
@@ -75,19 +75,29 @@ internal static class ConstraintLayoutShadow
             return null;
 
         var planned = reference.Views
-            .Where(view => view.Id != baseViewId && view.LayoutRect != null && IsSkeletonView(view))
+            .Where(view => view.Id != baseViewId && view.LayoutRect != null && IsPlannable(view, sectionLineAnchors))
             .ToList();
         var included = new List<DrawingLayoutCandidateView> { baseView };
         included.AddRange(planned);
 
+        // A model anchor says where the model origin lands on the sheet, and the model
+        // origin is usually far from the part. Two views line up through it only at
+        // one scale; a view drawn larger than the base view (a section kept at 1:5
+        // beside an assembly at 1:10) would be thrown off by the difference. Such a
+        // view is aligned by frame centers instead, as the current path does.
+        var baseScaleViewIds = included
+            .Where(view => Math.Abs(view.Scale - baseView.Scale) <= 1e-6 * Math.Max(baseView.Scale, 1.0))
+            .Select(static view => view.Id)
+            .ToHashSet();
         var modelAnchors = layoutCase.ModelAnchors
+            .Where(anchor => baseScaleViewIds.Contains(anchor.ViewId))
             .GroupBy(static anchor => anchor.ViewId)
             .ToDictionary(static group => group.Key, static group => group.First());
-        var projectionSides = layoutCase.ProjectionSides
+        var viewSides = layoutCase.ViewSides
             .GroupBy(static side => side.ViewId)
             .ToDictionary(static group => group.Key, static group => group.First().Side);
         var plannerViews = planned
-            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, projectionSides, baseViewId))
+            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, viewSides, baseViewId))
             .ToList();
 
         var margin = Math.Max(reference.ReservedLayout.Margin, 0.0);
@@ -142,19 +152,31 @@ internal static class ConstraintLayoutShadow
         return result;
     }
 
-    private static bool IsSkeletonView(DrawingLayoutCandidateView view)
-        => string.Equals(view.LayoutViewKind, nameof(LayoutViewKind.MainProjected), StringComparison.OrdinalIgnoreCase)
-            || string.Equals(view.LayoutViewKind, nameof(LayoutViewKind.StandardSection), StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// What the planner lays out: projections of the base view, and sections. A view
+    /// is a section when another view carries its section mark, whatever Tekla type
+    /// it has: an end view with section arrows is a section, not a projection.
+    /// </summary>
+    private static bool IsPlannable(
+        DrawingLayoutCandidateView view,
+        IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors)
+        => sectionLineAnchors.ContainsKey(view.Id)
+            ? !IsKind(view, LayoutViewKind.Detail) && !IsKind(view, LayoutViewKind.Model3D) && !IsKind(view, LayoutViewKind.Other)
+            : IsKind(view, LayoutViewKind.MainProjected) || IsKind(view, LayoutViewKind.StandardSection);
+
+    private static bool IsKind(DrawingLayoutCandidateView view, LayoutViewKind kind)
+        => string.Equals(view.LayoutViewKind, kind.ToString(), StringComparison.OrdinalIgnoreCase);
 
     private static ConstraintLayoutViewInput ToPlannerView(
         DrawingLayoutCandidateView view,
         IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors,
         IReadOnlyDictionary<int, ConstraintLayoutCaseModelAnchor> modelAnchors,
-        IReadOnlyDictionary<int, string> projectionSides,
+        IReadOnlyDictionary<int, string> viewSides,
         int baseViewId)
     {
-        var side = ResolvePreferredSide(view, projectionSides);
-        sectionLineAnchors.TryGetValue(view.Id, out var anchor);
+        var side = ResolvePreferredSide(view, viewSides);
+        var isSection = sectionLineAnchors.TryGetValue(view.Id, out var anchor)
+            || IsKind(view, LayoutViewKind.StandardSection);
         var hasModelAnchors = modelAnchors.TryGetValue(view.Id, out var own)
             & modelAnchors.TryGetValue(baseViewId, out var ofBase);
 
@@ -166,10 +188,14 @@ internal static class ConstraintLayoutShadow
             Width = view.LayoutRect!.Width,
             Height = view.LayoutRect.Height,
             PreferredSide = side,
-            ProjectionStrength = Enum.TryParse<ProjectionStrength>(view.ProjectionStrength, ignoreCase: true, out var strength)
-                ? strength
-                : ProjectionStrength.Relaxed,
-            IsProjection = string.Equals(view.LayoutViewKind, nameof(LayoutViewKind.MainProjected), StringComparison.OrdinalIgnoreCase),
+            // A section may leave its side when the views do not fit; a projection
+            // keeps the link the current path gave it, strong unless stated otherwise.
+            ProjectionStrength = isSection
+                ? ProjectionStrength.Relaxed
+                : Enum.TryParse<ProjectionStrength>(view.ProjectionStrength, ignoreCase: true, out var strength)
+                    ? strength
+                    : ProjectionStrength.Strong,
+            IsProjection = !isSection,
             // Sections placed left or right are cut by vertical lines and differ in X;
             // sections placed above or below differ in Y, read top down.
             OrderKey = side is SectionPlacementSide.Top or SectionPlacementSide.Bottom
@@ -187,21 +213,22 @@ internal static class ConstraintLayoutShadow
             : Math.Abs((((viewRect.MinY + viewRect.MaxY) - (baseRect.MinY + baseRect.MaxY)) / 2.0) - input.AlignmentOffsetY);
 
     /// <summary>
-    /// The side the current path recorded, else the side the case supplies for a
-    /// projection of the base view, else a guess from the view type.
+    /// The side the case supplies, else the side the current path recorded on the
+    /// view, else a guess from the view type. The case comes first so the planner
+    /// follows its own side rules, not the current path's.
     /// </summary>
     private static SectionPlacementSide ResolvePreferredSide(
         DrawingLayoutCandidateView view,
-        IReadOnlyDictionary<int, string> projectionSides)
+        IReadOnlyDictionary<int, string> viewSides)
     {
-        if (Enum.TryParse<SectionPlacementSide>(view.PreferredPlacementSide, ignoreCase: true, out var side)
+        if (viewSides.TryGetValue(view.Id, out var supplied)
+            && Enum.TryParse<SectionPlacementSide>(supplied, ignoreCase: true, out var side)
             && side != SectionPlacementSide.Unknown)
         {
             return side;
         }
 
-        if (projectionSides.TryGetValue(view.Id, out var supplied)
-            && Enum.TryParse(supplied, ignoreCase: true, out side)
+        if (Enum.TryParse(view.PreferredPlacementSide, ignoreCase: true, out side)
             && side != SectionPlacementSide.Unknown)
         {
             return side;

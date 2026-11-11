@@ -12,6 +12,110 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 public sealed partial class TeklaDrawingViewApi
 {
     /// <summary>
+    /// The constraint planner's layout for the views as the current planner sized
+    /// and sided them at this scale, or null when it has none to offer: no base
+    /// view, a view kind it does not handle yet on the sheet, or nothing that fits
+    /// under the policy. A failure is traced and treated as "no layout".
+    /// </summary>
+    private static DrawingLayoutCandidateEvaluation? TryEvaluateConstraintLayoutCandidate(
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutVariantResult currentVariant,
+        double gap,
+        DrawingLayoutPlannerMode plannerMode,
+        double scale)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        string outcome;
+        try
+        {
+            var reference = currentVariant.Candidates.LastOrDefault();
+            var layoutCase = reference == null
+                ? null
+                : BuildConstraintLayoutCase(workspace, reference, gap, currentVariant.ProjectionResult);
+            var result = layoutCase == null
+                ? null
+                : ConstraintLayoutShadow.Evaluate(
+                    layoutCase,
+                    plannerMode == DrawingLayoutPlannerMode.ConstraintKeepProjection
+                        ? ConstraintLayoutPolicy.KeepProjection
+                        : ConstraintLayoutPolicy.PreferScale);
+            if (layoutCase != null)
+                SaveConstraintLayoutCase(layoutCase);
+
+            if (result == null)
+                outcome = "skipped reason=no-base-view";
+            else if (result.SkippedViews > 0)
+                outcome = $"skipped reason=unsupported-views count={result.SkippedViews}";
+            else if (result.Best == null)
+                outcome = $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}";
+            else
+            {
+                PerfTrace.Write(
+                    "api-view",
+                    "constraint_layout_plan",
+                    stopwatch.ElapsedMilliseconds,
+                    string.Format(
+                        CultureInfo.InvariantCulture,
+                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5}",
+                        scale,
+                        plannerMode,
+                        result.Best.IsFeasible ? 1 : 0,
+                        result.BestPlan!.Cost,
+                        result.BestPlan.Deviations,
+                        result.Plan.EvaluatedTopologies));
+                return result.Best;
+            }
+        }
+        catch (System.Exception exception)
+        {
+            outcome = $"error type={exception.GetType().Name} message={exception.Message}";
+        }
+
+        PerfTrace.Write(
+            "api-view",
+            "constraint_layout_plan",
+            stopwatch.ElapsedMilliseconds,
+            string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} result={2}", scale, plannerMode, outcome));
+        return null;
+    }
+
+    private static ConstraintLayoutCase? BuildConstraintLayoutCase(
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutCandidate reference,
+        double gap,
+        ProjectionAlignmentResult? referenceProjection)
+    {
+        var baseView = BaseViewSelection.Select(workspace.RuntimeViews).View;
+        if (baseView == null)
+            return null;
+
+        // Every view with a section mark on another view, not only the views the
+        // current path classifies as sections: an end view with section arrows is one too.
+        var sectionMarks = DetailRelationResolver.BuildSectionMarkRelations(
+            workspace.RuntimeViews,
+            workspace.RuntimeViews.Where(view =>
+                !ReferenceEquals(view, baseView) && IsConstraintLayoutViewKind(workspace, view)));
+
+        return new ConstraintLayoutCase
+        {
+            Reference = reference,
+            BaseViewId = baseView.GetIdentifier().ID,
+            Gap = gap,
+            SectionLineAnchors = sectionMarks.All
+                .Select(static relation => new ConstraintLayoutCaseAnchor
+                {
+                    ViewId = relation.DetailView.GetIdentifier().ID,
+                    X = relation.AnchorX,
+                    Y = relation.AnchorY
+                })
+                .ToList(),
+            ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
+            ViewSides = BuildConstraintLayoutViewSides(workspace, baseView, sectionMarks),
+            ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
+        };
+    }
+
+    /// <summary>
     /// Shadow run of the constraint planner (ROADMAP_CONSTRAINT_LAYOUT.md, phase 2):
     /// lays out the same views, scores both layouts and writes the comparison to the
     /// trace. It changes neither the drawing nor the result, and a failure here must
@@ -29,27 +133,7 @@ public sealed partial class TeklaDrawingViewApi
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var baseView = BaseViewSelection.Select(workspace.RuntimeViews).View;
-            var layoutCase = baseView == null
-                ? null
-                : new ConstraintLayoutCase
-                {
-                    Reference = reference,
-                    BaseViewId = baseView.GetIdentifier().ID,
-                    Gap = gap,
-                    SectionLineAnchors = workspace.Views
-                        .Where(static view => view.ParentRelationKind == DrawingLayoutWorkspace.RelationKindSectionMark)
-                        .Select(static view => new ConstraintLayoutCaseAnchor
-                        {
-                            ViewId = view.Id,
-                            X = view.ParentAnchorX,
-                            Y = view.ParentAnchorY
-                        })
-                        .ToList(),
-                    ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
-                    ProjectionSides = BuildConstraintLayoutProjectionSides(workspace, baseView),
-                    ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
-                };
+            var layoutCase = BuildConstraintLayoutCase(workspace, reference, gap, referenceProjection);
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
 
@@ -113,26 +197,29 @@ public sealed partial class TeklaDrawingViewApi
         }
     }
 
+    private static bool IsConstraintLayoutViewKind(DrawingLayoutWorkspace workspace, View view)
+        => workspace.GetLayoutViewKind(view.GetIdentifier().ID)
+            is LayoutViewKind.MainProjected or LayoutViewKind.StandardSection or LayoutViewKind.AnchorDetailSection;
+
     /// <summary>
-    /// The side of the base view each of its projections belongs on. An end view
-    /// stands where its section arrows point, the same rule sections follow; its
-    /// type alone does not say which way it looks. The other projections take the
-    /// role the topology gives them (top view above, bottom view below).
+    /// The side of the base view each view belongs on. A section, and an end view
+    /// with or without a section mark, stands where it looks: for a view looking
+    /// along the base view's X axis that is where its section arrows point. The
+    /// other projections take the role the topology gives them (top view above,
+    /// bottom view below).
     /// </summary>
-    private static List<ConstraintLayoutCaseSide> BuildConstraintLayoutProjectionSides(
+    private static List<ConstraintLayoutCaseSide> BuildConstraintLayoutViewSides(
         DrawingLayoutWorkspace workspace,
-        View baseView)
+        View baseView,
+        DetailRelationSet sectionMarks)
     {
         var neighbors = workspace.GetTopology().Neighbors;
         var sides = new List<ConstraintLayoutCaseSide>();
         foreach (var view in workspace.RuntimeViews)
         {
             var id = view.GetIdentifier().ID;
-            if (ReferenceEquals(view, baseView)
-                || workspace.GetLayoutViewKind(id) != LayoutViewKind.MainProjected)
-            {
+            if (ReferenceEquals(view, baseView) || !IsConstraintLayoutViewKind(workspace, view))
                 continue;
-            }
 
             var side = (neighbors?.GetRole(id) ?? NeighborRole.Unknown) switch
             {
@@ -142,15 +229,16 @@ public sealed partial class TeklaDrawingViewApi
                 NeighborRole.SideRight => SectionPlacementSide.Right,
                 _ => SectionPlacementSide.Unknown
             };
-            if (view.ViewType == View.ViewTypes.EndView
+            if ((sectionMarks.TryGet(id, out _) || view.ViewType == View.ViewTypes.EndView)
                 && baseView.ViewCoordinateSystem != null
                 && view.ViewCoordinateSystem != null)
             {
-                var byArrows = SectionPlacementSideResolver.ResolveFromCoordinateSystems(
+                var byDirection = SectionPlacementSideResolver.ResolveFromCoordinateSystems(
                     baseView.ViewCoordinateSystem, view.ViewCoordinateSystem);
-                if (byArrows is SectionPlacementSide.Left or SectionPlacementSide.Right)
-                    side = byArrows;
+                if (byDirection != SectionPlacementSide.Unknown)
+                    side = byDirection;
             }
+
             if (side != SectionPlacementSide.Unknown)
                 sides.Add(new ConstraintLayoutCaseSide { ViewId = id, Side = side.ToString() });
         }
