@@ -102,8 +102,15 @@ internal static class ConstraintLayoutShadow
         var viewSides = layoutCase.ViewSides
             .GroupBy(static side => side.ViewId)
             .ToDictionary(static group => group.Key, static group => group.First().Side);
+        // A section is placed against the view that carries its mark, when the planner
+        // lays that view out too; every other view against the base view.
+        var hosts = planned.ToDictionary(
+            static view => view.Id,
+            view => sectionLineAnchors.TryGetValue(view.Id, out var anchor)
+                ? included.FirstOrDefault(other => other.Id == anchor.OwnerViewId && other.Id != view.Id) ?? baseView
+                : baseView);
         var plannerViews = planned
-            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, viewSides, baseViewId))
+            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, viewSides, hosts[view.Id], baseView.Id))
             .ToList();
 
         var margin = Math.Max(reference.ReservedLayout.Margin, 0.0);
@@ -119,9 +126,9 @@ internal static class ConstraintLayoutShadow
 
         var residuals = planned
             .Zip(plannerViews, static (view, input) => (view, input))
-            .Where(pair => modelAnchors.ContainsKey(baseViewId) && modelAnchors.ContainsKey(pair.view.Id))
+            .Where(pair => modelAnchors.ContainsKey(hosts[pair.view.Id].Id) && modelAnchors.ContainsKey(pair.view.Id))
             .Where(static pair => pair.input.PreferredSide != SectionPlacementSide.Unknown)
-            .Select(pair => GetAlignmentResidual(baseView.LayoutRect, pair.view.LayoutRect!, pair.input))
+            .Select(pair => GetAlignmentResidual(hosts[pair.view.Id].LayoutRect!, pair.view.LayoutRect!, pair.input))
             .ToList();
 
         var result = new ConstraintLayoutShadowResult
@@ -159,7 +166,7 @@ internal static class ConstraintLayoutShadow
 
         // The policy decides first: only the cheapest layouts compete on score.
         var cheapest = plan.Candidates
-            .Where(candidate => candidate.Cost <= plan.Candidates[0].Cost + 1e-9)
+            .Where(candidate => candidate.RankCost <= plan.Candidates[0].RankCost + 1e-9)
             .ToList();
         var selection = new DrawingLayoutCandidateSelector().SelectBest(
             cheapest.Select(candidate => ToCandidate(reference, included, candidate)));
@@ -188,19 +195,22 @@ internal static class ConstraintLayoutShadow
         IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors,
         IReadOnlyDictionary<int, ConstraintLayoutCaseModelAnchor> modelAnchors,
         IReadOnlyDictionary<int, string> viewSides,
+        DrawingLayoutCandidateView host,
         int baseViewId)
     {
         var side = ResolvePreferredSide(view, viewSides);
         var isSection = sectionLineAnchors.TryGetValue(view.Id, out var anchor)
             || IsKind(view, LayoutViewKind.StandardSection);
         var hasModelAnchors = modelAnchors.TryGetValue(view.Id, out var own)
-            & modelAnchors.TryGetValue(baseViewId, out var ofBase);
+            & modelAnchors.TryGetValue(host.Id, out var ofHost);
+        var cut = GetCutPoint(anchor, host);
 
         return new ConstraintLayoutViewInput
         {
             Id = view.Id,
-            AlignmentOffsetX = hasModelAnchors ? own!.X - ofBase!.X : 0.0,
-            AlignmentOffsetY = hasModelAnchors ? own!.Y - ofBase!.Y : 0.0,
+            OwnerId = host.Id == baseViewId ? null : host.Id,
+            AlignmentOffsetX = hasModelAnchors ? own!.X - ofHost!.X : 0.0,
+            AlignmentOffsetY = hasModelAnchors ? own!.Y - ofHost!.Y : 0.0,
             Width = view.LayoutRect!.Width,
             Height = view.LayoutRect.Height,
             PreferredSide = side,
@@ -216,8 +226,32 @@ internal static class ConstraintLayoutShadow
             // sections placed above or below differ in Y, read top down.
             OrderKey = side is SectionPlacementSide.Top or SectionPlacementSide.Bottom
                 ? -(anchor?.Y ?? 0.0)
-                : anchor?.X ?? 0.0
+                : anchor?.X ?? 0.0,
+            CutX = cut?.X,
+            CutY = cut?.Y
         };
+    }
+
+    /// <summary>
+    /// The middle of a section's line on the view that carries its mark, from that
+    /// view's frame center. Null unless the mark is on the host view.
+    /// </summary>
+    private static (double X, double Y)? GetCutPoint(
+        ConstraintLayoutCaseAnchor? anchor,
+        DrawingLayoutCandidateView host)
+    {
+        if (anchor?.OwnerViewId != host.Id
+            || anchor.OwnerLocalX is not { } localX
+            || anchor.OwnerLocalY is not { } localY
+            || host.Scale <= 0)
+        {
+            return null;
+        }
+
+        var frame = host.LayoutRect!;
+        return (
+            host.OriginX + (localX / host.Scale) - ((frame.MinX + frame.MaxX) / 2.0),
+            host.OriginY + (localY / host.Scale) - ((frame.MinY + frame.MaxY) / 2.0));
     }
 
     private static double GetAlignmentResidual(

@@ -66,7 +66,7 @@ internal static class DimensionTextBoxContextLoader
             $"hasShortening={shorteningMapper?.HasShortening == true}");
     }
 
-    private static ViewShorteningCoordinateMapper? TryBuildShorteningMapper(View view)
+    internal static ViewShorteningCoordinateMapper? TryBuildShorteningMapper(View view)
     {
         try
         {

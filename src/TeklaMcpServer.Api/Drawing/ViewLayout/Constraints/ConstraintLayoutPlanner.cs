@@ -4,13 +4,17 @@ using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 
-/// <summary>Where one view sits relative to the base view.</summary>
+/// <summary>
+/// Where one view sits relative to its host: the view that carries its section
+/// mark, or the base view. A stack is always relative to the base view.
+/// </summary>
 internal readonly struct ViewSlot
 {
-    public ViewSlot(SectionPlacementSide side, bool isStack)
+    public ViewSlot(SectionPlacementSide side, bool isStack, bool isAtCut = false)
     {
         Side = side;
         IsStack = isStack;
+        IsAtCut = isAtCut;
     }
 
     public SectionPlacementSide Side { get; }
@@ -21,7 +25,14 @@ internal readonly struct ViewSlot
     /// </summary>
     public bool IsStack { get; }
 
-    public override string ToString() => IsStack ? $"stack-{Side}" : $"inline-{Side}";
+    /// <summary>
+    /// True: a section beside the base view on that side, level with its own section
+    /// line, so the reader finds it next to the place where it is cut. It is off the
+    /// side its arrows point to, and not on the base view's center line.
+    /// </summary>
+    public bool IsAtCut { get; }
+
+    public override string ToString() => IsAtCut ? $"cut-{Side}" : IsStack ? $"stack-{Side}" : $"inline-{Side}";
 }
 
 internal sealed class ConstraintLayoutViewInput
@@ -54,6 +65,22 @@ internal sealed class ConstraintLayoutViewInput
     /// order: left to right in a row, top to bottom in a column.
     /// </summary>
     public double OrderKey { get; set; }
+
+    /// <summary>
+    /// The view this one is placed against: the one that carries its section mark,
+    /// when that is another view of the plan. Null: the base view.
+    /// </summary>
+    public int? OwnerId { get; set; }
+
+    /// <summary>
+    /// The middle of the view's section line, measured from the frame center of the
+    /// view that carries the mark. Null when the view has no section line there; it
+    /// then has no slot at the cut and pays nothing for distance.
+    /// </summary>
+    public double? CutX { get; set; }
+
+    /// <inheritdoc cref="CutX"/>
+    public double? CutY { get; set; }
 }
 
 internal sealed class ConstraintLayoutPlannerInput
@@ -88,6 +115,14 @@ internal sealed class ConstraintLayoutPlanCandidate
 
     /// <summary>What those deviations cost under the policy, in scale steps.</summary>
     public double Cost { get; set; }
+
+    /// <summary>
+    /// What the sections cost for standing away from their section lines. Candidates
+    /// are ordered by this and <see cref="Cost"/> together.
+    /// </summary>
+    public double CutDistanceCost { get; set; }
+
+    public double RankCost => Cost + CutDistanceCost;
 }
 
 internal sealed class ConstraintLayoutPlan
@@ -171,13 +206,42 @@ internal static class ConstraintLayoutPlanner
                 Slots = slots,
                 RectsById = rects,
                 Deviations = choice.Count(static c => c != 0),
-                Cost = cost
+                Cost = cost,
+                CutDistanceCost = GetCutDistanceCost(input, rects)
             });
             if (plan.Candidates.Count >= input.MaxCandidates)
                 break;
         }
 
+        // The distance prices are known only once a layout is solved; put the
+        // candidates back in order of price, equal ones as they came.
+        var byCost = plan.Candidates.OrderBy(static candidate => candidate.RankCost).ToList();
+        plan.Candidates.Clear();
+        plan.Candidates.AddRange(byCost);
         return plan;
+    }
+
+    /// <summary>What the sections cost for standing away from the middles of their section lines.</summary>
+    private static double GetCutDistanceCost(
+        ConstraintLayoutPlannerInput input,
+        IReadOnlyDictionary<int, ReservedRect> rects)
+    {
+        var distance = 0.0;
+        foreach (var view in input.Views)
+        {
+            if (view.CutX is not { } cutX || view.CutY is not { } cutY)
+                continue;
+
+            var host = rects[view.OwnerId ?? input.BaseView.Id];
+            var x = ((host.MinX + host.MaxX) / 2.0) + cutX;
+            var y = ((host.MinY + host.MaxY) / 2.0) + cutY;
+            var rect = rects[view.Id];
+            var dx = Math.Max(Math.Max(rect.MinX - x, x - rect.MaxX), 0.0);
+            var dy = Math.Max(Math.Max(rect.MinY - y, y - rect.MaxY), 0.0);
+            distance += Math.Sqrt((dx * dx) + (dy * dy));
+        }
+
+        return distance / 100.0 * input.Policy.CutDistanceCost;
     }
 
     /// <summary>
@@ -199,6 +263,13 @@ internal static class ConstraintLayoutPlanner
         var options = new List<(ViewSlot, double)> { (new ViewSlot(view.PreferredSide, isStack: false), 0.0) };
         if (view.ProjectionStrength == ProjectionStrength.Strong)
             return options;
+
+        if (view.CutX != null && view.CutY != null && !double.IsPositiveInfinity(policy.BesideCutCost))
+        {
+            options.AddRange(Sides
+                .Where(side => IsHorizontal(side) != IsHorizontal(view.PreferredSide))
+                .Select(side => (new ViewSlot(side, isStack: false, isAtCut: true), policy.BesideCutCost)));
+        }
 
         if (!double.IsPositiveInfinity(policy.SideDeviationCost))
             options.Add((new ViewSlot(Opposite(view.PreferredSide), isStack: false), policy.SideDeviationCost));
@@ -253,23 +324,27 @@ internal static class ConstraintLayoutPlanner
 
         // The slots separate views of one side and of opposite sides. Views on adjacent
         // sides (a wide top view and a tall right section) can still meet at the corner;
-        // each pass separates the pairs the last solution left touching.
+        // each pass separates one pair the last solution left touching.
         var solution = Solve(input, views, relations);
         for (var pass = 0; pass < views.Count * views.Count; pass++)
         {
             if (solution.UnseparatedPairs.Count == 0)
                 break;
 
-            foreach (var (firstId, secondId) in solution.UnseparatedPairs)
-            {
-                var relation = TrySeparateAdjacentSides(input, slots, solution.RectsById, firstId, secondId);
-                if (relation == null)
-                    return solution;
+            var (firstId, secondId) = solution.UnseparatedPairs[0];
+            var separated = SeparateAdjacentSides(input, slots, solution.RectsById, firstId, secondId)
+                .Select(relation => Solve(input, views, relations.Append(relation).ToList()))
+                .Zip(
+                    SeparateAdjacentSides(input, slots, solution.RectsById, firstId, secondId),
+                    static (attempt, relation) => (attempt, relation))
+                .FirstOrDefault(static item =>
+                    item.attempt.HorizontalFailure == AxisFailure.None
+                    && item.attempt.VerticalFailure == AxisFailure.None);
+            if (separated.attempt == null)
+                return solution;
 
-                relations.Add(relation.Value);
-            }
-
-            solution = Solve(input, views, relations);
+            relations.Add(separated.relation);
+            solution = separated.attempt;
         }
 
         return solution;
@@ -288,55 +363,125 @@ internal static class ConstraintLayoutPlanner
     {
         var baseId = input.BaseView.Id;
         var relations = new List<LayoutRelation>();
+        var hostIds = new[] { baseId }.Concat(input.Views.Select(v => v.OwnerId ?? baseId)).Distinct();
+        foreach (var hostId in hostIds)
         foreach (var side in Sides)
         {
-            var horizontal = IsHorizontal(side);
-            var ascendingOutward = side is SectionPlacementSide.Right or SectionPlacementSide.Bottom;
-            var onSide = input.Views.Where(v => slots[v.Id].Side == side).ToList();
-
-            // In line: a chain running outward from the base view, all on its center line.
-            var outermost = baseId;
-            var inline = onSide.Where(v => !slots[v.Id].IsStack).OrderByDescending(static v => v.IsProjection);
-            inline = ascendingOutward
-                ? inline.ThenBy(static v => v.OrderKey).ThenBy(static v => v.Id)
-                : inline.ThenByDescending(static v => v.OrderKey).ThenByDescending(static v => v.Id);
-            foreach (var view in inline)
-            {
-                relations.Add(Outward(side, outermost, view.Id));
-                relations.Add(horizontal
-                    ? new LayoutRelation(LayoutRelationKind.AlignCenterY, baseId, view.Id, view.AlignmentOffsetY)
-                    : new LayoutRelation(LayoutRelationKind.AlignCenterX, baseId, view.Id, view.AlignmentOffsetX));
-                outermost = view.Id;
-            }
-
-            // Stack: beyond the in-line chain, running across it in reading order.
-            var stack = onSide
-                .Where(v => slots[v.Id].IsStack)
-                .OrderBy(static v => v.OrderKey)
-                .ThenBy(static v => v.Id)
+            // A stack is off every axis, so it gathers around the base view whatever
+            // view carries the section mark.
+            var onSide = input.Views
+                .Where(v => slots[v.Id].Side == side
+                    && (slots[v.Id].IsStack ? baseId : v.OwnerId ?? baseId) == hostId)
                 .ToList();
-            for (var i = 0; i < stack.Count; i++)
-            {
-                relations.Add(Outward(side, outermost, stack[i].Id));
-                if (i == 0)
-                    continue;
-
-                relations.Add(horizontal
-                    ? new LayoutRelation(LayoutRelationKind.Below, stack[i].Id, stack[i - 1].Id)
-                    : new LayoutRelation(LayoutRelationKind.LeftOf, stack[i - 1].Id, stack[i].Id));
-                relations.Add(new LayoutRelation(
-                    horizontal ? LayoutRelationKind.AlignCenterX : LayoutRelationKind.AlignCenterY, stack[0].Id, stack[i].Id));
-            }
+            AddSideRelations(input, slots, relations, hostId, side, onSide);
         }
 
         return relations;
     }
 
+    /// <summary>The relations of the views that stand on one side of one host view.</summary>
+    private static void AddSideRelations(
+        ConstraintLayoutPlannerInput input,
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        List<LayoutRelation> relations,
+        int hostId,
+        SectionPlacementSide side,
+        IReadOnlyList<ConstraintLayoutViewInput> onSide)
+    {
+        var horizontal = IsHorizontal(side);
+        var ascendingOutward = side is SectionPlacementSide.Right or SectionPlacementSide.Bottom;
+
+        // In line: a chain running outward from the host view, all on its center line.
+        var outermost = hostId;
+        var inline = onSide
+            .Where(v => !slots[v.Id].IsStack && !slots[v.Id].IsAtCut)
+            .OrderByDescending(static v => v.IsProjection);
+        inline = ascendingOutward
+            ? inline.ThenBy(static v => v.OrderKey).ThenBy(static v => v.Id)
+            : inline.ThenByDescending(static v => v.OrderKey).ThenByDescending(static v => v.Id);
+        foreach (var view in inline)
+        {
+            relations.Add(Outward(side, outermost, view.Id));
+            relations.Add(horizontal
+                ? new LayoutRelation(LayoutRelationKind.AlignCenterY, hostId, view.Id, view.AlignmentOffsetY)
+                : new LayoutRelation(LayoutRelationKind.AlignCenterX, hostId, view.Id, view.AlignmentOffsetX));
+            outermost = view.Id;
+        }
+
+        // At the cut: beyond the in-line chain, each view level with its own section
+        // line. Views whose lines are far enough apart share one column.
+        var outer = new List<int> { outermost };
+        foreach (var column in ArrangeAtCutColumns(onSide.Where(v => slots[v.Id].IsAtCut), horizontal, input.Gap))
+        {
+            foreach (var view in column)
+            {
+                relations.AddRange(outer.Select(inner => Outward(side, inner, view.Id)));
+                relations.Add(horizontal
+                    ? new LayoutRelation(LayoutRelationKind.AlignCenterY, hostId, view.Id, view.CutY ?? 0.0)
+                    : new LayoutRelation(LayoutRelationKind.AlignCenterX, hostId, view.Id, view.CutX ?? 0.0));
+            }
+
+            outer = column.Select(static v => v.Id).ToList();
+        }
+
+        // Stack: beyond all of those, running across the side in reading order.
+        var stack = onSide
+            .Where(v => slots[v.Id].IsStack)
+            .OrderBy(static v => v.OrderKey)
+            .ThenBy(static v => v.Id)
+            .ToList();
+        for (var i = 0; i < stack.Count; i++)
+        {
+            relations.AddRange(outer.Select(inner => Outward(side, inner, stack[i].Id)));
+            if (i == 0)
+                continue;
+
+            relations.Add(horizontal
+                ? new LayoutRelation(LayoutRelationKind.Below, stack[i].Id, stack[i - 1].Id)
+                : new LayoutRelation(LayoutRelationKind.LeftOf, stack[i - 1].Id, stack[i].Id));
+            relations.Add(new LayoutRelation(
+                horizontal ? LayoutRelationKind.AlignCenterX : LayoutRelationKind.AlignCenterY, stack[0].Id, stack[i].Id));
+        }
+    }
+
     /// <summary>
-    /// Separates a view on a horizontal side from one on a vertical side along the
-    /// axis that needs the smaller move. Null when the pair is not such a pair.
+    /// Groups the views placed at their cuts on one side into columns running outward
+    /// from the host view (rows, on a side above or below it). A view joins the first
+    /// column where it stays a gap clear of the views already there.
     /// </summary>
-    private static LayoutRelation? TrySeparateAdjacentSides(
+    private static List<List<ConstraintLayoutViewInput>> ArrangeAtCutColumns(
+        IEnumerable<ConstraintLayoutViewInput> views,
+        bool horizontal,
+        double gap)
+    {
+        double Along(ConstraintLayoutViewInput view) => (horizontal ? view.CutY : view.CutX) ?? 0.0;
+
+        bool AreClear(ConstraintLayoutViewInput first, ConstraintLayoutViewInput second)
+        {
+            var extent = horizontal ? first.Height + second.Height : first.Width + second.Width;
+            return Math.Abs(Along(first) - Along(second)) >= (extent / 2.0) + gap;
+        }
+
+        var columns = new List<List<ConstraintLayoutViewInput>>();
+        foreach (var view in views.OrderBy(Along).ThenBy(static v => v.Id))
+        {
+            var column = columns.FirstOrDefault(placed => placed.All(other => AreClear(other, view)));
+            if (column == null)
+                columns.Add(column = new List<ConstraintLayoutViewInput>());
+
+            column.Add(view);
+        }
+
+        return columns;
+    }
+
+    /// <summary>
+    /// The two ways to separate a view on a horizontal side from one on a vertical
+    /// side, the one that needs the smaller move first. The other is there because
+    /// the first can contradict the rest: the two views may stand against different
+    /// host views. Empty when the pair is not such a pair.
+    /// </summary>
+    private static LayoutRelation[] SeparateAdjacentSides(
         ConstraintLayoutPlannerInput input,
         IReadOnlyDictionary<int, ViewSlot> slots,
         IReadOnlyDictionary<int, ReservedRect> rects,
@@ -344,9 +489,9 @@ internal static class ConstraintLayoutPlanner
         int secondId)
     {
         if (!slots.TryGetValue(firstId, out var first) || !slots.TryGetValue(secondId, out var second))
-            return null;
+            return [];
         if (IsHorizontal(first.Side) == IsHorizontal(second.Side))
-            return null;
+            return [];
 
         var sideId = IsHorizontal(first.Side) ? firstId : secondId;
         var verticalId = IsHorizontal(first.Side) ? secondId : firstId;
@@ -354,10 +499,10 @@ internal static class ConstraintLayoutPlanner
         var verticalRect = rects[verticalId];
         var clearX = Math.Max(sideRect.MinX - verticalRect.MaxX, verticalRect.MinX - sideRect.MaxX);
         var clearY = Math.Max(sideRect.MinY - verticalRect.MaxY, verticalRect.MinY - sideRect.MaxY);
+        var alongX = Outward(slots[sideId].Side, verticalId, sideId);
+        var alongY = Outward(slots[verticalId].Side, sideId, verticalId);
 
-        return input.Gap - clearX <= input.Gap - clearY
-            ? Outward(slots[sideId].Side, verticalId, sideId)
-            : Outward(slots[verticalId].Side, sideId, verticalId);
+        return input.Gap - clearX <= input.Gap - clearY ? [alongX, alongY] : [alongY, alongX];
     }
 
     /// <summary>

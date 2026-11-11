@@ -14,6 +14,21 @@ internal sealed class ConstraintLayoutCaseAnchor
     public double? X { get; set; }
 
     public double? Y { get; set; }
+
+    /// <summary>The view that carries the section mark. Null in cases saved before this was recorded.</summary>
+    public int? OwnerViewId { get; set; }
+
+    /// <summary>
+    /// The same midpoint in the owner view's own coordinates, model millimeters, as
+    /// the view draws it: in a shortened view, with the stretches it leaves out taken
+    /// off. It lands on the sheet at <c>owner view origin + local / scale</c>, so it
+    /// stays valid when the owner view is moved. After a rescale of a shortened view
+    /// it is off by the change in the paper gaps at the breaks.
+    /// </summary>
+    public double? OwnerLocalX { get; set; }
+
+    /// <inheritdoc cref="OwnerLocalX"/>
+    public double? OwnerLocalY { get; set; }
 }
 
 /// <summary>

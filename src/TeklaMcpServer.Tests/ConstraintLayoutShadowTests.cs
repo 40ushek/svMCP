@@ -249,6 +249,35 @@ public sealed class ConstraintLayoutShadowTests
     }
 
     [Fact]
+    public void CutOffset_ComesFromTheSectionLineOnTheBaseView_AtTheBaseViewsScale()
+    {
+        var reference = Reference();
+        var front = reference.Views.Single(static view => view.Id == Front);
+        var layoutCase = Case(reference);
+        // Both sections look down. A's line is 300 model mm above the base view's
+        // origin; B's mark is on a view the planner does not lay out, so B has no place at its cut.
+        layoutCase.ViewSides =
+        [
+            new ConstraintLayoutCaseSide { ViewId = SectionA, Side = "Bottom" },
+            new ConstraintLayoutCaseSide { ViewId = SectionB, Side = "Bottom" }
+        ];
+        layoutCase.SectionLineAnchors =
+        [
+            new ConstraintLayoutCaseAnchor { ViewId = SectionA, OwnerViewId = Front, OwnerLocalX = 0, OwnerLocalY = 300 },
+            new ConstraintLayoutCaseAnchor { ViewId = SectionB, OwnerViewId = Detail, OwnerLocalX = 0, OwnerLocalY = 300 }
+        ];
+
+        var plan = ConstraintLayoutShadow.Evaluate(layoutCase)!.Plan;
+
+        var atCut = plan.Candidates.First(static candidate => candidate.Slots[SectionA].IsAtCut);
+        var frame = atCut.RectsById[Front];
+        var section = atCut.RectsById[SectionA];
+        var expected = front.OriginY + (300 / front.Scale) - ((front.LayoutRect!.MinY + front.LayoutRect.MaxY) / 2);
+        Assert.Equal(expected, ((section.MinY + section.MaxY) - (frame.MinY + frame.MaxY)) / 2, 9);
+        Assert.DoesNotContain(plan.Candidates, static candidate => candidate.Slots[SectionB].IsAtCut);
+    }
+
+    [Fact]
     public void ModelAnchor_IsFrameCenterMinusWhereTheModelOriginLands()
     {
         // View looking along -Y: view X is model X, view Y is model Z.

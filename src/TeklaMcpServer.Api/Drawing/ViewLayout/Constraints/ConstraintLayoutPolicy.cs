@@ -21,6 +21,23 @@ internal sealed class ConstraintLayoutPolicy
     /// </summary>
     public double SideDeviationCost { get; set; } = 0.5;
 
+    /// <summary>
+    /// A section beside the view that carries its section mark, level with its own
+    /// section line: off the side its arrows point to, but next to the place where
+    /// it is cut, where the reader looks for it first. Cheaper than any other
+    /// deviation for that reason.
+    /// </summary>
+    public double BesideCutCost { get; set; } = 0.25;
+
+    /// <summary>
+    /// What every 100 mm of sheet between a section and the middle of its section
+    /// line costs. The further a section is from its cut, the longer the reader
+    /// looks for it. It ranks the layouts of one scale against each other and is
+    /// not carried across scales: a smaller scale shortens every distance on the
+    /// sheet, and that is no reason to prefer it.
+    /// </summary>
+    public double CutDistanceCost { get; set; } = 0.25;
+
     /// <summary>A view moved into a stack off the base view's axis: the projection link is lost.</summary>
     public double LinkBreakCost { get; set; } = 1.5;
 
@@ -69,6 +86,7 @@ internal sealed class ConstraintLayoutPolicy
     public static ConstraintLayoutPolicy KeepProjection => new()
     {
         SideDeviationCost = double.PositiveInfinity,
+        BesideCutCost = double.PositiveInfinity,
         LinkBreakCost = double.PositiveInfinity
     };
 }

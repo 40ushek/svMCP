@@ -108,23 +108,74 @@ public sealed partial class TeklaDrawingViewApi
             workspace.RuntimeViews.Where(view =>
                 !ReferenceEquals(view, baseView) && IsConstraintLayoutViewKind(workspace, view)));
 
+        var shorteningByOwnerId = new Dictionary<int, ViewShorteningCoordinateMapper?>();
         return new ConstraintLayoutCase
         {
             Reference = reference,
             BaseViewId = baseView.GetIdentifier().ID,
             Gap = gap,
             SectionLineAnchors = sectionMarks.All
-                .Select(static relation => new ConstraintLayoutCaseAnchor
-                {
-                    ViewId = relation.DetailView.GetIdentifier().ID,
-                    X = relation.AnchorX,
-                    Y = relation.AnchorY
-                })
+                .Select(relation => ToConstraintLayoutCaseAnchor(relation, shorteningByOwnerId))
                 .ToList(),
             ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
             ViewSides = BuildConstraintLayoutViewSides(workspace, baseView, sectionMarks),
             ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
         };
+    }
+
+    private static ConstraintLayoutCaseAnchor ToConstraintLayoutCaseAnchor(
+        DetailRelation relation,
+        Dictionary<int, ViewShorteningCoordinateMapper?> shorteningByOwnerId)
+    {
+        var owner = relation.OwnerView;
+        var ownerId = owner.GetIdentifier().ID;
+        var anchor = new ConstraintLayoutCaseAnchor
+        {
+            ViewId = relation.DetailView.GetIdentifier().ID,
+            X = relation.AnchorX,
+            Y = relation.AnchorY,
+            OwnerViewId = ownerId
+        };
+        if (owner.Origin == null || relation.AnchorX is not { } sheetX || relation.AnchorY is not { } sheetY)
+            return anchor;
+
+        // The anchor is the owner view's origin plus the point over the scale
+        // (DetailRelationResolver.TryProjectToSheet); this takes the point back out.
+        var scale = owner.Attributes.Scale > 0 ? owner.Attributes.Scale : 1.0;
+        var localX = (sheetX - owner.Origin.X) * scale;
+        var localY = (sheetY - owner.Origin.Y) * scale;
+
+        // A shortened view draws the member with stretches of it left out, and the
+        // point is given as if nothing were: move it to where it is drawn.
+        if (!shorteningByOwnerId.TryGetValue(ownerId, out var shortening))
+            shorteningByOwnerId[ownerId] = shortening = DimensionTextBoxContextLoader.TryBuildShorteningMapper(owner);
+        if (shortening?.HasShortening == true)
+        {
+            localX = ToDrawnCoordinate(localX, shortening.XIntervals, x => shortening.ConvertPointToVisual(x, 0)[0]);
+            localY = ToDrawnCoordinate(localY, shortening.YIntervals, y => shortening.ConvertPointToVisual(0, y)[1]);
+        }
+
+        anchor.OwnerLocalX = localX;
+        anchor.OwnerLocalY = localY;
+        return anchor;
+    }
+
+    /// <summary>
+    /// Where a shortened view draws a coordinate. A section line that falls in a
+    /// stretch the view leaves out is drawn at the break, between the two pieces.
+    /// </summary>
+    private static double ToDrawnCoordinate(
+        double raw,
+        IReadOnlyList<ViewShorteningInterval> shown,
+        System.Func<double, double> toDrawn)
+    {
+        for (var i = 0; i + 1 < shown.Count; i++)
+        {
+            if (raw > shown[i].Max && raw < shown[i + 1].Min)
+                return (toDrawn(shown[i].Max) + toDrawn(shown[i + 1].Min)) / 2.0;
+        }
+
+        return toDrawn(raw);
     }
 
     /// <summary>
@@ -214,11 +265,10 @@ public sealed partial class TeklaDrawingViewApi
             is LayoutViewKind.MainProjected or LayoutViewKind.StandardSection or LayoutViewKind.AnchorDetailSection;
 
     /// <summary>
-    /// The side of the base view each view belongs on. A section, and an end view
-    /// with or without a section mark, stands where it looks: for a view looking
-    /// along the base view's X axis that is where its section arrows point. The
-    /// other projections take the role the topology gives them (top view above,
-    /// bottom view below).
+    /// The side of the base view each view belongs on, by where the view looks
+    /// (ConstraintViewSideResolver). A section, and an end view with or without a
+    /// section mark, stands where its arrows point; any other projection stands on
+    /// the observer's side, so on an unturned base view the top view is above.
     /// </summary>
     private static List<ConstraintLayoutCaseSide> BuildConstraintLayoutViewSides(
         DrawingLayoutWorkspace workspace,
@@ -233,22 +283,43 @@ public sealed partial class TeklaDrawingViewApi
             if (ReferenceEquals(view, baseView) || !IsConstraintLayoutViewKind(workspace, view))
                 continue;
 
-            var side = (neighbors?.GetRole(id) ?? NeighborRole.Unknown) switch
+            // The side comes from where the view looks, relative to the base view; the
+            // view type is not asked, since a turned base view makes its name misleading.
+            // A section or an end view stands where its arrows point; another projection
+            // stands on the observer's side.
+            // A section is placed against the view that carries its mark, and its side is
+            // a side of that view: a back view is the base view mirrored, left for right.
+            var hasSectionMark = sectionMarks.TryGet(id, out var relation);
+            var host = hasSectionMark
+                && !ReferenceEquals(relation.OwnerView, view)
+                && IsConstraintLayoutViewKind(workspace, relation.OwnerView)
+                    ? relation.OwnerView
+                    : baseView;
+            var side = SectionPlacementSide.Unknown;
+            var baseSystem = host.ViewCoordinateSystem;
+            var viewSystem = view.ViewCoordinateSystem;
+            if (baseSystem != null && viewSystem != null)
             {
-                NeighborRole.Top => SectionPlacementSide.Top,
-                NeighborRole.Bottom => SectionPlacementSide.Bottom,
-                NeighborRole.SideLeft => SectionPlacementSide.Left,
-                NeighborRole.SideRight => SectionPlacementSide.Right,
-                _ => SectionPlacementSide.Unknown
-            };
-            if ((sectionMarks.TryGet(id, out _) || view.ViewType == View.ViewTypes.EndView)
-                && baseView.ViewCoordinateSystem != null
-                && view.ViewCoordinateSystem != null)
+                side = ConstraintViewSideResolver.Resolve(
+                    (baseSystem.AxisX.X, baseSystem.AxisX.Y, baseSystem.AxisX.Z),
+                    (baseSystem.AxisY.X, baseSystem.AxisY.Y, baseSystem.AxisY.Z),
+                    (viewSystem.AxisX.X, viewSystem.AxisX.Y, viewSystem.AxisX.Z),
+                    (viewSystem.AxisY.X, viewSystem.AxisY.Y, viewSystem.AxisY.Z),
+                    standsWhereItLooks: hasSectionMark || view.ViewType == View.ViewTypes.EndView);
+            }
+
+            // A view that looks the same way as the base view, or straight back at it,
+            // has no side of its own; the topology's role for it stands (back view below).
+            if (side == SectionPlacementSide.Unknown)
             {
-                var byDirection = SectionPlacementSideResolver.ResolveFromCoordinateSystems(
-                    baseView.ViewCoordinateSystem, view.ViewCoordinateSystem);
-                if (byDirection != SectionPlacementSide.Unknown)
-                    side = byDirection;
+                side = (neighbors?.GetRole(id) ?? NeighborRole.Unknown) switch
+                {
+                    NeighborRole.Top => SectionPlacementSide.Top,
+                    NeighborRole.Bottom => SectionPlacementSide.Bottom,
+                    NeighborRole.SideLeft => SectionPlacementSide.Left,
+                    NeighborRole.SideRight => SectionPlacementSide.Right,
+                    _ => SectionPlacementSide.Unknown
+                };
             }
 
             if (side != SectionPlacementSide.Unknown)

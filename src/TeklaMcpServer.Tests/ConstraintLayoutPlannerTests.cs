@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
@@ -175,6 +176,139 @@ public sealed class ConstraintLayoutPlannerTests
         var placed = best.RectsById[SectionA];
         Assert.Equal(12, ((placed.MinY + placed.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
         Assert.Equal(Gap, placed.MinX - front.MaxX, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void SectionWithNoRoomOnItsSide_StandsBesideTheBaseView_LevelWithItsCut()
+    {
+        // An upright member: base view 60 x 300 with an end view below it. The
+        // section looks down too; one under the other they need 373 of height.
+        var bounds = new ReservedRect(0, 0, 300, 360);
+        var input = Input(
+            bounds,
+            new ConstraintLayoutViewInput
+            {
+                Id = Top, Width = 60, Height = 40, IsProjection = true,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Strong
+            },
+            new ConstraintLayoutViewInput
+            {
+                Id = SectionA, Width = 30, Height = 25,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Relaxed,
+                CutX = 0, CutY = 40
+            });
+        input.BaseView = new ConstraintLayoutView(Front, 60, 300);
+
+        var plan = ConstraintLayoutPlanner.Plan(input);
+
+        var best = plan.Candidates[0];
+        Assert.Equal(ConstraintLayoutPolicy.Balanced.BesideCutCost, best.Cost);
+        Assert.StartsWith("cut-", best.Slots[SectionA].ToString());
+        var front = best.RectsById[Front];
+        var section = best.RectsById[SectionA];
+        Assert.Equal(40, ((section.MinY + section.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        Assert.Equal(Gap, Math.Max(section.MinX - front.MaxX, front.MinX - section.MaxX), 9);
+        AssertValid(best, bounds);
+
+        // Under the strict policy the section may not leave its side at all.
+        input.Policy = ConstraintLayoutPolicy.KeepProjection;
+        Assert.Empty(ConstraintLayoutPlanner.Plan(input).Candidates);
+    }
+
+    [Fact]
+    public void SectionAtItsCut_PrefersTheSideWhereItStandsNextToTheBaseView()
+    {
+        // A side view 100 wide stands left of the base view. On the left the section
+        // would be beyond it, 104 from the base view; on the right, next to it.
+        var bounds = new ReservedRect(0, 0, 400, 360);
+        var input = Input(
+            bounds,
+            new ConstraintLayoutViewInput
+            {
+                Id = Top, Width = 100, Height = 300, IsProjection = true,
+                PreferredSide = SectionPlacementSide.Left, ProjectionStrength = ProjectionStrength.Strong
+            },
+            new ConstraintLayoutViewInput
+            {
+                Id = SectionB, Width = 60, Height = 40, IsProjection = true,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Strong
+            },
+            new ConstraintLayoutViewInput
+            {
+                Id = SectionA, Width = 30, Height = 25,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Relaxed,
+                CutX = 0, CutY = 0
+            });
+        input.BaseView = new ConstraintLayoutView(Front, 60, 300);
+
+        var candidates = ConstraintLayoutPlanner.Plan(input).Candidates;
+
+        // The cut is on the base view's center line, 30 from its edge: next to the base
+        // view the section is 34 from it, beyond the side view 138.
+        Assert.Equal("cut-Right", candidates[0].Slots[SectionA].ToString());
+        Assert.Equal(0.25, candidates[0].Cost, 9);
+        Assert.Equal(34 / 100.0 * 0.25, candidates[0].CutDistanceCost, 9);
+        Assert.Equal("cut-Left", candidates[1].Slots[SectionA].ToString());
+        Assert.Equal(0.25, candidates[1].Cost, 9);
+        Assert.Equal(138 / 100.0 * 0.25, candidates[1].CutDistanceCost, 9);
+    }
+
+    [Fact]
+    public void SectionMarkedOnAnotherView_StandsBesideThatView_AtTheEndWhereItIsCut()
+    {
+        // A second long view under the base view carries the section mark at its
+        // left end. The arrows point right; the cut is 195 to the left of center.
+        // The sheet has no room under that view, where the section would be at its cut.
+        var bounds = new ReservedRect(0, 0, 600, 200);
+        var input = Input(
+            bounds,
+            new ConstraintLayoutViewInput
+            {
+                Id = Top, Width = 400, Height = 80, IsProjection = true,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Strong
+            },
+            new ConstraintLayoutViewInput
+            {
+                Id = SectionA, Width = 50, Height = 60, OwnerId = Top,
+                PreferredSide = SectionPlacementSide.Right, ProjectionStrength = ProjectionStrength.Relaxed,
+                CutX = -195, CutY = 0
+            });
+        input.BaseView = new ConstraintLayoutView(Front, 400, 100);
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates[0];
+
+        // Left of the view with the mark, on its center line; not beside the base view.
+        var owner = best.RectsById[Top];
+        var section = best.RectsById[SectionA];
+        Assert.Equal("inline-Left", best.Slots[SectionA].ToString());
+        Assert.Equal(Gap, owner.MinX - section.MaxX, 9);
+        Assert.Equal((owner.MinY + owner.MaxY) / 2, (section.MinY + section.MaxY) / 2, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void SectionsAtTheirCuts_ShareAColumn_WhenTheirLinesAreFarApart()
+    {
+        var bounds = new ReservedRect(0, 0, 300, 310);
+        ConstraintLayoutViewInput AtCut(int id, double cutOffset) => new()
+        {
+            Id = id, Width = 30, Height = 25,
+            PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Relaxed,
+            CutX = 0, CutY = cutOffset
+        };
+        var input = Input(bounds, AtCut(SectionA, 100), AtCut(SectionB, -100), AtCut(Top, -90));
+        input.BaseView = new ConstraintLayoutView(Front, 60, 300);
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates
+            .First(candidate => candidate.Slots.Values.All(static slot => slot.ToString() == "cut-Right"));
+
+        var front = best.RectsById[Front];
+        // A and B are 200 apart: one column next to the base view. The third view's
+        // line is 10 from B's, so it goes one column further out.
+        Assert.Equal(Gap, best.RectsById[SectionA].MinX - front.MaxX, 9);
+        Assert.Equal(Gap, best.RectsById[SectionB].MinX - front.MaxX, 9);
+        Assert.Equal(Gap, best.RectsById[Top].MinX - best.RectsById[SectionB].MaxX, 9);
         AssertValid(best, bounds);
     }
 
