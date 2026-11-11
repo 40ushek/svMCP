@@ -620,11 +620,21 @@ public sealed partial class TeklaDrawingViewApi
             var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
             var variantList = new System.Collections.Generic.List<DrawingLayoutVariantResult> { defaultVariant };
 
+            // The constraint planner goes first. With a layout from it, the legacy
+            // planner's 3D-corner variants below -- four more runs of its chain --
+            // would only be thrown away; they are still run when it has none, so the
+            // fallback is what it was.
+            var planned = plannerMode != DrawingLayoutPlannerMode.Legacy
+                ? TryEvaluateConstraintLayoutCandidate(
+                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant)
+                : default;
+            var plannerFeasible = planned.Evaluation?.IsFeasible == true;
+
             // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
             var model3DViews = arrangedViews
                 .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
                 .ToList();
-            if (model3DViews.Count == 1)
+            if (model3DViews.Count == 1 && !plannerFeasible)
             {
                 for (var corner = 0; corner < 4; corner++)
                 {
@@ -647,9 +657,6 @@ public sealed partial class TeklaDrawingViewApi
             var constraintScaleDecision = Constraints.ConstraintScaleDecision.NoLayout;
             if (plannerMode != DrawingLayoutPlannerMode.Legacy)
             {
-                var planned = TryEvaluateConstraintLayoutCandidate(
-                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant);
-                var plannerFeasible = planned.Evaluation?.IsFeasible == true;
                 constraintPlannerCase = planned.Case;
                 constraintScaleDecision = constraintScaleSearch.Offer(
                     attemptIndex,
