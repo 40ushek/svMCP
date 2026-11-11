@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 using TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 using Xunit;
 
@@ -37,14 +38,14 @@ public sealed class ConstraintLayoutShadowTests
         var result = Evaluate(Reference());
 
         Assert.NotNull(result);
-        Assert.Equal(4, result.IncludedViews);
-        Assert.Equal(1, result.SkippedViews);
-        Assert.Equal(4, result.Reference.Candidate.Views.Count);
+        Assert.Equal(5, result.IncludedViews);
+        Assert.Equal(0, result.SkippedViews);
+        Assert.Equal(5, result.Reference.Candidate.Views.Count);
 
         Assert.NotNull(result.Best);
         Assert.True(result.Best.IsFeasible);
         Assert.Equal(ConstraintLayoutShadow.CandidateName, result.Best.Candidate.Name);
-        Assert.Equal(4, result.Best.Candidate.Views.Count);
+        Assert.Equal(5, result.Best.Candidate.Views.Count);
         Assert.Equal(0, result.BestPlan!.Deviations);
     }
 
@@ -88,7 +89,7 @@ public sealed class ConstraintLayoutShadowTests
         Assert.Null(result.Best);
         Assert.Empty(result.Plan.Candidates);
         Assert.True(result.Plan.PreferredRequiredWidth > 130);
-        Assert.Equal(4, result.Reference.Candidate.Views.Count);
+        Assert.Equal(5, result.Reference.Candidate.Views.Count);
     }
 
     [Fact]
@@ -275,6 +276,42 @@ public sealed class ConstraintLayoutShadowTests
         var expected = front.OriginY + (300 / front.Scale) - ((front.LayoutRect!.MinY + front.LayoutRect.MaxY) / 2);
         Assert.Equal(expected, ((section.MinY + section.MaxY) - (frame.MinY + frame.MaxY)) / 2, 9);
         Assert.DoesNotContain(plan.Candidates, static candidate => candidate.Slots[SectionB].IsAtCut);
+    }
+
+    [Fact]
+    public void View3D_IsLaidOutToo_InTheRoomLeft()
+    {
+        var reference = Reference();
+        reference.Views.Add(View(
+            8, "_3DView", "Model3D", "Model3D", new ReservedRect(0, 0, 100, 60), "", "Off"));
+
+        var result = Evaluate(reference)!;
+
+        Assert.Equal(6, result.IncludedViews);
+        Assert.Equal(0, result.SkippedViews);
+        Assert.NotNull(result.Best);
+        Assert.True(result.Best.IsFeasible);
+        var placed = result.Best.Candidate.Views.Single(static view => view.Id == 8).LayoutRect!;
+        Assert.Equal(100, placed.Width, 9);
+        Assert.All(
+            result.Best.Candidate.Views.Where(static view => view.Id != 8),
+            view => Assert.False(ViewPlacementValidator.Intersects(placed, view.LayoutRect!)));
+    }
+
+    [Fact]
+    public void ViewsAFewMillimetersShortOfFitting_AreDrawnCloserTogether_NotMovedAway()
+    {
+        // In line: 200 + 50 + 50 and two gaps. Usable width 305: 3 short at a gap
+        // of 4, fits at a gap of 2.
+        var reference = Reference();
+        reference.Sheet = new DrawingSheetContext { Width = 325, Height = 420 };
+
+        var best = Evaluate(reference)!;
+
+        Assert.Equal(0, best.BestPlan!.Cost);
+        var front = best.Best!.Candidate.Views.Single(static view => view.Id == Front).LayoutRect!;
+        var b = best.Best.Candidate.Views.Single(static view => view.Id == SectionB).LayoutRect!;
+        Assert.Equal(2, b.MinX - front.MaxX, 9);
     }
 
     [Fact]

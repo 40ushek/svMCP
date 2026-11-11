@@ -38,6 +38,13 @@ internal sealed class ConstraintLayoutPolicy
     /// </summary>
     public double CutDistanceCost { get; set; } = 0.25;
 
+    /// <summary>
+    /// A view in a stack on its own side: off the base view's axis, but where the
+    /// reader expects it, beside the base view and under the views that stand in
+    /// line there.
+    /// </summary>
+    public double OwnSideStackCost { get; set; } = 0.4;
+
     /// <summary>A view moved into a stack off the base view's axis: the projection link is lost.</summary>
     public double LinkBreakCost { get; set; } = 1.5;
 
@@ -87,6 +94,7 @@ internal sealed class ConstraintLayoutPolicy
     {
         SideDeviationCost = double.PositiveInfinity,
         BesideCutCost = double.PositiveInfinity,
+        OwnSideStackCost = double.PositiveInfinity,
         LinkBreakCost = double.PositiveInfinity
     };
 }

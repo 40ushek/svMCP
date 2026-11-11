@@ -108,6 +108,9 @@ internal sealed class ConstraintLayoutCase
     /// </summary>
     public List<ConstraintLayoutCaseAnchor> SectionLineAnchors { get; set; } = new();
 
+    /// <summary>One entry per detail view whose mark was found: where the mark is on its owner view.</summary>
+    public List<ConstraintLayoutCaseAnchor> DetailMarkAnchors { get; set; } = new();
+
     /// <summary>
     /// Per view; a view without one, or a case without the base view's, is aligned
     /// by frame centers.

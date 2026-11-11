@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TeklaMcpServer.Api.Algorithms.Packing;
 
 namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 
@@ -83,6 +84,25 @@ internal sealed class ConstraintLayoutViewInput
     public double? CutY { get; set; }
 }
 
+/// <summary>A view that takes the room the others leave: a 3D view, a detail.</summary>
+internal sealed class ConstraintLayoutFreeViewInput
+{
+    public int Id { get; set; }
+
+    public double Width { get; set; }
+
+    public double Height { get; set; }
+
+    /// <summary>The view that carries this view's mark. Null: the view is tied to nothing.</summary>
+    public int? OwnerId { get; set; }
+
+    /// <summary>Where the mark is, from the owner view's frame center. The view goes as near to it as there is room.</summary>
+    public double AnchorX { get; set; }
+
+    /// <inheritdoc cref="AnchorX"/>
+    public double AnchorY { get; set; }
+}
+
 internal sealed class ConstraintLayoutPlannerInput
 {
     /// <summary>Usable sheet area, margins already taken off.</summary>
@@ -96,6 +116,13 @@ internal sealed class ConstraintLayoutPlannerInput
 
     public IReadOnlyList<ConstraintLayoutViewInput> Views { get; set; } = Array.Empty<ConstraintLayoutViewInput>();
 
+    /// <summary>
+    /// Views that take whatever room the others leave: details first, each as near
+    /// to its mark as it gets, then views tied to nothing (a 3D view), largest
+    /// first. A layout that leaves no room for them is not a layout.
+    /// </summary>
+    public IReadOnlyList<ConstraintLayoutFreeViewInput> FreeViews { get; set; } = Array.Empty<ConstraintLayoutFreeViewInput>();
+
     public ConstraintLayoutPolicy Policy { get; set; } = ConstraintLayoutPolicy.Balanced;
 
     public int MaxTopologies { get; set; } = 2000;
@@ -107,7 +134,7 @@ internal sealed class ConstraintLayoutPlanCandidate
 {
     public IReadOnlyDictionary<int, ViewSlot> Slots { get; set; } = new Dictionary<int, ViewSlot>();
 
-    /// <summary>Frame rectangles in sheet coordinates, base view included.</summary>
+    /// <summary>Frame rectangles in sheet coordinates, base view and free views included.</summary>
     public IReadOnlyDictionary<int, ReservedRect> RectsById { get; set; } = new Dictionary<int, ReservedRect>();
 
     /// <summary>How many views are not in their preferred slot.</summary>
@@ -190,14 +217,23 @@ internal static class ConstraintLayoutPlanner
             for (var i = 0; i < input.Views.Count; i++)
                 slots[input.Views[i].Id] = options[i][choice[i]].Slot;
 
-            var solution = SolveTopology(input, slots);
+            // A stack beside the base view first goes under the views in line there,
+            // then above them; when neither works out, beyond them.
+            var solution = SolveTopology(input, slots, StackPlacement.Under);
+            foreach (var placement in new[] { StackPlacement.Above, StackPlacement.Beyond })
+            {
+                if (solution.IsFeasible && PlaceOnSheet(input, solution.RectsById) != null)
+                    break;
+
+                solution = SolveTopology(input, slots, placement);
+            }
             if (plan.EvaluatedTopologies == 1)
             {
                 plan.PreferredRequiredWidth = solution.RequiredWidth;
                 plan.PreferredRequiredHeight = solution.RequiredHeight;
             }
 
-            var rects = solution.IsFeasible ? AvoidReservedAreas(input, solution.RectsById) : null;
+            var rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
             if (rects == null)
                 continue;
 
@@ -206,7 +242,7 @@ internal static class ConstraintLayoutPlanner
                 Slots = slots,
                 RectsById = rects,
                 Deviations = choice.Count(static c => c != 0),
-                Cost = cost,
+                Cost = cost + GetCutBehindViewCost(input, slots),
                 CutDistanceCost = GetCutDistanceCost(input, rects)
             });
             if (plan.Candidates.Count >= input.MaxCandidates)
@@ -219,6 +255,27 @@ internal static class ConstraintLayoutPlanner
         plan.Candidates.Clear();
         plan.Candidates.AddRange(byCost);
         return plan;
+    }
+
+    /// <summary>
+    /// A section at its cut is cheap because it stands next to the view that is cut.
+    /// With another view in line on that side between the two, it is as far off as
+    /// any view that lost its link, and costs the same.
+    /// </summary>
+    private static double GetCutBehindViewCost(
+        ConstraintLayoutPlannerInput input,
+        IReadOnlyDictionary<int, ViewSlot> slots)
+    {
+        if (double.IsPositiveInfinity(input.Policy.LinkBreakCost))
+            return 0.0;
+
+        var baseId = input.BaseView.Id;
+        var behind = input.Views.Count(view => slots[view.Id].IsAtCut && input.Views.Any(other =>
+            other.Id != view.Id
+            && slots[other.Id] is { IsStack: false, IsAtCut: false } inLine
+            && inLine.Side == slots[view.Id].Side
+            && (other.OwnerId ?? baseId) == (view.OwnerId ?? baseId)));
+        return behind * Math.Max(input.Policy.LinkBreakCost - input.Policy.BesideCutCost, 0.0);
     }
 
     /// <summary>What the sections cost for standing away from the middles of their section lines.</summary>
@@ -273,8 +330,12 @@ internal static class ConstraintLayoutPlanner
 
         if (!double.IsPositiveInfinity(policy.SideDeviationCost))
             options.Add((new ViewSlot(Opposite(view.PreferredSide), isStack: false), policy.SideDeviationCost));
-        if (!double.IsPositiveInfinity(policy.LinkBreakCost))
-            options.AddRange(StackSlots.Select(slot => (slot, policy.LinkBreakCost)));
+        options.AddRange(StackSlots
+            .Select(slot => (slot, slot.Side == view.PreferredSide ? policy.OwnSideStackCost : policy.LinkBreakCost))
+            .Where(static option => !double.IsPositiveInfinity(option.Item2)));
+
+        // Cheapest first after the preferred slot; equal prices keep their order.
+        options = options.Take(1).Concat(options.Skip(1).OrderBy(static option => option.Item2)).ToList();
 
         return options;
     }
@@ -316,11 +377,12 @@ internal static class ConstraintLayoutPlanner
 
     private static ConstraintLayoutSolution SolveTopology(
         ConstraintLayoutPlannerInput input,
-        IReadOnlyDictionary<int, ViewSlot> slots)
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        StackPlacement stackPlacement)
     {
         var views = new List<ConstraintLayoutView> { input.BaseView };
         views.AddRange(input.Views.Select(static v => new ConstraintLayoutView(v.Id, v.Width, v.Height)));
-        var relations = BuildRelations(input, slots);
+        var relations = BuildRelations(input, slots, stackPlacement);
 
         // The slots separate views of one side and of opposite sides. Views on adjacent
         // sides (a wide top view and a tall right section) can still meet at the corner;
@@ -359,7 +421,8 @@ internal static class ConstraintLayoutPlanner
 
     private static List<LayoutRelation> BuildRelations(
         ConstraintLayoutPlannerInput input,
-        IReadOnlyDictionary<int, ViewSlot> slots)
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        StackPlacement stackPlacement)
     {
         var baseId = input.BaseView.Id;
         var relations = new List<LayoutRelation>();
@@ -373,7 +436,7 @@ internal static class ConstraintLayoutPlanner
                 .Where(v => slots[v.Id].Side == side
                     && (slots[v.Id].IsStack ? baseId : v.OwnerId ?? baseId) == hostId)
                 .ToList();
-            AddSideRelations(input, slots, relations, hostId, side, onSide);
+            AddSideRelations(input, slots, relations, hostId, side, onSide, stackPlacement);
         }
 
         return relations;
@@ -386,7 +449,8 @@ internal static class ConstraintLayoutPlanner
         List<LayoutRelation> relations,
         int hostId,
         SectionPlacementSide side,
-        IReadOnlyList<ConstraintLayoutViewInput> onSide)
+        IReadOnlyList<ConstraintLayoutViewInput> onSide,
+        StackPlacement stackPlacement)
     {
         var horizontal = IsHorizontal(side);
         var ascendingOutward = side is SectionPlacementSide.Right or SectionPlacementSide.Bottom;
@@ -399,7 +463,8 @@ internal static class ConstraintLayoutPlanner
         inline = ascendingOutward
             ? inline.ThenBy(static v => v.OrderKey).ThenBy(static v => v.Id)
             : inline.ThenByDescending(static v => v.OrderKey).ThenByDescending(static v => v.Id);
-        foreach (var view in inline)
+        var chain = inline.ToList();
+        foreach (var view in chain)
         {
             relations.Add(Outward(side, outermost, view.Id));
             relations.Add(horizontal
@@ -430,11 +495,21 @@ internal static class ConstraintLayoutPlanner
             .OrderBy(static v => v.OrderKey)
             .ThenBy(static v => v.Id)
             .ToList();
+        // Beside the host view, the stack can stand next to it, under or above the
+        // in-line views, instead of beyond them: nearer, and it uses the room there.
+        var under = stackPlacement != StackPlacement.Beyond && horizontal && chain.Count > 0;
         for (var i = 0; i < stack.Count; i++)
         {
-            relations.AddRange(outer.Select(inner => Outward(side, inner, stack[i].Id)));
+            if (under)
+                relations.Add(Outward(side, hostId, stack[i].Id));
+            else
+                relations.AddRange(outer.Select(inner => Outward(side, inner, stack[i].Id)));
             if (i == 0)
+            {
+                if (under && stackPlacement == StackPlacement.Under)
+                    relations.AddRange(chain.Select(inLine => new LayoutRelation(LayoutRelationKind.Below, stack[0].Id, inLine.Id)));
                 continue;
+            }
 
             relations.Add(horizontal
                 ? new LayoutRelation(LayoutRelationKind.Below, stack[i].Id, stack[i - 1].Id)
@@ -442,6 +517,19 @@ internal static class ConstraintLayoutPlanner
             relations.Add(new LayoutRelation(
                 horizontal ? LayoutRelationKind.AlignCenterX : LayoutRelationKind.AlignCenterY, stack[0].Id, stack[i].Id));
         }
+
+        // The stack runs downward from its first view, so above the in-line views it
+        // is the last one that has to clear them.
+        if (under && stack.Count > 0 && stackPlacement == StackPlacement.Above)
+            relations.AddRange(chain.Select(inLine => new LayoutRelation(LayoutRelationKind.Below, inLine.Id, stack[stack.Count - 1].Id)));
+    }
+
+    /// <summary>Where a stack beside the host view stands relative to the views in line on that side.</summary>
+    private enum StackPlacement
+    {
+        Under,
+        Above,
+        Beyond
     }
 
     /// <summary>
@@ -507,20 +595,18 @@ internal static class ConstraintLayoutPlanner
 
     /// <summary>
     /// Views are solved as one rigid block centered on the sheet. When that position
-    /// touches a reserved area, tries the block pushed to each edge and corner.
-    /// Null when no position is clear.
+    /// touches a reserved area or leaves no room for the free views, tries the block
+    /// pushed to each edge and corner. Returns the rectangles with the free views
+    /// added; null when no position works.
     /// </summary>
-    private static IReadOnlyDictionary<int, ReservedRect>? AvoidReservedAreas(
+    private static IReadOnlyDictionary<int, ReservedRect>? PlaceOnSheet(
         ConstraintLayoutPlannerInput input,
         IReadOnlyDictionary<int, ReservedRect> rects)
     {
-        if (input.ReservedAreas.Count == 0)
+        if (input.ReservedAreas.Count == 0 && input.FreeViews.Count == 0)
             return rects;
 
-        var blocked = input.ReservedAreas
-            .Select(area => new ReservedRect(
-                area.MinX - input.Gap, area.MinY - input.Gap, area.MaxX + input.Gap, area.MaxY + input.Gap))
-            .ToList();
+        var blocked = input.ReservedAreas.Select(area => Expand(area, input.Gap)).ToList();
         double[] shiftsX = [0.0, input.Bounds.MinX - rects.Values.Min(static r => r.MinX), input.Bounds.MaxX - rects.Values.Max(static r => r.MaxX)];
         double[] shiftsY = [0.0, input.Bounds.MinY - rects.Values.Min(static r => r.MinY), input.Bounds.MaxY - rects.Values.Max(static r => r.MaxY)];
         var shifts = shiftsX
@@ -533,12 +619,72 @@ internal static class ConstraintLayoutPlanner
                 static item => item.Key,
                 item => new ReservedRect(
                     item.Value.MinX + dx, item.Value.MinY + dy, item.Value.MaxX + dx, item.Value.MaxY + dy));
-            if (!moved.Values.Any(rect => ViewPlacementValidator.IntersectsAny(rect, blocked)))
+            if (moved.Values.Any(rect => ViewPlacementValidator.IntersectsAny(rect, blocked)))
+                continue;
+            if (TryPlaceFreeViews(input, moved))
                 return moved;
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Packs the free views into the room the placed views and the reserved areas
+    /// leave, the way the current path places its leftover views, and adds them to
+    /// <paramref name="rects"/>. False when one does not fit.
+    /// </summary>
+    private static bool TryPlaceFreeViews(
+        ConstraintLayoutPlannerInput input,
+        Dictionary<int, ReservedRect> rects)
+    {
+        if (input.FreeViews.Count == 0)
+            return true;
+
+        // The packer counts from the top left corner of the usable area, Y downward.
+        // Every rectangle in it carries its gap on the right and below, the taken
+        // ones as well as the inserted ones; that keeps one gap between any two.
+        var bounds = input.Bounds;
+        var taken = input.ReservedAreas
+            .Concat(rects.Values)
+            .Select(rect => new PackedRectangle(
+                rect.MinX - bounds.MinX,
+                bounds.MaxY - rect.MaxY,
+                rect.MaxX - rect.MinX + input.Gap,
+                rect.MaxY - rect.MinY + input.Gap));
+        var packer = new MaxRectsBinPacker(
+            bounds.Width + input.Gap, bounds.Height + input.Gap, allowRotation: false, blockedRectangles: taken);
+        var ordered = input.FreeViews
+            .OrderByDescending(view => view.OwnerId != null && rects.ContainsKey(view.OwnerId.Value))
+            .ThenByDescending(static v => v.Width * v.Height)
+            .ThenBy(static v => v.Id);
+        foreach (var view in ordered)
+        {
+            PackedRectangle placement;
+            if (view.OwnerId is { } ownerId && rects.TryGetValue(ownerId, out var owner))
+            {
+                var markX = ((owner.MinX + owner.MaxX) / 2.0) + view.AnchorX;
+                var markY = ((owner.MinY + owner.MaxY) / 2.0) + view.AnchorY;
+                if (!packer.TryInsertClosestToPoint(
+                        view.Width + input.Gap, view.Height + input.Gap, markX - bounds.MinX, bounds.MaxY - markY, out placement))
+                {
+                    return false;
+                }
+            }
+            else if (!packer.TryInsert(view.Width + input.Gap, view.Height + input.Gap, MaxRectsHeuristic.BestAreaFit, out placement))
+            {
+                return false;
+            }
+
+            var minX = bounds.MinX + placement.X;
+            var maxY = bounds.MaxY - placement.Y;
+            rects[view.Id] = new ReservedRect(minX, maxY - view.Height, minX + view.Width, maxY);
+        }
+
+        return true;
+    }
+
+    private static ReservedRect Expand(ReservedRect rect, double by)
+        => new(rect.MinX - by, rect.MinY - by, rect.MaxX + by, rect.MaxY + by);
 
     /// <summary>The relation that puts <paramref name="outerId"/> further out on <paramref name="side"/> than <paramref name="innerId"/>.</summary>
     private static LayoutRelation Outward(SectionPlacementSide side, int innerId, int outerId)

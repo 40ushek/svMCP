@@ -117,6 +117,14 @@ public sealed partial class TeklaDrawingViewApi
             SectionLineAnchors = sectionMarks.All
                 .Select(relation => ToConstraintLayoutCaseAnchor(relation, shorteningByOwnerId))
                 .ToList(),
+            DetailMarkAnchors = DetailRelationResolver
+                .Build(
+                    workspace.RuntimeViews,
+                    workspace.RuntimeViews.Where(view =>
+                        workspace.GetLayoutViewKind(view.GetIdentifier().ID) == LayoutViewKind.Detail))
+                .All
+                .Select(relation => ToConstraintLayoutCaseAnchor(relation, shorteningByOwnerId))
+                .ToList(),
             ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
             ViewSides = BuildConstraintLayoutViewSides(workspace, baseView, sectionMarks),
             ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
@@ -320,6 +328,21 @@ public sealed partial class TeklaDrawingViewApi
                     NeighborRole.SideRight => SectionPlacementSide.Right,
                     _ => SectionPlacementSide.Unknown
                 };
+
+                // The topology's roles are those of a member drawn lying down. An upright
+                // base view is that drawing turned a quarter: what was above stands on
+                // the left, as the view from above does, and what was below on the right.
+                if (baseView.Height > baseView.Width)
+                {
+                    side = side switch
+                    {
+                        SectionPlacementSide.Top => SectionPlacementSide.Left,
+                        SectionPlacementSide.Bottom => SectionPlacementSide.Right,
+                        SectionPlacementSide.Left => SectionPlacementSide.Bottom,
+                        SectionPlacementSide.Right => SectionPlacementSide.Top,
+                        _ => side
+                    };
+                }
             }
 
             if (side != SectionPlacementSide.Unknown)
@@ -339,11 +362,21 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutCandidate reference)
     {
         var anchors = new List<ConstraintLayoutCaseModelAnchor>();
+        var baseSystem = BaseViewSelection.Select(workspace.RuntimeViews).View?.ViewCoordinateSystem;
         foreach (var view in reference.Views)
         {
             var coordinateSystem = workspace.TryGetRuntimeView(view.Id)?.ViewCoordinateSystem;
             if (view.LayoutRect == null || coordinateSystem == null)
                 continue;
+
+            // Two views line up through the model origin only when their axes are
+            // square to each other. A section cut across a sloping member is turned
+            // against the base view; it is aligned by frame centers instead.
+            if (baseSystem != null
+                && !(IsAlongAnAxisOf(baseSystem, coordinateSystem.AxisX) && IsAlongAnAxisOf(baseSystem, coordinateSystem.AxisY)))
+            {
+                continue;
+            }
 
             var anchor = ConstraintLayoutCaseModelAnchor.FromViewCoordinateSystem(
                 view.Id,
@@ -359,6 +392,18 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         return anchors;
+    }
+
+    private static bool IsAlongAnAxisOf(Tekla.Structures.Geometry3d.CoordinateSystem system, Tekla.Structures.Geometry3d.Vector direction)
+    {
+        var length = direction.GetLength();
+        if (length <= 1e-9)
+            return false;
+
+        var normal = system.AxisX.Cross(system.AxisY);
+        return new[] { system.AxisX, system.AxisY, normal }.Any(axis =>
+            axis.GetLength() > 1e-9
+            && System.Math.Abs(axis.Dot(direction)) / (axis.GetLength() * length) >= 0.9999);
     }
 
     /// <summary>

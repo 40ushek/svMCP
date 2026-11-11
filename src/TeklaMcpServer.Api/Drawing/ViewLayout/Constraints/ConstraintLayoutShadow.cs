@@ -8,10 +8,10 @@ internal sealed class ConstraintLayoutShadowResult
 {
     public ConstraintLayoutPlan Plan { get; set; } = new();
 
-    /// <summary>Views the planner laid out: the base view, its projections and standard sections.</summary>
+    /// <summary>Views the planner laid out: the base view, its projections, sections, details and 3D views.</summary>
     public int IncludedViews { get; set; }
 
-    /// <summary>Views left out: details, 3D, other, and views without a frame rectangle.</summary>
+    /// <summary>Views left out: other kinds, and views without a frame rectangle.</summary>
     public int SkippedViews { get; set; }
 
     /// <summary>The current layout, scored on the included views only so both sides compare like for like.</summary>
@@ -53,6 +53,12 @@ internal static class ConstraintLayoutShadow
 {
     public const string CandidateName = "constraint-layout:planner";
 
+    /// <summary>How far the gap between views may shrink to keep a view in a cheaper place.</summary>
+    private const double TightGapShare = 0.5;
+
+    /// <summary>Below this the views are too close to tell apart; the gap is not shrunk past it.</summary>
+    private const double MinTightGap = 2.0;
+
     /// <summary>Sheet millimeters within which a predicted and an actual offset count as the same.</summary>
     private const double AlignmentMatchTolerance = 0.05;
 
@@ -70,6 +76,32 @@ internal static class ConstraintLayoutShadow
         if (layoutCase == null)
             throw new ArgumentNullException(nameof(layoutCase));
 
+        // A view a few millimeters short of fitting on its own side is better kept
+        // there with the views drawn closer together than sent somewhere else.
+        var gap = layoutCase.Gap;
+        var tightGap = gap * TightGapShare;
+        if (tightGap >= MinTightGap)
+        {
+            var normal = Evaluate(layoutCase, policy, 0, gap);
+            var tight = normal?.BestPlan?.Cost > 0 || (normal != null && normal.BestPlan == null)
+                ? Evaluate(layoutCase, policy, 0, tightGap)
+                : null;
+            if (tight?.BestPlan != null && (normal!.BestPlan == null || tight.BestPlan.Cost < normal.BestPlan.Cost - 1e-9))
+                gap = tightGap;
+            else if (variant == 0)
+                return normal;
+        }
+
+        return Evaluate(layoutCase, policy, variant, gap);
+    }
+
+    private static ConstraintLayoutShadowResult? Evaluate(
+        ConstraintLayoutCase layoutCase,
+        ConstraintLayoutPolicy? policy,
+        int variant,
+        double gap)
+    {
+
         var reference = layoutCase.Reference;
         var baseViewId = layoutCase.BaseViewId;
         var sectionLineAnchors = layoutCase.SectionLineAnchors
@@ -83,8 +115,18 @@ internal static class ConstraintLayoutShadow
         var planned = reference.Views
             .Where(view => view.Id != baseViewId && view.LayoutRect != null && IsPlannable(view, sectionLineAnchors))
             .ToList();
+        // A 3D view is tied to nothing and a detail only to its mark: they take the
+        // room the others leave.
+        var free = reference.Views
+            .Where(view => view.Id != baseViewId && view.LayoutRect != null && !IsPlannable(view, sectionLineAnchors))
+            .Where(static view => IsKind(view, LayoutViewKind.Model3D) || IsKind(view, LayoutViewKind.Detail))
+            .ToList();
+        var detailMarkAnchors = layoutCase.DetailMarkAnchors
+            .GroupBy(static anchor => anchor.ViewId)
+            .ToDictionary(static group => group.Key, static group => group.First());
         var included = new List<DrawingLayoutCandidateView> { baseView };
         included.AddRange(planned);
+        included.AddRange(free);
 
         // A model anchor says where the model origin lands on the sheet, and the model
         // origin is usually far from the part. Two views line up through it only at
@@ -107,7 +149,7 @@ internal static class ConstraintLayoutShadow
         var hosts = planned.ToDictionary(
             static view => view.Id,
             view => sectionLineAnchors.TryGetValue(view.Id, out var anchor)
-                ? included.FirstOrDefault(other => other.Id == anchor.OwnerViewId && other.Id != view.Id) ?? baseView
+                ? planned.FirstOrDefault(other => other.Id == anchor.OwnerViewId && other.Id != view.Id) ?? baseView
                 : baseView);
         var plannerViews = planned
             .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, viewSides, hosts[view.Id], baseView.Id))
@@ -117,10 +159,13 @@ internal static class ConstraintLayoutShadow
         var plan = ConstraintLayoutPlanner.Plan(new ConstraintLayoutPlannerInput
         {
             Bounds = new ReservedRect(margin, margin, reference.Sheet.Width - margin, reference.Sheet.Height - margin),
-            Gap = layoutCase.Gap,
+            Gap = gap,
             ReservedAreas = reference.ReservedLayout.Areas,
             BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
             Views = plannerViews,
+            FreeViews = free
+                .Select(view => ToFreeView(view, detailMarkAnchors, new[] { baseView }.Concat(planned).ToList()))
+                .ToList(),
             Policy = policy ?? ConstraintLayoutPolicy.Balanced
         });
 
@@ -229,6 +274,25 @@ internal static class ConstraintLayoutShadow
                 : anchor?.X ?? 0.0,
             CutX = cut?.X,
             CutY = cut?.Y
+        };
+    }
+
+    private static ConstraintLayoutFreeViewInput ToFreeView(
+        DrawingLayoutCandidateView view,
+        IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> detailMarkAnchors,
+        IReadOnlyList<DrawingLayoutCandidateView> placed)
+    {
+        detailMarkAnchors.TryGetValue(view.Id, out var anchor);
+        var owner = anchor == null ? null : placed.FirstOrDefault(other => other.Id == anchor.OwnerViewId);
+        var mark = owner == null ? null : GetCutPoint(anchor, owner);
+        return new ConstraintLayoutFreeViewInput
+        {
+            Id = view.Id,
+            Width = view.LayoutRect!.Width,
+            Height = view.LayoutRect.Height,
+            OwnerId = mark == null ? null : owner!.Id,
+            AnchorX = mark?.X ?? 0.0,
+            AnchorY = mark?.Y ?? 0.0
         };
     }
 

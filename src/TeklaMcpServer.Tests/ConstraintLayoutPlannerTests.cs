@@ -48,7 +48,8 @@ public sealed class ConstraintLayoutPlannerTests
         var best = plan.Candidates[0];
         Assert.Equal(1, best.Deviations);
         Assert.Contains(best.Slots.Values, static slot => slot.ToString() == "inline-Right");
-        Assert.Contains(best.Slots.Values, static slot => slot.ToString() == "stack-Bottom");
+        // The other one stays on its side too, under the first.
+        Assert.Contains(best.Slots.Values, static slot => slot.ToString() == "stack-Right");
         AssertValid(best, bounds);
     }
 
@@ -75,13 +76,15 @@ public sealed class ConstraintLayoutPlannerTests
         var bounds = new ReservedRect(0, 0, 400, 300);
 
         var byDefault = ConstraintLayoutPlanner.Plan(Input(bounds, Section(SectionA, orderKey: 10)));
-        // Default: a wrong side (0.5) is given up before a projection link (1.5).
-        Assert.Equal(new[] { 0.0, 0.5, 1.5, 1.5, 1.5 }, byDefault.Candidates.Select(static c => c.Cost));
+        // Default: a stack on the view's own side (0.4), then the wrong side (0.5),
+        // then a stack elsewhere (1.5).
+        Assert.Equal(new[] { 0.0, 0.4, 0.5, 1.5, 1.5 }, byDefault.Candidates.Select(static c => c.Cost));
         Assert.Equal("inline-Right", byDefault.Candidates[0].Slots[SectionA].ToString());
-        Assert.Equal("inline-Left", byDefault.Candidates[1].Slots[SectionA].ToString());
+        Assert.Equal("stack-Right", byDefault.Candidates[1].Slots[SectionA].ToString());
+        Assert.Equal("inline-Left", byDefault.Candidates[2].Slots[SectionA].ToString());
 
         var input = Input(bounds, Section(SectionA, orderKey: 10));
-        input.Policy = new ConstraintLayoutPolicy { SideDeviationCost = 2, LinkBreakCost = 1 };
+        input.Policy = new ConstraintLayoutPolicy { SideDeviationCost = 2, LinkBreakCost = 1, OwnSideStackCost = 1 };
         var linkCheaper = ConstraintLayoutPlanner.Plan(input);
         Assert.Equal(new[] { 0.0, 1.0, 1.0, 1.0, 2.0 }, linkCheaper.Candidates.Select(static c => c.Cost));
         Assert.Equal("stack-Left", linkCheaper.Candidates[1].Slots[SectionA].ToString());
@@ -249,8 +252,9 @@ public sealed class ConstraintLayoutPlannerTests
         Assert.Equal("cut-Right", candidates[0].Slots[SectionA].ToString());
         Assert.Equal(0.25, candidates[0].Cost, 9);
         Assert.Equal(34 / 100.0 * 0.25, candidates[0].CutDistanceCost, 9);
+        // Behind the side view it is no longer next to its cut and costs as a lost link.
         Assert.Equal("cut-Left", candidates[1].Slots[SectionA].ToString());
-        Assert.Equal(0.25, candidates[1].Cost, 9);
+        Assert.Equal(ConstraintLayoutPolicy.Balanced.LinkBreakCost, candidates[1].Cost, 9);
         Assert.Equal(138 / 100.0 * 0.25, candidates[1].CutDistanceCost, 9);
     }
 
@@ -309,6 +313,68 @@ public sealed class ConstraintLayoutPlannerTests
         Assert.Equal(Gap, best.RectsById[SectionA].MinX - front.MaxX, 9);
         Assert.Equal(Gap, best.RectsById[SectionB].MinX - front.MaxX, 9);
         Assert.Equal(Gap, best.RectsById[Top].MinX - best.RectsById[SectionB].MaxX, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void FreeView_TakesTheRoomTheOthersLeave_AndTheBlockMovesAsideForIt()
+    {
+        // The base view centered on the sheet leaves 50 above and below; the free
+        // view is 80 high and fits only once the base view moves to an edge.
+        var bounds = new ReservedRect(0, 0, 400, 200);
+        var input = Input(bounds);
+        input.FreeViews = new[] { new ConstraintLayoutFreeViewInput { Id = Top, Width = 300, Height = 80 } };
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates[0];
+
+        Assert.Equal(300, best.RectsById[Top].Width, 9);
+        Assert.Equal(80, best.RectsById[Top].Height, 9);
+        AssertValid(best, bounds);
+
+        // No room at all: no layout.
+        input.FreeViews = new[] { new ConstraintLayoutFreeViewInput { Id = Top, Width = 300, Height = 120 } };
+        Assert.Empty(ConstraintLayoutPlanner.Plan(input).Candidates);
+    }
+
+    [Fact]
+    public void SecondViewOfASide_StandsUnderTheFirst_BesideTheBaseView()
+    {
+        // Two sections belong on the right; in a row they need 312 of width.
+        var bounds = new ReservedRect(0, 0, 260, 300);
+        var best = ConstraintLayoutPlanner.Plan(Input(
+            bounds,
+            Section(SectionA, orderKey: 10),
+            Section(SectionB, orderKey: 20))).Candidates[0];
+
+        Assert.Equal(ConstraintLayoutPolicy.Balanced.OwnSideStackCost, best.Cost);
+        var front = best.RectsById[Front];
+        var inLine = best.RectsById[best.Slots.Single(static slot => !slot.Value.IsStack).Key];
+        var stacked = best.RectsById[best.Slots.Single(static slot => slot.Value.IsStack).Key];
+        Assert.Equal(Gap, inLine.MinX - front.MaxX, 9);
+        Assert.Equal(Gap, stacked.MinX - front.MaxX, 9);
+        Assert.Equal(Gap, inLine.MinY - stacked.MaxY, 9);
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void Detail_GoesAsNearToItsMarkAsThereIsRoom()
+    {
+        // The mark is at the right end of the base view, a little above its middle.
+        var bounds = new ReservedRect(0, 0, 400, 300);
+        var input = Input(bounds);
+        input.FreeViews = new[]
+        {
+            new ConstraintLayoutFreeViewInput { Id = Top, Width = 40, Height = 30, OwnerId = Front, AnchorX = 95, AnchorY = 10 }
+        };
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates[0];
+
+        var front = best.RectsById[Front];
+        var detail = best.RectsById[Top];
+        var markX = ((front.MinX + front.MaxX) / 2) + 95;
+        var markY = ((front.MinY + front.MaxY) / 2) + 10;
+        var distance = Math.Abs(((detail.MinX + detail.MaxX) / 2) - markX) + Math.Abs(((detail.MinY + detail.MaxY) / 2) - markY);
+        Assert.True(distance < 80, $"detail is {distance:0} from its mark");
         AssertValid(best, bounds);
     }
 
