@@ -97,6 +97,10 @@ Copy-Item "$src\TeklaBridge.exe" $dst
 Copy-Item "$src\TeklaMcpServer.Api.dll" $dst
 Copy-Item "$src\SolidContacts.Core.dll" $dst
 # Также скопировать сторонние зависимости (System.Text.Json, Newtonsoft.Json и т.д.)
+# На новой машине дополнительно — из C:\TeklaStructures\2025.0\bin\ в ту же папку:
+#   Tekla.Structures.GrpcContracts.dll и Microsoft.Win32.Registry.dll
+# Без них мост работает, но таблицы чертежа (штамп, спецификация) не читаются,
+# и fit_views_to_sheet молча считает лист пустым (tableCount = 0).
 # Затем возобновить мост через контроллер (Resume/Restart) — сам он не запустится.
 ```
 

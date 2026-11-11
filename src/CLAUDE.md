@@ -29,6 +29,7 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
   - the manual step is deliberate: `TeklaBridge.exe.config` (with `<codeBase>` entries) lives in that folder and is created once by hand
   - after changing anything in `TeklaMcpServer.Api` that the bridge returns, copy **all three** of `TeklaBridge.exe`, `TeklaMcpServer.Api.dll` and `SolidContacts.Core.dll`, or the bridge keeps answering from the stale DLL with no error
   - `SolidContacts.Core.dll` joined that list when `TeklaMcpServer.Api` took a direct reference on it; missing, it is not a stale answer but a `FileNotFoundException` on the first contact call
+  - reading layout tables (title block, parts list) needs two more files beside `TeklaBridge.exe`, copied by hand from `C:\TeklaStructures\2025.0\bin\`: `Tekla.Structures.GrpcContracts.dll` and `Microsoft.Win32.Registry.dll`. Missing, nothing fails loudly: `fit_views_to_sheet` and `get_drawing_reserved_areas` report `tableCount: 0` and lay views out as if the sheet had no tables. The views log then has `reserved_tables_skip reason=presentation_model_failed` with the missing assembly named in `inner=`. Found on a newly set-up machine on 2026-11-11, where restarting the bridge, Tekla and the computer did not help
   - logging also requires `Serilog.dll`, `Serilog.Sinks.File.dll`, `System.Diagnostics.DiagnosticSource.dll` and `System.Threading.Channels.dll` beside `TeklaBridge.exe`; preserve the extensions copy of `TeklaBridge.exe.config` and merge the Serilog 4.3.0 binding redirect into it without removing Tekla entries
 
 ## Architecture

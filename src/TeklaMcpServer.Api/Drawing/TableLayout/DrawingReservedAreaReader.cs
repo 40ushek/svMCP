@@ -220,7 +220,18 @@ internal static class DrawingReservedAreaReader
         }
         catch (Exception ex)
         {
-            PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=presentation_model_failed error={ex.GetType().Name}");
+            // Diagnostic detail only: the type name alone ("Exception") did not say why
+            // table geometry could not be read on a newly set-up machine.
+            var inner = ex.InnerException;
+            var where = (ex.StackTrace ?? string.Empty).Split('\n').FirstOrDefault()?.Trim() ?? string.Empty;
+            PerfTrace.Write(
+                "api-view",
+                "reserved_tables_skip",
+                0,
+                $"reason=presentation_model_failed error={ex.GetType().Name} tables={tableIds.Count} readBeforeFailure={result.Count}" +
+                $" message=\"{ex.Message.Replace('\r', ' ').Replace('\n', ' ')}\"" +
+                (inner == null ? string.Empty : $" inner={inner.GetType().Name}:\"{inner.Message.Replace('\r', ' ').Replace('\n', ' ')}\"") +
+                $" at=\"{where}\"");
             return (sheetMargin, Array.Empty<LayoutTableGeometryInfo>());
         }
         finally
