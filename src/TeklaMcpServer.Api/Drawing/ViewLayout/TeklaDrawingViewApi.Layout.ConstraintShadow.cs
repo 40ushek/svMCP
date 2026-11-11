@@ -16,9 +16,10 @@ public sealed partial class TeklaDrawingViewApi
     /// and sided them at this scale, or null when it has none to offer: no base
     /// view, a view kind it does not handle yet on the sheet, or nothing that fits
     /// under the policy. A failure is traced and treated as "no layout". Cost is
-    /// what the layout's deviations cost under the policy, in scale steps.
+    /// what the layout's deviations cost under the policy and Emptiness what it
+    /// costs for leaving the sheet empty, both in scale steps.
     /// </summary>
-    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost) TryEvaluateConstraintLayoutCandidate(
+    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness) TryEvaluateConstraintLayoutCandidate(
         DrawingLayoutWorkspace workspace,
         DrawingLayoutVariantResult currentVariant,
         double gap,
@@ -33,16 +34,13 @@ public sealed partial class TeklaDrawingViewApi
             var layoutCase = reference == null
                 ? null
                 : BuildConstraintLayoutCase(workspace, reference, gap, currentVariant.ProjectionResult);
-            var result = layoutCase == null
-                ? null
-                : ConstraintLayoutShadow.Evaluate(
-                    layoutCase,
-                    plannerMode switch
-                    {
-                        DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
-                        DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
-                        _ => ConstraintLayoutPolicy.Balanced
-                    });
+            var policy = plannerMode switch
+            {
+                DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
+                DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
+                _ => ConstraintLayoutPolicy.Balanced
+            };
+            var result = layoutCase == null ? null : ConstraintLayoutShadow.Evaluate(layoutCase, policy);
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
 
@@ -54,20 +52,24 @@ public sealed partial class TeklaDrawingViewApi
                 outcome = $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}";
             else
             {
+                var fill = result.Best.Score.Breakdown.FillRatioRaw;
+                var emptiness = policy.GetEmptinessCost(fill);
                 PerfTrace.Write(
                     "api-view",
                     "constraint_layout_plan",
                     stopwatch.ElapsedMilliseconds,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5}",
+                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5} fill={6:0.###} emptiness={7:0.##}",
                         scale,
                         plannerMode,
                         result.Best.IsFeasible ? 1 : 0,
                         result.BestPlan!.Cost,
                         result.BestPlan.Deviations,
-                        result.Plan.EvaluatedTopologies));
-                return (result.Best, result.BestPlan.Cost);
+                        result.Plan.EvaluatedTopologies,
+                        fill,
+                        emptiness));
+                return (result.Best, result.BestPlan.Cost, emptiness);
             }
         }
         catch (System.Exception exception)
@@ -80,7 +82,7 @@ public sealed partial class TeklaDrawingViewApi
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
             string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} result={2}", scale, plannerMode, outcome));
-        return (null, 0.0);
+        return (null, 0.0, 0.0);
     }
 
     private static ConstraintLayoutCase? BuildConstraintLayoutCase(

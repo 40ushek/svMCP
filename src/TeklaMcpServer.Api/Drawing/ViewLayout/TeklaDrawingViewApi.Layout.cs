@@ -628,7 +628,8 @@ public sealed partial class TeklaDrawingViewApi
                 constraintScaleDecision = constraintScaleSearch.Offer(
                     attemptIndex,
                     isLast: attemptIndex == scalesToTry.Count - 1,
-                    cost: plannerFeasible ? planned.Cost : (double?)null);
+                    cost: plannerFeasible ? planned.Cost : (double?)null,
+                    emptiness: planned.Emptiness);
 
                 var holdsBest = constraintScaleDecision == Constraints.ConstraintScaleDecision.Select
                     || (constraintScaleDecision == Constraints.ConstraintScaleDecision.LookAhead

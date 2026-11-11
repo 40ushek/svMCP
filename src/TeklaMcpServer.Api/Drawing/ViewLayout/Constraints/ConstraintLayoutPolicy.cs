@@ -6,9 +6,9 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 /// and are not here.
 ///
 /// Prices are in steps of the standard scale series: a price of 1 means "this is
-/// as bad as making the drawing one scale step smaller". Until the planner picks
-/// the scale itself (roadmap phase 4) prices only rank layouts against each other,
-/// and an infinite price forbids the deviation outright.
+/// as bad as making the drawing one scale step smaller". Within one scale they
+/// rank layouts against each other; across scales ConstraintScaleSearch adds them
+/// to the scale steps taken. An infinite price forbids the deviation outright.
 ///
 /// A policy narrows what <see cref="ProjectionStrength"/> allows; it never widens
 /// it. A view with a strong projection link keeps its side under any policy.
@@ -23,6 +23,29 @@ internal sealed class ConstraintLayoutPolicy
 
     /// <summary>A view moved into a stack off the base view's axis: the projection link is lost.</summary>
     public double LinkBreakCost { get; set; } = 1.5;
+
+    /// <summary>
+    /// Fill ratio (view area over the sheet area free of tables) below which the
+    /// sheet looks empty. The same threshold ROADMAP_DRAWING_LAYOUT.md names.
+    /// </summary>
+    public double EmptySheetFill { get; set; } = 0.5;
+
+    /// <summary>
+    /// What a completely empty sheet costs. The price falls linearly to nothing as
+    /// the fill ratio rises to <see cref="EmptySheetFill"/>. It makes a step to a
+    /// smaller scale dearer the emptier the sheet already is, so a half-empty
+    /// drawing is not shrunk further just to keep a view on its axis.
+    /// </summary>
+    public double EmptySheetCost { get; set; } = 2.0;
+
+    /// <summary>What a layout with this fill ratio costs for leaving the sheet empty, in scale steps.</summary>
+    public double GetEmptinessCost(double fillRatio)
+    {
+        if (EmptySheetFill <= 0 || fillRatio >= EmptySheetFill)
+            return 0.0;
+
+        return (EmptySheetFill - System.Math.Max(fillRatio, 0.0)) / EmptySheetFill * EmptySheetCost;
+    }
 
     /// <summary>
     /// The class defaults. A view may change sides to keep the scale, but a

@@ -72,6 +72,53 @@ public sealed class ConstraintScaleSearchTests
     }
 
     [Fact]
+    public void OnAHalfEmptySheet_ABrokenLinkAtTheLargerScale_BeatsACleanLayoutOnAnEmptierOne()
+    {
+        // The figures of drawing M.179 under the balanced policy: fill 0.40 at 1:5
+        // with one view off the axis, 0.22 at 1:10 with nothing given up.
+        var policy = ConstraintLayoutPolicy.Balanced;
+        var search = new ConstraintScaleSearch();
+
+        Assert.Equal(
+            ConstraintScaleDecision.LookAhead,
+            search.Offer(0, isLast: false, cost: policy.LinkBreakCost, emptiness: policy.GetEmptinessCost(0.403)));
+        Assert.Equal(
+            ConstraintScaleDecision.GoBack,
+            search.Offer(1, isLast: false, cost: 0, emptiness: policy.GetEmptinessCost(0.221)));
+        Assert.Equal(0, search.BestIndex);
+    }
+
+    [Fact]
+    public void OnAWellFilledSheet_TheStepDownStillWins()
+    {
+        var policy = ConstraintLayoutPolicy.Balanced;
+        var search = new ConstraintScaleSearch();
+
+        search.Offer(0, isLast: false, cost: policy.LinkBreakCost, emptiness: policy.GetEmptinessCost(0.80));
+
+        Assert.Equal(
+            ConstraintScaleDecision.Select,
+            search.Offer(1, isLast: false, cost: 0, emptiness: policy.GetEmptinessCost(0.55)));
+    }
+
+    [Fact]
+    public void EmptinessAlone_NeverSendsTheSearchToASmallerScale()
+    {
+        // Nothing given up and a nearly empty sheet: a smaller scale would only be emptier.
+        Assert.Equal(
+            ConstraintScaleDecision.Select,
+            new ConstraintScaleSearch().Offer(0, isLast: false, cost: 0, emptiness: 1.8));
+    }
+
+    [Theory]
+    [InlineData(0.50, 0.0)]
+    [InlineData(0.80, 0.0)]
+    [InlineData(0.25, 1.0)]
+    [InlineData(0.00, 2.0)]
+    public void EmptinessCost_FallsLinearlyToNothingAtTheThreshold(double fill, double expected)
+        => Assert.Equal(expected, ConstraintLayoutPolicy.Balanced.GetEmptinessCost(fill), 9);
+
+    [Fact]
     public void NoLayoutAtTheSmallerScale_SendsTheSearchBack()
     {
         var search = new ConstraintScaleSearch();
