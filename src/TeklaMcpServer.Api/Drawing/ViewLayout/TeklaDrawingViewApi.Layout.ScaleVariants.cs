@@ -12,8 +12,13 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 
 public sealed partial class TeklaDrawingViewApi
 {
-    /// <summary>How many scale combinations are tried on the drawing.</summary>
-    private const int MaxScaleVariantAttempts = 4;
+    /// <summary>
+    /// Whether the constraint planner is the default on the active drawing: on an
+    /// assembly drawing, the only kind it has been tried on. Elsewhere (GA,
+    /// single-part) the legacy planner stays the default until it has been.
+    /// </summary>
+    public bool IsConstraintPlannerDefault()
+        => new DrawingHandler().GetActiveDrawing() is AssemblyDrawing;
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
@@ -24,13 +29,13 @@ public sealed partial class TeklaDrawingViewApi
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
         DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
         SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain,
-        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current,
+        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Legacy,
         int plannerVariant = 0)
     {
         // The constraint planner picking the scales goes its own way; when it
         // cannot (no base view, a view larger than the sheet as it stands), the
         // scale loop of the core does the job as before.
-        if (plannerMode != DrawingLayoutPlannerMode.Current
+        if (plannerMode != DrawingLayoutPlannerMode.Legacy
             && scalePolicy == DrawingScalePolicy.UniformAllNonDetail
             && plannerVariant == 0)
         {
@@ -119,17 +124,32 @@ public sealed partial class TeklaDrawingViewApi
             return measured;
         }
 
+        // The scales the drawing has now and the planner's layout at them. A variant
+        // that asks for just these scales is already measured: no pass on the drawing.
+        var scalesOnDrawing = new Dictionary<int, double>(originalScales);
+        var layoutOnDrawing = measured;
+
         var tried = new HashSet<string>();
         ConstraintScaleVariant? best = null;
-        while (variants.Count > 0 && tried.Count < MaxScaleVariantAttempts)
+        while (variants.Count > 0 && tried.Count < policy.MaxScaleProbes)
         {
             var variant = variants[0];
             tried.Add(variant.Key);
-            SetViewScales(variant.ScalesById);
 
-            var probe = AtPresentScales(DrawingLayoutApplyMode.DebugPreview);
-            if (probe?.PlannerCase != null)
-                RecordFrameSizes(estimator, probe.PlannerCase);
+            var alreadyMeasured = variant.ScalesById.All(pair =>
+                scalesOnDrawing.TryGetValue(pair.Key, out var present) && System.Math.Abs(present - pair.Value) <= 1e-6);
+            if (!alreadyMeasured)
+            {
+                SetViewScales(variant.ScalesById);
+                foreach (var pair in variant.ScalesById)
+                    scalesOnDrawing[pair.Key] = pair.Value;
+
+                layoutOnDrawing = AtPresentScales(DrawingLayoutApplyMode.DebugPreview);
+                if (layoutOnDrawing?.PlannerCase != null)
+                    RecordFrameSizes(estimator, layoutOnDrawing.PlannerCase);
+            }
+
+            var probe = layoutOnDrawing;
 
             var fits = probe?.PlannerCost != null;
             var measuredVariant = fits
@@ -143,7 +163,7 @@ public sealed partial class TeklaDrawingViewApi
                 }
                 : null;
             if (measuredVariant != null
-                && (best == null || ConstraintScaleVariants.Order(new[] { best, measuredVariant })[0] == measuredVariant))
+                && (best == null || ConstraintScaleVariants.Order(new[] { best, measuredVariant }, policy.ScaleFillTie)[0] == measuredVariant))
             {
                 best = measuredVariant;
             }
@@ -153,7 +173,7 @@ public sealed partial class TeklaDrawingViewApi
                 stopwatch.ElapsedMilliseconds,
                 string.Format(
                     CultureInfo.InvariantCulture,
-                    "attempt={0} main=1:{1:0.###} sections=1:{2:0.###} estimatedFill={3:0.###} estimatedCost={4:0.##} result={5} fill={6:0.###} cost={7}",
+                    "attempt={0} probe={8} main=1:{1:0.###} sections=1:{2:0.###} estimatedFill={3:0.###} estimatedCost={4:0.##} result={5} fill={6:0.###} cost={7}",
                     tried.Count,
                     variant.MainScale,
                     variant.SectionScale,
@@ -161,14 +181,15 @@ public sealed partial class TeklaDrawingViewApi
                     variant.Cost,
                     fits ? "fits" : "no-fit",
                     measuredVariant?.Fill ?? 0.0,
-                    probe?.PlannerCost?.ToString("0.##", CultureInfo.InvariantCulture) ?? "none"));
+                    probe?.PlannerCost?.ToString("0.##", CultureInfo.InvariantCulture) ?? "none",
+                    alreadyMeasured ? "reused" : "drawing"));
 
             variants = Rank().Where(next => !tried.Contains(next.Key)).ToList();
             TraceScaleVariants("after-measure", variants, stopwatch.ElapsedMilliseconds);
 
             // With a layout in hand, another is worth a try on the drawing only when
             // the corrected estimate promises a clearly fuller sheet.
-            if (best != null && (variants.Count == 0 || variants[0].Fill <= best.Fill + ConstraintScaleVariants.FillTie))
+            if (best != null && (variants.Count == 0 || variants[0].Fill <= best.Fill + policy.ScaleFillTie))
                 break;
         }
 

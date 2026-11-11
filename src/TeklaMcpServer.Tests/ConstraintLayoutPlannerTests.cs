@@ -438,7 +438,7 @@ public sealed class ConstraintLayoutPlannerTests
             new ReservedRect(0, 0, 100, 100),
             Section(SectionA, orderKey: 10),
             Section(SectionB, orderKey: 20));
-        input.MaxTopologies = 3;
+        input.Policy.MaxTopologies = 3;
 
         var plan = ConstraintLayoutPlanner.Plan(input);
 

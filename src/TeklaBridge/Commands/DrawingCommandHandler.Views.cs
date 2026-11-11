@@ -179,12 +179,16 @@ internal sealed partial class DrawingCommandHandler
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
         try
         {
+            if (!api.IsConstraintPlannerDefault())
+                request.UseLegacyDefaults();
+
             var result = api.FitViewsToSheet(
                 request.Margin,
                 request.Gap,
                 request.TitleBlockHeight,
                 DrawingScalePolicy.PreserveExistingScales,
-                request.ApplyMode);
+                request.ApplyMode,
+                plannerMode: request.PlannerMode);
             WriteFitViewsToSheetResult(result, result.ReservedAreas);
         }
         catch (DrawingFitFailedException ex)
@@ -236,6 +240,9 @@ internal sealed partial class DrawingCommandHandler
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(args);
         try
         {
+            if (!api.IsConstraintPlannerDefault())
+                request.UseLegacyDefaults();
+
             var result = api.FitViewsToSheet(
                 request.Margin,
                 request.Gap,

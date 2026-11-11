@@ -78,7 +78,7 @@ public sealed class ConstraintScaleVariantsTests
             new ConstraintScaleVariant { MainScale = 15, Fill = 0.30, Cost = 0 },
             new ConstraintScaleVariant { MainScale = 10, SectionScale = 5, Fill = 0.62, Cost = 1.5 },
             new ConstraintScaleVariant { MainScale = 10, SectionScale = 10, Fill = 0.59, Cost = 0 }
-        });
+        }, ConstraintLayoutPolicy.Balanced.ScaleFillTie);
 
         Assert.Equal(new[] { 0.59, 0.62, 0.30 }, ordered.Select(static variant => variant.Fill));
     }
@@ -92,7 +92,7 @@ public sealed class ConstraintScaleVariantsTests
         {
             new ConstraintScaleVariant { MainScale = 10, SectionScale = 2, Fill = 0.39, Cost = 0.25 },
             new ConstraintScaleVariant { MainScale = 5, SectionScale = 5, Fill = 0.37, Cost = 0.25 }
-        });
+        }, ConstraintLayoutPolicy.Balanced.ScaleFillTie);
 
         Assert.Equal(5, ordered[0].MainScale);
     }
@@ -127,7 +127,7 @@ public sealed class ConstraintScaleVariantsTests
         {
             new ConstraintScaleVariant { MainScale = 15, Fill = 0.26, Cost = 0 },
             new ConstraintScaleVariant { MainScale = 10, Fill = 0.59, Cost = 4.5 }
-        });
+        }, ConstraintLayoutPolicy.Balanced.ScaleFillTie);
 
         Assert.Equal(10, ordered[0].MainScale);
     }

@@ -393,7 +393,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Fit all views to the sheet: auto-calculates the optimal standard scale and arranges views without overlaps. Set keepScale=true to preserve existing view scales and only rearrange positions. Set dryRun=true to compute layout without moving views in Tekla. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
+    [McpServerTool, Description("Fit all views to the sheet: arranges views without overlaps, each on its side of the base view. On an assembly drawing the constraint planner does it and the views keep their scales unless plannerRescale=true; on other drawing kinds the deprecated legacy planner does it and picks one standard scale unless keepScale=true. Set dryRun=true to compute layout without moving views in Tekla. titleBlockHeight is an optional manual bottom reserve for compatibility with older scripts.")]
     public static string FitViewsToSheet(
         [Description("Margin from sheet edges in mm. Default: -1 = auto-read from drawing layout. Use 0 only for a true zero margin.")] double margin = -1,
         [Description("Gap between views in mm. Default: 4")] double gap = 4,
@@ -401,9 +401,9 @@ public static partial class ModelTools
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false,
         [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false,
         [Description("Scale policy for secondary views (Section/Detail) relative to main scale. SameAsMain=default (no change), PreserveLargerIfFits=keep author scale if larger and fits, PreserveIfNotSmaller=keep if not smaller than main, AllowLargerIfFits=pick best larger scale.")] string secondaryScalePolicy = "SameAsMain",
-        [Description("Experimental layout planner. Current=default. KeepProjection=constraint planner, no view leaves its side or the base view's axis. Balanced=constraint planner, a section may change sides but keeps the projection link unless that costs two scale steps. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. The constraint planner handles the base view, its projections and standard sections; with details or 3D views on the sheet the current planner is used.")] string planner = "Current",
+        [Description("Layout planner. Default=Balanced on an assembly drawing, Legacy on other drawing kinds. Balanced=constraint planner, a section may change sides but keeps the projection link where it can. KeepProjection=constraint planner, no view leaves its side or the base view's axis. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. Legacy=the deprecated planner used before the constraint planner; kept as the fallback. The constraint planner handles the base view, its projections, sections, details and a 3D view; where it has no layout the legacy planner's result is used.")] string planner = "Default",
         [Description("With a constraint planner: which of the layouts that fit to use. 0=the planner's own choice, 1, 2, ...=the next ones, each giving up a little more. Run with dryRun=true to look at a variant before applying it.")] int plannerVariant = 0,
-        [Description("With a constraint planner the views keep their scales by default. Set true to let it choose a common scale for the assembly views as well.")] bool plannerRescale = false)
+        [Description("With a constraint planner the views keep their scales by default. Set true to let it choose the scales of the assembly views and of the sections.")] bool plannerRescale = false)
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
@@ -420,6 +420,9 @@ public static partial class ModelTools
             tokens.Add("planner:balanced");
         else if (string.Equals(planner, "PreferScale", System.StringComparison.OrdinalIgnoreCase))
             tokens.Add("planner:preferscale");
+        else if (string.Equals(planner, "Legacy", System.StringComparison.OrdinalIgnoreCase)
+            || string.Equals(planner, "Current", System.StringComparison.OrdinalIgnoreCase))
+            tokens.Add("planner:legacy");
         if (plannerVariant > 0)
             tokens.Add("planner-variant:" + plannerVariant.ToString(CultureInfo.InvariantCulture));
         var json = RunBridge(tokens.ToArray());

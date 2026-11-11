@@ -121,19 +121,6 @@ internal sealed class ConstraintFrameSizeEstimator
 /// </summary>
 internal static class ConstraintScaleVariants
 {
-    /// <summary>Fill ratios closer than this count as the same; the price of deviations decides.</summary>
-    public const double FillTie = 0.05;
-
-    /// <summary>How many assembly scales are looked at, from the largest that can fit down.</summary>
-    private const int MainScaleDepth = 4;
-
-    /// <summary>
-    /// How many section scales are looked at for each assembly scale, from the
-    /// assembly's own up. It bounds the search, not the drawing: the user ruled out
-    /// "a section at most one step larger than the assembly" twice.
-    /// </summary>
-    private const int SectionScaleDepth = 3;
-
     public static List<ConstraintScaleVariant> Rank(
         ConstraintLayoutCase layoutCase,
         IReadOnlyCollection<int> assemblyViewIds,
@@ -159,13 +146,13 @@ internal static class ConstraintScaleVariants
         var found = new Dictionary<string, ConstraintScaleVariant>();
         foreach (var mainScale in mainScales
             .SkipWhile(scale => !FitsAlone(assembly.ToDictionary(static id => id, _ => scale)))
-            .Take(MainScaleDepth))
+            .Take(policy.MainScaleDepth))
         {
             // A section is never drawn smaller than the assembly, and never smaller
             // than it was: a section the author already drew larger stays as it is.
             var sectionChoices = sections.Count == 0
                 ? new List<double> { mainScale }
-                : sectionScales.Where(scale => scale <= mainScale + 1e-9).Reverse().Take(SectionScaleDepth).ToList();
+                : sectionScales.Where(scale => scale <= mainScale + 1e-9).Reverse().Take(policy.SectionScaleDepth).ToList();
             foreach (var sectionScale in sectionChoices)
             {
                 var scales = assembly.ToDictionary(static id => id, _ => mainScale);
@@ -186,7 +173,7 @@ internal static class ConstraintScaleVariants
             }
         }
 
-        return Order(found.Values);
+        return Order(found.Values, policy.ScaleFillTie);
     }
 
     /// <summary>
@@ -194,7 +181,8 @@ internal static class ConstraintScaleVariants
     /// the fullest the one with the larger assembly comes first, and of those the
     /// one that gives up least.
     /// </summary>
-    public static List<ConstraintScaleVariant> Order(IEnumerable<ConstraintScaleVariant> variants)
+    /// <param name="fillTie">Fill ratios closer than this count as the same (the policy's ScaleFillTie).</param>
+    public static List<ConstraintScaleVariant> Order(IEnumerable<ConstraintScaleVariant> variants, double fillTie)
     {
         var left = variants.ToList();
         var ordered = new List<ConstraintScaleVariant>(left.Count);
@@ -202,7 +190,7 @@ internal static class ConstraintScaleVariants
         {
             var fullest = left.Max(static variant => variant.Fill);
             var next = left
-                .Where(variant => variant.Fill >= fullest - FillTie)
+                .Where(variant => variant.Fill >= fullest - fillTie)
                 .OrderBy(static variant => variant.MainScale)
                 .ThenBy(static variant => variant.Cost)
                 .ThenByDescending(static variant => variant.Fill)

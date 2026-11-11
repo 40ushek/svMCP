@@ -15,7 +15,7 @@ public interface IDrawingViewApi
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
         DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
         SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain,
-        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current,
+        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Legacy,
         int plannerVariant = 0);
 }
 

@@ -7,11 +7,44 @@ namespace TeklaMcpServer.Tests;
 public sealed class FitViewsToSheetRequestParserTests
 {
     [Fact]
-    public void WithoutAPlannerToken_TheCurrentPlannerIsUsed()
+    public void WithoutAPlannerToken_TheConstraintPlannerIsUsed_AndScalesAreKept()
     {
         var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0"]);
 
-        Assert.Equal(DrawingLayoutPlannerMode.Current, request.PlannerMode);
+        Assert.Equal(DrawingLayoutPlannerMode.ConstraintBalanced, request.PlannerMode);
+        Assert.False(request.PlannerGiven);
+        Assert.Equal(DrawingScalePolicy.PreserveExistingScales, request.ScalePolicy);
+    }
+
+    [Theory]
+    [InlineData("planner:legacy")]
+    [InlineData("planner:current")]
+    public void LegacyToken_SelectsTheDeprecatedPlanner_WithItsOwnScaleDefault(string token)
+    {
+        var request = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0", token]);
+
+        Assert.Equal(DrawingLayoutPlannerMode.Legacy, request.PlannerMode);
+        Assert.True(request.PlannerGiven);
+        Assert.Equal(DrawingScalePolicy.UniformAllNonDetail, request.ScalePolicy);
+    }
+
+    [Fact]
+    public void OnADrawingTheConstraintPlannerIsNotTheDefaultOn_LegacyDefaultsReplaceOnlyWhatWasNotNamed()
+    {
+        var nothingNamed = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0"]);
+        var scaleNamed = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0", "keepscale"]);
+        var plannerNamed = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0", "planner:preferscale"]);
+
+        nothingNamed.UseLegacyDefaults();
+        scaleNamed.UseLegacyDefaults();
+        plannerNamed.UseLegacyDefaults();
+
+        Assert.Equal(DrawingLayoutPlannerMode.Legacy, nothingNamed.PlannerMode);
+        Assert.Equal(DrawingScalePolicy.UniformAllNonDetail, nothingNamed.ScalePolicy);
+        Assert.Equal(DrawingLayoutPlannerMode.Legacy, scaleNamed.PlannerMode);
+        Assert.Equal(DrawingScalePolicy.PreserveExistingScales, scaleNamed.ScalePolicy);
+        Assert.Equal(DrawingLayoutPlannerMode.ConstraintPreferScale, plannerNamed.PlannerMode);
+        Assert.Equal(DrawingScalePolicy.PreserveExistingScales, plannerNamed.ScalePolicy);
     }
 
     [Theory]
@@ -54,7 +87,7 @@ public sealed class FitViewsToSheetRequestParserTests
         var rescaled = DrawingCommandParsers.ParseFitViewsToSheetRequest(
             ["fit_views_to_sheet", "auto", "4", "0", "uniformallnondetail", "planner:balanced"]);
         var noPlanner = DrawingCommandParsers.ParseFitViewsToSheetRequest(
-            ["fit_views_to_sheet", "auto", "4", "0"]);
+            ["fit_views_to_sheet", "auto", "4", "0", "planner:legacy"]);
 
         Assert.Equal(DrawingScalePolicy.PreserveExistingScales, kept.ScalePolicy);
         Assert.Equal(DrawingScalePolicy.UniformAllNonDetail, rescaled.ScalePolicy);

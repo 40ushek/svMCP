@@ -8,9 +8,14 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 /// and are not here.
 ///
 /// Within one scale the prices rank layouts against each other. Across scales
-/// ConstraintScaleSearch adds them to <see cref="ScaleStepCost"/> for every step
-/// of the standard scale series taken, so a price says how much of a scale step
-/// the deviation is worth. An infinite price forbids the deviation outright.
+/// the planner compares scale combinations by fill ratio (ConstraintScaleVariants)
+/// and the prices only break a tie between sheets about as full. Only the
+/// fallback scale loop (ConstraintScaleSearch) still adds them to
+/// <see cref="ScaleStepCost"/> for every step of the scale series taken. An
+/// infinite price forbids the deviation outright.
+///
+/// Every figure of the planner a user may want to tune lives here: a settings
+/// window and file are planned on top of this object.
 ///
 /// A policy narrows what <see cref="ProjectionStrength"/> allows; it never widens
 /// it. A view with a strong projection link keeps its side under any policy.
@@ -52,7 +57,8 @@ internal sealed class ConstraintLayoutPolicy
 
     /// <summary>
     /// What making the drawing one scale step smaller costs, in the units of the
-    /// prices above. A readable scale comes before views on their axes: on M.179,
+    /// prices above. Used by the fallback scale loop only; the planner's own
+    /// choice of scales goes by fill ratio. A readable scale comes before views on their axes: on M.179,
     /// M.433 and M.123 the user took the larger scale each time, on M.123 with
     /// three views off the base view's axis (4.5). No drawing so far went the other
     /// way, so the figure has a lower bound from the journal and no upper one.
@@ -72,6 +78,50 @@ internal sealed class ConstraintLayoutPolicy
     // an assembly at 1:5 or 1:10 came out too large on M.44, M.433 and M.179.
     private static readonly double[] StandardScales =
         { 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 100, 125, 150, 175, 200, 250, 300 };
+
+    /// <summary>
+    /// How many combinations of view places the planner looks at for one drawing
+    /// at one set of scales. A bound on the search, reported as "truncated" when hit.
+    /// </summary>
+    public int MaxTopologies { get; set; } = 2000;
+
+    /// <summary>How many layouts that fit are kept; these are the numbered variants a caller may pick from.</summary>
+    public int MaxCandidates { get; set; } = 16;
+
+    /// <summary>
+    /// Layouts are collected in order of what their slots cost, and only then priced
+    /// for distance. A layout a little dearer by slots can be the cheapest overall,
+    /// so this many times more are collected than are kept.
+    /// </summary>
+    public int CandidatePoolFactor { get; set; } = 8;
+
+    /// <summary>
+    /// Fill ratios of two scale combinations closer than this count as the same;
+    /// the larger assembly, then the smaller price of deviations, decides.
+    /// </summary>
+    public double ScaleFillTie { get; set; } = 0.05;
+
+    /// <summary>How many assembly scales are looked at, from the largest that can fit down.</summary>
+    public int MainScaleDepth { get; set; } = 4;
+
+    /// <summary>
+    /// How many section scales are looked at for each assembly scale, from the
+    /// assembly's own up. It bounds the search, not the drawing: the user ruled out
+    /// "a section at most one step larger than the assembly" twice.
+    /// </summary>
+    public int SectionScaleDepth { get; set; } = 3;
+
+    /// <summary>How many scale combinations are tried on the drawing in one run.</summary>
+    public int MaxScaleProbes { get; set; } = 4;
+
+    /// <summary>
+    /// How far the gap between views may shrink, as a share of the gap asked for,
+    /// to keep a view in a cheaper place.
+    /// </summary>
+    public double TightGapShare { get; set; } = 0.5;
+
+    /// <summary>Below this, in sheet millimeters, the views are too close to tell apart; the gap is not shrunk past it.</summary>
+    public double MinTightGap { get; set; } = 2.0;
 
     /// <summary>
     /// Fill ratio (view area over the sheet area free of tables) below which the

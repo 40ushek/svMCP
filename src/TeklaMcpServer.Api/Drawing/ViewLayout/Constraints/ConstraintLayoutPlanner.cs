@@ -124,10 +124,6 @@ internal sealed class ConstraintLayoutPlannerInput
     public IReadOnlyList<ConstraintLayoutFreeViewInput> FreeViews { get; set; } = Array.Empty<ConstraintLayoutFreeViewInput>();
 
     public ConstraintLayoutPolicy Policy { get; set; } = ConstraintLayoutPolicy.Balanced;
-
-    public int MaxTopologies { get; set; } = 2000;
-
-    public int MaxCandidates { get; set; } = 16;
 }
 
 internal sealed class ConstraintLayoutPlanCandidate
@@ -159,7 +155,7 @@ internal sealed class ConstraintLayoutPlan
 
     public int EvaluatedTopologies { get; set; }
 
-    /// <summary>True when <see cref="ConstraintLayoutPlannerInput.MaxTopologies"/> stopped the search early.</summary>
+    /// <summary>True when <see cref="ConstraintLayoutPolicy.MaxTopologies"/> stopped the search early.</summary>
     public bool Truncated { get; set; }
 
     /// <summary>Sheet width the all-preferred topology needs.</summary>
@@ -175,13 +171,6 @@ internal sealed class ConstraintLayoutPlan
 /// </summary>
 internal static class ConstraintLayoutPlanner
 {
-    /// <summary>
-    /// Layouts are collected in order of what their slots cost, and only then priced
-    /// for distance. A layout a little dearer by slots can be the cheapest overall,
-    /// so more are collected than are kept.
-    /// </summary>
-    private const int CandidatePoolFactor = 8;
-
     private static readonly SectionPlacementSide[] Sides =
     [
         SectionPlacementSide.Left,
@@ -209,11 +198,11 @@ internal static class ConstraintLayoutPlanner
         // the cheapest under the policy first. The sort is stable, so the all-preferred
         // combination stays in front.
         var choices = EnumerateChoices(options.Select(static o => o.Count).ToArray())
-            .Take(input.MaxTopologies + 1)
+            .Take(input.Policy.MaxTopologies + 1)
             .ToList();
-        plan.Truncated = choices.Count > input.MaxTopologies;
+        plan.Truncated = choices.Count > input.Policy.MaxTopologies;
         var ranked = choices
-            .Take(input.MaxTopologies)
+            .Take(input.Policy.MaxTopologies)
             .Select(choice => (choice, cost: choice.Select((option, i) => options[i][option].Cost).Sum()))
             .OrderBy(static item => item.cost);
 
@@ -252,13 +241,13 @@ internal static class ConstraintLayoutPlanner
                 Cost = cost + GetCutBehindViewCost(input, slots),
                 CutDistanceCost = GetCutDistanceCost(input, rects)
             });
-            if (plan.Candidates.Count >= input.MaxCandidates * CandidatePoolFactor)
+            if (plan.Candidates.Count >= input.Policy.MaxCandidates * input.Policy.CandidatePoolFactor)
                 break;
         }
 
         // The distance prices are known only once a layout is solved; put the
         // candidates back in order of price, equal ones as they came.
-        var byCost = plan.Candidates.OrderBy(static candidate => candidate.RankCost).Take(input.MaxCandidates).ToList();
+        var byCost = plan.Candidates.OrderBy(static candidate => candidate.RankCost).Take(input.Policy.MaxCandidates).ToList();
         plan.Candidates.Clear();
         plan.Candidates.AddRange(byCost);
         return plan;

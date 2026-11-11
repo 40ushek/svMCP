@@ -413,8 +413,29 @@ public sealed class FitViewsToSheetRequest
     public DrawingScalePolicy ScalePolicy { get; set; } = DrawingScalePolicy.UniformAllNonDetail;
     public DrawingLayoutApplyMode ApplyMode { get; set; } = DrawingLayoutApplyMode.DebugPreview;
     public SecondaryScalePolicy SecondaryScalePolicy { get; set; } = SecondaryScalePolicy.SameAsMain;
-    public DrawingLayoutPlannerMode PlannerMode { get; set; } = DrawingLayoutPlannerMode.Current;
+    public DrawingLayoutPlannerMode PlannerMode { get; set; } = DrawingLayoutPlannerMode.ConstraintBalanced;
     public int PlannerVariant { get; set; }
+
+    /// <summary>True when the caller named a planner; false when the default stands.</summary>
+    public bool PlannerGiven { get; set; }
+
+    /// <summary>True when the caller named a scale policy.</summary>
+    public bool ScalePolicyGiven { get; set; }
+
+    /// <summary>
+    /// For a drawing the constraint planner is not the default on: what the caller
+    /// named stays, the rest goes back to the legacy planner and its own default,
+    /// one scale for all views.
+    /// </summary>
+    public void UseLegacyDefaults()
+    {
+        if (PlannerGiven)
+            return;
+
+        PlannerMode = DrawingLayoutPlannerMode.Legacy;
+        if (!ScalePolicyGiven)
+            ScalePolicy = DrawingScalePolicy.UniformAllNonDetail;
+    }
 }
 
 public sealed class DeleteDimensionRequest

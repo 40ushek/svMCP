@@ -53,12 +53,6 @@ internal static class ConstraintLayoutShadow
 {
     public const string CandidateName = "constraint-layout:planner";
 
-    /// <summary>How far the gap between views may shrink to keep a view in a cheaper place.</summary>
-    private const double TightGapShare = 0.5;
-
-    /// <summary>Below this the views are too close to tell apart; the gap is not shrunk past it.</summary>
-    private const double MinTightGap = 2.0;
-
     /// <summary>Sheet millimeters within which a predicted and an actual offset count as the same.</summary>
     private const double AlignmentMatchTolerance = 0.05;
 
@@ -79,8 +73,9 @@ internal static class ConstraintLayoutShadow
         // A view a few millimeters short of fitting on its own side is better kept
         // there with the views drawn closer together than sent somewhere else.
         var gap = layoutCase.Gap;
-        var tightGap = gap * TightGapShare;
-        if (tightGap >= MinTightGap)
+        var settings = policy ?? ConstraintLayoutPolicy.Balanced;
+        var tightGap = gap * settings.TightGapShare;
+        if (tightGap >= settings.MinTightGap && tightGap < gap)
         {
             var normal = Evaluate(layoutCase, policy, 0, gap);
             var tight = normal?.BestPlan?.Cost > 0 || (normal != null && normal.BestPlan == null)

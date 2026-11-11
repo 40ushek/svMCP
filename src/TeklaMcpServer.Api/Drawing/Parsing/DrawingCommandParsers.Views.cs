@@ -66,7 +66,6 @@ public static partial class DrawingCommandParsers
             request.TitleBlockHeight = titleBlockHeight;
 
         // Scale-policy tokens can appear at any position (positional args are numeric, so no ambiguity)
-        var scalePolicyGiven = false;
         for (int i = 1; i < args.Length; i++)
         {
             if (string.Equals(args[i], "debugpreview", StringComparison.OrdinalIgnoreCase) ||
@@ -88,7 +87,7 @@ public static partial class DrawingCommandParsers
                 string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
-                scalePolicyGiven = true;
+                request.ScalePolicyGiven = true;
                 continue;
             }
 
@@ -96,13 +95,14 @@ public static partial class DrawingCommandParsers
                 string.Equals(args[i], "strictuniformscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformAllNonDetail;
-                scalePolicyGiven = true;
+                request.ScalePolicyGiven = true;
                 continue;
             }
 
             if (string.Equals(args[i], "planner:keepprojection", StringComparison.OrdinalIgnoreCase))
             {
                 request.PlannerMode = DrawingLayoutPlannerMode.ConstraintKeepProjection;
+                request.PlannerGiven = true;
                 continue;
             }
 
@@ -118,19 +118,30 @@ public static partial class DrawingCommandParsers
             if (string.Equals(args[i], "planner:balanced", StringComparison.OrdinalIgnoreCase))
             {
                 request.PlannerMode = DrawingLayoutPlannerMode.ConstraintBalanced;
+                request.PlannerGiven = true;
                 continue;
             }
 
             if (string.Equals(args[i], "planner:preferscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.PlannerMode = DrawingLayoutPlannerMode.ConstraintPreferScale;
+                request.PlannerGiven = true;
+                continue;
+            }
+
+            // The deprecated planner, by name; "current" is what it was called before.
+            if (string.Equals(args[i], "planner:legacy", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(args[i], "planner:current", StringComparison.OrdinalIgnoreCase))
+            {
+                request.PlannerMode = DrawingLayoutPlannerMode.Legacy;
+                request.PlannerGiven = true;
                 continue;
             }
 
             if (string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;
-                scalePolicyGiven = true;
+                request.ScalePolicyGiven = true;
                 continue;
             }
 
@@ -145,7 +156,7 @@ public static partial class DrawingCommandParsers
         // The constraint planner keeps the views' scales unless a scale policy is asked
         // for by name. Bringing every view to one scale shrinks small views that were
         // drawn larger than the assembly, and the drawing reads worse for it.
-        if (request.PlannerMode != DrawingLayoutPlannerMode.Current && !scalePolicyGiven)
+        if (request.PlannerMode != DrawingLayoutPlannerMode.Legacy && !request.ScalePolicyGiven)
             request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
 
         return request;

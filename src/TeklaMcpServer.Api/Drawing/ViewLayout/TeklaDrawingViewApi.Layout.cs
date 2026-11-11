@@ -166,7 +166,7 @@ public sealed partial class TeklaDrawingViewApi
         // The constraint planner picking the scale: the assembly views get the common
         // scale, and a section -- by its role, so an end view with section arrows
         // too -- keeps its own unless that would leave it smaller than the assembly.
-        if (plannerMode != DrawingLayoutPlannerMode.Current)
+        if (plannerMode != DrawingLayoutPlannerMode.Legacy)
         {
             layoutWorkspace.SetSectionRoleViewIds(FindSectionRoleViewIds(layoutWorkspace));
             if (uniformAllNonDetail && secondaryScalePolicy == SecondaryScalePolicy.SameAsMain)
@@ -284,7 +284,7 @@ public sealed partial class TeklaDrawingViewApi
                 stage: "preserve-scales",
                 oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
                 fitFailedMessage: "Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.",
-                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Current);
+                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Legacy);
             candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
 
@@ -311,7 +311,7 @@ public sealed partial class TeklaDrawingViewApi
                 stage: "keep-current-scales",
                 oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
                 fitFailedMessage: "Could not fit views on sheet at current scales.",
-                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Current);
+                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Legacy);
             candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
 
@@ -394,7 +394,7 @@ public sealed partial class TeklaDrawingViewApi
                 // scale loop further down. The current planner's estimate would hide
                 // from it every scale that estimate rejects, so here the first scale at
                 // which no single view is larger than the sheet is taken as the start.
-                var fits = plannerMode != DrawingLayoutPlannerMode.Current
+                var fits = plannerMode != DrawingLayoutPlannerMode.Legacy
                     || _arrangementSelector.EstimateFit(ctx, actualFrames);
                 TraceScaleCandidate(s, candidateViews, actualFrames, fits);
                 if (!fits && PerfTrace.IsViewLayoutDetailedTraceActive)
@@ -645,7 +645,7 @@ public sealed partial class TeklaDrawingViewApi
             constraintPlannerSelected = false;
             var constraintPlannerPassesScale = false;
             var constraintScaleDecision = Constraints.ConstraintScaleDecision.NoLayout;
-            if (plannerMode != DrawingLayoutPlannerMode.Current)
+            if (plannerMode != DrawingLayoutPlannerMode.Legacy)
             {
                 var planned = TryEvaluateConstraintLayoutCandidate(
                     layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant);
@@ -740,7 +740,7 @@ public sealed partial class TeklaDrawingViewApi
         TraceLayoutCandidateSelection(passiveSelection);
         foreach (var evaluation in passiveSelection.Evaluations)
             TraceLayoutCandidateScore(evaluation);
-        if (plannerMode == DrawingLayoutPlannerMode.Current)
+        if (plannerMode == DrawingLayoutPlannerMode.Legacy)
             TraceConstraintLayoutShadow(layoutWorkspace, passiveSelection.Selected?.Candidate, gap, projectionResult);
         var applyPlan = DrawingLayoutCandidateApplyPlanBuilder.FromEvaluation(passiveSelection.Selected);
 
@@ -892,12 +892,12 @@ public sealed partial class TeklaDrawingViewApi
             PlannerCase = constraintPlannerCase,
             PlannerSectionViewIds = views
                 .Select(static view => view.GetIdentifier().ID)
-                .Where(id => plannerMode != DrawingLayoutPlannerMode.Current
+                .Where(id => plannerMode != DrawingLayoutPlannerMode.Legacy
                     && layoutWorkspace.GetScaleKind(id) == ViewSemanticKind.Section)
                 .ToList(),
             PlannerAssemblyViewIds = views
                 .Select(static view => view.GetIdentifier().ID)
-                .Where(id => plannerMode != DrawingLayoutPlannerMode.Current
+                .Where(id => plannerMode != DrawingLayoutPlannerMode.Legacy
                     && layoutWorkspace.GetScaleKind(id) == ViewSemanticKind.BaseProjected)
                 .ToList(),
             ReservedAreas = new DrawingReservedAreasResult
