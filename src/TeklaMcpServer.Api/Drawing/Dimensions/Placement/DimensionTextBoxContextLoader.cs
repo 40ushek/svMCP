@@ -85,7 +85,7 @@ internal static class DimensionTextBoxContextLoader
         }
     }
 
-    private static List<AABB> ReadVisibleAreaRestrictionBoxes(View view)
+    internal static List<AABB> ReadVisibleAreaRestrictionBoxes(View view)
     {
         var result = new List<AABB>();
         var boxes = view.GetVisibleAreaRestrictionBoxes();

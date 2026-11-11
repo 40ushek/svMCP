@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 
 /// <summary>
@@ -5,10 +7,10 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 /// way they should. Sheet bounds, overlaps and reserved areas are never negotiable
 /// and are not here.
 ///
-/// Prices are in steps of the standard scale series: a price of 1 means "this is
-/// as bad as making the drawing one scale step smaller". Within one scale they
-/// rank layouts against each other; across scales ConstraintScaleSearch adds them
-/// to the scale steps taken. An infinite price forbids the deviation outright.
+/// Within one scale the prices rank layouts against each other. Across scales
+/// ConstraintScaleSearch adds them to <see cref="ScaleStepCost"/> for every step
+/// of the standard scale series taken, so a price says how much of a scale step
+/// the deviation is worth. An infinite price forbids the deviation outright.
 ///
 /// A policy narrows what <see cref="ProjectionStrength"/> allows; it never widens
 /// it. A view with a strong projection link keeps its side under any policy.
@@ -49,6 +51,29 @@ internal sealed class ConstraintLayoutPolicy
     public double LinkBreakCost { get; set; } = 1.5;
 
     /// <summary>
+    /// What making the drawing one scale step smaller costs, in the units of the
+    /// prices above. A readable scale comes before views on their axes: on M.179,
+    /// M.433 and M.123 the user took the larger scale each time, on M.123 with
+    /// three views off the base view's axis (4.5). No drawing so far went the other
+    /// way, so the figure has a lower bound from the journal and no upper one.
+    /// </summary>
+    public double ScaleStepCost { get; set; } = 4.0;
+
+    /// <summary>
+    /// The scales the assembly views may be given, as denominators. A setting of
+    /// this software, not of the drawing's layout in Tekla (the user's decision).
+    /// </summary>
+    public IReadOnlyList<double> MainViewScales { get; set; } = StandardScales;
+
+    /// <summary>The scales the sections may be given. A section is never drawn smaller than the assembly.</summary>
+    public IReadOnlyList<double> SectionViewScales { get; set; } = StandardScales;
+
+    // Without 1:2 and 1:1, on the user's word (2026-11-11): a section at 1:2 beside
+    // an assembly at 1:5 or 1:10 came out too large on M.44, M.433 and M.179.
+    private static readonly double[] StandardScales =
+        { 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 100, 125, 150, 175, 200, 250, 300 };
+
+    /// <summary>
     /// Fill ratio (view area over the sheet area free of tables) below which the
     /// sheet looks empty. The same threshold ROADMAP_DRAWING_LAYOUT.md names.
     /// </summary>
@@ -58,11 +83,12 @@ internal sealed class ConstraintLayoutPolicy
     /// What a completely empty sheet costs. The price falls linearly to nothing as
     /// the fill ratio rises to <see cref="EmptySheetFill"/>. It makes a step to a
     /// smaller scale dearer the emptier the sheet already is, so a half-empty
-    /// drawing is not shrunk further just to keep a view on its axis.
+    /// drawing is not shrunk further just to keep a view on its axis. As much as a
+    /// scale step: an empty sheet is a defect, not a matter of taste.
     /// </summary>
-    public double EmptySheetCost { get; set; } = 2.0;
+    public double EmptySheetCost { get; set; } = 4.0;
 
-    /// <summary>What a layout with this fill ratio costs for leaving the sheet empty, in scale steps.</summary>
+    /// <summary>What a layout with this fill ratio costs for leaving the sheet empty.</summary>
     public double GetEmptinessCost(double fillRatio)
     {
         if (EmptySheetFill <= 0 || fillRatio >= EmptySheetFill)
@@ -72,17 +98,17 @@ internal sealed class ConstraintLayoutPolicy
     }
 
     /// <summary>
-    /// The class defaults. A view may change sides to keep the scale, but a
-    /// projection link is worth more than one scale step: the drawing goes one step
-    /// smaller before a view leaves the base view's axis.
+    /// The class defaults. Views leave their side or the base view's axis to keep
+    /// the scale; the drawing goes a step smaller only when about three of them
+    /// would have to, and the smaller scale does not leave the sheet empty.
     /// </summary>
     public static ConstraintLayoutPolicy Balanced => new();
 
     /// <summary>
     /// For drawings where a readable scale comes first, because dimensions have to
-    /// be legible: a view leaves its side or the base view's axis whenever that
-    /// keeps the drawing one scale step larger. A wrong side is still given up
-    /// before a projection link, and two views off the axis cost more than a step.
+    /// be legible: a view off the base view's axis costs half of what it does under
+    /// <see cref="Balanced"/>, so more views leave it before the scale gives way.
+    /// A wrong side is still given up before a projection link.
     /// </summary>
     public static ConstraintLayoutPolicy PreferScale => new() { LinkBreakCost = 0.75 };
 

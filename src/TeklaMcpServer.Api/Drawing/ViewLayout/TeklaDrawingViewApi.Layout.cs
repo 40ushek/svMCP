@@ -86,17 +86,18 @@ public sealed partial class TeklaDrawingViewApi
     }
 
 
-    /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
-    /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>
-    public FitViewsResult FitViewsToSheet(
+    // The public FitViewsToSheet (TeklaDrawingViewApi.Layout.ScaleVariants.cs) calls
+    // this once, or once per scale combination it tries on the drawing when the
+    // constraint planner picks the scales.
+    private FitViewsResult FitViewsToSheetCore(
         double? margin,
         double gap,
         double titleBlockHeight,
-        DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
-        DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
-        SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain,
-        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current,
-        int plannerVariant = 0)
+        DrawingScalePolicy scalePolicy,
+        DrawingLayoutApplyMode applyMode,
+        SecondaryScalePolicy secondaryScalePolicy,
+        DrawingLayoutPlannerMode plannerMode,
+        int plannerVariant)
     {
         var total = Stopwatch.StartNew();
         using var layoutTrace = PerfTrace.BeginViewLayoutRun(
@@ -161,6 +162,17 @@ public sealed partial class TeklaDrawingViewApi
         var layoutWorkspace = DrawingLayoutWorkspace.From(drawingContext, views);
         layoutWorkspace.SetActualViewRects(actualRects);
         layoutWorkspace.SetParentViewRelations();
+
+        // The constraint planner picking the scale: the assembly views get the common
+        // scale, and a section -- by its role, so an end view with section arrows
+        // too -- keeps its own unless that would leave it smaller than the assembly.
+        if (plannerMode != DrawingLayoutPlannerMode.Current)
+        {
+            layoutWorkspace.SetSectionRoleViewIds(FindSectionRoleViewIds(layoutWorkspace));
+            if (uniformAllNonDetail && secondaryScalePolicy == SecondaryScalePolicy.SameAsMain)
+                secondaryScalePolicy = SecondaryScalePolicy.PreserveIfNotSmaller;
+        }
+
         var effectiveMargin = layoutWorkspace.Margin;
         var sheetW = layoutWorkspace.SheetWidth;
         var sheetH = layoutWorkspace.SheetHeight;
@@ -506,7 +518,11 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutVariantResult? variantResult = null;
         DrawingLayoutCandidateSelection? passiveSelection = null;
         var constraintPlannerSelected = false;
-        var constraintScaleSearch = new Constraints.ConstraintScaleSearch();
+        var constraintPlannerCost = 0.0;
+        var constraintPlannerFill = 0.0;
+        Constraints.ConstraintLayoutCase? constraintPlannerCase = null;
+        var constraintScaleSearch = new Constraints.ConstraintScaleSearch(
+            ResolveConstraintLayoutPolicy(plannerMode).ScaleStepCost);
         var allCandidates = System.Array.Empty<DrawingLayoutCandidate>();
         var scaleAttemptViews = currentViews;
         var scaleAttemptRects = actualRects;
@@ -627,12 +643,14 @@ public sealed partial class TeklaDrawingViewApi
             // earlier scale. With no layout from it the current planner's selection
             // stands and the loop goes on as before.
             constraintPlannerSelected = false;
+            var constraintPlannerPassesScale = false;
             var constraintScaleDecision = Constraints.ConstraintScaleDecision.NoLayout;
             if (plannerMode != DrawingLayoutPlannerMode.Current)
             {
                 var planned = TryEvaluateConstraintLayoutCandidate(
                     layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant);
                 var plannerFeasible = planned.Evaluation?.IsFeasible == true;
+                constraintPlannerCase = planned.Case;
                 constraintScaleDecision = constraintScaleSearch.Offer(
                     attemptIndex,
                     isLast: attemptIndex == scalesToTry.Count - 1,
@@ -647,14 +665,23 @@ public sealed partial class TeklaDrawingViewApi
                     allCandidates = allCandidates.Append(planned.Evaluation!.Candidate).ToArray();
                     passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(new[] { planned.Evaluation.Candidate });
                     constraintPlannerSelected = true;
+                    constraintPlannerCost = planned.Cost;
+                    constraintPlannerFill = planned.Evaluation!.Score.Breakdown.FillRatioRaw;
                     selectedScale = attemptScale;
                 }
 
                 if (constraintScaleDecision == Constraints.ConstraintScaleDecision.GoBack)
                     scalesToTry.Insert(attemptIndex + 1, scalesToTry[constraintScaleSearch.BestIndex]);
 
+                // The planner laid the views out and found no room at this scale. While a
+                // smaller scale is left, it gets its turn there; the current planner's
+                // layout at this scale is not taken in its place.
+                constraintPlannerPassesScale = planned.NoFit
+                    && constraintScaleDecision == Constraints.ConstraintScaleDecision.NoLayout
+                    && attemptIndex < scalesToTry.Count - 1;
+
                 PerfTrace.Write("api-view", "constraint_layout_scale", 0,
-                    $"scale=1:{attemptScale:0.###} attempt={attemptIndex} decision={constraintScaleDecision} bestAttempt={constraintScaleSearch.BestIndex}");
+                    $"scale=1:{attemptScale:0.###} attempt={attemptIndex} decision={constraintScaleDecision} bestAttempt={constraintScaleSearch.BestIndex} passesScale={(constraintPlannerPassesScale ? 1 : 0)}");
             }
 
             var constraintPlannerMovesOn = constraintScaleDecision
@@ -670,7 +697,7 @@ public sealed partial class TeklaDrawingViewApi
                 v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
             variantResult = winningVariant;
 
-            if (anyFeasible && !constraintPlannerMovesOn)
+            if (anyFeasible && !constraintPlannerMovesOn && !constraintPlannerPassesScale)
             {
                 selectedScale = attemptScale;
                 break;
@@ -860,6 +887,19 @@ public sealed partial class TeklaDrawingViewApi
             ProjectionApplied = projectionResult?.AppliedMoves ?? 0,
             ProjectionSkipped = projectionResult?.SkippedMoves ?? 0,
             ProjectionDiagnostics = projectionResult?.Diagnostics.Count > 0 ? projectionResult.Diagnostics : null,
+            PlannerCost = constraintPlannerSelected ? constraintPlannerCost : (double?)null,
+            PlannerFill = constraintPlannerFill,
+            PlannerCase = constraintPlannerCase,
+            PlannerSectionViewIds = views
+                .Select(static view => view.GetIdentifier().ID)
+                .Where(id => plannerMode != DrawingLayoutPlannerMode.Current
+                    && layoutWorkspace.GetScaleKind(id) == ViewSemanticKind.Section)
+                .ToList(),
+            PlannerAssemblyViewIds = views
+                .Select(static view => view.GetIdentifier().ID)
+                .Where(id => plannerMode != DrawingLayoutPlannerMode.Current
+                    && layoutWorkspace.GetScaleKind(id) == ViewSemanticKind.BaseProjected)
+                .ToList(),
             ReservedAreas = new DrawingReservedAreasResult
             {
                 SheetWidth  = sheetW,

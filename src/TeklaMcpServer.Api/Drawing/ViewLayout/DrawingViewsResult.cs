@@ -123,6 +123,21 @@ public sealed class FitViewsResult
     public long                TotalMs             { get; set; }
     public Dictionary<string, long>? PhaseMs       { get; set; }
     internal DrawingCaseLayoutDiagnostics? LayoutDiagnostics { get; set; }
+
+    /// <summary>What the applied layout's deviations cost when it is the constraint planner's; null otherwise.</summary>
+    internal double? PlannerCost { get; set; }
+
+    /// <summary>Fill ratio of that layout; 0 when the applied layout is not the constraint planner's.</summary>
+    internal double PlannerFill { get; set; }
+
+    /// <summary>With a constraint planner: the views that are sections by kind or by role. Empty otherwise.</summary>
+    internal IReadOnlyList<int> PlannerSectionViewIds { get; set; } = System.Array.Empty<int>();
+
+    /// <summary>With a constraint planner: the base view and its projections that are not sections by role.</summary>
+    internal IReadOnlyList<int> PlannerAssemblyViewIds { get; set; } = System.Array.Empty<int>();
+
+    /// <summary>With a constraint planner: what it was given at the last scale it looked at; null when it never ran.</summary>
+    internal Constraints.ConstraintLayoutCase? PlannerCase { get; set; }
 }
 
 public sealed class ArrangedView

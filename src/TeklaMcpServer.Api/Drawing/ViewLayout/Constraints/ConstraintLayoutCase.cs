@@ -80,6 +80,21 @@ internal sealed class ConstraintLayoutCaseModelAnchor
     }
 }
 
+/// <summary>
+/// How much of the model a view draws along its own axes, in model millimeters:
+/// for a shortened view, the stretches it keeps, without those it leaves out.
+/// Over the scale this is the part of the frame that changes with the scale; the
+/// rest of the frame -- marks, dimensions, the gaps at the breaks -- does not.
+/// </summary>
+internal sealed class ConstraintLayoutCaseModelExtent
+{
+    public int ViewId { get; set; }
+
+    public double Width { get; set; }
+
+    public double Height { get; set; }
+}
+
 /// <summary>The side of the base view a view belongs on by the planner's own rules.</summary>
 internal sealed class ConstraintLayoutCaseSide
 {
@@ -116,6 +131,9 @@ internal sealed class ConstraintLayoutCase
     /// by frame centers.
     /// </summary>
     public List<ConstraintLayoutCaseModelAnchor> ModelAnchors { get; set; } = new();
+
+    /// <summary>Per view that could be read; a view without one has its frame scaled proportionally.</summary>
+    public List<ConstraintLayoutCaseModelExtent> ModelExtents { get; set; } = new();
 
     /// <summary>
     /// Sides by the planner's rules: a section or an end view where its arrows
@@ -158,6 +176,11 @@ internal static class ConstraintLayoutCaseStore
         File.WriteAllText(path, JsonSerializer.Serialize(layoutCase, JsonOptions));
         return path;
     }
+
+    /// <summary>A copy that shares nothing with the original.</summary>
+    public static ConstraintLayoutCase Clone(ConstraintLayoutCase layoutCase)
+        => JsonSerializer.Deserialize<ConstraintLayoutCase>(JsonSerializer.Serialize(layoutCase, JsonOptions), JsonOptions)
+            ?? throw new InvalidOperationException("Layout case could not be copied.");
 
     public static ConstraintLayoutCase Load(string path)
         => JsonSerializer.Deserialize<ConstraintLayoutCase>(File.ReadAllText(path), JsonOptions)

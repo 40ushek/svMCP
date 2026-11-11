@@ -65,6 +65,13 @@ internal sealed class DrawingLayoutWorkspace
     public IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>> GridAxesByViewId { get; private set; } =
         new Dictionary<int, IReadOnlyList<GridAxisInfo>>();
 
+    /// <summary>
+    /// Views that are sections by their role on the drawing whatever their Tekla
+    /// type (an end view with section arrows), named by the constraint planner when
+    /// it picks the scale. Empty otherwise.
+    /// </summary>
+    public IReadOnlyCollection<int> SectionRoleViewIds { get; private set; } = Array.Empty<int>();
+
     private ViewTopologyGraph? _runtimeTopology;
 
     public double SheetWidth => Source.Sheet.Width;
@@ -152,6 +159,18 @@ internal sealed class DrawingLayoutWorkspace
         RuntimeViewsById = runtimeViews.ToDictionary(static view => view.GetIdentifier().ID);
         _runtimeTopology = null;
     }
+
+    public void SetSectionRoleViewIds(IReadOnlyCollection<int> viewIds)
+    {
+        SectionRoleViewIds = viewIds ?? throw new ArgumentNullException(nameof(viewIds));
+    }
+
+    /// <summary>
+    /// The kind that decides a view's scale: a view with a section's role takes its
+    /// scale as a section does, the others by their own kind.
+    /// </summary>
+    public ViewSemanticKind GetScaleKind(int viewId)
+        => SectionRoleViewIds.Contains(viewId) ? ViewSemanticKind.Section : GetSemanticKind(viewId);
 
     public void SetGridAxes(IReadOnlyDictionary<int, IReadOnlyList<GridAxisInfo>> gridAxesByViewId)
     {

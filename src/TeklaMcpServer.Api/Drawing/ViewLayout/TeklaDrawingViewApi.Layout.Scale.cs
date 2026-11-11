@@ -361,7 +361,7 @@ public sealed partial class TeklaDrawingViewApi
             var targetScale = resolvedScales.TryGetValue(id, out var rs) ? rs
                 : ResolveTargetScale(
                     view,
-                    workspace.GetSemanticKind(id),
+                    workspace.GetScaleKind(id),
                     candidateScale,
                     uniformAllNonDetail,
                     workspace.OriginalScalesById,
@@ -416,7 +416,7 @@ public sealed partial class TeklaDrawingViewApi
                 : (view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0);
             var targetScale = ResolveTargetScale(
                 view,
-                workspace.GetSemanticKind(id),
+                workspace.GetScaleKind(id),
                 candidateScale,
                 uniformAllNonDetail,
                 workspace.OriginalScalesById,
@@ -473,7 +473,7 @@ public sealed partial class TeklaDrawingViewApi
 
             result[id] = ResolveTargetScale(
                 view,
-                workspace.GetSemanticKind(id),
+                workspace.GetScaleKind(id),
                 selectedScale,
                 uniformAllNonDetail,
                 workspace.OriginalScalesById,

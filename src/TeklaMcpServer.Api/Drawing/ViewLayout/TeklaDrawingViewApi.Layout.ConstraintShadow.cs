@@ -17,9 +17,10 @@ public sealed partial class TeklaDrawingViewApi
     /// view, a view kind it does not handle yet on the sheet, or nothing that fits
     /// under the policy. A failure is traced and treated as "no layout". Cost is
     /// what the layout's deviations cost under the policy and Emptiness what it
-    /// costs for leaving the sheet empty, both in scale steps.
+    /// costs for leaving the sheet empty, both in the policy's prices. NoFit tells
+    /// "laid the views out and found no room" from the other reasons.
     /// </summary>
-    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness) TryEvaluateConstraintLayoutCandidate(
+    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness, bool NoFit, ConstraintLayoutCase? Case) TryEvaluateConstraintLayoutCandidate(
         DrawingLayoutWorkspace workspace,
         DrawingLayoutVariantResult currentVariant,
         double gap,
@@ -29,18 +30,15 @@ public sealed partial class TeklaDrawingViewApi
     {
         var stopwatch = Stopwatch.StartNew();
         string outcome;
+        var noFit = false;
+        ConstraintLayoutCase? layoutCase = null;
         try
         {
             var reference = currentVariant.Candidates.LastOrDefault();
-            var layoutCase = reference == null
+            layoutCase = reference == null
                 ? null
                 : BuildConstraintLayoutCase(workspace, reference, gap, currentVariant.ProjectionResult);
-            var policy = plannerMode switch
-            {
-                DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
-                DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
-                _ => ConstraintLayoutPolicy.Balanced
-            };
+            var policy = ResolveConstraintLayoutPolicy(plannerMode);
             var result = layoutCase == null ? null : ConstraintLayoutShadow.Evaluate(layoutCase, policy, variant);
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
@@ -50,9 +48,12 @@ public sealed partial class TeklaDrawingViewApi
             else if (result.SkippedViews > 0)
                 outcome = $"skipped reason=unsupported-views count={result.SkippedViews}";
             else if (result.Best == null)
-                outcome = result.Plan.Candidates.Count > 0
-                    ? $"no-such-variant variant={variant} variants={result.Plan.Candidates.Count}"
-                    : $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}";
+            {
+                noFit = result.Plan.Candidates.Count == 0;
+                outcome = noFit
+                    ? $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}"
+                    : $"no-such-variant variant={variant} variants={result.Plan.Candidates.Count}";
+            }
             else
             {
                 var fill = result.Best.Score.Breakdown.FillRatioRaw;
@@ -75,7 +76,7 @@ public sealed partial class TeklaDrawingViewApi
                         variant,
                         result.Plan.Candidates.Count,
                         string.Join(",", result.BestPlan.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}"))));
-                return (result.Best, result.BestPlan.Cost, emptiness);
+                return (result.Best, result.BestPlan.Cost, emptiness, false, layoutCase);
             }
         }
         catch (System.Exception exception)
@@ -88,7 +89,59 @@ public sealed partial class TeklaDrawingViewApi
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
             string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} result={2}", scale, plannerMode, outcome));
-        return (null, 0.0, 0.0);
+        return (null, 0.0, 0.0, noFit, layoutCase);
+    }
+
+    private static ConstraintLayoutPolicy ResolveConstraintLayoutPolicy(DrawingLayoutPlannerMode plannerMode)
+        => plannerMode switch
+        {
+            DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
+            DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
+            _ => ConstraintLayoutPolicy.Balanced
+        };
+
+    /// <summary>
+    /// The view the layout is built around: the base view as the current path picks
+    /// it, and on a drawing that has none -- sections only, as of a pipe -- the
+    /// section that draws the most of the model.
+    /// </summary>
+    private static View? SelectConstraintLayoutBaseView(DrawingLayoutWorkspace workspace)
+    {
+        var baseView = BaseViewSelection.Select(workspace.RuntimeViews).View;
+        if (baseView != null)
+            return baseView;
+
+        return workspace.RuntimeViews
+            .Where(view => IsConstraintLayoutViewKind(workspace, view))
+            .OrderByDescending(view =>
+            {
+                var size = workspace.GetSelectedFrameSize(view.GetIdentifier().ID, view.Width, view.Height);
+                var scale = view.Attributes.Scale > 0 ? view.Attributes.Scale : 1.0;
+                return size.Width * size.Height * scale * scale;
+            })
+            .ThenBy(static view => view.GetIdentifier().ID)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Section marks of every view but the base view, not only of the views the
+    /// current path classifies as sections: an end view with section arrows is one too.
+    /// </summary>
+    private static DetailRelationSet BuildConstraintLayoutSectionMarks(DrawingLayoutWorkspace workspace, View baseView)
+        => DetailRelationResolver.BuildSectionMarkRelations(
+            workspace.RuntimeViews,
+            workspace.RuntimeViews.Where(view =>
+                !ReferenceEquals(view, baseView) && IsConstraintLayoutViewKind(workspace, view)));
+
+    /// <summary>The views that are sections by their role: another view carries their section mark.</summary>
+    private static HashSet<int> FindSectionRoleViewIds(DrawingLayoutWorkspace workspace)
+    {
+        var baseView = SelectConstraintLayoutBaseView(workspace);
+        return baseView == null
+            ? new HashSet<int>()
+            : BuildConstraintLayoutSectionMarks(workspace, baseView).All
+                .Select(static relation => relation.DetailView.GetIdentifier().ID)
+                .ToHashSet();
     }
 
     private static ConstraintLayoutCase? BuildConstraintLayoutCase(
@@ -97,16 +150,11 @@ public sealed partial class TeklaDrawingViewApi
         double gap,
         ProjectionAlignmentResult? referenceProjection)
     {
-        var baseView = BaseViewSelection.Select(workspace.RuntimeViews).View;
+        var baseView = SelectConstraintLayoutBaseView(workspace);
         if (baseView == null)
             return null;
 
-        // Every view with a section mark on another view, not only the views the
-        // current path classifies as sections: an end view with section arrows is one too.
-        var sectionMarks = DetailRelationResolver.BuildSectionMarkRelations(
-            workspace.RuntimeViews,
-            workspace.RuntimeViews.Where(view =>
-                !ReferenceEquals(view, baseView) && IsConstraintLayoutViewKind(workspace, view)));
+        var sectionMarks = BuildConstraintLayoutSectionMarks(workspace, baseView);
 
         var shorteningByOwnerId = new Dictionary<int, ViewShorteningCoordinateMapper?>();
         return new ConstraintLayoutCase
@@ -126,6 +174,7 @@ public sealed partial class TeklaDrawingViewApi
                 .Select(relation => ToConstraintLayoutCaseAnchor(relation, shorteningByOwnerId))
                 .ToList(),
             ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
+            ModelExtents = BuildConstraintLayoutModelExtents(workspace, reference),
             ViewSides = BuildConstraintLayoutViewSides(workspace, baseView, sectionMarks),
             ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
         };
@@ -362,7 +411,7 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutCandidate reference)
     {
         var anchors = new List<ConstraintLayoutCaseModelAnchor>();
-        var baseSystem = BaseViewSelection.Select(workspace.RuntimeViews).View?.ViewCoordinateSystem;
+        var baseSystem = SelectConstraintLayoutBaseView(workspace)?.ViewCoordinateSystem;
         foreach (var view in reference.Views)
         {
             var coordinateSystem = workspace.TryGetRuntimeView(view.Id)?.ViewCoordinateSystem;
@@ -392,6 +441,59 @@ public sealed partial class TeklaDrawingViewApi
         }
 
         return anchors;
+    }
+
+    /// <summary>
+    /// How much of the model each view draws: its visible areas, which for a
+    /// shortened view are the stretches it keeps. A view that cannot be read is
+    /// left out.
+    /// </summary>
+    private static List<ConstraintLayoutCaseModelExtent> BuildConstraintLayoutModelExtents(
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutCandidate reference)
+    {
+        var extents = new List<ConstraintLayoutCaseModelExtent>();
+        foreach (var view in reference.Views)
+        {
+            var runtimeView = workspace.TryGetRuntimeView(view.Id);
+            if (runtimeView == null)
+                continue;
+
+            try
+            {
+                var boxes = DimensionTextBoxContextLoader.ReadVisibleAreaRestrictionBoxes(runtimeView);
+                if (boxes.Count == 0 && runtimeView.RestrictionBox != null)
+                    boxes.Add(runtimeView.RestrictionBox);
+
+                var width = CoveredLength(boxes.Select(static box => (box.MinPoint.X, box.MaxPoint.X)));
+                var height = CoveredLength(boxes.Select(static box => (box.MinPoint.Y, box.MaxPoint.Y)));
+                if (width > 0 && height > 0)
+                    extents.Add(new ConstraintLayoutCaseModelExtent { ViewId = view.Id, Width = width, Height = height });
+            }
+            catch (System.Exception)
+            {
+                // Without the extent the frame is scaled proportionally.
+            }
+        }
+
+        return extents;
+    }
+
+    /// <summary>The total length the intervals cover, overlaps counted once.</summary>
+    private static double CoveredLength(IEnumerable<(double Min, double Max)> intervals)
+    {
+        var covered = 0.0;
+        var reach = double.NegativeInfinity;
+        foreach (var (min, max) in intervals.Where(static interval => interval.Max > interval.Min).OrderBy(static interval => interval.Min))
+        {
+            if (max <= reach)
+                continue;
+
+            covered += max - System.Math.Max(min, reach);
+            reach = max;
+        }
+
+        return covered;
     }
 
     private static bool IsAlongAnAxisOf(Tekla.Structures.Geometry3d.CoordinateSystem system, Tekla.Structures.Geometry3d.Vector direction)

@@ -17,18 +17,24 @@ internal enum ConstraintScaleDecision
 
 /// <summary>
 /// Weighs scale against the policy's prices while fit_views_to_sheet walks its
-/// scales from the largest down. A layout's total is the number of scale steps
-/// taken so far, plus what its deviations cost, plus what it costs for leaving the
-/// sheet empty, all in scale steps; the smallest total wins. So a layout that had
-/// to break a projection link (1.5) loses to one a single step smaller that breaks
-/// nothing (1.0) -- unless the smaller scale leaves the sheet so empty that the
-/// step is no longer worth it.
+/// scales from the largest down. A layout's total is what the scale steps taken
+/// so far cost, plus what its deviations cost, plus what it costs for leaving the
+/// sheet empty; the smallest total wins. So a layout loses to one a step smaller
+/// that gives nothing up only when its deviations cost more than the step --
+/// and more than that again when the smaller scale leaves the sheet empty.
 /// </summary>
 internal sealed class ConstraintScaleSearch
 {
     private const double Epsilon = 1e-9;
 
+    private readonly double _stepCost;
     private double _bestTotal = double.PositiveInfinity;
+
+    /// <param name="scaleStepCost">What one step to a smaller scale costs, in the units of the layout prices.</param>
+    public ConstraintScaleSearch(double scaleStepCost = 1.0)
+    {
+        _stepCost = scaleStepCost;
+    }
 
     /// <summary>Attempt number of the best layout so far; -1 when there is none.</summary>
     public int BestIndex { get; private set; } = -1;
@@ -45,10 +51,11 @@ internal sealed class ConstraintScaleSearch
         if (IsReturning)
             return cost.HasValue ? ConstraintScaleDecision.Select : ConstraintScaleDecision.NoLayout;
 
-        if (cost.HasValue && index + cost.Value + emptiness < _bestTotal - Epsilon)
+        var steps = index * _stepCost;
+        if (cost.HasValue && steps + cost.Value + emptiness < _bestTotal - Epsilon)
         {
             BestIndex = index;
-            _bestTotal = index + cost.Value + emptiness;
+            _bestTotal = steps + cost.Value + emptiness;
         }
 
         if (BestIndex < 0)
@@ -57,7 +64,7 @@ internal sealed class ConstraintScaleSearch
         // A smaller scale can only win if one more step, with nothing given up, beats
         // the best so far. Views shrink with the scale, so the sheet will be at least
         // as empty there as it is here.
-        if (!isLast && index + 1 + (cost.HasValue ? emptiness : 0.0) < _bestTotal - Epsilon)
+        if (!isLast && steps + _stepCost + (cost.HasValue ? emptiness : 0.0) < _bestTotal - Epsilon)
             return ConstraintScaleDecision.LookAhead;
 
         if (BestIndex == index)
