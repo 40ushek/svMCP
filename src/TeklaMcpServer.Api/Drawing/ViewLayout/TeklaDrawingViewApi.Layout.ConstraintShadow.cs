@@ -20,7 +20,7 @@ public sealed partial class TeklaDrawingViewApi
     /// costs for leaving the sheet empty, both in the policy's prices. NoFit tells
     /// "laid the views out and found no room" from the other reasons.
     /// </summary>
-    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness, bool NoFit, ConstraintLayoutCase? Case) TryEvaluateConstraintLayoutCandidate(
+    private (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness, bool NoFit, ConstraintLayoutCase? Case) TryEvaluateConstraintLayoutCandidate(
         DrawingLayoutWorkspace workspace,
         DrawingLayoutVariantResult currentVariant,
         double gap,
@@ -88,17 +88,28 @@ public sealed partial class TeklaDrawingViewApi
             "api-view",
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
-            string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} result={2}", scale, plannerMode, outcome));
+            string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} oppositeSide={3} result={2}", scale, plannerMode, outcome, PlannerAllowOppositeSide ? 1 : 0));
         return (null, 0.0, 0.0, noFit, layoutCase);
     }
 
-    private static ConstraintLayoutPolicy ResolveConstraintLayoutPolicy(DrawingLayoutPlannerMode plannerMode)
-        => plannerMode switch
+    /// <summary>
+    /// Constraint planner setting: whether a section may stand on the side of its
+    /// host view opposite its own. Set by the caller before FitViewsToSheet; the
+    /// planned settings file will fill settings like this one.
+    /// </summary>
+    public bool PlannerAllowOppositeSide { get; set; } = true;
+
+    private ConstraintLayoutPolicy ResolveConstraintLayoutPolicy(DrawingLayoutPlannerMode plannerMode)
+    {
+        var policy = plannerMode switch
         {
             DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
             DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
             _ => ConstraintLayoutPolicy.Balanced
         };
+        policy.AllowOppositeSide = PlannerAllowOppositeSide;
+        return policy;
+    }
 
     /// <summary>
     /// The view the layout is built around: the base view as the current path picks

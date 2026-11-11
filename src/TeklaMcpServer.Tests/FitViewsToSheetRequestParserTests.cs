@@ -67,6 +67,16 @@ public sealed class FitViewsToSheetRequestParserTests
     }
 
     [Fact]
+    public void OppositeSideIsAllowed_UnlessTheTokenForbidsIt()
+    {
+        var byDefault = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0"]);
+        var forbidden = DrawingCommandParsers.ParseFitViewsToSheetRequest(["fit_views_to_sheet", "auto", "4", "0", "no-opposite-side"]);
+
+        Assert.True(byDefault.PlannerAllowOppositeSide);
+        Assert.False(forbidden.PlannerAllowOppositeSide);
+    }
+
+    [Fact]
     public void VariantToken_PicksALaterLayout_AndGarbageIsIgnored()
     {
         var chosen = DrawingCommandParsers.ParseFitViewsToSheetRequest(

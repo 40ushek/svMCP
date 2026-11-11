@@ -416,6 +416,9 @@ public sealed class FitViewsToSheetRequest
     public DrawingLayoutPlannerMode PlannerMode { get; set; } = DrawingLayoutPlannerMode.ConstraintBalanced;
     public int PlannerVariant { get; set; }
 
+    /// <summary>False when the caller forbade sections on the side opposite their own.</summary>
+    public bool PlannerAllowOppositeSide { get; set; } = true;
+
     /// <summary>True when the caller named a planner; false when the default stands.</summary>
     public bool PlannerGiven { get; set; }
 

@@ -29,6 +29,16 @@ internal sealed class ConstraintLayoutPolicy
     public double SideDeviationCost { get; set; } = 0.5;
 
     /// <summary>
+    /// Whether a view may stand on the side of its host view opposite its own, in
+    /// line or in a stack. Off, a section whose arrows point left is never put to
+    /// the right: it stays on its side, goes under or above the views there, or
+    /// beside its cut -- and when none of that fits, there is no layout. An option
+    /// the user asked for (2026-11-11, drawing M.51): "должна быть опция, которая
+    /// запрещает такое движение -- сечения с противоположной стороны".
+    /// </summary>
+    public bool AllowOppositeSide { get; set; } = true;
+
+    /// <summary>
     /// A section beside the view that carries its section mark, level with its own
     /// section line: off the side its arrows point to, but next to the place where
     /// it is cut, where the reader looks for it first. Cheaper than any other

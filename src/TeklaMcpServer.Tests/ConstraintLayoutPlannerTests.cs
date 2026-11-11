@@ -92,6 +92,22 @@ public sealed class ConstraintLayoutPlannerTests
     }
 
     [Fact]
+    public void WithOppositeSideForbidden_ASectionIsNeverPutAcrossTheBaseView()
+    {
+        var bounds = new ReservedRect(0, 0, 400, 300);
+        var input = Input(bounds, Section(SectionA, orderKey: 10));
+        input.Policy = new ConstraintLayoutPolicy { AllowOppositeSide = false };
+
+        var plan = ConstraintLayoutPlanner.Plan(input);
+
+        // What is left of the default list: in line, the stack on its own side, the
+        // stack below. Neither "inline-Left" nor "stack-Left".
+        Assert.Equal(
+            new[] { "inline-Right", "stack-Right", "stack-Bottom" },
+            plan.Candidates.Select(static c => c.Slots[SectionA].ToString()));
+    }
+
+    [Fact]
     public void PolicyCannotLoosenAStrongProjectionLink()
     {
         var input = Input(

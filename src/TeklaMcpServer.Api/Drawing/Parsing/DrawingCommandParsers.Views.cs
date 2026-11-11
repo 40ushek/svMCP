@@ -129,6 +129,12 @@ public static partial class DrawingCommandParsers
                 continue;
             }
 
+            if (string.Equals(args[i], "no-opposite-side", StringComparison.OrdinalIgnoreCase))
+            {
+                request.PlannerAllowOppositeSide = false;
+                continue;
+            }
+
             // The deprecated planner, by name; "current" is what it was called before.
             if (string.Equals(args[i], "planner:legacy", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(args[i], "planner:current", StringComparison.OrdinalIgnoreCase))

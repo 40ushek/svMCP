@@ -181,6 +181,7 @@ internal sealed partial class DrawingCommandHandler
         {
             if (!api.IsConstraintPlannerDefault())
                 request.UseLegacyDefaults();
+            api.PlannerAllowOppositeSide = request.PlannerAllowOppositeSide;
 
             var result = api.FitViewsToSheet(
                 request.Margin,
@@ -242,6 +243,7 @@ internal sealed partial class DrawingCommandHandler
         {
             if (!api.IsConstraintPlannerDefault())
                 request.UseLegacyDefaults();
+            api.PlannerAllowOppositeSide = request.PlannerAllowOppositeSide;
 
             var result = api.FitViewsToSheet(
                 request.Margin,

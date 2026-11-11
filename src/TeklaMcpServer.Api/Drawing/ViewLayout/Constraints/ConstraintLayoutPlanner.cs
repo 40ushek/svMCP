@@ -335,9 +335,11 @@ internal static class ConstraintLayoutPlanner
                 .Select(side => (new ViewSlot(side, isStack: false, isAtCut: true), policy.BesideCutCost)));
         }
 
-        if (!double.IsPositiveInfinity(policy.SideDeviationCost))
-            options.Add((new ViewSlot(Opposite(view.PreferredSide), isStack: false), policy.SideDeviationCost));
+        var opposite = Opposite(view.PreferredSide);
+        if (policy.AllowOppositeSide && !double.IsPositiveInfinity(policy.SideDeviationCost))
+            options.Add((new ViewSlot(opposite, isStack: false), policy.SideDeviationCost));
         options.AddRange(StackSlots
+            .Where(slot => policy.AllowOppositeSide || slot.Side != opposite)
             .Select(slot => (slot, slot.Side == view.PreferredSide ? policy.OwnSideStackCost : policy.LinkBreakCost))
             .Where(static option => !double.IsPositiveInfinity(option.Item2)));
 

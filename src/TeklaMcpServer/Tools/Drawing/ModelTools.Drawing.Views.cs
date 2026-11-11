@@ -403,7 +403,8 @@ public static partial class ModelTools
         [Description("Scale policy for secondary views (Section/Detail) relative to main scale. SameAsMain=default (no change), PreserveLargerIfFits=keep author scale if larger and fits, PreserveIfNotSmaller=keep if not smaller than main, AllowLargerIfFits=pick best larger scale.")] string secondaryScalePolicy = "SameAsMain",
         [Description("Layout planner. Default=Balanced on an assembly drawing, Legacy on other drawing kinds. Balanced=constraint planner, a section may change sides but keeps the projection link where it can. KeepProjection=constraint planner, no view leaves its side or the base view's axis. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. Legacy=the deprecated planner used before the constraint planner; kept as the fallback. The constraint planner handles the base view, its projections, sections, details and a 3D view; where it has no layout the legacy planner's result is used.")] string planner = "Default",
         [Description("With a constraint planner: which of the layouts that fit to use. 0=the planner's own choice, 1, 2, ...=the next ones, each giving up a little more. Run with dryRun=true to look at a variant before applying it.")] int plannerVariant = 0,
-        [Description("With a constraint planner the views keep their scales by default. Set true to let it choose the scales of the assembly views and of the sections.")] bool plannerRescale = false)
+        [Description("With a constraint planner the views keep their scales by default. Set true to let it choose the scales of the assembly views and of the sections.")] bool plannerRescale = false,
+        [Description("With a constraint planner: whether a section may stand on the side of the base view opposite its own (a section whose arrows point left put to the right). Default: true. Set false to forbid it; the section then stays on its side, under or above the views there, or beside its cut.")] bool plannerAllowOppositeSide = true)
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
@@ -425,6 +426,8 @@ public static partial class ModelTools
             tokens.Add("planner:legacy");
         if (plannerVariant > 0)
             tokens.Add("planner-variant:" + plannerVariant.ToString(CultureInfo.InvariantCulture));
+        if (!plannerAllowOppositeSide)
+            tokens.Add("no-opposite-side");
         var json = RunBridge(tokens.ToArray());
         try
         {
