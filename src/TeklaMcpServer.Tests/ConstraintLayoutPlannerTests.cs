@@ -52,6 +52,53 @@ public sealed class ConstraintLayoutPlannerTests
     }
 
     [Fact]
+    public void KeepProjectionPolicy_RefusesToMoveASection_WhereTheDefaultPolicyMovesIt()
+    {
+        var input = Input(
+            new ReservedRect(0, 0, 270, 250),
+            Section(SectionA, orderKey: 10),
+            Section(SectionB, orderKey: 20));
+        Assert.NotEmpty(ConstraintLayoutPlanner.Plan(input).Candidates);
+
+        input.Policy = ConstraintLayoutPolicy.KeepProjection;
+        var strict = ConstraintLayoutPlanner.Plan(input);
+
+        Assert.Empty(strict.Candidates);
+        Assert.Equal(1, strict.EvaluatedTopologies);
+        Assert.Equal(308, strict.PreferredRequiredWidth, 9);
+    }
+
+    [Fact]
+    public void Candidates_ComeCheapestFirst_ByThePolicyPrices()
+    {
+        var bounds = new ReservedRect(0, 0, 400, 300);
+
+        var byDefault = ConstraintLayoutPlanner.Plan(Input(bounds, Section(SectionA, orderKey: 10)));
+        // Default: a wrong side (0.5) is given up before a projection link (1.5).
+        Assert.Equal(new[] { 0.0, 0.5, 1.5, 1.5, 1.5 }, byDefault.Candidates.Select(static c => c.Cost));
+        Assert.Equal("inline-Right", byDefault.Candidates[0].Slots[SectionA].ToString());
+        Assert.Equal("inline-Left", byDefault.Candidates[1].Slots[SectionA].ToString());
+
+        var input = Input(bounds, Section(SectionA, orderKey: 10));
+        input.Policy = new ConstraintLayoutPolicy { SideDeviationCost = 2, LinkBreakCost = 1 };
+        var linkCheaper = ConstraintLayoutPlanner.Plan(input);
+        Assert.Equal(new[] { 0.0, 1.0, 1.0, 1.0, 2.0 }, linkCheaper.Candidates.Select(static c => c.Cost));
+        Assert.Equal("stack-Left", linkCheaper.Candidates[1].Slots[SectionA].ToString());
+        Assert.Equal("inline-Left", linkCheaper.Candidates[4].Slots[SectionA].ToString());
+    }
+
+    [Fact]
+    public void PolicyCannotLoosenAStrongProjectionLink()
+    {
+        var input = Input(
+            new ReservedRect(0, 0, 230, 250),
+            Section(SectionA, orderKey: 10, strength: ProjectionStrength.Strong));
+        input.Policy = new ConstraintLayoutPolicy { SideDeviationCost = 0, LinkBreakCost = 0 };
+
+        Assert.Empty(ConstraintLayoutPlanner.Plan(input).Candidates);
+    }
+
+    [Fact]
     public void StrongViewThatDoesNotFit_GivesNoCandidate_AndReportsRequiredSize()
     {
         var plan = ConstraintLayoutPlanner.Plan(Input(

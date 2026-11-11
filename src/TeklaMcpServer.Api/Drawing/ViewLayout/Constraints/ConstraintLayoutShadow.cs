@@ -22,18 +22,26 @@ internal sealed class ConstraintLayoutShadowResult
 
     public ConstraintLayoutPlanCandidate? BestPlan { get; set; }
 
-    /// <summary>
-    /// Views of the current layout that sit in line on their preferred side and have
-    /// a model anchor, i.e. views the current path has projection-aligned itself.
-    /// </summary>
+    /// <summary>Views with a known side and a model anchor, compared with the current layout.</summary>
     public int AlignmentCheckedViews { get; set; }
 
     /// <summary>
-    /// Largest gap, over those views, between the offset the model anchors predict
-    /// and the offset the current layout actually has. Near zero means the anchors
-    /// describe the same alignment the current path produces.
+    /// Of those, the views whose offset from the base view in the current layout
+    /// equals the offset the model anchors predict. These are the views the current
+    /// path projection-aligned, and each one confirms the anchors. The rest it left
+    /// unaligned: placed freely, or centered on the base view's frame.
     /// </summary>
+    public int AlignmentMatchedViews { get; set; }
+
+    /// <summary>Largest gap between predicted and actual offset over the checked views.</summary>
     public double AlignmentResidualMax { get; set; }
+
+    /// <summary>
+    /// False when the current path ran no projection alignment on the reference
+    /// (a dry run that leaves mixed scales, for one). The residual then compares the
+    /// anchors with an unaligned layout and says nothing about them.
+    /// </summary>
+    public bool AlignmentCheckValid { get; set; }
 }
 
 /// <summary>
@@ -45,8 +53,13 @@ internal static class ConstraintLayoutShadow
 {
     public const string CandidateName = "constraint-layout:shadow";
 
+    /// <summary>Sheet millimeters within which a predicted and an actual offset count as the same.</summary>
+    private const double AlignmentMatchTolerance = 0.05;
+
     /// <returns>Null when the base view is not among the case's views or has no frame rectangle.</returns>
-    public static ConstraintLayoutShadowResult? Evaluate(ConstraintLayoutCase layoutCase)
+    public static ConstraintLayoutShadowResult? Evaluate(
+        ConstraintLayoutCase layoutCase,
+        ConstraintLayoutPolicy? policy = null)
     {
         if (layoutCase == null)
             throw new ArgumentNullException(nameof(layoutCase));
@@ -70,8 +83,11 @@ internal static class ConstraintLayoutShadow
         var modelAnchors = layoutCase.ModelAnchors
             .GroupBy(static anchor => anchor.ViewId)
             .ToDictionary(static group => group.Key, static group => group.First());
+        var projectionSides = layoutCase.ProjectionSides
+            .GroupBy(static side => side.ViewId)
+            .ToDictionary(static group => group.Key, static group => group.First().Side);
         var plannerViews = planned
-            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, baseViewId))
+            .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, projectionSides, baseViewId))
             .ToList();
 
         var margin = Math.Max(reference.ReservedLayout.Margin, 0.0);
@@ -81,19 +97,22 @@ internal static class ConstraintLayoutShadow
             Gap = layoutCase.Gap,
             ReservedAreas = reference.ReservedLayout.Areas,
             BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
-            Views = plannerViews
+            Views = plannerViews,
+            Policy = policy ?? ConstraintLayoutPolicy.PreferScale
         });
 
         var residuals = planned
             .Zip(plannerViews, static (view, input) => (view, input))
             .Where(pair => modelAnchors.ContainsKey(baseViewId) && modelAnchors.ContainsKey(pair.view.Id))
-            .Where(static pair => IsInLineOnPreferredSide(pair.view, pair.input.PreferredSide))
+            .Where(static pair => pair.input.PreferredSide != SectionPlacementSide.Unknown)
             .Select(pair => GetAlignmentResidual(baseView.LayoutRect, pair.view.LayoutRect!, pair.input))
             .ToList();
 
         var result = new ConstraintLayoutShadowResult
         {
+            AlignmentCheckValid = layoutCase.ReferenceProjectionMode is "assembly" or "ga" or "single-part",
             AlignmentCheckedViews = residuals.Count,
+            AlignmentMatchedViews = residuals.Count(static residual => residual <= AlignmentMatchTolerance),
             AlignmentResidualMax = residuals.Count == 0 ? 0.0 : residuals.Max(),
             Plan = plan,
             IncludedViews = included.Count,
@@ -112,10 +131,14 @@ internal static class ConstraintLayoutShadow
         if (plan.Candidates.Count == 0)
             return result;
 
+        // The policy decides first: only the cheapest layouts compete on score.
+        var cheapest = plan.Candidates
+            .Where(candidate => candidate.Cost <= plan.Candidates[0].Cost + 1e-9)
+            .ToList();
         var selection = new DrawingLayoutCandidateSelector().SelectBest(
-            plan.Candidates.Select(candidate => ToCandidate(reference, included, candidate)));
+            cheapest.Select(candidate => ToCandidate(reference, included, candidate)));
         result.Best = selection.Selected;
-        result.BestPlan = plan.Candidates[selection.Items.First(static item => item.IsSelected).Index];
+        result.BestPlan = cheapest[selection.Items.First(static item => item.IsSelected).Index];
         return result;
     }
 
@@ -127,9 +150,10 @@ internal static class ConstraintLayoutShadow
         DrawingLayoutCandidateView view,
         IReadOnlyDictionary<int, ConstraintLayoutCaseAnchor> sectionLineAnchors,
         IReadOnlyDictionary<int, ConstraintLayoutCaseModelAnchor> modelAnchors,
+        IReadOnlyDictionary<int, string> projectionSides,
         int baseViewId)
     {
-        var side = ResolvePreferredSide(view);
+        var side = ResolvePreferredSide(view, projectionSides);
         sectionLineAnchors.TryGetValue(view.Id, out var anchor);
         var hasModelAnchors = modelAnchors.TryGetValue(view.Id, out var own)
             & modelAnchors.TryGetValue(baseViewId, out var ofBase);
@@ -154,11 +178,6 @@ internal static class ConstraintLayoutShadow
         };
     }
 
-    private static bool IsInLineOnPreferredSide(DrawingLayoutCandidateView view, SectionPlacementSide preferredSide)
-        => preferredSide != SectionPlacementSide.Unknown
-            && !view.PlacementFallbackUsed
-            && string.Equals(view.ActualPlacementSide, preferredSide.ToString(), StringComparison.OrdinalIgnoreCase);
-
     private static double GetAlignmentResidual(
         ReservedRect baseRect,
         ReservedRect viewRect,
@@ -167,9 +186,22 @@ internal static class ConstraintLayoutShadow
             ? Math.Abs((((viewRect.MinX + viewRect.MaxX) - (baseRect.MinX + baseRect.MaxX)) / 2.0) - input.AlignmentOffsetX)
             : Math.Abs((((viewRect.MinY + viewRect.MaxY) - (baseRect.MinY + baseRect.MaxY)) / 2.0) - input.AlignmentOffsetY);
 
-    private static SectionPlacementSide ResolvePreferredSide(DrawingLayoutCandidateView view)
+    /// <summary>
+    /// The side the current path recorded, else the side the case supplies for a
+    /// projection of the base view, else a guess from the view type.
+    /// </summary>
+    private static SectionPlacementSide ResolvePreferredSide(
+        DrawingLayoutCandidateView view,
+        IReadOnlyDictionary<int, string> projectionSides)
     {
         if (Enum.TryParse<SectionPlacementSide>(view.PreferredPlacementSide, ignoreCase: true, out var side)
+            && side != SectionPlacementSide.Unknown)
+        {
+            return side;
+        }
+
+        if (projectionSides.TryGetValue(view.Id, out var supplied)
+            && Enum.TryParse(supplied, ignoreCase: true, out side)
             && side != SectionPlacementSide.Unknown)
         {
             return side;

@@ -69,6 +69,8 @@ internal sealed class ConstraintLayoutPlannerInput
 
     public IReadOnlyList<ConstraintLayoutViewInput> Views { get; set; } = Array.Empty<ConstraintLayoutViewInput>();
 
+    public ConstraintLayoutPolicy Policy { get; set; } = ConstraintLayoutPolicy.PreferScale;
+
     public int MaxTopologies { get; set; } = 2000;
 
     public int MaxCandidates { get; set; } = 16;
@@ -83,11 +85,14 @@ internal sealed class ConstraintLayoutPlanCandidate
 
     /// <summary>How many views are not in their preferred slot.</summary>
     public int Deviations { get; set; }
+
+    /// <summary>What those deviations cost under the policy, in scale steps.</summary>
+    public double Cost { get; set; }
 }
 
 internal sealed class ConstraintLayoutPlan
 {
-    /// <summary>Layouts that fit, fewest deviations first.</summary>
+    /// <summary>Layouts that fit, cheapest under the policy first.</summary>
     public List<ConstraintLayoutPlanCandidate> Candidates { get; } = new();
 
     public int EvaluatedTopologies { get; set; }
@@ -128,20 +133,27 @@ internal static class ConstraintLayoutPlanner
         if (input == null)
             throw new ArgumentNullException(nameof(input));
 
-        var options = input.Views.Select(GetSlotOptions).ToList();
+        var options = input.Views.Select(view => GetSlotOptions(view, input.Policy)).ToList();
         var plan = new ConstraintLayoutPlan();
-        foreach (var choice in EnumerateChoices(options.Select(static o => o.Count).ToArray()))
-        {
-            if (plan.EvaluatedTopologies >= input.MaxTopologies)
-            {
-                plan.Truncated = true;
-                break;
-            }
 
+        // Take the combinations with the fewest deviations, up to the limit, then try
+        // the cheapest under the policy first. The sort is stable, so the all-preferred
+        // combination stays in front.
+        var choices = EnumerateChoices(options.Select(static o => o.Count).ToArray())
+            .Take(input.MaxTopologies + 1)
+            .ToList();
+        plan.Truncated = choices.Count > input.MaxTopologies;
+        var ranked = choices
+            .Take(input.MaxTopologies)
+            .Select(choice => (choice, cost: choice.Select((option, i) => options[i][option].Cost).Sum()))
+            .OrderBy(static item => item.cost);
+
+        foreach (var (choice, cost) in ranked)
+        {
             plan.EvaluatedTopologies++;
             var slots = new Dictionary<int, ViewSlot>(input.Views.Count);
             for (var i = 0; i < input.Views.Count; i++)
-                slots[input.Views[i].Id] = options[i][choice[i]];
+                slots[input.Views[i].Id] = options[i][choice[i]].Slot;
 
             var solution = SolveTopology(input, slots);
             if (plan.EvaluatedTopologies == 1)
@@ -158,7 +170,8 @@ internal static class ConstraintLayoutPlanner
             {
                 Slots = slots,
                 RectsById = rects,
-                Deviations = choice.Count(static c => c != 0)
+                Deviations = choice.Count(static c => c != 0),
+                Cost = cost
             });
             if (plan.Candidates.Count >= input.MaxCandidates)
                 break;
@@ -167,20 +180,32 @@ internal static class ConstraintLayoutPlanner
         return plan;
     }
 
-    /// <summary>Slots a view may take; the first one is its preferred slot.</summary>
-    private static IReadOnlyList<ViewSlot> GetSlotOptions(ConstraintLayoutViewInput view)
+    /// <summary>
+    /// Slots a view may take with what each costs under the policy; the first one is
+    /// its preferred slot and costs nothing. A slot the policy prices at infinity is
+    /// left out.
+    /// </summary>
+    private static IReadOnlyList<(ViewSlot Slot, double Cost)> GetSlotOptions(
+        ConstraintLayoutViewInput view,
+        ConstraintLayoutPolicy policy)
     {
+        // A view with no side or no projection link has nothing to lose in a stack.
         if (view.PreferredSide == SectionPlacementSide.Unknown
             || view.ProjectionStrength is ProjectionStrength.Off or ProjectionStrength.Weak)
         {
-            return StackSlots;
+            return StackSlots.Select(static slot => (slot, 0.0)).ToList();
         }
 
-        var preferred = new ViewSlot(view.PreferredSide, isStack: false);
+        var options = new List<(ViewSlot, double)> { (new ViewSlot(view.PreferredSide, isStack: false), 0.0) };
         if (view.ProjectionStrength == ProjectionStrength.Strong)
-            return [preferred];
+            return options;
 
-        return [preferred, new ViewSlot(Opposite(view.PreferredSide), isStack: false), .. StackSlots];
+        if (!double.IsPositiveInfinity(policy.SideDeviationCost))
+            options.Add((new ViewSlot(Opposite(view.PreferredSide), isStack: false), policy.SideDeviationCost));
+        if (!double.IsPositiveInfinity(policy.LinkBreakCost))
+            options.AddRange(StackSlots.Select(slot => (slot, policy.LinkBreakCost)));
+
+        return options;
     }
 
     /// <summary>Every combination of option indices, ordered by how many are not the first option.</summary>

@@ -92,6 +92,21 @@ public sealed class ConstraintLayoutShadowTests
     }
 
     [Fact]
+    public void SheetTooNarrowForBothSectionsInLine_DefaultPolicyMovesOne_StrictPolicyGivesNoLayout()
+    {
+        // Usable width 300; base view and two sections in line need 308.
+        var reference = Reference();
+        reference.Sheet = new DrawingSheetContext { Width = 320, Height = 297 };
+
+        var byDefault = ConstraintLayoutShadow.Evaluate(Case(reference))!;
+        var strict = ConstraintLayoutShadow.Evaluate(Case(reference), ConstraintLayoutPolicy.KeepProjection)!;
+
+        Assert.NotNull(byDefault.Best);
+        Assert.True(byDefault.BestPlan!.Cost > 0);
+        Assert.Null(strict.Best);
+    }
+
+    [Fact]
     public void BaseViewNotInReference_ReturnsNull()
         => Assert.Null(Evaluate(Reference(), baseViewId: 99));
 
@@ -122,7 +137,35 @@ public sealed class ConstraintLayoutShadowTests
         // In the current layout A and Top are centered on the base view; the anchors
         // ask for 3 and 0, so the worst disagreement is 3. B is not checked.
         Assert.Equal(2, result.AlignmentCheckedViews);
+        Assert.Equal(1, result.AlignmentMatchedViews);
         Assert.Equal(3, result.AlignmentResidualMax, 9);
+        // The case does not say the current path aligned its layout, so the residual proves nothing.
+        Assert.False(result.AlignmentCheckValid);
+
+        layoutCase.ReferenceProjectionMode = "assembly";
+        Assert.True(ConstraintLayoutShadow.Evaluate(layoutCase)!.AlignmentCheckValid);
+        layoutCase.ReferenceProjectionMode = "disabled-mixed-scales";
+        Assert.False(ConstraintLayoutShadow.Evaluate(layoutCase)!.AlignmentCheckValid);
+    }
+
+    [Fact]
+    public void ProjectionSideFromTheCase_OverridesTheGuessFromViewType()
+    {
+        var reference = Reference();
+        reference.Views.Add(View(
+            6, "EndView", "BaseProjected", "MainProjected", new ReservedRect(350, 20, 380, 120), "", "Strong"));
+        reference.Views.Add(View(
+            7, "EndView", "BaseProjected", "MainProjected", new ReservedRect(385, 20, 410, 120), "", "Strong"));
+        var layoutCase = Case(reference);
+        layoutCase.ProjectionSides = [new ConstraintLayoutCaseSide { ViewId = 6, Side = "Left" }];
+
+        var slots = ConstraintLayoutShadow.Evaluate(layoutCase)!.BestPlan!.Slots;
+
+        Assert.Equal("inline-Left", slots[6].ToString());
+        // No side supplied: an end view is assumed to belong on the right.
+        Assert.Equal("inline-Right", slots[7].ToString());
+        // A side the current path recorded on the view itself is kept.
+        Assert.Equal("inline-Right", slots[SectionA].ToString());
     }
 
     [Fact]

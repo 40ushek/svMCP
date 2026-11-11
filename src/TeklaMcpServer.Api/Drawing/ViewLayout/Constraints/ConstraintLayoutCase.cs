@@ -65,6 +65,15 @@ internal sealed class ConstraintLayoutCaseModelAnchor
     }
 }
 
+/// <summary>The side of the base view a projection of it belongs on.</summary>
+internal sealed class ConstraintLayoutCaseSide
+{
+    public int ViewId { get; set; }
+
+    /// <summary>A <see cref="SectionPlacementSide"/> name.</summary>
+    public string Side { get; set; } = string.Empty;
+}
+
 /// <summary>
 /// Everything the constraint planner needs from one fit_views_to_sheet run, with no
 /// Tekla objects, so the run can be replayed later without Tekla.
@@ -85,6 +94,19 @@ internal sealed class ConstraintLayoutCase
     /// by frame centers.
     /// </summary>
     public List<ConstraintLayoutCaseModelAnchor> ModelAnchors { get; set; } = new();
+
+    /// <summary>
+    /// Sides for views whose reference entry carries none: the current path records
+    /// a preferred side for sections only, not for projections of the base view.
+    /// </summary>
+    public List<ConstraintLayoutCaseSide> ProjectionSides { get; set; } = new();
+
+    /// <summary>
+    /// What projection alignment the current path ran on the reference:
+    /// "assembly", "ga", "single-part", or a "disabled-..." / "none" mode when it
+    /// ran none. Only an aligned reference can be compared with the model anchors.
+    /// </summary>
+    public string ReferenceProjectionMode { get; set; } = string.Empty;
 }
 
 /// <summary>Stores layout cases as one JSON file per drawing.</summary>

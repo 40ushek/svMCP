@@ -54,16 +54,41 @@ public sealed class ConstraintLayoutCorpusTests
             if (result.Best == null)
                 continue;
 
+            // Where the planner puts every view, and how far that is from where it stands.
+            foreach (var view in result.Best.Candidate.Views.OrderBy(static view => view.Id))
+            {
+                var current = layoutCase.Reference.Views.First(other => other.Id == view.Id);
+                _output.WriteLine(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    view {0} {1} {2}: origin=({3:0.###},{4:0.###}) frame=[{5:0.#},{6:0.#},{7:0.#},{8:0.#}] move=({9:0.###},{10:0.###})",
+                    view.Id,
+                    view.ViewType,
+                    result.BestPlan!.Slots.TryGetValue(view.Id, out var slot) ? slot.ToString() : "base",
+                    view.OriginX,
+                    view.OriginY,
+                    view.LayoutRect!.MinX,
+                    view.LayoutRect.MinY,
+                    view.LayoutRect.MaxX,
+                    view.LayoutRect.MaxY,
+                    view.OriginX - current.OriginX,
+                    view.OriginY - current.OriginY));
+            }
+
             // Same input, same layout.
             Assert.Equal(Rects(result.Best.Candidate), Rects(ConstraintLayoutShadow.Evaluate(layoutCase)!.Best!.Candidate));
 
             // A second run that starts from the planner's own result moves nothing.
+            // Everything but the reference carries over: anchors and sides belong to
+            // the views, not to where they stand.
             var settled = ConstraintLayoutShadow.Evaluate(new ConstraintLayoutCase
             {
                 Reference = result.Best.Candidate,
                 BaseViewId = layoutCase.BaseViewId,
                 Gap = layoutCase.Gap,
-                SectionLineAnchors = layoutCase.SectionLineAnchors
+                SectionLineAnchors = layoutCase.SectionLineAnchors,
+                ModelAnchors = layoutCase.ModelAnchors,
+                ProjectionSides = layoutCase.ProjectionSides,
+                ReferenceProjectionMode = layoutCase.ReferenceProjectionMode
             });
             Assert.Equal(Rects(result.Best.Candidate), Rects(settled!.Best!.Candidate));
         }
@@ -78,7 +103,7 @@ public sealed class ConstraintLayoutCorpusTests
             CultureInfo.InvariantCulture,
             "{0} [{1}]: views={2} skipped={3} | current: feasible={4} fallbackViews={5} score={6:0.###} | " +
             "planner: {7} deviations={8} score={9:0.###} topologies={10}{11} preferredNeeds={12:0.#}x{13:0.#} | " +
-            "alignmentChecked={14} alignmentResidualMax={15:0.###}",
+            "alignmentCheck={16} alignmentMatched={17}/{14} alignmentResidualMax={15:0.###}",
             Path.GetFileName(file),
             layoutCase.Reference.Drawing.Name ?? "unnamed",
             result.IncludedViews,
@@ -94,7 +119,9 @@ public sealed class ConstraintLayoutCorpusTests
             result.Plan.PreferredRequiredWidth,
             result.Plan.PreferredRequiredHeight,
             result.AlignmentCheckedViews,
-            result.AlignmentResidualMax);
+            result.AlignmentResidualMax,
+            result.AlignmentCheckValid ? "valid" : "reference-not-aligned",
+            result.AlignmentMatchedViews);
 
     private static List<(int Id, double MinX, double MinY, double MaxX, double MaxY)> Rects(DrawingLayoutCandidate candidate)
         => candidate.Views

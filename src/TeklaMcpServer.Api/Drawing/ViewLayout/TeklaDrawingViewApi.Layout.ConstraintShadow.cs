@@ -20,7 +20,8 @@ public sealed partial class TeklaDrawingViewApi
     private static void TraceConstraintLayoutShadow(
         DrawingLayoutWorkspace workspace,
         DrawingLayoutCandidate? reference,
-        double gap)
+        double gap,
+        ProjectionAlignmentResult? referenceProjection)
     {
         if (reference == null)
             return;
@@ -45,7 +46,9 @@ public sealed partial class TeklaDrawingViewApi
                             Y = view.ParentAnchorY
                         })
                         .ToList(),
-                    ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference)
+                    ModelAnchors = BuildConstraintLayoutModelAnchors(workspace, reference),
+                    ProjectionSides = BuildConstraintLayoutProjectionSides(workspace, baseView),
+                    ReferenceProjectionMode = referenceProjection?.Mode ?? "none"
                 };
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
@@ -57,6 +60,13 @@ public sealed partial class TeklaDrawingViewApi
                 return;
             }
 
+            // The same case under the strict policy: does it fit with every view on
+            // its side and in projection?
+            var keepProjection = result.BestPlan?.Cost == 0.0
+                ? "fits"
+                : ConstraintLayoutShadow.Evaluate(layoutCase!, ConstraintLayoutPolicy.KeepProjection)?.Best == null
+                    ? "no-fit"
+                    : "fits";
             var slots = result.BestPlan == null
                 ? "none"
                 : string.Join(",", result.BestPlan.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}"));
@@ -67,8 +77,8 @@ public sealed partial class TeklaDrawingViewApi
                 string.Format(
                     CultureInfo.InvariantCulture,
                     "result={0} views={1} skippedViews={2} topologies={3} truncated={4} fitting={5} preferredNeeds={6:0.#}x{7:0.#} " +
-                    "shadowFeasible={8} shadowScore={9:0.###} shadowDeviations={10} referenceCandidate={11} referenceFeasible={12} referenceScore={13:0.###} " +
-                    "alignmentChecked={15} alignmentResidualMax={16:0.###} slots={14}",
+                    "shadowFeasible={8} shadowScore={9:0.###} shadowDeviations={10} shadowCost={19:0.##} keepProjection={20} referenceCandidate={11} referenceFeasible={12} referenceScore={13:0.###} " +
+                    "alignmentCheck={17} alignmentMatched={18}/{15} alignmentResidualMax={16:0.###} slots={14}",
                     result.Best == null ? "no-fit" : "ok",
                     result.IncludedViews,
                     result.SkippedViews,
@@ -85,7 +95,13 @@ public sealed partial class TeklaDrawingViewApi
                     result.Reference.Score.TotalScore,
                     slots,
                     result.AlignmentCheckedViews,
-                    result.AlignmentResidualMax));
+                    result.AlignmentResidualMax,
+                    result.AlignmentCheckValid
+                        ? "valid"
+                        : $"reference-not-aligned({layoutCase!.ReferenceProjectionMode})",
+                    result.AlignmentMatchedViews,
+                    result.BestPlan?.Cost ?? 0.0,
+                    keepProjection));
         }
         catch (System.Exception exception)
         {
@@ -95,6 +111,51 @@ public sealed partial class TeklaDrawingViewApi
                 stopwatch.ElapsedMilliseconds,
                 $"result=error type={exception.GetType().Name} message={exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// The side of the base view each of its projections belongs on. An end view
+    /// stands where its section arrows point, the same rule sections follow; its
+    /// type alone does not say which way it looks. The other projections take the
+    /// role the topology gives them (top view above, bottom view below).
+    /// </summary>
+    private static List<ConstraintLayoutCaseSide> BuildConstraintLayoutProjectionSides(
+        DrawingLayoutWorkspace workspace,
+        View baseView)
+    {
+        var neighbors = workspace.GetTopology().Neighbors;
+        var sides = new List<ConstraintLayoutCaseSide>();
+        foreach (var view in workspace.RuntimeViews)
+        {
+            var id = view.GetIdentifier().ID;
+            if (ReferenceEquals(view, baseView)
+                || workspace.GetLayoutViewKind(id) != LayoutViewKind.MainProjected)
+            {
+                continue;
+            }
+
+            var side = (neighbors?.GetRole(id) ?? NeighborRole.Unknown) switch
+            {
+                NeighborRole.Top => SectionPlacementSide.Top,
+                NeighborRole.Bottom => SectionPlacementSide.Bottom,
+                NeighborRole.SideLeft => SectionPlacementSide.Left,
+                NeighborRole.SideRight => SectionPlacementSide.Right,
+                _ => SectionPlacementSide.Unknown
+            };
+            if (view.ViewType == View.ViewTypes.EndView
+                && baseView.ViewCoordinateSystem != null
+                && view.ViewCoordinateSystem != null)
+            {
+                var byArrows = SectionPlacementSideResolver.ResolveFromCoordinateSystems(
+                    baseView.ViewCoordinateSystem, view.ViewCoordinateSystem);
+                if (byArrows is SectionPlacementSide.Left or SectionPlacementSide.Right)
+                    side = byArrows;
+            }
+            if (side != SectionPlacementSide.Unknown)
+                sides.Add(new ConstraintLayoutCaseSide { ViewId = id, Side = side.ToString() });
+        }
+
+        return sides;
     }
 
     /// <summary>
