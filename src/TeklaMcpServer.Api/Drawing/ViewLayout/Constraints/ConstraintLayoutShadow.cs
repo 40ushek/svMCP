@@ -160,13 +160,15 @@ internal static class ConstraintLayoutShadow
             .Select(view => ToPlannerView(view, sectionLineAnchors, modelAnchors, viewSides, hosts[view.Id], baseView.Id))
             .ToList();
 
+        var ownSides = plannerViews.ToDictionary(static view => view.Id, static view => view.PreferredSide);
+
         var margin = Math.Max(reference.ReservedLayout.Margin, 0.0);
         var plan = ConstraintLayoutPlanner.Plan(new ConstraintLayoutPlannerInput
         {
             Bounds = new ReservedRect(margin, margin, reference.Sheet.Width - margin, reference.Sheet.Height - margin),
             Gap = gap,
             ReservedAreas = reference.ReservedLayout.Areas,
-            BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
+            BaseView = new ConstraintLayoutView(baseViewId, Clean(baseView.LayoutRect.Width), Clean(baseView.LayoutRect.Height)),
             Views = plannerViews,
             FreeViews = free
                 .Select(view => ToFreeView(view, detailMarkAnchors, new[] { baseView }.Concat(planned).ToList()))
@@ -210,7 +212,7 @@ internal static class ConstraintLayoutShadow
                 return result;
 
             result.BestPlan = plan.Candidates[variant];
-            result.Best = new DrawingLayoutScorer().Evaluate(ToCandidate(reference, included, result.BestPlan));
+            result.Best = new DrawingLayoutScorer().Evaluate(ToCandidate(reference, included, result.BestPlan, ownSides));
             return result;
         }
 
@@ -219,7 +221,7 @@ internal static class ConstraintLayoutShadow
             .Where(candidate => candidate.RankCost <= plan.Candidates[0].RankCost + 1e-9)
             .ToList();
         var selection = new DrawingLayoutCandidateSelector().SelectBest(
-            cheapest.Select(candidate => ToCandidate(reference, included, candidate)));
+            cheapest.Select(candidate => ToCandidate(reference, included, candidate, ownSides)));
         result.Best = selection.Selected;
         result.BestPlan = cheapest[selection.Items.First(static item => item.IsSelected).Index];
         return result;
@@ -259,10 +261,10 @@ internal static class ConstraintLayoutShadow
         {
             Id = view.Id,
             OwnerId = host.Id == baseViewId ? null : host.Id,
-            AlignmentOffsetX = hasModelAnchors ? own!.X - ofHost!.X : 0.0,
-            AlignmentOffsetY = hasModelAnchors ? own!.Y - ofHost!.Y : 0.0,
-            Width = view.LayoutRect!.Width,
-            Height = view.LayoutRect.Height,
+            AlignmentOffsetX = hasModelAnchors ? Clean(own!.X - ofHost!.X) : 0.0,
+            AlignmentOffsetY = hasModelAnchors ? Clean(own!.Y - ofHost!.Y) : 0.0,
+            Width = Clean(view.LayoutRect!.Width),
+            Height = Clean(view.LayoutRect.Height),
             PreferredSide = side,
             // A section may leave its side when the views do not fit; a projection
             // keeps the link the current path gave it, strong unless stated otherwise.
@@ -293,8 +295,8 @@ internal static class ConstraintLayoutShadow
         return new ConstraintLayoutFreeViewInput
         {
             Id = view.Id,
-            Width = view.LayoutRect!.Width,
-            Height = view.LayoutRect.Height,
+            Width = Clean(view.LayoutRect!.Width),
+            Height = Clean(view.LayoutRect.Height),
             OwnerId = mark == null ? null : owner!.Id,
             AnchorX = mark?.X ?? 0.0,
             AnchorY = mark?.Y ?? 0.0
@@ -319,9 +321,19 @@ internal static class ConstraintLayoutShadow
 
         var frame = host.LayoutRect!;
         return (
-            host.OriginX + (localX / host.Scale) - ((frame.MinX + frame.MaxX) / 2.0),
-            host.OriginY + (localY / host.Scale) - ((frame.MinY + frame.MaxY) / 2.0));
+            Clean(host.OriginX + (localX / host.Scale) - ((frame.MinX + frame.MaxX) / 2.0)),
+            Clean(host.OriginY + (localY / host.Scale) - ((frame.MinY + frame.MaxY) / 2.0)));
     }
+
+    /// <summary>
+    /// A size or an offset as the planner takes it: to a millionth of a millimeter.
+    /// These figures are differences of sheet coordinates, and the same view
+    /// standing elsewhere on the sheet gives them a different last digit. Where
+    /// two places for a view are equally good -- a block centered on the sheet
+    /// leaves the same room on its left and on its right -- that digit decided
+    /// which one was taken, so the same drawing could come out two ways.
+    /// </summary>
+    private static double Clean(double value) => Math.Round(value, 6);
 
     private static double GetAlignmentResidual(
         ReservedRect baseRect,
@@ -365,22 +377,30 @@ internal static class ConstraintLayoutShadow
     private static DrawingLayoutCandidate ToCandidate(
         DrawingLayoutCandidate reference,
         IReadOnlyList<DrawingLayoutCandidateView> included,
-        ConstraintLayoutPlanCandidate candidate)
+        ConstraintLayoutPlanCandidate candidate,
+        IReadOnlyDictionary<int, SectionPlacementSide> ownSides)
         => DrawingLayoutCandidateFactory.FromPlannedViews(
             CandidateName,
             reference.Drawing,
             reference.Sheet,
             reference.ReservedLayout,
-            included.Select(view => ToPlannedView(view, candidate)).ToList());
+            included.Select(view => ToPlannedView(view, candidate, ownSides)).ToList());
 
     private static DrawingLayoutPlannedView ToPlannedView(
         DrawingLayoutCandidateView view,
-        ConstraintLayoutPlanCandidate candidate)
+        ConstraintLayoutPlanCandidate candidate,
+        IReadOnlyDictionary<int, SectionPlacementSide> ownSides)
     {
         var rect = candidate.RectsById[view.Id];
         var current = view.LayoutRect!;
         var hasSlot = candidate.Slots.TryGetValue(view.Id, out var slot);
         var actualSide = hasSlot ? slot.Side.ToString() : string.Empty;
+
+        // The side the view belongs on is the one the planner worked with, by its
+        // own rules; what the reference recorded stands only where it has none.
+        var preferredSide = ownSides.TryGetValue(view.Id, out var ownSide) && ownSide != SectionPlacementSide.Unknown
+            ? ownSide.ToString()
+            : view.PreferredPlacementSide;
 
         return new DrawingLayoutPlannedView
         {
@@ -396,12 +416,12 @@ internal static class ConstraintLayoutShadow
             Width = rect.Width,
             Height = rect.Height,
             LayoutRect = rect,
-            PreferredPlacementSide = view.PreferredPlacementSide,
+            PreferredPlacementSide = preferredSide,
             ActualPlacementSide = actualSide,
             PlacementFallbackUsed = hasSlot
                 && (slot.IsStack
-                    || (!string.IsNullOrWhiteSpace(view.PreferredPlacementSide)
-                        && !string.Equals(view.PreferredPlacementSide, actualSide, StringComparison.OrdinalIgnoreCase))),
+                    || (!string.IsNullOrWhiteSpace(preferredSide)
+                        && !string.Equals(preferredSide, actualSide, StringComparison.OrdinalIgnoreCase))),
             ProjectionStrength = view.ProjectionStrength,
             ScaleFlexibility = view.ScaleFlexibility,
             ProjectionRole = view.ProjectionRole

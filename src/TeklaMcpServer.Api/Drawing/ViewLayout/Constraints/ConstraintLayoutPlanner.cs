@@ -676,7 +676,11 @@ internal static class ConstraintLayoutPlanner
         double[] shiftsY = [0.0, input.Bounds.MinY - rects.Values.Min(static r => r.MinY), input.Bounds.MaxY - rects.Values.Max(static r => r.MaxY)];
         var shifts = shiftsX
             .SelectMany(_ => shiftsY, static (dx, dy) => (dx, dy))
-            .OrderBy(static shift => Math.Abs(shift.dx) + Math.Abs(shift.dy));
+            // Equal moves are taken in the order they are listed -- the block as it
+            // is, then to the left, to the right; within each, down before up -- and
+            // not by the last digit of a sum: a block centered on the sheet is as
+            // far from one edge as from the other.
+            .OrderBy(static shift => Math.Round(Math.Abs(shift.dx) + Math.Abs(shift.dy), 6));
 
         foreach (var (dx, dy) in shifts)
         {

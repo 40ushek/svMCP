@@ -381,6 +381,62 @@ public sealed class ConstraintLayoutShadowTests
         }
     }
 
+    [Fact]
+    public void WhereTheViewsStoodBefore_AndWhatSideWasRecordedOnThem_DoNotChangeTheLayout()
+    {
+        // The planner reads the views as they stand on the drawing. The same views
+        // standing elsewhere, with no side recorded on them, must come out alike --
+        // or running the command twice would give two layouts.
+        DrawingLayoutCandidate Build(bool movedAndBare)
+        {
+            var reference = Reference();
+            reference.Views.Add(View(
+                8, "_3DView", "Model3D", "Model3D", new ReservedRect(0, 0, 100, 60), "", "Off"));
+            if (!movedAndBare)
+                return reference;
+
+            var index = 0;
+            foreach (var view in reference.Views)
+            {
+                var dx = 13.37 * ++index;
+                var dy = -7.11 * index;
+                var rect = view.LayoutRect!;
+                view.LayoutRect = new ReservedRect(rect.MinX + dx, rect.MinY + dy, rect.MaxX + dx, rect.MaxY + dy);
+                view.OriginX += dx;
+                view.OriginY += dy;
+                view.PreferredPlacementSide = string.Empty;
+                view.ActualPlacementSide = string.Empty;
+            }
+
+            return reference;
+        }
+
+        // The sides come with the case, as the planner's reader supplies them.
+        ConstraintLayoutCase WithSides(DrawingLayoutCandidate reference)
+        {
+            var layoutCase = Case(reference);
+            layoutCase.ViewSides =
+            [
+                new ConstraintLayoutCaseSide { ViewId = Top, Side = "Top" },
+                new ConstraintLayoutCaseSide { ViewId = SectionA, Side = "Right" },
+                new ConstraintLayoutCaseSide { ViewId = SectionB, Side = "Right" }
+            ];
+            return layoutCase;
+        }
+
+        var asLaidOut = ConstraintLayoutShadow.Evaluate(WithSides(Build(movedAndBare: false)))!.Best!.Candidate;
+        var movedAbout = ConstraintLayoutShadow.Evaluate(WithSides(Build(movedAndBare: true)))!.Best!.Candidate;
+
+        foreach (var view in asLaidOut.Views)
+        {
+            var other = movedAbout.Views.Single(candidate => candidate.Id == view.Id);
+            Assert.Equal(view.LayoutRect!.MinX, other.LayoutRect!.MinX, 6);
+            Assert.Equal(view.LayoutRect.MinY, other.LayoutRect.MinY, 6);
+            Assert.Equal(view.PreferredPlacementSide, other.PreferredPlacementSide);
+            Assert.Equal(view.ActualPlacementSide, other.ActualPlacementSide);
+        }
+    }
+
     private static DrawingLayoutCandidate Reference()
         => new()
         {

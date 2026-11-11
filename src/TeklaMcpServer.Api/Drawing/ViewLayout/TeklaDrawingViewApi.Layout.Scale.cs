@@ -263,7 +263,9 @@ public sealed partial class TeklaDrawingViewApi
             throw new DrawingFitFailedException(oversizeMessage, oversizeConflicts);
         }
 
-        var fits = _arrangementSelector.EstimateFit(keepCtx, keepFrames);
+        // With the constraint planner asked for, the legacy planner's estimate
+        // decides nothing here, so it is not worked out.
+        var fits = plannerJudgesFit || _arrangementSelector.EstimateFit(keepCtx, keepFrames);
         TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
         keepFitSw.Stop();
 

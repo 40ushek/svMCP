@@ -168,7 +168,7 @@ public sealed partial class TeklaDrawingViewApi
         // too -- keeps its own unless that would leave it smaller than the assembly.
         if (plannerMode != DrawingLayoutPlannerMode.Legacy)
         {
-            layoutWorkspace.SetSectionRoleViewIds(FindSectionRoleViewIds(layoutWorkspace));
+            layoutWorkspace.SetSectionRoleViewIds(ConstraintLayoutCaseReader.FindSectionRoleViewIds(layoutWorkspace));
             if (uniformAllNonDetail && secondaryScalePolicy == SecondaryScalePolicy.SameAsMain)
                 secondaryScalePolicy = SecondaryScalePolicy.PreserveIfNotSmaller;
         }
@@ -594,69 +594,19 @@ public sealed partial class TeklaDrawingViewApi
                 .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) != ViewSemanticKind.Detail)
                 .ToList();
 
-            var gridApi = new TeklaDrawingGridApi();
-            var preloadedAxes = arrangedViews
-                .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
-                .Where(x => x.Result.Success)
-                .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
-            layoutWorkspace.SetGridAxes(preloadedAxes);
-
-            var sharedCtx = new SharedLayoutContext
-            {
-                Drawing              = activeDrawing,
-                Workspace            = layoutWorkspace,
-                CurrentViews         = scaleAttemptViews,
-                ArrangedViews        = arrangedViews,
-                ActualRects          = scaleAttemptRects,
-                OffsetById           = offsetById,
-                OptimalScale         = attemptScale,
-                EffectiveMargin      = effectiveMargin,
-                Gap                  = gap,
-                PreserveExistingScales = preserveExistingScales,
-                KeepCurrentScales    = keepCurrentScales,
-                AllowTeklaMutation   = allowTeklaMutation
-            };
-
-            var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
-            var variantList = new System.Collections.Generic.List<DrawingLayoutVariantResult> { defaultVariant };
-
-            // The constraint planner goes first. With a layout from it, the legacy
-            // planner's 3D-corner variants below -- four more runs of its chain --
-            // would only be thrown away; they are still run when it has none, so the
-            // fallback is what it was.
-            var planned = plannerMode != DrawingLayoutPlannerMode.Legacy
-                ? TryEvaluateConstraintLayoutCandidate(
-                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant)
-                : default;
-            var plannerFeasible = planned.Evaluation?.IsFeasible == true;
-
-            // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
-            var model3DViews = arrangedViews
-                .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
-                .ToList();
-            if (model3DViews.Count == 1 && !plannerFeasible)
-            {
-                for (var corner = 0; corner < 4; corner++)
-                {
-                    var cornerVariant = TryRun3DCornerLayoutVariant(sharedCtx, model3DViews[0], corner);
-                    if (cornerVariant != null)
-                        variantList.Add(cornerVariant);
-                }
-            }
-
-            allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
-            passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
-
-            // Constraint planner, when asked for. Its layout at this scale is weighed
-            // against what a smaller scale could give (ConstraintScaleSearch): it may be
-            // taken at once, held while the next scale is tried, or passed over for an
-            // earlier scale. With no layout from it the current planner's selection
-            // stands and the loop goes on as before.
+            // The constraint planner goes first, on the views as they stand. Its layout
+            // at this scale is weighed against what a smaller scale could give
+            // (ConstraintScaleSearch): it may be taken at once, held while the next
+            // scale is tried, or passed over for an earlier scale.
             constraintPlannerSelected = false;
             var constraintPlannerPassesScale = false;
             var constraintScaleDecision = Constraints.ConstraintScaleDecision.NoLayout;
+            DrawingLayoutCandidateEvaluation? plannerEvaluation = null;
             if (plannerMode != DrawingLayoutPlannerMode.Legacy)
             {
+                var planned = TryEvaluateConstraintLayoutCandidate(
+                    layoutWorkspace, gap, plannerMode, attemptScale, plannerVariant);
+                var plannerFeasible = planned.Evaluation?.IsFeasible == true;
                 constraintPlannerCase = planned.Case;
                 constraintScaleDecision = constraintScaleSearch.Offer(
                     attemptIndex,
@@ -669,8 +619,7 @@ public sealed partial class TeklaDrawingViewApi
                         && constraintScaleSearch.BestIndex == attemptIndex);
                 if (plannerFeasible && holdsBest)
                 {
-                    allCandidates = allCandidates.Append(planned.Evaluation!.Candidate).ToArray();
-                    passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(new[] { planned.Evaluation.Candidate });
+                    plannerEvaluation = planned.Evaluation;
                     constraintPlannerSelected = true;
                     constraintPlannerCost = planned.Cost;
                     constraintPlannerFill = planned.Evaluation!.Score.Breakdown.FillRatioRaw;
@@ -681,7 +630,7 @@ public sealed partial class TeklaDrawingViewApi
                     scalesToTry.Insert(attemptIndex + 1, scalesToTry[constraintScaleSearch.BestIndex]);
 
                 // The planner laid the views out and found no room at this scale. While a
-                // smaller scale is left, it gets its turn there; the current planner's
+                // smaller scale is left, it gets its turn there; the legacy planner's
                 // layout at this scale is not taken in its place.
                 constraintPlannerPassesScale = planned.NoFit
                     && constraintScaleDecision == Constraints.ConstraintScaleDecision.NoLayout
@@ -691,6 +640,68 @@ public sealed partial class TeklaDrawingViewApi
                     $"scale=1:{attemptScale:0.###} attempt={attemptIndex} decision={constraintScaleDecision} bestAttempt={constraintScaleSearch.BestIndex} passesScale={(constraintPlannerPassesScale ? 1 : 0)}");
             }
 
+            // The legacy planner lays the drawing out only where the constraint
+            // planner's layout is not taken: when it is not asked for, has none, or
+            // holds none at this scale. Then it is the fallback it was, grid axes and
+            // 3D-corner variants included.
+            DrawingLayoutVariantResult attemptVariant;
+            if (plannerEvaluation != null)
+            {
+                allCandidates = new[] { plannerEvaluation.Candidate };
+                passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
+                attemptVariant = new DrawingLayoutVariantResult();
+            }
+            else
+            {
+                var gridApi = new TeklaDrawingGridApi();
+                var preloadedAxes = arrangedViews
+                    .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
+                    .Where(x => x.Result.Success)
+                    .ToDictionary(x => x.Id, x => (IReadOnlyList<GridAxisInfo>)x.Result.Axes);
+                layoutWorkspace.SetGridAxes(preloadedAxes);
+
+                var sharedCtx = new SharedLayoutContext
+                {
+                    Drawing              = activeDrawing,
+                    Workspace            = layoutWorkspace,
+                    CurrentViews         = scaleAttemptViews,
+                    ArrangedViews        = arrangedViews,
+                    ActualRects          = scaleAttemptRects,
+                    OffsetById           = offsetById,
+                    OptimalScale         = attemptScale,
+                    EffectiveMargin      = effectiveMargin,
+                    Gap                  = gap,
+                    PreserveExistingScales = preserveExistingScales,
+                    KeepCurrentScales    = keepCurrentScales,
+                    AllowTeklaMutation   = allowTeklaMutation
+                };
+
+                var defaultVariant = RunDefaultLayoutVariant(sharedCtx);
+                var variantList = new System.Collections.Generic.List<DrawingLayoutVariantResult> { defaultVariant };
+
+                // 3D-corner reservation variants: one per corner when exactly one Model3D view is present
+                var model3DViews = arrangedViews
+                    .Where(v => layoutWorkspace.GetSemanticKind(v.GetIdentifier().ID) == ViewSemanticKind.Model3D)
+                    .ToList();
+                if (model3DViews.Count == 1)
+                {
+                    for (var corner = 0; corner < 4; corner++)
+                    {
+                        var cornerVariant = TryRun3DCornerLayoutVariant(sharedCtx, model3DViews[0], corner);
+                        if (cornerVariant != null)
+                            variantList.Add(cornerVariant);
+                    }
+                }
+
+                allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
+                passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
+
+                // Baseline from the winning variant, not from the last-executed variant's side effects
+                var winningCandidateName = passiveSelection.Selected?.Candidate.Name ?? "";
+                attemptVariant = variantList.FirstOrDefault(v =>
+                    v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
+            }
+
             var constraintPlannerMovesOn = constraintScaleDecision
                 is Constraints.ConstraintScaleDecision.LookAhead or Constraints.ConstraintScaleDecision.GoBack;
             var anyFeasible = passiveSelection.Selected?.IsFeasible == true;
@@ -698,11 +709,7 @@ public sealed partial class TeklaDrawingViewApi
             PerfTrace.Write("api-view", "layout_internal", 0,
                 $"scale_variant_result scale=1:{attemptScale:0.###} candidates={allCandidates.Length} feasible={(anyFeasible ? passiveSelection.Evaluations.Count(e => e.IsFeasible) : 0)} action={(anyFeasible ? "select" : "try-next-scale")}");
 
-            // Baseline from the winning variant, not from the last-executed variant's side effects
-            var winningCandidateName = passiveSelection.Selected?.Candidate.Name ?? "";
-            var winningVariant = variantList.FirstOrDefault(v =>
-                v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
-            variantResult = winningVariant;
+            variantResult = attemptVariant;
 
             if (anyFeasible && !constraintPlannerMovesOn && !constraintPlannerPassesScale)
             {
@@ -755,7 +762,7 @@ public sealed partial class TeklaDrawingViewApi
         // constraint planner's candidate was selected, report its positions instead,
         // in a dry run as well as after an apply.
         if (constraintPlannerSelected)
-            arranged = BuildArrangedFromApplyPlan(arranged, layoutWorkspace, applyPlan);
+            arranged = BuildArrangedFromApplyPlan(passiveSelection.Selected!.Candidate, layoutWorkspace, applyPlan);
         TraceLayoutCandidateApplyPlan(applyPlan, layoutWorkspace);
         var applyDeltas = DrawingLayoutCandidateApplyDeltaBuilder.BuildDeltas(runtimeBaselineCandidate, applyPlan);
         TraceLayoutCandidateApplyDeltas(applyDeltas);
@@ -969,6 +976,30 @@ public sealed partial class TeklaDrawingViewApi
             $"views={viewsCount} arranged={arranged.Count} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount} feasible={(selectedCandidateFeasible ? 1 : 0)} totalMs={total.ElapsedMilliseconds}");
         return result;
     }
+
+    /// <summary>
+    /// The views of the constraint planner's layout as reported: where the apply
+    /// plan puts them, with the sides the planner itself gave them.
+    /// </summary>
+    private static List<ArrangedView> BuildArrangedFromApplyPlan(
+        DrawingLayoutCandidate plannerCandidate,
+        DrawingLayoutWorkspace workspace,
+        DrawingLayoutCandidateApplyPlan applyPlan)
+        => BuildArrangedFromApplyPlan(
+            plannerCandidate.Views
+                .Select(static view => new ArrangedView
+                {
+                    Id = view.Id,
+                    ViewType = view.ViewType,
+                    OriginX = view.OriginX,
+                    OriginY = view.OriginY,
+                    PreferredPlacementSide = view.PreferredPlacementSide,
+                    ActualPlacementSide = view.ActualPlacementSide,
+                    PlacementFallbackUsed = view.PlacementFallbackUsed
+                })
+                .ToList(),
+            workspace,
+            applyPlan);
 
     private static List<ArrangedView> BuildArrangedFromApplyPlan(
         IReadOnlyList<ArrangedView> existing,
