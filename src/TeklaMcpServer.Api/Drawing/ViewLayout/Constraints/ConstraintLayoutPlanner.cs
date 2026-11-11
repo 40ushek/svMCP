@@ -175,6 +175,13 @@ internal sealed class ConstraintLayoutPlan
 /// </summary>
 internal static class ConstraintLayoutPlanner
 {
+    /// <summary>
+    /// Layouts are collected in order of what their slots cost, and only then priced
+    /// for distance. A layout a little dearer by slots can be the cheapest overall,
+    /// so more are collected than are kept.
+    /// </summary>
+    private const int CandidatePoolFactor = 8;
+
     private static readonly SectionPlacementSide[] Sides =
     [
         SectionPlacementSide.Left,
@@ -245,13 +252,13 @@ internal static class ConstraintLayoutPlanner
                 Cost = cost + GetCutBehindViewCost(input, slots),
                 CutDistanceCost = GetCutDistanceCost(input, rects)
             });
-            if (plan.Candidates.Count >= input.MaxCandidates)
+            if (plan.Candidates.Count >= input.MaxCandidates * CandidatePoolFactor)
                 break;
         }
 
         // The distance prices are known only once a layout is solved; put the
         // candidates back in order of price, equal ones as they came.
-        var byCost = plan.Candidates.OrderBy(static candidate => candidate.RankCost).ToList();
+        var byCost = plan.Candidates.OrderBy(static candidate => candidate.RankCost).Take(input.MaxCandidates).ToList();
         plan.Candidates.Clear();
         plan.Candidates.AddRange(byCost);
         return plan;
@@ -278,7 +285,7 @@ internal static class ConstraintLayoutPlanner
         return behind * Math.Max(input.Policy.LinkBreakCost - input.Policy.BesideCutCost, 0.0);
     }
 
-    /// <summary>What the sections cost for standing away from the middles of their section lines.</summary>
+    /// <summary>What the sections cost for standing away from their section lines.</summary>
     private static double GetCutDistanceCost(
         ConstraintLayoutPlannerInput input,
         IReadOnlyDictionary<int, ReservedRect> rects)
@@ -292,9 +299,17 @@ internal static class ConstraintLayoutPlanner
             var host = rects[view.OwnerId ?? input.BaseView.Id];
             var x = ((host.MinX + host.MaxX) / 2.0) + cutX;
             var y = ((host.MinY + host.MaxY) / 2.0) + cutY;
+            // The section line runs across the view it cuts, square to where the
+            // section looks: the distance is to that line, not to its middle.
+            var across = view.PreferredSide is SectionPlacementSide.Top or SectionPlacementSide.Bottom;
+            var along = view.PreferredSide is SectionPlacementSide.Left or SectionPlacementSide.Right;
             var rect = rects[view.Id];
-            var dx = Math.Max(Math.Max(rect.MinX - x, x - rect.MaxX), 0.0);
-            var dy = Math.Max(Math.Max(rect.MinY - y, y - rect.MaxY), 0.0);
+            var dx = across
+                ? Math.Max(Math.Max(rect.MinX - host.MaxX, host.MinX - rect.MaxX), 0.0)
+                : Math.Max(Math.Max(rect.MinX - x, x - rect.MaxX), 0.0);
+            var dy = along
+                ? Math.Max(Math.Max(rect.MinY - host.MaxY, host.MinY - rect.MaxY), 0.0)
+                : Math.Max(Math.Max(rect.MinY - y, y - rect.MaxY), 0.0);
             distance += Math.Sqrt((dx * dx) + (dy * dy));
         }
 

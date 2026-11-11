@@ -247,15 +247,15 @@ public sealed class ConstraintLayoutPlannerTests
 
         var candidates = ConstraintLayoutPlanner.Plan(input).Candidates;
 
-        // The cut is on the base view's center line, 30 from its edge: next to the base
-        // view the section is 34 from it, beyond the side view 138.
+        // The section line runs across the base view: next to the base view the
+        // section is one gap from it, beyond the side view 108.
         Assert.Equal("cut-Right", candidates[0].Slots[SectionA].ToString());
         Assert.Equal(0.25, candidates[0].Cost, 9);
-        Assert.Equal(34 / 100.0 * 0.25, candidates[0].CutDistanceCost, 9);
+        Assert.Equal(4 / 100.0 * 0.25, candidates[0].CutDistanceCost, 9);
         // Behind the side view it is no longer next to its cut and costs as a lost link.
         Assert.Equal("cut-Left", candidates[1].Slots[SectionA].ToString());
         Assert.Equal(ConstraintLayoutPolicy.Balanced.LinkBreakCost, candidates[1].Cost, 9);
-        Assert.Equal(138 / 100.0 * 0.25, candidates[1].CutDistanceCost, 9);
+        Assert.Equal(108 / 100.0 * 0.25, candidates[1].CutDistanceCost, 9);
     }
 
     [Fact]
