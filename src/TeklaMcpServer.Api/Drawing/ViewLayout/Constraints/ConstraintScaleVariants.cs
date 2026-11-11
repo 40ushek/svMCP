@@ -143,7 +143,8 @@ internal static class ConstraintScaleVariants
         var assembly = assemblyViewIds.Where(currentScales.ContainsKey).ToList();
         var sections = sectionViewIds.Where(currentScales.ContainsKey).ToList();
 
-        var found = new Dictionary<string, ConstraintScaleVariant>();
+        var seen = new HashSet<string>();
+        var candidates = new List<ConstraintScaleVariant>();
         foreach (var mainScale in mainScales
             .SkipWhile(scale => !FitsAlone(assembly.ToDictionary(static id => id, _ => scale)))
             .Take(policy.MainScaleDepth))
@@ -160,20 +161,34 @@ internal static class ConstraintScaleVariants
                     scales[id] = Math.Min(currentScales[id], sectionScale);
 
                 var variant = new ConstraintScaleVariant { MainScale = mainScale, SectionScale = sectionScale, ScalesById = scales };
-                if (found.ContainsKey(variant.Key) || !FitsAlone(scales))
-                    continue;
-
-                var result = ConstraintLayoutShadow.Evaluate(Rescale(layoutCase, scales, estimator), policy);
-                if (result?.Best?.IsFeasible != true || result.SkippedViews > 0)
-                    continue;
-
-                variant.Fill = result.Best.Score.Breakdown.FillRatioRaw;
-                variant.Cost = result.BestPlan!.Cost;
-                found[variant.Key] = variant;
+                if (seen.Add(variant.Key) && FitsAlone(scales))
+                    candidates.Add(variant);
             }
         }
 
-        return Order(found.Values, policy.ScaleFillTie);
+        // The combinations do not depend on each other and nothing here touches
+        // Tekla, so they are laid out side by side; the order they came in is kept.
+        bool LaysOut(ConstraintScaleVariant variant)
+        {
+            var result = ConstraintLayoutShadow.Evaluate(Rescale(layoutCase, variant.ScalesById, estimator), policy);
+            if (result?.Best?.IsFeasible != true || result.SkippedViews > 0)
+                return false;
+
+            variant.Fill = result.Best.Score.Breakdown.FillRatioRaw;
+            variant.Cost = result.BestPlan!.Cost;
+            return true;
+        }
+
+        try
+        {
+            return Order(candidates.AsParallel().AsOrdered().Where(LaysOut).ToList(), policy.ScaleFillTie);
+        }
+        catch (AggregateException exception) when (exception.InnerExceptions.Count > 0)
+        {
+            // The failure of one combination as it was, not wrapped by the parallel run.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception.InnerExceptions[0]).Throw();
+            throw;
+        }
     }
 
     /// <summary>

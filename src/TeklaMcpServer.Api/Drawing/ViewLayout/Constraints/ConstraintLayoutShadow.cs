@@ -77,9 +77,13 @@ internal static class ConstraintLayoutShadow
         var tightGap = gap * settings.TightGapShare;
         if (tightGap >= settings.MinTightGap && tightGap < gap)
         {
+            // The layout at the tight gap is wanted only when the one at the full gap
+            // gives something up, which is not known until that one is done. It is
+            // worked out alongside, on another thread, and left aside when not wanted.
+            var tightTask = System.Threading.Tasks.Task.Run(() => Evaluate(layoutCase, policy, 0, tightGap));
             var normal = Evaluate(layoutCase, policy, 0, gap);
             var tight = normal?.BestPlan?.Cost > 0 || (normal != null && normal.BestPlan == null)
-                ? Evaluate(layoutCase, policy, 0, tightGap)
+                ? tightTask.GetAwaiter().GetResult()
                 : null;
             if (tight?.BestPlan != null && (normal!.BestPlan == null || tight.BestPlan.Cost < normal.BestPlan.Cost - 1e-9))
             {

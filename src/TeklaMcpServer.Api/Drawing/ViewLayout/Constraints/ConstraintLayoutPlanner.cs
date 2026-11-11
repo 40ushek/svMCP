@@ -186,6 +186,8 @@ internal static class ConstraintLayoutPlanner
         new(SectionPlacementSide.Bottom, isStack: true)
     ];
 
+    private static readonly StackPlacement[] OtherStackPlacements = [StackPlacement.Above, StackPlacement.Beyond];
+
     public static ConstraintLayoutPlan Plan(ConstraintLayoutPlannerInput input)
     {
         if (input == null)
@@ -216,12 +218,14 @@ internal static class ConstraintLayoutPlanner
             // A stack beside the base view first goes under the views in line there,
             // then above them; when neither works out, beyond them.
             var solution = SolveTopology(input, slots, StackPlacement.Under);
-            foreach (var placement in new[] { StackPlacement.Above, StackPlacement.Beyond })
+            var rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
+            foreach (var placement in OtherStackPlacements)
             {
-                if (solution.IsFeasible && PlaceOnSheet(input, solution.RectsById) != null)
+                if (rects != null)
                     break;
 
                 solution = SolveTopology(input, slots, placement);
+                rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
             }
             if (plan.EvaluatedTopologies == 1)
             {
@@ -229,7 +233,6 @@ internal static class ConstraintLayoutPlanner
                 plan.PreferredRequiredHeight = solution.RequiredHeight;
             }
 
-            var rects = solution.IsFeasible ? PlaceOnSheet(input, solution.RectsById) : null;
             if (rects == null)
                 continue;
 
