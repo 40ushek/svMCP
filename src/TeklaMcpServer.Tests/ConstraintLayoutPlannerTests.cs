@@ -302,6 +302,7 @@ public sealed class ConstraintLayoutPlannerTests
             CutX = 0, CutY = cutOffset
         };
         var input = Input(bounds, AtCut(SectionA, 100), AtCut(SectionB, -100), AtCut(Top, -90));
+        // Lines 10 apart are too close to spread; see the next test for lines a little too close.
         input.BaseView = new ConstraintLayoutView(Front, 60, 300);
 
         var best = ConstraintLayoutPlanner.Plan(input).Candidates
@@ -375,6 +376,34 @@ public sealed class ConstraintLayoutPlannerTests
         var markY = ((front.MinY + front.MaxY) / 2) + 10;
         var distance = Math.Abs(((detail.MinX + detail.MaxX) / 2) - markX) + Math.Abs(((detail.MinY + detail.MaxY) / 2) - markY);
         Assert.True(distance < 80, $"detail is {distance:0} from its mark");
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void SectionsWhoseLinesAreALittleTooClose_AreSpreadApart_InOneColumn()
+    {
+        // Two sections 25 high need 29 between centers; their lines are 25 apart.
+        var bounds = new ReservedRect(0, 0, 300, 310);
+        ConstraintLayoutViewInput AtCut(int id, double cutOffset) => new()
+        {
+            Id = id, Width = 30, Height = 25,
+            PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Relaxed,
+            CutX = 0, CutY = cutOffset
+        };
+        var input = Input(bounds, AtCut(SectionA, 25), AtCut(SectionB, 0));
+        input.BaseView = new ConstraintLayoutView(Front, 60, 300);
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates
+            .First(candidate => candidate.Slots.Values.All(static slot => slot.ToString() == "cut-Right"));
+
+        var front = best.RectsById[Front];
+        var a = best.RectsById[SectionA];
+        var b = best.RectsById[SectionB];
+        Assert.Equal(Gap, a.MinX - front.MaxX, 9);
+        Assert.Equal(Gap, b.MinX - front.MaxX, 9);
+        // Each gave way by 2: centers at 27 and -2 from the base view's center.
+        Assert.Equal(27, ((a.MinY + a.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
+        Assert.Equal(-2, ((b.MinY + b.MaxY) - (front.MinY + front.MaxY)) / 2, 9);
         AssertValid(best, bounds);
     }
 

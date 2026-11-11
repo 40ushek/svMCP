@@ -478,15 +478,14 @@ internal static class ConstraintLayoutPlanner
         var outer = new List<int> { outermost };
         foreach (var column in ArrangeAtCutColumns(onSide.Where(v => slots[v.Id].IsAtCut), horizontal, input.Gap))
         {
-            foreach (var view in column)
+            foreach (var (view, offset) in column)
             {
                 relations.AddRange(outer.Select(inner => Outward(side, inner, view.Id)));
-                relations.Add(horizontal
-                    ? new LayoutRelation(LayoutRelationKind.AlignCenterY, hostId, view.Id, view.CutY ?? 0.0)
-                    : new LayoutRelation(LayoutRelationKind.AlignCenterX, hostId, view.Id, view.CutX ?? 0.0));
+                relations.Add(new LayoutRelation(
+                    horizontal ? LayoutRelationKind.AlignCenterY : LayoutRelationKind.AlignCenterX, hostId, view.Id, offset));
             }
 
-            outer = column.Select(static v => v.Id).ToList();
+            outer = column.Select(static item => item.View.Id).ToList();
         }
 
         // Stack: beyond all of those, running across the side in reading order.
@@ -534,33 +533,47 @@ internal static class ConstraintLayoutPlanner
 
     /// <summary>
     /// Groups the views placed at their cuts on one side into columns running outward
-    /// from the host view (rows, on a side above or below it). A view joins the first
-    /// column where it stays a gap clear of the views already there.
+    /// from the host view (rows, on a side above or below it), each view with where
+    /// it stands along the host. Views whose lines are a little too close for one
+    /// column are spread apart rather than sent to the next column: a section a few
+    /// millimeters off its line is still at its line, one column further out is not.
     /// </summary>
-    private static List<List<ConstraintLayoutViewInput>> ArrangeAtCutColumns(
+    private static List<List<(ConstraintLayoutViewInput View, double Offset)>> ArrangeAtCutColumns(
         IEnumerable<ConstraintLayoutViewInput> views,
         bool horizontal,
         double gap)
     {
         double Along(ConstraintLayoutViewInput view) => (horizontal ? view.CutY : view.CutX) ?? 0.0;
+        double Extent(ConstraintLayoutViewInput view) => horizontal ? view.Height : view.Width;
 
-        bool AreClear(ConstraintLayoutViewInput first, ConstraintLayoutViewInput second)
+        // Where the views of one column stand: on their lines, pushed apart just
+        // enough to clear each other, the push shared between both ends. Null when
+        // some view would end up further from its line than a quarter of its size.
+        List<(ConstraintLayoutViewInput View, double Offset)>? Spread(List<ConstraintLayoutViewInput> column)
         {
-            var extent = horizontal ? first.Height + second.Height : first.Width + second.Width;
-            return Math.Abs(Along(first) - Along(second)) >= (extent / 2.0) + gap;
+            var offsets = column.Select(Along).ToArray();
+            for (var i = 1; i < column.Count; i++)
+            {
+                var needed = ((Extent(column[i - 1]) + Extent(column[i])) / 2.0) + gap;
+                offsets[i] = Math.Max(offsets[i], offsets[i - 1] + needed);
+            }
+
+            var shift = column.Select((view, i) => offsets[i] - Along(view)).Average();
+            var spread = column.Select((view, i) => (View: view, Offset: offsets[i] - shift)).ToList();
+            return spread.All(item => Math.Abs(item.Offset - Along(item.View)) <= Extent(item.View) / 4.0) ? spread : null;
         }
 
         var columns = new List<List<ConstraintLayoutViewInput>>();
         foreach (var view in views.OrderBy(Along).ThenBy(static v => v.Id))
         {
-            var column = columns.FirstOrDefault(placed => placed.All(other => AreClear(other, view)));
+            var column = columns.FirstOrDefault(placed => Spread(placed.Append(view).ToList()) != null);
             if (column == null)
                 columns.Add(column = new List<ConstraintLayoutViewInput>());
 
             column.Add(view);
         }
 
-        return columns;
+        return columns.Select(column => Spread(column)!).ToList();
     }
 
     /// <summary>
