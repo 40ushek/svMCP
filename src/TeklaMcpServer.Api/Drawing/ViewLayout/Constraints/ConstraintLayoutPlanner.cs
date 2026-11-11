@@ -69,7 +69,7 @@ internal sealed class ConstraintLayoutPlannerInput
 
     public IReadOnlyList<ConstraintLayoutViewInput> Views { get; set; } = Array.Empty<ConstraintLayoutViewInput>();
 
-    public ConstraintLayoutPolicy Policy { get; set; } = ConstraintLayoutPolicy.PreferScale;
+    public ConstraintLayoutPolicy Policy { get; set; } = ConstraintLayoutPolicy.Balanced;
 
     public int MaxTopologies { get; set; } = 2000;
 

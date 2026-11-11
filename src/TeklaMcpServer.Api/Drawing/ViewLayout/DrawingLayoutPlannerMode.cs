@@ -13,6 +13,12 @@ public enum DrawingLayoutPlannerMode
     /// <summary>Constraint planner; no view leaves its side or the base view's axis.</summary>
     ConstraintKeepProjection,
 
-    /// <summary>Constraint planner; sections may leave their side or axis when the views do not fit otherwise.</summary>
+    /// <summary>
+    /// Constraint planner; a section may change sides to keep the scale, but leaves
+    /// the base view's axis only when the drawing would otherwise lose two scale steps.
+    /// </summary>
+    ConstraintBalanced,
+
+    /// <summary>Constraint planner; a section leaves its side or axis whenever that keeps a larger scale.</summary>
     ConstraintPreferScale
 }

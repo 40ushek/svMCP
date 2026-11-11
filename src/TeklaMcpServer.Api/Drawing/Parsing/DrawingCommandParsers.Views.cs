@@ -103,6 +103,12 @@ public static partial class DrawingCommandParsers
                 continue;
             }
 
+            if (string.Equals(args[i], "planner:balanced", StringComparison.OrdinalIgnoreCase))
+            {
+                request.PlannerMode = DrawingLayoutPlannerMode.ConstraintBalanced;
+                continue;
+            }
+
             if (string.Equals(args[i], "planner:preferscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.PlannerMode = DrawingLayoutPlannerMode.ConstraintPreferScale;

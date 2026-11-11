@@ -25,11 +25,19 @@ internal sealed class ConstraintLayoutPolicy
     public double LinkBreakCost { get; set; } = 1.5;
 
     /// <summary>
-    /// For drawings where a readable scale comes first: views go on their side and
-    /// in projection when that fits, and sections give those up when it does not.
-    /// A wrong side is given up before a projection link.
+    /// The class defaults. A view may change sides to keep the scale, but a
+    /// projection link is worth more than one scale step: the drawing goes one step
+    /// smaller before a view leaves the base view's axis.
     /// </summary>
-    public static ConstraintLayoutPolicy PreferScale => new();
+    public static ConstraintLayoutPolicy Balanced => new();
+
+    /// <summary>
+    /// For drawings where a readable scale comes first, because dimensions have to
+    /// be legible: a view leaves its side or the base view's axis whenever that
+    /// keeps the drawing one scale step larger. A wrong side is still given up
+    /// before a projection link, and two views off the axis cost more than a step.
+    /// </summary>
+    public static ConstraintLayoutPolicy PreferScale => new() { LinkBreakCost = 0.75 };
 
     /// <summary>
     /// For drawings where projection links and sides come first: no view leaves

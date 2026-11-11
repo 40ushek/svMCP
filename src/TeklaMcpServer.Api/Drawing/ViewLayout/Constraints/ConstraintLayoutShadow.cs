@@ -108,7 +108,7 @@ internal static class ConstraintLayoutShadow
             ReservedAreas = reference.ReservedLayout.Areas,
             BaseView = new ConstraintLayoutView(baseViewId, baseView.LayoutRect.Width, baseView.LayoutRect.Height),
             Views = plannerViews,
-            Policy = policy ?? ConstraintLayoutPolicy.PreferScale
+            Policy = policy ?? ConstraintLayoutPolicy.Balanced
         });
 
         var residuals = planned

@@ -401,7 +401,7 @@ public static partial class ModelTools
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false,
         [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false,
         [Description("Scale policy for secondary views (Section/Detail) relative to main scale. SameAsMain=default (no change), PreserveLargerIfFits=keep author scale if larger and fits, PreserveIfNotSmaller=keep if not smaller than main, AllowLargerIfFits=pick best larger scale.")] string secondaryScalePolicy = "SameAsMain",
-        [Description("Experimental layout planner. Current=default. KeepProjection=constraint planner, no view leaves its side or the base view's axis. PreferScale=constraint planner, sections may leave their side or axis to keep a larger scale. The constraint planner handles the base view, its projections and standard sections; with details or 3D views on the sheet the current planner is used.")] string planner = "Current")
+        [Description("Experimental layout planner. Current=default. KeepProjection=constraint planner, no view leaves its side or the base view's axis. Balanced=constraint planner, a section may change sides but keeps the projection link unless that costs two scale steps. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. The constraint planner handles the base view, its projections and standard sections; with details or 3D views on the sheet the current planner is used.")] string planner = "Current")
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
@@ -413,6 +413,8 @@ public static partial class ModelTools
             tokens.Add(secondaryScalePolicy);
         if (string.Equals(planner, "KeepProjection", System.StringComparison.OrdinalIgnoreCase))
             tokens.Add("planner:keepprojection");
+        else if (string.Equals(planner, "Balanced", System.StringComparison.OrdinalIgnoreCase))
+            tokens.Add("planner:balanced");
         else if (string.Equals(planner, "PreferScale", System.StringComparison.OrdinalIgnoreCase))
             tokens.Add("planner:preferscale");
         var json = RunBridge(tokens.ToArray());

@@ -498,15 +498,21 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutVariantResult? variantResult = null;
         DrawingLayoutCandidateSelection? passiveSelection = null;
         var constraintPlannerSelected = false;
+        var constraintScaleSearch = new Constraints.ConstraintScaleSearch();
         var allCandidates = System.Array.Empty<DrawingLayoutCandidate>();
         var scaleAttemptViews = currentViews;
         var scaleAttemptRects = actualRects;
 
-        foreach (var attemptScale in scalesToTry)
+        // Indexed, not foreach: the constraint planner may append a return to an
+        // earlier scale. Without it the loop visits the same scales in the same order.
+        for (var attemptIndex = 0; attemptIndex < scalesToTry.Count; attemptIndex++)
         {
+            var attemptScale = scalesToTry[attemptIndex];
+
             // For the first attempt use the state already set by probe.
             // For subsequent attempts, apply the new scale virtually (no Tekla mutation).
-            if (attemptScale != optimalScale.Value)
+            // A return to an earlier scale is probed again: the state has moved on since.
+            if (attemptScale != optimalScale.Value || constraintScaleSearch.IsReturning)
             {
                 var fallbackProbe = ProbeCandidateScale(
                     activeDrawing,
@@ -607,22 +613,43 @@ public sealed partial class TeklaDrawingViewApi
             allCandidates = variantList.SelectMany(v => v.Candidates).ToArray();
             passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(allCandidates);
 
-            // Constraint planner, when asked for: its layout at this scale takes over
-            // if it is feasible; otherwise the current planner's selection stands and
-            // the loop may go on to the next scale as before.
+            // Constraint planner, when asked for. Its layout at this scale is weighed
+            // against what a smaller scale could give (ConstraintScaleSearch): it may be
+            // taken at once, held while the next scale is tried, or passed over for an
+            // earlier scale. With no layout from it the current planner's selection
+            // stands and the loop goes on as before.
             constraintPlannerSelected = false;
+            var constraintScaleDecision = Constraints.ConstraintScaleDecision.NoLayout;
             if (plannerMode != DrawingLayoutPlannerMode.Current)
             {
-                var plannerEvaluation = TryEvaluateConstraintLayoutCandidate(
+                var planned = TryEvaluateConstraintLayoutCandidate(
                     layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale);
-                if (plannerEvaluation?.IsFeasible == true)
+                var plannerFeasible = planned.Evaluation?.IsFeasible == true;
+                constraintScaleDecision = constraintScaleSearch.Offer(
+                    attemptIndex,
+                    isLast: attemptIndex == scalesToTry.Count - 1,
+                    cost: plannerFeasible ? planned.Cost : (double?)null);
+
+                var holdsBest = constraintScaleDecision == Constraints.ConstraintScaleDecision.Select
+                    || (constraintScaleDecision == Constraints.ConstraintScaleDecision.LookAhead
+                        && constraintScaleSearch.BestIndex == attemptIndex);
+                if (plannerFeasible && holdsBest)
                 {
-                    allCandidates = allCandidates.Append(plannerEvaluation.Candidate).ToArray();
-                    passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(new[] { plannerEvaluation.Candidate });
+                    allCandidates = allCandidates.Append(planned.Evaluation!.Candidate).ToArray();
+                    passiveSelection = new DrawingLayoutCandidateSelector().SelectBest(new[] { planned.Evaluation.Candidate });
                     constraintPlannerSelected = true;
+                    selectedScale = attemptScale;
                 }
+
+                if (constraintScaleDecision == Constraints.ConstraintScaleDecision.GoBack)
+                    scalesToTry.Insert(attemptIndex + 1, scalesToTry[constraintScaleSearch.BestIndex]);
+
+                PerfTrace.Write("api-view", "constraint_layout_scale", 0,
+                    $"scale=1:{attemptScale:0.###} attempt={attemptIndex} decision={constraintScaleDecision} bestAttempt={constraintScaleSearch.BestIndex}");
             }
 
+            var constraintPlannerMovesOn = constraintScaleDecision
+                is Constraints.ConstraintScaleDecision.LookAhead or Constraints.ConstraintScaleDecision.GoBack;
             var anyFeasible = passiveSelection.Selected?.IsFeasible == true;
 
             PerfTrace.Write("api-view", "layout_internal", 0,
@@ -634,7 +661,7 @@ public sealed partial class TeklaDrawingViewApi
                 v.Candidates.Any(c => c.Name == winningCandidateName)) ?? defaultVariant;
             variantResult = winningVariant;
 
-            if (anyFeasible)
+            if (anyFeasible && !constraintPlannerMovesOn)
             {
                 selectedScale = attemptScale;
                 break;

@@ -16,6 +16,7 @@ public sealed class FitViewsToSheetRequestParserTests
 
     [Theory]
     [InlineData("planner:keepprojection", DrawingLayoutPlannerMode.ConstraintKeepProjection)]
+    [InlineData("planner:balanced", DrawingLayoutPlannerMode.ConstraintBalanced)]
     [InlineData("planner:preferscale", DrawingLayoutPlannerMode.ConstraintPreferScale)]
     [InlineData("PLANNER:PreferScale", DrawingLayoutPlannerMode.ConstraintPreferScale)]
     public void PlannerToken_SelectsTheConstraintPlanner_AndLeavesTheOtherOptionsAlone(

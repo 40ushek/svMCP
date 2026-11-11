@@ -15,9 +15,10 @@ public sealed partial class TeklaDrawingViewApi
     /// The constraint planner's layout for the views as the current planner sized
     /// and sided them at this scale, or null when it has none to offer: no base
     /// view, a view kind it does not handle yet on the sheet, or nothing that fits
-    /// under the policy. A failure is traced and treated as "no layout".
+    /// under the policy. A failure is traced and treated as "no layout". Cost is
+    /// what the layout's deviations cost under the policy, in scale steps.
     /// </summary>
-    private static DrawingLayoutCandidateEvaluation? TryEvaluateConstraintLayoutCandidate(
+    private static (DrawingLayoutCandidateEvaluation? Evaluation, double Cost) TryEvaluateConstraintLayoutCandidate(
         DrawingLayoutWorkspace workspace,
         DrawingLayoutVariantResult currentVariant,
         double gap,
@@ -36,9 +37,12 @@ public sealed partial class TeklaDrawingViewApi
                 ? null
                 : ConstraintLayoutShadow.Evaluate(
                     layoutCase,
-                    plannerMode == DrawingLayoutPlannerMode.ConstraintKeepProjection
-                        ? ConstraintLayoutPolicy.KeepProjection
-                        : ConstraintLayoutPolicy.PreferScale);
+                    plannerMode switch
+                    {
+                        DrawingLayoutPlannerMode.ConstraintKeepProjection => ConstraintLayoutPolicy.KeepProjection,
+                        DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
+                        _ => ConstraintLayoutPolicy.Balanced
+                    });
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
 
@@ -63,7 +67,7 @@ public sealed partial class TeklaDrawingViewApi
                         result.BestPlan!.Cost,
                         result.BestPlan.Deviations,
                         result.Plan.EvaluatedTopologies));
-                return result.Best;
+                return (result.Best, result.BestPlan.Cost);
             }
         }
         catch (System.Exception exception)
@@ -76,7 +80,7 @@ public sealed partial class TeklaDrawingViewApi
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
             string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} result={2}", scale, plannerMode, outcome));
-        return null;
+        return (null, 0.0);
     }
 
     private static ConstraintLayoutCase? BuildConstraintLayoutCase(
