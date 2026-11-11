@@ -13,12 +13,13 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 public sealed partial class TeklaDrawingViewApi
 {
     /// <summary>
-    /// Whether the constraint planner is the default on the active drawing: on an
-    /// assembly drawing, the only kind it has been tried on. Elsewhere (GA,
-    /// single-part) the legacy planner stays the default until it has been.
+    /// Whether the constraint planner is the default on the active drawing: on
+    /// assembly and single-part drawings, the kinds it has been tried on.
+    /// Elsewhere (GA, cast unit) the legacy planner stays the default until it
+    /// has been.
     /// </summary>
     public bool IsConstraintPlannerDefault()
-        => new DrawingHandler().GetActiveDrawing() is AssemblyDrawing;
+        => new DrawingHandler().GetActiveDrawing() is AssemblyDrawing or SinglePartDrawing;
 
     /// <param name="margin">Margin from sheet edges in mm. Pass <c>null</c> to auto-read from drawing layout. Pass 0 for a true zero margin.</param>
     /// <param name="scalePolicy">Controls whether scales are unified, partially unified, or preserved as-is.</param>

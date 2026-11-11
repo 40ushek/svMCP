@@ -3,7 +3,7 @@ namespace TeklaMcpServer.Api.Drawing.ViewLayout;
 /// <summary>
 /// Which planner lays out the views in fit_views_to_sheet. The constraint planner
 /// (ROADMAP_CONSTRAINT_LAYOUT.md) is the main one: a caller that names no planner
-/// gets <see cref="ConstraintBalanced"/> on an assembly drawing. When it has no
+/// gets <see cref="ConstraintBalanced"/> on an assembly or single-part drawing. When it has no
 /// layout at a scale, the legacy planner's result is used instead.
 /// </summary>
 public enum DrawingLayoutPlannerMode
@@ -11,7 +11,7 @@ public enum DrawingLayoutPlannerMode
     /// <summary>
     /// Deprecated: the planner fit_views_to_sheet had before the constraint planner
     /// (a chain of packing steps). Kept as the fallback and for the drawing kinds
-    /// the constraint planner has not been tried on (GA, single-part); not
+    /// the constraint planner has not been tried on (GA, cast unit); not
     /// developed further and removed once the constraint planner covers those.
     /// The constraint planner only runs in shadow under it.
     /// </summary>
