@@ -57,9 +57,15 @@ internal static class ConstraintLayoutShadow
     private const double AlignmentMatchTolerance = 0.05;
 
     /// <returns>Null when the base view is not among the case's views or has no frame rectangle.</returns>
+    /// <param name="variant">
+    /// Which of the layouts that fit to return, counted from the cheapest: 0 is the
+    /// planner's own choice, 1 the next one, and so on. A number past the last
+    /// layout returns no layout.
+    /// </param>
     public static ConstraintLayoutShadowResult? Evaluate(
         ConstraintLayoutCase layoutCase,
-        ConstraintLayoutPolicy? policy = null)
+        ConstraintLayoutPolicy? policy = null,
+        int variant = 0)
     {
         if (layoutCase == null)
             throw new ArgumentNullException(nameof(layoutCase));
@@ -140,6 +146,16 @@ internal static class ConstraintLayoutShadow
         };
         if (plan.Candidates.Count == 0)
             return result;
+
+        if (variant > 0)
+        {
+            if (variant >= plan.Candidates.Count)
+                return result;
+
+            result.BestPlan = plan.Candidates[variant];
+            result.Best = new DrawingLayoutScorer().Evaluate(ToCandidate(reference, included, result.BestPlan));
+            return result;
+        }
 
         // The policy decides first: only the cheapest layouts compete on score.
         var cheapest = plan.Candidates

@@ -414,6 +414,7 @@ public sealed class FitViewsToSheetRequest
     public DrawingLayoutApplyMode ApplyMode { get; set; } = DrawingLayoutApplyMode.DebugPreview;
     public SecondaryScalePolicy SecondaryScalePolicy { get; set; } = SecondaryScalePolicy.SameAsMain;
     public DrawingLayoutPlannerMode PlannerMode { get; set; } = DrawingLayoutPlannerMode.Current;
+    public int PlannerVariant { get; set; }
 }
 
 public sealed class DeleteDimensionRequest

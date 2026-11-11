@@ -401,13 +401,16 @@ public static partial class ModelTools
         [Description("If true, keep existing view scales and only rearrange positions. Default: false")] bool keepScale = false,
         [Description("If true, compute layout without moving views in Tekla (dry run / preview). Default: false")] bool dryRun = false,
         [Description("Scale policy for secondary views (Section/Detail) relative to main scale. SameAsMain=default (no change), PreserveLargerIfFits=keep author scale if larger and fits, PreserveIfNotSmaller=keep if not smaller than main, AllowLargerIfFits=pick best larger scale.")] string secondaryScalePolicy = "SameAsMain",
-        [Description("Experimental layout planner. Current=default. KeepProjection=constraint planner, no view leaves its side or the base view's axis. Balanced=constraint planner, a section may change sides but keeps the projection link unless that costs two scale steps. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. The constraint planner handles the base view, its projections and standard sections; with details or 3D views on the sheet the current planner is used.")] string planner = "Current")
+        [Description("Experimental layout planner. Current=default. KeepProjection=constraint planner, no view leaves its side or the base view's axis. Balanced=constraint planner, a section may change sides but keeps the projection link unless that costs two scale steps. PreferScale=constraint planner, a section leaves its side or axis whenever that keeps a larger scale. The constraint planner handles the base view, its projections and standard sections; with details or 3D views on the sheet the current planner is used.")] string planner = "Current",
+        [Description("With a constraint planner: which of the layouts that fit to use. 0=the planner's own choice, 1, 2, ...=the next ones, each giving up a little more. Run with dryRun=true to look at a variant before applying it.")] int plannerVariant = 0,
+        [Description("With a constraint planner the views keep their scales by default. Set true to let it choose a common scale for the assembly views as well.")] bool plannerRescale = false)
     {
         var marginStr         = margin < 0 ? "auto" : margin.ToString(CultureInfo.InvariantCulture);
         var gapStr            = gap.ToString(CultureInfo.InvariantCulture);
         var titleBlockStr     = titleBlockHeight.ToString(CultureInfo.InvariantCulture);
         var tokens            = new System.Collections.Generic.List<string> { "fit_views_to_sheet", marginStr, gapStr, titleBlockStr };
         if (keepScale) tokens.Add("preserveexistingscales");
+        else if (plannerRescale) tokens.Add("uniformallnondetail");
         if (dryRun)    tokens.Add("debugpreview");
         if (!string.Equals(secondaryScalePolicy, "SameAsMain", System.StringComparison.OrdinalIgnoreCase))
             tokens.Add(secondaryScalePolicy);
@@ -417,6 +420,8 @@ public static partial class ModelTools
             tokens.Add("planner:balanced");
         else if (string.Equals(planner, "PreferScale", System.StringComparison.OrdinalIgnoreCase))
             tokens.Add("planner:preferscale");
+        if (plannerVariant > 0)
+            tokens.Add("planner-variant:" + plannerVariant.ToString(CultureInfo.InvariantCulture));
         var json = RunBridge(tokens.ToArray());
         try
         {

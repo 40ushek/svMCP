@@ -244,7 +244,8 @@ public sealed partial class TeklaDrawingViewApi
         double currentScale,
         string stage,
         string oversizeMessage,
-        string fitFailedMessage)
+        string fitFailedMessage,
+        bool plannerJudgesFit = false)
     {
         var keepFrameSizes = DrawingViewFrameGeometry.TryGetFrameSizes(currentViews, actualRects);
         var keepFrames = BuildFrameList(currentViews, keepFrameSizes);
@@ -266,7 +267,10 @@ public sealed partial class TeklaDrawingViewApi
         TraceScaleCandidate(currentScale, currentViews, keepFrames, fits, oversizeConflicts);
         keepFitSw.Stop();
 
-        if (!fits)
+        // With the constraint planner asked for, a failed estimate of the current
+        // planner is not the last word: the constraint planner lays the views out at
+        // these scales itself, further down.
+        if (!fits && !plannerJudgesFit)
         {
             var conflicts = _arrangementSelector.DiagnoseFitConflicts(keepCtx, keepFrames);
             TraceEstimateFailureDecision(new EstimateFitFailureDecision(

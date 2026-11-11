@@ -54,6 +54,18 @@ public sealed class ConstraintLayoutCorpusTests
             if (result.Best == null)
                 continue;
 
+            // The other layouts the planner found, cheapest first.
+            for (var i = 0; i < result.Plan.Candidates.Count; i++)
+            {
+                var candidate = result.Plan.Candidates[i];
+                _output.WriteLine(string.Format(
+                    CultureInfo.InvariantCulture,
+                    "    variant {0}: cost={1:0.##} {2}",
+                    i,
+                    candidate.Cost,
+                    string.Join(" ", candidate.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}"))));
+            }
+
             // Where the planner puts every view, and how far that is from where it stands.
             foreach (var view in result.Best.Candidate.Views.OrderBy(static view => view.Id))
             {

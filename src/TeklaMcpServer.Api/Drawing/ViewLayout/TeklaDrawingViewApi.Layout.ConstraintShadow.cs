@@ -24,7 +24,8 @@ public sealed partial class TeklaDrawingViewApi
         DrawingLayoutVariantResult currentVariant,
         double gap,
         DrawingLayoutPlannerMode plannerMode,
-        double scale)
+        double scale,
+        int variant)
     {
         var stopwatch = Stopwatch.StartNew();
         string outcome;
@@ -40,7 +41,7 @@ public sealed partial class TeklaDrawingViewApi
                 DrawingLayoutPlannerMode.ConstraintPreferScale => ConstraintLayoutPolicy.PreferScale,
                 _ => ConstraintLayoutPolicy.Balanced
             };
-            var result = layoutCase == null ? null : ConstraintLayoutShadow.Evaluate(layoutCase, policy);
+            var result = layoutCase == null ? null : ConstraintLayoutShadow.Evaluate(layoutCase, policy, variant);
             if (layoutCase != null)
                 SaveConstraintLayoutCase(layoutCase);
 
@@ -49,7 +50,9 @@ public sealed partial class TeklaDrawingViewApi
             else if (result.SkippedViews > 0)
                 outcome = $"skipped reason=unsupported-views count={result.SkippedViews}";
             else if (result.Best == null)
-                outcome = $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}";
+                outcome = result.Plan.Candidates.Count > 0
+                    ? $"no-such-variant variant={variant} variants={result.Plan.Candidates.Count}"
+                    : $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}";
             else
             {
                 var fill = result.Best.Score.Breakdown.FillRatioRaw;
@@ -60,7 +63,7 @@ public sealed partial class TeklaDrawingViewApi
                     stopwatch.ElapsedMilliseconds,
                     string.Format(
                         CultureInfo.InvariantCulture,
-                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5} fill={6:0.###} emptiness={7:0.##}",
+                        "scale=1:{0:0.###} mode={1} result=ok feasible={2} cost={3:0.##} deviations={4} topologies={5} fill={6:0.###} emptiness={7:0.##} variant={8} variants={9} slots={10}",
                         scale,
                         plannerMode,
                         result.Best.IsFeasible ? 1 : 0,
@@ -68,7 +71,10 @@ public sealed partial class TeklaDrawingViewApi
                         result.BestPlan.Deviations,
                         result.Plan.EvaluatedTopologies,
                         fill,
-                        emptiness));
+                        emptiness,
+                        variant,
+                        result.Plan.Candidates.Count,
+                        string.Join(",", result.BestPlan.Slots.OrderBy(static slot => slot.Key).Select(static slot => $"{slot.Key}:{slot.Value}"))));
                 return (result.Best, result.BestPlan.Cost, emptiness);
             }
         }

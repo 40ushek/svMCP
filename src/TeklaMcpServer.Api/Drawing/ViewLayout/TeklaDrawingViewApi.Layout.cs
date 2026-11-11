@@ -95,7 +95,8 @@ public sealed partial class TeklaDrawingViewApi
         DrawingScalePolicy scalePolicy = DrawingScalePolicy.UniformAllNonDetail,
         DrawingLayoutApplyMode applyMode = DrawingLayoutApplyMode.DebugPreview,
         SecondaryScalePolicy secondaryScalePolicy = SecondaryScalePolicy.SameAsMain,
-        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current)
+        DrawingLayoutPlannerMode plannerMode = DrawingLayoutPlannerMode.Current,
+        int plannerVariant = 0)
     {
         var total = Stopwatch.StartNew();
         using var layoutTrace = PerfTrace.BeginViewLayoutRun(
@@ -270,7 +271,8 @@ public sealed partial class TeklaDrawingViewApi
                 currentScale,
                 stage: "preserve-scales",
                 oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
-                fitFailedMessage: "Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.");
+                fitFailedMessage: "Could not fit views on sheet at current scales. Use a non-preserving scale policy to allow rescaling.",
+                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Current);
             candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
 
@@ -296,7 +298,8 @@ public sealed partial class TeklaDrawingViewApi
                 currentScale,
                 stage: "keep-current-scales",
                 oversizeMessage: "One or more views are larger than the usable sheet area at current scales.",
-                fitFailedMessage: "Could not fit views on sheet at current scales.");
+                fitFailedMessage: "Could not fit views on sheet at current scales.",
+                plannerJudgesFit: plannerMode != DrawingLayoutPlannerMode.Current);
             candidateFitMs = keepResult.ElapsedMilliseconds;
             candidateAttempts = 1;
 
@@ -375,7 +378,12 @@ public sealed partial class TeklaDrawingViewApi
                     continue;
                 }
 
-                var fits = _arrangementSelector.EstimateFit(ctx, actualFrames);
+                // In planner mode the constraint planner judges the fit itself, in the
+                // scale loop further down. The current planner's estimate would hide
+                // from it every scale that estimate rejects, so here the first scale at
+                // which no single view is larger than the sheet is taken as the start.
+                var fits = plannerMode != DrawingLayoutPlannerMode.Current
+                    || _arrangementSelector.EstimateFit(ctx, actualFrames);
                 TraceScaleCandidate(s, candidateViews, actualFrames, fits);
                 if (!fits && PerfTrace.IsViewLayoutDetailedTraceActive)
                 {
@@ -623,7 +631,7 @@ public sealed partial class TeklaDrawingViewApi
             if (plannerMode != DrawingLayoutPlannerMode.Current)
             {
                 var planned = TryEvaluateConstraintLayoutCandidate(
-                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale);
+                    layoutWorkspace, defaultVariant, gap, plannerMode, attemptScale, plannerVariant);
                 var plannerFeasible = planned.Evaluation?.IsFeasible == true;
                 constraintScaleDecision = constraintScaleSearch.Offer(
                     attemptIndex,

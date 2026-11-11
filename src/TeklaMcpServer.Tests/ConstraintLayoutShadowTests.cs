@@ -107,6 +107,26 @@ public sealed class ConstraintLayoutShadowTests
     }
 
     [Fact]
+    public void Variant_ReturnsTheNextLayouts_CheapestFirst_AndNothingPastTheLast()
+    {
+        var layoutCase = Case(Reference());
+
+        var chosen = ConstraintLayoutShadow.Evaluate(layoutCase)!;
+        var next = ConstraintLayoutShadow.Evaluate(layoutCase, variant: 1)!;
+        var pastTheEnd = ConstraintLayoutShadow.Evaluate(layoutCase, variant: 1000)!;
+
+        Assert.Equal(0, chosen.BestPlan!.Cost);
+        Assert.True(next.BestPlan!.Cost > 0);
+        Assert.Same(next.Plan.Candidates[1], next.BestPlan);
+        Assert.NotEqual(
+            chosen.BestPlan.Slots.Select(static slot => slot.Value.ToString()),
+            next.BestPlan.Slots.Select(static slot => slot.Value.ToString()));
+        Assert.True(next.Best!.IsFeasible);
+        Assert.Null(pastTheEnd.Best);
+        Assert.NotEmpty(pastTheEnd.Plan.Candidates);
+    }
+
+    [Fact]
     public void BaseViewNotInReference_ReturnsNull()
         => Assert.Null(Evaluate(Reference(), baseViewId: 99));
 

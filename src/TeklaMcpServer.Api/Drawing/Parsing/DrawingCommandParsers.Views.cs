@@ -66,6 +66,7 @@ public static partial class DrawingCommandParsers
             request.TitleBlockHeight = titleBlockHeight;
 
         // Scale-policy tokens can appear at any position (positional args are numeric, so no ambiguity)
+        var scalePolicyGiven = false;
         for (int i = 1; i < args.Length; i++)
         {
             if (string.Equals(args[i], "debugpreview", StringComparison.OrdinalIgnoreCase) ||
@@ -87,6 +88,7 @@ public static partial class DrawingCommandParsers
                 string.Equals(args[i], "keepscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
+                scalePolicyGiven = true;
                 continue;
             }
 
@@ -94,12 +96,22 @@ public static partial class DrawingCommandParsers
                 string.Equals(args[i], "strictuniformscale", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformAllNonDetail;
+                scalePolicyGiven = true;
                 continue;
             }
 
             if (string.Equals(args[i], "planner:keepprojection", StringComparison.OrdinalIgnoreCase))
             {
                 request.PlannerMode = DrawingLayoutPlannerMode.ConstraintKeepProjection;
+                continue;
+            }
+
+            const string variantPrefix = "planner-variant:";
+            if (args[i].StartsWith(variantPrefix, StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(args[i].Substring(variantPrefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out var plannerVariant)
+                && plannerVariant >= 0)
+            {
+                request.PlannerVariant = plannerVariant;
                 continue;
             }
 
@@ -118,6 +130,7 @@ public static partial class DrawingCommandParsers
             if (string.Equals(args[i], "uniformmainwithsectionexceptions", StringComparison.OrdinalIgnoreCase))
             {
                 request.ScalePolicy = DrawingScalePolicy.UniformMainWithSectionExceptions;
+                scalePolicyGiven = true;
                 continue;
             }
 
@@ -128,6 +141,12 @@ public static partial class DrawingCommandParsers
                 continue;
             }
         }
+
+        // The constraint planner keeps the views' scales unless a scale policy is asked
+        // for by name. Bringing every view to one scale shrinks small views that were
+        // drawn larger than the assembly, and the drawing reads worse for it.
+        if (request.PlannerMode != DrawingLayoutPlannerMode.Current && !scalePolicyGiven)
+            request.ScalePolicy = DrawingScalePolicy.PreserveExistingScales;
 
         return request;
     }

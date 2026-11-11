@@ -27,8 +27,37 @@ public sealed class FitViewsToSheetRequestParserTests
             ["fit_views_to_sheet", "auto", "6", "0", "debugpreview", token]);
 
         Assert.Equal(expected, request.PlannerMode);
+        Assert.Equal(DrawingScalePolicy.PreserveExistingScales, request.ScalePolicy);
         Assert.Equal(6, request.Gap);
         Assert.Equal(DrawingLayoutApplyMode.DebugPreview, request.ApplyMode);
         Assert.Equal(SecondaryScalePolicy.SameAsMain, request.SecondaryScalePolicy);
+    }
+
+    [Fact]
+    public void VariantToken_PicksALaterLayout_AndGarbageIsIgnored()
+    {
+        var chosen = DrawingCommandParsers.ParseFitViewsToSheetRequest(
+            ["fit_views_to_sheet", "auto", "4", "0", "planner:balanced", "planner-variant:3"]);
+        var garbage = DrawingCommandParsers.ParseFitViewsToSheetRequest(
+            ["fit_views_to_sheet", "auto", "4", "0", "planner:balanced", "planner-variant:x"]);
+
+        Assert.Equal(3, chosen.PlannerVariant);
+        Assert.Equal(DrawingLayoutPlannerMode.ConstraintBalanced, chosen.PlannerMode);
+        Assert.Equal(0, garbage.PlannerVariant);
+    }
+
+    [Fact]
+    public void WithAPlanner_ScalesAreKept_UnlessAScalePolicyIsNamed()
+    {
+        var kept = DrawingCommandParsers.ParseFitViewsToSheetRequest(
+            ["fit_views_to_sheet", "auto", "4", "0", "planner:balanced"]);
+        var rescaled = DrawingCommandParsers.ParseFitViewsToSheetRequest(
+            ["fit_views_to_sheet", "auto", "4", "0", "uniformallnondetail", "planner:balanced"]);
+        var noPlanner = DrawingCommandParsers.ParseFitViewsToSheetRequest(
+            ["fit_views_to_sheet", "auto", "4", "0"]);
+
+        Assert.Equal(DrawingScalePolicy.PreserveExistingScales, kept.ScalePolicy);
+        Assert.Equal(DrawingScalePolicy.UniformAllNonDetail, rescaled.ScalePolicy);
+        Assert.Equal(DrawingScalePolicy.UniformAllNonDetail, noPlanner.ScalePolicy);
     }
 }
