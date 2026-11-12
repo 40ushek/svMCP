@@ -271,7 +271,28 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
                     new Tekla.Structures.Geometry3d.Point(point[0], point[1], point[2])));
                 return new[] { local.X, local.Y, local.Z };
             }, outline.IsComplete, depth.Error);
-        return new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata, bolts);
+        var context = new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata, bolts);
+        SaveCase(context.ToCase);
+        return context;
+    }
+
+    /// <summary>
+    /// Keeps what the context was built from for offline replay of the chain rules. One
+    /// file per drawing, view and part selection, overwritten on every read; a failed
+    /// write is traced and ignored.
+    /// </summary>
+    private static void SaveCase(Func<ViewDimensionContextCase> capture)
+    {
+        try
+        {
+            var path = ViewDimensionContextCaseStore.Save(ViewDimensionContextCaseStore.DefaultDirectory, capture());
+            PerfTrace.Write("api-geometry", "dimension_context_case", 0, $"result=saved path={path}");
+        }
+        catch (Exception exception)
+        {
+            PerfTrace.Write("api-geometry", "dimension_context_case", 0,
+                $"result=error type={exception.GetType().Name} message={exception.Message}");
+        }
     }
 
     public PartSolidGeometryInViewResult ReadPartSolidGeometry(int viewId, int modelId) =>

@@ -9,6 +9,9 @@ internal sealed class ViewBoltGeometrySnapshot
 
     private ViewBoltGeometrySnapshot(object answer) => Answer = JsonSerializer.SerializeToElement(answer, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
 
+    /// <summary>Wraps an answer captured earlier, for replaying a stored view context case.</summary>
+    internal static ViewBoltGeometrySnapshot Restore(JsonElement answer) => new(answer);
+
     internal static ViewBoltGeometrySnapshot Capture(int viewId, IEnumerable<int> partIds,
         Func<int, PartBoltGeometryInViewResult> read, DepthBox? restrictionBox,
         Func<double[], double[]> toRestrictionCoordinates, bool partSelectionComplete,

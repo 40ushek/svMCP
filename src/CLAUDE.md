@@ -349,6 +349,7 @@ Tekla layout table bounds are read from the Presentation Model (`DrawingPresenta
 | `%LOCALAPPDATA%\svMCP\Logs\dimensions-*.log` | Dimension tracing and context reads |
 | `%LOCALAPPDATA%\svMCP\Logs\views-*.log` | View layout tracing |
 | `%LOCALAPPDATA%\svMCP\LayoutCases\<drawing guid>.json` | Input of the last `fit_views_to_sheet` run per drawing, for offline replay of the constraint layout planner; overwritten on every run, never cleaned up |
+| `%LOCALAPPDATA%\svMCP\DimensionContextCases\<drawing guid>_<view id>_<hash>.json` | Input of the last view dimension context read per drawing, view and part selection, for offline replay of the chain rules (copy to `cases/dimension_context_cases`); overwritten on every read, never cleaned up |
 | `%LOCALAPPDATA%\svMCP\Logs\marks-*.log` | Mark operations |
 | `%LOCALAPPDATA%\svMCP\Logs\geometry-*.log` | Geometry and cache tracing |
 

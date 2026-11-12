@@ -43,6 +43,10 @@ public sealed class ViewDimensionContext
     public double Scale { get; }
     public string ContextId { get; } = "ctx_" + Guid.NewGuid().ToString("N");
     internal bool IsComplete => _complete;
+    private readonly Func<ViewDimensionContextCase> _toCase;
+
+    /// <summary>What this context was built from, in a form that can be saved and rebuilt without Tekla.</summary>
+    internal ViewDimensionContextCase ToCase() => _toCase();
 
     /// <summary>Returns an isolated copy of a captured part solid, or null when it was not read.</summary>
     public PartSolidGeometryInViewResult? GetPartSolidGeometry(int modelId) =>
@@ -58,6 +62,7 @@ public sealed class ViewDimensionContext
         ViewBoltGeometrySnapshot? bolts = null)
     {
         ViewId = viewId;
+        _toCase = () => ViewDimensionContextCase.From(viewId, scale, outline, exclusions, source, metadata, bolts);
         _partContours = Freeze(outline.Outline.PartNodes);
         Scale = scale;
         _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,

@@ -1,12 +1,92 @@
 # Dimensions Roadmap
 
-Updated 2026-10-02. This file is the active work order. Steps 1-3 have source
+Updated 2026-11-12 (assembly chain review added below; the rest is as of 2026-10-02).
+This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
 explicit rule-set selection. Timber-wall live findings are recorded below; the latest
 rules still need repeat validation on the named fixtures. Five rule transfers and the
 legacy steel location cleanup in step 4b are complete. Contact candidate reuse is
 implemented, with the remaining comparison and performance gates listed in step 5.
+
+## Assembly chain quality: review and work order (2026-11-12)
+
+Status: review findings and a proposed order of work. Nothing below is implemented.
+The findings come from reading the code and the skill, not from a live drawing run.
+
+**Decision: keep the architecture, replace one layer, add two.** Keep the view
+snapshot, point IDs, verified write, batch, the rule/settings/rule-set contract and
+the split "code proposes, the assistant decides by the skill". A full rewrite would
+have to rediscover the measured Tekla behaviour, and there are no steel cases to
+prove a rewrite is no worse.
+
+Findings on the steel path (front views and sections):
+
+1. Top and Bottom repeat each other: a part crossing the main-part axis enters both
+   location chains, and the overall is offered on both sides. Sections and panels
+   suppress the repeat; the front view does not (`SteelPartLocationRule`).
+2. Across the main part only end parts are located; every other part goes to
+   `skippedPartIds`, so a front view carries no height location for plates, gussets
+   or stiffeners.
+3. Points are assigned to a side by the middle of the whole assembly
+   (`CalcDimensionChains.AddX/AddY`), before any rule knows the main part. Each rule
+   then works around it. This is the one layer to replace: a point list without
+   sides; the rule chooses direction and side.
+4. No paper-space readability check: the short-segment cutoff is 3 model mm at any
+   scale, the section threshold is 0.5 paper mm, and dimension text is wider.
+5. The line offset is row x 8 mm from the part extent. Marks, existing dimensions,
+   section symbols and neighbouring views are not considered.
+6. Sections: only a 4-point rectangle or an I profile is accepted; a part whose edge
+   is within 2 mm of any profile level (web faces included) is dropped from the
+   merged chain by coordinate alone and still counted as located, so the unlocated
+   lists can be empty when a part has no dimension.
+7. Chains always run in ascending coordinate order; the "main part start" datum of
+   `steel-rules.md` is not implemented.
+8. One unread main-part flag on any part, excluded ones included, refuses the view.
+
+Skill and code disagree on steel: `Internal`, `recognizableDistance`, the datum and
+closure on plate edges exist only in `steel-rules.md`. The preview knows none of
+them, and the assistant can no longer read source points to apply them itself.
+`structured-plan.md` and `steel-rules.md` still tell the reader to query `points`,
+which the tool now rejects. The two `HISTORY.md` copies differ. Steel rules were
+never exercised in a placement run, and all 13 saved dimension cases are timber
+walls without part contours, so they cannot replay the chain rules.
+
+Work order:
+
+1. **Replayable inputs.** When a view snapshot is built, save what it is built from
+   (part contours, part attributes, main part, view type, scale) so a test can
+   rebuild the same context and run the chain rules without Tekla, as the layout
+   planner already does with `LayoutCases`. No change in placement behaviour.
+   **Source implemented 2026-11-12, not deployed.** Every context read from Tekla
+   writes `%LOCALAPPDATA%\svMCP\DimensionContextCases\<drawing guid>_<view id>_<selection hash>.json`
+   (`ViewDimensionContextCase`); a failed write is traced and ignored. The file holds
+   part solids in view coordinates, part attributes, exclusions, reference zone,
+   bolts and view metadata; outlines are rebuilt from the solids by the same
+   projection code. `ViewDimensionContextCaseTests` checks that a saved case gives
+   the same chain answers as the original and replays any files copied to
+   `cases/dimension_context_cases`. Not stored: solids the contact search reads
+   later for parts outside the dimension selection, so a replayed panel preview can
+   fall back to the geometric touching test where the live one used a contact.
+   Expected chains per case are not recorded yet; the corpus test only checks that
+   a case replays the same way twice and prints the chains.
+2. **First rule fix, checked on saved steel cases:** split sides by the main-part
+   axis and suppress the Top/Bottom repeat, inside the steel rule only.
+3. **Replace the side assignment** with a side-free point list, built beside the
+   current code, compared on the cases, then switched.
+4. **Add a placement layer:** candidate positions per chain (side, row) with
+   penalties for overlaps and long extension lines; each stack of dimensions keeps
+   an occupied zone. Start greedy; search only if greedy is not enough.
+5. **Add a drawing-level check:** a part is located once on the sheet, not once per
+   view. Contact counting stays a hint for steel, not a rule
+   (`ROADMAP_PART_FREEDOM.md`).
+
+Separate cleanup, no behaviour change: bring the skill references in line with
+`SKILL.md`, keep one `HISTORY.md`, mark the steel settings the code does not know.
+
+Not reviewed: the timber panel rule, bolt chains, and the older
+`Grouping`/`Arrangement`/`Orchestration` code. Prior art is in
+[Dimension Research](DIMENSION_RESEARCH.md).
 
 ## Creation row fix (2026-10-02)
 
