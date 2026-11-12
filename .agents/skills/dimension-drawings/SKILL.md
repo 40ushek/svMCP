@@ -32,7 +32,6 @@ Read only the relevant references, once per run; reuse them while unchanged.
 | Timber frame/panel | [plant-rules.md](references/plant-rules.md) |
 | Steel member with plates/gussets | [steel-rules.md](references/steel-rules.md) |
 | First drawing write of the run | [placement-and-verification.md](references/placement-and-verification.md) |
-| Compact context response and snapshot refresh | [structured-plan.md](references/structured-plan.md) |
 
 Do not blend timber and steel rules. If neither applies or the subject is
 ambiguous, ask. Do not routinely read HISTORY, roadmaps, code or the internet

@@ -11,8 +11,8 @@ implemented, with the remaining comparison and performance gates listed in step 
 
 ## Assembly chain quality: review and work order (2026-11-12)
 
-Status: review findings and a proposed order of work. Nothing below is implemented.
-The findings come from reading the code and the skill, not from a live drawing run.
+Status: review findings and a proposed order of work. Step 1 and the skill cleanup
+are done; steps 2-5 are not started. The findings come from reading the code and the skill, not from a live drawing run.
 
 **Decision: keep the architecture, replace one layer, add two.** Keep the view
 snapshot, point IDs, verified write, batch, the rule/settings/rule-set contract and
@@ -47,8 +47,8 @@ Findings on the steel path (front views and sections):
 Skill and code disagree on steel: `Internal`, `recognizableDistance`, the datum and
 closure on plate edges exist only in `steel-rules.md`. The preview knows none of
 them, and the assistant can no longer read source points to apply them itself.
-`structured-plan.md` and `steel-rules.md` still tell the reader to query `points`,
-which the tool now rejects. The two `HISTORY.md` copies differ. Steel rules were
+(The skill references that still told the reader to query `points` were corrected
+on 2026-11-12, see the cleanup note below.) Steel rules were
 never exercised in a placement run, and all 13 saved dimension cases are timber
 walls without part contours, so they cannot replay the chain rules.
 
@@ -58,7 +58,8 @@ Work order:
    (part contours, part attributes, main part, view type, scale) so a test can
    rebuild the same context and run the chain rules without Tekla, as the layout
    planner already does with `LayoutCases`. No change in placement behaviour.
-   **Source implemented 2026-11-12, not deployed.** Every context read from Tekla
+   **Implemented and deployed 2026-11-12 (bridge files hash-verified); no live
+   read has confirmed a written file yet.** Every context read from Tekla
    writes `%LOCALAPPDATA%\svMCP\DimensionContextCases\<drawing guid>_<view id>_<selection hash>.json`
    (`ViewDimensionContextCase`); a failed write is traced and ignored. The file holds
    part solids in view coordinates, part attributes, exclusions, reference zone,
@@ -81,8 +82,9 @@ Work order:
    view. Contact counting stays a hint for steel, not a rule
    (`ROADMAP_PART_FREEDOM.md`).
 
-Separate cleanup, no behaviour change: bring the skill references in line with
-`SKILL.md`, keep one `HISTORY.md`, mark the steel settings the code does not know.
+Skill cleanup done 2026-11-12, no behaviour change: `structured-plan.md` removed,
+`steel-rules.md` points at prepared chains and names the settings the preview does
+not apply, one `HISTORY.md` is kept (`.agents`) with a note on its outdated parts.
 
 Not reviewed: the timber panel rule, bolt chains, and the older
 `Grouping`/`Arrangement`/`Orchestration` code. Prior art is in

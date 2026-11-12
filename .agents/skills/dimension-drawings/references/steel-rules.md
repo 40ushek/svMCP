@@ -47,8 +47,10 @@ corner on top and the left corner on the bottom, or the right on both. Mixing si
 numbers that look alike (283 and 283) but measure different edges. Confirmed by the user on the
 M.48 girder's raked ribs (top 15045.7 with bottom 15122.4, not 15142.3).
 
-Coordinates come from the shared preliminary candidates: `get_view_dimension_context`
-(points question) or `get_structural_chain_positions`. Do not invent coordinates.
+Points come from the prepared chains of `get_view_dimension_context`
+(`questions="chain,scale"`, `ruleSet="steel"`), as `SKILL.md` describes; the tool no
+longer answers a `points` question. `get_structural_chain_positions` is the
+full-evidence route for a specific doubt. Do not invent coordinates.
 
 Read on twenty-one drawings across three member types: ten HEB160 columns,
 `M.73`–`M.82`; eight IPE220 beams, `M.30`/`M.31`/`M.33`/`M.34`/`M.37`/`M.38`/`M.39`/`M.70`;
@@ -76,6 +78,14 @@ per-part linkage.
 
 Where reasonable people differ. Each has a policy - a default, or a question, or a stop
 until something is confirmed. State in the final response which applied.
+
+**What the prepared chains apply today (2026-11-12).** The steel preview applies
+`minDimensionLength` and closes location chains on the outer faces. It does not know
+`Internal`, `recognizableDistance`, the anchor choice or the datum: it offers no
+internal dimensions of secondary parts, and every chain starts at its leftmost or
+lowest point. So do not ask for `Internal` or `recognizableDistance` before using
+prepared chains; they matter only when a reviewed chain is built from explicit point
+IDs. If the main part's start is at the other end, say that the datum is unverified.
 
 | Setting | Default | Notes |
 |---|---|---|
@@ -175,7 +185,8 @@ retained point.
 ## Stop
 
 - no single resolvable main part, or any `mainPartUnresolvedModelIds`;
-- `Internal` unstated, or `Necessary` without a `recognizableDistance`;
+- a chain built from explicit point IDs needs secondary-part internal dimensions and
+  `Internal` is unstated, or it is `Necessary` without a `recognizableDistance`;
 - a bolt dimension is required;
 - a `SectionView` or `EndView` must be dimensioned but does not meet every condition in
   **Section/end-view exception**;
