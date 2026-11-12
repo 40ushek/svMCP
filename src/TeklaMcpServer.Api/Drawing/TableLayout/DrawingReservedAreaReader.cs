@@ -16,8 +16,9 @@ internal static class DrawingReservedAreaReader
     private const double MinObstacleSize = 1.0;
     private const double FullSheetCoverageRatio = 0.95;
 
-    // Cache: keyed by drawing identifier ID. ReadLayoutInfo() is expensive (2× editor
-    // open/close + N IPC + M gRPC calls). The table layout does not change during a
+    // Cache: keyed by drawing identifier ID. ReadLayoutInfo() costs a presentation
+    // connection + N IPC + M gRPC calls (0.3-0.4 s; 1-2 s on the two-phase fallback,
+    // which opens and closes the editor twice). The table layout does not change during a
     // single fit_views_to_sheet session, so one read per drawing is sufficient.
     private static int _cachedDrawingId = -1;
     private static (double? SheetMargin, IReadOnlyList<LayoutTableGeometryInfo> Tables) _cachedLayoutInfo;
@@ -106,7 +107,11 @@ internal static class DrawingReservedAreaReader
     /// <summary>
     /// Reads sheet margin and layout table geometries.
     ///
-    /// TWO-PHASE ARCHITECTURE — do not merge into one LayoutManager.OpenEditor() block:
+    /// First choice is TryReadLayoutInfoInOneSession(): margins, table list and geometry
+    /// inside one PresentationConnection, with no LayoutManager.OpenEditor() at all.
+    /// The two-phase read below is the fallback when the table list cannot be read that way.
+    ///
+    /// TWO-PHASE FALLBACK — do not merge into one LayoutManager.OpenEditor() block:
     ///
     /// Phase 1 (metadata): LayoutManager.OpenEditor() → GetMarginsAndSpaces() + GetCurrentTables()
     ///                      → LayoutManager.CloseEditor()   ← MUST close before Phase 2

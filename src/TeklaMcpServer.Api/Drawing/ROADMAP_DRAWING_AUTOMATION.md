@@ -165,6 +165,13 @@ For existing multi-step MCP workflows, callers should use
 `open_drawing_background` before automated layout/mark operations. The MCP
 tool does not expose `showDrawing` as an optional parameter.
 
+Measured 2026-11-12 on M.50 (10 views, 5 layout tables): background open,
+view layout with scale picking, save and close work end to end. The first
+open in a bridge process took 18.8 s, later opens 0.2-0.9 s; layout with scale
+picking 4.0 s; save and close 0.3 s. A batch must run through the persistent
+bridge: `TeklaBridge.exe <command>` as a separate process pays the first-open
+cost on every drawing. See `ViewLayout/ROADMAP_CONSTRAINT_LAYOUT.md`.
+
 ## Timeout Policy
 
 Automation commands need a timeout policy that matches expected runtime.

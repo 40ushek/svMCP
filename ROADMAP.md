@@ -165,31 +165,30 @@
 - **IPC-прокси**: объекты из `GetAllObjects()` — transparent proxies. `is Beam` всегда `false`. Использовать `GetType().Name`
 - **BoltGrade**: не доступен через свойства, нужен `GetReportProperty("BOLT_GRADE")`
 - **GetAllObjects()**: только верхний уровень; для компонентов нужен `component.GetChildren()` рекурсивно
-- **Шаблонные объекты (штамп, таблицы) — ✅ РАБОТАЕТ через `PresentationConnection` + `LayoutManager.CloseEditor()`:**
+- **Шаблонные объекты (штамп, таблицы) — ✅ РАБОТАЕТ через `PresentationConnection`:**
 
-  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона, но через internal API работает следующая цепочка в `DrawingReservedAreaReader.ReadLayoutInfo()`:
-  1. `LayoutManager.OpenEditor()` → открывает Layout Editor для чтения метаданных
+  `sheet.GetAllObjects()` не возвращает элементы `.tpl`-шаблона, но через internal API работает следующая цепочка в `DrawingReservedAreaReader.ReadLayoutInfo()` (с 2026-11-12 — всё внутри одного подключения, `TryReadLayoutInfoInOneSession`):
+  1. `new PresentationConnection()` → подключение к presentation model
   2. `TableLayout.GetMarginsAndSpaces()` → реальные отступы листа
   3. `TableLayout.GetCurrentTables()` → список `tableId` на текущем чертеже
-  4. `LayoutManager.CloseEditor()` → **обязательно** закрыть ДО создания `PresentationConnection`
-  5. `new PresentationConnection()` → открывает Layout Editor сам как побочный эффект
-  6. `connection.Service.GetObjectPresentation(tableId)` → `Segment` с примитивами рендеринга → `TryGetSegmentBounds()` → точный bbox таблицы включая динамическую высоту (parts list)
-  7. `LayoutManager.CloseEditor()` в `finally` → редактор закрывается, пользователь не видит мигания
+  4. `connection.Service.GetObjectPresentation(tableId)` → `Segment` с примитивами рендеринга → `TryGetSegmentBounds()` → точный bbox таблицы включая динамическую высоту (parts list)
+  5. `LayoutManager.CloseEditor()` в `finally`
 
   **Результат**: `fit_views_to_sheet` получает реальные reserved areas таблиц и не размещает виды поверх штампа/списка деталей.
 
-  **⚠️ Критически важно: двухфазная архитектура `ReadLayoutInfo()`**
+  **Скорость (замер 2026-11-12):** первое чтение чертежа 0,3–0,4 с (M.50, 5 таблиц; P.1004, 2 таблицы), из них 0,22–0,32 с — само подключение. Прежнее чтение в два шага занимало 1,1–2,0 с: время уходило на `LayoutManager.OpenEditor()` / `CloseEditor()` (по 0,5 с) и на `GetMarginsAndSpaces()` через открытый редактор (0,6–0,8 с против 0,01 с внутри подключения). Результат читается один раз на чертёж и кэшируется по `drawingId`.
 
-  `LayoutManager.OpenEditor()` и `new PresentationConnection()` **не могут** работать в одном блоке — `PresentationConnection` сам открывает Layout Editor как побочный эффект. Если редактор уже открыт нашим кодом, `PresentationConnection` бросает `"Unable to connect to TeklaStructures process"`.
+  **Запасной путь: чтение в два шага**
 
-  Правильная структура:
+  Если список таблиц внутри подключения не прочитался, `ReadLayoutInfo()` читает по-старому. Здесь порядок важен: `LayoutManager.OpenEditor()` и `new PresentationConnection()` **не могут** работать в одном блоке в этом порядке — если редактор уже открыт нашим кодом, `PresentationConnection` бросает `"Unable to connect to TeklaStructures process"`.
+
   ```
   // Фаза 1: метаданные (редактор открыт/закрыт явно)
   LayoutManager.OpenEditor()
   try { GetMarginsAndSpaces() + GetCurrentTables() }
   finally { LayoutManager.CloseEditor() }   // ← закрыть ДО фазы 2!
 
-  // Фаза 2: геометрия (редактор открывается внутри PresentationConnection)
+  // Фаза 2: геометрия
   try { new PresentationConnection() → GetObjectPresentation() }
   finally { LayoutManager.CloseEditor() }
   ```
@@ -233,6 +232,8 @@ TS2025: NuGet `2025.0.0.0` vs FileVersion `2025.0.52577.0` → channel mismatch 
 **stdout-дисциплина:** только протокольные JSON-строки, одна на запрос. `Console.SetOut(teklaLog)` — **до** `ApplyTeklaChannelFixes()`. Автовосстановление: IPC-ошибка → `KillProcess()` → рестарт на следующем вызове.
 
 **Кэш чертежей ✅ (2026-06-01):** `open_drawing` искал чертёж перебором всех чертежей модели с IPC-вызовом `GetIdentifier().GUID` на каждый (~6.7 с при 251 чертеже); само `SetActiveDrawing` — ~0.17 с. Добавлен статический `Dictionary<Guid, Drawing>` в `TeklaDrawingQueryApi` (строится раз за сессию, `InvalidateDrawingCache()` для сброса). Batch из 100 чертежей: ~12 мин → **~68 с**. Параметр `showDrawing` в `open_drawing` (фоновое открытие без рендера). `place_contour_angle_dimensions` сделан идемпотентным (удаляет старые `AngleDimension` перед простановкой).
+
+**Замер 2026-11-12 (фоновая расстановка видов):** первое `open_drawing` в процессе моста — 18,8 с (вероятно, построение этого кэша; по шагам не разбиралось), повторное открытие того же чертежа — 0,9 с, другого — 0,2 с. Расстановка видов с подбором масштабов на M.50 в фоне — 4,0 с, сохранение и закрытие — 0,3 с. Запуск `TeklaBridge.exe <команда>` отдельным процессом теряет кэш: каждое открытие снова 19–25 с. Пакетную обработку вести только через постоянный мост. Подробности — `src/TeklaMcpServer.Api/Drawing/ViewLayout/ROADMAP_CONSTRAINT_LAYOUT.md`.
 
 ---
 
