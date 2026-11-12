@@ -29,7 +29,8 @@ rest of this file explains the reasons and covers every other request.
 5. Choose the keys to place:
    - take every chain with `incomplete=false`;
    - drop a chain whose `segments` equal those of a chain you already keep on this
-     view: of `Top`/`Bottom` keep `Bottom`, of `Left`/`Right` keep `Left`;
+     view: of `Top`/`Bottom` keep `Bottom`, of `Left`/`Right` keep `Left`. This
+     covers overall chains too;
    - between views drop only these two repeats, nothing else:
      an `overall` chain whose `segments` equal an overall already placed on the
      sheet (equal means within 0.5: 2962.69 and 2962.699 are the same overall); and, on a back view or a bottom view, a chain whose `segments` equal a
@@ -44,7 +45,7 @@ rest of this file explains the reasons and covers every other request.
      says another chain already covers it. That is normal, not an error;
    - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,
      `offeredOnOtherSidePartIds`) are explanations. They change nothing in what
-     you place; mention them in the report only if the user asks why.
+     you place; they belong in a debug report only.
 6. Call `create_dimensions_batch` once for the view with the same `viewId`,
    `contextId`, `ruleSet="steel"` and `chainsJson` such as
    `[{"preview":"Bottom-location"},{"preview":"Bottom-overall"}]`.
@@ -63,10 +64,17 @@ rest of this file explains the reasons and covers every other request.
    away. That is normal. `renderedLineStatus` `matched` means the line was drawn
    where calculated; `not verified` means only that it could not be checked. An
    inclined chain comes back with side `Unknown` and no line position: also normal.
-8. After the last view, report per view: the keys placed with their segments, the
-   keys dropped and why, and anything that failed. Say plainly that the chains on
-   section and end views are provisional (the code does not clip parts to the
-   section depth) and that line positions were not checked by eye.
+8. After the last view, report. Two modes:
+   - **Short report (default).** Two or three lines: how many dimensions were
+     placed on how many views; every key that was not `created`/`retained`, with
+     its status and error text; and one sentence that the chains on section and
+     end views are provisional and that line positions were not checked by eye.
+     Nothing else: no per-view list, no segments, no dropped keys.
+   - **Debug report.** Only when the request asks for it ("debug", "detailed
+     report", "подробный отчёт", "отладка"): per view, the keys placed with their
+     segments and statuses, the keys dropped and why, every failed call with its
+     error text, and any place where this skill was unclear or disagreed with a
+     tool answer.
 
 Do not, in a standard run: ask for the steel settings (`Internal`,
 `recognizableDistance`), request points or contacts, read part geometry, draw debug
@@ -101,7 +109,7 @@ Read only the relevant references, once per run; reuse them while unchanged.
 |---|---|
 | Timber frame/panel | [plant-rules.md](references/plant-rules.md) |
 | Steel member with plates/gussets | [steel-rules.md](references/steel-rules.md) |
-| First drawing write of the run | [placement-and-verification.md](references/placement-and-verification.md) |
+| First drawing write of the run, outside a standard run | [placement-and-verification.md](references/placement-and-verification.md) |
 
 Do not blend timber and steel rules. If neither applies or the subject is
 ambiguous, ask. Do not routinely read HISTORY, roadmaps, code or the internet
