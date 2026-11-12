@@ -172,6 +172,12 @@ picking 4.0 s; save and close 0.3 s. A batch must run through the persistent
 bridge: `TeklaBridge.exe <command>` as a separate process pays the first-open
 cost on every drawing. See `ViewLayout/ROADMAP_CONSTRAINT_LAYOUT.md`.
 
+Batch measured 2026-11-12 through the persistent bridge (controller pipe,
+`execute`): 33 single-part drawings selected in Document Manager, each opened
+in background, laid out with scale picking, saved and closed, took 41-48 s in
+total; per drawing: open 0.1 s, layout 0.5-2.4 s, close 0-0.4 s. Nine assembly
+drawings: 25 s for eight after the first open, layout 1.3-3.6 s each.
+
 ## Timeout Policy
 
 Automation commands need a timeout policy that matches expected runtime.

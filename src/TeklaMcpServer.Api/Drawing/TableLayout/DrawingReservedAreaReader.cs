@@ -374,7 +374,13 @@ internal static class DrawingReservedAreaReader
     /// </summary>
     public static double? TryReadSheetMargin() => ReadLayoutInfo().SheetMargin;
 
-    private static void AddLayoutTableReservedAreas(
+    private static bool LiesOnSheet(ReservedRect bounds, double sheetWidth, double sheetHeight)
+        => bounds.MinX >= -MinObstacleSize
+           && bounds.MinY >= -MinObstacleSize
+           && bounds.MaxX <= sheetWidth + MinObstacleSize
+           && bounds.MaxY <= sheetHeight + MinObstacleSize;
+
+    internal static void AddLayoutTableReservedAreas(
         List<ReservedRect> reserved,
         double usableMinX,
         double usableMinY,
@@ -400,10 +406,17 @@ internal static class DrawingReservedAreaReader
 
             var widthRatio = (maxX - minX) / (usableMaxX - usableMinX);
             var heightRatio = (maxY - minY) / (usableMaxY - usableMinY);
-            // Use OR: canvas markers from an A0 template clamped onto a smaller sheet
-            // produce a rect that spans the full width but not the full height.
-            // Skipping on either dimension prevents blocking the entire usable area.
-            if (widthRatio >= FullSheetCoverageRatio || heightRatio >= FullSheetCoverageRatio)
+            var fullWidth = widthRatio >= FullSheetCoverageRatio;
+            var fullHeight = heightRatio >= FullSheetCoverageRatio;
+            if (fullWidth && fullHeight)
+                continue;
+
+            // Canvas markers from an A0 template clamped onto a smaller sheet produce a rect
+            // that spans the full width but not the full height; it would block the usable
+            // area, so it is skipped. A table that lies on the sheet and spans its width
+            // (a parts-list strip on A4) is a real obstacle and stays.
+            if ((fullWidth || fullHeight)
+                && !LiesOnSheet(table.Bounds, usableMaxX + usableMinX, usableMaxY + usableMinY))
                 continue;
 
             reserved.Add(new ReservedRect(minX, minY, maxX, maxY));

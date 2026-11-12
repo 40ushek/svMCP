@@ -101,4 +101,44 @@ public sealed class DrawingReservedAreaReaderTests
     {
         return new Segment(1, new Pen(1, 1, 1), new SolidColorBrush(1), 0, 0, 0);
     }
+
+    [Fact]
+    public void AddLayoutTableReservedAreas_KeepsFullWidthStripThatLiesOnSheet()
+    {
+        // A4 portrait, margin 10: the parts-list strip spans the whole sheet width.
+        var reserved = AddTables(200, 287, Table(5, 43, 205, 52));
+
+        var rect = Assert.Single(reserved);
+        Assert.Equal(10, rect.MinX, 6);
+        Assert.Equal(43, rect.MinY, 6);
+        Assert.Equal(200, rect.MaxX, 6);
+        Assert.Equal(52, rect.MaxY, 6);
+    }
+
+    [Fact]
+    public void AddLayoutTableReservedAreas_SkipsTemplateFrameLargerThanSheet()
+    {
+        // Canvas markers of an A0 template on an A3 sheet: full width after clamping.
+        var reserved = AddTables(410, 287, Table(0, 0, 722, 150));
+
+        Assert.Empty(reserved);
+    }
+
+    [Fact]
+    public void AddLayoutTableReservedAreas_SkipsTableCoveringWholeUsableArea()
+    {
+        var reserved = AddTables(410, 287, Table(5, 5, 415, 292));
+
+        Assert.Empty(reserved);
+    }
+
+    private static List<ReservedRect> AddTables(double usableMaxX, double usableMaxY, params LayoutTableGeometryInfo[] tables)
+    {
+        var reserved = new List<ReservedRect>();
+        DrawingReservedAreaReader.AddLayoutTableReservedAreas(reserved, 10, 10, usableMaxX, usableMaxY, tables);
+        return reserved;
+    }
+
+    private static LayoutTableGeometryInfo Table(double minX, double minY, double maxX, double maxY)
+        => new() { TableId = 1, Name = "t", HasGeometry = true, Bounds = new ReservedRect(minX, minY, maxX, maxY) };
 }
