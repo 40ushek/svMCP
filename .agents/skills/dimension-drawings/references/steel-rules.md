@@ -21,6 +21,67 @@ The main part lies on the welding table and everything is welded to it. So:
   e.g. `615.5 · 390 · 1005.5 · 69 · 1074.5`: without the plate's 390 the 69 to the next
   part cannot be measured.
 
+## The tape test, and what a part is measured from
+
+Worked out with the user on four drawings (M.505, M.81, M.53, M.46) on 2026-11-12.
+The prepared chains already follow these; use them to judge a chain you are asked
+about, and to explain a chain that is missing.
+
+**The tape test.** A dimension is worth placing only if a fitter can lay a tape on
+it: both ends on real edges, along a direction the part itself gives. The user's
+question about a doubtful dimension is always the same: *how would you measure
+this with a tape?* A dimension that fails it is removed, however correct the
+number. What fails:
+
+- **A projection of a tilted part onto a view axis.** A head plate on a sloped cut
+  gave `1.6 / 83 / 153.6 / 6.4` horizontally; none of those lengths exists on the
+  part. The part is measured along itself instead: `238 / 8`.
+- **A length between corners of two different tilted parts.** `8` between the
+  corner of a small plate and the corner of a tilted end plate, read on a
+  horizontal chain: neither point lies on a square edge.
+- **A point beyond what the view shows:** past the section's depth or outside the
+  view's frame. A section cut square to a tilted end offered `948` to the far end
+  of a 9 m girder.
+
+**A part is measured from the part it is welded to, in that part's direction.**
+Not always from the main part:
+
+- a part **on the main part** is located along the main part by the chain that runs
+  along it, and across it by a short chain placed next to the part;
+- a part **welded onto a tilted part** (a small plate lying on a tilted end plate,
+  or one standing on it with its end) is located along that tilted part, between
+  its ends, in the same chain: `25 / 339 / 150 / 315 / 25`. A vertical dimension
+  from the girder's flanges to such a part is nearly useless: the fitter holds the
+  small plate against the end plate, not against the flange;
+- a plate that merely **ends at a tilted part at another angle** is not measured
+  along it: that would be a projection again.
+
+**Which edges of a part are taken.**
+
+- A **rib** standing across the chain shows only its thickness there: one face.
+- A part **lying along** the chain (a cover plate, a gusset seen edge-on, longer
+  than one and a half thicknesses) or **seen face-on** (its plane parallel to the
+  view): both ends. One end does not place it.
+- An **end plate** on an end view is located by both edges even when an edge
+  happens to fall near a flange face; a rib between the flanges abuts them and
+  gets nothing.
+
+**Short chains next to a part, across the main part** (the `Local` row):
+
+- a part standing on a face of the main part is measured from that face: a rib
+  `199.3` from the flange, a cover plate `30` from the edge it lies on;
+- a part touching no face (a gusset on the web) is closed on both outer edges:
+  `400 / 15 / 385`;
+- parts at one place share one chain (`400 / 15 / 200.2 / 184.8`); the same chain
+  is not repeated at the next rib of a pair;
+- a part fitted between two faces gets nothing.
+
+**Once per drawing, where it reads best.** A section cut square to a tilted plate
+shows the same numbers straight (`25 / 339 / 150 / 315 / 25` upright) that the front
+view shows along the plate. The user keeps both when the chain on the front view is
+not in the way. A part that is hidden and tilted on a view, and located well on
+another, need not be located there (user's observation on M.53; not yet a rule).
+
 **What a dimension on an assembly drawing is for.** Standard drafting practice splits every
 dimension into a **size dimension** ("how big is this feature") or a **location dimension**
 ("where is it relative to something else") - an assembly drawing's job is the second, not

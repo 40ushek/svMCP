@@ -91,8 +91,14 @@ above are complete for this run. If the proposed chains look wrong,
 place nothing on that view and report what looks wrong: the fix belongs in the
 code's rules.
 
-Where these defaults come from: beam M.505 and column M.81, placed this way on
-2026-11-12 and accepted by the user. Two drawings, one plant; a different subject
+Why the chains look the way they do, and how to judge one you are asked about:
+`references/steel-rules.md`, "The tape test, and what a part is measured from".
+The short form: a dimension must be measurable with a tape, and a part is measured
+from the part it is welded to, in that part's direction. You do not need that file
+to run these steps.
+
+Where these defaults come from: beam M.505, column M.81 and girders M.53 and M.46,
+placed this way on 2026-11-12 and reviewed by the user. Four drawings, one plant; a different subject
 may need the judgement described below.
 
 ## Scope and mode

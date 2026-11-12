@@ -32,7 +32,7 @@ public static class DimensionPlacementSettings
     /// Shortest segment a steel location chain keeps, on paper: a segment shorter than this
     /// cannot carry a readable number. The view-unit cutoff above still applies as a floor.
     /// </summary>
-    public const double MinimumChainSegmentPaperMm = 1.0;
+    public const double MinimumChainSegmentPaperMm = 0.8;
 
     /// <summary>
     /// A local chain equal to the one next to a neighbouring part is not repeated when the two

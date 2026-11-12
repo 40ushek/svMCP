@@ -66,7 +66,7 @@ internal static class DimensionChainPreview
         DimensionPartAnchor partAnchor = DimensionPartAnchor.LowFace,
         DimensionPartAnchor endPartAnchor = DimensionPartAnchor.BothFaces,
         IReadOnlyCollection<int>? inclinedPartIds = null, IReadOnlyCollection<int>? faceOnPartIds = null,
-        IReadOnlyDictionary<int, double>? partThickness = null)
+        IReadOnlyDictionary<int, double>? partThickness = null, IReadOnlyCollection<int>? carriedPartIds = null)
     {
         var all = catalog.AllPoints.ToArray();
         var line = catalog.LinePoints(side);
@@ -84,7 +84,7 @@ internal static class DimensionChainPreview
             ? Overall(side, line, ctx)
             : Empty(side, "overall", "across the main part the location chain already spans the overall");
         var ruleContext = DimensionRuleContext.FromCatalog(catalog,
-            new SteelPartLocationInput(catalog, mainPartIds, inclinedPartIds, faceOnPartIds, partThickness));
+            new SteelPartLocationInput(catalog, mainPartIds, inclinedPartIds, faceOnPartIds, partThickness, carriedPartIds));
         var locationResult = new DimensionRuleSet(new SteelPartLocationRule(
             new SteelPartLocationSettings(side, minSegmentLength, SameCoordinate, partAnchor, endPartAnchor)))
             .Calculate(ruleContext).Results.Single();

@@ -28,6 +28,9 @@ internal sealed class InclinedPartDimensionSettings
     /// </summary>
     public double AttachedPartAcrossRatio { get; } = 3.0;
 
+    /// <summary>How far from the inclined part, in view units, a part may stand and still count as welded to it.</summary>
+    public double AttachedPartGapViewUnits { get; } = 2.0;
+
     public InclinedPartDimensionSettings(double minimumTiltDegrees = 1.0, double minimumSegmentViewUnits = 3.0,
         double sameCoordinateTolerance = 0.01, double contactBandToleranceViewUnits = 0.5)
     {

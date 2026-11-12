@@ -70,9 +70,9 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
-    public void ShortestSteelSegmentIsAMillimetreOnPaperButNeverBelowTheModelFloor()
+    public void ShortestSteelSegmentFollowsThePaperSizeButNeverGoesBelowTheModelFloor()
     {
-        Assert.Equal(10, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(10));
+        Assert.Equal(8, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(10));
         Assert.Equal(3, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(1));
         Assert.Equal(3, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(0));
     }

@@ -26,10 +26,18 @@ internal sealed class SteelPartLocationInput
     /// </summary>
     public IReadOnlyDictionary<int, double> PartThickness { get; }
 
+    /// <summary>
+    /// Parts carried by an inclined part's chain (welded onto it). Their corners project onto
+    /// a view axis at places no tape can find, so a chain along the main part takes none of
+    /// their points.
+    /// </summary>
+    public IReadOnlyCollection<int> CarriedPartIds { get; }
+
     public SteelPartLocationInput(DimensionPointCatalog catalog, IReadOnlyCollection<int> mainPartIds,
         IReadOnlyCollection<int>? inclinedPartIds = null, IReadOnlyCollection<int>? faceOnPartIds = null,
-        IReadOnlyDictionary<int, double>? partThickness = null)
+        IReadOnlyDictionary<int, double>? partThickness = null, IReadOnlyCollection<int>? carriedPartIds = null)
     {
+        CarriedPartIds = carriedPartIds ?? Array.Empty<int>();
         PartThickness = partThickness ?? new Dictionary<int, double>();
         FaceOnPartIds = faceOnPartIds ?? Array.Empty<int>();
         InclinedPartIds = inclinedPartIds ?? Array.Empty<int>();

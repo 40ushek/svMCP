@@ -76,16 +76,25 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
             var shape = other.Value;
             if (shape.Count < 3) continue;
             var (otherLow, otherHigh) = (shape.Min(Along), shape.Max(Along));
-            var onThisPart = shape.Min(Across) <= contour.Max(Across) + settings.ContactBandToleranceViewUnits
-                && shape.Max(Across) >= contour.Min(Across) - settings.ContactBandToleranceViewUnits;
+            var onThisPart = shape.Min(Across) <= contour.Max(Across) + settings.AttachedPartGapViewUnits
+                && shape.Max(Across) >= contour.Min(Across) - settings.AttachedPartGapViewUnits;
             var between = otherLow >= low - settings.SameCoordinateTolerance
                 && otherHigh <= high + settings.SameCoordinateTolerance;
-            // Not a part merely crossing this one: it has to be small across it too.
-            var small = shape.Max(Across) - shape.Min(Across) <= thickness * settings.AttachedPartAcrossRatio;
-            if (!onThisPart || !between || !small || otherHigh - otherLow < settings.MinimumSegmentViewUnits) continue;
+            // Not a part merely crossing this one. Either it lies on this part (small across it), or
+            // it stands on it with its end, as a rib stands on a flange (thin along it).
+            var small = shape.Max(Across) - shape.Min(Across) <= thickness * settings.AttachedPartAcrossRatio
+                || otherHigh - otherLow <= thickness * settings.AttachedPartAcrossRatio;
+            // It has to run along this part or square to it. A plate that merely ends at this part at
+            // another angle (a horizontal gusset meeting a tilted end plate) would be measured here
+            // by its projection, which no tape can find.
+            var squareOrAlong = LongEdge(shape) is { } run && IsStraight([(0, 0), run], along);
+            if (!onThisPart || !between || !small || !squareOrAlong
+                || otherHigh - otherLow < settings.MinimumSegmentViewUnits) continue;
+            // The point nearest this part's own line: where the two parts meet.
+            var meet = (contour.Min(Across) + contour.Max(Across)) / 2;
             (double X, double Y) OtherEnd(double coordinate) => shape
                 .Where(p => Math.Abs(Along(p) - coordinate) <= settings.SameCoordinateTolerance)
-                .OrderByDescending(Across).First();
+                .OrderBy(p => Math.Abs(Across(p) - meet)).First();
             points.Add((OtherEnd(otherLow), other.Key));
             points.Add((OtherEnd(otherHigh), other.Key));
             attached.Add(other.Key);
@@ -131,14 +140,16 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
 
     // Every edge worth a segment runs along the part or square to it: a straight bar or plate.
     private bool IsStraight(IReadOnlyList<(double X, double Y)> contour, (double X, double Y) along)
-    {
+    {        // A bare direction is given as a two-point path from the origin: judge its one edge whatever its length.
+        var direction = contour.Count == 2;
+
         var limit = Math.Sin(settings.MinimumTiltDegrees * Math.PI / 180);
         for (var i = 0; i < contour.Count; i++)
         {
             var a = contour[i];
             var b = contour[(i + 1) % contour.Count];
             var length = Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
-            if (length < settings.MinimumSegmentViewUnits) continue;
+            if (length < (direction ? 1e-9 : settings.MinimumSegmentViewUnits)) continue;
             var cos = Math.Abs(((b.X - a.X) * along.X + (b.Y - a.Y) * along.Y) / length);
             var sin = Math.Sqrt(Math.Max(0, 1 - cos * cos));
             if (sin > limit && cos > limit) return false;

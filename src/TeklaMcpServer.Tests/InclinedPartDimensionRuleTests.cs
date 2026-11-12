@@ -72,6 +72,28 @@ public sealed class InclinedPartDimensionRuleTests
     }
 
     [Fact]
+    public void PlateStandingOnTheInclinedPlateWithItsEndIsCarriedButOneMeetingItAtAnAngleIsNot()
+    {
+        IReadOnlyList<DimensionRuleResult> Run((double X, double Y)[] other) =>
+            new InclinedPartDimensionRule(new InclinedPartDimensionSettings()).Calculate(new DimensionRuleContext([], null,
+                new InclinedPartDimensionInput(new Dictionary<int, IReadOnlyList<(double X, double Y)>> {
+                    [10] = Column.Select(point => (point.Item1, point.Item2)).ToArray(),
+                    [11] = Plate(-83, CutLength - 8).Select(point => (point.Item1, point.Item2)).ToArray(),
+                    [12] = other
+                }, 10))).Results;
+        (double X, double Y) At(double along, double up) =>
+            (-80 + along * Along.X + up * Up.X, 1000 + along * Along.Y + up * Up.Y);
+
+        // A 12 thick plate standing square on the head plate's upper face, 60 to 72 along it, 200 tall.
+        var standing = Assert.Single(Run([At(60, Thickness), At(72, Thickness), At(72, Thickness + 200), At(60, Thickness + 200)]));
+        Assert.Equal(new[] { 143d, 12d, Math.Round(CutLength - 8 - 72, 3), 8d }, standing.Segments.ToArray());
+
+        // A level plate ending at the same place: along the head plate it shows only a projection.
+        var level = Assert.Single(Run([(-20, 1030), (-8, 1030), (-8, 1230), (-20, 1230)]));
+        Assert.Empty((int[])level.Evidence["attachedPartIds"]);
+    }
+
+    [Fact]
     public void PlateSquareToTheViewAxesGetsNoInclinedChain()
     {
         (double, double)[] column = [(-80, 0), (80, 0), (80, 1000), (-80, 1000)];

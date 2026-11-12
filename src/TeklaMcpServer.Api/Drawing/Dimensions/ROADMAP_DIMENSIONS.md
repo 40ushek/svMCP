@@ -214,6 +214,23 @@ Work order:
    cut square to the plate; the user keeps both: the chain on the front view does
    not get in the way, and the end view is where it is read straight.
 
+   **The tape test (source, 2026-11-12).** On the left end of the M.46 front view
+   the user added the small plate P/1564, which stands on the tilted end plate
+   with its end, to that plate's chain (8 / 264 / 15 / 509 / 8) and struck out an
+   8 on the horizontal chain: "no use in it - how would you measure it with a
+   tape?" That 8 lay between a corner of the small plate and a corner of the
+   tilted end plate. Three changes: a part standing on an inclined part with its
+   end, square to it, is carried by its chain like one lying on it; a plate that
+   only ends at an inclined part at another angle is not (M.53's level gusset
+   meeting the tilted end plate would have read 35.4, a projection); and a chain
+   along the main part takes no point of a carried part and no part-edge point of
+   an inclined part, which can only be where the chain closes. The paper minimum
+   along the main part is 0.8 mm, so the 9.9 between the girder's end and the
+   first cover plate stays. On the saved views the M.46 front chain now starts
+   20.7 / 9.9 / 103.4, as the user left it, and the left inclined chain reads
+   8 / 509.3 / 15 / 264.1 / 8. The principle is written into the skill:
+   `steel-rules.md`, "The tape test, and what a part is measured from".
+
    **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
    on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
    doubtful: on this view the rib stands at an angle and is hidden under the

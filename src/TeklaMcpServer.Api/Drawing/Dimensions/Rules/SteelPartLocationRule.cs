@@ -48,7 +48,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var input = context.Require<SteelPartLocationInput>();
         var catalog = input.Catalog;
         var all = catalog.AllPoints.ToArray();
-        var line = catalog.LinePoints(settings.Side);
+        IReadOnlyList<DimensionPoint> line = catalog.LinePoints(settings.Side);
         var main = all.Where(point => point.Parents.Any(parent =>
             parent.ModelId is { } id && input.MainPartIds.Contains(id))).ToArray();
         if (main.Length == 0)
@@ -57,17 +57,27 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var alongX = settings.Side is DimensionChainSide.Top or DimensionChainSide.Bottom;
         var mainAlongX = main.Max(point => point.X) - main.Min(point => point.X)
             >= main.Max(point => point.Y) - main.Min(point => point.Y);
+        // Along the main part, a point that belongs only to parts carried by an inclined chain is
+        // not offered at all: its place along the axis is a projection, not a measurable length.
+        if (alongX == mainAlongX && input.CarriedPartIds.Count > 0)
+            line = line.Where(point => {
+                var owners = point.Parents.Where(parent => parent.ModelId.HasValue)
+                    .Select(parent => parent.ModelId!.Value).Distinct().ToArray();
+                return owners.Length == 0 || owners.Any(id => !input.CarriedPartIds.Contains(id));
+            }).ToArray();
         var calculation = new CalculationContext(alongX,
             settings.Side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1,
             input.MainPartIds, line, all, main, catalog.LinePoints(Opposite(settings.Side)));
         var result = alongX == mainAlongX
-            ? AlongMain(context, calculation, input.FaceOnPartIds, input.PartThickness)
+            ? AlongMain(context, calculation, input.FaceOnPartIds, input.PartThickness,
+                input.InclinedPartIds.Concat(input.CarriedPartIds).ToArray())
             : AcrossMain(context, all, main, mainAlongX, calculation, input.InclinedPartIds);
         return new DimensionRuleEvaluation([result]);
     }
 
     private DimensionRuleResult AlongMain(DimensionRuleContext context, CalculationContext calculation,
-        IReadOnlyCollection<int> faceOnPartIds, IReadOnlyDictionary<int, double> partThickness)
+        IReadOnlyCollection<int> faceOnPartIds, IReadOnlyDictionary<int, double> partThickness,
+        IReadOnlyCollection<int> locatedAlongThemselves)
     {
         var line = calculation.Line;
         if (line.Count == 0) return Empty("no points on this side");
@@ -79,8 +89,9 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var main = outer.Where(calculation.IsMain).ToArray();
         if (main.Length > 0) picks.AddRange(Ends(main, calculation, "main-end", 2));
 
+        // A tilted part is located along itself; here it can only be where the chain closes.
         var partIds = line.SelectMany(calculation.Parts)
-            .Where(id => !calculation.MainIds.Contains(id)).Distinct().ToArray();
+            .Where(id => !calculation.MainIds.Contains(id) && !locatedAlongThemselves.Contains(id)).Distinct().ToArray();
         var offeredOnOtherSide = partIds.Where(id =>
             !calculation.LiesOnThisSide(id, settings.SameCoordinateTolerance)).ToArray();
         foreach (var id in partIds.Where(id =>
