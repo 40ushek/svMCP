@@ -30,9 +30,15 @@ rest of this file explains the reasons and covers every other request.
    - take every chain with `incomplete=false`;
    - drop a chain whose `segments` equal those of a chain you already keep on this
      view: of `Top`/`Bottom` keep `Bottom`, of `Left`/`Right` keep `Left`;
-   - drop a chain whose `segments` equal those of a chain already placed on an
-     earlier view of this drawing (a back view repeats the front view, a bottom
-     view repeats the top view, an overall is needed once on the sheet);
+   - between views drop only these two repeats, nothing else:
+     an `overall` chain whose `segments` equal an overall already placed on the
+     sheet; and, on a back view or a bottom view, a chain whose `segments` equal a
+     chain placed on the opposite projection (back against front, bottom against
+     top). A chain on a section or an end view is kept even when its numbers match
+     a chain on another view: the section shows the same parts from another side;
+   - always compare the `segments` of the preview answers with each other. Do not
+     compare with the numbers in a batch answer: there `segments` are running
+     totals from the first point (preview `[70,160]` comes back as `[160,230]`);
    - take every chain of the `Inclined` row;
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error.
@@ -43,9 +49,14 @@ rest of this file explains the reasons and covers every other request.
    - If the call fails with `Dimension attributes 'overall' could not be loaded`,
      nothing was created: add `"attributesFile":"standard"` to the overall entries
      and send the same call again.
-7. Read the batch answer. `created` and `retained` are fine. For `merged`,
-   `uncertain`, `failed` or `skipped`, stop on that view and report the key, the
-   status and the error text; do not retry blindly.
+7. Read the batch answer for the `status` of each key only. `created` and
+   `retained` are fine. For `merged`, `uncertain`, `failed` or `skipped`, stop on
+   that view and report the key, the status and the error text; do not retry
+   blindly. The batch answer is the read-back: no separate dimension read is
+   needed. Its `lineAt`, `from` and `to` are view coordinates; on a section they
+   can be large numbers (tens of thousands) because the section's origin lies far
+   away. That is normal. `renderedLineStatus` `matched` means the line was drawn
+   where calculated; `not verified` means only that it could not be checked.
 8. After the last view, report per view: the keys placed with their segments, the
    keys dropped and why, and anything that failed. Say plainly that the chains on
    section and end views are provisional (the code does not clip parts to the
