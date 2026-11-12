@@ -136,14 +136,29 @@ internal static class DrawingReservedAreaReader
             return _cachedLayoutInfo;
         }
 
+        if (TryReadLayoutInfoInOneSession(out var oneSessionInfo))
+        {
+            if (drawingId >= 0)
+            {
+                _cachedDrawingId = drawingId;
+                _cachedLayoutInfo = oneSessionInfo;
+            }
+            return oneSessionInfo;
+        }
+
         // Phase 1: read margins and table IDs in one editor-open pass.
         // Must be closed BEFORE creating PresentationConnection — PresentationConnection
         // opens the Layout Editor itself as a side effect, and fails if it is already open.
         double? sheetMargin = null;
         List<int>? tableIds = null;
+
+        // Timing only: where a first read of a drawing's layout spends its time.
+        var timing = System.Diagnostics.Stopwatch.StartNew();
+        long openMs = 0, marginsMs = 0, listMs = 0, closeMs = 0;
         try
         {
             LayoutManager.OpenEditor();
+            openMs = timing.ElapsedMilliseconds;
             try
             {
                 try
@@ -158,8 +173,9 @@ internal static class DrawingReservedAreaReader
                     sheetMargin = m > 0 ? m : (double?)null;
                 }
                 catch { }
+                marginsMs = timing.ElapsedMilliseconds - openMs;
 
-                try { tableIds = TableLayout.GetCurrentTables(); }
+                try { tableIds = TableLayout.GetCurrentTables(); listMs = timing.ElapsedMilliseconds - openMs - marginsMs; }
                 catch (Exception ex)
                 {
                     PerfTrace.Write("api-view", "reserved_tables_skip", 0, $"reason=get_current_tables_failed error={ex.GetType().Name}");
@@ -168,7 +184,11 @@ internal static class DrawingReservedAreaReader
             }
             finally
             {
+                var beforeClose = timing.ElapsedMilliseconds;
                 try { LayoutManager.CloseEditor(); } catch { }
+                closeMs = timing.ElapsedMilliseconds - beforeClose;
+                PerfTrace.Write("api-view", "reserved_tables_timing", timing.ElapsedMilliseconds,
+                    $"phase=list openEditorMs={openMs} marginsMs={marginsMs} listTablesMs={listMs} closeEditorMs={closeMs} tables={tableIds?.Count ?? -1}");
             }
         }
         catch (Exception ex)
@@ -201,34 +221,14 @@ internal static class DrawingReservedAreaReader
         // TeklaBridge.exe. It is not included in Tekla NuGet packages.
         // Source: C:\TeklaStructures\{ver}\bin\Tekla.Structures.GrpcContracts.dll
         var result = new List<LayoutTableGeometryInfo>();
+        var geometryTiming = System.Diagnostics.Stopwatch.StartNew();
+        long connectMs = 0, presentationMs = 0;
         try
         {
             using var connection = new PresentationConnection();
-            foreach (var tableId in tableIds)
-            {
-                var lt = new LayoutTable { Id = tableId };
-                var ltSelected = lt.Select();
-                var overlapWithViews = ltSelected && lt.OverlapVithViews;
-                var tableName = ltSelected ? (lt.Name ?? "") : "";
-
-                // OverlapWithViews tables are never added to reserved areas — skip gRPC call.
-                if (overlapWithViews)
-                {
-                    result.Add(new LayoutTableGeometryInfo { TableId = tableId, Name = tableName, OverlapWithViews = true });
-                    continue;
-                }
-
-                var segment = connection.Service.GetObjectPresentation(tableId);
-                var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
-                result.Add(info);
-                PerfTrace.Write(
-                    "api-view",
-                    "reserved_table_geometry",
-                    0,
-                    info.HasGeometry && info.Bounds != null
-                        ? $"tableId={info.TableId} name={info.Name} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
-                        : $"tableId={info.TableId} name={info.Name} hasGeometry=false");
-            }
+            connectMs = geometryTiming.ElapsedMilliseconds;
+            ReadTableGeometries(connection, tableIds, result);
+            presentationMs = geometryTiming.ElapsedMilliseconds - connectMs;
         }
         catch (Exception ex)
         {
@@ -248,7 +248,10 @@ internal static class DrawingReservedAreaReader
         }
         finally
         {
+            var beforeClose = geometryTiming.ElapsedMilliseconds;
             try { LayoutManager.CloseEditor(); } catch { }
+            PerfTrace.Write("api-view", "reserved_tables_timing", geometryTiming.ElapsedMilliseconds,
+                $"phase=geometry connectMs={connectMs} tablesMs={presentationMs} closeEditorMs={geometryTiming.ElapsedMilliseconds - beforeClose} tables={tableIds.Count}");
         }
 
         PerfTrace.Write("api-view", "reserved_tables_summary", 0,
@@ -261,6 +264,102 @@ internal static class DrawingReservedAreaReader
             _cachedLayoutInfo = layoutInfo;
         }
         return layoutInfo;
+    }
+
+    /// <summary>
+    /// Reads margins, table list and table geometry inside one PresentationConnection, which
+    /// opens the Layout Editor itself: one editor open/close instead of two. Returns false
+    /// when the list of tables could not be read this way; the caller then reads in two phases.
+    /// </summary>
+    private static bool TryReadLayoutInfoInOneSession(
+        out (double? SheetMargin, IReadOnlyList<LayoutTableGeometryInfo> Tables) info)
+    {
+        info = (null, Array.Empty<LayoutTableGeometryInfo>());
+        var timing = System.Diagnostics.Stopwatch.StartNew();
+        long connectMs = 0, marginsMs = 0, listMs = 0, tablesMs = 0;
+        var tableCount = -1;
+        var stage = "connect";
+        var marginsRead = "none";
+        try
+        {
+            using var connection = new PresentationConnection();
+            connectMs = timing.ElapsedMilliseconds;
+
+            stage = "margins";
+            double? sheetMargin = null;
+            try
+            {
+                double top = 0, bottom = 0, left = 0, right = 0;
+                TableLayout.GetMarginsAndSpaces(out top, out bottom, out left, out right);
+                var m = Math.Min(Math.Min(top, bottom), Math.Min(left, right));
+                sheetMargin = m > 0 ? m : (double?)null;
+                marginsRead = $"{top:F1}/{bottom:F1}/{left:F1}/{right:F1}";
+            }
+            catch (Exception ex) { marginsRead = ex.GetType().Name; }
+            marginsMs = timing.ElapsedMilliseconds - connectMs;
+
+            stage = "list";
+            var tableIds = TableLayout.GetCurrentTables();
+            listMs = timing.ElapsedMilliseconds - connectMs - marginsMs;
+            if (tableIds == null)
+                return false;
+            tableCount = tableIds.Count;
+
+            stage = "tables";
+            var result = new List<LayoutTableGeometryInfo>();
+            ReadTableGeometries(connection, tableIds, result);
+            tablesMs = timing.ElapsedMilliseconds - connectMs - marginsMs - listMs;
+
+            PerfTrace.Write("api-view", "reserved_tables_summary", 0,
+                $"count={result.Count} reserved={result.Count(x => x.HasGeometry && !x.OverlapWithViews)}");
+            info = (sheetMargin, result);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PerfTrace.Write("api-view", "reserved_tables_skip", 0,
+                $"reason=one_session_failed stage={stage} error={ex.GetType().Name} message=\"{ex.Message.Replace('\r', ' ').Replace('\n', ' ')}\"");
+            return false;
+        }
+        finally
+        {
+            var beforeClose = timing.ElapsedMilliseconds;
+            try { LayoutManager.CloseEditor(); } catch { }
+            PerfTrace.Write("api-view", "reserved_tables_timing", timing.ElapsedMilliseconds,
+                $"phase=one-session connectMs={connectMs} marginsMs={marginsMs} listTablesMs={listMs} tablesMs={tablesMs} margins={marginsRead} closeEditorMs={timing.ElapsedMilliseconds - beforeClose} tables={tableCount}");
+        }
+    }
+
+    private static void ReadTableGeometries(
+        PresentationConnection connection,
+        IReadOnlyList<int> tableIds,
+        List<LayoutTableGeometryInfo> result)
+    {
+        foreach (var tableId in tableIds)
+        {
+            var lt = new LayoutTable { Id = tableId };
+            var ltSelected = lt.Select();
+            var overlapWithViews = ltSelected && lt.OverlapVithViews;
+            var tableName = ltSelected ? (lt.Name ?? "") : "";
+
+            // OverlapWithViews tables are never added to reserved areas — skip gRPC call.
+            if (overlapWithViews)
+            {
+                result.Add(new LayoutTableGeometryInfo { TableId = tableId, Name = tableName, OverlapWithViews = true });
+                continue;
+            }
+
+            var segment = connection.Service.GetObjectPresentation(tableId);
+            var info = BuildLayoutTableGeometryInfo(tableId, tableName, segment, overlapWithViews);
+            result.Add(info);
+            PerfTrace.Write(
+                "api-view",
+                "reserved_table_geometry",
+                0,
+                info.HasGeometry && info.Bounds != null
+                    ? $"tableId={info.TableId} name={info.Name} hasGeometry=true minX={info.Bounds.MinX:F1} minY={info.Bounds.MinY:F1} maxX={info.Bounds.MaxX:F1} maxY={info.Bounds.MaxY:F1}"
+                    : $"tableId={info.TableId} name={info.Name} hasGeometry=false");
+        }
     }
 
     /// <summary>
