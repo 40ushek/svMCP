@@ -24,7 +24,7 @@ public sealed class ViewAssemblyOutlineResult
         IReadOnlyList<int>? outsideDepthModelIds = null,
         IReadOnlyList<int>? unresolvedDepthModelIds = null,
         IReadOnlyDictionary<int, PartSolidGeometryInViewResult>? partSolidGeometries = null,
-        (double Min, double Max)? depthRange = null)
+        (double Min, double Max, double? Cut)? depthRange = null)
     {
         DepthRange = depthRange;
         Restricted = restricted;
@@ -48,7 +48,7 @@ public sealed class ViewAssemblyOutlineResult
     public int ViewId { get; }
 
     /// <summary>The view depth the part outlines were limited to; null when it was not applied.</summary>
-    internal (double Min, double Max)? DepthRange { get; }
+    internal (double Min, double Max, double? Cut)? DepthRange { get; }
     public PolyTreeD AssemblyOutline { get; }
     public IReadOnlyDictionary<int, PolyTreeD> PartOutlines { get; }
     internal IReadOnlyDictionary<int, PartSolidGeometryInViewResult> PartSolidGeometries { get; }

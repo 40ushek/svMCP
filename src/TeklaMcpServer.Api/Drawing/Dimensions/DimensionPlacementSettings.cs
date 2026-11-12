@@ -58,6 +58,12 @@ public static class DimensionPlacementSettings
     public const double EndPartDepthToleranceViewUnits = 0.5;
 
     /// <summary>
+    /// The cut of a part by the view plane repeats the part's own faces lying within the view
+    /// depth when it stays within their extent by this much; it then adds nothing but a shift.
+    /// </summary>
+    public const double CutRepeatsOwnFaceToleranceViewUnits = 2.0;
+
+    /// <summary>
     /// A part counts as lying in the view plane (seen face-on) when the out-of-plane share of
     /// each of its own X and Y axes is at most this: 0.1 is about 6 degrees of tilt.
     /// </summary>

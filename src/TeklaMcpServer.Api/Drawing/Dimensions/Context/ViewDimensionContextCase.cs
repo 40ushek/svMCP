@@ -206,7 +206,7 @@ internal sealed class ViewDimensionContextCase
             TeklaDrawingAssemblyOutlineApi.Build(ViewId, outline.SolidIds, new StoredSolids(solids), null,
                 outline.Restricted, outline.VisibleCount, outline.RequestedIds, outline.NotVisibleRequestedIds,
                 outline.OutsideDepthModelIds, outline.UnresolvedDepthModelIds, selectionUnread,
-                outline.DepthMin is { } min && outline.DepthMax is { } max ? (min, max) : MetadataDepthRange());
+                MetadataDepthRange() ?? (outline.DepthMin is { } min && outline.DepthMax is { } max ? (min, max, null) : null));
 
         // The projection reports again whatever it could not use. The rest of the stored
         // list came from the selection and has to be handed back in.
@@ -219,17 +219,18 @@ internal sealed class ViewDimensionContextCase
     }
 
     // A case saved before the depth was recorded: the same range the reader would take, from
-    // the view metadata - the depth window, where the display and view origins coincide.
-    private (double Min, double Max)? MetadataDepthRange()
+    // the view metadata - the depth window, moved to the view origin along the depth.
+    private (double Min, double Max, double? Cut)? MetadataDepthRange()
     {
         if (Metadata.ValueKind != JsonValueKind.Object
             || !Metadata.TryGetProperty("depthWindow", out var window) || window.ValueKind != JsonValueKind.Object
             || !Metadata.TryGetProperty("viewCoordinates", out var view)
             || !Metadata.TryGetProperty("displayCoordinates", out var display)) return null;
-        for (var i = 0; i < 3; i++)
-            if (Math.Abs(view[i].GetDouble() - display[i].GetDouble()) > 0.01) return null;
         return window.TryGetProperty("MinZ", out var min) && window.TryGetProperty("MaxZ", out var max)
-            ? (min.GetDouble(), max.GetDouble()) : null;
+            ? ViewDepthWindow.DepthRangeInView(min.GetDouble(), max.GetDouble(),
+                view.EnumerateArray().Select(number => number.GetDouble()).ToArray(),
+                display.EnumerateArray().Select(number => number.GetDouble()).ToArray())
+            : null;
     }
 
     private static ViewDimensionContextCaseOutline OutlineOf(ViewAssemblyOutlineResult outline) => new()

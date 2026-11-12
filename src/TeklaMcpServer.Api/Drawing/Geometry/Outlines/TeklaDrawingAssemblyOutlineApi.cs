@@ -82,23 +82,29 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
 
     // The view's depth along its own Z, usable only where the solids are read in the same
     // coordinates as the window: on some sections the display origin differs from the view's.
-    private (double Min, double Max)? ReadDepthRange(View view)
+    private (double Min, double Max, double? Cut)? ReadDepthRange(View view)
     {
-        var origin = view.ViewCoordinateSystem.Origin;
-        var display = view.DisplayCoordinateSystem.Origin;
-        if (Tekla.Structures.Geometry3d.Distance.PointToPoint(origin, display) > 0.01) return null;
-        return ViewDepthWindow.Read(_model, view).Box is { } box ? (box.MinZ, box.MaxZ) : null;
+        static double[] Numbers(Tekla.Structures.Geometry3d.CoordinateSystem system) => [
+            system.Origin.X, system.Origin.Y, system.Origin.Z, system.AxisX.X, system.AxisX.Y, system.AxisX.Z,
+            system.AxisY.X, system.AxisY.Y, system.AxisY.Z];
+        return ViewDepthWindow.Read(_model, view).Box is { } box
+            ? ViewDepthWindow.DepthRangeInView(box.MinZ, box.MaxZ,
+                Numbers(view.ViewCoordinateSystem), Numbers(view.DisplayCoordinateSystem))
+            : null;
     }
 
     /// <summary>
-    /// What a view shows of a part that reaches beyond its depth: only the faces lying
-    /// entirely within the depth. Geometry beyond the depth is not drawn there and nothing
-    /// may be dimensioned to it. A part that is wholly inside the depth, or that has no face
-    /// wholly inside it (a member running through the cut), is returned unchanged: projected
-    /// in full, as before.
+    /// What a view shows of a part that reaches beyond its depth. Geometry beyond the depth is
+    /// not drawn there and nothing may be dimensioned to it.
+    /// A part is drawn by its faces lying entirely within the depth: true corners. Where the
+    /// view plane cuts the part outside what those faces show (a gusset running through, with
+    /// only a notch inside the depth), the contour of the cut is drawn with them.
+    /// A member running through the view plane with no face within the depth is drawn by the cut.
+    /// A member lying along the view plane (a lengthwise section), a part that cannot be cut
+    /// cleanly, and a part wholly inside the depth are returned unchanged: projected in full.
     /// </summary>
     internal static PartSolidGeometryInViewResult WithinDepth(PartSolidGeometryInViewResult geometry,
-        (double Min, double Max)? depth)
+        (double Min, double Max, double? Cut)? depth)
     {
         if (depth is not { } range || !geometry.Success) return geometry;
         const double tolerance = 0.5;
@@ -107,32 +113,45 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         bool Inside(double[] point) => point[2] >= range.Min - tolerance && point[2] <= range.Max + tolerance;
         if (vertices.Count == 0 || vertices.Values.All(Inside)) return geometry;
 
-        var faces = geometry.Solid.Faces.Where(face => face.Loops.Count > 0
-            && face.Loops.All(loop => loop.VertexIndexes.All(index =>
-                vertices.TryGetValue(index, out var point) && Inside(point)))).ToList();
-        // A face seen edge-on adds nothing to the outline; at least one face must show an area.
-        double Area(PartFaceGeometry face) => face.Loops.Sum(loop => {
-            var points = loop.VertexIndexes.Select(index => vertices[index]).ToArray();
-            var twice = 0d;
-            for (var i = 0; i < points.Length; i++)
-            {
-                var next = points[(i + 1) % points.Length];
-                twice += points[i][0] * next[1] - next[0] * points[i][1];
-            }
-            return Math.Abs(twice) / 2;
-        });
-        if (!faces.Any(face => Area(face) > 1e-6)) return geometry;
-
-        return new PartSolidGeometryInViewResult {
+        PartSolidGeometryInViewResult With(List<PartVertexGeometry> shownVertices, List<PartFaceGeometry> shownFaces) => new() {
             Success = true, ViewId = geometry.ViewId, ModelId = geometry.ModelId,
             StartPoint = geometry.StartPoint, EndPoint = geometry.EndPoint,
             CoordinateSystemOrigin = geometry.CoordinateSystemOrigin, AxisX = geometry.AxisX, AxisY = geometry.AxisY,
             Solid = new PartSolidGeometry {
                 BboxMin = geometry.Solid.BboxMin, BboxMax = geometry.Solid.BboxMax,
                 SolidGeometryComplete = geometry.Solid.SolidGeometryComplete,
-                Vertices = geometry.Solid.Vertices, ViewHull = geometry.Solid.ViewHull, Faces = faces
+                ViewHull = geometry.Solid.ViewHull, Vertices = shownVertices, Faces = shownFaces
             }
         };
+        static double Low(IEnumerable<double[]> points, int axis) => points.Min(point => point[axis]);
+        static double High(IEnumerable<double[]> points, int axis) => points.Max(point => point[axis]);
+
+        var cut = range.Cut is { } plane ? SolidDepthClip.Section(geometry.Solid, plane, vertices.Keys.Max() + 1) : null;
+        var cutPoints = cut?.Vertices.Select(vertex => vertex.Point).ToArray() ?? [];
+        var faces = geometry.Solid.Faces.Where(face => face.Loops.Count > 0
+            && face.Loops.All(loop => loop.VertexIndexes.All(index =>
+                vertices.TryGetValue(index, out var point) && Inside(point)))).ToList();
+        // A face seen edge-on adds nothing to the outline; at least one face must show an area.
+        if (faces.Any(face => SolidDepthClip.ProjectedArea(geometry.Solid, face) > 1e-6))
+        {
+            var facePoints = faces.SelectMany(face => face.Loops).SelectMany(loop => loop.VertexIndexes)
+                .Select(index => vertices[index]).ToArray();
+            // The cut of a part ending at the view plane repeats its end face, shifted a little
+            // on a tilted part (8 becomes 7.9): the face alone is drawn.
+            var slack = Dimensions.DimensionPlacementSettings.CutRepeatsOwnFaceToleranceViewUnits;
+            var repeats = cut == null || new[] { 0, 1 }.All(axis =>
+                Low(cutPoints, axis) >= Low(facePoints, axis) - slack && High(cutPoints, axis) <= High(facePoints, axis) + slack);
+            return repeats
+                ? With(geometry.Solid.Vertices, faces)
+                : With(geometry.Solid.Vertices.Concat(cut!.Vertices).ToList(), faces.Concat(cut.Faces).ToList());
+        }
+
+        if (cut == null) return geometry;
+        // Through the plane or along it: the cut of a member running through is smaller than
+        // the member is deep; a lengthwise cut is as long as the member.
+        var through = Math.Max(High(cutPoints, 0) - Low(cutPoints, 0), High(cutPoints, 1) - Low(cutPoints, 1))
+            < High(vertices.Values, 2) - Low(vertices.Values, 2);
+        return through ? With(cut.Vertices, cut.Faces) : geometry;
     }
 
     internal static ViewAssemblyOutlineResult Build(
@@ -147,7 +166,7 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         IReadOnlyList<int>? outsideDepthModelIds = null,
         IReadOnlyList<int>? unresolvedDepthModelIds = null,
         IReadOnlyList<UnreadPart>? selectionUnread = null,
-        (double Min, double Max)? depthRange = null)
+        (double Min, double Max, double? Cut)? depthRange = null)
     {
         var partOutlines = new Dictionary<int, PolyTreeD>();
         var partSolidGeometries = new Dictionary<int, PartSolidGeometryInViewResult>();

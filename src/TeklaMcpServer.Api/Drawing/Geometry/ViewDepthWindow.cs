@@ -24,6 +24,34 @@ internal sealed class ViewDepthWindow
     public string? Error { get; }
     public bool IsUsable => Box.HasValue;
 
+    /// <summary>
+    /// The window's depth limits in the coordinates of the captured solids. The window is read
+    /// from the display coordinate system; on a section its origin can lie off the view's own
+    /// origin along the depth (an inclined section: 1460 mm), and the limits move with it.
+    /// Cut is the plane the window is measured from: the view plane, where a section cuts.
+    /// Both systems are nine numbers: origin, axis X, axis Y. Null when their depth axes differ.
+    /// </summary>
+    internal static (double Min, double Max, double? Cut)? DepthRangeInView(double minZ, double maxZ,
+        double[] view, double[] display)
+    {
+        if (view.Length < 9 || display.Length < 9) return null;
+        static double[]? Depth(double[] system)
+        {
+            var z = new[] {
+                system[4] * system[8] - system[5] * system[7],
+                system[5] * system[6] - system[3] * system[8],
+                system[3] * system[7] - system[4] * system[6]
+            };
+            var length = Math.Sqrt(z[0] * z[0] + z[1] * z[1] + z[2] * z[2]);
+            return length <= 1e-9 ? null : [z[0] / length, z[1] / length, z[2] / length];
+        }
+        if (Depth(view) is not { } axis || Depth(display) is not { } other
+            || axis[0] * other[0] + axis[1] * other[1] + axis[2] * other[2] < 0.9999) return null;
+        var shift = (display[0] - view[0]) * axis[0] + (display[1] - view[1]) * axis[1]
+            + (display[2] - view[2]) * axis[2];
+        return (minZ - shift, maxZ - shift, -shift);
+    }
+
     public static ViewDepthWindow Read(Model model, View view)
     {
         var coordinateSystem = view.ViewCoordinateSystem;

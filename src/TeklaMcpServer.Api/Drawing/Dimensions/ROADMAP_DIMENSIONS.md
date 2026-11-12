@@ -289,6 +289,54 @@ Work order:
    option for locating parts, not a steel one. Only the steel rule reads it so
    far; the panel rule (stud left faces, one face per horizontal member) and the
    section rule still have their faces fixed in code.
+
+   **Chain closes on the ends of the whole line (deployed 2026-11-12).** On the
+   M.85 top view the gussets stand 264 mm off the girder, so the outer half of the
+   side held only their points: the chain along the girder ended at the last
+   gusset. When the outer half holds no main-part point, the chain now also takes
+   the two ends of the whole line: 19.1 / 191.6 / 93 / 4287.2 / 615.1 / 4407 /
+   620.6 / 735.9, the sum of the overall. It closes on the end plates, as the
+   front view does; the engineer closed on the girder's own ends (787.5).
+   Not explained: why the left gusset is split 191.6 + 93.
+
+   **View depth on sections whose origin lies off the view plane (deployed
+   2026-11-12).** The depth window is read in the display coordinate system. Where
+   its origin lay off the view origin along the depth (M.85 section D: 1460 mm),
+   the depth was dropped and every part was projected whole: the 11 m girder and
+   the whole gusset. `ViewDepthWindow.DepthRangeInView` moves the limits by that
+   offset. Seven of the saved sections had no depth for this reason.
+
+   **A part cut by the view plane is drawn by the cut (deployed 2026-11-12).**
+   Taking only the faces lying wholly within the depth failed on M.46 section F: a
+   gusset running through the cut had one notch face inside the depth and was
+   taken for it (edge 283 lost). The user's rule: cut the solid by the plane of
+   the view and use that polygon. `SolidDepthClip.Section` computes the cut from
+   the captured solid; `WithinDepth` then draws
+   - a part ending within the depth by its own faces within the depth (true
+     corners: a cut 0.4 mm inside a tilted girder would turn 8 into 7.9);
+   - the same part with the cut added, where the cut reaches past those faces by
+     more than `CutRepeatsOwnFaceToleranceViewUnits` (2 mm);
+   - a member running through the plane with no face within the depth by the cut
+     alone;
+   - a member lying along the plane (lengthwise section, M.46 G) projected in
+     full, as before: its cut is longer than the member is deep.
+   Section F now reads 133.2 / 30 / 270 / 133.2 on top, accepted by the user as
+   better. A slab between both depth planes was tried and dropped: the far plane
+   is no real edge and shifts every tilted outline.
+   Open: take the cut from Tekla (`Solid.IntersectAllFaces`) when the view is
+   read and store it with the solid, keeping the own computation for saved cases;
+   the left chain of F (400 / 92 / 275.9 / 36.6 / 26.4) and the 7.1 on M.85 D are
+   not reviewed; M.46 D is still refused for one part on the depth boundary.
+
+   **Haiku runs with the skill alone (2026-11-12).** Six cold runs, delete and
+   place, on M.46 and M.85: 26-28 dimensions, 22-26 tool calls, 119-181 s, no
+   failed call. Places where the skill gave no direct answer and the runs
+   differed or decided alone: whether the mirror rule covers side and local
+   chains (bottom view of M.46: placed once, dropped once); an overall on the top
+   view already placed on the front (duplicated once on M.85); a view with
+   nothing left to place and a section refused as a whole; equal local chains on
+   one view against the same-view repeat rule. The running-totals example in
+   step 5 is wrong (70 / 160 comes back as 70 / 230). Not fixed in the skill yet.
 2. **First rule fix, checked on saved steel cases:** split sides by the main-part
    axis and suppress the Top/Bottom repeat, inside the steel rule only.
 3. **Replace the side assignment** with a side-free point list, built beside the
