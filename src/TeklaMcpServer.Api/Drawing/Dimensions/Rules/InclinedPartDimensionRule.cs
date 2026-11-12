@@ -20,13 +20,16 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
         if (!input.PartContours.TryGetValue(input.MainPartId, out var main) || main.Count < 3)
             return new DimensionRuleEvaluation([]);
         var results = input.PartContours.Where(part => part.Key != input.MainPartId).OrderBy(part => part.Key)
-            .Select(part => Locate(part.Key, part.Value, input.MainPartId, main))
+            .Select(part => Locate(part.Key, part.Value, input.MainPartId, main, input.PartContours))
             .Where(result => result != null).Select(result => result!).ToArray();
-        return new DimensionRuleEvaluation(results);
+        // A part carried by another part's chain has no chain of its own.
+        var carried = results.SelectMany(result => (int[])result.Evidence["attachedPartIds"]).ToArray();
+        return new DimensionRuleEvaluation(results.Where(result => !carried.Contains((int)result.Evidence["partId"])));
     }
 
     private DimensionRuleResult? Locate(int partId, IReadOnlyList<(double X, double Y)> contour,
-        int mainId, IReadOnlyList<(double X, double Y)> main)
+        int mainId, IReadOnlyList<(double X, double Y)> main,
+        IReadOnlyDictionary<int, IReadOnlyList<(double X, double Y)>> all)
     {
         if (contour.Count < 3 || LongEdge(contour) is not { } along) return null;
         var tilt = Math.Atan2(Math.Min(Math.Abs(along.X), Math.Abs(along.Y)),
@@ -64,13 +67,44 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
                     && high - Along(p) >= settings.MinimumSegmentViewUnits).Distinct().ToArray();
         points.AddRange(beyond.Concat(inside).Select(p => (p, mainId)));
 
-        var ordered = points.OrderBy(p => Along(p.Point)).ToArray();
+        // A smaller part welded onto this one is located along it, between its ends: that is
+        // where the fitter measures. A dimension to the main part would say nothing about it.
+        var attached = new List<int>();
+        var thickness = contour.Max(Across) - contour.Min(Across);
+        foreach (var other in all.Where(other => other.Key != partId && other.Key != mainId).OrderBy(other => other.Key))
+        {
+            var shape = other.Value;
+            if (shape.Count < 3) continue;
+            var (otherLow, otherHigh) = (shape.Min(Along), shape.Max(Along));
+            var onThisPart = shape.Min(Across) <= contour.Max(Across) + settings.ContactBandToleranceViewUnits
+                && shape.Max(Across) >= contour.Min(Across) - settings.ContactBandToleranceViewUnits;
+            var between = otherLow >= low - settings.SameCoordinateTolerance
+                && otherHigh <= high + settings.SameCoordinateTolerance;
+            // Not a part merely crossing this one: it has to be small across it too.
+            var small = shape.Max(Across) - shape.Min(Across) <= thickness * settings.AttachedPartAcrossRatio;
+            if (!onThisPart || !between || !small || otherHigh - otherLow < settings.MinimumSegmentViewUnits) continue;
+            (double X, double Y) OtherEnd(double coordinate) => shape
+                .Where(p => Math.Abs(Along(p) - coordinate) <= settings.SameCoordinateTolerance)
+                .OrderByDescending(Across).First();
+            points.Add((OtherEnd(otherLow), other.Key));
+            points.Add((OtherEnd(otherHigh), other.Key));
+            attached.Add(other.Key);
+        }
+
+        // Two parts at one place (a plate on each side of the web) give one point, not two.
+        var ordered = points.OrderBy(p => Along(p.Point)).Aggregate(new List<((double X, double Y) Point, int Owner)>(),
+            (kept, p) => {
+                if (kept.Count == 0 || Along(p.Point) - Along(kept[kept.Count - 1].Point) > settings.ContactBandToleranceViewUnits)
+                    kept.Add(p);
+                return kept;
+            }).ToArray();
         var rulePoints = ordered.Select((p, index) => new DimensionRulePoint(
             "i" + partId.ToString(CultureInfo.InvariantCulture) + "-" + index.ToString(CultureInfo.InvariantCulture),
             p.Point.X, p.Point.Y, [new DimensionPointSource("part", p.Owner, "inclined-contour")])).ToArray();
         var segments = ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(Along(b.Point) - Along(a.Point), 3));
         var evidence = new Dictionary<string, object> {
             ["partId"] = partId,
+            ["attachedPartIds"] = attached.ToArray(),
             ["tiltDegrees"] = Math.Round(tilt, 3),
             // From the lowest chain point across the part to the highest: the line clears all of them.
             ["acrossSpan"] = ordered.Max(p => Across(p.Point)) - ordered.Min(p => Across(p.Point))

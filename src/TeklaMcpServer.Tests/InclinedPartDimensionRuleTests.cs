@@ -54,6 +54,24 @@ public sealed class InclinedPartDimensionRuleTests
     }
 
     [Fact]
+    public void SmallPartWeldedOntoTheInclinedPlateIsLocatedAlongIt()
+    {
+        // Two equal small plates at one place on the head plate (one each side of the web),
+        // 20 to 100 along it: the chain reads the place once, between the plate's ends.
+        (double, double)[] Small() => Plate(20, 100).Select(point => (point.Item1, point.Item2)).ToArray();
+        var contours = new Dictionary<int, IReadOnlyList<(double X, double Y)>> {
+            [10] = Column.Select(point => (point.Item1, point.Item2)).ToArray(),
+            [11] = Plate(-83, CutLength - 8).Select(point => (point.Item1, point.Item2)).ToArray(),
+            [12] = Small(), [13] = Small()
+        };
+        var result = Assert.Single(new InclinedPartDimensionRule(new InclinedPartDimensionSettings())
+            .Calculate(new DimensionRuleContext([], null, new InclinedPartDimensionInput(contours, 10))).Results);
+
+        Assert.Equal(new[] { 103d, 80d, Math.Round(CutLength - 8 - 100, 3), 8d }, result.Segments.ToArray());
+        Assert.Equal(new[] { 12, 13 }, (int[])result.Evidence["attachedPartIds"]);
+    }
+
+    [Fact]
     public void PlateSquareToTheViewAxesGetsNoInclinedChain()
     {
         (double, double)[] column = [(-80, 0), (80, 0), (80, 1000), (-80, 1000)];

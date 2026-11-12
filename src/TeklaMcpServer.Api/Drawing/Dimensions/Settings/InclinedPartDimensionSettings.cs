@@ -22,6 +22,12 @@ internal sealed class InclinedPartDimensionSettings
     /// </summary>
     public double ContactBandToleranceViewUnits { get; }
 
+    /// <summary>
+    /// A part standing on an inclined part is carried by that part's chain when its own size
+    /// across the inclined part is at most this many of that part's thicknesses.
+    /// </summary>
+    public double AttachedPartAcrossRatio { get; } = 3.0;
+
     public InclinedPartDimensionSettings(double minimumTiltDegrees = 1.0, double minimumSegmentViewUnits = 3.0,
         double sameCoordinateTolerance = 0.01, double contactBandToleranceViewUnits = 0.5)
     {

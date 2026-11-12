@@ -269,7 +269,7 @@ public sealed class ViewDimensionContext
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetPanelDimensionPointCatalog(), side,
                         _mainPartIds, DimensionPlacementSettings.MinimumSteelChainSegment(Scale),
-                        inclinedPartIds: InclinedChains().Select(chain => chain.PartId).ToArray(),
+                        inclinedPartIds: InclinedChains().SelectMany(chain => chain.LocatedPartIds).ToArray(),
                         faceOnPartIds: FaceOnPartIds(), partThickness: PartThicknesses()))
                     .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
             }).ToArray();
@@ -300,9 +300,13 @@ public sealed class ViewDimensionContext
 
     /// <summary>A chain along a tilted part, ready to be written: points and offset are final.</summary>
     internal sealed class InclinedChain(int partId, double[] points, double[] segments, string direction, double distance,
-        string side = InclinedSide, string kind = InclinedPartDimensionRule.Kind)
+        string side = InclinedSide, string kind = InclinedPartDimensionRule.Kind, int[]? attachedPartIds = null)
     {
         public int PartId { get; } = partId;
+        /// <summary>Parts standing on this one that the chain locates as well.</summary>
+        public int[] AttachedPartIds { get; } = attachedPartIds ?? [];
+        /// <summary>Every part this chain locates: no other chain needs to.</summary>
+        public IEnumerable<int> LocatedPartIds => new[] { PartId }.Concat(AttachedPartIds);
         public string Key => side + "-" + PartId.ToString(CultureInfo.InvariantCulture);
         /// <summary>Flat view coordinates [x0,y0,0, x1,y1,0, ...], ordered along the part.</summary>
         public double[] Points { get; } = points;
@@ -334,7 +338,8 @@ public sealed class ViewDimensionContext
                 result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(),
                 result.Segments.ToArray(),
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
-                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"]);
+                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"],
+                attachedPartIds: (int[])result.Evidence["attachedPartIds"]);
         }).ToArray();
     }
 
@@ -348,7 +353,7 @@ public sealed class ViewDimensionContext
         if (_localChains != null) return _localChains;
         if (!_complete || _mainPartIds.Length != 1 || _mainPartUnresolvedIds.Length > 0) return _localChains = [];
         var mainId = _mainPartIds[0];
-        var inclined = InclinedChains().Select(chain => chain.PartId).ToArray();
+        var inclined = InclinedChains().SelectMany(chain => chain.LocatedPartIds).ToArray();
         (double MinX, double MaxX, double MinY, double MaxY)? Box(int id, bool straightOnly)
         {
             var shapes = _group.Shapes.Where(shape => shape.ModelId == id && !shape.IsHole

@@ -198,6 +198,22 @@ Work order:
    of M.53. Not covered: gussets with chamfered corners in plan (tilted edges, so
    no box) and the engineer's 133.2 / 300 / 133.2 against the flange edges.
 
+   **Parts welded onto an inclined part (source, deployed 2026-11-12).** On the
+   M.46 front view the small plates on the tilted end plate were located by a
+   vertical chain from the girder's flanges (335 / 149 / 316), its text printed
+   over the inclined chain's. The user replaced both by one chain along the end
+   plate, 25 / 339 / 150 / 315 / 25: the small part is welded to the larger one,
+   which stands at an angle to the girder, so it is measured along it; the old
+   dimension was nearly useless. `InclinedPartDimensionRule` now carries such a
+   part in the inclined part's chain: a part lying within the inclined part's
+   thickness on the view, between its ends, and at most three of its thicknesses
+   across (`AttachedPartAcrossRatio`). It gets no chain of its own and is left
+   out of the axis-aligned and local chains; equal parts at one place give one
+   point. Of 186 chains on the saved views only the M.46 front-view pair and its
+   mirror on the back view change. The same numbers stand on section E, which is
+   cut square to the plate; the user keeps both: the chain on the front view does
+   not get in the way, and the end view is where it is read straight.
+
    **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
    on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
    doubtful: on this view the rib stands at an angle and is hidden under the
