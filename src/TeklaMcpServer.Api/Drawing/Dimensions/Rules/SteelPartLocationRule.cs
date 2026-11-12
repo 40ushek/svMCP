@@ -87,6 +87,13 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var outer = OuterHalf(line, calculation);
         picks.AddRange(Ends(outer, calculation, "extreme", 1));
         var main = outer.Where(calculation.IsMain).ToArray();
+        // Parts standing far out (gussets) push the main part and the end parts out of the outer
+        // half; the chain still closes on the ends of the whole line.
+        if (main.Length == 0)
+        {
+            picks.AddRange(Ends(line, calculation, "extreme", 1));
+            main = line.Where(calculation.IsMain).ToArray();
+        }
         if (main.Length > 0) picks.AddRange(Ends(main, calculation, "main-end", 2));
 
         // A tilted part is located along itself; here it can only be where the chain closes.
