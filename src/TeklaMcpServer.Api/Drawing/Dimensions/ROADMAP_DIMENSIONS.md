@@ -88,6 +88,20 @@ Work order:
    ribs standing inside the profile still abut. The user allows this location on
    the end view; whether it belongs there or on the front view is not decided.
 
+   **Plates seen face-on (source, 2026-11-12; not deployed).** Second live case,
+   M.81 section E (view 1409): the vertical chain read 80 / 30 / 130 and left out
+   the upper edge of plate P/1548, so its height was not on the sheet. The user's
+   rule: a plate whose plane is parallel to the view plane gets both edges, and
+   the sign is that the part's own X and Y axes lie in the view plane, or nearly.
+   A part is face-on when the out-of-plane share of both own axes is at most 0.1
+   (about 6 degrees, `FaceOnAxisOutOfPlaneTolerance`); without readable axes, when
+   it is thinner along the view depth than along either view axis. A face-on part
+   inside the profile limits is located by both edges; the abutting rule still
+   applies to it, so a face-on rib between the flanges gets no dimension. On the
+   six saved section and end views of M.505 and M.81 the sign holds for every
+   plate, and only 1409 changes, to 80 / 30 / 100 / 30. M.81 as proposed before
+   this change is on the sheet for the user's edits; other remarks on it are open.
+
    **Part anchor option (source, 2026-11-12; not deployed, not exposed).** The
    user noted that the front-view chain takes every welded part by its left
    face and asked for the choice Tekla's rules give, on horizontal and vertical

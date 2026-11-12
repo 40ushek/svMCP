@@ -385,6 +385,35 @@ public sealed class DimensionChainPreviewTests
         Assert.All(horizontal, segments => Assert.Equal(new[] { 160d }, segments));
     }
 
+    [Theory]
+    [InlineData(10, new[] { 50d, 100d, 50d })] // thin along the view depth: seen face-on, both edges are located
+    [InlineData(0, new[] { 50d, 150d })]       // no depth read: one edge, as before
+    public void PlateSeenFaceOnIsLocatedByBothEdges(double thickness, double[] expected)
+    {
+        var context = ISectionContext(sidePlateThickness: thickness);
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var vertical = rows.Where(r => r.GetProperty("side").GetString() is "Left" or "Right")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.Contains(vertical, segments => segments.SequenceEqual(expected));
+        var horizontal = rows.Where(r => r.GetProperty("side").GetString() is "Top" or "Bottom")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.Contains(horizontal, segments => segments.SequenceEqual(new[] { 80d, 160d }));
+    }
+
+    [Theory]
+    [InlineData(1, 0, 0, new[] { 50d, 100d, 50d })]      // both own axes in the view plane: face-on
+    [InlineData(1, 0, 0.05, new[] { 50d, 100d, 50d })]   // nearly
+    [InlineData(0, 0, 1, new[] { 50d, 150d })]           // own X along the view depth: not face-on, whatever its extents
+    public void PartAxesDecideWhetherAPlateIsSeenFaceOn(double x, double y, double z, double[] expected)
+    {
+        // No depth in the fixture, so the plate is not an end part and only its axes speak.
+        var context = ISectionContext(sidePlateThickness: 0, sidePlateAxisX: [x, y, z]);
+        var vertical = context.Query("chain").GetProperty("chainPreview").EnumerateArray()
+            .Where(r => r.GetProperty("side").GetString() is "Left" or "Right")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.Contains(vertical, segments => segments.SequenceEqual(expected));
+    }
+
     [Fact]
     public void SectionAnswerIsOneChainPerAxisWithoutMirrorSides()
     {
@@ -405,7 +434,8 @@ public sealed class DimensionChainPreviewTests
 
     internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
-        double? edgeAboveFlange = null, double? insetPlateDepth = null)
+        double? edgeAboveFlange = null, double? insetPlateDepth = null, double? sidePlateThickness = null,
+        double[]? sidePlateAxisX = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -436,6 +466,16 @@ public sealed class DimensionChainPreviewTests
         {
             parts.Add(14, Solid(14, 30, 35, 90 + edge, 95));
             included.Add(new PartRoleInView(14, "P14", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        if (sidePlateThickness is { } thickness)
+        {
+            // A plate beside the profile, 80 out from the flange and 100 high about the axis.
+            var plate = Solid(16, -160, -80, -50, 50);
+            plate.Solid.Vertices[2].Point[2] = thickness;
+            plate.Solid.Vertices[3].Point[2] = thickness;
+            if (sidePlateAxisX != null) { plate.AxisX = sidePlateAxisX; plate.AxisY = [0, 1, 0]; }
+            parts.Add(16, plate);
+            included.Add(new PartRoleInView(16, "P16", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
         }
         if (insetPlateDepth is { } depth)
         {

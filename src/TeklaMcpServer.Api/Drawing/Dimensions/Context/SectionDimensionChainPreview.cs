@@ -23,7 +23,7 @@ internal sealed class SectionDimensionChainPreview
     private readonly DimensionRuleContext _ruleContext;
 
     private SectionDimensionChainPreview(DimensionPointCatalog catalog, int mainId,
-        int[] secondaryIds, int[] endPartIds, double[] xLevels, double[] yLevels, double scale, GeometryGroupExtent extent)
+        int[] secondaryIds, int[] endPartIds, int[] faceOnPartIds, double[] xLevels, double[] yLevels, double scale, GeometryGroupExtent extent)
     {
         _catalog = catalog;
         _secondaryIds = secondaryIds;
@@ -32,7 +32,7 @@ internal sealed class SectionDimensionChainPreview
         _extent = extent;
         _ruleContext = DimensionRuleContext.FromCatalog(catalog, extent,
             new SectionProfileDimensionInput(mainId, xLevels, yLevels),
-            new SectionPartLocationInput(secondaryIds, endPartIds));
+            new SectionPartLocationInput(secondaryIds, endPartIds, faceOnPartIds));
     }
 
     public IReadOnlyList<int> SecondaryIds => _secondaryIds;
@@ -81,7 +81,8 @@ internal sealed class SectionDimensionChainPreview
     public static bool TryCreate(DimensionPointCatalog catalog, GeometryGroup group, int mainId,
         IEnumerable<int> includedIds, double minFeatureLength, double scale,
         out SectionDimensionChainPreview? preview,
-        out string? reason, IReadOnlyCollection<int>? endPartIds = null)
+        out string? reason, IReadOnlyCollection<int>? endPartIds = null,
+        IReadOnlyCollection<int>? faceOnPartIds = null)
     {
         preview = null;
         if (double.IsNaN(scale) || double.IsInfinity(scale) || scale <= 0)
@@ -113,7 +114,8 @@ internal sealed class SectionDimensionChainPreview
 
         preview = new SectionDimensionChainPreview(catalog, mainId,
             includedIds.Where(id => id != mainId).Distinct().OrderBy(id => id).ToArray(),
-            (endPartIds ?? Array.Empty<int>()).Where(id => id != mainId).Distinct().ToArray(), xLevels, yLevels,
+            (endPartIds ?? Array.Empty<int>()).Where(id => id != mainId).Distinct().ToArray(),
+            (faceOnPartIds ?? Array.Empty<int>()).Where(id => id != mainId).Distinct().ToArray(), xLevels, yLevels,
             scale, group.Extent);
         reason = null;
         return true;

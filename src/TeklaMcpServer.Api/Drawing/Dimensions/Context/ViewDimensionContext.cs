@@ -220,7 +220,7 @@ public sealed class ViewDimensionContext
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
                     GetPanelDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, Scale,
-                    out sectionPreview, out var profileReason, EndPartIds(_mainPartIds[0])))
+                    out sectionPreview, out var profileReason, EndPartIds(_mainPartIds[0]), FaceOnPartIds()))
                 refusal = profileReason;
             if (section)
                 result["sectionPreviewStatus"] = refusal == null
@@ -282,6 +282,27 @@ public sealed class ViewDimensionContext
         result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
         return Freeze(result, display: true);
     }
+
+    // Parts lying in the view plane, or nearly: the part's own X and Y axes both lie in it.
+    // Without readable axes, a part thinner along the view depth than along either view axis.
+    private int[] FaceOnPartIds() => _includedModelIds.Where(id => {
+        var solid = GetPartSolidGeometrySnapshot(id);
+        static double? OutOfPlane(double[] axis)
+        {
+            if (axis.Length < 3) return null;
+            var length = Math.Sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+            return length <= 1e-9 ? null : Math.Abs(axis[2]) / length;
+        }
+        if (solid != null && OutOfPlane(solid.AxisX) is { } x && OutOfPlane(solid.AxisY) is { } y)
+            return x <= DimensionPlacementSettings.FaceOnAxisOutOfPlaneTolerance
+                && y <= DimensionPlacementSettings.FaceOnAxisOutOfPlaneTolerance;
+        var points = solid?.Solid.Vertices
+            .Where(vertex => vertex.Point.Length >= 3).Select(vertex => vertex.Point).ToArray();
+        if (points is not { Length: > 0 }) return false;
+        double Extent(int axis) => points.Max(point => point[axis]) - points.Min(point => point[axis]);
+        var depth = Extent(2);
+        return depth > 0 && depth < Extent(0) && depth < Extent(1);
+    }).ToArray();
 
     // Parts reaching past the main part's end along the view depth (an end plate, a cap).
     // Unread depth says nothing, so such a part is not treated as an end part.

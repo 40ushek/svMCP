@@ -14,8 +14,15 @@ internal sealed class SectionPartLocationInput
     /// </summary>
     public int[] EndPartIds { get; }
 
-    public SectionPartLocationInput(int[] secondaryPartIds, int[]? endPartIds = null)
+    /// <summary>
+    /// Parts whose plane is parallel to the view plane: a plate seen face-on, with its whole
+    /// contour drawn. Both of its edges along a chain are real and both are located.
+    /// </summary>
+    public int[] FaceOnPartIds { get; }
+
+    public SectionPartLocationInput(int[] secondaryPartIds, int[]? endPartIds = null, int[]? faceOnPartIds = null)
     {
+        FaceOnPartIds = (int[])(faceOnPartIds ?? Array.Empty<int>()).Clone();
         SecondaryPartIds = (int[])(secondaryPartIds
             ?? throw new ArgumentNullException(nameof(secondaryPartIds))).Clone();
         EndPartIds = (int[])(endPartIds ?? Array.Empty<int>()).Clone();

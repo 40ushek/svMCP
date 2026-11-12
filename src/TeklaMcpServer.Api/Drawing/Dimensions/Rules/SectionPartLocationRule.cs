@@ -67,9 +67,10 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
             if (wanted.Count == 0)
             {
                 wanted.Add(low);
-                // An end part inside the profile limits is located by both of its faces:
-                // one face alone leaves its size along the chain to be worked out.
-                if (locationInput.EndPartIds.Contains(id) && high - low > settings.SameCoordinateTolerance)
+                // An end part or a plate seen face-on, inside the profile limits, is located by
+                // both of its edges: one edge alone leaves its size along the chain to be worked out.
+                if ((locationInput.EndPartIds.Contains(id) || locationInput.FaceOnPartIds.Contains(id))
+                    && high - low > settings.SameCoordinateTolerance)
                     wanted.Add(high);
             }
             foreach (var coordinate in wanted)

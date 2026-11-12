@@ -39,4 +39,10 @@ public static class DimensionPlacementSettings
     /// end to count as an end part (end plate, cap) on a section or end view.
     /// </summary>
     public const double EndPartDepthToleranceViewUnits = 0.5;
+
+    /// <summary>
+    /// A part counts as lying in the view plane (seen face-on) when the out-of-plane share of
+    /// each of its own X and Y axes is at most this: 0.1 is about 6 degrees of tilt.
+    /// </summary>
+    public const double FaceOnAxisOutOfPlaneTolerance = 0.1;
 }
