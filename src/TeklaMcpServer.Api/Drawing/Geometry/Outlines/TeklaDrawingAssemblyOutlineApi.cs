@@ -108,8 +108,7 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
     {
         if (depth is not { } range || !geometry.Success) return geometry;
         const double tolerance = 0.5;
-        var vertices = geometry.Solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
-            .GroupBy(vertex => vertex.Index).ToDictionary(group => group.Key, group => group.First().Point);
+        var vertices = SolidDepthClip.VerticesByIndex(geometry.Solid);
         bool Inside(double[] point) => point[2] >= range.Min - tolerance && point[2] <= range.Max + tolerance;
         if (vertices.Count == 0 || vertices.Values.All(Inside)) return geometry;
 

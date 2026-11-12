@@ -41,8 +41,7 @@ internal static class SolidDepthClip
     /// </summary>
     public static PartSolidGeometry? Section(PartSolidGeometry solid, double plane, int firstIndex = 0)
     {
-        var vertices = solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
-            .GroupBy(vertex => vertex.Index).ToDictionary(group => group.Key, group => group.First().Point);
+        var vertices = VerticesByIndex(solid);
         if (solid.Faces.Any(face => face.Loops.Any(loop => loop.VertexIndexes.Any(index => !vertices.ContainsKey(index)))))
             return null;
         return CrossSection(solid, vertices, plane) is { Count: > 0 } section
@@ -72,11 +71,15 @@ internal static class SolidDepthClip
         };
     }
 
+    /// <summary>The solid's vertices with three coordinates, by the index the loops name them with.</summary>
+    public static Dictionary<int, double[]> VerticesByIndex(PartSolidGeometry solid) =>
+        solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
+            .GroupBy(vertex => vertex.Index).ToDictionary(group => group.Key, group => group.First().Point);
+
     /// <summary>The area a face covers on the view plane: its outer loop less its holes.</summary>
     public static double ProjectedArea(PartSolidGeometry solid, PartFaceGeometry face)
     {
-        var vertices = solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
-            .GroupBy(vertex => vertex.Index).ToDictionary(group => group.Key, group => group.First().Point);
+        var vertices = VerticesByIndex(solid);
         var areas = face.Loops.Select(loop => Area(loop.VertexIndexes
             .Where(vertices.ContainsKey).Select(index => vertices[index]).ToArray())).ToArray();
         return areas.Length == 0 ? 0 : Math.Max(areas[0] - areas.Skip(1).Sum(), 0);

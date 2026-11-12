@@ -130,8 +130,8 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     private static DimensionRuleResult Result(DimensionRuleContext context, DimensionChainSide side,
         PickedPoint chain, double minimumSegment, string? note)
     {
-        var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var alongX = side.RunsAlongX();
+        var outer = side.OutwardSign();
         var direction = new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1);
         var placement = new OutsideOutlineDimensionPlacement(
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
@@ -319,7 +319,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     private static DimensionPoint? FindPoint(IEnumerable<DimensionPoint> line, DimensionChainSide side, bool alongX, Candidate candidate)
     {
         var owners = candidate.Owners.ToHashSet();
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         return line.Where(p => Math.Abs(Coordinate(p, alongX) - candidate.Coordinate) <= PositionTolerance
                 && (candidate.MatchByCoordinate || p.Parents.Any(parent => parent.ModelId.HasValue && owners.Contains(parent.ModelId.Value))))
             .OrderByDescending(p => outer * (alongX ? p.Y : p.X))
@@ -340,7 +340,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     private static IEnumerable<double> OutlineCoordinates((double X, double Y)[] outline, DimensionChainSide side, bool alongX)
     {
         if (outline.Length == 0) return [];
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         if (alongX)
         {
             var middle = (outline.Max(v => v.Y) + outline.Min(v => v.Y)) / 2;
@@ -353,7 +353,7 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
     private static IEnumerable<double> ReferenceCoordinates((double X, double Y)[] outline,
         DimensionChainSide side, bool alongX, GeometryGroupExtent panel)
     {
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         var middle = alongX ? (panel.MinY + panel.MaxY) / 2 : (panel.MinX + panel.MaxX) / 2;
         // Components were selected against the panel before reaching this method. Keep their
         // overhanging vertices and use the measured panel's midpoint to select the chain side.

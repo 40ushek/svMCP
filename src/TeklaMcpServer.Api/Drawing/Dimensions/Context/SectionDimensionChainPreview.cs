@@ -268,9 +268,9 @@ internal sealed class SectionDimensionChainPreview
                                       && Math.Abs(p.Y - pair.Item2) <= SameCoordinate));
     }
 
-    private static bool AlongX(DimensionChainSide side) => side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+    private static bool AlongX(DimensionChainSide side) => side.RunsAlongX();
     private static double Along(DimensionPoint p, DimensionChainSide side) => AlongX(side) ? p.X : p.Y;
     private static double Across(DimensionPoint p, DimensionChainSide side) => AlongX(side) ? p.Y : p.X;
     private static double Outside(DimensionPoint p, DimensionChainSide side) =>
-        (side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1) * Across(p, side);
+        (side.OutwardSign()) * Across(p, side);
 }

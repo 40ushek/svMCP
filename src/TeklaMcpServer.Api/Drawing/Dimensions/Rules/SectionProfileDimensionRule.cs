@@ -13,12 +13,12 @@ internal sealed class SectionProfileDimensionRule(SectionProfileDimensionSetting
             return new DimensionRuleEvaluation([Refused("axis-aligned snapshot geometry is unavailable")]);
         var input = context.Require<SectionProfileDimensionInput>();
         var side = settings.Side;
-        var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = side.RunsAlongX();
         var levels = alongX ? input.XLevels : input.YLevels;
         var line = geometry.Points.LinePoints(side);
         double Along(DimensionPoint point) => alongX ? point.X : point.Y;
         double Across(DimensionPoint point) => alongX ? point.Y : point.X;
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
 
         var profile = levels.Select(level => line
             .Where(point => point.Parents.Any(parent => parent.ModelId == input.MainPartId)
@@ -38,7 +38,7 @@ internal sealed class SectionProfileDimensionRule(SectionProfileDimensionSetting
 
     private DimensionRuleResult Refused(string reason)
     {
-        var alongX = settings.Side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = settings.Side.RunsAlongX();
         return new DimensionRuleResult(Direction(alongX), Placement(settings.Side, alongX), "profile", [], reason);
     }
 
@@ -47,7 +47,7 @@ internal sealed class SectionProfileDimensionRule(SectionProfileDimensionSetting
 
     private static OutsideOutlineDimensionPlacement Placement(DimensionChainSide side, bool alongX)
     {
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         return new OutsideOutlineDimensionPlacement(
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
     }

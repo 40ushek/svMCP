@@ -7,23 +7,12 @@ namespace TeklaMcpServer.Api.Drawing;
 /// <summary>Proposes the standard steel part-location chain for one side.</summary>
 internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) : IDimensionRule
 {
-    private sealed class Pick(DimensionPoint point, string role, int priority)
-    {
-        public DimensionPoint Point { get; } = point;
-        public string Role { get; } = role;
-        public int Priority { get; } = priority;
-    }
-
     private sealed class CalculationContext(bool alongX, int outer, IReadOnlyCollection<int> mainIds,
         IReadOnlyList<DimensionPoint> line, IReadOnlyList<DimensionPoint> all,
-        IReadOnlyList<DimensionPoint> main, IReadOnlyList<DimensionPoint> otherLine)
+        IReadOnlyList<DimensionPoint> main, IReadOnlyList<DimensionPoint> otherLine, double sameCoordinate)
+        : ChainAxis(alongX, outer, line, sameCoordinate)
     {
-        public bool AlongX { get; } = alongX;
-        public int Outer { get; } = outer;
         public IReadOnlyCollection<int> MainIds { get; } = mainIds;
-        public IReadOnlyList<DimensionPoint> Line { get; } = line;
-        public double Along(DimensionPoint point) => AlongX ? point.X : point.Y;
-        public double Across(DimensionPoint point) => AlongX ? point.Y : point.X;
 
         public bool LiesOnThisSide(int partId, double tolerance)
         {
@@ -39,8 +28,6 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
 
         public bool IsMain(DimensionPoint point) => point.Parents.Any(parent =>
             parent.ModelId is { } id && MainIds.Contains(id));
-        public IEnumerable<int> Parts(DimensionPoint point) => point.Parents
-            .Where(parent => parent.ModelId.HasValue).Select(parent => parent.ModelId!.Value).Distinct();
     }
 
     public DimensionRuleEvaluation Calculate(DimensionRuleContext context)
@@ -54,7 +41,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         if (main.Length == 0)
             return new DimensionRuleEvaluation([Empty("main part has no dimension points")]);
 
-        var alongX = settings.Side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = settings.Side.RunsAlongX();
         var mainAlongX = main.Max(point => point.X) - main.Min(point => point.X)
             >= main.Max(point => point.Y) - main.Min(point => point.Y);
         // Along the main part, a point that belongs only to parts carried by an inclined chain is
@@ -66,8 +53,9 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
                 return owners.Length == 0 || owners.Any(id => !input.CarriedPartIds.Contains(id));
             }).ToArray();
         var calculation = new CalculationContext(alongX,
-            settings.Side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1,
-            input.MainPartIds, line, all, main, catalog.LinePoints(Opposite(settings.Side)));
+            settings.Side.OutwardSign(),
+            input.MainPartIds, line, all, main, catalog.LinePoints(settings.Side.Opposite()),
+            settings.SameCoordinateTolerance);
         var result = alongX == mainAlongX
             ? AlongMain(context, calculation, input.FaceOnPartIds, input.PartThickness,
                 input.InclinedPartIds.Concat(input.CarriedPartIds).ToArray())
@@ -83,7 +71,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         if (line.Count == 0) return Empty("no points on this side");
         if (settings.PartAnchor == DimensionPartAnchor.Center)
             return Empty("locating parts by their center is not implemented: the center is not a captured part point");
-        var picks = new List<Pick>();
+        var picks = new List<ChainPick>();
         var outer = OuterHalf(line, calculation);
         picks.AddRange(Ends(outer, calculation, "extreme", 1));
         var main = outer.Where(calculation.IsMain).ToArray();
@@ -120,8 +108,8 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
                 ? new[] { low, high }
                 : new[] { settings.PartAnchor == DimensionPartAnchor.HighFace ? high : low };
             foreach (var anchor in anchors)
-                picks.Add(new Pick(Best(own.Where(point =>
-                    Math.Abs(calculation.Along(point) - anchor) <= settings.SameCoordinateTolerance), calculation),
+                picks.Add(new ChainPick(calculation.Best(own.Where(point =>
+                    Math.Abs(calculation.Along(point) - anchor) <= settings.SameCoordinateTolerance)),
                     "part-edge", 1));
         }
         return Result(context, picks, calculation, [], offeredOnOtherSide: offeredOnOtherSide);
@@ -152,7 +140,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             return Empty("the end part on this side is tilted; it is located by the inclined chain", partIds);
         if (settings.EndPartAnchor == DimensionPartAnchor.Center)
             return Empty("locating parts by their center is not implemented: the center is not a captured part point");
-        var picks = new List<Pick>();
+        var picks = new List<ChainPick>();
         foreach (var id in endParts)
         {
             var own = calculation.Line.Where(point => calculation.Parts(point).Contains(id)).ToArray();
@@ -163,7 +151,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
                 _ => groups
             };
             foreach (var group in chosen)
-                picks.Add(new Pick(Best(group, calculation), "end-part-outer", 1));
+                picks.Add(new ChainPick(calculation.Best(group), "end-part-outer", 1));
         }
         var mainOnLine = calculation.Line.Where(calculation.IsMain).ToArray();
         if (mainOnLine.Length > 0)
@@ -176,20 +164,14 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             minimumSegment: settings.MinimumEndPartSegmentViewUnits);
     }
 
-    private DimensionRuleResult Result(DimensionRuleContext context, List<Pick> picks,
+    private DimensionRuleResult Result(DimensionRuleContext context, List<ChainPick> picks,
         CalculationContext calculation, IReadOnlyCollection<int> skippedParts, int minPoints = 0,
         string? tooFewNote = null, IReadOnlyCollection<int>? offeredOnOtherSide = null, double? minimumSegment = null)
     {
         // Across the main part a few millimetres are the whole point (an end plate 8 short of a
         // flange), so only the model-unit floor applies there.
         var shortest = minimumSegment ?? settings.MinimumSegmentViewUnits;
-        var chosen = new List<(DimensionPoint Point, List<string> Roles)>();
-        foreach (var group in ClusterPicks(picks, calculation))
-        {
-            var winner = group.OrderByDescending(item => calculation.Outer * calculation.Across(item.Point))
-                .ThenByDescending(item => item.Priority).ThenBy(item => item.Point.Id, StringComparer.Ordinal).First();
-            chosen.Add((Outermost(winner.Point, calculation), group.Select(item => item.Role).Distinct().ToList()));
-        }
+        var chosen = calculation.Settle(picks);
 
         var dropped = new List<DimensionPoint>();
         for (var index = chosen.Count - 2; index >= 1; index--)
@@ -231,7 +213,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
     private DimensionRuleResult Empty(string note, IReadOnlyCollection<int>? skipped = null,
         IReadOnlyCollection<string>? dropped = null)
     {
-        var alongX = settings.Side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = settings.Side.RunsAlongX();
         var evidence = new Dictionary<string, object> {
             ["roles"] = Array.Empty<string[]>(), ["partIds"] = Array.Empty<int[]>(),
             ["skippedPartIds"] = (skipped ?? Array.Empty<int>()).ToArray(),
@@ -250,22 +232,17 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         return outer.Length > 0 ? outer : line;
     }
 
-    private IEnumerable<Pick> Ends(IEnumerable<DimensionPoint> points, CalculationContext calculation,
+    private IEnumerable<ChainPick> Ends(IEnumerable<DimensionPoint> points, CalculationContext calculation,
         string role, int priority)
     {
         var list = points.ToArray();
         var low = list.Min(calculation.Along);
         var high = list.Max(calculation.Along);
-        yield return new Pick(Best(list.Where(point =>
-            Math.Abs(calculation.Along(point) - low) <= settings.SameCoordinateTolerance), calculation), role, priority);
-        yield return new Pick(Best(list.Where(point =>
-            Math.Abs(calculation.Along(point) - high) <= settings.SameCoordinateTolerance), calculation), role, priority);
+        yield return new ChainPick(calculation.Best(list.Where(point =>
+            Math.Abs(calculation.Along(point) - low) <= settings.SameCoordinateTolerance)), role, priority);
+        yield return new ChainPick(calculation.Best(list.Where(point =>
+            Math.Abs(calculation.Along(point) - high) <= settings.SameCoordinateTolerance)), role, priority);
     }
-
-    private static DimensionPoint Best(IEnumerable<DimensionPoint> points, CalculationContext calculation) => points
-        .OrderByDescending(point => calculation.Outer * calculation.Across(point))
-        .ThenByDescending(point => point.Parents.Any(parent => parent.ModelId.HasValue))
-        .ThenBy(point => point.Id, StringComparer.Ordinal).First();
 
     private IEnumerable<DimensionPoint[]> Cluster(IEnumerable<DimensionPoint> points, CalculationContext calculation)
     {
@@ -283,42 +260,12 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         if (current.Count > 0) yield return current.ToArray();
     }
 
-    private DimensionPoint Outermost(DimensionPoint point, CalculationContext calculation) => calculation.Line
-        .Where(candidate => Math.Abs(calculation.Along(candidate) - calculation.Along(point))
-            <= settings.SameCoordinateTolerance)
-        .OrderByDescending(candidate => calculation.Outer * calculation.Across(candidate))
-        .ThenBy(candidate => candidate.Id == point.Id ? 0 : 1)
-        .ThenBy(candidate => candidate.Id, StringComparer.Ordinal).FirstOrDefault() ?? point;
-
-    private IEnumerable<List<Pick>> ClusterPicks(List<Pick> picks, CalculationContext calculation)
-    {
-        var current = new List<Pick>();
-        foreach (var pick in picks.OrderBy(item => calculation.Along(item.Point)))
-        {
-            if (current.Count > 0 && calculation.Along(pick.Point)
-                - calculation.Along(current[current.Count - 1].Point) > settings.SameCoordinateTolerance)
-            {
-                yield return current;
-                current = new List<Pick>();
-            }
-            current.Add(pick);
-        }
-        if (current.Count > 0) yield return current;
-    }
-
     private DimensionDirection Direction(bool alongX) => new(alongX ? 1 : 0, alongX ? 0 : 1);
 
     private OutsideOutlineDimensionPlacement Placement(bool alongX)
     {
-        var outer = settings.Side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = settings.Side.OutwardSign();
         return new OutsideOutlineDimensionPlacement(
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
     }
-
-    private static DimensionChainSide Opposite(DimensionChainSide side) => side switch {
-        DimensionChainSide.Top => DimensionChainSide.Bottom,
-        DimensionChainSide.Bottom => DimensionChainSide.Top,
-        DimensionChainSide.Left => DimensionChainSide.Right,
-        _ => DimensionChainSide.Left
-    };
 }

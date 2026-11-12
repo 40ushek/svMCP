@@ -19,7 +19,7 @@ internal sealed class OverallDimensionRule(OverallDimensionSettings settings) : 
     private DimensionRuleResult Calculate(DimensionRuleContext context, DimensionChainSide side, bool alongX)
     {
         var direction = new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1);
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         var placement = new OutsideOutlineDimensionPlacement(
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 2);
         var geometry = context.AxisAlignedGeometry;

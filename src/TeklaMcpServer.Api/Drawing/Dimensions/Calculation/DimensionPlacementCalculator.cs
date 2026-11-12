@@ -24,7 +24,7 @@ public static class DimensionPlacementCalculator
         if (points.Any(value => !Finite(value)))
             throw new ArgumentException("Dimension points must be finite", nameof(points));
 
-        var horizontal = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var horizontal = side.RunsAlongX();
         var chainAxisIndex = horizontal ? 0 : 1;
         var offsetAxisIndex = horizontal ? 1 : 0;
         var baseAxisValue = Enumerable.Range(0, points.Length / 3)

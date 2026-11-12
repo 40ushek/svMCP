@@ -37,9 +37,9 @@ internal static class BoltPartChainPreview
     private static object BuildChain(int partId, Source[] sources, DimensionChainSide side,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance)
     {
-        var axis = side is DimensionChainSide.Top or DimensionChainSide.Bottom ? 0 : 1;
+        var axis = side.RunsAlongX() ? 0 : 1;
         var across = 1 - axis;
-        var sign = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var sign = side.OutwardSign();
         var blockedSources = sources.Where(source => source.Reason != null)
             .OrderBy(source => source.GroupId).ThenBy(source => source.Index)
             .Select(source => new { boltGroupId = source.GroupId, index = source.Index, reason = source.Reason }).ToArray();

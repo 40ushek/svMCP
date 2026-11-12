@@ -88,7 +88,7 @@ internal static class BoltDimensionChainPreview
                             representativeIndex = cell.Point.Index });
                     }
                 }
-                if (sides.Any(side => side is DimensionChainSide.Top or DimensionChainSide.Bottom))
+                if (sides.Any(side => side.RunsAlongX()))
                 {
                     candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
                     AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours, tolerance);

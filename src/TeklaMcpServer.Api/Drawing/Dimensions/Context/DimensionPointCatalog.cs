@@ -61,8 +61,8 @@ internal sealed class DimensionPointCatalog
     // the point farthest toward the dimension line is used, whichever part it belongs to.
     private DimensionPoint Outermost(DimensionPoint point, DimensionChainSide side)
     {
-        var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var alongX = side.RunsAlongX();
+        var outer = side.OutwardSign();
         double Along(DimensionPoint p) => alongX ? p.X : p.Y;
         double Across(DimensionPoint p) => alongX ? p.Y : p.X;
         return LinePoints(side)
@@ -110,9 +110,9 @@ internal sealed class DimensionPointCatalog
             var entries = chain.Positions
                 .SelectMany(position => position.Supports)
                 .GroupBy(support => (support.Point.X, support.Point.Y))
-                .OrderBy(group => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom
+                .OrderBy(group => chain.Side.RunsAlongX()
                     ? group.Key.X : group.Key.Y)
-                .ThenBy(group => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom
+                .ThenBy(group => chain.Side.RunsAlongX()
                     ? group.Key.Y : group.Key.X)
                 .Select(group => {
                     if (!byCoordinates.TryGetValue(group.Key, out var point))
@@ -167,13 +167,13 @@ internal sealed class DimensionPointCatalog
             var side = pair.Key;
             var entries = pair.Value.Entries.Select(entry => points[entry.PointId])
                 .Concat(mapped.Values.Where(point => {
-                    var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
-                    var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+                    var alongX = side.RunsAlongX();
+                    var outer = side.OutwardSign();
                     var middle = alongX ? (panel.MinY + panel.MaxY) / 2 : (panel.MinX + panel.MaxX) / 2;
                     return outer * ((alongX ? point.Y : point.X) - middle) >= -.5;
                 }))
-                .Distinct().OrderBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.X : point.Y)
-                .ThenBy(point => side is DimensionChainSide.Top or DimensionChainSide.Bottom ? point.Y : point.X).ToArray();
+                .Distinct().OrderBy(point => side.RunsAlongX() ? point.X : point.Y)
+                .ThenBy(point => side.RunsAlongX() ? point.Y : point.X).ToArray();
             lines.Add(side, new DimensionPointLine(entries.Select((point, index) => new DimensionPointLineEntry(
                 point.Id, index == 0 ? null : AxisDistance(side, entries[index - 1], point),
                 index + 1 == entries.Length ? null : AxisDistance(side, point, entries[index + 1]))).ToArray()));
@@ -205,7 +205,7 @@ internal sealed class DimensionPointCatalog
         var lines = new Dictionary<DimensionChainSide, DimensionPointLine>();
         foreach (var side in _lines.Keys)
         {
-            var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+            var alongX = side.RunsAlongX();
             double Along(DimensionPoint point) => alongX ? point.X : point.Y;
             var min = alongX ? extent.MinX : extent.MinY;
             var max = alongX ? extent.MaxX : extent.MaxY;
@@ -220,7 +220,7 @@ internal sealed class DimensionPointCatalog
     }
 
     private static double AxisDistance(DimensionChainSide side, DimensionPoint a, DimensionPoint b) =>
-        Math.Abs(side is DimensionChainSide.Top or DimensionChainSide.Bottom ? b.X - a.X : b.Y - a.Y);
+        Math.Abs(side.RunsAlongX() ? b.X - a.X : b.Y - a.Y);
 
     private static string[] KindNames(DimensionPointKind kinds) =>
         Enum.GetValues(typeof(DimensionPointKind)).Cast<DimensionPointKind>()
@@ -266,7 +266,7 @@ internal sealed class DimensionPoint(string id, double x, double y)
         if (support.Source.IsHole) _kinds |= DimensionPointKind.Hole;
 
         var extent = support.AxisAlignedModelExtent;
-        double? span = extent == null ? null : side is DimensionChainSide.Top or DimensionChainSide.Bottom
+        double? span = extent == null ? null : side.RunsAlongX()
             ? extent.MaxX - extent.MinX : extent.MaxY - extent.MinY;
         var key = (support.ModelId, support.Source.Id, support.PointIndex, support.Kind, support.Source.IsHole, span);
         if (_parentKeys.Add(key))

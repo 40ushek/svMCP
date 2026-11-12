@@ -475,7 +475,7 @@ public sealed class ViewDimensionContext
     internal double[] ResolveBoltProposal(string proposalId, int partId, string direction)
     {
         var side = ParseSide(direction);
-        var axis = side is DimensionChainSide.Top or DimensionChainSide.Bottom ? "X" : "Y";
+        var axis = side.RunsAlongX() ? "X" : "Y";
         var preview = BuildBoltPreview((DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide)));
         foreach (var chain in preview.GetProperty("partChains").EnumerateArray())
         {
@@ -677,8 +677,8 @@ public sealed class ViewDimensionContext
 
     private object[] ShortPoints(DimensionChain chain) => chain.Positions
         .SelectMany(p => p.Supports).GroupBy(s => (s.Point.X, s.Point.Y))
-        .OrderBy(g => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom ? g.Key.X : g.Key.Y)
-        .ThenBy(g => chain.Side is DimensionChainSide.Top or DimensionChainSide.Bottom ? g.Key.Y : g.Key.X)
+        .OrderBy(g => chain.Side.RunsAlongX() ? g.Key.X : g.Key.Y)
+        .ThenBy(g => chain.Side.RunsAlongX() ? g.Key.Y : g.Key.X)
         .Select(g => (object)new {
             x = g.Key.X, y = g.Key.Y,
             supports = g.GroupBy(s => (s.ModelId, s.Kind, s.Source.IsHole, Extent: Span(chain.Side, s)))
@@ -756,7 +756,7 @@ public sealed class ViewDimensionContext
     }).ToArray();
 
     private static double? Span(DimensionChainSide side, DimensionChainPositionSupport s) =>
-        s.AxisAlignedModelExtent == null ? null : side is DimensionChainSide.Top or DimensionChainSide.Bottom
+        s.AxisAlignedModelExtent == null ? null : side.RunsAlongX()
             ? s.AxisAlignedModelExtent.MaxX - s.AxisAlignedModelExtent.MinX
             : s.AxisAlignedModelExtent.MaxY - s.AxisAlignedModelExtent.MinY;
 

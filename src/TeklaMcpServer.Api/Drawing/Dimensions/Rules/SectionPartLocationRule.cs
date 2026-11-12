@@ -23,7 +23,7 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         var locationInput = context.Require<SectionPartLocationInput>();
         var catalog = geometry.Points;
         var side = settings.Side;
-        var alongX = side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = side.RunsAlongX();
         var levels = alongX ? profileInput.XLevels : profileInput.YLevels;
         var line = catalog.LinePoints(side);
         var originalById = catalog.AllPoints.ToDictionary(point => point.Id, StringComparer.Ordinal);
@@ -32,7 +32,7 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         double Across(DimensionPoint point) => alongX ? point.Y : point.X;
         double Outside(DimensionPoint point)
         {
-            var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+            var outer = side.OutwardSign();
             return outer * Across(point);
         }
         bool Owns(DimensionPoint point, int modelId) => point.Parents.Any(parent => parent.ModelId == modelId);
@@ -53,7 +53,7 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
             var reachesLow = allOwn.Any(point => Across(point) < center - settings.SameCoordinateTolerance);
             var thisSide = side is DimensionChainSide.Top or DimensionChainSide.Right ? reachesHigh : reachesLow;
             if (!thisSide && (reachesHigh || reachesLow)
-                && catalog.LinePoints(Opposite(side)).Any(point => Owns(point, id)))
+                && catalog.LinePoints(side.Opposite()).Any(point => Owns(point, id)))
             {
                 otherSide.Add(id);
                 continue;
@@ -117,7 +117,7 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
 
     private DimensionRuleResult Refused(string reason)
     {
-        var alongX = settings.Side is DimensionChainSide.Top or DimensionChainSide.Bottom;
+        var alongX = settings.Side.RunsAlongX();
         return new DimensionRuleResult(Direction(alongX), Placement(settings.Side, alongX), "location", [], reason);
     }
 
@@ -125,15 +125,8 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
 
     private static OutsideOutlineDimensionPlacement Placement(DimensionChainSide side, bool alongX)
     {
-        var outer = side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1;
+        var outer = side.OutwardSign();
         return new OutsideOutlineDimensionPlacement(
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
     }
-
-    private static DimensionChainSide Opposite(DimensionChainSide side) => side switch {
-        DimensionChainSide.Top => DimensionChainSide.Bottom,
-        DimensionChainSide.Bottom => DimensionChainSide.Top,
-        DimensionChainSide.Left => DimensionChainSide.Right,
-        _ => DimensionChainSide.Left
-    };
 }
