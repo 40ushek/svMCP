@@ -7,9 +7,17 @@ internal sealed class SteelPartLocationSettings
     public DimensionChainSide Side { get; }
     public double MinimumSegmentViewUnits { get; }
     public double SameCoordinateTolerance { get; }
+    /// <summary>For parts located along the main part. Default: the first face.</summary>
+    public DimensionPartAnchor PartAnchor { get; }
+    /// <summary>
+    /// For end parts located across the main part. Default: both faces, so the chain closes
+    /// on the end part's edges around the main-part edges.
+    /// </summary>
+    public DimensionPartAnchor EndPartAnchor { get; }
 
     public SteelPartLocationSettings(DimensionChainSide side, double minimumSegmentViewUnits,
-        double sameCoordinateTolerance)
+        double sameCoordinateTolerance, DimensionPartAnchor partAnchor = DimensionPartAnchor.LowFace,
+        DimensionPartAnchor endPartAnchor = DimensionPartAnchor.BothFaces)
     {
         if (!IsNonnegativeFinite(minimumSegmentViewUnits))
             throw new ArgumentOutOfRangeException(nameof(minimumSegmentViewUnits));
@@ -18,6 +26,8 @@ internal sealed class SteelPartLocationSettings
         Side = side;
         MinimumSegmentViewUnits = minimumSegmentViewUnits;
         SameCoordinateTolerance = sameCoordinateTolerance;
+        PartAnchor = partAnchor;
+        EndPartAnchor = endPartAnchor;
     }
 
     private static bool IsNonnegativeFinite(double value) =>

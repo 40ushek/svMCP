@@ -15,6 +15,44 @@ public sealed class DimensionChainPreviewTests
         Assert.Equal(5, chain.GetProperty("pointIds").GetArrayLength());
     }
 
+    [Theory]
+    [InlineData("LowFace", new[] { 20d, 200d, 800d, 10d })]
+    [InlineData("HighFace", new[] { 20d, 210d, 790d, 10d })]
+    [InlineData("BothFaces", new[] { 20d, 200d, 10d, 790d, 10d })]
+    public void PartAnchorChoosesTheRibFaceOnTheChainAlongTheMainPart(string anchor, double[] expected)
+    {
+        Assert.Equal(expected, Segments(Location(DimensionChainSide.Bottom, Anchor(anchor), DimensionPartAnchor.BothFaces)));
+    }
+
+    [Theory]
+    [InlineData("BothFaces", new[] { 94d, 152d, 94d })]
+    [InlineData("LowFace", new[] { 94d, 152d })]
+    [InlineData("HighFace", new[] { 152d, 94d })]
+    public void EndPartAnchorChoosesTheEndPlateFacesOnTheChainAcrossTheMainPart(string anchor, double[] expected)
+    {
+        Assert.Equal(expected, Segments(Location(DimensionChainSide.Left, DimensionPartAnchor.LowFace, Anchor(anchor))));
+    }
+
+    [Fact]
+    public void CenterAnchorIsNamedButRefusedUntilItIsCalculated()
+    {
+        var along = Location(DimensionChainSide.Bottom, DimensionPartAnchor.Center, DimensionPartAnchor.BothFaces);
+        Assert.Empty(along.GetProperty("pointIds").EnumerateArray());
+        Assert.Contains("center", along.GetProperty("note").GetString());
+        var across = Location(DimensionChainSide.Left, DimensionPartAnchor.LowFace, DimensionPartAnchor.Center);
+        Assert.Contains("center", across.GetProperty("note").GetString());
+    }
+
+    private static DimensionPartAnchor Anchor(string name) => (DimensionPartAnchor)Enum.Parse(typeof(DimensionPartAnchor), name);
+
+    // The same beam as Context(68), with the anchors set on the rule.
+    private static JsonElement Location(DimensionChainSide side, DimensionPartAnchor partAnchor, DimensionPartAnchor endPartAnchor)
+    {
+        var context = Context(rightHalfHeight: 68);
+        var chains = DimensionChainPreview.Build(context.SteelCatalogForTests(), side, [10], 3, partAnchor, endPartAnchor);
+        return JsonSerializer.SerializeToElement(chains[0]);
+    }
+
     [Fact]
     public void OverallChainHasTwoPointsAtTheExtremes()
     {
@@ -331,6 +369,22 @@ public sealed class DimensionChainPreviewTests
         Assert.Contains(vertical, segments => segments.SequenceEqual(expected));
     }
 
+    [Theory]
+    [InlineData(-10, new[] { 12d, 176d, 12d })] // beyond the main part's end: an end plate, located by both faces
+    [InlineData(0, new[] { 200d })]             // within the main part's depth: it stands inside and abuts the flanges
+    public void PlateNearTheInnerFlangeFacesIsLocatedOnlyWhenItIsAnEndPlate(double depth, double[] expected)
+    {
+        var context = ISectionContext(viewType: "EndView", insetPlateDepth: depth);
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var vertical = rows.Where(r => r.GetProperty("side").GetString() is "Left" or "Right")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.Contains(vertical, segments => segments.SequenceEqual(expected));
+        // Across, the plate is flush with the profile: nothing to add.
+        var horizontal = rows.Where(r => r.GetProperty("side").GetString() is "Top" or "Bottom")
+            .Select(r => Segments(r.GetProperty("chains")[0])).ToArray();
+        Assert.All(horizontal, segments => Assert.Equal(new[] { 160d }, segments));
+    }
+
     [Fact]
     public void SectionAnswerIsOneChainPerAxisWithoutMirrorSides()
     {
@@ -351,7 +405,7 @@ public sealed class DimensionChainPreviewTests
 
     internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
-        double? edgeAboveFlange = null)
+        double? edgeAboveFlange = null, double? insetPlateDepth = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -382,6 +436,14 @@ public sealed class DimensionChainPreviewTests
         {
             parts.Add(14, Solid(14, 30, 35, 90 + edge, 95));
             included.Add(new PartRoleInView(14, "P14", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        if (insetPlateDepth is { } depth)
+        {
+            // As wide as the profile and 12 short of each flange face; 2 from the inner flange faces.
+            var plate = Solid(15, -80, 80, -88, 88);
+            foreach (var vertex in plate.Solid.Vertices) vertex.Point[2] = depth;
+            parts.Add(15, plate);
+            included.Add(new PartRoleInView(15, "P15", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
         }
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, parts.Keys, new Solids(parts));
         return new ViewDimensionContext(7, scale, new StructuralOutline(outline, included, [], [], [], [], parts.Keys.ToArray()),

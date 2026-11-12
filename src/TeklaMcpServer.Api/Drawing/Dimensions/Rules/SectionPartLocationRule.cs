@@ -64,7 +64,14 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
             var wanted = new List<double>();
             if (low < levels[0] - settings.SameCoordinateTolerance) wanted.Add(low);
             if (high > levels[levels.Length - 1] + settings.SameCoordinateTolerance) wanted.Add(high);
-            if (wanted.Count == 0) wanted.Add(low);
+            if (wanted.Count == 0)
+            {
+                wanted.Add(low);
+                // An end part inside the profile limits is located by both of its faces:
+                // one face alone leaves its size along the chain to be worked out.
+                if (locationInput.EndPartIds.Contains(id) && high - low > settings.SameCoordinateTolerance)
+                    wanted.Add(high);
+            }
             foreach (var coordinate in wanted)
             {
                 var pick = own.Where(point => Math.Abs(Along(point) - coordinate) <= settings.SameCoordinateTolerance)

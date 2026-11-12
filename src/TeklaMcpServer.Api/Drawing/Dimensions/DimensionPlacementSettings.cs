@@ -33,4 +33,10 @@ public static class DimensionPlacementSettings
     /// candidate and reported as merged. Separate from the model-unit segment cutoff.
     /// </summary>
     public const double SectionReadabilityGapPaperMm = 0.5;
+
+    /// <summary>
+    /// How far, in view units along the view depth, a part must reach past the main part's
+    /// end to count as an end part (end plate, cap) on a section or end view.
+    /// </summary>
+    public const double EndPartDepthToleranceViewUnits = 0.5;
 }

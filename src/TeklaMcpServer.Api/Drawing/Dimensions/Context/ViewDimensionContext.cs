@@ -220,7 +220,7 @@ public sealed class ViewDimensionContext
             if (section && refusal == null && !SectionDimensionChainPreview.TryCreate(
                     GetPanelDimensionPointCatalog(), _group, _mainPartIds[0], _includedModelIds,
                     DimensionPlacementSettings.MinimumChainSegmentViewUnits, Scale,
-                    out sectionPreview, out var profileReason))
+                    out sectionPreview, out var profileReason, EndPartIds(_mainPartIds[0])))
                 refusal = profileReason;
             if (section)
                 result["sectionPreviewStatus"] = refusal == null
@@ -281,6 +281,23 @@ public sealed class ViewDimensionContext
             }).ToArray();
         result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
         return Freeze(result, display: true);
+    }
+
+    // Parts reaching past the main part's end along the view depth (an end plate, a cap).
+    // Unread depth says nothing, so such a part is not treated as an end part.
+    private int[] EndPartIds(int mainId)
+    {
+        static (double Min, double Max)? Depth(PartSolidGeometryInViewResult? solid)
+        {
+            var depths = solid?.Solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
+                .Select(vertex => vertex.Point[2]).ToArray();
+            return depths is { Length: > 0 } ? (depths.Min(), depths.Max()) : null;
+        }
+        if (Depth(GetPartSolidGeometrySnapshot(mainId)) is not { } main) return [];
+        return _includedModelIds.Where(id => id != mainId
+            && Depth(GetPartSolidGeometrySnapshot(id)) is { } part
+            && (part.Min < main.Min - DimensionPlacementSettings.EndPartDepthToleranceViewUnits
+                || part.Max > main.Max + DimensionPlacementSettings.EndPartDepthToleranceViewUnits)).ToArray();
     }
 
     internal void AttachContacts(ViewContactsSnapshot contacts)
@@ -390,6 +407,13 @@ public sealed class ViewDimensionContext
 
     private GeometryGroup? UsableReferenceGroup() => _referenceGroup is { Extent: not null }
         && _referenceGroup.Completeness.IsComplete ? _referenceGroup : null;
+
+    // The catalog the steel preview reads; exposed so a test can run the rule with other settings.
+    internal DimensionPointCatalog SteelCatalogForTests()
+    {
+        EnsureChains();
+        return GetPanelDimensionPointCatalog();
+    }
 
     private DimensionPointCatalog GetPanelDimensionPointCatalog() =>
         _panelDimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);

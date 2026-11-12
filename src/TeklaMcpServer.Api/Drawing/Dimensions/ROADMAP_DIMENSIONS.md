@@ -71,6 +71,37 @@ Work order:
    fall back to the geometric touching test where the live one used a contact.
    Expected chains per case are not recorded yet; the corpus test only checks that
    a case replays the same way twice and prints the chains.
+   **First live case, M.505 (2026-11-12).** Seven views captured. The chains the
+   assistant chose from the preview (front: Bottom-location, Bottom-overall,
+   Left-location, Right-location; top: Left-location; end views and section: one
+   chain per axis) were placed and accepted by the user without edits. The
+   Top/Bottom repeat and the repeat on the back and bottom views were left out by
+   the assistant, not by the code. Bolts were set aside for now.
+
+   **End parts on section and end views (source, 2026-11-12; not deployed).**
+   Found on M.505 end view 1599: a 136 mm end plate on a 152 mm beam got no
+   location, because its edges (68) fell within 2 mm of the inner flange faces
+   (67) and were dropped as abutting. A part that reaches past the main part's
+   end along the view depth is now an end part: the abutting rule does not apply
+   to it and, when it stays inside the profile limits, it is located by both
+   faces. On the seven saved views only 1599 changes, from 152 to 8 / 136 / 8;
+   ribs standing inside the profile still abut. The user allows this location on
+   the end view; whether it belongs there or on the front view is not decided.
+
+   **Part anchor option (source, 2026-11-12; not deployed, not exposed).** The
+   user noted that the front-view chain takes every welded part by its left
+   face and asked for the choice Tekla's rules give, on horizontal and vertical
+   chains alike. `SteelPartLocationSettings` now has `PartAnchor` for parts along
+   the main part (default `LowFace`, as before) and `EndPartAnchor` for end parts
+   across it (default `BothFaces`, as before), each `LowFace`, `HighFace`,
+   `BothFaces` or `Center`. `Center` is named but refused with a reason: the
+   middle of a part is not a captured point. Defaults keep every existing answer.
+   No MCP or batch parameter carries the option yet; a preview read and the batch
+   that references it would both have to pass it.
+   The choice itself is general (`DimensionPartAnchor`), as the user asked: an
+   option for locating parts, not a steel one. Only the steel rule reads it so
+   far; the panel rule (stud left faces, one face per horizontal member) and the
+   section rule still have their faces fixed in code.
 2. **First rule fix, checked on saved steel cases:** split sides by the main-part
    axis and suppress the Top/Bottom repeat, inside the steel rule only.
 3. **Replace the side assignment** with a side-free point list, built beside the

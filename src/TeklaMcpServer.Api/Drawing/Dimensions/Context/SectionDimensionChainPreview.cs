@@ -17,20 +17,22 @@ internal sealed class SectionDimensionChainPreview
     private const double AbuttingGapViewUnits = 2.0;
     private readonly DimensionPointCatalog _catalog;
     private readonly int[] _secondaryIds;
+    private readonly int[] _endPartIds;
     private readonly double _readableGapViewUnits;
     private readonly GeometryGroupExtent _extent;
     private readonly DimensionRuleContext _ruleContext;
 
     private SectionDimensionChainPreview(DimensionPointCatalog catalog, int mainId,
-        int[] secondaryIds, double[] xLevels, double[] yLevels, double scale, GeometryGroupExtent extent)
+        int[] secondaryIds, int[] endPartIds, double[] xLevels, double[] yLevels, double scale, GeometryGroupExtent extent)
     {
         _catalog = catalog;
         _secondaryIds = secondaryIds;
+        _endPartIds = endPartIds;
         _readableGapViewUnits = DimensionPlacementSettings.SectionReadabilityGapPaperMm * scale;
         _extent = extent;
         _ruleContext = DimensionRuleContext.FromCatalog(catalog, extent,
             new SectionProfileDimensionInput(mainId, xLevels, yLevels),
-            new SectionPartLocationInput(secondaryIds));
+            new SectionPartLocationInput(secondaryIds, endPartIds));
     }
 
     public IReadOnlyList<int> SecondaryIds => _secondaryIds;
@@ -79,7 +81,7 @@ internal sealed class SectionDimensionChainPreview
     public static bool TryCreate(DimensionPointCatalog catalog, GeometryGroup group, int mainId,
         IEnumerable<int> includedIds, double minFeatureLength, double scale,
         out SectionDimensionChainPreview? preview,
-        out string? reason)
+        out string? reason, IReadOnlyCollection<int>? endPartIds = null)
     {
         preview = null;
         if (double.IsNaN(scale) || double.IsInfinity(scale) || scale <= 0)
@@ -110,7 +112,8 @@ internal sealed class SectionDimensionChainPreview
         }
 
         preview = new SectionDimensionChainPreview(catalog, mainId,
-            includedIds.Where(id => id != mainId).Distinct().OrderBy(id => id).ToArray(), xLevels, yLevels,
+            includedIds.Where(id => id != mainId).Distinct().OrderBy(id => id).ToArray(),
+            (endPartIds ?? Array.Empty<int>()).Where(id => id != mainId).Distinct().ToArray(), xLevels, yLevels,
             scale, group.Extent);
         reason = null;
         return true;
@@ -149,16 +152,18 @@ internal sealed class SectionDimensionChainPreview
     }
 
     // The chain to place on a side: the profile's two outer faces and the parts located against them.
-    // Thicknesses inside the profile (web, flange faces) are left out, a part within a couple of
-    // millimetres of any profile face abuts it and needs no dimension, and points closer than the
+    // Thicknesses inside the profile (web, flange faces) are left out, a part standing inside the
+    // profile within a couple of millimetres of any profile face abuts it and needs no dimension, and points closer than the
     // readable gap collapse into the first one, an outer face first.
     private DimensionPoint[] MergeChain(List<DimensionPoint> profile, List<DimensionPoint> location, DimensionChainSide side)
     {
         var profileIds = profile.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         var faces = profile.Select(p => Along(p, side)).ToArray();
         var outer = profile.OrderBy(p => Along(p, side)).Take(1).Concat(profile.OrderByDescending(p => Along(p, side)).Take(1));
+        // An end part covers the profile; its edge near a profile face is not an abutting joint.
+        bool OnEndPart(DimensionPoint p) => p.Parents.Any(parent => parent.ModelId is { } id && _endPartIds.Contains(id));
         var parts = location.Where(p => !profileIds.Contains(p.Id)
-            && !faces.Any(f => Math.Abs(Along(p, side) - f) <= AbuttingGapViewUnits));
+            && (OnEndPart(p) || !faces.Any(f => Math.Abs(Along(p, side) - f) <= AbuttingGapViewUnits)));
         var ordered = outer.Select(p => (Point: p, IsOuter: true)).Concat(parts.Select(p => (Point: p, IsOuter: false)))
             .GroupBy(x => Math.Round(Along(x.Point, side), 2))
             .Select(g => g.OrderByDescending(x => x.IsOuter).ThenByDescending(x => Outside(x.Point, side))

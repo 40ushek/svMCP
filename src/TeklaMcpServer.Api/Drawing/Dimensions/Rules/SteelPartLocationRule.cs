@@ -70,6 +70,8 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
     {
         var line = calculation.Line;
         if (line.Count == 0) return Empty("no points on this side");
+        if (settings.PartAnchor == DimensionPartAnchor.Center)
+            return Empty("locating parts by their center is not implemented: the center is not a captured part point");
         var picks = new List<Pick>();
         var outer = OuterHalf(line, calculation);
         picks.AddRange(Ends(outer, calculation, "extreme", 1));
@@ -84,10 +86,17 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
                      calculation.LiesOnThisSide(id, settings.SameCoordinateTolerance)))
         {
             var own = line.Where(point => calculation.Parts(point).Contains(id)).ToArray();
-            var first = own.Min(calculation.Along);
-            picks.Add(new Pick(Best(own.Where(point =>
-                Math.Abs(calculation.Along(point) - first) <= settings.SameCoordinateTolerance), calculation),
-                "part-edge", 1));
+            var low = own.Min(calculation.Along);
+            var high = own.Max(calculation.Along);
+            var anchors = settings.PartAnchor switch {
+                DimensionPartAnchor.HighFace => new[] { high },
+                DimensionPartAnchor.BothFaces when high - low > settings.SameCoordinateTolerance => new[] { low, high },
+                _ => new[] { low }
+            };
+            foreach (var anchor in anchors)
+                picks.Add(new Pick(Best(own.Where(point =>
+                    Math.Abs(calculation.Along(point) - anchor) <= settings.SameCoordinateTolerance), calculation),
+                    "part-edge", 1));
         }
         return Result(context, picks, calculation, [], offeredOnOtherSide: offeredOnOtherSide);
     }
@@ -110,11 +119,19 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var partIds = calculation.Line.SelectMany(calculation.Parts)
             .Where(id => !calculation.MainIds.Contains(id)).Distinct().ToArray();
         var endParts = partIds.Where(Sticks).ToArray();
+        if (settings.EndPartAnchor == DimensionPartAnchor.Center)
+            return Empty("locating parts by their center is not implemented: the center is not a captured part point");
         var picks = new List<Pick>();
         foreach (var id in endParts)
         {
             var own = calculation.Line.Where(point => calculation.Parts(point).Contains(id)).ToArray();
-            foreach (var group in Cluster(own, calculation))
+            var groups = Cluster(own, calculation).ToArray();
+            var chosen = settings.EndPartAnchor switch {
+                DimensionPartAnchor.LowFace => groups.Take(1),
+                DimensionPartAnchor.HighFace => groups.Skip(Math.Max(groups.Length - 1, 0)),
+                _ => groups
+            };
+            foreach (var group in chosen)
                 picks.Add(new Pick(Best(group, calculation), "end-part-outer", 1));
         }
         var mainOnLine = calculation.Line.Where(calculation.IsMain).ToArray();

@@ -62,7 +62,9 @@ internal static class DimensionChainPreview
         [Empty(side, "location", note), Empty(side, "overall", note)];
 
     public static object[] Build(DimensionPointCatalog catalog, DimensionChainSide side,
-        IReadOnlyCollection<int> mainPartIds, double minSegmentLength)
+        IReadOnlyCollection<int> mainPartIds, double minSegmentLength,
+        DimensionPartAnchor partAnchor = DimensionPartAnchor.LowFace,
+        DimensionPartAnchor endPartAnchor = DimensionPartAnchor.BothFaces)
     {
         var all = catalog.AllPoints.ToArray();
         var line = catalog.LinePoints(side);
@@ -82,7 +84,7 @@ internal static class DimensionChainPreview
         var ruleContext = DimensionRuleContext.FromCatalog(catalog,
             new SteelPartLocationInput(catalog, mainPartIds));
         var locationResult = new DimensionRuleSet(new SteelPartLocationRule(
-            new SteelPartLocationSettings(side, minSegmentLength, SameCoordinate)))
+            new SteelPartLocationSettings(side, minSegmentLength, SameCoordinate, partAnchor, endPartAnchor)))
             .Calculate(ruleContext).Results.Single();
         var location = SteelLocation(side, locationResult);
         return [location, overall];
