@@ -323,9 +323,14 @@ Work order:
    Section F now reads 133.2 / 30 / 270 / 133.2 on top, accepted by the user as
    better. A slab between both depth planes was tried and dropped: the far plane
    is no real edge and shifts every tilted outline.
-   Open: take the cut from Tekla (`Solid.IntersectAllFaces`) when the view is
-   read and store it with the solid, keeping the own computation for saved cases;
-   the left chain of F (400 / 92 / 275.9 / 36.6 / 26.4) and the 7.1 on M.85 D are
+   **The cut comes from Tekla (deployed 2026-11-12).** The solid reader asks
+   Tekla for the cut by the plane of the view (`Solid.IntersectAllFaces`) and
+   stores it with the solid as `ViewPlaneCut`; `WithinDepth` uses it. The own
+   computation stays for cases saved before and for a plane that only touches a
+   part's end, where Tekla is not asked. Checked live on M.46 section F: the
+   girder comes back as a 12-point I contour, both gussets as strips 149.1 to
+   283.2, and the chains are the same as with the own computation.
+   Open: the left chain of F (400 / 92 / 275.9 / 36.6 / 26.4) and the 7.1 on M.85 D are
    not reviewed; M.46 D is still refused for one part on the depth boundary.
 
    **Haiku runs with the skill alone (2026-11-12).** Six cold runs, delete and
@@ -336,7 +341,14 @@ Work order:
    view already placed on the front (duplicated once on M.85); a view with
    nothing left to place and a section refused as a whole; equal local chains on
    one view against the same-view repeat rule. The running-totals example in
-   step 5 is wrong (70 / 160 comes back as 70 / 230). Not fixed in the skill yet.
+   step 5 is wrong (70 / 160 comes back as 70 / 230).
+   On the seventh run (M.46) the same-view repeat rule was read literally: equal
+   local chains were dropped as repeats of each other, 21 dimensions instead of
+   27. The standard run now says: inside one view only Top/Bottom and Left/Right
+   are compared, local and inclined chains never with each other; the mirror
+   rule covers every row of a back or bottom view; 0.5 is the tolerance for every
+   comparison; a refused section and a view with no key left are normal results
+   with no call; sections go in any order. Not yet rerun on Haiku.
 2. **First rule fix, checked on saved steel cases:** split sides by the main-part
    axis and suppress the Top/Bottom repeat, inside the steel rule only.
 3. **Replace the side assignment** with a side-free point list, built beside the

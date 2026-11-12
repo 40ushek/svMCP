@@ -19,6 +19,14 @@ public sealed class PartSolidGeometry
     /// </summary>
     public List<double[]> ViewHull { get; set; } = new();
 
+    /// <summary>
+    /// The solid cut by the plane of the view, as Tekla returns it: regions, each a list of
+    /// loops (the outer contour first, then its holes), each loop a list of [x, y, z] points in
+    /// the same coordinates as Vertices. Empty when the plane misses the solid. Null when the
+    /// cut was not read: the reader then computes it from Faces.
+    /// </summary>
+    public List<List<List<double[]>>>? ViewPlaneCut { get; set; }
+
     /// <summary>True when Vertices, Faces and ViewHull came from a complete solid traversal.</summary>
     public bool SolidGeometryComplete { get; set; }
 }

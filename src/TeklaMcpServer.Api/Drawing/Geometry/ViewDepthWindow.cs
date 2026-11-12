@@ -25,10 +25,11 @@ internal sealed class ViewDepthWindow
     public bool IsUsable => Box.HasValue;
 
     /// <summary>
-    /// The window's depth limits in the coordinates of the captured solids. The window is read
-    /// from the display coordinate system; on a section its origin can lie off the view's own
-    /// origin along the depth (an inclined section: 1460 mm), and the limits move with it.
-    /// Cut is the plane the window is measured from: the view plane, where a section cuts.
+    /// The window's depth limits in the coordinates of the captured solids. The window is
+    /// measured from the plane of the view; the solids are captured in the display coordinate
+    /// system, whose origin on a section can lie off that plane along the depth (an inclined
+    /// section: 1460 mm). The limits are moved by that offset.
+    /// Cut is the plane of the view itself, where a section cuts the parts.
     /// Both systems are nine numbers: origin, axis X, axis Y. Null when their depth axes differ.
     /// </summary>
     internal static (double Min, double Max, double? Cut)? DepthRangeInView(double minZ, double maxZ,

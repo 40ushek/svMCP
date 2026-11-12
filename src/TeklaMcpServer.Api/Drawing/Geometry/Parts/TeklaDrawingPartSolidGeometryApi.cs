@@ -4,6 +4,8 @@ using Tekla.Structures.DrawingInternal;
 using Tekla.Structures.Geometry3d;
 using Tekla.Structures.Model;
 using ModelPart = Tekla.Structures.Model.Part;
+using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -106,7 +108,7 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
                 CoordinateSystemOrigin = partPlane.Origin,
                 AxisX = partPlane.AxisX,
                 AxisY = partPlane.AxisY,
-                Solid = BuildSolidGeometry(solid)
+                Solid = BuildSolidGeometry(solid, ViewPlaneDepth(viewCoordinateSystem, readSystem))
             };
         }
         catch (Exception ex)
@@ -119,7 +121,40 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
         }
     }
 
-    private static PartSolidGeometry BuildSolidGeometry(Solid solid)
+    // Where the plane of the view lies along the depth of the system the solid is read in.
+    private static double ViewPlaneDepth(CoordinateSystem view, CoordinateSystem read)
+    {
+        var depth = Vector.Cross(read.AxisX, read.AxisY).GetNormal();
+        return new Vector(view.Origin.X - read.Origin.X, view.Origin.Y - read.Origin.Y,
+            view.Origin.Z - read.Origin.Z).Dot(depth);
+    }
+
+    // The solid cut by the plane of the view. Null where the plane only touches the solid's
+    // end or the cut cannot be read: the caller then works the cut out from the faces.
+    private static List<List<List<double[]>>>? ReadViewPlaneCut(Solid solid, double depth)
+    {
+        const double edge = 0.01;
+        if (depth <= solid.MinimumPoint.Z + edge || depth >= solid.MaximumPoint.Z - edge) return null;
+        try
+        {
+            var regions = new List<List<List<double[]>>>();
+            var faces = solid.IntersectAllFaces(new Point(0, 0, depth), new Point(1000, 0, depth), new Point(0, 1000, depth));
+            while (faces.MoveNext())
+            {
+                if (faces.Current is not ArrayList loops) continue;
+                var region = loops.OfType<ArrayList>()
+                    .Select(loop => loop.OfType<Point>().Select(point => ToArray(point)).ToList()).ToList();
+                if (region.Count > 0) regions.Add(region);
+            }
+            return regions;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static PartSolidGeometry BuildSolidGeometry(Solid solid, double viewPlaneDepth)
     {
         // One canonical traversal supplies vertices, loop indexes and the hull.
         var snapshot = SolidViewVertexCollector.CollectGeometry(
@@ -131,6 +166,7 @@ public sealed class TeklaDrawingPartSolidGeometryApi : IDrawingPartSolidGeometry
             BboxMin = ToArray(solid.MinimumPoint),
             BboxMax = ToArray(solid.MaximumPoint),
             SolidGeometryComplete = true,
+            ViewPlaneCut = ReadViewPlaneCut(solid, viewPlaneDepth),
             Vertices = snapshot.Vertices
                 .Select(static (point, index) => new PartVertexGeometry
                 {

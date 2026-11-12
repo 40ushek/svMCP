@@ -126,7 +126,11 @@ public sealed class TeklaDrawingAssemblyOutlineApi : IDrawingViewOutlineApi
         static double Low(IEnumerable<double[]> points, int axis) => points.Min(point => point[axis]);
         static double High(IEnumerable<double[]> points, int axis) => points.Max(point => point[axis]);
 
-        var cut = range.Cut is { } plane ? SolidDepthClip.Section(geometry.Solid, plane, vertices.Keys.Max() + 1) : null;
+        // Tekla's own cut where the read carries it; worked out from the faces otherwise.
+        var firstCutIndex = vertices.Keys.Max() + 1;
+        var cut = range.Cut is not { } plane ? null
+            : geometry.Solid.ViewPlaneCut is { } regions ? SolidDepthClip.FromRegions(geometry.Solid, regions, firstCutIndex)
+            : SolidDepthClip.Section(geometry.Solid, plane, firstCutIndex);
         var cutPoints = cut?.Vertices.Select(vertex => vertex.Point).ToArray() ?? [];
         var faces = geometry.Solid.Faces.Where(face => face.Loops.Count > 0
             && face.Loops.All(loop => loop.VertexIndexes.All(index =>

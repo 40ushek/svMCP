@@ -111,6 +111,17 @@ public sealed class ViewDepthOutlineTests
     }
 
     [Fact]
+    public void CutReadFromTeklaIsUsedInsteadOfTheOneWorkedOut()
+    {
+        var bar = Bar(-500, 500);
+        bar.Solid.ViewPlaneCut = [[[[-40, -30, 0], [40, -30, 0], [40, 30, 0], [-40, 30, 0]]]];
+        Assert.Equal((-30d, 30d), Height(bar, (-10, 10, 0)));
+        // Tekla found nothing in the plane: no cut, the full projection stays.
+        bar.Solid.ViewPlaneCut = [];
+        Assert.Same(bar, TeklaDrawingAssemblyOutlineApi.WithinDepth(bar, (-10, 10, 0)));
+    }
+
+    [Fact]
     public void MemberRunningThroughADepthWithNoKnownCutKeepsItsFullProjection()
     {
         // No face lies wholly within the depth, so there is nothing truer to draw than the projection.

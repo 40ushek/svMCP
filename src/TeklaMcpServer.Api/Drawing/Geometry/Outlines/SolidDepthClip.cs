@@ -45,11 +45,26 @@ internal static class SolidDepthClip
             .GroupBy(vertex => vertex.Index).ToDictionary(group => group.Key, group => group.First().Point);
         if (solid.Faces.Any(face => face.Loops.Any(loop => loop.VertexIndexes.Any(index => !vertices.ContainsKey(index)))))
             return null;
-        if (CrossSection(solid, vertices, plane) is not { Count: > 0 } section) return null;
+        return CrossSection(solid, vertices, plane) is { Count: > 0 } section
+            ? FromRegions(solid, section, firstIndex) : null;
+    }
 
+    /// <summary>
+    /// A section given as regions (outer contour first, then holes), as faces. Null when no
+    /// region has a contour of three points.
+    /// </summary>
+    public static PartSolidGeometry? FromRegions(PartSolidGeometry solid,
+        IEnumerable<IEnumerable<IReadOnlyList<double[]>>> regions, int firstIndex = 0)
+    {
         var builder = new Builder { FirstIndex = firstIndex };
-        foreach (var region in section)
-            builder.AddFace([0, 0, 1], region);
+        foreach (var region in regions)
+        {
+            var loops = region.ToArray();
+            // Without its outer contour a region is gone; a degenerate hole is simply not there.
+            if (loops.Length == 0 || loops[0].Count < 3 || loops[0].Any(point => point.Length < 3)) continue;
+            builder.AddFace([0, 0, 1], loops.Where(loop => loop.Count >= 3 && loop.All(point => point.Length >= 3)));
+        }
+        if (builder.Faces.Count == 0) return null;
         return new PartSolidGeometry {
             BboxMin = solid.BboxMin, BboxMax = solid.BboxMax, ViewHull = solid.ViewHull,
             SolidGeometryComplete = solid.SolidGeometryComplete,
