@@ -124,6 +124,19 @@ Work order:
    is refused for it; the chain along the column still projects the plate
    (8.9 / 14.9 at the top).
 
+   **Skill standard run, checked on a weak model (2026-11-12).** `SKILL.md` now
+   opens with a step-by-step standard run for a steel assembly: pick chain keys,
+   one batch per view, report statuses. Two cold Haiku subagent runs on the empty
+   M.81 sheet: the first placed 12 of 14 chains in 65 s and 17 tool calls, dropping
+   two because the cross-view repeat rule was too wide; after narrowing it the
+   second placed the same 14 as the accepted sheet in 57 s and 17 calls. One
+   drawing, two runs. The user's criterion: weak models must cope, and quickly.
+   For speed, a preview's default attributes file that the model does not have
+   (`overall` on this model) no longer refuses the batch: `standard` is used and
+   reported as `attributesFileUsed`; a file named by the caller is never replaced.
+   Next candidates for speed: move the key choice into code, and one call per
+   drawing instead of two per view.
+
    **Part anchor option (source, 2026-11-12; not deployed, not exposed).** The
    user noted that the front-view chain takes every welded part by its left
    face and asked for the choice Tekla's rules give, on horizontal and vertical

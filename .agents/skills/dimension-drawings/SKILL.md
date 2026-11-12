@@ -32,7 +32,7 @@ rest of this file explains the reasons and covers every other request.
      view: of `Top`/`Bottom` keep `Bottom`, of `Left`/`Right` keep `Left`;
    - between views drop only these two repeats, nothing else:
      an `overall` chain whose `segments` equal an overall already placed on the
-     sheet; and, on a back view or a bottom view, a chain whose `segments` equal a
+     sheet (equal means within 0.5: 2962.69 and 2962.699 are the same overall); and, on a back view or a bottom view, a chain whose `segments` equal a
      chain placed on the opposite projection (back against front, bottom against
      top). A chain on a section or an end view is kept even when its numbers match
      a chain on another view: the section shows the same parts from another side;
@@ -41,14 +41,19 @@ rest of this file explains the reasons and covers every other request.
      totals from the first point (preview `[70,160]` comes back as `[160,230]`);
    - take every chain of the `Inclined` row;
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
-     says another chain already covers it. That is normal, not an error.
+     says another chain already covers it. That is normal, not an error;
+   - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,
+     `offeredOnOtherSidePartIds`) are explanations. They change nothing in what
+     you place; mention them in the report only if the user asks why.
 6. Call `create_dimensions_batch` once for the view with the same `viewId`,
    `contextId`, `ruleSet="steel"` and `chainsJson` such as
-   `[{"preview":"Bottom-location"},{"preview":"Bottom-overall","attributesFile":"standard"}]`.
-   Send keys only: no `pointIds`, no `direction`, no `paperGapMm`.
-   - If the call fails with `Dimension attributes 'overall' could not be loaded`,
-     nothing was created: add `"attributesFile":"standard"` to the overall entries
-     and send the same call again.
+   `[{"preview":"Bottom-location"},{"preview":"Bottom-overall"}]`.
+   Send keys only: no `pointIds`, no `direction`, no `paperGapMm`, no
+   `attributesFile`. If the model has no attributes file for a chain kind, the
+   batch uses `standard` by itself and says so in `attributesFileUsed`.
+   - On an older bridge the call can still fail with `Dimension attributes
+     'overall' could not be loaded`: nothing was created; add
+     `"attributesFile":"standard"` to the overall entries and send it again.
 7. Read the batch answer for the `status` of each key only. `created` and
    `retained` are fine. For `merged`, `uncertain`, `failed` or `skipped`, stop on
    that view and report the key, the status and the error text; do not retry
@@ -56,7 +61,8 @@ rest of this file explains the reasons and covers every other request.
    needed. Its `lineAt`, `from` and `to` are view coordinates; on a section they
    can be large numbers (tens of thousands) because the section's origin lies far
    away. That is normal. `renderedLineStatus` `matched` means the line was drawn
-   where calculated; `not verified` means only that it could not be checked.
+   where calculated; `not verified` means only that it could not be checked. An
+   inclined chain comes back with side `Unknown` and no line position: also normal.
 8. After the last view, report per view: the keys placed with their segments, the
    keys dropped and why, and anything that failed. Say plainly that the chains on
    section and end views are provisional (the code does not clip parts to the
@@ -64,7 +70,8 @@ rest of this file explains the reasons and covers every other request.
 
 Do not, in a standard run: ask for the steel settings (`Internal`,
 `recognizableDistance`), request points or contacts, read part geometry, draw debug
-overlays, or build a chain from coordinates. If the proposed chains look wrong,
+overlays, build a chain from coordinates, or read the reference files: the steps
+above are complete for this run. If the proposed chains look wrong,
 place nothing on that view and report what looks wrong: the fix belongs in the
 code's rules.
 
@@ -211,8 +218,8 @@ command if its automatic group cleanup could erase an earlier overlay.
 
 ## Apply and verify
 
-Read the placement reference before the first write. Preserve matching
-dimensions. Direction chooses the side; distance is non-negative. Keep the
+Outside a standard run, read the placement reference before the first write.
+Preserve matching dimensions. Direction chooses the side; distance is non-negative. Keep the
 returned new ID when Tekla renumbers a chain.
 
 Use available, known working tools; source code existing is not proof that the

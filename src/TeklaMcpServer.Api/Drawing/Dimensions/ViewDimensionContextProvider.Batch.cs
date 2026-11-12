@@ -37,6 +37,8 @@ public sealed class BatchDimensionChain
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? AttributesFile { get; set; }
     public string? DimensionType { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal string? AttributesFallback { get; set; }
     // Final view coordinates of a preview chain that carries its own points (an inclined chain).
     [System.Text.Json.Serialization.JsonIgnore]
     internal double[]? ResolvedPoints { get; set; }
@@ -51,6 +53,10 @@ public sealed class BatchDimensionItemResult
     public int? MatchingDimensionId { get; set; }
     public string? ActualDimensionType { get; set; }
     public string? RenderedLineStatus { get; set; }
+    // Set only when the preview's default attributes file does not exist in this model and
+    // the chain was written with this one instead.
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? AttributesFileUsed { get; set; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? BoltGeometryVerification { get; set; }
     public string? Error { get; set; }
@@ -117,6 +123,7 @@ public sealed partial class ViewDimensionContextProvider
         foreach (var entry in prepared)
         {
             var item = new BatchDimensionItemResult { Key = entry.Chain.Key,
+                AttributesFileUsed = entry.Chain.AttributesFallback,
                 BoltGeometryVerification = entry.Chain.BoltProposal == null ? null
                     : "explicitly selected provisional proposal; bolt-plane orientation, visibility and section clipping are unverified" };
             result.Chains.Add(item);
@@ -269,13 +276,27 @@ public sealed partial class ViewDimensionContextProvider
             if (ids.Length < 2)
                 throw new ArgumentException($"Preview chain '{chain.Preview}' needs at least two pointIds" +
                     (selected.TryGetProperty("incompleteReason", out var reason) ? ": " + reason.GetString() : ""));
+            var defaultAttributes = PreviewAttributes(selected, out var fallback);
             return new BatchDimensionChain {
                 Key = string.IsNullOrWhiteSpace(chain.Key) ? chain.Preview : chain.Key,
                 PointIds = ids, Direction = selected.GetProperty("direction").GetString()!,
-                AttributesFile = chain.AttributesFile ?? selected.GetProperty("attributesFile").GetString()!,
+                AttributesFile = chain.AttributesFile ?? defaultAttributes,
+                AttributesFallback = chain.AttributesFile == null ? fallback : null,
                 Distance = chain.Distance, PaperGapMm = chain.PaperGapMm, DimensionType = chain.DimensionType
             };
         }).ToArray();
+    }
+
+    // The preview names a default attributes file per chain kind ("overall" for an overall).
+    // A model without that file gets the standard one instead of a refused batch; a file the
+    // caller named explicitly is never replaced.
+    private string PreviewAttributes(System.Text.Json.JsonElement chain, out string? fallback)
+    {
+        var file = chain.GetProperty("attributesFile").GetString()!;
+        fallback = null;
+        if (StringComparer.OrdinalIgnoreCase.Equals(file, "standard")) return file;
+        try { _validateAttributes(file); return file; }
+        catch (InvalidOperationException) { return fallback = "standard"; }
     }
 
     // Legacy keys address one chain. Multiple proposals per key are valid in a diagnostic

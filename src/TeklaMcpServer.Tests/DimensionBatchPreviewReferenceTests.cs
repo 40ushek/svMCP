@@ -37,6 +37,36 @@ public sealed class DimensionBatchPreviewReferenceTests
         Assert.Equal("created", first.Chains.Single().Status);
     }
 
+    [Fact]
+    public void MissingDefaultAttributesFileFallsBackToStandardButANamedFileIsNeverReplaced()
+    {
+        var context = DimensionChainPreviewTests.Context(68);
+        var writes = new List<CreateDimensionRequest>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
+            (request, _) => { writes.Add(request); return new() { Created = true, DimensionId = 100 + writes.Count }; },
+            readDimensions: _ => new GetDimensionsResult(),
+            validateAttributes: file => {
+                if (file == "overall") throw new InvalidOperationException("Dimension attributes 'overall' could not be loaded; nothing created");
+            });
+        provider.Get(7);
+
+        var result = provider.CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            Chains = [new() { Preview = "Bottom-location" }, new() { Preview = "Bottom-overall" }]
+        });
+
+        Assert.Equal(new[] { "standard", "standard" }, writes.Select(write => write.AttributesFile));
+        Assert.Null(result.Chains[0].AttributesFileUsed);
+        Assert.Equal("standard", result.Chains[1].AttributesFileUsed);
+
+        var named = Assert.Throws<InvalidOperationException>(() => provider.CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            Chains = [new() { Preview = "Bottom-overall", AttributesFile = "overall" }]
+        }));
+        Assert.Contains("could not be loaded", named.Message);
+        Assert.Equal(2, writes.Count);
+    }
+
     [Theory]
     [InlineData("steel", "chain")]
     [InlineData("steel", "chainDetails")]
