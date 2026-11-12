@@ -61,12 +61,13 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             settings.Side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1,
             input.MainPartIds, line, all, main, catalog.LinePoints(Opposite(settings.Side)));
         var result = alongX == mainAlongX
-            ? AlongMain(context, calculation)
+            ? AlongMain(context, calculation, input.FaceOnPartIds)
             : AcrossMain(context, all, main, mainAlongX, calculation, input.InclinedPartIds);
         return new DimensionRuleEvaluation([result]);
     }
 
-    private DimensionRuleResult AlongMain(DimensionRuleContext context, CalculationContext calculation)
+    private DimensionRuleResult AlongMain(DimensionRuleContext context, CalculationContext calculation,
+        IReadOnlyCollection<int> faceOnPartIds)
     {
         var line = calculation.Line;
         if (line.Count == 0) return Empty("no points on this side");
@@ -88,11 +89,11 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             var own = line.Where(point => calculation.Parts(point).Contains(id)).ToArray();
             var low = own.Min(calculation.Along);
             var high = own.Max(calculation.Along);
-            var anchors = settings.PartAnchor switch {
-                DimensionPartAnchor.HighFace => new[] { high },
-                DimensionPartAnchor.BothFaces when high - low > settings.SameCoordinateTolerance => new[] { low, high },
-                _ => new[] { low }
-            };
+            // A plate seen face-on shows both of its edges, and both are located whatever the anchor.
+            var both = settings.PartAnchor == DimensionPartAnchor.BothFaces || faceOnPartIds.Contains(id);
+            var anchors = both && high - low > settings.SameCoordinateTolerance
+                ? new[] { low, high }
+                : new[] { settings.PartAnchor == DimensionPartAnchor.HighFace ? high : low };
             foreach (var anchor in anchors)
                 picks.Add(new Pick(Best(own.Where(point =>
                     Math.Abs(calculation.Along(point) - anchor) <= settings.SameCoordinateTolerance), calculation),

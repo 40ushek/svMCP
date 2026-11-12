@@ -34,6 +34,20 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
+    public void PartSeenFaceOnIsLocatedByBothEdgesAlongTheMainPartWhateverTheAnchor()
+    {
+        // The rib (12) declared as lying in the view plane: its second edge joins the chain.
+        var context = Context(rightHalfHeight: 68);
+        var chain = JsonSerializer.SerializeToElement(DimensionChainPreview.Build(context.SteelCatalogForTests(),
+            DimensionChainSide.Bottom, [10], 3, faceOnPartIds: [12])[0]);
+        Assert.Equal(new[] { 20d, 200d, 10d, 790d, 10d }, Segments(chain));
+        // Across the main part nothing changes.
+        var across = JsonSerializer.SerializeToElement(DimensionChainPreview.Build(context.SteelCatalogForTests(),
+            DimensionChainSide.Left, [10], 3, faceOnPartIds: [12])[0]);
+        Assert.Equal(new[] { 94d, 152d, 94d }, Segments(across));
+    }
+
+    [Fact]
     public void CenterAnchorIsNamedButRefusedUntilItIsCalculated()
     {
         var along = Location(DimensionChainSide.Bottom, DimensionPartAnchor.Center, DimensionPartAnchor.BothFaces);

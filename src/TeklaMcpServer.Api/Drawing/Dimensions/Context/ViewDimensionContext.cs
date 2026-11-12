@@ -269,7 +269,8 @@ public sealed class ViewDimensionContext
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetPanelDimensionPointCatalog(), side,
                         _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits,
-                        inclinedPartIds: InclinedChains().Select(chain => chain.PartId).ToArray()))
+                        inclinedPartIds: InclinedChains().Select(chain => chain.PartId).ToArray(),
+                        faceOnPartIds: FaceOnPartIds()))
                     .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
             }).ToArray();
             // Chains along tilted parts belong to no side; they come with a whole-view answer.

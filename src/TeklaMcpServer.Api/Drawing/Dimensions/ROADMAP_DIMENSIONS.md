@@ -102,6 +102,31 @@ Work order:
    plate, and only 1409 changes, to 80 / 30 / 100 / 30. M.81 as proposed before
    this change is on the sheet for the user's edits; other remarks on it are open.
 
+   **Face-on parts along the main part (source, 2026-11-12; not deployed).**
+   Third live case, girder M.53 (39 engineer's dimensions saved, 13 placed by the
+   standard run). On the top view the user added the right edge of gusset P/1464
+   to the proposed chain and pointed at the same rule: the gusset lies in the view
+   plane. The face-on sign now also applies on ordinary views: along the main part
+   a face-on part is located by both edges whatever `PartAnchor` says. Of 101
+   chains on the 19 saved views only the M.53 top-view chain and its mirror on the
+   bottom view change; the first gusset comes out exactly as the user edited it
+   (223.1 / 249.5 / 4529.8). The second gusset gets 76.6 / 160.6 in place of
+   237.2: its far edge on the chain's side is a chamfer corner; not confirmed by
+   the user. Open on M.53: section E is cut square to the tilted end, so the
+   unclipped 9 m main part projects 1131 high and the vertical chain reads
+   948 / 175 / 8 (not placed); gussets get no location across the girder; the
+   mirrored chain 200 / 106 on the bottom view is not recognised as a repeat of
+   106 / 200 on the top view.
+
+   **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
+   on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
+   doubtful: on this view the rib stands at an angle and is hidden under the
+   flange. It is located well on another view, so nothing is missing on the sheet.
+   Two signs the code does not use yet: whether a part is visible on the view
+   (here it lies behind the main part along the view depth, inside its outline),
+   and whether a part is located better on another view. Both belong to the
+   drawing-level check of step 5.
+
    **Inclined parts (source, 2026-11-12; not deployed).** On the M.81 front view
    the tilted head plate got the horizontal chain 1.6 / 83 / 153.6 / 6.4:
    projections that cannot be measured on the part. The user placed 238 / 8 along
