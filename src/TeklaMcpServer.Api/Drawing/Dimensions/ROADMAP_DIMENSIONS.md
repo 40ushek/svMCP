@@ -330,6 +330,21 @@ Work order:
    part's end, where Tekla is not asked. Checked live on M.46 section F: the
    girder comes back as a 12-point I contour, both gussets as strips 149.1 to
    283.2, and the chains are the same as with the own computation.
+   Put off by the user (2026-11-12, "not critical for now"): M.57 section F is
+   refused. The view plane cuts no part there; the girder lies behind it and
+   reaches past the far limit of the depth, and its faces lying wholly within the
+   depth make several separate contours ("section profile needs exactly one
+   projected outer contour of the main part"). It needs the part trimmed at the
+   far limit of the depth, which the cut by the view plane does not give.
+   **Repeats between views: an option, not a fixed rule (user, 2026-11-12).** On
+   the purlins M.100 and M.37 the chain along the main part and the overall stand
+   on both the front view and the bottom view: the sheet has no top view, and the
+   skill compares a bottom view only with a top view. The user: not critical for
+   now, and it may have to be an option that allows or forbids such repeats,
+   something like "the minimum number of dimensions". So the repeat rules are a
+   setting to come (with the settings object), not something to tighten in the
+   skill text. Both purlin sheets also show what the missing bolt and hole chains
+   cost: 9 of the engineer's 33 dimensions on M.100, 11 of 18 on M.37.
    Open: the left chain of F (400 / 92 / 275.9 / 36.6 / 26.4) and the 7.1 on M.85 D are
    not reviewed; M.46 D is still refused for one part on the depth boundary.
 
