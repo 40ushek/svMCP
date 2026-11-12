@@ -21,8 +21,10 @@ rest of this file explains the reasons and covers every other request.
    and ask whether to delete them, keep them, or add beside them. Never delete
    without the user's word.
 3. Take one view, finish it, then take the next. A `contextId` dies as soon as
-   another view is read. Order: front view, then sections and end views, then the
-   other projections (top, bottom, back).
+   another view is read. Order, whatever order the view list comes in: front view,
+   then sections and end views, then top view, then bottom view, then back view.
+   The top view must be done before the bottom view and the front before the back:
+   the repeat rule below compares a bottom or back view with the one already done.
 4. For the view call `get_view_dimension_context` with `viewId` and
    `ruleSet="steel"`; leave `questions` at its default. In the answer every chain
    has a `key`, `segments` and `incomplete`.

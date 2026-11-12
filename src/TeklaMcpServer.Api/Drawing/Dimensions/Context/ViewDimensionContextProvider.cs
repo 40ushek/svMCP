@@ -259,7 +259,8 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
             viewId, viewType = view.ViewType.ToString(), scale,
             viewCoordinates = new[] { cs.Origin.X, cs.Origin.Y, cs.Origin.Z, cs.AxisX.X, cs.AxisX.Y, cs.AxisX.Z, cs.AxisY.X, cs.AxisY.Y, cs.AxisY.Z },
             displayCoordinates = new[] { display.Origin.X, display.Origin.Y, display.Origin.Z, display.AxisX.X, display.AxisX.Y, display.AxisX.Z, display.AxisY.X, display.AxisY.Y, display.AxisY.Z },
-            depthWindow = depth.Box, depthError = depth.Error
+            depthWindow = depth.Box, depthError = depth.Error,
+            viewFrame = ViewFrame(view, scale)
         };
         var boltApi = new TeklaDrawingBoltGeometryApi(model);
         var displayToGlobal = new TransformationPlane(display).TransformationMatrixToGlobal;
@@ -293,6 +294,25 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
             PerfTrace.Write("api-geometry", "dimension_context_case", 0,
                 $"result=error type={exception.GetType().Name} message={exception.Message}");
         }
+    }
+
+    // The drawn frame of the view in its own coordinates: [minX, minY, maxX, maxY]. A sheet point
+    // lies at (sheet - view origin) * scale. Null when the frame cannot be read or the view is shortened.
+    private static double[]? ViewFrame(View view, double scale)
+    {
+        try
+        {
+            if (scale <= 0) return null;
+            // A shortened view leaves stretches out, so a point's place on the sheet does not
+            // follow from its coordinates: no frame there.
+            var shortening = ViewShorteningAttributesReader.Read(view);
+            if (shortening.CutParts || shortening.CutSkewParts) return null;
+            var box = view.GetAxisAlignedBoundingBox();
+            var origin = view.Origin;
+            return [(box.MinPoint.X - origin.X) * scale, (box.MinPoint.Y - origin.Y) * scale,
+                (box.MaxPoint.X - origin.X) * scale, (box.MaxPoint.Y - origin.Y) * scale];
+        }
+        catch { return null; }
     }
 
     public PartSolidGeometryInViewResult ReadPartSolidGeometry(int viewId, int modelId) =>

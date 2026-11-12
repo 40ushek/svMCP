@@ -138,6 +138,41 @@ Work order:
    still projects in full. The skill now drops mirror repeats on back and bottom
    views, inclined chains included.
 
+   **Fourth live case, girder M.46 (2026-11-12): 20 m HEB800, sheet A0, ten views,
+   33 parts, 28 bolt groups; 90 engineer's dimensions saved.** A cold Haiku run
+   placed 22 dimensions in 124 s and 23 calls, following the skill exactly; the
+   code's proposals were the problem. Three rules followed (source, deployed, not
+   committed at the time of writing):
+   - *A part lying along the main part gets both ends.* A straight part whose size
+     along the chain is more than 1.5 thicknesses (thickness = its smallest size
+     along its own axes) is a cover plate or a gusset seen edge-on, not a rib. The
+     engineer's chains show it on M.46 (distance plates 200 long) and on M.53
+     (gusset ends on the front view).
+   - *No points beyond the drawn frame.* On a view that is not shortened, points
+     outside the view's drawn frame are offered to no chain. The frame comes from
+     the view's box on the sheet; the restriction box is narrower than the drawn
+     view on M.81 section H and is not used. M.46 section G (a local section along
+     the girder) no longer offers 19849, section F no longer offers 2108; both
+     chains are refused instead.
+   - *A segment shorter than 1 mm on paper is dropped along the main part*
+     (`MinimumChainSegmentPaperMm`); across the main part the 3-unit floor stays,
+     so 8 / 136 / 8 survives. On M.81 it removes the 8.9 next to the head plate.
+   Checked on 155 chains of 28 saved views: M.505 unchanged; M.81 one chain; M.53
+   the front-view chain gains the gusset's far end.
+   Still wrong or missing on M.46, in the order they hurt:
+   1. Parts are located across the girder only at its ends. The engineer places
+      short local chains next to each gusset, rib and cover plate, inside the view
+      (400 / 15 / 385 by height, 133.2 / 300 / 133.2 across). The code offers four
+      outside sides only. Four such chains were placed by hand from coordinates.
+   2. No bolts: most of the engineer's 90 dimensions.
+   3. Top and bottom views repeat the front view's positions along the girder in
+      chains of 26-28 segments. A part should be located along the girder once, on
+      the view where it is seen best.
+   4. A section cut at an angle through a member that runs through it still
+      projects the member in full (section F); this needs real clipping of solids.
+   5. Section D is refused whole because one part sits on the depth boundary.
+   6. `delete_dimensions_batch` timed out at 30 s on 90 dimensions (57 deleted).
+
    **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
    on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
    doubtful: on this view the rib stands at an angle and is hidden under the

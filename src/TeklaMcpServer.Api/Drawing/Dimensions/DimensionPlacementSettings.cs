@@ -29,6 +29,17 @@ public static class DimensionPlacementSettings
     public const double MinimumChainSegmentViewUnits = 3.0;
 
     /// <summary>
+    /// Shortest segment a steel location chain keeps, on paper: a segment shorter than this
+    /// cannot carry a readable number. The view-unit cutoff above still applies as a floor.
+    /// </summary>
+    public const double MinimumChainSegmentPaperMm = 1.0;
+
+    /// <summary>The steel chain's shortest kept segment in view units at a view scale.</summary>
+    public static double MinimumSteelChainSegment(double viewScale) =>
+        System.Math.Max(MinimumChainSegmentViewUnits,
+            viewScale > 0 && !double.IsInfinity(viewScale) ? MinimumChainSegmentPaperMm * viewScale : 0);
+
+    /// <summary>
     /// Section-preview positions closer than this on paper are represented by one
     /// candidate and reported as merged. Separate from the model-unit segment cutoff.
     /// </summary>

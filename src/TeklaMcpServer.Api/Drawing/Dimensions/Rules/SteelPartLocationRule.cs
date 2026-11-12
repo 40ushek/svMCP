@@ -61,13 +61,13 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             settings.Side is DimensionChainSide.Top or DimensionChainSide.Right ? 1 : -1,
             input.MainPartIds, line, all, main, catalog.LinePoints(Opposite(settings.Side)));
         var result = alongX == mainAlongX
-            ? AlongMain(context, calculation, input.FaceOnPartIds)
+            ? AlongMain(context, calculation, input.FaceOnPartIds, input.PartThickness)
             : AcrossMain(context, all, main, mainAlongX, calculation, input.InclinedPartIds);
         return new DimensionRuleEvaluation([result]);
     }
 
     private DimensionRuleResult AlongMain(DimensionRuleContext context, CalculationContext calculation,
-        IReadOnlyCollection<int> faceOnPartIds)
+        IReadOnlyCollection<int> faceOnPartIds, IReadOnlyDictionary<int, double> partThickness)
     {
         var line = calculation.Line;
         if (line.Count == 0) return Empty("no points on this side");
@@ -90,7 +90,14 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             var low = own.Min(calculation.Along);
             var high = own.Max(calculation.Along);
             // A plate seen face-on shows both of its edges, and both are located whatever the anchor.
-            var both = settings.PartAnchor == DimensionPartAnchor.BothFaces || faceOnPartIds.Contains(id);
+            // So does a straight part lying along the main part: its size along the chain is a
+            // length, not its thickness, and one end alone does not place it.
+            // Only a part with square-on edges: a tilted one projects longer than it is.
+            var squareOn = own.SelectMany(point => point.Parents)
+                .Any(parent => parent.ModelId == id && parent.PartExtentAlongChain.HasValue);
+            var liesAlong = squareOn && partThickness.TryGetValue(id, out var thickness)
+                && high - low > thickness * settings.LiesAlongThicknessRatio;
+            var both = settings.PartAnchor == DimensionPartAnchor.BothFaces || faceOnPartIds.Contains(id) || liesAlong;
             var anchors = both && high - low > settings.SameCoordinateTolerance
                 ? new[] { low, high }
                 : new[] { settings.PartAnchor == DimensionPartAnchor.HighFace ? high : low };
@@ -147,13 +154,17 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         if (endParts.Length == 0)
             return Empty("no part sticks out past the main part's end on this side", skipped);
         return Result(context, picks, calculation, skipped, minPoints: 3,
-            tooFewNote: "the end part is flush with the main part; nothing to locate");
+            tooFewNote: "the end part is flush with the main part; nothing to locate",
+            minimumSegment: settings.MinimumEndPartSegmentViewUnits);
     }
 
     private DimensionRuleResult Result(DimensionRuleContext context, List<Pick> picks,
         CalculationContext calculation, IReadOnlyCollection<int> skippedParts, int minPoints = 0,
-        string? tooFewNote = null, IReadOnlyCollection<int>? offeredOnOtherSide = null)
+        string? tooFewNote = null, IReadOnlyCollection<int>? offeredOnOtherSide = null, double? minimumSegment = null)
     {
+        // Across the main part a few millimetres are the whole point (an end plate 8 short of a
+        // flange), so only the model-unit floor applies there.
+        var shortest = minimumSegment ?? settings.MinimumSegmentViewUnits;
         var chosen = new List<(DimensionPoint Point, List<string> Roles)>();
         foreach (var group in ClusterPicks(picks, calculation))
         {
@@ -165,7 +176,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var dropped = new List<DimensionPoint>();
         for (var index = chosen.Count - 2; index >= 1; index--)
             if (calculation.Along(chosen[index + 1].Point) - calculation.Along(chosen[index].Point)
-                < settings.MinimumSegmentViewUnits)
+                < shortest)
             {
                 dropped.Add(chosen[index].Point);
                 chosen.RemoveAt(index);
@@ -179,7 +190,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         if (chosen.Count < minPoints)
         {
             var note = dropped.Count > 0
-                ? $"fewer than {minPoints} points remain after dropping segments shorter than {settings.MinimumSegmentViewUnits} view units"
+                ? $"fewer than {minPoints} points remain after dropping segments shorter than {shortest} view units"
                 : tooFewNote ?? "too few points";
             return Empty(note, skipped, dropped.Select(point => point.Id).ToArray());
         }

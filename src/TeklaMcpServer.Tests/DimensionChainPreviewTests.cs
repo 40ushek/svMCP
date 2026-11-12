@@ -47,6 +47,36 @@ public sealed class DimensionChainPreviewTests
         Assert.Equal(new[] { 94d, 152d, 94d }, Segments(across));
     }
 
+    [Theory]
+    [InlineData(10, new[] { 20d, 200d, 800d, 10d })]      // 10 along the chain is the rib's thickness: one face
+    [InlineData(2, new[] { 20d, 200d, 10d, 790d, 10d })]  // five thicknesses long: it lies along, both ends
+    public void PartLyingAlongTheMainPartIsLocatedByBothEnds(double thickness, double[] expected)
+    {
+        var context = Context(rightHalfHeight: 68);
+        var chain = JsonSerializer.SerializeToElement(DimensionChainPreview.Build(context.SteelCatalogForTests(),
+            DimensionChainSide.Bottom, [10], 3, partThickness: new Dictionary<int, double> { [12] = thickness })[0]);
+        Assert.Equal(expected, Segments(chain));
+    }
+
+    [Fact]
+    public void PointsBeyondTheViewFrameAreNotOfferedToAnyChain()
+    {
+        var catalog = Context(rightHalfHeight: 68).SteelCatalogForTests();
+        var framed = catalog.Within(-25, 600, -200, 200);
+        Assert.Contains(catalog.LinePoints(DimensionChainSide.Bottom), point => point.X > 600);
+        Assert.DoesNotContain(framed.LinePoints(DimensionChainSide.Bottom), point => point.X > 600);
+        Assert.Equal(catalog.LinePoints(DimensionChainSide.Bottom).Count(point => point.X <= 600),
+            framed.LinePoints(DimensionChainSide.Bottom).Count);
+    }
+
+    [Fact]
+    public void ShortestSteelSegmentIsAMillimetreOnPaperButNeverBelowTheModelFloor()
+    {
+        Assert.Equal(10, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(10));
+        Assert.Equal(3, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(1));
+        Assert.Equal(3, TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(0));
+    }
+
     [Fact]
     public void CenterAnchorIsNamedButRefusedUntilItIsCalculated()
     {

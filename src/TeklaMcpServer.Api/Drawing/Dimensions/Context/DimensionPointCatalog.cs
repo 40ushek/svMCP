@@ -182,6 +182,22 @@ internal sealed class DimensionPointCatalog
         return new DimensionPointCatalog(points, lines);
     }
 
+    // A view shows what lies inside its frame. Points beyond it are not drawn there and are not
+    // offered to any chain; the points themselves stay known, so nothing else changes.
+    internal DimensionPointCatalog Within(double minX, double maxX, double minY, double maxY)
+    {
+        var lines = new Dictionary<DimensionChainSide, DimensionPointLine>();
+        foreach (var side in _lines.Keys)
+        {
+            var entries = LinePoints(side).Where(point => point.X >= minX && point.X <= maxX
+                && point.Y >= minY && point.Y <= maxY).ToArray();
+            lines.Add(side, new DimensionPointLine(entries.Select((point, index) => new DimensionPointLineEntry(
+                point.Id, index == 0 ? null : AxisDistance(side, entries[index - 1], point),
+                index + 1 == entries.Length ? null : AxisDistance(side, point, entries[index + 1]))).ToArray()));
+        }
+        return new DimensionPointCatalog(_points.ToDictionary(pair => pair.Key, pair => pair.Value), lines);
+    }
+
     // Global overall bounds may be supported only on the opposite contour side. Retain
     // those real points on each requested axis so their IDs resolve during creation.
     internal DimensionPointCatalog WithExtentSupports(GeometryGroupExtent extent)

@@ -14,6 +14,14 @@ internal sealed class SteelPartLocationSettings
     /// on the end part's edges around the main-part edges.
     /// </summary>
     public DimensionPartAnchor EndPartAnchor { get; }
+    /// <summary>
+    /// A straight part counts as lying along the main part when its size along the chain is
+    /// more than this many thicknesses.
+    /// </summary>
+    public double LiesAlongThicknessRatio { get; } = 1.5;
+    /// <summary>Shortest segment kept in a chain across the main part, in view units.</summary>
+    public double MinimumEndPartSegmentViewUnits { get; } =
+        Dimensions.DimensionPlacementSettings.MinimumChainSegmentViewUnits;
 
     public SteelPartLocationSettings(DimensionChainSide side, double minimumSegmentViewUnits,
         double sameCoordinateTolerance, DimensionPartAnchor partAnchor = DimensionPartAnchor.LowFace,

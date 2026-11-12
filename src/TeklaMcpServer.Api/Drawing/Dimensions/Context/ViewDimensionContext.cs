@@ -268,9 +268,9 @@ public sealed class ViewDimensionContext
                     : (refusal != null
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetPanelDimensionPointCatalog(), side,
-                        _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits,
+                        _mainPartIds, DimensionPlacementSettings.MinimumSteelChainSegment(Scale),
                         inclinedPartIds: InclinedChains().Select(chain => chain.PartId).ToArray(),
-                        faceOnPartIds: FaceOnPartIds()))
+                        faceOnPartIds: FaceOnPartIds(), partThickness: PartThicknesses()))
                     .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
             }).ToArray();
             // Chains along tilted parts belong to no side; they come with a whole-view answer.
@@ -485,8 +485,56 @@ public sealed class ViewDimensionContext
         return GetPanelDimensionPointCatalog();
     }
 
-    private DimensionPointCatalog GetPanelDimensionPointCatalog() =>
-        _panelDimensionPointCatalog ??= DimensionPointCatalog.Build(_group.DimensionChains!);
+    private DimensionPointCatalog GetPanelDimensionPointCatalog()
+    {
+        if (_panelDimensionPointCatalog != null) return _panelDimensionPointCatalog;
+        var catalog = DimensionPointCatalog.Build(_group.DimensionChains!);
+        return _panelDimensionPointCatalog = ViewFrame() is { } frame
+            ? catalog.Within(frame.MinX, frame.MaxX, frame.MinY, frame.MaxY) : catalog;
+    }
+
+    // The view's frame on the sheet, in the coordinates of the captured points: [minX, minY,
+    // maxX, maxY]. It is the drawn frame, annotations included, so it never cuts off a point the
+    // view shows. The restriction box is not used for this: its X and Y limits can be narrower
+    // than the drawn view (M.81 section H).
+    private (double MinX, double MaxX, double MinY, double MaxY)? ViewFrame()
+    {
+        if (_metadata.ValueKind != JsonValueKind.Object
+            || !_metadata.TryGetProperty("viewFrame", out var frame) || frame.ValueKind != JsonValueKind.Array
+            || frame.GetArrayLength() != 4) return null;
+        const double tolerance = 0.5;
+        return (frame[0].GetDouble() - tolerance, frame[2].GetDouble() + tolerance,
+            frame[1].GetDouble() - tolerance, frame[3].GetDouble() + tolerance);
+    }
+
+    // A part's thickness: its smallest size along its own axes.
+    private IReadOnlyDictionary<int, double> PartThicknesses()
+    {
+        var result = new Dictionary<int, double>();
+        foreach (var id in _includedModelIds)
+        {
+            var solid = GetPartSolidGeometrySnapshot(id);
+            if (solid == null || solid.AxisX.Length < 3 || solid.AxisY.Length < 3) continue;
+            double[] Unit(double[] axis)
+            {
+                var length = Math.Sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]);
+                return length <= 1e-9 ? [] : [axis[0] / length, axis[1] / length, axis[2] / length];
+            }
+            var x = Unit(solid.AxisX);
+            var y = Unit(solid.AxisY);
+            if (x.Length == 0 || y.Length == 0) continue;
+            double[] z = [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0]];
+            var points = solid.Solid.Vertices.Where(vertex => vertex.Point.Length >= 3).Select(vertex => vertex.Point).ToArray();
+            if (points.Length == 0) continue;
+            double Size(double[] axis)
+            {
+                var along = points.Select(point => point[0] * axis[0] + point[1] * axis[1] + point[2] * axis[2]).ToArray();
+                return along.Max() - along.Min();
+            }
+            result[id] = new[] { Size(x), Size(y), Size(z) }.Min();
+        }
+        return result;
+    }
 
     private DimensionPointCatalog GetDimensionPointCatalog()
     {
