@@ -88,6 +88,7 @@ public sealed class ReferenceZoneOutline
             notVisibleRequestedIds: captured.NotVisibleRequestedIds.Where(ids.Contains).ToArray(),
             outsideDepthModelIds: captured.OutsideDepthModelIds.Where(ids.Contains).ToArray(),
             unresolvedDepthModelIds: captured.UnresolvedDepthModelIds.Where(ids.Contains).ToArray(),
-            partSolidGeometries: captured.PartSolidGeometries.Where(pair => ids.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value));
+            partSolidGeometries: captured.PartSolidGeometries.Where(pair => ids.Contains(pair.Key)).ToDictionary(pair => pair.Key, pair => pair.Value),
+            depthRange: captured.DepthRange);
     }
 }

@@ -35,12 +35,15 @@ rest of this file explains the reasons and covers every other request.
      an `overall` chain whose `segments` equal an overall already placed on the
      sheet (equal means within 0.5: 2962.69 and 2962.699 are the same overall); and, on a back view or a bottom view, a chain whose `segments` equal a
      chain placed on the opposite projection (back against front, bottom against
-     top). A chain on a section or an end view is kept even when its numbers match
+     top), read in either order: `[200,106]` on a bottom view repeats `[106,200]`
+     on the top view. This covers the `Inclined` row too: an inclined chain on a
+     back or bottom view that mirrors one placed on the opposite projection is
+     dropped. A chain on a section or an end view is kept even when its numbers match
      a chain on another view: the section shows the same parts from another side;
    - always compare the `segments` of the preview answers with each other. Do not
      compare with the numbers in a batch answer: there `segments` are running
      totals from the first point (preview `[70,160]` comes back as `[160,230]`);
-   - take every chain of the `Inclined` row;
+   - take every chain of the `Inclined` row, except a mirror repeat as above;
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error;
    - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,

@@ -118,6 +118,26 @@ Work order:
    mirrored chain 200 / 106 on the bottom view is not recognised as a repeat of
    106 / 200 on the top view.
 
+   **View depth (deployed 2026-11-12).** After it a second cold Haiku run on M.53
+   placed 14 dimensions in 65 s and 18 calls: section E reads 8 / 175 / 8 and both
+   mirror repeats are left out; the user found the result good. What led to it: A cold Haiku run of the
+   standard run on M.53 placed 16 dimensions in 74 s and 20 calls: the 13 of the
+   main session plus the wrong 948 / 175 / 8 on section E and two mirror repeats
+   (bottom view 200 / 106 against top view 106 / 200; the inclined chain on the
+   back view). A weak model cannot tell a wrong number without reading geometry,
+   so the code has to. The user's rule: where a part reaches beyond the view
+   depth, nothing is dimensioned to the geometry beyond it. A part that reaches
+   beyond the depth is now outlined by its faces lying wholly within the depth
+   (0.5 tolerance), if any of them shows an area; a part wholly inside, or a member
+   running through the cut with no face wholly inside, is projected in full as
+   before. Applied where the solids and the depth window share coordinates
+   (display and view origins coincide); the stored solids stay whole for contacts.
+   Of 101 chains on the 19 saved views one changes: M.53 section E, from
+   948 / 175 / 8 to 8 / 175 / 8. This is a partial answer to the section-clipping
+   gap of `ROADMAP_SECTION_CROSS_SECTIONS.md`: a member cut mid-span at an angle
+   still projects in full. The skill now drops mirror repeats on back and bottom
+   views, inclined chains included.
+
    **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
    on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
    doubtful: on this view the rib stands at an angle and is hidden under the

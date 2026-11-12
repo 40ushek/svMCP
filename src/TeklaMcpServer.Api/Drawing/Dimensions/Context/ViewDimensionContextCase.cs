@@ -30,6 +30,11 @@ internal sealed class ViewDimensionContextCaseOutline
     public List<int> OutsideDepthModelIds { get; set; } = new();
 
     public List<int> UnresolvedDepthModelIds { get; set; } = new();
+
+    /// <summary>The view depth the outlines were limited to; both null when it was not applied.</summary>
+    public double? DepthMin { get; set; }
+
+    public double? DepthMax { get; set; }
 }
 
 internal sealed class ViewDimensionContextCaseUnread
@@ -200,7 +205,8 @@ internal sealed class ViewDimensionContextCase
         ViewAssemblyOutlineResult Build(IReadOnlyList<UnreadPart> selectionUnread) =>
             TeklaDrawingAssemblyOutlineApi.Build(ViewId, outline.SolidIds, new StoredSolids(solids), null,
                 outline.Restricted, outline.VisibleCount, outline.RequestedIds, outline.NotVisibleRequestedIds,
-                outline.OutsideDepthModelIds, outline.UnresolvedDepthModelIds, selectionUnread);
+                outline.OutsideDepthModelIds, outline.UnresolvedDepthModelIds, selectionUnread,
+                outline.DepthMin is { } min && outline.DepthMax is { } max ? (min, max) : MetadataDepthRange());
 
         // The projection reports again whatever it could not use. The rest of the stored
         // list came from the selection and has to be handed back in.
@@ -210,6 +216,20 @@ internal sealed class ViewDimensionContextCase
             if (index >= 0) unread.RemoveAt(index);
         }
         return Build(unread);
+    }
+
+    // A case saved before the depth was recorded: the same range the reader would take, from
+    // the view metadata - the depth window, where the display and view origins coincide.
+    private (double Min, double Max)? MetadataDepthRange()
+    {
+        if (Metadata.ValueKind != JsonValueKind.Object
+            || !Metadata.TryGetProperty("depthWindow", out var window) || window.ValueKind != JsonValueKind.Object
+            || !Metadata.TryGetProperty("viewCoordinates", out var view)
+            || !Metadata.TryGetProperty("displayCoordinates", out var display)) return null;
+        for (var i = 0; i < 3; i++)
+            if (Math.Abs(view[i].GetDouble() - display[i].GetDouble()) > 0.01) return null;
+        return window.TryGetProperty("MinZ", out var min) && window.TryGetProperty("MaxZ", out var max)
+            ? (min.GetDouble(), max.GetDouble()) : null;
     }
 
     private static ViewDimensionContextCaseOutline OutlineOf(ViewAssemblyOutlineResult outline) => new()
@@ -222,7 +242,8 @@ internal sealed class ViewDimensionContextCase
         RequestedIds = outline.RequestedIds.ToList(),
         NotVisibleRequestedIds = outline.NotVisibleRequestedIds.ToList(),
         OutsideDepthModelIds = outline.OutsideDepthModelIds.ToList(),
-        UnresolvedDepthModelIds = outline.UnresolvedDepthModelIds.ToList()
+        UnresolvedDepthModelIds = outline.UnresolvedDepthModelIds.ToList(),
+        DepthMin = outline.DepthRange?.Min, DepthMax = outline.DepthRange?.Max
     };
 
     private static ViewDimensionContextCasePart Part(PartRoleInView part) => new()
