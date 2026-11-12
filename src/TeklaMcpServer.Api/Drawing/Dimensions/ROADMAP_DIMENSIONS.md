@@ -536,8 +536,9 @@ filter scope has its own ID while cached; refresh or a drawing/view switch
 invalidates these IDs. Contacts, bolts, new geometry kinds and automatic point
 choice remain later stages.
 
-Merging by tolerance (the Tekla rule dialog defaults its alignment tolerance to
-50 mm; see the source below) is not enabled automatically: it can glue different supports together. The tolerance is
+Merging by tolerance (the Tekla rule dialog defaults its combining tolerance to
+50 mm: the largest distance at which objects count as lying on one line for
+"Combine on one line"; see the source below) is not enabled automatically: it can glue different supports together. The tolerance is
 discussed and checked separately.
 
 Tekla's own dimensioning rules group points by object category (documented at
@@ -546,8 +547,8 @@ The project owner's observation is that this works poorly on complex
 assemblies; that is an observation, not a documented limit, so the rules are not
 copied for point choice. Only the mechanical parts are taken, as documented
 there: line order (the first rule is placed closest to the part), the
-alignment tolerance (default 50 mm), the minimum dimension length, grouping by
-side.
+combining tolerance (default 50 mm; corrected 2026-11-12, it was called an
+alignment tolerance here), the minimum dimension length, grouping by side.
 
 #### 4a, second stage: chain preview (implemented, read-only)
 
