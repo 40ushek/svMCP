@@ -173,6 +173,31 @@ Work order:
    5. Section D is refused whole because one part sits on the depth boundary.
    6. `delete_dimensions_batch` timed out at 30 s on 90 dimensions (57 deleted).
 
+   **Local chains (source, 2026-11-12).** Item 1 of the M.46 list above, after the
+   user looked at the four hand-placed chains and agreed that complex assemblies
+   need them. `LocalPartDimensionRule` gives a straight secondary part a short
+   chain across the main part, placed next to the part:
+   - an edge within 2 view units of a main-part level (the across coordinates of
+     the main solid's vertices: flange faces, outer edges) stands on that face,
+     and the part is measured from it: a rib 199.3 from the flange, a cover
+     plate 30 from the edge;
+   - a part touching no level across the chain is closed on both outer edges of
+     the main part: a gusset 400 / 15 / 385;
+   - a part fitted between two levels gets nothing;
+   - parts whose ranges along the main part overlap share one chain (a gusset and
+     the rib on it: 400 / 15 / 200.2 / 184.8), each kind separately;
+   - the same chain is not repeated within 30 mm on paper along the main part
+     (a pair of ribs).
+   End parts and tilted parts are left to their own rules. The preview adds a row
+   `Local` with keys `Local-<partId>`; the batch writes such a chain with its own
+   points, offset vector and distance, as it does an inclined one. The line
+   stands the default paper gap past the part's far end; nothing checks what it
+   lands on. On the saved views the rule reproduces the engineer's local
+   dimensions on the M.46 front view (30 three times, 400 / 15 / 385,
+   400 / 15 / 200.2 / 184.8, 199.3 three times) and 85 / 10 / 95 at both gussets
+   of M.53. Not covered: gussets with chamfered corners in plan (tilted edges, so
+   no box) and the engineer's 133.2 / 300 / 133.2 against the flange edges.
+
    **Observation, not a task (user, 2026-11-12, M.53 top view).** The chain points
    on rib P/1283 (3978 in the upper chain, the 223 point in the lower one) are
    doubtful: on this view the rib stands at an angle and is hidden under the

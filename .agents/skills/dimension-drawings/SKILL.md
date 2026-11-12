@@ -46,6 +46,9 @@ rest of this file explains the reasons and covers every other request.
      compare with the numbers in a batch answer: there `segments` are running
      totals from the first point (preview `[70,160]` comes back as `[160,230]`);
    - take every chain of the `Inclined` row, except a mirror repeat as above;
+   - take every chain of the `Local` row, except a mirror repeat as above. These
+     are short chains next to single parts, across the main part (a gusset
+     400 / 15 / 385, a rib 199.3 from its flange, a cover plate 30);
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error;
    - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,
@@ -187,6 +190,12 @@ Keep one compact plan, not repeated prose copies:
 forward its ordered `pointIds`. Do not replace their coordinates with bbox, vertices, axes or
 contacts. Selecting a prepared chain and its dimension type is the normal
 decision boundary; fixing point selection belongs in the preview rules.
+
+**Local chains:** a steel whole-view preview can add a row `Local` with keys
+`Local-<partId>`: a short chain across the main part next to one part or a group
+of parts at one place. Like an inclined chain it carries its own points, offset
+vector and `distance`; reference it by key, override `distance` if the line
+collides with something, never `paperGapMm`.
 
 **Inclined chains:** a steel whole-view preview can add a row `Inclined` with
 keys `Inclined-<partId>`: a chain along a tilted part (a head plate on a sloped

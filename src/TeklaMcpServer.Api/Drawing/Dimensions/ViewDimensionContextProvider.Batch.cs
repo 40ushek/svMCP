@@ -258,10 +258,11 @@ public sealed partial class ViewDimensionContextProvider
             if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
                 throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
-            if (selected.TryGetProperty("kind", out var kind) && kind.GetString() == InclinedPartDimensionRule.Kind)
+            // An inclined or a local chain carries its own points, offset vector and distance.
+            if (selected.TryGetProperty("points", out _) && selected.TryGetProperty("distance", out _))
             {
                 if (chain.PaperGapMm.HasValue)
-                    throw new ArgumentException($"Preview chain '{chain.Preview}' is inclined: give distance, not paperGapMm");
+                    throw new ArgumentException($"Preview chain '{chain.Preview}' carries its own offset: give distance, not paperGapMm");
                 return new BatchDimensionChain {
                     Key = string.IsNullOrWhiteSpace(chain.Key) ? chain.Preview : chain.Key,
                     Direction = selected.GetProperty("direction").GetString()!,

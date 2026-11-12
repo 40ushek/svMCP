@@ -34,6 +34,12 @@ public static class DimensionPlacementSettings
     /// </summary>
     public const double MinimumChainSegmentPaperMm = 1.0;
 
+    /// <summary>
+    /// A local chain equal to the one next to a neighbouring part is not repeated when the two
+    /// parts are closer than this on paper.
+    /// </summary>
+    public const double LocalChainRepeatGapPaperMm = 30.0;
+
     /// <summary>The steel chain's shortest kept segment in view units at a view scale.</summary>
     public static double MinimumSteelChainSegment(double viewScale) =>
         System.Math.Max(MinimumChainSegmentViewUnits,

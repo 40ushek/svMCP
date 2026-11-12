@@ -278,6 +278,11 @@ public sealed class ViewDimensionContext
                 result["chainPreview"] = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().Concat([new {
                     side = InclinedSide, chains = InclinedChains().Select(chain => chain.Project()).ToArray()
                 }]).ToArray();
+            // Short chains next to single parts, across the main part; they too belong to no side.
+            if (!panel && !section && refusal == null && selected.Length == 4 && LocalChains().Count > 0)
+                result["chainPreview"] = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().Concat([new {
+                    side = LocalSide, chains = LocalChains().Select(chain => chain.Project()).ToArray()
+                }]).ToArray();
         }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
@@ -294,10 +299,11 @@ public sealed class ViewDimensionContext
     private IReadOnlyList<InclinedChain>? _inclinedChains;
 
     /// <summary>A chain along a tilted part, ready to be written: points and offset are final.</summary>
-    internal sealed class InclinedChain(int partId, double[] points, double[] segments, string direction, double distance)
+    internal sealed class InclinedChain(int partId, double[] points, double[] segments, string direction, double distance,
+        string side = InclinedSide, string kind = InclinedPartDimensionRule.Kind)
     {
         public int PartId { get; } = partId;
-        public string Key => InclinedSide + "-" + PartId.ToString(CultureInfo.InvariantCulture);
+        public string Key => side + "-" + PartId.ToString(CultureInfo.InvariantCulture);
         /// <summary>Flat view coordinates [x0,y0,0, x1,y1,0, ...], ordered along the part.</summary>
         public double[] Points { get; } = points;
         public double[] Segments { get; } = segments;
@@ -306,7 +312,7 @@ public sealed class ViewDimensionContext
         public double Distance { get; } = distance;
 
         public object Project() => new {
-            key = Key, direction = Direction, attributesFile = "standard", kind = InclinedPartDimensionRule.Kind,
+            key = Key, direction = Direction, attributesFile = "standard", kind,
             partId = PartId, segments = Segments, distance = Distance,
             points = Enumerable.Range(0, Points.Length / 3).Select(i => new[] { Points[i * 3], Points[i * 3 + 1] }).ToArray(),
             incomplete = false
@@ -329,6 +335,50 @@ public sealed class ViewDimensionContext
                 result.Segments.ToArray(),
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
                 DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"]);
+        }).ToArray();
+    }
+
+    internal const string LocalSide = "Local";
+    private IReadOnlyList<InclinedChain>? _localChains;
+
+    // Short chains across the main part next to single parts. Straight parts only; a tilted part
+    // has its own chain. The line stands the default paper gap past the part, toward its far end.
+    internal IReadOnlyList<InclinedChain> LocalChains()
+    {
+        if (_localChains != null) return _localChains;
+        if (!_complete || _mainPartIds.Length != 1 || _mainPartUnresolvedIds.Length > 0) return _localChains = [];
+        var mainId = _mainPartIds[0];
+        var inclined = InclinedChains().Select(chain => chain.PartId).ToArray();
+        (double MinX, double MaxX, double MinY, double MaxY)? Box(int id, bool straightOnly)
+        {
+            var shapes = _group.Shapes.Where(shape => shape.ModelId == id && !shape.IsHole
+                && shape.Shape.Kind == SolidContacts.PlanarShapeKind.Polygon).ToArray();
+            if (shapes.Length == 0) return null;
+            var points = shapes.SelectMany(shape => shape.Shape.Points).ToArray();
+            if (straightOnly && shapes.Any(shape => Enumerable.Range(0, shape.Shape.Points.Count).Any(i => {
+                    var a = shape.Shape.Points[i];
+                    var b = shape.Shape.Points[(i + 1) % shape.Shape.Points.Count];
+                    return Math.Abs(a.X - b.X) > 0.01 && Math.Abs(a.Y - b.Y) > 0.01;
+                }))) return null;
+            return (points.Min(p => p.X), points.Max(p => p.X), points.Min(p => p.Y), points.Max(p => p.Y));
+        }
+        var solid = GetPartSolidGeometrySnapshot(mainId);
+        if (Box(mainId, straightOnly: false) is not { } main || solid == null) return _localChains = [];
+        double[] Levels(int axis) => solid.Solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
+            .Select(vertex => Math.Round(vertex.Point[axis], 2)).Distinct().OrderBy(value => value).ToArray();
+        var parts = _includedModelIds.Where(id => id != mainId && !inclined.Contains(id))
+            .Select(id => (Id: id, Box: Box(id, straightOnly: true))).Where(part => part.Box.HasValue)
+            .ToDictionary(part => part.Id, part => part.Box!.Value);
+        var evaluation = new DimensionRuleSet(new LocalPartDimensionRule(new LocalPartDimensionSettings(
+                repeatGapViewUnits: DimensionPlacementSettings.LocalChainRepeatGapPaperMm * Scale)))
+            .Calculate(new DimensionRuleContext([], null, new LocalPartDimensionInput(main, Levels(0), Levels(1), parts)));
+        return _localChains = evaluation.Results.Select(result => {
+            var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
+            return new InclinedChain((int)result.Evidence["partId"],
+                result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(), result.Segments.ToArray(),
+                string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
+                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["baseOffset"],
+                LocalSide, LocalPartDimensionRule.Kind);
         }).ToArray();
     }
 
