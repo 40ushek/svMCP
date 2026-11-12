@@ -268,9 +268,15 @@ public sealed class ViewDimensionContext
                     : (refusal != null
                     ? section ? SectionDimensionChainPreview.Refused(refusal).Chains : DimensionChainPreview.Refused(side, refusal)
                     : section ? sectionPlans![side].Chains : DimensionChainPreview.Build(GetPanelDimensionPointCatalog(), side,
-                        _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits))
+                        _mainPartIds, DimensionPlacementSettings.MinimumChainSegmentViewUnits,
+                        inclinedPartIds: InclinedChains().Select(chain => chain.PartId).ToArray()))
                     .Select(chain => DimensionChainPreview.Short(chain, detailed, side.ToString())).ToArray()
             }).ToArray();
+            // Chains along tilted parts belong to no side; they come with a whole-view answer.
+            if (!panel && !section && refusal == null && selected.Length == 4 && InclinedChains().Count > 0)
+                result["chainPreview"] = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().Concat([new {
+                    side = InclinedSide, chains = InclinedChains().Select(chain => chain.Project()).ToArray()
+                }]).ToArray();
         }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
@@ -281,6 +287,48 @@ public sealed class ViewDimensionContext
             }).ToArray();
         result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
         return Freeze(result, display: true);
+    }
+
+    internal const string InclinedSide = "Inclined";
+    private IReadOnlyList<InclinedChain>? _inclinedChains;
+
+    /// <summary>A chain along a tilted part, ready to be written: points and offset are final.</summary>
+    internal sealed class InclinedChain(int partId, double[] points, double[] segments, string direction, double distance)
+    {
+        public int PartId { get; } = partId;
+        public string Key => InclinedSide + "-" + PartId.ToString(CultureInfo.InvariantCulture);
+        /// <summary>Flat view coordinates [x0,y0,0, x1,y1,0, ...], ordered along the part.</summary>
+        public double[] Points { get; } = points;
+        public double[] Segments { get; } = segments;
+        /// <summary>The offset direction as a 'dx,dy,dz' vector: from the points toward the line.</summary>
+        public string Direction { get; } = direction;
+        public double Distance { get; } = distance;
+
+        public object Project() => new {
+            key = Key, direction = Direction, attributesFile = "standard", kind = InclinedPartDimensionRule.Kind,
+            partId = PartId, segments = Segments, distance = Distance,
+            points = Enumerable.Range(0, Points.Length / 3).Select(i => new[] { Points[i * 3], Points[i * 3 + 1] }).ToArray(),
+            incomplete = false
+        };
+    }
+
+    // On a view with one resolved main part: the chains along its tilted parts. The offset puts the
+    // line the default paper gap beyond the chain point farthest toward it.
+    internal IReadOnlyList<InclinedChain> InclinedChains()
+    {
+        if (_inclinedChains != null) return _inclinedChains;
+        if (!_complete || _mainPartIds.Length != 1 || _mainPartUnresolvedIds.Length > 0) return _inclinedChains = [];
+        var evaluation = new DimensionRuleSet(new InclinedPartDimensionRule(new InclinedPartDimensionSettings(
+                minimumSegmentViewUnits: DimensionPlacementSettings.MinimumChainSegmentViewUnits)))
+            .Calculate(new DimensionRuleContext([], null, InclinedPartDimensionInput.FromGroup(_group, _mainPartIds[0])));
+        return _inclinedChains = evaluation.Results.Select(result => {
+            var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
+            return new InclinedChain((int)result.Evidence["partId"],
+                result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(),
+                result.Segments.ToArray(),
+                string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
+                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"]);
+        }).ToArray();
     }
 
     // Parts lying in the view plane, or nearly: the part's own X and Y axes both lie in it.

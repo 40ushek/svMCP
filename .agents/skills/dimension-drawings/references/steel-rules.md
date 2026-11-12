@@ -157,7 +157,14 @@ anchor does. Geometry verification cannot supply new chain coordinates.
 
 ## Section/end-view exception
 
-A `SectionView` or `EndView` may be dimensioned only when all of the following are true:
+**Prepared chains first.** The preview now offers chains on section and end views
+(one per axis; an end plate and a plate seen face-on are located by both edges).
+In a standard run they are placed as they come and reported as provisional, as
+`SKILL.md` says: the visual gate below is then the user's look at the sheet, not a
+condition for placing. The gate still applies in full to any chain built by hand
+from candidates, and before a section chain is reported as verified.
+
+A `SectionView` or `EndView` may be dimensioned by hand only when all of the following are true:
 
 1. `get_structural_chain_positions <viewId>` returns `isComplete=true` with no issues.
 2. Every retained candidate on each side being created/recreated agrees visually
@@ -188,8 +195,8 @@ retained point.
 - a chain built from explicit point IDs needs secondary-part internal dimensions and
   `Internal` is unstated, or it is `Necessary` without a `recognizableDistance`;
 - a bolt dimension is required;
-- a `SectionView` or `EndView` must be dimensioned but does not meet every condition in
-  **Section/end-view exception**;
+- a `SectionView` or `EndView` needs a chain the preview does not offer, and it does not
+  meet every condition in **Section/end-view exception**;
 - a fresh `RelativeAndAbsolute` chain is needed and no attributes file producing that type
   has been confirmed - ask the operator for the file name, or limit the run to recreating
   chains that already carry the type.

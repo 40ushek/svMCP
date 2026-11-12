@@ -102,6 +102,28 @@ Work order:
    plate, and only 1409 changes, to 80 / 30 / 100 / 30. M.81 as proposed before
    this change is on the sheet for the user's edits; other remarks on it are open.
 
+   **Inclined parts (source, 2026-11-12; not deployed).** On the M.81 front view
+   the tilted head plate got the horizontal chain 1.6 / 83 / 153.6 / 6.4:
+   projections that cannot be measured on the part. The user placed 238 / 8 along
+   the plate instead (plate ends on its outer face, then the column corner that
+   reaches past it) and asked for a rule. `InclinedPartDimensionRule` is the first
+   rule with a free direction: a part drawn as one polygon whose long edge is at
+   least 1 degree off both view axes and whose other edges run along it or square
+   to it gets a chain along itself. Its points are the part's two ends and, per
+   end, the main-part point within the part's thickness that reaches past it by
+   at least the minimum segment; if the main part reaches past neither end, its
+   limits inside the part. The line goes to the side away from the main part.
+   The preview adds a row `Inclined` with keys `Inclined-<partId>`; such a chain
+   carries final points, an offset vector and a distance (default paper gap plus
+   the chain's span across the part), and the batch writes it as it is. A tilted
+   end part is left out of the axis-aligned chain across the main part, which then
+   says so. The saved M.81 view replays as 237.881 / 8 on the user's three points;
+   no other saved view changes. Limits: steel non-section views with one main
+   part; the offset base Tekla uses on a free direction is not verified; a repeat
+   batch does not recognise an inclined chain already on the sheet; `paperGapMm`
+   is refused for it; the chain along the column still projects the plate
+   (8.9 / 14.9 at the top).
+
    **Part anchor option (source, 2026-11-12; not deployed, not exposed).** The
    user noted that the front-view chain takes every welded part by its left
    face and asked for the choice Tekla's rules give, on horizontal and vertical

@@ -62,7 +62,7 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
             input.MainPartIds, line, all, main, catalog.LinePoints(Opposite(settings.Side)));
         var result = alongX == mainAlongX
             ? AlongMain(context, calculation)
-            : AcrossMain(context, all, main, mainAlongX, calculation);
+            : AcrossMain(context, all, main, mainAlongX, calculation, input.InclinedPartIds);
         return new DimensionRuleEvaluation([result]);
     }
 
@@ -102,7 +102,8 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
     }
 
     private DimensionRuleResult AcrossMain(DimensionRuleContext context, IReadOnlyList<DimensionPoint> all,
-        IReadOnlyList<DimensionPoint> main, bool mainAlongX, CalculationContext calculation)
+        IReadOnlyList<DimensionPoint> main, bool mainAlongX, CalculationContext calculation,
+        IReadOnlyCollection<int> inclinedPartIds)
     {
         double MainAxis(DimensionPoint point) => mainAlongX ? point.X : point.Y;
         var mainLow = main.Min(MainAxis);
@@ -118,7 +119,11 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
 
         var partIds = calculation.Line.SelectMany(calculation.Parts)
             .Where(id => !calculation.MainIds.Contains(id)).Distinct().ToArray();
-        var endParts = partIds.Where(Sticks).ToArray();
+        var sticking = partIds.Where(Sticks).ToArray();
+        // A tilted end part is located along itself; its projection on this axis says nothing.
+        var endParts = sticking.Where(id => !inclinedPartIds.Contains(id)).ToArray();
+        if (endParts.Length == 0 && sticking.Length > 0)
+            return Empty("the end part on this side is tilted; it is located by the inclined chain", partIds);
         if (settings.EndPartAnchor == DimensionPartAnchor.Center)
             return Empty("locating parts by their center is not implemented: the center is not a captured part point");
         var picks = new List<Pick>();

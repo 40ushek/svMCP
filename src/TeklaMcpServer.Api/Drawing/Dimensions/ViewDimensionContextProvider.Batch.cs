@@ -37,6 +37,9 @@ public sealed class BatchDimensionChain
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? AttributesFile { get; set; }
     public string? DimensionType { get; set; }
+    // Final view coordinates of a preview chain that carries its own points (an inclined chain).
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal double[]? ResolvedPoints { get; set; }
 }
 
 public sealed class BatchDimensionItemResult
@@ -248,6 +251,20 @@ public sealed partial class ViewDimensionContextProvider
             if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
                 throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
+            if (selected.TryGetProperty("kind", out var kind) && kind.GetString() == InclinedPartDimensionRule.Kind)
+            {
+                if (chain.PaperGapMm.HasValue)
+                    throw new ArgumentException($"Preview chain '{chain.Preview}' is inclined: give distance, not paperGapMm");
+                return new BatchDimensionChain {
+                    Key = string.IsNullOrWhiteSpace(chain.Key) ? chain.Preview : chain.Key,
+                    Direction = selected.GetProperty("direction").GetString()!,
+                    AttributesFile = chain.AttributesFile ?? selected.GetProperty("attributesFile").GetString()!,
+                    Distance = chain.Distance ?? selected.GetProperty("distance").GetDouble(),
+                    DimensionType = chain.DimensionType,
+                    ResolvedPoints = selected.GetProperty("points").EnumerateArray()
+                        .SelectMany(point => new[] { point[0].GetDouble(), point[1].GetDouble(), 0d }).ToArray()
+                };
+            }
             var ids = selected.GetProperty("pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
             if (ids.Length < 2)
                 throw new ArgumentException($"Preview chain '{chain.Preview}' needs at least two pointIds" +
@@ -302,7 +319,7 @@ public sealed partial class ViewDimensionContextProvider
 
     private PreparedBatchChain PrepareBatchChain(CreateDimensionsBatchRequest batch, BatchDimensionChain chain, int row)
     {
-        if (chain.BoltProposal == null && (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace)))
+        if (chain.BoltProposal == null && chain.ResolvedPoints == null && (chain.PointIds is not { Length: >= 2 } || chain.PointIds.Any(string.IsNullOrWhiteSpace)))
             throw new ArgumentException($"Chain '{chain.Key}' needs at least two pointIds");
         if (string.IsNullOrWhiteSpace(chain.Direction))
             throw new ArgumentException($"Chain '{chain.Key}' needs a direction");
@@ -331,6 +348,12 @@ public sealed partial class ViewDimensionContextProvider
             var placement = chain.Distance.HasValue ? null : context.Calculate(chain.Direction, request.Points,
                 DimensionPlacementSettings.ResolvePaperGapMm(row, chain.PaperGapMm));
             write = new PreparedDimensionWrite(request, chain.Distance ?? placement!.Distance, placement);
+        }
+        else if (chain.ResolvedPoints != null)
+        {
+            request.ContextId = string.Empty;
+            request.Points = chain.ResolvedPoints;
+            write = new PreparedDimensionWrite(request, chain.Distance!.Value, null);
         }
         else write = Prepare(request);
         var error = DimensionWriteProtocol.Validate(request.Points, write.Distance);

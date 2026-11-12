@@ -9,6 +9,58 @@ Use only for `AssemblyDrawing`; confirm the active drawing and target view befor
 writing. Code/skill review or editing is not a drawing-placement run. Do not
 change code, rules or roadmaps during placement without a separate request.
 
+## Standard run: steel assembly, whole drawing
+
+Follow these steps in order for "place the dimensions on this drawing" on a steel
+assembly. The code proposes the chains; your job is to pick keys, not points. The
+rest of this file explains the reasons and covers every other request.
+
+1. `get_drawing_context`: the drawing must be an `AssemblyDrawing`. Then
+   `get_drawing_views`: note each view's id and type. Skip `_3DView`.
+2. `get_drawing_dimensions` with `compact=true`. If dimensions already exist, stop
+   and ask whether to delete them, keep them, or add beside them. Never delete
+   without the user's word.
+3. Take one view, finish it, then take the next. A `contextId` dies as soon as
+   another view is read. Order: front view, then sections and end views, then the
+   other projections (top, bottom, back).
+4. For the view call `get_view_dimension_context` with `viewId` and
+   `ruleSet="steel"`; leave `questions` at its default. In the answer every chain
+   has a `key`, `segments` and `incomplete`.
+5. Choose the keys to place:
+   - take every chain with `incomplete=false`;
+   - drop a chain whose `segments` equal those of a chain you already keep on this
+     view: of `Top`/`Bottom` keep `Bottom`, of `Left`/`Right` keep `Left`;
+   - drop a chain whose `segments` equal those of a chain already placed on an
+     earlier view of this drawing (a back view repeats the front view, a bottom
+     view repeats the top view, an overall is needed once on the sheet);
+   - take every chain of the `Inclined` row;
+   - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
+     says another chain already covers it. That is normal, not an error.
+6. Call `create_dimensions_batch` once for the view with the same `viewId`,
+   `contextId`, `ruleSet="steel"` and `chainsJson` such as
+   `[{"preview":"Bottom-location"},{"preview":"Bottom-overall","attributesFile":"standard"}]`.
+   Send keys only: no `pointIds`, no `direction`, no `paperGapMm`.
+   - If the call fails with `Dimension attributes 'overall' could not be loaded`,
+     nothing was created: add `"attributesFile":"standard"` to the overall entries
+     and send the same call again.
+7. Read the batch answer. `created` and `retained` are fine. For `merged`,
+   `uncertain`, `failed` or `skipped`, stop on that view and report the key, the
+   status and the error text; do not retry blindly.
+8. After the last view, report per view: the keys placed with their segments, the
+   keys dropped and why, and anything that failed. Say plainly that the chains on
+   section and end views are provisional (the code does not clip parts to the
+   section depth) and that line positions were not checked by eye.
+
+Do not, in a standard run: ask for the steel settings (`Internal`,
+`recognizableDistance`), request points or contacts, read part geometry, draw debug
+overlays, or build a chain from coordinates. If the proposed chains look wrong,
+place nothing on that view and report what looks wrong: the fix belongs in the
+code's rules.
+
+Where these defaults come from: beam M.505 and column M.81, placed this way on
+2026-11-12 and accepted by the user. Two drawings, one plant; a different subject
+may need the judgement described below.
+
 ## Scope and mode
 
 - **Review / explain:** read only; no dimensions or debug objects.
@@ -105,6 +157,14 @@ forward its ordered `pointIds`. Do not replace their coordinates with bbox, vert
 contacts. Selecting a prepared chain and its dimension type is the normal
 decision boundary; fixing point selection belongs in the preview rules.
 
+**Inclined chains:** a steel whole-view preview can add a row `Inclined` with
+keys `Inclined-<partId>`: a chain along a tilted part (a head plate on a sloped
+cut), with its own points, offset vector and `distance`. Reference it like any
+other prepared chain; override `distance` if needed, never `paperGapMm`. The
+axis-aligned chain across the main part then leaves that part out and says so.
+A repeated batch does not recognise an inclined chain already on the sheet:
+check existing dimensions first.
+
 **Reference is not closure.** The steel main part or timber frame is what
 locates the subject. For longitudinal/main-frame chains, use its real ends as
 the rule set requires. A transverse steel plate-location chain can close on
@@ -130,8 +190,9 @@ for the same pair/snapshot. `selectionComplete=false` proves no absence.
 A contact can justify an existing candidate, never demand/add a coordinate.
 For timber's reduction to one position, use the exact rule 4b gate.
 
-**Visual checks:** no debug lines by default. Section/end views still require
-the visual confirmation in steel-rules. Use the current matching view image;
+**Visual checks:** no debug lines by default. Prepared section/end-view chains
+are placed as provisional and reported so; a chain built by hand there still
+requires the visual confirmation in steel-rules. Use the current matching view image;
 an overlay is a drawing mutation, not a read. Only create one if genuinely
 needed and authorized; track and remove only this run's own overlay objects.
 Never clear unrelated/pre-existing annotations. Avoid a fixed-name overlay
@@ -198,7 +259,8 @@ the point is valid or invalid.
 ## Progress log
 
 Only actual drawing review/placement runs need bridge logging; skill/code-only
-work does not. Before the first bridge read:
+work does not. In a standard run the log is optional: skip it when you cannot run
+the bridge executable directly, and say so in the report. Before the first bridge read:
 
 ```powershell
 TeklaBridge.exe log_skill_event start dimension-drawings <runId>

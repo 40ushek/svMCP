@@ -528,7 +528,7 @@ public sealed class DimensionChainPreviewTests
     private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>
         Poly(id, (x0, y0), (x1, y0), (x1, y1), (x0, y1));
 
-    private static PartSolidGeometryInViewResult Poly(int id, params (double, double)[] points)
+    internal static PartSolidGeometryInViewResult Poly(int id, params (double, double)[] points)
     {
         var geometry = new PartSolidGeometryInViewResult { Success = true, ModelId = id, ViewId = 7 };
         for (var i = 0; i < points.Length; i++)
