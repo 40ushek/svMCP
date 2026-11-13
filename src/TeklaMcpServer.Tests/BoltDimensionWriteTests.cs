@@ -3,6 +3,8 @@ using Xunit;
 
 namespace TeklaMcpServer.Tests;
 
+#pragma warning disable CS0618 // Tests of the obsolete boltProposal path.
+
 public sealed class BoltDimensionWriteTests
 {
     [Fact]
@@ -117,7 +119,7 @@ public sealed class BoltDimensionWriteTests
     private static ViewDimensionContext Context(bool outside = false)
     {
         var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", PartToBeBoltedId = 10,
-            FirstPosition = [10, 20, 0], SecondPosition = [70, 20, 0],
+            FirstPosition = [10, 20, 0], SecondPosition = [70, 20, 0], Axis = [0, 0, 1],
             Positions = [new() { Index = 5, Point = [10, 20, 0] }, new() { Index = 9, Point = [70, 20, 0] }] };
         var bolts = ViewBoltGeometrySnapshot.Capture(7, [10], id => new() {
             Success = true, ViewId = 7, PartId = id, BoltGroups = [group]

@@ -1,8 +1,8 @@
 # Bolt Chains Roadmap
 
-Created 2026-11-13. Status: a roadmap only - decisions agreed with the user, Tekla's
-original rules as the basis, and a work order. No code is written for it yet, and none
-is to be written until the user says so.
+Created 2026-11-13. Status: the first release (work order steps 1-5) is implemented
+on 2026-11-13 and read live on M.502; nothing was placed on a drawing yet. Open: the
+cold Haiku run (step 6), a live write of the `Bolt` row, and steps 7-10.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
 close to Tekla's own. The neighbours own the rest:
@@ -155,23 +155,26 @@ The plant's own choice of all these options exists as a file in the model folder
 
 ## Where the code is today
 
-- The view dimension context reads bolt groups with every bolt center and tests each
-  center against the view depth.
-- `boltChains` proposes steps between bolts, edge distances and one chain per part
-  (edge - bolts - edge), only for a rectangular group seen in plan and standing along
-  the view axes. In Tekla's words: *Internal* and *Edge distance*, as with `All`.
-- A group seen from the side is refused, not classified.
+- The bolt axis (normal of the group's own XY plane) is read with the centers, in view
+  coordinates, and kept in the view snapshot (`BoltGroupGeometry.Axis`). A case saved
+  before has no axis: its groups are `Unresolved` and give no chain.
+- Every group gets a class (`BoltGroupViewClassifier`): `Plan`, `Side`, `Skewed`,
+  `Unresolved`. The `bolts` and `boltChains` answers show it.
+- `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
+  orientation refusals are gone, the skewed-reference refusal stays.
+- `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
+  chains of the `Bolt` row in the chain preview. A key from it is written by the batch
+  like a `Local` key; a key marked not to create rejects the whole batch.
+- The skill places the `Bolt` row in the standard run; it takes no part in `repeats`.
 - No *Position* and no *Check* dimension is built.
-- A proposal reaches the drawing only when its name is passed explicitly. The standard
-  run of the dimension skill places no bolt chain.
 
 Live read on M.502, 2026-11-13 (read only, nothing placed):
 
 | View | Group | Answer |
 |---|---|---|
-| Bottom 1900 | 10126649, four bolts on part 10126565 | In plan. Part chains `35 - 90 - 35` and `30 - 230 - 30` |
-| Bottom 1900 | 10129801, two bolts on part 10129088 | Refused: `bolt-group reference direction has no stable XY projection` |
-| Section 2149 | 10126649 | Refused: `bolt centers span view depth; a face-on planar pattern is not established` |
+| Bottom 1900 | 10126649, four bolts on part 10126565 | `Plan`. Created: `35 - 90 - 35` (Top) and `30 - 230 - 30` (Right) |
+| Bottom 1900 | 10129801, two bolts on part 10129088 | `Side`. Edge chain refused: `axis ray aligns with a contour vertex` (under `All` no steps are offered) |
+| Section 2149 | 10126649 | `Side`. Edge chain refused (edge not confirmed); steps `230` created instead |
 
 ## Target
 
@@ -365,7 +368,7 @@ running dimensions from the member end was found; that stays with the plant's ru
 
 ## Work order
 
-No code until the user asks for it. When they do:
+Steps 1-5 done on 2026-11-13.
 
 1. The bolt axis: read the group's coordinate system where the centers are read, and
    keep the axis in the view snapshot. Check on known face-on, side-on and tilted
@@ -377,157 +380,15 @@ No code until the user asks for it. When they do:
 3. Chains for `Side` groups.
 4. The settings object with Tekla's names, and the decision step over the kinds that
    exist (internal, edge distance).
-5. The `Bolt` row in the chain preview; the skill places marked chains. Only after the
-   open acceptance of batch writes in the Dimensions roadmap is closed.
+5. The `Bolt` row in the chain preview; the skill places marked chains. Implemented
+   while the acceptance of batch writes in the Dimensions roadmap is still open: the
+   standard run already writes part chains through that batch, bolts add more.
 6. A cold Haiku run on M.502 and on the M.81 sections: result, time, tool calls.
 7. The *Position* kind, then the *Check* kind, then centered bolts.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
 10. Merging with part chains by Tekla's *Combine dimensions* modes: in the Chain
    Composition roadmap, not here.
-
-## Implementation plan (temporary)
-
-**Delete this section once it is implemented.** What stays after that: the decisions,
-Tekla's rules and the ideas above; the delivered state goes to the Dimensions roadmap
-and the Dimensions README.
-
-The plan follows what the code already does for `Local` and `Inclined` chains: a rule
-with its settings and input, a row in the chain preview, creation by key through the
-existing batch. No new write path, no new MCP tool and no new tool parameter.
-
-Decided by the user (2026-11-13):
-
-- **The explicit way stays for now, marked obsolete.** The `boltChains` question and the
-  `boltProposal` batch entries keep working beside the new `Bolt` row, but from slice C
-  on they are obsolete: `[Obsolete]` on their code entry points, the word "obsolete" in
-  the tool description, the README and the skill, each pointing to the `Bolt` row. They
-  are removed later, by a separate decision.
-- **A settings class from the start, no constants.** Every number and every choice for
-  bolts lives in `BoltChainSettings`, each with a default; the rule takes the settings
-  as input and holds no constants of its own, as `InclinedPartDimensionSettings` does
-  for inclined chains. A file and a window fill the same class later.
-
-### The path of the data
-
-| # | Step | Class | Change |
-|---|---|---|---|
-| 1 | Read from Tekla | `TeklaDrawingBoltGeometryApi` (exists) | Inside the scope where `BoltPositions` are read in view coordinates, also read `boltGroup.GetCoordinateSystem()` and keep the unit normal of its X and Y axes |
-| 2 | Group data | `BoltGroupGeometry` (exists) | New field `Axis`: three numbers in view coordinates; empty when it could not be read |
-| 3 | View snapshot | `ViewBoltGeometrySnapshot` (exists) | Carry `axis` in the frozen answer and in `Restore`, so saved view cases replay offline. A case saved before this has no axis: its groups are `Unresolved` |
-| 4 | Class | `BoltGroupViewClass`, `BoltGroupViewClassifier` (new, `Geometry/Bolts`) | Enum `Plan`, `Side`, `Skewed`, `Unresolved`; one pure function from the axis and a tolerance in degrees |
-| 5 | Chains | `BoltDimensionChainPreview`, `BoltPartChainPreview`, `BoltEdgeDistancePreview` (exist) | Replace the two orientation refusals with the class check. Keep the refusal `skewed bolt-group reference requires an explicit direction policy` and other unsupported-pattern checks. Supported `Side` groups use projected centers and merged coinciding points; rows follow the key contract above. Every proposal gains `viewClass` |
-| 6 | Settings | `BoltChainSettings` (new, `Dimensions/Settings`) | From Tekla, with its names and values: `MainPartInternal`, `SecondaryPartInternal` (`None`, `Necessary`, `Internal`, `All`). This project's own: `DimensionedProjections`, `ClassToleranceDegrees`. Defaults follow "First release decisions"; group merging and `GroupMergeDistance` come later |
-| 7 | Decision | `BoltChainRule : IDimensionRule`, `BoltChainInput` (new, `Dimensions/Rules`) | Input: the built chains with kind, class, part and part role. Output: every chain, marked to create or not, with the reason. Run through `DimensionRuleSet` like `LocalPartDimensionRule` |
-| 8 | Preview row | `ViewDimensionContext` (exists) | New `BoltChains()` beside `LocalChains()` and `InclinedChains()`; row `Bolt`; keys as in "What is offered, and under which key". A chain not to be created comes with `incomplete=true` and its reason. The view-frame check applies, as for `Local` |
-| 9 | Write | `ViewDimensionContextProvider` batch (exists) | Resolve a `Bolt` row key and enforce its refusal before any batch writes. `boltProposal` entries keep working and are marked obsolete |
-
-If any selected `Bolt` row key has `incomplete=true`, reject the whole batch before
-the first write, including a batch mixing bolt and part chains. Return the key and
-its refusal reason. An explicit distance does not override this check; having two
-or more points does not make a refused chain writable.
-
-The part role for step 7: main when the part is the main part of the view, secondary
-otherwise. The view context already knows its main part.
-
-**Saved cases and test fixtures:** missing axes intentionally give `Unresolved`;
-do not fall back to the old depth-spread heuristic to preserve old chain output.
-Keep old cases to test that refusal, and recapture the M.502 and M.81 bolt examples
-with axes for chain replay. Update synthetic fixtures that expect chains with their
-explicit, known axes; do not infer an axis from a single row or two bolt centers.
-Old cases remain readable, but their former bolt-chain output is not guaranteed.
-
-In step 8, exclude the `Bolt` row from `DimensionChainRepeats`: its current comparison
-uses segment lengths, not source bolt identities. This applies to every chain kind
-in the row, including a part chain with edge endpoints.
-
-### Slices, each one deployable
-
-| Slice | Steps | What changes for a user |
-|---|---|---|
-| A | 1-4 | The `bolts` and `boltChains` answers show the class of every group. Nothing else changes |
-| B | 5 | `boltChains` offers chains for `Side` groups instead of refusing them. Still by explicit choice only |
-| C | 6-9 and the skill | The `Bolt` row appears; the standard run places bolt chains. Known cost: bolt chains are left out of repeat suppression, so a bottom or back view repeats the bolt chains of the top or front view until suppression by source bolts is added |
-
-**Slice C waits for the batch acceptance.** The Dimensions roadmap keeps an open gate
-on batch writes: statuses that disagree with the drawing, partial success, a repeated
-batch, merged chains
-([next gate](ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02),
-"finish live acceptance of batch writes"). The standard run already writes part chains
-through that batch, so the risk is not new, but bolts add chains to every view. Slices
-A and B write nothing by themselves and do not wait.
-
-Deploy after each slice: the bridge and its two DLLs, as usual. The MCP server only
-when a tool description changes (slice C).
-
-### Tests
-
-- `BoltGroupViewClassifierTests` (new): axis along the view normal, in the view plane,
-  in between, missing; both inclusive tolerance boundaries, reversed axis direction,
-  invalid axes and invalid tolerances.
-- `BoltChainRuleTests` (new): each value of the two internal settings; a class switched
-  off; main and secondary part.
-- `ViewBoltGeometrySnapshotTests`: the axis survives freeze and restore; an old case
-  without it remains readable and gives `Unresolved` with no bolt chains. Recaptured
-  cases with axes replay their expected chains.
-- `BoltDimensionChainPreviewTests`, `BoltPartChainPreviewTests`: a `Side` group gets a
-  chain; a single row seen from the side is no longer `Plan`; unsupported skewed
-  reference directions remain refused. Collapsed projected rows preserve all source
-  indices and keep the same keys when the source order is reversed.
-- First-release groups and keys: groups on one part and side stay separate, have
-  distinct keys and contain no bolts from each other, even when close together.
-  With three groups at X=20/40, 100/120 and 200/220 and confirmed part edges, the
-  middle group retains an edge datum as well. Sharing an edge between chains is
-  allowed. Reversing group read order does not change their keys. `Internal` never
-  adds a span between groups. Test merged source IDs and the merge boundary only
-  when cluster merging is implemented later.
-- Section edges: an `All` chain on a section without a confirmed edge is refused.
-  Its steps-only replacement is created only with at least two distinct admissible
-  projected positions. A projection collapsed to one position creates no chain;
-  class, settings, depth and pattern refusals cannot be bypassed by the fallback.
-- Defaults and refusals: `All` for both part roles, `Plan` and `Side` enabled, the
-  configurable 1-degree class boundary, and no automatic edge chain from an
-  unverified section contour. Equal segment lengths in different bolt chains must
-  not cause repeat suppression.
-- `DimensionChainPreviewTests`: the `Bolt` row in the preview and its key written by
-  the batch, after the pattern of `PreviewAddsALocalRowAndTheBatchWritesItsChain`.
-  A refused `Bolt` key with two or more points rejects the entire batch before any
-  writes, including mixed part/bolt batches and requests with an explicit distance.
-
-Live expectations on M.502: bottom view 1900 - group 10126649 `Plan`, group 10129801
-`Side`; section 2149 - group 10126649 `Side`, its edge chain refused (edge not
-confirmed). Create its steps-only replacement only if the admissibility checks
-pass and at least two distinct projected positions remain; otherwise retain the
-refusal without creating a chain. Then the cold Haiku run.
-
-### What changes in the skill
-
-Update the canonical `.agents/skills/dimension-drawings/SKILL.md`.
-The files under `src/.claude/skills/dimension-drawings/` and
-`src/.codex/skills/dimension-drawings/` are adapters pointing to it; keep the
-instructions in the canonical file rather than duplicating them in the adapters:
-
-- The steps of the standard run stay as they are. Step 5 already says "every chain with
-  `incomplete=false` whose key is not in `repeats`", and that covers the `Bolt` row.
-- One new paragraph beside "Local chains" and "Inclined chains": the row `Bolt`, its
-  keys, "reference it by key"; a bolt chain with `incomplete=true` carries the reason
-  (class switched off, setting `None`, edge not confirmed). In the `Bolt` row
-  `incomplete=true` means "the rule decided not to create it", not missing points:
-  do not repair, extend or place such a chain by hand.
-- In "Do not, in a standard run" add: do not query `boltChains` and do not build bolt
-  chains by hand. Say that `boltChains` and `boltProposal` are obsolete and kept only
-  for placing one chosen bolt chain.
-
-In `references/steel-rules.md`:
-
-- Replace the statements that bolt dimensions cannot be planned at all (the "Bolts"
-  item and the two later mentions) with the delivered state.
-- Add a short "Bolts" section: the settings, their defaults and the three classes.
-
-In the description of `get_view_dimension_context`: name the `Bolt` row next to the
-other rows, and mark the `boltChains` question obsolete.
-
-Check the result the usual way: a cold Haiku run with only the task and the skill path.
 
 ## Open questions
 

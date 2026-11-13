@@ -109,7 +109,7 @@ public sealed class BoltPartChainPreviewTests
             boltGroups = points.Select((point, index) => new {
                 geometry = new BoltGroupGeometry {
                     ModelId = index + 100, Shape = "BoltArray", PartToBeBoltedId = partIds?[index] ?? 10,
-                    FirstPosition = [0, 0, 0], SecondPosition = [10, 0, 0],
+                    FirstPosition = [0, 0, 0], SecondPosition = [10, 0, 0], Axis = [0, 0, 1],
                     Positions = [new() { Index = 0, Point = point }]
                 },
                 restriction = new[] { new { index = 0, centerState = states?[index] ?? (outside && index == 3 ? "Outside" : "Inside") } }

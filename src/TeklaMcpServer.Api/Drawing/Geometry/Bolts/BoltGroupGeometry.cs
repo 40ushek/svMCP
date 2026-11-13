@@ -9,6 +9,8 @@ public sealed class BoltGroupGeometry
     public double BoltSize { get; set; }
     public double[] FirstPosition { get; set; } = [];
     public double[] SecondPosition { get; set; } = [];
+    /// <summary>Unit bolt axis (normal of the group's XY plane) in view coordinates; empty when it could not be read.</summary>
+    public double[] Axis { get; set; } = [];
     public double[] BboxMin { get; set; } = [];
     public double[] BboxMax { get; set; } = [];
     public int? PartToBeBoltedId { get; set; }

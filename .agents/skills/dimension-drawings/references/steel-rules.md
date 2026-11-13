@@ -218,10 +218,10 @@ anchor does. Geometry verification cannot supply new chain coordinates.
 
 ## Not covered
 
-- **Bolts.** `BoltArray` is not in the structural outline, so edge distances, spacing and
-  extreme-bolt checks cannot be planned at all. Tekla devotes a whole tab to them, and this
-  plant uses it: regularly spaced chains in plan views (`M.73`, `M.81`) sit exactly where a
-  bolted flange splice would be. Confirms the gap; does not close it.
+- **Bolt position and check dimensions.** Bolt steps and edge distances come in the `Bolt`
+  row (see "Bolts" below). Position dimensions (bolts to the reference line or the member
+  end), extreme-bolt checks, centered bolts, `Necessary` and groups skewed to the view are
+  not planned yet.
 - **Sections and end views.** Three separate findings now, not one guess.
   1. On the ten measured columns, most section views sit in the same small coordinate
      range as the base views; one per drawing carries a large, drawing-specific offset
@@ -244,6 +244,27 @@ anchor does. Geometry verification cannot supply new chain coordinates.
 - Trusses and braced frames as their own assembly (diagonals as part of this assembly's
   own geometry, not bolted on externally through gusset plates) remain unmeasured.
 
+## Bolts
+
+The `Bolt` row of the preview holds bolt chains chosen by Tekla-like settings
+(`BoltChainSettings`). Defaults: `All` for main and secondary parts; groups seen in plan
+and from the side are dimensioned; position, check and combining options are off.
+
+- **Class of a group**, from the angle between the bolt axis and the view normal
+  (tolerance 1 degree): `Plan` (axis points at the viewer), `Side` (axis lies in the view
+  plane), `Skewed` (neither) or `Unresolved` (axis not read). `Skewed` and `Unresolved`
+  groups are listed with their reason and not created. A `Side` group is measured only
+  across its bolt axis; bolts one behind another give one point.
+- **All**: one chain per group, part and axis, edge - bolts - edge, beside the nearer part
+  bound. A group joining the main part and a secondary part is dimensioned on the
+  secondary part. Groups are never merged, and two chains may share a part edge.
+- **Internal**: the steps of each projected row of a group; no part edges.
+- **Sections and end views**: a part edge is not confirmed there (the section contour is
+  not read), so the edge chain is refused and the steps of the group are placed instead,
+  when there are at least two distinct points.
+- Bolt chains take no part in `repeats`: on a bottom or back view they repeat the bolt
+  chains of the top or front view.
+
 ## Section/end-view exception
 
 **Prepared chains first.** The preview now offers chains on section and end views
@@ -263,8 +284,8 @@ A `SectionView` or `EndView` may be dimensioned by hand only when all of the fol
    the image is insufficient and temporary drawing marks are authorized; remove
    only the overlay objects created by this run after the check. No usable visual
    evidence means this gate remains unresolved, not automatically passed.
-3. The plan does not require bolt dimensions. Bolt arrays are still outside the structural
-   outline contract.
+3. The plan does not require bolt dimensions beyond the `Bolt` row. Bolt arrays are still
+   outside the structural outline contract.
 4. The final response says that this was the section/end-view exception, names the view
    type, and records the visual verification.
 
@@ -283,7 +304,7 @@ retained point.
 - no single resolvable main part, or any `mainPartUnresolvedModelIds`;
 - a chain built from explicit point IDs needs secondary-part internal dimensions and
   `Internal` is unstated, or it is `Necessary` without a `recognizableDistance`;
-- a bolt dimension is required;
+- a bolt dimension is required that the `Bolt` row does not offer;
 - a `SectionView` or `EndView` needs a chain the preview does not offer, and it does not
   meet every condition in **Section/end-view exception**;
 - a fresh `RelativeAndAbsolute` chain is needed and no attributes file producing that type

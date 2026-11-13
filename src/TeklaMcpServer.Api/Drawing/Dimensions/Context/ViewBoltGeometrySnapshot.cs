@@ -15,7 +15,7 @@ internal sealed class ViewBoltGeometrySnapshot
     internal static ViewBoltGeometrySnapshot Capture(int viewId, IEnumerable<int> partIds,
         Func<int, PartBoltGeometryInViewResult> read, DepthBox? restrictionBox,
         Func<double[], double[]> toRestrictionCoordinates, bool partSelectionComplete,
-        string? restrictionError = null)
+        string? restrictionError = null, BoltChainSettings? boltSettings = null)
     {
         var requested = partIds.Distinct().OrderBy(id => id).ToArray();
         var groups = new SortedDictionary<int, BoltGroupGeometry>();
@@ -34,7 +34,7 @@ internal sealed class ViewBoltGeometrySnapshot
                 {
                     if (group.ModelId <= 0 || group.Positions.Count == 0
                         || group.Positions.Any(position => !ValidPoint(position.Point))
-                        || new[] { group.FirstPosition, group.SecondPosition, group.BboxMin, group.BboxMax }
+                        || new[] { group.FirstPosition, group.SecondPosition, group.BboxMin, group.BboxMax, group.Axis }
                             .SelectMany(point => point).Any(value => double.IsNaN(value) || double.IsInfinity(value)))
                         throw new InvalidOperationException($"Bolt group {group.ModelId} has invalid or missing geometry");
                     if (!groups.ContainsKey(group.ModelId)) groups.Add(group.ModelId, group);
@@ -43,8 +43,10 @@ internal sealed class ViewBoltGeometrySnapshot
             catch (Exception ex) { unread.Add(new { partId, reason = ex.Message }); }
         }
 
+        var classTolerance = (boltSettings ?? new BoltChainSettings()).ClassToleranceDegrees;
         var rows = groups.Values.Select(group => new {
             geometry = group,
+            viewClass = BoltGroupViewClassifier.Classify(group.Axis, classTolerance).ToString(),
             restriction = group.Positions.Select(position => new {
                 index = position.Index,
                 centerState = ClassifyCenter(position.Point, restrictionBox, toRestrictionCoordinates)

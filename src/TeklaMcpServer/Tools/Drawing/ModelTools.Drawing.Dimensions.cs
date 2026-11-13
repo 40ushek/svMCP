@@ -356,7 +356,7 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create 1–32 reviewed chains from one context. Entries use preview, pointIds plus direction, or boltProposal plus partId and direction. Bolt proposals require explicit selection; visibility and section clipping remain unverified. Preview entries require the read ruleSet and chainView. All entries are validated before writes; returns verified results and final dimensions.")]
+    [McpServerTool, Description("Create 1–32 reviewed chains from one context. Entries use preview, pointIds plus direction, or boltProposal plus partId and direction. Bolt chains come by preview key from the Bolt row; boltProposal is obsolete and kept only for placing one chosen bolt chain. A preview key the rule marked not to create rejects the whole batch. Preview entries require the read ruleSet and chainView. All entries are validated before writes; returns verified results and final dimensions.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain or boltChains). All pointIds must belong to this context.")] string contextId,

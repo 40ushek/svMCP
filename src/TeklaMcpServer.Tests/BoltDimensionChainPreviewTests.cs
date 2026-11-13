@@ -56,7 +56,8 @@ public sealed class BoltDimensionChainPreviewTests
 
     [Theory]
     [InlineData("skewed", "skewed")]
-    [InlineData("depth", "view depth")]
+    [InlineData("no-axis", "axis was not read")]
+    [InlineData("skewed-to-view", "skewed to the view")]
     [InlineData("staggered", "staggered")]
     [InlineData("missing-cell", "incomplete")]
     [InlineData("circle", "BoltArray")]
@@ -67,7 +68,8 @@ public sealed class BoltDimensionChainPreviewTests
         switch (mode)
         {
             case "skewed": group.SecondPosition = [70, 80, 0]; break;
-            case "depth": group.Positions[0].Point[2] = 30; break;
+            case "no-axis": group.Axis = []; break;
+            case "skewed-to-view": group.Axis = [0, Math.Sin(Math.PI / 6), Math.Cos(Math.PI / 6)]; break;
             case "staggered": group.Positions[2].Point[0] += 15; break;
             case "missing-cell": group.Positions.RemoveAt(3); break;
             case "circle": group.Shape = "BoltCircle"; break;
@@ -79,6 +81,60 @@ public sealed class BoltDimensionChainPreviewTests
         Assert.Empty(answer.GetProperty("chains").EnumerateArray());
         Assert.All(answer.GetProperty("points").EnumerateArray(), point =>
             Assert.Equal("Blocked", point.GetProperty("state").GetString()));
+    }
+
+    [Fact]
+    public void SideGroupIsProjectedAndKeepsEverySourceIndex()
+    {
+        var answer = Preview(Side()).GetProperty("groups")[0];
+        Assert.Equal("Side", answer.GetProperty("viewClass").GetString());
+        Assert.Equal("Candidate", answer.GetProperty("status").GetString());
+        var chain = Assert.Single(answer.GetProperty("chains").EnumerateArray());
+        Assert.Equal("bolt-42-X-0", chain.GetProperty("proposalId").GetString());
+        Assert.Equal(new[] { 60d }, chain.GetProperty("segments").EnumerateArray().Select(v => v.GetDouble()));
+        Assert.Equal(new[] { new[] { 1, 2 }, new[] { 3, 4 } }, chain.GetProperty("points").EnumerateArray()
+            .Select(point => point.GetProperty("sourceIndices").EnumerateArray().Select(v => v.GetInt32()).ToArray()));
+    }
+
+    [Fact]
+    public void SideGroupChainsDoNotDependOnReadOrder()
+    {
+        var forward = Preview(Side()).GetProperty("groups")[0].GetProperty("chains").GetRawText();
+        var group = Side();
+        group.Positions.Reverse();
+        Assert.Equal(forward, Preview(group).GetProperty("groups")[0].GetProperty("chains").GetRawText());
+    }
+
+    [Fact]
+    public void ASingleRowSeenFromTheSideIsNoLongerPlan()
+    {
+        var group = Rectangle();
+        group.Positions.RemoveRange(2, 2);
+        group.Axis = [0, 1, 0];
+        var answer = Preview(group).GetProperty("groups")[0];
+        Assert.Equal("Side", answer.GetProperty("viewClass").GetString());
+        Assert.Equal("Candidate", answer.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public void ASkewedReferenceStaysRefusedForASideGroup()
+    {
+        var group = Side();
+        group.SecondPosition = [70, 80, 0];
+        Assert.Contains("explicit direction policy", Preview(group).GetProperty("groups")[0].GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public void ClassToleranceComesFromTheSettings()
+    {
+        var group = Rectangle();
+        group.Axis = [Math.Sin(Math.PI / 90), 0, Math.Cos(Math.PI / 90)];
+        var snapshot = Snapshot(group).Answer;
+        var strict = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, boltSettings: new(1)));
+        var loose = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, boltSettings: new(3)));
+        Assert.Equal("Skewed", strict.GetProperty("groups")[0].GetProperty("viewClass").GetString());
+        Assert.Equal("Plan", loose.GetProperty("groups")[0].GetProperty("viewClass").GetString());
+        Assert.Equal(3, loose.GetProperty("classToleranceDegrees").GetDouble());
     }
 
     [Fact]
@@ -160,7 +216,7 @@ public sealed class BoltDimensionChainPreviewTests
     public void RequestToleranceReachesBoltPatternChecks()
     {
         var group = Rectangle();
-        group.Positions[0].Point[2] = 0.05;
+        group.Positions[0].Point[0] += 0.05;
         var snapshot = Snapshot(group).Answer;
         var coarse = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.1)));
         var fine = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.01)));
@@ -195,9 +251,17 @@ public sealed class BoltDimensionChainPreviewTests
     private static int[] Indices(JsonElement chain) => chain.GetProperty("points").EnumerateArray()
         .Select(point => point.GetProperty("sourceIndices")[0].GetInt32()).ToArray();
 
+    // Bolt axis along view Y: two pairs of bolts, each pair one behind another along the view depth.
+    private static BoltGroupGeometry Side() => new() {
+        ModelId = 42, Shape = "BoltArray", FirstPosition = [10, 20, 0], SecondPosition = [10, 20, 40],
+        Axis = [0, 1, 0], PartToBeBoltedId = 10,
+        Positions = [new() { Index = 1, Point = [10, 20, 0] }, new() { Index = 2, Point = [10, 20, 40] },
+            new() { Index = 3, Point = [70, 20, 0] }, new() { Index = 4, Point = [70, 20, 40] }]
+    };
+
     private static BoltGroupGeometry Rectangle() => new() {
         ModelId = 42, Shape = "BoltArray", FirstPosition = [10, 20, 0], SecondPosition = [70, 20, 0],
-        PartToBeBoltedId = 10, PartToBoltToId = 20,
+        Axis = [0, 0, 1], PartToBeBoltedId = 10, PartToBoltToId = 20,
         Positions = [new() { Index = 3, Point = [10, 20, 0] }, new() { Index = 8, Point = [70, 20, 0] },
             new() { Index = 4, Point = [10, 60, 0] }, new() { Index = 6, Point = [70, 60, 0] }]
     };

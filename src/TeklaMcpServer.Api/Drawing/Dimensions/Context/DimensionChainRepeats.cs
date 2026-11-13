@@ -24,7 +24,7 @@ internal static class DimensionChainRepeats
     public sealed class Chain(string key, string side, string kind, double[] segments)
     {
         public string Key { get; } = key;
-        /// <summary>The preview row: Top, Bottom, Left, Right, Inclined or Local.</summary>
+        /// <summary>The preview row: Top, Bottom, Left, Right, Inclined or Local (never Bolt).</summary>
         public string Side { get; } = side;
         public string Kind { get; } = kind;
         public double[] Segments { get; } = segments;
@@ -116,7 +116,10 @@ internal static class DimensionChainRepeats
     public static IReadOnlyList<Chain> FromPreview(JsonElement answer)
     {
         if (!answer.TryGetProperty("chainPreview", out var rows) || rows.ValueKind != JsonValueKind.Array) return [];
-        return rows.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray()
+        // Bolt chains are compared by segment lengths here, not by their source bolts: equal steps in
+        // different groups prove no repeat, so the Bolt row takes no part.
+        return rows.EnumerateArray().Where(row => row.GetProperty("side").GetString() != ViewDimensionContext.BoltSide)
+            .SelectMany(row => row.GetProperty("chains").EnumerateArray()
             .Where(chain => !(chain.TryGetProperty("incomplete", out var incomplete) && incomplete.GetBoolean()))
             .Select(chain => new Chain(
                 chain.GetProperty("key").GetString()!,

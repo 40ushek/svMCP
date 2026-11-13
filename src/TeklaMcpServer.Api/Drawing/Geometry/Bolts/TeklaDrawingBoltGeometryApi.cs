@@ -140,6 +140,7 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
             BoltSize = boltGroup.BoltSize,
             FirstPosition = ToArray(boltGroup.FirstPosition),
             SecondPosition = ToArray(boltGroup.SecondPosition),
+            Axis = ReadAxis(boltGroup),
             PartToBeBoltedId = boltGroup.PartToBeBolted?.Identifier.ID,
             PartToBoltToId = boltGroup.PartToBoltTo?.Identifier.ID
         };
@@ -176,6 +177,25 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
 
         if (includeSolidBbox) TryPopulateSolidBbox(boltGroup, result);
         return result;
+    }
+
+    // Bolt positions lie in the XY plane of the group's coordinate system, so its normal is the bolt axis.
+    // Read inside the view plane scope, so the axis comes in view coordinates like the centers.
+    private static double[] ReadAxis(BoltGroup boltGroup)
+    {
+        try
+        {
+            var system = boltGroup.GetCoordinateSystem();
+            if (system == null) return [];
+            var normal = Vector.Cross(system.AxisX, system.AxisY);
+            var length = normal.GetLength();
+            if (double.IsNaN(length) || double.IsInfinity(length) || length <= 1e-9) return [];
+            return [normal.X / length, normal.Y / length, normal.Z / length];
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     private static void TryPopulateSolidBbox(BoltGroup boltGroup, BoltGroupGeometry result)

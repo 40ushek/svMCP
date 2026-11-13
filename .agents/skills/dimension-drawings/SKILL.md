@@ -32,6 +32,10 @@ rest of this file explains the reasons and covers every other request.
    that repeat another chain. If the answer has `isComplete=false` or
    `sectionPreviewStatus` `refused`, place nothing on that view, go on to the next
    view and name the view and the reason in the report. That is not an error.
+   If the row `Bolt` has a non-empty `readIncomplete`, place the other chains as
+   usual, and say in the report that bolt dimensions on that view were skipped
+   because the bolt read was incomplete, quoting `readIncomplete` (it names the
+   reason and the part numbers). The row may then have no chains at all.
 5. Choose the keys to place: every chain with `incomplete=false` whose `key` is
    not in `repeats`. Compare nothing yourself: the code has compared the chains
    with each other and with the dimensions already on the sheet (rules:
@@ -65,7 +69,8 @@ rest of this file explains the reasons and covers every other request.
 8. After the last view, report. Two modes:
    - **Short report (default).** Two or three lines: how many dimensions were
      placed on how many views; every key that was not `created`/`retained`, with
-     its status and error text; and one sentence that the chains on section and
+     its status and error text; every view whose bolt dimensions were skipped for
+     an incomplete bolt read, with its `readIncomplete`; and one sentence that the chains on section and
      end views are provisional and that line positions were not checked by eye.
      Nothing else: no per-view list, no segments, no dropped keys.
    - **Debug report.** Only when the request asks for it ("debug", "detailed
@@ -76,8 +81,10 @@ rest of this file explains the reasons and covers every other request.
 
 Do not, in a standard run: ask for the steel settings (`Internal`,
 `recognizableDistance`), request points or contacts, read part geometry, draw debug
-overlays, build a chain from coordinates, or read the reference files: the steps
-above are complete for this run. If the proposed chains look wrong,
+overlays, build a chain from coordinates, query `boltChains` or build bolt chains by
+hand, or read the reference files: the steps above are complete for this run.
+`boltChains` and `boltProposal` are obsolete; they are kept only for placing one
+chosen bolt chain on request. If the proposed chains look wrong,
 place nothing on that view and report what looks wrong: the fix belongs in the
 code's rules.
 
@@ -192,6 +199,16 @@ decision boundary; fixing point selection belongs in the preview rules.
 of parts at one place. Like an inclined chain it carries its own points, offset
 vector and `distance`; reference it by key, override `distance` if the line
 collides with something, never `paperGapMm`.
+
+**Bolt chains:** a steel whole-view preview can add a row `Bolt`. Keys:
+`bolt-part-<partId>-groups-<groupId>-<side>` (edge - bolts - edge),
+`bolt-<groupId>-<X|Y>-<row>` (steps of one row) and `bolt-<groupId>` (a group no
+chain was built for). Like a local chain each carries its own points, offset vector
+and `distance`; reference it by key. In this row `incomplete=true` means the rule
+decided not to create it, with the reason in `incompleteReason` (group skewed to
+the view, class switched off, setting `None`, part edge not confirmed on a
+section): do not repair, extend or place such a chain by hand. Placing one rejects
+the whole batch. Bolt chains are never in `repeats`.
 
 **Inclined chains:** a steel whole-view preview can add a row `Inclined` with
 keys `Inclined-<partId>`: a chain along a tilted part (a head plate on a sloped

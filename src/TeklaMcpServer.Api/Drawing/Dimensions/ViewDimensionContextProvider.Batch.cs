@@ -261,6 +261,11 @@ public sealed partial class ViewDimensionContextProvider
             // An inclined or a local chain carries its own points, offset vector and distance.
             if (selected.TryGetProperty("points", out _) && selected.TryGetProperty("distance", out _))
             {
+                // A Bolt chain the rule decided not to create refuses the whole batch before any write.
+                if (selected.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == System.Text.Json.JsonValueKind.True)
+                    throw new ArgumentException($"Preview chain '{chain.Preview}' is not to be created" +
+                        (selected.TryGetProperty("incompleteReason", out var why) && why.ValueKind == System.Text.Json.JsonValueKind.String
+                            ? ": " + why.GetString() : ""));
                 if (chain.PaperGapMm.HasValue)
                     throw new ArgumentException($"Preview chain '{chain.Preview}' carries its own offset: give distance, not paperGapMm");
                 return new BatchDimensionChain {
@@ -366,7 +371,9 @@ public sealed partial class ViewDimensionContextProvider
         if (chain.BoltProposal != null)
         {
             var context = RequireContext(batch.ViewId, batch.ContextId);
+#pragma warning disable CS0618 // The obsolete boltProposal entry stays working until its removal is decided.
             request.Points = context.ResolveBoltProposal(chain.BoltProposal, chain.PartId!.Value, chain.Direction);
+#pragma warning restore CS0618
             var placement = chain.Distance.HasValue ? null : context.Calculate(chain.Direction, request.Points,
                 DimensionPlacementSettings.ResolvePaperGapMm(row, chain.PaperGapMm));
             write = new PreparedDimensionWrite(request, chain.Distance ?? placement!.Distance, placement);

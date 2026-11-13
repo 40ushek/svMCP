@@ -11,25 +11,26 @@ internal static class BoltDimensionChainPreview
     internal static object Build(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours = null,
-        DimensionCoordinateSettings? coordinateSettings = null)
+        DimensionCoordinateSettings? coordinateSettings = null, BoltChainSettings? boltSettings = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
+        var settings = boltSettings ?? new BoltChainSettings();
         var groups = snapshot.TryGetProperty("boltGroups", out var rows)
-            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours, tolerance)).ToArray()
+            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours, tolerance, settings)).ToArray()
             : Array.Empty<object>();
         return new {
             scope = "bolt-chain-proposals", coordinateSystem = "display",
-            coordinateTolerance = tolerance,
+            coordinateTolerance = tolerance, classToleranceDegrees = settings.ClassToleranceDegrees,
             geometryReadComplete = Flag(snapshot, "isComplete"),
             selectionComplete = Flag(snapshot, "selectionComplete"),
             visibilityVerified = Flag(snapshot, "visibilityVerified"),
             creationMode = "explicitSelectionOnly",
-            pending = new[] { "part scope and internal-dimension policy", "bolt-plane orientation and selection verification",
+            pending = new[] { "part scope and internal-dimension policy", "selection and visibility verification",
                 "placement side and offset", "edge-dimension policy", "group-position datum and chains" },
             unread = snapshot.TryGetProperty("unread", out var unread) ? unread : default(JsonElement?),
             error = snapshot.TryGetProperty("error", out var error) ? error : default(JsonElement?),
             groups,
-            partChains = BoltPartChainPreview.Build(snapshot, includedPartIds, sides, partContours, tolerance)
+            partChains = BoltPartChainPreview.Build(snapshot, includedPartIds, sides, partContours, tolerance, settings)
         };
     }
 
@@ -38,11 +39,11 @@ internal static class BoltDimensionChainPreview
 
     private static object BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance,
+        BoltChainSettings settings)
     {
-        var geometry = row.GetProperty("geometry");
-        var group = JsonSerializer.Deserialize<BoltGroupGeometry>(geometry.GetRawText(),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        var group = ReadGroup(row);
+        var viewClass = BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees);
         var related = new[] { group.PartToBeBoltedId, group.PartToBoltToId }
             .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds)
             .Distinct().OrderBy(id => id).ToArray();
@@ -51,7 +52,7 @@ internal static class BoltDimensionChainPreview
             .GroupBy(value => value.GetProperty("index").GetInt32())
             .ToDictionary(values => values.Key, values => values.Count() == 1
                 ? values.First().GetProperty("centerState").GetString() : "Unresolved");
-        var reason = PatternRefusal(group, tolerance);
+        var reason = PatternRefusal(group, viewClass, tolerance);
         var chains = new List<object>();
         var edgeChains = new List<object>();
         var candidateChainCount = 0;
@@ -106,7 +107,7 @@ internal static class BoltDimensionChainPreview
             boltGroupId = group.ModelId, relatedPartIds = related, partCandidates,
             partScopeStatus = partCandidates.Length == 1 ? "single included related part; role/policy still requires review"
                 : "unresolved: choose the dimensioned part explicitly",
-            shape = group.Shape,
+            shape = group.Shape, viewClass = viewClass.ToString(),
             status = reason != null || (chains.Count > 0 && candidateChainCount == 0)
                 ? "Blocked" : chains.Count == 0 ? "NoInternalSpacing" : "Candidate",
             candidateChainCount, blockedChainCount = chains.Count - candidateChainCount,
@@ -116,20 +117,32 @@ internal static class BoltDimensionChainPreview
         };
     }
 
-    internal static string? PatternRefusal(BoltGroupGeometry group, double tolerance = CoordinateTolerance)
+    internal static BoltGroupGeometry ReadGroup(JsonElement row) =>
+        JsonSerializer.Deserialize<BoltGroupGeometry>(row.GetProperty("geometry").GetRawText(),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+
+    /// <summary>
+    /// Why no chain is built for this group, or null. Plan and Side groups are projected on the
+    /// view plane; coinciding projected centers merge later, keeping every source index.
+    /// </summary>
+    internal static string? PatternRefusal(BoltGroupGeometry group, BoltGroupViewClass viewClass,
+        double tolerance = CoordinateTolerance)
     {
         if (group.Positions.Count == 0 || group.Positions.Any(p => !ValidPoint(p.Point)))
             return "missing or invalid bolt positions";
         if (group.Positions.Select(p => p.Index).Distinct().Count() != group.Positions.Count)
             return "source bolt indices are not unique";
         if (group.Shape != "BoltArray") return "only BoltArray is supported by this first preview";
-        if (group.Positions.Max(p => p.Point[2]) - group.Positions.Min(p => p.Point[2]) > tolerance)
-            return "bolt centers span view depth; a face-on planar pattern is not established";
+        if (viewClass == BoltGroupViewClass.Unresolved)
+            return "bolt axis was not read; the group's turn to the view is unresolved";
+        if (viewClass == BoltGroupViewClass.Skewed)
+            return "bolt group is skewed to the view; no chain is built for it yet";
         if (!ValidPoint(group.FirstPosition) || !ValidPoint(group.SecondPosition))
             return "bolt-group reference direction is missing";
         var dx = Math.Abs(group.SecondPosition[0] - group.FirstPosition[0]);
         var dy = Math.Abs(group.SecondPosition[1] - group.FirstPosition[1]);
-        if (dx <= tolerance && dy <= tolerance)
+        // A Side group may run its reference along the view depth; its projection is still one line.
+        if (viewClass == BoltGroupViewClass.Plan && dx <= tolerance && dy <= tolerance)
             return "bolt-group reference direction has no stable XY projection";
         if (dx > tolerance && dy > tolerance)
             return "skewed bolt-group reference requires an explicit direction policy";

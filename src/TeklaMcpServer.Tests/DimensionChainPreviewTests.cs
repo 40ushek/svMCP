@@ -576,7 +576,7 @@ public sealed class DimensionChainPreviewTests
     internal static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
         bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false, bool farGusset = false,
-        double[]? viewFrame = null, (double X0, double X1)? extraRib = null)
+        double[]? viewFrame = null, (double X0, double X1)? extraRib = null, ViewBoltGeometrySnapshot? bolts = null)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -608,7 +608,7 @@ public sealed class DimensionChainPreviewTests
                 .Where(p => !rakedEnd || p.ModelId != 13).Concat(upperPlate || crossingPlate || edgeOnPlate || farGusset ? [new PartRoleInView(16, "P16", "P", role, false)] : []).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
-        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame });
+        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame }, bolts);
     }
 
     private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>

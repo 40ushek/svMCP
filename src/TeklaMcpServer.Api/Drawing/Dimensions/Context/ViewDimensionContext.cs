@@ -254,10 +254,11 @@ public sealed class ViewDimensionContext
                 : null;
             if (consolidated != null && consolidated.Length > 0)
             {
-                result["chainPreview"] = consolidated.Select(k => new {
+                var sideRows = consolidated.Select(k => (object)new {
                     side = k.Side.ToString(),
                     chains = new[] { DimensionChainPreview.Short(SectionDimensionChainPreview.MergedChain(k), detailed, k.Side.ToString()) }
                 }).ToArray();
+                result["chainPreview"] = sideRows.Concat(selected.Length == 4 ? BoltRow(coordinateSettings, sideRows) : []).ToArray();
                 result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
                 return Freeze(result, display: true);
             }
@@ -286,6 +287,12 @@ public sealed class ViewDimensionContext
                 result["chainPreview"] = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().Concat([new {
                     side = LocalSide, chains = LocalChains().Select(chain => chain.Project()).ToArray()
                 }]).ToArray();
+            // Bolt chains belong to no side either; each one says whether it is to be created.
+            if (!panel && refusal == null && selected.Length == 4)
+            {
+                var sideRows = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().ToArray();
+                result["chainPreview"] = sideRows.Concat(BoltRow(coordinateSettings, sideRows)).ToArray();
+            }
         }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
@@ -397,6 +404,174 @@ public sealed class ViewDimensionContext
         }).Where(InsideViewFrame).ToArray();
     }
 
+    internal const string BoltSide = "Bolt";
+    private readonly Dictionary<string, IReadOnlyList<BoltRowChain>> _boltChains = new(StringComparer.Ordinal);
+
+    /// <summary>A bolt chain of the Bolt row: written by key like a Local chain when it is to be created.</summary>
+    internal sealed class BoltRowChain(DimensionRuleResult result, double distance, string? frameRefusal)
+    {
+        public string Key { get; } = (string)result.Evidence["key"];
+        public string? Reason { get; } = result.Note ?? frameRefusal;
+        public bool Create => Reason == null;
+
+        public object Project() => new {
+            key = Key, direction = string.Join(",", new[] {
+                ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal.X,
+                ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal.Y, 0d }
+                .Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
+            attributesFile = "standard", kind = BoltChainRule.Kind,
+            chainKind = result.Evidence["chainKind"], boltGroupId = result.Evidence["groupId"],
+            partId = result.Evidence["partId"], viewClass = result.Evidence["viewClass"],
+            segments = result.Segments, distance,
+            points = result.Points.Select(point => new[] { point.X, point.Y }).ToArray(),
+            sources = result.Evidence["sources"],
+            incomplete = !Create, incompleteReason = Reason
+        };
+    }
+
+    private object[] BoltRow(DimensionCoordinateSettings? coordinateSettings, object[] sideRows)
+    {
+        var chains = BoltChains(coordinateSettings, SideRowCounts(sideRows));
+        var readRefusal = BoltReadRefusal();
+        // An incomplete read stays visible even when no group was read: no chains is not "no bolts".
+        return chains.Count == 0 && readRefusal == null ? [] : [new { side = BoltSide, readIncomplete = readRefusal,
+            chains = chains.Select(chain => chain.Project()).ToArray() }];
+    }
+
+    // Bolt chains by Tekla-like settings. Part edges count as confirmed only off sections: a
+    // section contour is not read yet, so there the steps of the group stand in for its edge chain.
+    internal IReadOnlyList<BoltRowChain> BoltChains(DimensionCoordinateSettings? coordinateSettings = null,
+        IReadOnlyDictionary<DimensionChainSide, int>? sideRows = null)
+    {
+        var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
+        var cacheKey = tolerance.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",",
+            (sideRows ?? new Dictionary<DimensionChainSide, int>()).OrderBy(item => item.Key).Select(item => item.Key + "=" + item.Value));
+        if (_boltChains.TryGetValue(cacheKey, out var cached)) return cached;
+        var settings = new BoltChainSettings();
+        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
+            JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
+            edgesConfirmed: viewType is not ("SectionView" or "EndView") ? _ => true : WhollyInDepth, settings, coordinateSettings);
+        var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
+            .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
+        var frame = ViewFrame();
+        var readRefusal = BoltReadRefusal();
+        var gap = DimensionPlacementSettings.DefaultPaperGapMm * Scale;
+        var rows = OccupiedLines(sideRows, gap);
+        var chains = evaluation.Results.Select(result => {
+            var outside = frame is { } f && result.Points.Any(point =>
+                point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY);
+            var refusal = readRefusal ?? (outside ? "a point lies outside the view frame" : null);
+            var distance = gap + (double)result.Evidence["baseOffset"];
+            if (result.Note == null && refusal == null && result.Points.Count > 0)
+                distance = NextFreeRow(rows, result, distance, gap);
+            return new BoltRowChain(result, distance, refusal);
+        }).ToArray();
+        _boltChains.Add(cacheKey, chains);
+        return chains;
+    }
+
+    // On a section a part's edges are those of its whole solid only when the whole solid lies in
+    // the view's depth; a part the section cuts may change shape behind the cut.
+    private bool WhollyInDepth(int partId)
+    {
+        if (DepthRange() is not { } range) return false;
+        var points = GetPartSolidGeometrySnapshot(partId)?.Solid.Vertices
+            .Where(vertex => vertex.Point.Length >= 3).Select(vertex => vertex.Point[2]).ToArray();
+        return points is { Length: > 0 } && points.All(z =>
+            z >= range.Min - DimensionPlacementSettings.VerificationToleranceViewUnits
+            && z <= range.Max + DimensionPlacementSettings.VerificationToleranceViewUnits);
+    }
+
+    // The view's depth window in the coordinates of the captured solids, from the view metadata.
+    private (double Min, double Max)? DepthRange()
+    {
+        if (!_metadata.TryGetProperty("depthWindow", out var window) || window.ValueKind != JsonValueKind.Object
+            || !window.TryGetProperty("MinZ", out var min) || !window.TryGetProperty("MaxZ", out var max)
+            || !_metadata.TryGetProperty("viewCoordinates", out var view)
+            || !_metadata.TryGetProperty("displayCoordinates", out var display)) return null;
+        return ViewDepthWindow.DepthRangeInView(min.GetDouble(), max.GetDouble(),
+            view.EnumerateArray().Select(number => number.GetDouble()).ToArray(),
+            display.EnumerateArray().Select(number => number.GetDouble()).ToArray()) is { } range
+            ? (range.Min, range.Max) : null;
+    }
+
+    // How many chains each side row offers for placing; each takes one row beyond the outline.
+    private static IReadOnlyDictionary<DimensionChainSide, int> SideRowCounts(object[] sideRows) =>
+        JsonSerializer.SerializeToElement(sideRows).EnumerateArray()
+            .Where(row => Enum.TryParse<DimensionChainSide>(row.GetProperty("side").GetString(), out _))
+            .GroupBy(row => (DimensionChainSide)Enum.Parse(typeof(DimensionChainSide), row.GetProperty("side").GetString()!))
+            .ToDictionary(side => side.Key, side => side.Sum(row => row.GetProperty("chains").EnumerateArray()
+                .Count(chain => !(chain.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == JsonValueKind.True))));
+
+    // The lines bolt chains must not fall on: the rows of the side chains beyond the outline, and
+    // the lines of the local and inclined chains, which carry their own offset.
+    private List<(double Nx, double Ny, double Line, double From, double To)> OccupiedLines(
+        IReadOnlyDictionary<DimensionChainSide, int>? sideRows, double gap)
+    {
+        var rows = new List<(double Nx, double Ny, double Line, double From, double To)>();
+        if (sideRows != null && _group.Extent is { } extent)
+            foreach (var side in sideRows)
+                for (var row = 1; row <= side.Value; row++)
+                {
+                    var (nx, ny, bound) = side.Key switch {
+                        DimensionChainSide.Top => (0d, 1d, extent.MaxY),
+                        DimensionChainSide.Bottom => (0d, -1d, -extent.MinY),
+                        DimensionChainSide.Left => (-1d, 0d, -extent.MinX),
+                        _ => (1d, 0d, extent.MaxX)
+                    };
+                    rows.Add((nx, ny, bound + row * gap, double.NegativeInfinity, double.PositiveInfinity));
+                }
+        // Sections and end views offer no local or inclined row.
+        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var ownOffset = viewType is "SectionView" or "EndView" ? [] : InclinedChains().Concat(LocalChains());
+        foreach (var chain in ownOffset)
+        {
+            var normal = chain.Direction.Split(',').Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+            var length = Math.Sqrt(normal[0] * normal[0] + normal[1] * normal[1]);
+            if (length <= 1e-9 || chain.Points.Length < 6) continue;
+            var (nx, ny) = (normal[0] / length, normal[1] / length);
+            var along = Enumerable.Range(0, chain.Points.Length / 3)
+                .Select(i => chain.Points[i * 3] * -ny + chain.Points[i * 3 + 1] * nx).ToArray();
+            rows.Add((nx, ny, chain.Points[0] * nx + chain.Points[1] * ny + chain.Distance, along.Min(), along.Max()));
+        }
+        return rows;
+    }
+
+    // Bolt chains on one side whose lines would fall on one another and whose spans overlap are
+    // moved out by one paper gap at a time. Tekla measures the offset from the chain's first point.
+    private static double NextFreeRow(List<(double Nx, double Ny, double Line, double From, double To)> rows,
+        DimensionRuleResult result, double distance, double gap)
+    {
+        var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
+        var first = result.Points[0];
+        var along = result.Points.Select(point => point.X * -normal.Y + point.Y * normal.X).ToArray();
+        var (from, to) = (along.Min(), along.Max());
+        double Line(double d) => first.X * normal.X + first.Y * normal.Y + d;
+        while (rows.Any(row => Math.Abs(row.Nx - normal.X) < 1e-9 && Math.Abs(row.Ny - normal.Y) < 1e-9
+                   // One gap apart is a free row: rounded points must not push a line one row further.
+                   && Math.Abs(row.Line - Line(distance)) < gap - DimensionPlacementSettings.VerificationToleranceViewUnits
+                   && row.From <= to && from <= row.To))
+            distance += gap;
+        rows.Add((normal.X, normal.Y, Line(distance), from, to));
+        return distance;
+    }
+
+    // An incomplete bolt read can hide groups: no bolt chain is created from it.
+    private string? BoltReadRefusal()
+    {
+        if (_bolts.TryGetProperty("isComplete", out var complete) && complete.ValueKind == JsonValueKind.True) return null;
+        // A context built without a bolt snapshot has nothing to report; a captured one always lists its groups.
+        if (!_bolts.TryGetProperty("boltGroups", out _)) return null;
+        var unread = _bolts.TryGetProperty("unread", out var items) && items.ValueKind == JsonValueKind.Array
+            ? items.EnumerateArray().Where(item => item.TryGetProperty("partId", out _))
+                .Select(item => item.GetProperty("partId").GetInt32().ToString(CultureInfo.InvariantCulture)).ToArray()
+            : [];
+        var error = _bolts.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+        return "bolt geometry was read incompletely" + (unread.Length > 0 ? " (unread parts " + string.Join(",", unread) + ")" : "")
+            + (error != null ? " (" + error + ")" : "") + "; no bolt chain is created";
+    }
+
     // Parts lying in the view plane, or nearly: the part's own X and Y axes both lie in it.
     // Without readable axes, a part thinner along the view depth than along either view axis.
     private int[] FaceOnPartIds() => _includedModelIds.Where(id => {
@@ -467,6 +642,7 @@ public sealed class ViewDimensionContext
         return null;
     }
 
+    /// <summary>The obsolete boltChains answer; the Bolt row of the chain preview replaces it.</summary>
     internal JsonElement BuildBoltPreview(IReadOnlyCollection<DimensionChainSide> sides, DimensionCoordinateSettings? coordinateSettings = null)
     {
         var settings = coordinateSettings ?? new DimensionCoordinateSettings();
@@ -481,6 +657,7 @@ public sealed class ViewDimensionContext
         return preview;
     }
 
+    [Obsolete("Use a key from the Bolt row of the chain preview; boltProposal is kept only for placing one chosen bolt chain.")]
     internal double[] ResolveBoltProposal(string proposalId, int partId, string direction)
     {
         var side = ParseSide(direction);

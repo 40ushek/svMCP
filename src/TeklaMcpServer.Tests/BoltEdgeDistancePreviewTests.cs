@@ -76,7 +76,7 @@ public sealed class BoltEdgeDistancePreviewTests
     {
         var group = new BoltGroupGeometry {
             ModelId = 42, Shape = "BoltArray", PartToBeBoltedId = 10,
-            FirstPosition = [10, 20, 0], SecondPosition = [70, 20, 0],
+            FirstPosition = [10, 20, 0], SecondPosition = [70, 20, 0], Axis = [0, 0, 1],
             Positions = [new() { Index = 5, Point = [10, 20, 0] }, new() { Index = 9, Point = [70, 20, 0] }]
         };
         var snapshot = Capture(group);
@@ -96,7 +96,7 @@ public sealed class BoltEdgeDistancePreviewTests
     {
         var group = new BoltGroupGeometry {
             ModelId = 42, Shape = "BoltArray", PartToBeBoltedId = 10, PartToBoltToId = 20,
-            FirstPosition = [20, 30, 0], SecondPosition = [60, 30, 0],
+            FirstPosition = [20, 30, 0], SecondPosition = [60, 30, 0], Axis = [0, 0, 1],
             Positions = [new() { Index = 1, Point = [20, 30, 0] }]
         };
         var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
@@ -123,7 +123,7 @@ public sealed class BoltEdgeDistancePreviewTests
         var structural = new StructuralOutline(outline,
             [new(10, "P10", "P", new PartRoleResult(PartRole.Included, "included", "test"), true)], [], []);
         var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", PartToBeBoltedId = 10,
-            FirstPosition = [20, 30, 0], SecondPosition = [60, 30, 0],
+            FirstPosition = [20, 30, 0], SecondPosition = [60, 30, 0], Axis = [0, 0, 1],
             Positions = [new() { Index = 1, Point = [20, 30, 0] }] };
         var context = new ViewDimensionContext(7, 10, structural, [], new { }, new { }, Capture(group));
         var first = context.Query("boltChains");

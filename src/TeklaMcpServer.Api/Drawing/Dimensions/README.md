@@ -46,7 +46,23 @@ New work beyond the historical v1 baseline below:
   calculation, now labelled `referenceLineSource`, not a presentation observation.
 - These changes have automated coverage; new runtime observation and reuse
   still require live validation. See the active roadmap.
-## Provisional bolt-chain preview (2026-10-02)
+## Bolt row in the chain preview (2026-11-13)
+
+A steel whole-view `chain` preview adds a row `Bolt`: bolt chains chosen by
+`BoltChainSettings` (Tekla's main/secondary part bolt internal dimensions, defaults
+`All`; dimensioned classes; class tolerance 1 degree). Each group gets a class from its
+bolt axis and the view normal (`Plan`, `Side`, `Skewed`, `Unresolved`).
+`BoltChainCandidates` builds the chains, `BoltChainRule` decides which are created. Keys:
+`bolt-part-<partId>-groups-<groupId>-<side>`, `bolt-<groupId>-<axis>-<row>`,
+`bolt-<groupId>`. A chain carries points, offset vector and `distance` like a `Local`
+chain; `incomplete=true` there means "not to be created", with the reason, and such a
+key rejects the batch before any write. On sections and end views part edges are not
+confirmed, so the steps of the group stand in for its edge chain. The row takes no part
+in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
+
+## Provisional bolt-chain preview (2026-10-02, obsolete)
+
+Kept only for placing one chosen bolt chain; use the `Bolt` row above.
 
 `get_view_dimension_context(questions="boltChains,scale")` returns a separate
 `boltChainPreview` from the frozen bolt snapshot. It proposes internal-spacing

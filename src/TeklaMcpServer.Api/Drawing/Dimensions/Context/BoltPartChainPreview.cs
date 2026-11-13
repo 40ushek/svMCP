@@ -7,19 +7,21 @@ internal static class BoltPartChainPreview
 {
     internal static object[] Build(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
         IReadOnlyCollection<DimensionChainSide> sides,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
+        BoltChainSettings? boltSettings = null, bool perGroup = false)
     {
+        var settings = boltSettings ?? new BoltChainSettings();
         if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<object>();
         var sources = new List<Source>();
         foreach (var row in rows.EnumerateArray())
         {
-            var group = JsonSerializer.Deserialize<BoltGroupGeometry>(row.GetProperty("geometry").GetRawText(),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+            var group = BoltDimensionChainPreview.ReadGroup(row);
             var related = new[] { group.PartToBeBoltedId, group.PartToBoltToId }
                 .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds).Distinct()
                 .Where(includedParts.Contains);
             var restriction = row.GetProperty("restriction").EnumerateArray().ToArray();
-            var refusal = BoltDimensionChainPreview.PatternRefusal(group, tolerance);
+            var refusal = BoltDimensionChainPreview.PatternRefusal(group,
+                BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees), tolerance);
             foreach (var partId in related)
                 foreach (var position in group.Positions)
                 {
@@ -30,12 +32,16 @@ internal static class BoltPartChainPreview
                     sources.Add(new Source(partId, group.ModelId, position.Index, position.Point, reason));
                 }
         }
-        return sources.GroupBy(source => source.PartId).OrderBy(part => part.Key)
-            .SelectMany(part => sides.Distinct().Select(side => BuildChain(part.Key, part.ToArray(), side, contours, tolerance))).ToArray();
+        // Per group: one chain per part, group and side (the Bolt row); otherwise one per part and side.
+        return sources.GroupBy(source => (source.PartId, GroupId: perGroup ? source.GroupId : 0))
+            .OrderBy(unit => unit.Key.PartId).ThenBy(unit => unit.Key.GroupId)
+            .SelectMany(unit => sides.Distinct().Select(side => BuildChain(unit.Key.PartId, unit.ToArray(), side, contours, tolerance,
+                perGroup ? $"bolt-part-{unit.Key.PartId}-groups-{unit.Key.GroupId}-{side}" : $"bolt-part-{unit.Key.PartId}-{side}")))
+            .ToArray();
     }
 
     private static object BuildChain(int partId, Source[] sources, DimensionChainSide side,
-        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance)
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance, string proposalId)
     {
         var axis = side.RunsAlongX() ? 0 : 1;
         var across = 1 - axis;
@@ -74,7 +80,7 @@ internal static class BoltPartChainPreview
         if (reason == null && (segments.Length == 0 || segments.Any(value => value <= tolerance)))
             reason = "edge endpoints do not bound all projected bolt coordinates";
         return new {
-            proposalId = $"bolt-part-{partId}-{side}", kind = "part", partId,
+            proposalId, kind = "part", partId,
             axis = axis == 0 ? "X" : "Y", placementSide = side.ToString(),
             state = reason == null ? "Candidate" : "Blocked", reason,
             creationMode = "explicitSelectionOnly", blockedSources,

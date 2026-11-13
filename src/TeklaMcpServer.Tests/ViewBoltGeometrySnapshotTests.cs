@@ -106,6 +106,53 @@ public sealed class ViewBoltGeometrySnapshotTests
         Assert.Empty(snapshot.Answer.GetProperty("boltGroups").EnumerateArray());
     }
 
+    [Fact]
+    public void AxisAndClassSurviveFreezeAndRestore()
+    {
+        var group = Group();
+        group.Axis = [1, 0, 0];
+        var snapshot = ViewBoltGeometrySnapshot.Capture(7, [10], id => new() {
+            Success = true, ViewId = 7, PartId = id, BoltGroups = [group]
+        }, Box, point => point, true);
+        group.Axis[0] = 0;
+        var restored = ViewBoltGeometrySnapshot.Restore(snapshot.Answer).Answer.GetProperty("boltGroups")[0];
+        Assert.Equal("Side", restored.GetProperty("viewClass").GetString());
+        Assert.Equal(1, restored.GetProperty("geometry").GetProperty("axis")[0].GetDouble());
+    }
+
+    [Fact]
+    public void AnOldCaseWithoutAxisStaysReadableAndBuildsNoBoltChain()
+    {
+        var old = System.Text.Json.JsonSerializer.SerializeToElement(new {
+            isComplete = true,
+            boltGroups = new[] { new {
+                geometry = new { modelId = 42, shape = "BoltArray", firstPosition = new[] { 10d, 20, 0 },
+                    secondPosition = new[] { 70d, 20, 0 }, partToBeBoltedId = 10,
+                    positions = new[] { new { index = 1, point = new[] { 10d, 20, 0 } },
+                        new { index = 2, point = new[] { 70d, 20, 0 } } } },
+                restriction = new[] { new { index = 1, centerState = "Inside" }, new { index = 2, centerState = "Inside" } }
+            } }
+        });
+        var preview = System.Text.Json.JsonSerializer.SerializeToElement(BoltDimensionChainPreview.Build(
+            ViewBoltGeometrySnapshot.Restore(old).Answer, [10], [DimensionChainSide.Bottom]));
+        var group = preview.GetProperty("groups")[0];
+        Assert.Equal("Unresolved", group.GetProperty("viewClass").GetString());
+        Assert.Equal("Blocked", group.GetProperty("status").GetString());
+        Assert.Empty(group.GetProperty("chains").EnumerateArray());
+        Assert.Equal("Blocked", preview.GetProperty("partChains")[0].GetProperty("state").GetString());
+    }
+
+    [Fact]
+    public void AnInvalidAxisIsReportedAsUnread()
+    {
+        var group = Group();
+        group.Axis = [0, double.NaN, 1];
+        var snapshot = ViewBoltGeometrySnapshot.Capture(7, [10], id => new() {
+            Success = true, ViewId = 7, PartId = id, BoltGroups = [group]
+        }, Box, point => point, true);
+        Assert.Single(snapshot.Answer.GetProperty("unread").EnumerateArray());
+    }
+
     private static ViewBoltGeometrySnapshot Capture(DepthBox? box) =>
         ViewBoltGeometrySnapshot.Capture(7, [10], id => new() {
             Success = true, ViewId = 7, PartId = id, BoltGroups = [Group()]
