@@ -19,6 +19,13 @@ Group-position/datum, centered/skewed and extreme-bolt dimension policies remain
 future work in the dimension planner. Earlier increments below are historical
 milestones, not an instruction to repeat completed preview/creation stages.
 
+How bolt chains are chosen automatically is owned by the
+[Bolt Chains roadmap](../../Dimensions/ROADMAP_BOLT_CHAINS.md) (2026-11-13): every
+group gets a class (in plan, from the side, at an angle), chains are built for all
+bolts, and creating is a separate decision by Tekla-like settings. One change follows
+for this module: a group seen from the side is to be classified, not refused. The
+policy table in section 4 below stays the list of settings that roadmap draws on.
+
 ## Goal
 
 Introduce a canonical bolt-aware geometry library under
@@ -408,6 +415,76 @@ Conclusion for phase 3: implement the None/Necessary/Internal/All, position-mode
 extreme-bolt mapping explicitly on top of the view dimension context bolt groups, as planned.
 Do not build against `ObjectDimensioningPlugin` expecting it to remove that work - it
 does not, and it targets the Tekla UI, not this bridge's MCP flow.
+
+### Findings 2026-11-13: the plant's settings file, dimension associations, a second live case
+
+A second pass over the installed Tekla 2025.0 files: REA managed inspection and a
+reflection-only load of `Tekla.Structures.Drawing.dll` (the `DrawingInternal` namespace
+lives inside it; there is no separate assembly), plus a name search in the native DLLs.
+Metadata only; no Tekla code was run. Most of it found again what is recorded above
+(the Bolt dimensions tab, `ObjectDimensioningPlugin`, `CheckVisibility`). What is new:
+
+**1. The plant's answers to the policy questions exist as files in the model folder.**
+`attributes/+Bemassungseigenschaften ZB Schrauben.adcd` in model `Sw2025` is a saved
+Integrated dimensioning property set for assembly drawings ("Schrauben" = bolts). It
+is plain text, one `key value` per line. The bolt keys, beside the same keys in
+`Pfette.adcd` of that model:
+
+| Key | Schrauben | Pfette | Policy input in section 4, by the key's name |
+|---|---|---|---|
+| `screw_main_internal` | 4 | 4 | `MainPartBoltInternal` |
+| `screw_sec_internal` | 2 | 1 | `SecondaryPartBoltInternal` |
+| `MainSkewedBoltGroupDim` / `SecSkewedBoltGroupDim` | 1 / 1 | 1 / 1 | `SkewedGroupDirection` |
+| `extreme_bolts` | 2 | 0 | `ExtremeBoltSpan` |
+| `bolts_to_work_points` | 1 | 0 | `ExtremeBoltsToWorkPoints` |
+| `screw_prefered_side` | 0 | 0 | `PreferredDimensionSide` |
+| `main_part_screw_pos` | 1 | 1 | main part bolt position on/off |
+| `pos_sec` | 0 | 2 | `PositionSecondaryPart` |
+| `pos_cent_screw` | 5 | 6 | centered bolts: internal or position |
+| `position_to` / `PartPositionTo` | 0 / 3 | 0 / 0 | `PositionReference` |
+| `combine_bolt_dim` / `min_bolts_num_to_combine` | 0 / 3 | 0 / 3 | `CombineBoltDimensions` |
+| `recogn_dist` | 10.0 | 10.0 | possibly the `recognizableDistance` that `Necessary` needs |
+
+The numbers are not decoded: which number means `None`, `Internal` or `All` is unknown,
+and the last column is a guess from the key names. Decode them before use by saving a
+known choice from the Tekla dialog and comparing the files. Single-part drawings have
+their own sets (`!singleBeamBoltDim.wdcd`, `!singlePlateBoltDim.wdcd`). File names and
+values are this plant's; another model will have others. This is a source for the
+"unresolved plant choice" of section 4, not a rule to hard-code.
+
+**2. Tekla can say which bolts and parts an existing dimension is tied to.**
+`Tekla.Structures.DrawingInternal.AssociativityManager` is a public static class:
+
+- `TryGetDimensionRebarOrBoltAssociations(int dimensionId, out IList<...> rules)`;
+- `TryGetAllDimensionPointAssociations`, `TryGetDimensionStartPointAssociations`,
+  `TryGetDimensionEndPointAssociations`, `TryGetDimensionZeroPointAssociations`.
+
+A rule (`PointAssociativityRule`) carries `RuleId`, `PointType`, up to three objects
+(`ObjectId1..3`) with plane names (`PlaneName1..3`) and `IsCenterBased`;
+`DisplayableAssociativityRule` adds the main and secondary model object and an
+`AssociationType` (`OBJECT`, `CUT`, `EDGE_CHAMFER`, grid kinds). Use: read drawings
+dimensioned by people and see which bolt group, part and plane each bolt dimension is
+measured from - policy evidence from examples. Not tried live. `DrawingInternal` is not
+a supported API, and the element types of the lists were not decoded.
+
+**3. `CheckVisibility`: who calls it.** Among the files in `bin`, the only other Tekla
+assembly that names it is `DrawingDialogLauncher.dll`. The friend assemblies of
+`Tekla.Structures.Drawing` are `Tekla.Application.Library`,
+`Tekla.Structures.Annotation`, `Tekla.Structures.DirectManipulation` and test
+assemblies. This does not say what `index` means; step 1 of the probe stays open.
+
+**4. Tekla's own bolt dimensioning is native code.** `grIntelligentBoltDimSet_ci` and
+`grIntelligentBoltDimension_ci` are in `Drawings.dll`; `SteelDimensioning_ci`,
+`dmlGrBoltGroup_c` and `grodmPluginCaller_c` are in `Dimensioning.dll`. No managed entry
+point to them was found, which agrees with the spike conclusion above.
+
+**5. A second live case for the selection gate: M.502.** The drawing database lists six
+`Drawing.Bolt` objects for two model groups (10126649, 10129801) on three views. Which
+view each object belongs to was inferred from the order of the ids:
+`filter_drawing_objects` does not return the view. The view dimension context of
+section 2149 returns one group (10126649, four bolts, all `Inside`), and the user
+confirmed by eye that the section shows one group. As on M.505: an object in the
+drawing database is not a drawn bolt, and the depth gate gave the right answer.
 
 ## Bolt dimension logic (design only; not implemented)
 

@@ -538,6 +538,12 @@ Bolt-group position/datum, centered/skewed rules and extreme-bolt checks remain
 separate unimplemented policy roles. Geometry-specific work is tracked in
 [Bolt Geometry roadmap](../Geometry/Bolts/ROADMAP_BOLT_GEOMETRY.md).
 
+**Next for bolts (2026-11-13):** choosing bolt chains automatically - a class for every
+group (in plan, from the side, at an angle), Tekla-like settings, a decision to create
+and a `Bolt` row in the chain preview. Bolt chains stay separate from part chains.
+Decisions and work order: [Bolt Chains roadmap](ROADMAP_BOLT_CHAINS.md). Nothing of it
+is implemented; the status above is unchanged.
+
 - **Next gate: finish live acceptance of batch writes (step 6).** The code is
   implemented and deployed. A live run on view 7429 exposed a mismatch between the
   batch status and subsequent drawing reads; see step 6. Fix that reconciliation and

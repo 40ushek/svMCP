@@ -216,6 +216,8 @@ Preset должен быть агрегатом:
 - definition-level policy may feed a pure composition stage over separate part/bolt
   proposals before dimensions exist; see the canonical
   [composition work order](../Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
+  The bolt policy itself (classes of bolt groups, Tekla-like settings, the decision to
+  create) is planned in the [Bolt Chains roadmap](../Dimensions/ROADMAP_BOLT_CHAINS.md).
 - handoff to runtime grouping/arrangement of actual drawing dimensions remains
   after writing. This is distinct from proposal composition and does not replace it.
 

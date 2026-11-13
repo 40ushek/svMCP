@@ -438,7 +438,10 @@ Changing the legacy written output is a separate explicitly selected policy.
 
 Return keep-separate when compatibility is unresolved; blocked inputs cannot lose
 their refusal diagnostics. Mixed part/bolt and mixed location/internal/edge
-combination need later explicit policies and fixtures. Alignment may move dimension
+combination need later explicit policies and fixtures. Until then bolt chains stay
+separate from part chains by decision (2026-11-13), keeping group, bolt index and part
+on every point so they can be merged here later; see
+[Bolt Chains roadmap](ROADMAP_BOLT_CHAINS.md). Alignment may move dimension
 lines, not silently move witness points off supporting geometry. Keep original
 proposals available even after composition.
 
