@@ -672,15 +672,36 @@ internal static class ConstraintLayoutPlanner
 
         var blocked = input.ReservedAreas.Select(area => Expand(area, input.Gap)).ToList();
         (IReadOnlyDictionary<int, ReservedRect> Rects, int? ShiftedViewId, double Shift)? bestShift = null;
-        double[] shiftsX = [0.0, input.Bounds.MinX - rects.Values.Min(static r => r.MinX), input.Bounds.MaxX - rects.Values.Max(static r => r.MaxX)];
-        double[] shiftsY = [0.0, input.Bounds.MinY - rects.Values.Min(static r => r.MinY), input.Bounds.MaxY - rects.Values.Max(static r => r.MaxY)];
-        var shifts = shiftsX
-            .SelectMany(_ => shiftsY, static (dx, dy) => (dx, dy))
+        var minX = rects.Values.Min(static r => r.MinX);
+        var maxX = rects.Values.Max(static r => r.MaxX);
+        var minY = rects.Values.Min(static r => r.MinY);
+        var maxY = rects.Values.Max(static r => r.MaxY);
+        double[] shiftsX = [0.0, input.Bounds.MinX - minX, input.Bounds.MaxX - maxX];
+        double[] shiftsY = [0.0, input.Bounds.MinY - minY, input.Bounds.MaxY - maxY];
+
+        // Only when none of those works: the block standing against a side of a
+        // reserved area. Room between two tables is neither at the center nor at an
+        // edge of the sheet.
+        const double clear = 1e-6;
+        var besideAreasX = shiftsX.Concat(blocked
+            .SelectMany(area => new[] { area.MaxX - minX + clear, area.MinX - maxX - clear })
+            .Where(dx => minX + dx >= input.Bounds.MinX - 1e-9 && maxX + dx <= input.Bounds.MaxX + 1e-9)).ToArray();
+        var besideAreasY = shiftsY.Concat(blocked
+            .SelectMany(area => new[] { area.MaxY - minY + clear, area.MinY - maxY - clear })
+            .Where(dy => minY + dy >= input.Bounds.MinY - 1e-9 && maxY + dy <= input.Bounds.MaxY + 1e-9)).ToArray();
+
+        var tried = new HashSet<(double, double)>();
+        foreach (var (passX, passY) in new[] { (shiftsX, shiftsY), (besideAreasX, besideAreasY) })
+        {
+        var shifts = passX
+            .SelectMany(_ => passY, static (dx, dy) => (dx, dy))
+            .Where(shift => tried.Add(shift))
             // Equal moves are taken in the order they are listed -- the block as it
             // is, then to the left, to the right; within each, down before up -- and
             // not by the last digit of a sum: a block centered on the sheet is as
             // far from one edge as from the other.
-            .OrderBy(static shift => Math.Round(Math.Abs(shift.dx) + Math.Abs(shift.dy), 6));
+            .OrderBy(static shift => Math.Round(Math.Abs(shift.dx) + Math.Abs(shift.dy), 6))
+            .ToList();
 
         foreach (var (dx, dy) in shifts)
         {
@@ -706,7 +727,9 @@ internal static class ConstraintLayoutPlanner
                 if (bestShift != null && Math.Abs(delta) >= Math.Abs(bestShift.Value.Shift) - 1e-9)
                     break;
 
-                var withSlid = new Dictionary<int, ReservedRect>(moved) { [viewId] = slid };
+                var withSlid = new Dictionary<int, ReservedRect>(moved);
+                foreach (var item in slid)
+                    withSlid[item.Key] = item.Value;
                 if (TryPlaceFreeViews(input, withSlid))
                 {
                     bestShift = (withSlid, viewId, delta);
@@ -715,7 +738,35 @@ internal static class ConstraintLayoutPlanner
             }
         }
 
-        return bestShift;
+        if (bestShift != null)
+            return bestShift;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The view and the views placed against it, and against those: a section cut on
+    /// a main view stands by that view and goes where it goes.
+    /// </summary>
+    private static HashSet<int> WithDependents(
+        ConstraintLayoutPlannerInput input,
+        IReadOnlyDictionary<int, ViewSlot> slots,
+        int viewId)
+    {
+        var group = new HashSet<int> { viewId };
+        var grown = true;
+        while (grown)
+        {
+            grown = false;
+            foreach (var view in input.Views)
+            {
+                if (!slots[view.Id].IsStack && view.OwnerId is { } owner && group.Contains(owner) && group.Add(view.Id))
+                    grown = true;
+            }
+        }
+
+        return group;
     }
 
     private static bool MayShiftMainView(ConstraintLayoutPlannerInput input)
@@ -728,9 +779,11 @@ internal static class ConstraintLayoutPlanner
     /// line above or below its host moves sideways, one beside it up or down, just
     /// far enough for one free view to stand between it and what it had on that
     /// side -- another view, a table, the edge of the sheet. Only slides that keep
-    /// the view on the sheet and clear of the others are returned.
+    /// the view on the sheet and clear of the others are returned. The views placed
+    /// against the main view slide with it, so they stay in line with it; Slid holds
+    /// the new rectangle of each.
     /// </summary>
-    private static IEnumerable<(int ViewId, double Delta, ReservedRect Slid)> EnumerateMainViewShifts(
+    private static IEnumerable<(int ViewId, double Delta, IReadOnlyDictionary<int, ReservedRect> Slid)> EnumerateMainViewShifts(
         ConstraintLayoutPlannerInput input,
         IReadOnlyDictionary<int, ViewSlot> slots,
         IReadOnlyDictionary<int, ReservedRect> rects,
@@ -741,26 +794,29 @@ internal static class ConstraintLayoutPlanner
         {
             var alongX = !IsHorizontal(slots[view.Id].Side);
             var rect = rects[view.Id];
-            var others = rects.Where(item => item.Key != view.Id).Select(static item => item.Value)
+            var group = WithDependents(input, slots, view.Id);
+            var others = rects.Where(item => !group.Contains(item.Key)).Select(static item => item.Value)
                 .Concat(input.ReservedAreas)
                 .ToList();
             double Min(ReservedRect r) => alongX ? r.MinX : r.MinY;
             double Max(ReservedRect r) => alongX ? r.MaxX : r.MaxY;
+            bool SharesBand(ReservedRect other) => alongX
+                ? other.MinY < rect.MaxY && rect.MinY < other.MaxY
+                : other.MinX < rect.MaxX && rect.MinX < other.MaxX;
 
-            // What bounds the view's own band on either side.
+            // How far the view and what goes with it reach along the view's own band.
+            var inBand = group.Select(id => rects[id]).Where(SharesBand).ToList();
+            var groupMin = inBand.Min(Min);
+            var groupMax = inBand.Max(Max);
+
+            // What bounds that band on either side.
             var low = Min(bounds);
             var high = Max(bounds);
-            foreach (var other in others)
+            foreach (var other in others.Where(SharesBand))
             {
-                var sharesBand = alongX
-                    ? other.MinY < rect.MaxY && rect.MinY < other.MaxY
-                    : other.MinX < rect.MaxX && rect.MinX < other.MaxX;
-                if (!sharesBand)
-                    continue;
-
-                if (Max(other) <= Min(rect) + 1e-9)
+                if (Max(other) <= groupMin + 1e-9)
                     low = Math.Max(low, Max(other) + input.Gap);
-                else if (Min(other) >= Max(rect) - 1e-9)
+                else if (Min(other) >= groupMax - 1e-9)
                     high = Math.Min(high, Min(other) - input.Gap);
             }
 
@@ -768,14 +824,15 @@ internal static class ConstraintLayoutPlanner
             foreach (var free in input.FreeViews)
             {
                 var room = (alongX ? free.Width : free.Height) + input.Gap + ShiftClearance;
-                var deltas = new[] { low + room - Min(rect), high - room - Max(rect) };
+                var deltas = new[] { low + room - groupMin, high - room - groupMax };
                 foreach (var delta in deltas.Where((delta, i) => i == 0 ? delta > 1e-9 : delta < -1e-9))
                 {
-                    var slid = alongX
-                        ? new ReservedRect(rect.MinX + delta, rect.MinY, rect.MaxX + delta, rect.MaxY)
-                        : new ReservedRect(rect.MinX, rect.MinY + delta, rect.MaxX, rect.MaxY + delta);
-                    if (ViewPlacementValidator.IsWithinArea(slid, bounds.MinX - 1e-9, bounds.MaxX + 1e-9, bounds.MinY - 1e-9, bounds.MaxY + 1e-9)
-                        && !ViewPlacementValidator.IntersectsAny(slid, clearOf))
+                    var slid = group.ToDictionary(static id => id, id => alongX
+                        ? new ReservedRect(rects[id].MinX + delta, rects[id].MinY, rects[id].MaxX + delta, rects[id].MaxY)
+                        : new ReservedRect(rects[id].MinX, rects[id].MinY + delta, rects[id].MaxX, rects[id].MaxY + delta));
+                    if (slid.Values.All(member =>
+                            ViewPlacementValidator.IsWithinArea(member, bounds.MinX - 1e-9, bounds.MaxX + 1e-9, bounds.MinY - 1e-9, bounds.MaxY + 1e-9)
+                            && !ViewPlacementValidator.IntersectsAny(member, clearOf)))
                     {
                         yield return (view.Id, delta, slid);
                     }

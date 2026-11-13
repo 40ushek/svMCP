@@ -606,6 +606,8 @@ public sealed partial class TeklaDrawingViewApi
             {
                 var planned = TryEvaluateConstraintLayoutCandidate(
                     layoutWorkspace, gap, plannerMode, attemptScale, plannerVariant);
+                if (planned.NoSuchVariant != null)
+                    throw new System.ArgumentException(planned.NoSuchVariant);
                 var plannerFeasible = planned.Evaluation?.IsFeasible == true;
                 constraintPlannerCase = planned.Case;
                 constraintScaleDecision = constraintScaleSearch.Offer(
@@ -653,6 +655,20 @@ public sealed partial class TeklaDrawingViewApi
             }
             else
             {
+                // A layout asked for by number is the constraint planner's or none.
+                // Where the search does not go on to another scale, the legacy planner's
+                // layout would be taken in its place: that is refused.
+                if (plannerVariant > 0
+                    && plannerMode != DrawingLayoutPlannerMode.Legacy
+                    && !constraintPlannerPassesScale
+                    && constraintScaleDecision is not (Constraints.ConstraintScaleDecision.LookAhead or Constraints.ConstraintScaleDecision.GoBack))
+                {
+                    throw new System.ArgumentException(string.Format(
+                        CultureInfo.InvariantCulture,
+                        "plannerVariant={0} cannot be used: the planner has no layout at scale 1:{1:0.###}. Run without plannerVariant.",
+                        plannerVariant, attemptScale));
+                }
+
                 var gridApi = new TeklaDrawingGridApi();
                 var preloadedAxes = arrangedViews
                     .Select(v => (Id: v.GetIdentifier().ID, Result: gridApi.GetGridAxes(v.GetIdentifier().ID)))
@@ -818,6 +834,9 @@ public sealed partial class TeklaDrawingViewApi
             0,
             $"stage=apply result={DrawingLayoutCandidateApplyExecutionReasonFormatter.ToTraceString(selectedCandidateApplyExecution.Reason)} mode={selectedCandidateApplySafety.EffectiveMode} requestedMoves={selectedCandidateApplyExecution.RequestedMoveCount} appliedMoves={selectedCandidateApplyExecution.AppliedMoveCount}");
         TraceLayoutCandidateApplyExecution(selectedCandidateApplyExecution);
+        // Whether the applied layout holds on the drawing; the scale search reads it.
+        bool? plannerLayoutHeld = selectedCandidateApplySafety.EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply
+            && !selectedCandidateApplyExecution.Success ? false : null;
         if (selectedCandidateApplySafety.EffectiveMode == DrawingLayoutCandidateApplyExecutionMode.Apply
             && selectedCandidateApplyExecution.Success
             && selectedCandidateApplyExecution.AppliedMoveCount > 0)
@@ -839,6 +858,7 @@ public sealed partial class TeklaDrawingViewApi
                 finalActualRects);
             var appliedActualEvaluation = new DrawingLayoutScorer().Evaluate(appliedActualCandidate);
             TraceLayoutCandidateScore(appliedActualEvaluation);
+            plannerLayoutHeld = appliedActualEvaluation.IsFeasible;
             if (!appliedActualEvaluation.IsFeasible)
             {
                 PerfTrace.Write(
@@ -902,6 +922,7 @@ public sealed partial class TeklaDrawingViewApi
             ProjectionSkipped = projectionResult?.SkippedMoves ?? 0,
             ProjectionDiagnostics = projectionResult?.Diagnostics.Count > 0 ? projectionResult.Diagnostics : null,
             PlannerCost = constraintPlannerSelected ? constraintPlannerCost : (double?)null,
+            PlannerLayoutHeld = plannerLayoutHeld,
             PlannerFill = constraintPlannerFill,
             PlannerCase = constraintPlannerCase,
             PlannerSectionViewIds = views

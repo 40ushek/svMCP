@@ -127,6 +127,16 @@ public sealed class FitViewsResult
     /// <summary>What the applied layout's deviations cost when it is the constraint planner's; null otherwise.</summary>
     internal double? PlannerCost { get; set; }
 
+    /// <summary>
+    /// What the drawing showed after the layout was applied: false when the moves
+    /// failed or the real frames ended up overlapping or off the sheet, true when
+    /// they hold, null when nothing was applied (a dry run, or no move was needed).
+    /// </summary>
+    internal bool? PlannerLayoutHeld { get; set; }
+
+    /// <summary>The constraint planner's layout is in hand and did not fail on the drawing.</summary>
+    internal bool HoldsPlannerLayout => PlannerCost != null && PlannerLayoutHeld != false;
+
     /// <summary>Fill ratio of that layout; 0 when the applied layout is not the constraint planner's.</summary>
     internal double PlannerFill { get; set; }
 

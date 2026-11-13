@@ -159,7 +159,9 @@ public sealed partial class TeklaDrawingViewApi
 
             var probe = layoutOnDrawing;
 
-            var fits = probe?.PlannerCost != null;
+            // A layout whose moves failed, or whose real frames overlap once moved, is
+            // not a layout that fits, whatever the planner worked out.
+            var fits = probe?.HoldsPlannerLayout == true;
             var measuredVariant = fits
                 ? new ConstraintScaleVariant
                 {
@@ -188,7 +190,7 @@ public sealed partial class TeklaDrawingViewApi
                     variant.SectionScale,
                     variant.Fill,
                     variant.Cost,
-                    fits ? "fits" : "no-fit",
+                    fits ? "fits" : probe?.PlannerLayoutHeld == false ? "not-held-on-drawing" : "no-fit",
                     measuredVariant?.Fill ?? 0.0,
                     probe?.PlannerCost?.ToString("0.##", CultureInfo.InvariantCulture) ?? "none",
                     alreadyMeasured ? "reused" : "applied"));
@@ -218,7 +220,15 @@ public sealed partial class TeklaDrawingViewApi
                 applied = AtPresentScales(DrawingLayoutApplyMode.FinalOnly);
             }
 
-            if (applied != null)
+            // The last pass is checked like every try: moves that failed or frames
+            // that overlap on the drawing are not the best layout, and the scales go
+            // back to what they were.
+            if (applied?.PlannerLayoutHeld == false)
+            {
+                PerfTrace.Write("api-view", "constraint_layout_scale_variant", stopwatch.ElapsedMilliseconds,
+                    string.Format(CultureInfo.InvariantCulture, "result=best-not-held-on-drawing main=1:{0:0.###} sections=1:{1:0.###}", best.MainScale, best.SectionScale));
+            }
+            else if (applied != null)
             {
                 applied.OptimalScale = best.MainScale;
                 applied.ScalePreserved = false;
@@ -230,9 +240,25 @@ public sealed partial class TeklaDrawingViewApi
 
         // Nothing held on the drawing: the scales go back to what they were and the
         // views are laid out at those.
-        SetViewScales(originalScales);
-        PerfTrace.Write("api-view", "constraint_layout_scale_variant", stopwatch.ElapsedMilliseconds, "result=restored-original-scales");
-        return AtPresentScales(DrawingLayoutApplyMode.FinalOnly);
+        return RestoreAndApplyLayout(
+            () =>
+            {
+                SetViewScales(originalScales);
+                PerfTrace.Write("api-view", "constraint_layout_scale_variant", stopwatch.ElapsedMilliseconds, "result=restored-original-scales");
+            },
+            () => AtPresentScales(DrawingLayoutApplyMode.FinalOnly));
+    }
+
+    // The fallback is still a drawing write: restoring scales does not guarantee
+    // that its moves succeed or its real frames fit.
+    internal static FitViewsResult? RestoreAndApplyLayout(System.Action restoreScales, System.Func<FitViewsResult?> applyLayout)
+    {
+        restoreScales();
+        var restored = applyLayout();
+        if (restored?.PlannerLayoutHeld == false)
+            throw new DrawingFitFailedException(
+                "Layout failed after restoring the original view scales: view moves failed or the actual frames overlap or lie outside the sheet. Inspect the drawing before retrying.");
+        return restored;
     }
 
     private static void RecordFrameSizes(ConstraintFrameSizeEstimator estimator, ConstraintLayoutCase layoutCase)

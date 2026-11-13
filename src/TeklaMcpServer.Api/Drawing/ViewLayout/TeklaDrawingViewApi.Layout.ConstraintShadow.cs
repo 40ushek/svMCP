@@ -20,7 +20,7 @@ public sealed partial class TeklaDrawingViewApi
     /// costs for leaving the sheet empty, both in the policy's prices. NoFit tells
     /// "laid the views out and found no room" from the other reasons.
     /// </summary>
-    private (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness, bool NoFit, ConstraintLayoutCase? Case) TryEvaluateConstraintLayoutCandidate(
+    private (DrawingLayoutCandidateEvaluation? Evaluation, double Cost, double Emptiness, bool NoFit, ConstraintLayoutCase? Case, string? NoSuchVariant) TryEvaluateConstraintLayoutCandidate(
         DrawingLayoutWorkspace workspace,
         double gap,
         DrawingLayoutPlannerMode plannerMode,
@@ -30,6 +30,7 @@ public sealed partial class TeklaDrawingViewApi
         var stopwatch = Stopwatch.StartNew();
         string outcome;
         var noFit = false;
+        string? noSuchVariant = null;
         ConstraintLayoutCase? layoutCase = null;
         try
         {
@@ -52,6 +53,13 @@ public sealed partial class TeklaDrawingViewApi
                 outcome = noFit
                     ? $"no-fit needs={result.Plan.PreferredRequiredWidth:0.#}x{result.Plan.PreferredRequiredHeight:0.#}"
                     : $"no-such-variant variant={variant} variants={result.Plan.Candidates.Count}";
+                // The caller asked for a layout by number and there is none with it:
+                // that is refused, not answered with another planner's layout.
+                if (!noFit)
+                    noSuchVariant = string.Format(
+                        CultureInfo.InvariantCulture,
+                        "plannerVariant={0} does not exist: the planner has {1} layout(s) at scale 1:{2:0.###}, numbered 0..{3}",
+                        variant, result.Plan.Candidates.Count, scale, result.Plan.Candidates.Count - 1);
             }
             else
             {
@@ -78,7 +86,7 @@ public sealed partial class TeklaDrawingViewApi
                         result.BestPlan.ShiftedViewId is { } shiftedId
                             ? string.Format(CultureInfo.InvariantCulture, "{0}:{1:0.#}", shiftedId, result.BestPlan.Shift)
                             : "none"));
-                return (result.Best, result.BestPlan.Cost, emptiness, false, layoutCase);
+                return (result.Best, result.BestPlan.Cost, emptiness, false, layoutCase, null);
             }
         }
         catch (System.Exception exception)
@@ -91,7 +99,7 @@ public sealed partial class TeklaDrawingViewApi
             "constraint_layout_plan",
             stopwatch.ElapsedMilliseconds,
             string.Format(CultureInfo.InvariantCulture, "scale=1:{0:0.###} mode={1} oppositeSide={3} mainViewShift={4} result={2}", scale, plannerMode, outcome, PlannerAllowOppositeSide ? 1 : 0, PlannerAllowMainViewShift ? 1 : 0));
-        return (null, 0.0, 0.0, noFit, layoutCase);
+        return (null, 0.0, 0.0, noFit, layoutCase, noSuchVariant);
     }
 
     /// <summary>

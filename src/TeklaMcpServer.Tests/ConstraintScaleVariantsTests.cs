@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using TeklaMcpServer.Api.Drawing;
+using TeklaMcpServer.Api.Drawing.ViewLayout;
 using TeklaMcpServer.Api.Drawing.ViewLayout.Constraints;
 using Xunit;
 
@@ -11,6 +12,59 @@ public sealed class ConstraintScaleVariantsTests
     private const int Front = 1;
     private const int Top = 2;
     private const int Section = 3;
+
+    [Fact]
+    public void FailedApplyAfterRestoringScales_ReturnsAnExplicitFitError()
+    {
+        var steps = new List<string> { "best-layout-failed" };
+
+        var error = Assert.Throws<DrawingFitFailedException>(() => TeklaDrawingViewApi.RestoreAndApplyLayout(
+            () => steps.Add("restore-scales"),
+            () =>
+            {
+                steps.Add("apply-restored-layout");
+                return new FitViewsResult { PlannerCost = 0, PlannerLayoutHeld = false };
+            }));
+
+        Assert.Equal(new[] { "best-layout-failed", "restore-scales", "apply-restored-layout" }, steps);
+        Assert.Contains("after restoring the original view scales", error.Message);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(null)]
+    public void RestoredLayoutWithoutAnApplyFailure_IsReturned(bool? held)
+    {
+        // A legacy fallback has no PlannerCost; a no-move result may have no held flag.
+        var expected = new FitViewsResult { PlannerLayoutHeld = held };
+        var restoredScales = false;
+
+        var result = TeklaDrawingViewApi.RestoreAndApplyLayout(
+            () => restoredScales = true,
+            () =>
+            {
+                Assert.True(restoredScales);
+                return expected;
+            });
+
+        Assert.Same(expected, result);
+    }
+
+    [Fact]
+    public void NoLayoutAfterRestoringScales_PreservesTheOuterPlannerFallback()
+    {
+        var restoredScales = false;
+
+        var result = TeklaDrawingViewApi.RestoreAndApplyLayout(
+            () => restoredScales = true,
+            () =>
+            {
+                Assert.True(restoredScales);
+                return null;
+            });
+
+        Assert.Null(result);
+    }
 
     [Fact]
     public void OneMeasurement_GivesAProportionalSize()

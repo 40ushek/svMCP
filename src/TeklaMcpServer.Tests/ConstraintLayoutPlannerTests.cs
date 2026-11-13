@@ -486,6 +486,71 @@ public sealed class ConstraintLayoutPlannerTests
     }
 
     [Fact]
+    public void RoomBetweenTwoReservedAreas_IsFound_ThoughItIsNeitherAtTheCenterNorAtAnEdge()
+    {
+        // Tables on both sides leave a strip 30..50; with the gap of 4 a view 10 wide
+        // stands in it. Centered (45..55) and at either edge it touches a table.
+        var bounds = new ReservedRect(0, 0, 100, 100);
+        var input = Input(bounds);
+        input.BaseView = new ConstraintLayoutView(Front, 10, 90);
+        input.ReservedAreas = new[] { new ReservedRect(0, 0, 30, 100), new ReservedRect(50, 0, 100, 100) };
+
+        var best = ConstraintLayoutPlanner.Plan(input).Candidates[0];
+
+        var front = best.RectsById[Front];
+        Assert.True(front.MinX >= 30 + Gap - 1e-3 && front.MaxX <= 50 - Gap + 1e-3, $"front stands at {front.MinX:0.###}..{front.MaxX:0.###}");
+        AssertValid(best, bounds);
+    }
+
+    [Fact]
+    public void SlidMainView_TakesTheSectionCutOnItAlong()
+    {
+        // As in the slide test above, with a section cut on the lower view standing
+        // to its right. The free view, 80 wide, has 76 beside the lower view.
+        const int Free = 5;
+        const int OnTop = 6;
+        var bounds = new ReservedRect(0, 0, 330, 164);
+        var left = Section(SectionA, orderKey: 10, strength: ProjectionStrength.Strong);
+        left.PreferredSide = SectionPlacementSide.Left;
+        var input = Input(
+            bounds,
+            left,
+            Section(SectionB, orderKey: 20, strength: ProjectionStrength.Strong),
+            new ConstraintLayoutViewInput
+            {
+                Id = Top, Width = 200, Height = 60,
+                PreferredSide = SectionPlacementSide.Bottom, ProjectionStrength = ProjectionStrength.Strong, IsProjection = true
+            },
+            new ConstraintLayoutViewInput
+            {
+                Id = OnTop, Width = 30, Height = 60, OwnerId = Top,
+                PreferredSide = SectionPlacementSide.Right, ProjectionStrength = ProjectionStrength.Strong, OrderKey = 30
+            });
+        input.FreeViews = new[] { new ConstraintLayoutFreeViewInput { Id = Free, Width = 80, Height = 50 } };
+        input.Policy = new ConstraintLayoutPolicy { AllowMainViewShift = true };
+
+        var shifted = ConstraintLayoutPlanner.Plan(input).Candidates.Where(static candidate => candidate.ShiftedViewId == Top).ToList();
+
+        Assert.NotEmpty(shifted);
+        Assert.All(shifted, candidate =>
+        {
+            // The section still stands against the view it is cut on, level with it.
+            Assert.Equal(Gap, candidate.RectsById[OnTop].MinX - candidate.RectsById[Top].MaxX, 9);
+            Assert.Equal(candidate.RectsById[Top].MinY, candidate.RectsById[OnTop].MinY, 9);
+            AssertValid(candidate, bounds);
+        });
+    }
+
+    [Fact]
+    public void LayoutThatDidNotHoldOnTheDrawing_IsNotALayoutInHand()
+    {
+        Assert.True(new FitViewsResult { PlannerCost = 0 }.HoldsPlannerLayout);
+        Assert.True(new FitViewsResult { PlannerCost = 0, PlannerLayoutHeld = true }.HoldsPlannerLayout);
+        Assert.False(new FitViewsResult { PlannerCost = 0, PlannerLayoutHeld = false }.HoldsPlannerLayout);
+        Assert.False(new FitViewsResult { PlannerLayoutHeld = true }.HoldsPlannerLayout);
+    }
+
+    [Fact]
     public void ReservedAreaWithNoClearPosition_GivesNoCandidate()
     {
         var input = Input(new ReservedRect(0, 0, 220, 120));
