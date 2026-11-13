@@ -181,6 +181,13 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
                 dropped.Add(chosen[index].Point);
                 chosen.RemoveAt(index);
             }
+        // The first interval too: the inner point next to the first end goes, the end stays.
+        while (chosen.Count > 2
+               && calculation.Along(chosen[1].Point) - calculation.Along(chosen[0].Point) < shortest)
+        {
+            dropped.Add(chosen[1].Point);
+            chosen.RemoveAt(1);
+        }
 
         var kept = chosen.SelectMany(item => calculation.Line.Where(point =>
                 Math.Abs(calculation.Along(point) - calculation.Along(item.Point)) <= settings.SameCoordinateTolerance)

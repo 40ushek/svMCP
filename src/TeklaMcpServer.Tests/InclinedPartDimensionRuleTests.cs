@@ -54,6 +54,23 @@ public sealed class InclinedPartDimensionRuleTests
     }
 
     [Fact]
+    public void TwoEqualPlatesAtOnePlaceKeepOneChain()
+    {
+        // A head plate on each side of the web: the same contour twice. Each carries the other.
+        var contours = new Dictionary<int, IReadOnlyList<(double X, double Y)>> {
+            [10] = Column.Select(point => (point.Item1, point.Item2)).ToArray(),
+            [11] = Plate(-83, CutLength - 8).Select(point => (point.Item1, point.Item2)).ToArray(),
+            [12] = Plate(-83, CutLength - 8).Select(point => (point.Item1, point.Item2)).ToArray()
+        };
+        var result = Assert.Single(new InclinedPartDimensionRule(new InclinedPartDimensionSettings())
+            .Calculate(new DimensionRuleContext([], null, new InclinedPartDimensionInput(contours, 10))).Results);
+
+        Assert.Equal(11, (int)result.Evidence["partId"]);
+        Assert.Equal(new[] { 12 }, (int[])result.Evidence["attachedPartIds"]);
+        Assert.Equal(new[] { Math.Round(CutLength + 75, 3), 8d }, result.Segments.ToArray());
+    }
+
+    [Fact]
     public void SmallPartWeldedOntoTheInclinedPlateIsLocatedAlongIt()
     {
         // Two equal small plates at one place on the head plate (one each side of the web),

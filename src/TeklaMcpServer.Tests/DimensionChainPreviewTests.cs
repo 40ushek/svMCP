@@ -290,6 +290,33 @@ public sealed class DimensionChainPreviewTests
             segment => Math.Abs(segment.GetDouble() - 6) < 0.001);
     }
 
+    [Theory]
+    [InlineData(-19, -15)]   // next to the chain's first end
+    [InlineData(2, 5)]
+    [InlineData(995, 998)]   // next to its last end
+    [InlineData(1012, 1015)]
+    public void NoSegmentShorterThanTheMinimumStaysAtEitherEnd(double x0, double x1)
+    {
+        var minimum = TeklaMcpServer.Api.Drawing.Dimensions.DimensionPlacementSettings.MinimumSteelChainSegment(10);
+        foreach (var side in new[] { "Top", "Bottom" })
+        {
+            var chain = Chain(Context(rightHalfHeight: 68, extraRib: (x0, x1)), side, "location");
+            var segments = chain.GetProperty("segments").EnumerateArray().Select(v => v.GetDouble()).ToArray();
+            Assert.True(segments.All(segment => segment >= minimum), side + ": " + string.Join(", ", segments));
+        }
+    }
+
+    [Fact]
+    public void LocalChainWithAPointOutsideTheViewFrameIsNotOffered()
+    {
+        // The plate 16 stands at X 500..510; the view shows X up to 300.
+        var context = Context(rightHalfHeight: 68, upperPlate: true, viewFrame: [-30, -200, 300, 200]);
+        var keys = context.Query("chain").GetProperty("chainPreview").EnumerateArray()
+            .SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .Select(chain => chain.TryGetProperty("key", out var key) ? key.GetString() : null).ToArray();
+        Assert.DoesNotContain("Local-16", keys);
+    }
+
     [Fact]
     public void PointDroppedForBeingTooCloseIsReported()
     {
@@ -548,7 +575,8 @@ public sealed class DimensionChainPreviewTests
 
     internal static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
-        bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false, bool farGusset = false)
+        bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false, bool farGusset = false,
+        double[]? viewFrame = null, (double X0, double X1)? extraRib = null)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -557,6 +585,7 @@ public sealed class DimensionChainPreviewTests
             [13] = Solid(13, 1000, 1010, -rightHalfHeight, rightHalfHeight)
         };
         if (closeRib) parts[15] = Solid(15, 201.5, 206, -66, 66);
+        if (extraRib is { } rib) { parts[15] = Solid(15, rib.X0, rib.X1, -66, 66); closeRib = true; }
         if (upperPlate) parts[16] = Solid(16, 500, 510, 20, 120);
         if (crossingPlate) parts[16] = Solid(16, 500, 510, -20, 80);
         if (edgeOnPlate) parts[16] = Solid(16, 500, 510, -0.001, 0.001);
@@ -579,7 +608,7 @@ public sealed class DimensionChainPreviewTests
                 .Where(p => !rakedEnd || p.ModelId != 13).Concat(upperPlate || crossingPlate || edgeOnPlate || farGusset ? [new PartRoleInView(16, "P16", "P", role, false)] : []).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
-        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType });
+        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame });
     }
 
     private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>

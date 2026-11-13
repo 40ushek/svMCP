@@ -22,9 +22,12 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
         var results = input.PartContours.Where(part => part.Key != input.MainPartId).OrderBy(part => part.Key)
             .Select(part => Locate(part.Key, part.Value, input.MainPartId, main, input.PartContours))
             .Where(result => result != null).Select(result => result!).ToArray();
-        // A part carried by another part's chain has no chain of its own.
-        var carried = results.SelectMany(result => (int[])result.Evidence["attachedPartIds"]).ToArray();
-        return new DimensionRuleEvaluation(results.Where(result => !carried.Contains((int)result.Evidence["partId"])));
+        // A part carried by another part's chain has no chain of its own. Two parts that carry
+        // each other (equal plates at one place) keep one chain: that of the lower id.
+        static int Id(DimensionRuleResult result) => (int)result.Evidence["partId"];
+        static int[] Carries(DimensionRuleResult result) => (int[])result.Evidence["attachedPartIds"];
+        return new DimensionRuleEvaluation(results.Where(result => !results.Any(other =>
+            Carries(other).Contains(Id(result)) && (!Carries(result).Contains(Id(other)) || Id(other) < Id(result)))));
     }
 
     private DimensionRuleResult? Locate(int partId, IReadOnlyList<(double X, double Y)> contour,

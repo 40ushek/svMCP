@@ -343,8 +343,15 @@ public sealed class ViewDimensionContext
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
                 DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"],
                 attachedPartIds: (int[])result.Evidence["attachedPartIds"]);
-        }).ToArray();
+        }).Where(InsideViewFrame).ToArray();
     }
+
+    // These chains are built from the whole part, not from the point catalog the frame has cut:
+    // one with a point the view does not show is not offered.
+    private bool InsideViewFrame(InclinedChain chain) => ViewFrame() is not { } frame
+        || Enumerable.Range(0, chain.Points.Length / 3).All(i =>
+            chain.Points[i * 3] >= frame.MinX && chain.Points[i * 3] <= frame.MaxX
+            && chain.Points[i * 3 + 1] >= frame.MinY && chain.Points[i * 3 + 1] <= frame.MaxY);
 
     internal const string LocalSide = "Local";
     private IReadOnlyList<InclinedChain>? _localChains;
@@ -387,7 +394,7 @@ public sealed class ViewDimensionContext
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
                 DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["baseOffset"],
                 LocalSide, LocalPartDimensionRule.Kind);
-        }).ToArray();
+        }).Where(InsideViewFrame).ToArray();
     }
 
     // Parts lying in the view plane, or nearly: the part's own X and Y axes both lie in it.
