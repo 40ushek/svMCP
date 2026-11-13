@@ -48,27 +48,28 @@ close to Tekla's own. The neighbours own the rest:
   `DimensionChainRepeats` comparison. Equal steps in different groups do not prove a
   repeat. Both eligible projections may be dimensioned; mirror suppression comes
   later, based on the identities of the source bolts.
-- **Unverified edges:** off sections and end views a part edge is confirmed. On them,
-  for now, an edge counts as confirmed only when the whole solid of the part lies
-  within the view depth (`WhollyInDepth`): a part the section cuts may change shape
-  behind the cut. View-depth processing exists, but some cases retain the full-solid
-  projection; it does not confirm every section edge. Step 6a replaces this rule. An `All`
-  chain without a confirmed edge is not created. Its steps-only replacement (as for
-  `Internal`) is offered only when the group passes the class, settings, depth and
-  pattern checks and has at least two distinct admissible projected positions.
-  Otherwise no replacement is created. The edge chain stays in the preview with
-  its refusal reason. Steps alone do not locate the group on the part.
+- **Section edges (agreed 2026-11-13):** off sections and end views a part edge is
+  confirmed. On them an edge chain is confirmed only when both of its end points
+  coincide, along the chain axis, with supports belonging to that same part in the
+  source profile/location chains of this view (`Top`/`Bottom` for X, `Left`/`Right`
+  for Y). Supports are taken before merging or formatting the answer; `chain` and
+  `chainDetails` give the same eligibility decision. The points come from the same view context, so the
+  part chains are computed first and the bolt chains after them; nothing is read
+  again from Tekla. Placing order is unchanged: one batch per view. An `All` chain
+  without both confirmed edges is not created and stays in the preview with its reason.
+- **No steps without a datum (agreed 2026-11-13):** under `All` steps between bolts
+  never stand in for an edge chain, on any view: tied to no edge or axis of symmetry
+  they locate nothing. Steps alone come only from the `Internal` setting. A datum on
+  an axis of symmetry belongs to the centered-bolts step (work order 7).
 - **Several groups on one part and side:** each group has its own `All` chain,
   using its own bolts and the confirmed part edges. Several chains may use the same
   part edge as a datum; do not remove a group's last edge datum because another
   group uses it. With both edges confirmed, each group gets `edge - bolts - edge`;
-  with one confirmed edge, it keeps that edge. Without confirmed edges, the
-  conditional steps-only fallback above applies. Confirm this on a live drawing.
+  with only one or neither confirmed edge, no `All` chain is created. A one-ended
+  `edge - bolts` chain is deferred to a separate step. Confirm this on a live drawing.
 - **A group on several parts:** a group joining the main part and secondary parts
   gets an edge chain on every secondary part; the main part takes it only when
-  nothing else is bolted. The steps of the group are offered once.
-- **Steps on sections:** under `All`, where edges are not confirmed, the steps of the
-  group are placed whatever the edge search found.
+  nothing else is bolted. Under `Internal` the steps of the group are offered once.
 - **Line placement:** the line stands one paper gap beyond the nearer bound of its
   part. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and
   of the rows of the side chains on the same side (one row per offered chain, an
@@ -175,8 +176,8 @@ The plant's own choice of all these options exists as a file in the model folder
   before has no axis: its groups are `Unresolved` and give no chain.
 - Every group gets a class (`BoltGroupViewClassifier`): `Plan`, `Side`, `Skewed`,
   `Unresolved`. The `bolts` and `boltChains` answers show it.
-- On sections, edge chains are created only for parts wholly within the view depth;
-  otherwise the steps of the group.
+- On sections, an `All` chain is created only when both ends match source section-chain
+  supports of the same part and axis; otherwise the chain is refused.
 - `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
   orientation refusals are gone, the skewed-reference refusal stays.
 - `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
@@ -411,9 +412,10 @@ Steps 1-5 done on 2026-11-13.
    standard run already writes part chains through that batch, bolts add more.
 6. A cold Haiku run on M.502 and on the M.81 sections: result, time, tool calls.
    M.502 done 2026-11-13 (see above); M.81 postponed by the user.
-6a. Section edges: measure to an edge only when it is a face seen edge-on, standing
-   perpendicular to the sheet (agreed with the user 2026-11-13). Replaces the
-   `WhollyInDepth` rule; an edge from a slanted face or a slanted cut gives steps only.
+6a. Section edges: both ends must match the unmerged section-chain supports of the
+   same part and axis, independently of answer detail (see "Section edges"). Replaces the
+   `WhollyInDepth` rule. Considered and set aside: a face seen edge-on (harder to
+   match a contour edge to a face).
 7. The *Position* kind, then the *Check* kind, then centered bolts.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
@@ -434,8 +436,6 @@ Steps 1-5 done on 2026-11-13.
   by view. How the two work together is to be settled when preferred-view selection is added.
 - A bolt hidden behind another part. The class does not answer it; see the visibility
   probe in the Bolt Geometry roadmap.
-- Section edges: the face-seen-edge-on rule (step 6a) is agreed in principle, not yet
-  specified: how a contour edge is matched to a face, and with which tolerance.
 - The row reserved for an overall that is not placed as a repeat leaves an empty row
   before the bolt line. Reserve only the chains that will be placed?
 - Bolt lines are kept clear by rows only; text collisions and lines of dimensions

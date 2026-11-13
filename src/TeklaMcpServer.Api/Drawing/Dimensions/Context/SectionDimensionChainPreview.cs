@@ -38,12 +38,14 @@ internal sealed class SectionDimensionChainPreview
     public IReadOnlyList<int> SecondaryIds => _secondaryIds;
 
     internal sealed class SideResult(object[] chains, int[] locatedPartIds, DimensionPoint[]? merged = null,
-        DimensionChainSide side = DimensionChainSide.Top)
+        DimensionChainSide side = DimensionChainSide.Top, DimensionPoint[]? edgePoints = null)
     {
         public object[] Chains { get; } = chains;
         public int[] LocatedPartIds { get; } = locatedPartIds;
         /// <summary>Profile and part-location points of this side as one chain, ordered along it.</summary>
         public DimensionPoint[] Merged { get; } = merged ?? [];
+        /// <summary>Unmerged supports selected by the profile and location rules, with part provenance.</summary>
+        public DimensionPoint[] EdgePoints { get; } = edgePoints ?? [];
         public DimensionChainSide Side { get; } = side;
         public double AlongOf(DimensionPoint p) => AlongX(Side) ? p.X : p.Y;
     }
@@ -150,7 +152,8 @@ internal sealed class SectionDimensionChainPreview
             ProfileChain(profileResult),
             LocationChain(locationResult),
             Empty("overall", overallNote)], (int[])locationResult.Evidence["locatedPartIds"],
-            MergeChain(profile, location, side), side);
+            MergeChain(profile, location, side), side,
+            profile.Concat(location).GroupBy(point => point.Id).Select(group => group.First()).ToArray());
     }
 
     // The chain to place on a side: the profile's two outer faces and the parts located against them.

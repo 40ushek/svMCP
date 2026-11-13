@@ -258,7 +258,7 @@ public sealed class ViewDimensionContext
                     side = k.Side.ToString(),
                     chains = new[] { DimensionChainPreview.Short(SectionDimensionChainPreview.MergedChain(k), detailed, k.Side.ToString()) }
                 }).ToArray();
-                result["chainPreview"] = sideRows.Concat(selected.Length == 4 ? BoltRow(coordinateSettings, sideRows) : []).ToArray();
+                result["chainPreview"] = sideRows.Concat(selected.Length == 4 ? BoltRow(coordinateSettings, sideRows, sectionPlans?.Values) : []).ToArray();
                 result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
                 return Freeze(result, display: true);
             }
@@ -291,7 +291,7 @@ public sealed class ViewDimensionContext
             if (!panel && refusal == null && selected.Length == 4)
             {
                 var sideRows = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().ToArray();
-                result["chainPreview"] = sideRows.Concat(BoltRow(coordinateSettings, sideRows)).ToArray();
+                result["chainPreview"] = sideRows.Concat(BoltRow(coordinateSettings, sideRows, sectionPlans?.Values)).ToArray();
             }
         }
         if (Wants("points") || Wants("edges"))
@@ -429,9 +429,10 @@ public sealed class ViewDimensionContext
         };
     }
 
-    private object[] BoltRow(DimensionCoordinateSettings? coordinateSettings, object[] sideRows)
+    private object[] BoltRow(DimensionCoordinateSettings? coordinateSettings, object[] sideRows,
+        IEnumerable<SectionDimensionChainPreview.SideResult>? sectionPlans)
     {
-        var chains = BoltChains(coordinateSettings, SideRowCounts(sideRows));
+        var chains = BoltChains(coordinateSettings, sideRows, sectionPlans);
         var readRefusal = BoltReadRefusal();
         // An incomplete read stays visible even when no group was read: no chains is not "no bolts".
         return chains.Count == 0 && readRefusal == null ? [] : [new { side = BoltSide, readIncomplete = readRefusal,
@@ -439,25 +440,27 @@ public sealed class ViewDimensionContext
     }
 
     // Bolt chains by Tekla-like settings. Part edges count as confirmed only off sections: a
-    // section contour is not read yet, so there the steps of the group stand in for its edge chain.
+    // section contour is not read yet, so there an edge counts only where a part chain uses it.
     internal IReadOnlyList<BoltRowChain> BoltChains(DimensionCoordinateSettings? coordinateSettings = null,
-        IReadOnlyDictionary<DimensionChainSide, int>? sideRows = null)
+        object[]? sideRows = null, IEnumerable<SectionDimensionChainPreview.SideResult>? sectionPlans = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
-        var cacheKey = tolerance.ToString("R", CultureInfo.InvariantCulture) + ":" + string.Join(",",
-            (sideRows ?? new Dictionary<DimensionChainSide, int>()).OrderBy(item => item.Key).Select(item => item.Key + "=" + item.Value));
+        var sideRowCounts = sideRows == null ? null : SideRowCounts(sideRows);
+        var cacheKey = tolerance.ToString("R", CultureInfo.InvariantCulture) + ":" + (sideRows == null ? ""
+            : JsonSerializer.SerializeToElement(sideRows).GetRawText());
         if (_boltChains.TryGetValue(cacheKey, out var cached)) return cached;
         var settings = new BoltChainSettings();
         var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
         var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
             JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
-            edgesConfirmed: viewType is not ("SectionView" or "EndView") ? _ => true : WhollyInDepth, settings, coordinateSettings);
+            edgesConfirmed: viewType is not ("SectionView" or "EndView") ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
+            settings, coordinateSettings);
         var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
             .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
         var frame = ViewFrame();
         var readRefusal = BoltReadRefusal();
         var gap = DimensionPlacementSettings.DefaultPaperGapMm * Scale;
-        var rows = OccupiedLines(sideRows, gap);
+        var rows = OccupiedLines(sideRowCounts, gap);
         var chains = evaluation.Results.Select(result => {
             var outside = frame is { } f && result.Points.Any(point =>
                 point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY);
@@ -471,29 +474,19 @@ public sealed class ViewDimensionContext
         return chains;
     }
 
-    // On a section a part's edges are those of its whole solid only when the whole solid lies in
-    // the view's depth; a part the section cuts may change shape behind the cut.
-    private bool WhollyInDepth(int partId)
+    // Use the unmerged section supports, never the formatted answer. Both ends must be
+    // supported by the same part on this axis; a matching coordinate on another part proves nothing.
+    private static Func<int, int, double[][], bool> SectionEdgeCheck(
+        IEnumerable<SectionDimensionChainPreview.SideResult> sectionPlans)
     {
-        if (DepthRange() is not { } range) return false;
-        var points = GetPartSolidGeometrySnapshot(partId)?.Solid.Vertices
-            .Where(vertex => vertex.Point.Length >= 3).Select(vertex => vertex.Point[2]).ToArray();
-        return points is { Length: > 0 } && points.All(z =>
-            z >= range.Min - DimensionPlacementSettings.VerificationToleranceViewUnits
-            && z <= range.Max + DimensionPlacementSettings.VerificationToleranceViewUnits);
-    }
-
-    // The view's depth window in the coordinates of the captured solids, from the view metadata.
-    private (double Min, double Max)? DepthRange()
-    {
-        if (!_metadata.TryGetProperty("depthWindow", out var window) || window.ValueKind != JsonValueKind.Object
-            || !window.TryGetProperty("MinZ", out var min) || !window.TryGetProperty("MaxZ", out var max)
-            || !_metadata.TryGetProperty("viewCoordinates", out var view)
-            || !_metadata.TryGetProperty("displayCoordinates", out var display)) return null;
-        return ViewDepthWindow.DepthRangeInView(min.GetDouble(), max.GetDouble(),
-            view.EnumerateArray().Select(number => number.GetDouble()).ToArray(),
-            display.EnumerateArray().Select(number => number.GetDouble()).ToArray()) is { } range
-            ? (range.Min, range.Max) : null;
+        var supports = sectionPlans.SelectMany(plan => plan.EdgePoints.SelectMany(point => point.Parents
+            .Where(parent => parent.ModelId.HasValue && !parent.IsHole)
+            .Select(parent => (PartId: parent.ModelId!.Value, Axis: plan.Side.RunsAlongX() ? 0 : 1,
+                Along: plan.Side.RunsAlongX() ? point.X : point.Y)))).ToArray();
+        var tolerance = CalcDimensionChains.PartSpanMatchToleranceMm;
+        return (partId, axis, points) => points.Length >= 2
+            && new[] { points[0], points[points.Length - 1] }.All(end => supports.Any(support =>
+                support.PartId == partId && support.Axis == axis && Math.Abs(support.Along - end[axis]) <= tolerance));
     }
 
     // How many chains each side row offers for placing; each takes one row beyond the outline.

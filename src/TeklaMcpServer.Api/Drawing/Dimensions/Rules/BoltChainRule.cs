@@ -26,15 +26,13 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
                     if (partPolicy is BoltInternalDimensions.None or BoltInternalDimensions.Internal) continue;
                     reason = Refusal(candidate)
                         ?? (partPolicy == BoltInternalDimensions.Necessary ? "setting Necessary is not implemented yet"
-                        : !candidate.EdgeConfirmed ? "part edge is not confirmed on this view; the steps of the group are placed instead"
+                        : !candidate.EdgeConfirmed ? "part edge is not confirmed on this view"
                         : null);
                     break;
                 default:
-                    // Under All the steps stand in for the edge chain where part edges are not confirmed,
-                    // whatever the edge search found: the steps need no edge.
-                    var policy = Policy(candidate);
-                    var replacement = policy == BoltInternalDimensions.All && !candidate.EdgeConfirmed;
-                    if (policy != BoltInternalDimensions.Internal && !replacement) continue;
+                    // Steps alone are offered only when the setting asks for them (Internal): under All
+                    // steps tied to no edge or axis locate nothing, so they never stand in for an edge chain.
+                    if (Policy(candidate) != BoltInternalDimensions.Internal) continue;
                     reason = Refusal(candidate);
                     break;
             }

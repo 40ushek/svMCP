@@ -518,7 +518,7 @@ public sealed class DimensionChainPreviewTests
     internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
         double? edgeAboveFlange = null, double? insetPlateDepth = null, double? sidePlateThickness = null,
-        double[]? sidePlateAxisX = null)
+        double[]? sidePlateAxisX = null, ViewBoltGeometrySnapshot? bolts = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -570,7 +570,7 @@ public sealed class DimensionChainPreviewTests
         }
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, parts.Keys, new Solids(parts));
         return new ViewDimensionContext(7, scale, new StructuralOutline(outline, included, [], [], [], [], parts.Keys.ToArray()),
-            [], new { drawingGuid = "test" }, new { viewType });
+            [], new { drawingGuid = "test" }, new { viewType }, bolts);
     }
 
     internal static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",

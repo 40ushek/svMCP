@@ -14,7 +14,7 @@ internal static class BoltChainCandidates
 
     internal static IReadOnlyList<BoltChainCandidate> Build(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<int> mainPartIds, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
-        Func<int, bool> edgesConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null)
+        Func<int, int, double[][], bool> edgesConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var preview = JsonSerializer.SerializeToElement(BoltDimensionChainPreview.Build(snapshot, includedPartIds,
@@ -50,6 +50,9 @@ internal static class BoltChainCandidates
                 var across = 1 - axis;
                 var center = group.GetProperty("points").EnumerateArray()
                     .Select(point => point.GetProperty("point")[across].GetDouble()).DefaultIfEmpty(0).Average();
+                // Whether the edges of each part chain on this axis are confirmed; the steps
+                // of the group follow the chain of the first part.
+                var confirmed = new Dictionary<int, bool>();
                 foreach (var partId in dimensioned)
                 {
                     var placement = Placement(contours, partId, axis, center);
@@ -57,11 +60,12 @@ internal static class BoltChainCandidates
                     if (!partChains.TryGetValue(partKey, out var part)) continue;
                     var points = part.GetProperty("points").EnumerateArray()
                         .Select(point => point.EnumerateArray().Select(value => value.GetDouble()).ToArray()).ToArray();
+                    confirmed[partId] = points.Length >= 2 && edgesConfirmed(partId, axis, points);
                     result.Add(new BoltChainCandidate(partKey, BoltChainCandidate.PartKind, groupId, partId,
                         mainPartIds.Contains(partId), viewClass, axis, RulePoints(partKey, groupId, points),
                         part.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()),
                         placement.Refusal ?? (part.GetProperty("state").GetString() == "Candidate" ? null : part.GetProperty("reason").GetString()),
-                        edgesConfirmed(partId), placement.Normal, points.Length > 0 ? placement.Offset(points[0]) : 0,
+                        confirmed[partId], placement.Normal, points.Length > 0 ? placement.Offset(points[0]) : 0,
                         part.GetProperty("projectedPositions").Clone()));
                 }
                 // The steps of a group are the same whichever part it bolts: offered once, beside the first part.
@@ -75,7 +79,7 @@ internal static class BoltChainCandidates
                         mainPartIds.Contains(dimensioned[0]), viewClass, axis, RulePoints(key, groupId, points),
                         chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()),
                         first.Refusal ?? (chain.GetProperty("state").GetString() == "Candidate" ? null : chain.GetProperty("reason").GetString()),
-                        edgesConfirmed(dimensioned[0]), first.Normal, points.Length > 0 ? first.Offset(points[0]) : 0,
+                        confirmed.TryGetValue(dimensioned[0], out var firstConfirmed) && firstConfirmed, first.Normal, points.Length > 0 ? first.Offset(points[0]) : 0,
                         chain.GetProperty("points").EnumerateArray().Select(point => point.GetProperty("sourceIndices").Clone()).ToArray()));
                 }
             }

@@ -55,34 +55,19 @@ public sealed class BoltChainRuleTests
     }
 
     [Fact]
-    public void AnUnconfirmedEdgeRefusesThePartChainAndPlacesTheStepsOfItsGroup()
+    public void AnUnconfirmedEdgeRefusesThePartChainAndPlacesNoStepsUnderAll()
     {
-        var results = Decide(new BoltChainSettings(), Part(edges: false), Steps(edges: false));
-        Assert.Equal(2, results.Length);
-        Assert.False(results[0].Create);
-        Assert.Contains("not confirmed", results[0].Reason);
-        Assert.True(results[1].Create);
-        Assert.Equal("bolt-42-X-0", results[1].Key);
+        var result = Assert.Single(Decide(new BoltChainSettings(), Part(edges: false), Steps(edges: false)));
+        Assert.False(result.Create);
+        Assert.Contains("not confirmed", result.Reason);
     }
 
     [Fact]
-    public void TheStepsFallbackCannotBypassTheirOwnRefusals()
+    public void ARefusedEdgeChainPlacesNoStepsUnderAll()
     {
-        var collapsed = Steps(edges: false, points: 1);
-        var blocked = Steps(edges: false, refusal: "restriction evidence does not admit every source", key: "bolt-42-X-1");
-        var results = Decide(new BoltChainSettings(), Part(edges: false), collapsed, blocked);
-        Assert.All(results, result => Assert.False(result.Create));
-        Assert.Contains(results, result => result.Key == "bolt-42-X-0" && result.Reason == "fewer than two distinct points");
-    }
-
-    [Fact]
-    public void OnASectionTheStepsDoNotDependOnTheEdgeSearch()
-    {
-        var results = Decide(new BoltChainSettings(), Part(edges: false, refusal: "axis ray aligns with a contour vertex"), Steps(edges: false));
-        Assert.Equal(2, results.Length);
-        Assert.Equal("axis ray aligns with a contour vertex", results[0].Reason);
-        Assert.True(results[1].Create);
-        Assert.Equal("bolt-42-X-0", results[1].Key);
+        var result = Assert.Single(Decide(new BoltChainSettings(),
+            Part(refusal: "axis ray aligns with a contour vertex"), Steps()));
+        Assert.Equal("axis ray aligns with a contour vertex", result.Reason);
     }
 
     [Fact]
@@ -95,7 +80,7 @@ public sealed class BoltChainRuleTests
         var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
             [10] = Contours()[10], [20] = Contours()[10], [30] = Contours()[10]
         };
-        var candidates = BoltChainCandidates.Build(Snapshot(group), [10, 20, 30], [10], contours, _ => true, new BoltChainSettings());
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10, 20, 30], [10], contours, (_, _, _) => true, new BoltChainSettings());
         var parts = candidates.Where(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 0).Select(c => c.PartId).ToArray();
         Assert.Equal(new int?[] { 20, 30 }, parts);
         Assert.Single(candidates, c => c.Kind == BoltChainCandidate.InternalKind && c.Axis == 0);
@@ -167,6 +152,79 @@ public sealed class BoltChainRuleTests
     }
 
     [Fact]
+    public void OnASectionAnEdgeTheSectionChainUsesIsConfirmed()
+    {
+        // Bolts on the end plate -130..130; the section chain locates the plate by both edges.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [-100, 150, 0],
+            SecondPosition = [100, 150, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [-100, 150, 0] }, new() { Index = 1, Point = [100, 150, 0] }] };
+        var snapshot = ViewBoltGeometrySnapshot.Capture(7, [11], id => new() {
+            Success = true, ViewId = 7, PartId = id, BoltGroups = [group]
+        }, new DepthBox(-2000, -2000, -2000, 2000, 2000, 2000), point => point, true);
+        var answer = DimensionChainPreviewTests.ISectionContext(endPlate: true, bolts: snapshot).Query("chain");
+        var bolt = answer.GetProperty("chainPreview").EnumerateArray()
+            .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray().ToArray();
+        var edge = bolt.Single(chain => chain.GetProperty("key").GetString() == "bolt-part-11-groups-42-Top");
+        Assert.False(edge.GetProperty("incomplete").GetBoolean(), answer.GetRawText());
+        Assert.Equal(new[] { 30d, 200d, 30d }, edge.GetProperty("segments").EnumerateArray().Select(v => v.GetDouble()));
+        Assert.DoesNotContain(bolt, chain => chain.GetProperty("key").GetString() == "bolt-42-X-0");
+    }
+
+    [Fact]
+    public void OnASectionAnEdgeNoPartChainUsesGivesNoBoltDimension()
+    {
+        var group = Group(42, 20, -40);
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10], Contours(),
+            (partId, axis, points) => false, new BoltChainSettings());
+        Assert.All(candidates.Where(c => c.Kind != BoltChainCandidate.GroupKind), c => Assert.False(c.EdgeConfirmed));
+        var results = new DimensionRuleSet(new BoltChainRule(new BoltChainSettings()))
+            .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates))).Results;
+        Assert.DoesNotContain(results, r => (bool)r.Evidence["create"]);
+        Assert.Contains(results, r => ((string)r.Evidence["key"]).StartsWith("bolt-part-10-groups-42-"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SectionEdgeDecisionDoesNotDependOnAnswerDetailOrQueryOrder(bool detailedFirst)
+    {
+        // The compact section omits the web thickness points; the underlying profile still checks them.
+        var group = Group(42, -2, 0);
+        group.SecondPosition = [2, 0, 0];
+        group.Positions[1].Point = [2, 0, 0];
+        var context = DimensionChainPreviewTests.ISectionContext(bolts: SnapshotOf(group));
+        var questions = detailedFirst ? new[] { "chainDetails", "chain" } : new[] { "chain", "chainDetails" };
+        foreach (var question in questions)
+        {
+            var chain = BoltChain(context.Query(question), "bolt-part-10-groups-42-Top");
+            Assert.False(chain.GetProperty("incomplete").GetBoolean());
+            Assert.Equal(new[] { 8d, 4d, 8d }, chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
+        }
+    }
+
+    [Fact]
+    public void SectionEdgesOfAnotherPartCannotConfirmAnInsetPlate()
+    {
+        // The plate and the main profile both span -80..80, but the plate is located by the
+        // profile and contributes no edge supports of its own to the section's chains.
+        var group = Group(42, -40, 0);
+        group.PartToBeBoltedId = 15;
+        group.SecondPosition = [40, 0, 0];
+        group.Positions[1].Point = [40, 0, 0];
+        var context = DimensionChainPreviewTests.ISectionContext(insetPlateDepth: -100, bolts: SnapshotOf(group));
+        foreach (var question in new[] { "chain", "chainDetails" })
+        {
+            var chain = BoltChain(context.Query(question), "bolt-part-15-groups-42-Top");
+            Assert.True(chain.GetProperty("incomplete").GetBoolean());
+            Assert.Equal("part edge is not confirmed on this view", chain.GetProperty("incompleteReason").GetString());
+        }
+    }
+
+    private static JsonElement BoltChain(JsonElement answer, string key) => answer.GetProperty("chainPreview").EnumerateArray()
+        .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray()
+        .Single(chain => chain.GetProperty("key").GetString() == key);
+
+    [Fact]
     public void AnIncompleteReadOfNoGroupAtAllStillShowsTheBoltRow()
     {
         var snapshot = ViewBoltGeometrySnapshot.Capture(7, [10], id =>
@@ -215,12 +273,12 @@ public sealed class BoltChainRuleTests
     public void BuiltChainsFromTwoGroupsOnOnePartStaySeparateAndKeepTheirKeys()
     {
         var snapshot = Snapshot(Group(21, 20), Group(22, 120));
-        var forward = Keys(BoltChainCandidates.Build(snapshot, [10], [10], Contours(), _ => true, new BoltChainSettings()));
-        var reversed = Keys(BoltChainCandidates.Build(Snapshot(Group(22, 120), Group(21, 20)), [10], [10], Contours(), _ => true, new BoltChainSettings()));
+        var forward = Keys(BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings()));
+        var reversed = Keys(BoltChainCandidates.Build(Snapshot(Group(22, 120), Group(21, 20)), [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings()));
         Assert.Equal(forward, reversed);
         Assert.Contains("bolt-part-10-groups-21-Bottom", forward);
         Assert.Contains("bolt-part-10-groups-22-Bottom", forward);
-        var candidates = BoltChainCandidates.Build(snapshot, [10], [10], Contours(), _ => true, new BoltChainSettings());
+        var candidates = BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings());
         var first = candidates.Single(c => c.Key == "bolt-part-10-groups-21-Bottom");
         // Edge - two bolts of group 21 - edge: no bolt of group 22 and no span between the groups.
         Assert.Equal(new[] { 20d, 60d, 180d }, first.Segments);
@@ -235,7 +293,7 @@ public sealed class BoltChainRuleTests
         group.SecondPosition = [20, 10, 40];
         group.Positions = [new() { Index = 0, Point = [20, 10, 0] }, new() { Index = 1, Point = [20, 10, 40] },
             new() { Index = 2, Point = [80, 10, 0] }, new() { Index = 3, Point = [80, 10, 40] }];
-        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10], Contours(), _ => false, new BoltChainSettings());
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10], Contours(), (_, _, _) => false, new BoltChainSettings());
         Assert.All(candidates, candidate => Assert.Equal(0, candidate.Axis));
         var steps = candidates.Single(c => c.Kind == BoltChainCandidate.InternalKind);
         Assert.Equal(new[] { 60d }, steps.Segments);
