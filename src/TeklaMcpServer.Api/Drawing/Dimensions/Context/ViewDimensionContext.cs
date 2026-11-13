@@ -424,7 +424,7 @@ public sealed class ViewDimensionContext
             partId = result.Evidence["partId"], viewClass = result.Evidence["viewClass"],
             segments = result.Segments, distance,
             points = result.Points.Select(point => new[] { point.X, point.Y }).ToArray(),
-            sources = result.Evidence["sources"],
+            sources = result.Evidence["sources"], holes = result.Evidence["holes"],
             incomplete = !Create, incompleteReason = Reason
         };
     }
@@ -534,7 +534,8 @@ public sealed class ViewDimensionContext
     }
 
     // Bolt chains on one side whose lines would fall on one another and whose spans overlap are
-    // moved out by one paper gap at a time. Tekla measures the offset from the chain's first point.
+    // moved out to one paper gap beyond the line in the way, so a chain whose points stand a little
+    // off the outline does not lose a row. Tekla measures the offset from the chain's first point.
     private static double NextFreeRow(List<(double Nx, double Ny, double Line, double From, double To)> rows,
         DimensionRuleResult result, double distance, double gap)
     {
@@ -542,12 +543,14 @@ public sealed class ViewDimensionContext
         var first = result.Points[0];
         var along = result.Points.Select(point => point.X * -normal.Y + point.Y * normal.X).ToArray();
         var (from, to) = (along.Min(), along.Max());
-        double Line(double d) => first.X * normal.X + first.Y * normal.Y + d;
-        while (rows.Any(row => Math.Abs(row.Nx - normal.X) < 1e-9 && Math.Abs(row.Ny - normal.Y) < 1e-9
+        var start = first.X * normal.X + first.Y * normal.Y;
+        while (rows.Where(row => Math.Abs(row.Nx - normal.X) < 1e-9 && Math.Abs(row.Ny - normal.Y) < 1e-9
                    // One gap apart is a free row: rounded points must not push a line one row further.
-                   && Math.Abs(row.Line - Line(distance)) < gap - DimensionPlacementSettings.VerificationToleranceViewUnits
-                   && row.From <= to && from <= row.To))
-            distance += gap;
+                   && Math.Abs(row.Line - (start + distance)) < gap - DimensionPlacementSettings.VerificationToleranceViewUnits
+                   && row.From <= to && from <= row.To)
+               .Select(row => (double?)row.Line).Max() is { } inTheWay)
+            distance = inTheWay + gap - start;
+        double Line(double d) => start + d;
         rows.Add((normal.X, normal.Y, Line(distance), from, to));
         return distance;
     }

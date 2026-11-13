@@ -31,24 +31,33 @@ internal static class BoltEdgeDistancePreview
     }
 
     internal static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
-        int axis, int sign, out double[]? edge, out int contourIndex, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
+        int axis, int sign, out double[]? edge, out int contourIndex, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm) =>
+        FindEdge(contours, center, axis, sign, out edge, out contourIndex, out _, tolerance);
+
+    /// <summary>The same search, with the kind of its outcome: a refusal is either ambiguous or invalid geometry.</summary>
+    internal static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
+        int axis, int sign, out double[]? edge, out int contourIndex, out BoltEdgeSearch search,
+        double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
     {
         edge = null;
         contourIndex = -1;
+        search = BoltEdgeSearch.Invalid;
         if (contours == null || contours.Count == 0) return "part has no captured projected contour";
         var outer = Flatten(contours).Where(node => !node.IsHole).ToArray();
         if (outer.Length == 0 || outer.Any(node => node.Polygon.Count < 3 || node.Polygon.Any(p =>
                 p.Length < 2 || p.Take(2).Any(value => double.IsNaN(value) || double.IsInfinity(value)))))
             return "part outer contour is invalid or incomplete";
-        var matches = outer.Select((node, index) => (node, index)).Where(item =>
-            PolygonGeometry.ContainsPoint(item.node.Polygon, center[0], center[1])).ToArray();
-        if (matches.Length != 1) return "bolt center is outside or belongs to ambiguous projected outer contours";
-        contourIndex = matches[0].index;
-        var polygon = matches[0].node.Polygon;
+        if (Owner(outer, center, tolerance) is not { } owner)
+            return "bolt center is outside or belongs to ambiguous projected outer contours";
+        contourIndex = owner.Index;
+        var polygon = owner.Polygon;
         var across = 1 - axis;
+        search = BoltEdgeSearch.Ambiguous;
         // Avoid choosing a crossing through a vertex or along a boundary from rounded evidence.
         if (polygon.Any(p => Math.Abs(p[across] - center[across]) <= tolerance))
             return "axis ray aligns with a contour vertex; edge crossing requires review";
+        if (owner.State == BoltCenterState.Boundary)
+            return "bolt center lies on or too close to the projected part edge";
         var crossings = new List<double>();
         for (var index = 0; index < polygon.Count; index++)
         {
@@ -60,11 +69,45 @@ internal static class BoltEdgeDistancePreview
                 return "bolt center lies on or too close to the projected part edge";
             if (sign * (along - center[axis]) > tolerance) crossings.Add(along);
         }
+        search = BoltEdgeSearch.Invalid;
         if (crossings.Count == 0) return "no external contour crossing in the requested axis direction";
         var selected = crossings.OrderBy(value => sign * (value - center[axis])).First();
         edge = (double[])center.Clone();
         edge[axis] = selected;
+        search = BoltEdgeSearch.Found;
         return null;
+    }
+
+    /// <summary>
+    /// The one outer contour that holds the center: the one it stands inside, or, inside none, the
+    /// one whose boundary it lies on. Null when there is none or more than one.
+    /// </summary>
+    internal static (int Index, IReadOnlyList<double[]> Polygon, BoltCenterState State)? Owner(
+        IReadOnlyList<OutlineTreeNodeResult> outer, double[] center, double tolerance)
+    {
+        var states = outer.Select((node, index) => (Index: index, Polygon: (IReadOnlyList<double[]>)node.Polygon,
+            State: Locate(node.Polygon, center, tolerance))).ToArray();
+        var inside = states.Where(item => item.State == BoltCenterState.Inside).ToArray();
+        var matches = inside.Length > 0 ? inside : states.Where(item => item.State == BoltCenterState.Boundary).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    /// <summary>Within the tolerance of the polygon's line the point is on the boundary, whichever side it fell on.</summary>
+    internal static BoltCenterState Locate(IReadOnlyList<double[]> polygon, double[] point, double tolerance)
+    {
+        for (var index = 0; index < polygon.Count; index++)
+            if (DistanceToSegment(point, polygon[index], polygon[(index + 1) % polygon.Count]) <= tolerance)
+                return BoltCenterState.Boundary;
+        return PolygonGeometry.ContainsPoint(polygon, point[0], point[1]) ? BoltCenterState.Inside : BoltCenterState.Outside;
+    }
+
+    internal static double DistanceToSegment(double[] point, double[] a, double[] b)
+    {
+        var (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        var length = dx * dx + dy * dy;
+        var t = length <= 0 ? 0 : Math.Max(0, Math.Min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / length));
+        var (x, y) = (a[0] + t * dx - point[0], a[1] + t * dy - point[1]);
+        return Math.Sqrt(x * x + y * y);
     }
 
     internal static IEnumerable<OutlineTreeNodeResult> Flatten(IEnumerable<OutlineTreeNodeResult> nodes)
@@ -75,4 +118,18 @@ internal static class BoltEdgeDistancePreview
             foreach (var child in Flatten(node.Children)) yield return child;
         }
     }
+}
+
+/// <summary>Where a bolt center stands against one projected contour, within the coordinate tolerance.</summary>
+internal enum BoltCenterState { Outside, Boundary, Inside }
+
+/// <summary>How the search for the part edge beside a bolt ended.</summary>
+internal enum BoltEdgeSearch
+{
+    /// <summary>One crossing of the contour was found.</summary>
+    Found,
+    /// <summary>The evidence does not single out a crossing: a vertex at the bolt's height, a center on the edge.</summary>
+    Ambiguous,
+    /// <summary>No usable contour, or no crossing on that side.</summary>
+    Invalid
 }

@@ -21,7 +21,7 @@ dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release
 - **Claude Desktop is NOT used** — but TeklaMcpServer.exe can still be locked: an MCP client (VS Code extension, Claude Code) keeps the server process alive while a session is open, so `dotnet build`/`dotnet test` may fail with MSB3021/MSB3027 on `TeklaMcpServer.exe` or `TeklaMcpServer.dll`.
   - A bridge-only rebuild still works while a session is open — but **not** because the bridge is short-lived. `PersistentBridge` starts `TeklaBridge.exe --loop` and keeps it alive for the whole session. It works because the running bridge for TS2025 is the copy in the Tekla extensions folder, while `dotnet build` writes to `src/TeklaBridge/bin/`. Deploying over the extensions copy **does** fail with a file lock — stop the bridge process first.
   - To build or test without stopping the session, redirect output:
-    `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<name>/`
+    `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=E:/repos/svMCP/.codex-build/<name>/`
     (use forward slashes — backslashes get mangled and MSBuild creates junk directories)
 - Deployment to `C:\TeklaStructures\2025.0\Environments\common\extensions\svMCP\` is **not** fully automatic:
   - the `DeployToExtensions` target in Host .csproj copies `@(HostOutput)` — this covers `TeklaMcpServer.Api.dll` but **not** `TeklaBridge.exe`
@@ -209,7 +209,7 @@ direction = `"-dy,dx,0"` (перпендикуляр к диагонали)
   - segment-level: `bounds`, `textBounds`, `dimensionLine`, `leadLineMain`, `leadLineSecond`
 - `TextBounds` пока intentionally conservative: `null`, без fake geometry
 - measured value пока не торчит в публичный JSON; compile-spike подтверждён через `StraightDimension.Value.GetUnformattedString()`
-- dimensions arrangement сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
+- dimensions arrangement сейчас перепроектируется по эталону `E:\repos\svMCP\dim`
 - публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
 - контракт для будущего arrange:
   - входной gap задаётся в бумажных единицах

@@ -8,7 +8,7 @@ internal static class BoltPartChainPreview
     internal static object[] Build(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
-        BoltChainSettings? boltSettings = null, bool perGroup = false)
+        BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyDictionary<int, int>? units = null)
     {
         var settings = boltSettings ?? new BoltChainSettings();
         if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<object>();
@@ -20,8 +20,8 @@ internal static class BoltPartChainPreview
                 .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds).Distinct()
                 .Where(includedParts.Contains);
             var restriction = row.GetProperty("restriction").EnumerateArray().ToArray();
-            var refusal = BoltDimensionChainPreview.PatternRefusal(group,
-                BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees), tolerance);
+            var viewClass = BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees);
+            var refusal = BoltDimensionChainPreview.PatternRefusal(group, viewClass, tolerance);
             foreach (var partId in related)
                 foreach (var position in group.Positions)
                 {
@@ -29,15 +29,28 @@ internal static class BoltPartChainPreview
                     var reason = refusal ?? (evidence.Length == 1 && evidence[0].GetProperty("centerState").GetString() == "Inside"
                         ? null : "center restriction is " + (evidence.Length == 1
                             ? evidence[0].GetProperty("centerState").GetString() : "missing or ambiguous"));
-                    sources.Add(new Source(partId, group.ModelId, position.Index, position.Point, reason));
+                    sources.Add(new Source(partId, group.ModelId, position.Index, position.Point, reason, viewClass == BoltGroupViewClass.Side));
                 }
         }
-        // Per group: one chain per part, group and side (the Bolt row); otherwise one per part and side.
-        return sources.GroupBy(source => (source.PartId, GroupId: perGroup ? source.GroupId : 0))
+        // Per group: one chain per part, group (or merged groups) and side (the Bolt row); otherwise
+        // one per part and side.
+        return sources.GroupBy(source => (source.PartId, GroupId: perGroup ? Leader(source.GroupId, units) : 0))
             .OrderBy(unit => unit.Key.PartId).ThenBy(unit => unit.Key.GroupId)
             .SelectMany(unit => sides.Distinct().Select(side => BuildChain(unit.Key.PartId, unit.ToArray(), side, contours, tolerance, perGroup,
-                perGroup ? $"bolt-part-{unit.Key.PartId}-groups-{unit.Key.GroupId}-{side}" : $"bolt-part-{unit.Key.PartId}-{side}")))
+                perGroup ? Key(unit.Key.PartId, unit.Key.GroupId, units, side) : $"bolt-part-{unit.Key.PartId}-{side}")))
             .ToArray();
+    }
+
+    // The first group of the merged groups a group belongs to; itself when not merged.
+    internal static int Leader(int groupId, IReadOnlyDictionary<int, int>? units) =>
+        units != null && units.TryGetValue(groupId, out var leader) ? leader : groupId;
+
+    // The key of a per-group chain names every group it measures: groups-21 or groups-21-22.
+    internal static string Key(int partId, int leader, IReadOnlyDictionary<int, int>? units, DimensionChainSide side)
+    {
+        var groups = units == null ? new[] { leader }
+            : units.Where(unit => unit.Value == leader).Select(unit => unit.Key).DefaultIfEmpty(leader).OrderBy(id => id).ToArray();
+        return $"bolt-part-{partId}-groups-{string.Join("-", groups)}-{side}";
     }
 
     private static object BuildChain(int partId, Source[] sources, DimensionChainSide side,
@@ -62,6 +75,7 @@ internal static class BoltPartChainPreview
             .ThenBy(source => source.GroupId).ThenBy(source => source.Index).First()).ToArray();
         double[]? min = null, max = null;
         double[]? minEnd = null, maxEnd = null;
+        string? minEndKind = null, maxEndKind = null;
         string? boltRefusal = null;
         var minContour = -1;
         var maxContour = -1;
@@ -71,20 +85,22 @@ internal static class BoltPartChainPreview
         {
             var first = representatives[0].Point;
             var last = representatives[representatives.Length - 1].Point;
-            var minReason = BoltEdgeDistancePreview.FindEdge(outline, first, axis, -1, out min, out minContour, tolerance);
-            var maxReason = BoltEdgeDistancePreview.FindEdge(outline, last, axis, 1, out max, out maxContour, tolerance);
+            var minReason = BoltEdgeDistancePreview.FindEdge(outline, first, axis, -1, out min, out minContour, out var minSearch, tolerance);
+            var maxReason = BoltEdgeDistancePreview.FindEdge(outline, last, axis, 1, out max, out maxContour, out var maxSearch, tolerance);
             reason = minReason ?? maxReason;
             if (reason == null && minContour != maxContour) reason = "endpoints belong to different outer contours";
-            if (perGroup) boltRefusal = BoltsOnOneContour(outline, sources.Select(source => source.Point));
-            if (perGroup && boltRefusal == null)
+            IReadOnlyList<double[]>? polygon = null;
+            var onEdge = false;
+            if (perGroup) boltRefusal = BoltsOnOneContour(outline, sources.Select(source => source.Point), tolerance, out polygon, out onEdge);
+            if (perGroup && boltRefusal == null && onEdge)
             {
-                // An edge met at the bolt's height counts only where the part's edge there runs square to
-                // the chain; a slanted edge there gives no measure. Then the corner of the part's edge
-                // facing the dimension line is the end, as a detailer measures it.
-                minEnd = minReason == null && SquareEdge(outline, min!, axis, tolerance) ? min
-                    : FacingCorner(outline, first, axis, sign, -1, tolerance);
-                maxEnd = maxReason == null && SquareEdge(outline, max!, axis, tolerance) ? max
-                    : FacingCorner(outline, last, axis, sign, 1, tolerance);
+                boltRefusal = EdgeLineEnds(polygon!, sources, first, last, axis, tolerance, out minEnd, out maxEnd);
+                minEndKind = maxEndKind = "Boundary";
+            }
+            else if (perGroup && boltRefusal == null)
+            {
+                (minEnd, minEndKind) = EdgeEnd(polygon!, minSearch, min, first, axis, sign, -1, tolerance);
+                (maxEnd, maxEndKind) = EdgeEnd(polygon!, maxSearch, max, last, axis, sign, 1, tolerance);
             }
         }
         var points = reason == null && min != null && max != null
@@ -99,7 +115,7 @@ internal static class BoltPartChainPreview
             state = reason == null ? "Candidate" : "Blocked", reason,
             creationMode = "explicitSelectionOnly", blockedSources,
             points, segments,
-            minEnd, maxEnd, boltRefusal,
+            minEnd, maxEnd, minEndKind, maxEndKind, boltRefusal,
             projectedPositions = clusters.Select((cluster, index) => new {
                 point = representatives[index].Point,
                 sources = cluster.Select(source => new { boltGroupId = source.GroupId, index = source.Index }).ToArray()
@@ -108,51 +124,114 @@ internal static class BoltPartChainPreview
         };
     }
 
-    // Every bolt must stand inside one and the same outer contour of the part, whatever ends are
-    // found later: a bolt outside the part or on another contour gives no chain.
-    private static string? BoltsOnOneContour(IReadOnlyList<OutlineTreeNodeResult>? contours, IEnumerable<double[]> bolts)
+    // Every bolt must stand in one and the same outer contour of the part, whatever ends are found
+    // later: a bolt outside the part or on another contour gives no chain. A center within the
+    // tolerance of the contour line is on its edge, whichever side of the line rounding put it.
+    private static string? BoltsOnOneContour(IReadOnlyList<OutlineTreeNodeResult>? contours, IEnumerable<double[]> bolts,
+        double tolerance, out IReadOnlyList<double[]>? polygon, out bool onEdge)
     {
+        polygon = null;
+        onEdge = false;
         if (contours == null || contours.Count == 0) return "part has no captured projected contour";
-        var outer = BoltEdgeDistancePreview.Flatten(contours).Where(node => !node.IsHole && node.Polygon.Count >= 3).ToArray();
+        var outer = BoltEdgeDistancePreview.Flatten(contours).Where(node => !node.IsHole && node.Polygon.Count >= 3
+            && node.Polygon.All(point => point.Length >= 2)).ToArray();
         var owners = new HashSet<int>();
         foreach (var bolt in bolts)
         {
-            var matches = outer.Select((node, index) => (node, index)).Where(item =>
-                TeklaMcpServer.Api.Algorithms.Geometry.PolygonGeometry.ContainsPoint(item.node.Polygon, bolt[0], bolt[1])).ToArray();
-            if (matches.Length != 1) return "bolt center is outside or belongs to ambiguous projected outer contours";
-            owners.Add(matches[0].index);
+            if (BoltEdgeDistancePreview.Owner(outer, bolt, tolerance) is not { } owner)
+                return "bolt center is outside or belongs to ambiguous projected outer contours";
+            owners.Add(owner.Index);
+            polygon = owner.Polygon;
+            onEdge |= owner.State == BoltCenterState.Boundary;
         }
         return owners.Count > 1 ? "bolts belong to different outer contours" : null;
     }
 
-    // Whether the contour runs square to the chain axis through this edge point.
-    private static bool SquareEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] edge, int axis, double tolerance)
+    // One end of an edge chain. A crossing found on an edge square to the chain gives that edge's
+    // corner; a crossing on a slanted edge gives no measure there, so the corner of the edge facing
+    // the dimension line is the end, as a detailer measures it. A search that ended ambiguous or on
+    // invalid geometry gives no end: the facing corner must not stand in for an edge that was not found.
+    private static (double[]? End, string Kind) EdgeEnd(IReadOnlyList<double[]> polygon, BoltEdgeSearch search,
+        double[]? edge, double[] bolt, int axis, int outward, int end, double tolerance)
+    {
+        if (search != BoltEdgeSearch.Found || edge == null) return (null, search.ToString());
+        return SquareEdgeCorner(polygon, edge, axis, outward, tolerance) is { } corner
+            ? (corner, "Square")
+            : (FacingCorner(polygon, bolt, axis, outward, end, tolerance), "Slanted");
+    }
+
+    // Bolt centers on the contour line. Only a group seen from the side may stand there: its centers
+    // lie in the face of the part, which the view shows as an edge. All of them must lie on one edge
+    // running along the chain; its two ends are the ends of the chain. In plan a center on the edge
+    // is not a bolt in this part.
+    private static string? EdgeLineEnds(IReadOnlyList<double[]> polygon, Source[] sources, double[] first, double[] last,
+        int axis, double tolerance, out double[]? minEnd, out double[]? maxEnd)
+    {
+        minEnd = maxEnd = null;
+        if (sources.Any(source => !source.Side)) return "bolt center lies on the projected part edge";
+        var across = 1 - axis;
+        // The edges of the contour running along the chain: its segments that stay within the
+        // tolerance across it, with pieces that follow one another joined into one edge. A center is
+        // on an edge by the same measure that put it on the boundary: its distance to a segment,
+        // not to another center and not to a line drawn through the edge.
+        var edges = new List<(List<(double[] A, double[] B)> Segments, double[] Lo, double[] Hi)>();
+        foreach (var piece in Enumerable.Range(0, polygon.Count).Select(i => (A: polygon[i], B: polygon[(i + 1) % polygon.Count]))
+            .Where(segment => Math.Abs(segment.A[across] - segment.B[across]) <= tolerance)
+            .Select(segment => segment.A[axis] <= segment.B[axis] ? (Lo: segment.A, Hi: segment.B) : (Lo: segment.B, Hi: segment.A))
+            .OrderBy(segment => segment.Lo[axis]))
+        {
+            var index = edges.FindIndex(edge => Math.Abs(edge.Hi[axis] - piece.Lo[axis]) <= tolerance
+                && Math.Abs(edge.Hi[across] - piece.Lo[across]) <= tolerance);
+            if (index < 0) edges.Add(([(piece.Lo, piece.Hi)], piece.Lo, piece.Hi));
+            else
+            {
+                edges[index].Segments.Add((piece.Lo, piece.Hi));
+                edges[index] = (edges[index].Segments, edges[index].Lo, piece.Hi);
+            }
+        }
+        var owners = edges.Where(edge => sources.All(source => edge.Segments.Any(segment =>
+            BoltEdgeDistancePreview.DistanceToSegment(source.Point, segment.A, segment.B) <= tolerance))).ToArray();
+        if (owners.Length != 1) return "bolt centers on the part edge do not lie on one edge running along the chain";
+        double[]? End(double[] bolt, double[] corner, int end)
+        {
+            if (end * (corner[axis] - bolt[axis]) <= tolerance) return null;
+            var point = (double[])bolt.Clone();
+            point[0] = corner[0];
+            point[1] = corner[1];
+            return point;
+        }
+        minEnd = End(first, owners[0].Lo, -1);
+        maxEnd = End(last, owners[0].Hi, 1);
+        return null;
+    }
+
+    // Where the contour runs square to the chain axis through this edge point: the corner of that
+    // edge nearest the dimension line, so the witness line starts at the part's corner, not at the
+    // bolt's height in the middle of the edge. Null when the edge there is not square.
+    // Only the contour the bolts stand in is searched: an edge of a neighbouring contour lying within
+    // the tolerance must not lend its corner.
+    private static double[]? SquareEdgeCorner(IReadOnlyList<double[]> polygon, double[] edge, int axis, int outward, double tolerance)
     {
         var across = 1 - axis;
-        return contours != null && BoltEdgeDistancePreview.Flatten(contours).Where(node => !node.IsHole)
-            .Any(node => Enumerable.Range(0, node.Polygon.Count).Any(i => {
-                var a = node.Polygon[i];
-                var b = node.Polygon[(i + 1) % node.Polygon.Count];
-                return Math.Abs(a[axis] - edge[axis]) <= tolerance && Math.Abs(b[axis] - edge[axis]) <= tolerance
-                    && edge[across] >= Math.Min(a[across], b[across]) - tolerance
-                    && edge[across] <= Math.Max(a[across], b[across]) + tolerance;
-            }));
+        var ends = Enumerable.Range(0, polygon.Count).Select(i => (A: polygon[i], B: polygon[(i + 1) % polygon.Count]))
+            .Where(segment => Math.Abs(segment.A[axis] - edge[axis]) <= tolerance && Math.Abs(segment.B[axis] - edge[axis]) <= tolerance
+                && edge[across] >= Math.Min(segment.A[across], segment.B[across]) - tolerance
+                && edge[across] <= Math.Max(segment.A[across], segment.B[across]) + tolerance)
+            .SelectMany(segment => new[] { segment.A[across], segment.B[across] }).ToArray();
+        if (ends.Length == 0) return null;
+        var corner = (double[])edge.Clone();
+        corner[across] = outward > 0 ? ends.Max() : ends.Min();
+        return corner;
     }
 
     // The end (min or max along the axis) of the part's outer edge facing the dimension line, when it
-    // stands beyond the bolts on that side. Null when the outline is missing or ambiguous.
-    private static double[]? FacingCorner(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] bolt, int axis,
+    // stands beyond the bolts on that side; null otherwise.
+    private static double[]? FacingCorner(IReadOnlyList<double[]> polygon, double[] bolt, int axis,
         int outward, int end, double tolerance)
     {
-        if (contours == null) return null;
         var across = 1 - axis;
-        var outer = BoltEdgeDistancePreview.Flatten(contours).Where(node => !node.IsHole && node.Polygon.Count >= 3)
-            .Where(node => TeklaMcpServer.Api.Algorithms.Geometry.PolygonGeometry.ContainsPoint(node.Polygon, bolt[0], bolt[1]))
-            .ToArray();
-        if (outer.Length != 1) return null;
-        var points = outer[0].Polygon.Where(point => point.Length >= 2).ToArray();
-        var facing = points.Max(point => outward * point[across]);
-        var edge = points.Where(point => facing - outward * point[across] <= tolerance).ToArray();
+        var facing = polygon.Max(point => outward * point[across]);
+        var edge = polygon.Where(point => facing - outward * point[across] <= tolerance).ToArray();
         var corner = end < 0 ? edge.OrderBy(point => point[axis]).First() : edge.OrderByDescending(point => point[axis]).First();
         if (end * (corner[axis] - bolt[axis]) <= tolerance) return null;
         var result = (double[])bolt.Clone();
@@ -163,8 +242,10 @@ internal static class BoltPartChainPreview
 
     private sealed class Source
     {
-        internal Source(int partId, int groupId, int index, double[] point, string? reason)
-        { PartId = partId; GroupId = groupId; Index = index; Point = point; Reason = reason; }
+        internal Source(int partId, int groupId, int index, double[] point, string? reason, bool side)
+        { PartId = partId; GroupId = groupId; Index = index; Point = point; Reason = reason; Side = side; }
+        /// <summary>The group is seen from the side: its centers lie in the face of the part.</summary>
+        internal bool Side { get; }
         internal int PartId { get; }
         internal int GroupId { get; }
         internal int Index { get; }

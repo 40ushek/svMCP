@@ -269,5 +269,5 @@ public class McpServerPlugin : PluginBase
 ```
 
 TeklaBridge читает `C:\temp\tekla_mcp_port.txt` → HTTP → плагин. Fallback: нет файла → Remoting.
-Регистрация: `.inp` в `applications/`. Пример: `D:\repos\MpdEdit\MpdEdit.Core\Plugins\` (CutPlugin, SvPluginBase).
+Регистрация: `.inp` в `applications/`. Пример: `E:\repos\MpdEdit\MpdEdit.Core\Plugins\` (CutPlugin, SvPluginBase).
 Объём: ~250 строк + `.inp`.

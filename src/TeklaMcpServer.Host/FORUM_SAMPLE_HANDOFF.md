@@ -2,7 +2,7 @@
 
 Workspace:
 
-`D:\repos\svMCP\src`
+`E:\repos\svMCP\src`
 
 Repository rules:
 

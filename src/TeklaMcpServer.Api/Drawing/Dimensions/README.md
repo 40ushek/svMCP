@@ -59,8 +59,11 @@ chain; `incomplete=true` there means "not to be created", with the reason, and s
 key rejects the batch before any write. Each edge-chain end is checked independently:
 on sections and end views it needs source section-chain support of the same part and
 axis, before answer merging/formatting, or the face-on part rule. One confirmed end
-suffices. Square crossings or facing corners supply the ends; all original bolts must
-belong to one outer contour, including sources merged in projection. Under `All` steps never stand in for a refused
+suffices. A square crossing gives its edge's corner, a slanted crossing the facing
+corner; an ambiguous or invalid edge search gives no end. All original bolts must
+belong to one outer contour, including sources merged in projection. A center within
+the coordinate tolerance of the contour line is on the boundary: a `Side` group there is
+measured along that one edge, a `Plan` group is refused (provisional). Under `All` steps never stand in for a refused
 edge chain. Bolt lines keep clear of `Local`, `Inclined`
 and side-chain rows. An incomplete bolt read creates no bolt chain and is reported in
 the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
@@ -258,7 +261,7 @@ It is responsible for:
 - control-diagonal placement
 - text/debug support for dimension inspection
 
-The canonical legacy reference for domain semantics is `D:\repos\svMCP\dim`.
+The canonical legacy reference for domain semantics is `E:\repos\svMCP\dim`.
 That project is a reference for vocabulary and heuristics, not for direct
 architectural copying.
 

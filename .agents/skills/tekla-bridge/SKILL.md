@@ -78,8 +78,8 @@ correct — it is the controller's own process, not the bridge it owns.
   restarting the MCP server.
 - Stop `TeklaMcpServer` before building it (`dotnet build` fails with MSB3021 on a running server).
   A test build that must not disturb the session:
-  `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<name>/`
-  (forward slashes).
+  `dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release -p:BaseOutputPath=<repo root>/.codex-build/<name>/`
+  (absolute path of this checkout with forward slashes, e.g. `E:/repos/svMCP/.codex-build/<name>/`).
 
 ## Bridge stuck or answering old data
 
@@ -95,6 +95,24 @@ correct — it is the controller's own process, not the bridge it owns.
 3. Compare hashes of the built and the deployed `TeklaMcpServer.Api.dll` before trusting a live check.
 4. Send `resume` to the controller and confirm `status` shows `bridgeRunning: true`.
    After an explicit `stop`, an MCP call cannot resume the paused bridge.
+   `teklaConnection` reads `Unknown` right after `resume` until the first tool call; that is not an error.
+
+Steps 2-3 as run from the repository root in Bash (worked on 2026-11-13):
+
+```bash
+D="/c/TeklaStructures/2025.0/Environments/common/extensions/svMCP"
+dotnet build src/TeklaBridge/TeklaBridge.csproj -c Release \
+  && cd src/TeklaBridge/bin/Release/net48 \
+  && cp TeklaBridge.exe TeklaMcpServer.Api.dll SolidContacts.Core.dll "$D/" \
+  && sha256sum TeklaMcpServer.Api.dll "$D/TeklaMcpServer.Api.dll" TeklaBridge.exe "$D/TeklaBridge.exe"
+```
+
+The `&&` chain matters: after a failed build nothing is copied. Without it the old
+build output would be copied and the hashes would still match. No hash lines in the
+output means the build or the copy failed; read the error before `resume`.
+
+Run the tests before step 1, not between `stop` and `resume`: tools fail while the bridge is paused.
+The MCP server itself is not rebuilt or restarted for a change in `TeklaMcpServer.Api` only.
 
 ## Direct bridge commands
 

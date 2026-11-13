@@ -556,7 +556,7 @@ a cache benefit without invalidation tests.
 Its long-term goal is to keep the current Tekla integration thin and to rebuild
 dimension semantics around the domain model already proven in:
 
-`D:\repos\svMCP\dim`
+`E:\repos\svMCP\dim`
 
 That legacy `dim` project is the canonical reference for:
 

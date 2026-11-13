@@ -49,7 +49,7 @@ dotnet build src/TeklaMcpServer/TeklaMcpServer.csproj -c Release
 > **Обход без закрытия сессии** — перенаправить вывод сборки:
 > ```bash
 > dotnet test src/TeklaMcpServer.Tests/TeklaMcpServer.Tests.csproj -c Release \
->   -p:BaseOutputPath=D:/repos/svMCP/.codex-build/<имя>/
+>   -p:BaseOutputPath=E:/repos/svMCP/.codex-build/<имя>/
 > ```
 > Только прямые слэши: с обратными MSBuild создаёт мусорные папки прямо в `src`.
 >
@@ -337,7 +337,7 @@ src/
 - `arrange_dimensions` уже работает, но это не полный layout engine, а conservative deterministic spacing path для параллельных стеков
 - `combine_dimensions` уже работает как controlled combine path и не тождественен обычной группировке
 - `TextBounds` пока остаётся `null`, пока Tekla-side text geometry не подтверждена runtime-spike'ом
-- блок `Drawing/Dimensions` сейчас перепроектируется по эталону `D:\repos\svMCP\dim`
+- блок `Drawing/Dimensions` сейчас перепроектируется по эталону `E:\repos\svMCP\dim`
 - публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
 
 ## Диагностика

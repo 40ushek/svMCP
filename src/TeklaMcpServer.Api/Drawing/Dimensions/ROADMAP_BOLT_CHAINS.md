@@ -43,9 +43,23 @@ close to Tekla's own. The neighbours own the rest:
   created. Position, check and combining options are off.
 - **Class tolerance:** start with `ClassToleranceDegrees = 1`, configurable in the
   settings class. Confirm it against the live examples before release.
-- **Group merging:** off in the first release. Every group has its own chain;
-  `GroupMergeDistance` and clustering are deferred until a concrete drawing needs
-  them. No threshold is inferred from the existing part chains.
+- **Group merging (agreed 2026-11-13, replaces "off in the first release"):** Tekla
+  merges the groups of a part unless `XS_DIMENSION_ALL_BOLT_GROUPS_SEPARATELY` is TRUE.
+  The setting `BoltChainSettings.GroupMerge` (own) says which groups share one edge
+  chain: `Separate`, `SameHole` (default: same hole diameter, hole type and slots) or
+  `SameBoltSize`. Groups merge only on the same dimensioned parts, of the same class and
+  measured axes; the chain key names every group (`bolt-part-10-groups-21-22-Bottom`).
+  Only groups with every center admitted on the view merge or make a twin: a blocked
+  group keeps its own refused chain (review 2026-11-13). Twins need the same measured
+  axes too: two `Side` groups in the same XY but with crossed bolt axes are both kept.
+  A merged group keeps its own steps (`Internal`). No distance limit yet: on M.156 four
+  groups along the beam flange gave four full-length rows; now one. A distance limit
+  ("close together") comes when a drawing needs it.
+- **Bolt and hole data (agreed 2026-11-13):** the bolt read keeps the hole tolerance,
+  `HoleOnly` (Tekla's `Bolt` off, e.g. `+LOCH`), hole type and slots; the hole diameter
+  is bolt size plus tolerance. Every chain of the `Bolt` row carries `holes`: standard,
+  bolt size, hole diameter, hole only, type and slots of each group it measures. Data
+  only: the diameter is not written into the dimension text, the bolt mark shows it.
 - **Repeats:** exclude bolt chains from the current segment-length-only
   `DimensionChainRepeats` comparison. Equal steps in different groups do not prove a
   repeat. Both eligible projections may be dimensioned; mirror suppression comes
@@ -72,6 +86,20 @@ close to Tekla's own. The neighbours own the rest:
   corner of the part's edge facing the dimension line (on a fin plate with a slanted
   side: the corner of its top edge), as a detailer measures it. An end the view does
   not confirm is dropped: one end left gives `edge - bolts`; none, a refusal.
+- **Facing corner only for a slanted edge (agreed 2026-11-13):** the edge search ends
+  as found, ambiguous or invalid. Found and square gives the corner of that edge; found
+  and slanted gives the facing corner. Ambiguous (a contour vertex at the bolts' height,
+  a center on the edge) or invalid geometry gives no end. A plate with cut corners and
+  bolts at the height where the cuts start is refused, not measured to the cut.
+- **Bolts on the contour line (agreed 2026-11-13, provisional):** a center within the
+  coordinate tolerance of the contour line is on the boundary, whichever side rounding
+  put it. A `Side` group there is measured when all its bolts lie on one edge running
+  along the chain: from one end of that edge through the bolts to the other. A `Plan`
+  group there, or bolts not on one such edge, is refused. Not yet checked on a drawing.
+- **One chain per set of holes (agreed 2026-11-13):** two groups of the same class
+  whose projected centers all coincide on the same dimensioned parts (bolts and a
+  `+LOCH` hole group in one end plate, say) are dimensioned once, by the first group;
+  the other is refused with a reference to it.
 - **No steps without a datum (agreed 2026-11-13):** under `All` steps between bolts
   never stand in for an edge chain, on any view: tied to no edge or axis of symmetry
   they locate nothing. Steps alone come only from the `Internal` setting. A datum on
@@ -88,7 +116,14 @@ close to Tekla's own. The neighbours own the rest:
   part. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and
   of the rows of the side chains on the same side (one row per offered chain, an
   overall in `repeats` included): a line within one gap of a taken line whose span
-  overlaps moves out by one gap at a time.
+  overlaps moves to one gap beyond that line (2026-11-13; before, it moved by whole
+  gaps from its own place, and bolts 5 mm off the outline lost a row).
+- **Open: the row of an overall in `repeats`.** Its row stays reserved and empty when
+  the overall is not placed (M.502 bottom view, M.156 top view). Whether a chain is a
+  repeat is decided later, from the sheet, so the bolt line cannot know it yet.
+- **Open: vertical chains of a long part.** A chain across a beam stands beside the
+  nearer part end, up to 1.3 m from its bolts (M.156 top view). Tekla's help does not
+  say where it puts that line; merging leaves one such chain per side.
 - **Incomplete bolt read:** no bolt chain is created; the `Bolt` row carries
   `readIncomplete` with the reason and the unread parts, even when no group was read.
 
@@ -398,8 +433,7 @@ the new row. Keys are resolved within their view context as today.
    line of the part are measured as a spread (the detailer's *gage*), not from an edge.
 5. **Close groups count as one.** Bolt groups standing close together on one part are
    dimensioned as one group; `XS_DIMENSION_ALL_BOLT_GROUPS_SEPARATELY` turns that off.
-   The part chain of today (edge - all bolts - edge) does this; the first release
-   keeps groups apart instead, and merging returns later by a set distance.
+   Done 2026-11-13 by `GroupMerge` (same hole by default), without a distance limit yet.
 6. **Extension lines stop at the nearest hole** of a group
    (`XS_DO_NOT_EXTEND_DIMENSION_LINES_THROUGH_ALL_HOLES`): which bolt of a row carries
    the dimension point matters for the look of the sheet.

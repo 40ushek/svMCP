@@ -320,7 +320,7 @@ cases/<category>/<drawing_guid>/
 
 ## Родительская папка: найденные `.md`
 
-В `D:\repos\svMCP`:
+В `E:\repos\svMCP`:
 
 - `AGENTS.md`
   - общие инструкции по работе агента
@@ -335,7 +335,7 @@ cases/<category>/<drawing_guid>/
 - `docs/drawings/view-projection-link.md`
   - отдельный план по проекционной связи в `fit_views_to_sheet`
 
-В `D:\repos\svMCP\src`:
+В `E:\repos\svMCP\src`:
 
 - `AGENTS.md`
 - `CLAUDE.md`

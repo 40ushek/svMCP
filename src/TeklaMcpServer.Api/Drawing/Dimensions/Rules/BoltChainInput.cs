@@ -30,10 +30,12 @@ internal sealed class BoltChainCandidate
     public double BaseOffset { get; }
     /// <summary>Source bolt group and bolt index of every point.</summary>
     public object Sources { get; }
+    /// <summary>Bolt and hole of every group the chain measures.</summary>
+    public object Holes { get; }
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
-        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources)
+        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null)
     {
         Key = key;
         Kind = kind;
@@ -49,6 +51,7 @@ internal sealed class BoltChainCandidate
         OutwardNormal = outwardNormal;
         BaseOffset = baseOffset;
         Sources = sources;
+        Holes = holes ?? Array.Empty<object>();
     }
 }
 

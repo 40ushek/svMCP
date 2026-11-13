@@ -44,6 +44,9 @@ rest of this file explains the reasons and covers every other request.
    `incomplete=false`.
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error;
+   - in the row `Bolt` do not place a chain with `viewClass` `Side` (bolts seen
+     from the side, not as circles), even with `incomplete=false`. Place only
+     bolt chains with `viewClass` `Plan`. That is this plant's choice, not an error;
    - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,
      `offeredOnOtherSidePartIds`) are explanations. They change nothing in what
      you place; they belong in a debug report only.
@@ -208,7 +211,9 @@ and `distance`; reference it by key. In this row `incomplete=true` means the rul
 decided not to create it, with the reason in `incompleteReason` (group skewed to
 the view, class switched off, setting `None`, part edge not confirmed on a
 section): do not repair, extend or place such a chain by hand. Placing one rejects
-the whole batch. Bolt chains are never in `repeats`.
+the whole batch. Bolt chains are never in `repeats`. Each chain names its
+`viewClass`; the standard run places `Plan` chains only and leaves `Side` ones out
+(step 5).
 
 **Inclined chains:** a steel whole-view preview can add a row `Inclined` with
 keys `Inclined-<partId>`: a chain along a tilted part (a head plate on a sloped

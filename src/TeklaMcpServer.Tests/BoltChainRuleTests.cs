@@ -90,12 +90,12 @@ public sealed class BoltChainRuleTests
     [Fact]
     public void OverlappingChainsOfTwoGroupsStandOnSeparateRows()
     {
-        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(Group(42, 20, -40), Group(43, 300, -40)));
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(Group(42, 20, -40), Sized(Group(43, 300, -40), 20)));
         var bolt = context.Query("chain").GetProperty("chainPreview").EnumerateArray()
             .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray()
             .Where(chain => chain.GetProperty("direction").GetString() == "0,-1,0" && !chain.GetProperty("incomplete").GetBoolean())
             .ToDictionary(chain => chain.GetProperty("key").GetString()!, chain => chain.GetProperty("distance").GetDouble());
-        Assert.Equal(116, bolt["bolt-part-10-groups-42-Bottom"], 6);
+        Assert.Equal(80, bolt["bolt-part-10-groups-42-Bottom"], 6);
         // The second line is at least one gap beyond the first (and off the Bottom side rows, see below).
         Assert.True(bolt["bolt-part-10-groups-43-Bottom"] - bolt["bolt-part-10-groups-42-Bottom"] >= 80 - 1e-9);
     }
@@ -280,6 +280,134 @@ public sealed class BoltChainRuleTests
         });
     }
 
+    [Fact]
+    public void TheEdgeCornerComesFromTheContourTheBoltsStandIn()
+    {
+        // Bolts in the contour 0..100; a neighbour contour -10..-0.05 runs from y -200 to 200, within
+        // the tolerance of the edge x 0. The corner must be (0, 100) of the bolts' own contour.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [20, 50, 0],
+            SecondPosition = [80, 50, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [20, 50, 0] }, new() { Index = 1, Point = [80, 50, 0] }] };
+        IReadOnlyList<OutlineTreeNodeResult> outline = [
+            new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] },
+            new OutlineTreeNodeResult { Polygon = [[-10, -200], [-0.05, -200], [-0.05, 200], [-10, 200]] }];
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true,
+            new BoltChainSettings(), new DimensionCoordinateSettings(0.1));
+        var top = candidates.Single(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 0);
+        Assert.Null(top.BuiltRefusal);
+        Assert.Equal(new[] { 0d, 100d }, new[] { top.Points[0].X, top.Points[0].Y });
+        Assert.Equal(new[] { 100d, 100d }, new[] { top.Points[top.Points.Count - 1].X, top.Points[top.Points.Count - 1].Y });
+    }
+
+    [Fact]
+    public void AVertexAtTheBoltsHeightDoesNotLendTheFacingCorner()
+    {
+        // A plate 100 x 100 with both top corners cut from (0, 80) and (100, 80); bolts at the height
+        // where the cuts start. The edge search ends ambiguous, not on a slanted edge: the ends of the
+        // top edge (x 20 and 80) must not be taken, they would give 10 - 40 - 10.
+        var group = Group(42, 30, 80);
+        group.SecondPosition = [70, 80, 0];
+        group.Positions = [new() { Index = 0, Point = [30, 80, 0] }, new() { Index = 1, Point = [70, 80, 0] }];
+        IReadOnlyList<OutlineTreeNodeResult> outline = [new OutlineTreeNodeResult {
+            Polygon = [[0, 0], [100, 0], [100, 80], [80, 100], [20, 100], [0, 80]] }];
+        var top = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true, new BoltChainSettings())
+            .Single(c => c.Key == "bolt-part-10-groups-42-Top");
+        Assert.Empty(top.Points);
+        Assert.Contains("no part edge is confirmed", top.BuiltRefusal);
+        Assert.Contains("aligns with a contour vertex", top.BuiltRefusal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(0.000001)]
+    [InlineData(-0.000001)]
+    [InlineData(100)]
+    [InlineData(100.000001)]
+    public void ASideGroupOnThePartFaceIsMeasuredAlongThatEdgeWhicheverSideRoundingFalls(double y)
+    {
+        // Seen from the side the centers lie in the face of the part, drawn as its edge y 0 or y 100.
+        var group = Group(42, 20, y);
+        group.Axis = [0, 1, 0];
+        IReadOnlyList<OutlineTreeNodeResult> outline = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }];
+        var chain = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true, new BoltChainSettings())
+            .Single(c => c.Kind == BoltChainCandidate.PartKind);
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(new[] { 20d, 60d, 20d }, chain.Segments);
+        Assert.Equal(new[] { 0d, 20, 80, 100 }, chain.Points.Select(point => point.X));
+    }
+
+    [Fact]
+    public void ASideGroupWithCentersOnBothSidesOfTheEdgeLineIsMeasuredAlongIt()
+    {
+        // Tolerance 0.1; centers 0.09 below and 0.09 above the edge y 0: each lies on the edge,
+        // though they stand 0.18 apart from one another.
+        var group = Group(42, 20, -0.09);
+        group.Axis = [0, 1, 0];
+        group.Positions = [new() { Index = 0, Point = [20, -0.09, 0] }, new() { Index = 1, Point = [80, -0.09, 0] },
+            new() { Index = 2, Point = [20, 0.09, 40] }, new() { Index = 3, Point = [80, 0.09, 40] }];
+        IReadOnlyList<OutlineTreeNodeResult> outline = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }];
+        var chain = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true,
+            new BoltChainSettings(), new DimensionCoordinateSettings(0.1))
+            .Single(c => c.Kind == BoltChainCandidate.PartKind);
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(new[] { 20d, 60d, 20d }, chain.Segments);
+        Assert.Equal(new[] { 0d, 0d }, new[] { chain.Points[0].X, chain.Points[0].Y });
+        Assert.Equal(new[] { 100d, 0d }, new[] { chain.Points[3].X, chain.Points[3].Y });
+    }
+
+    [Fact]
+    public void ASideGroupOnANearlyLevelEdgeIsJudgedByItsDistanceToThatEdge()
+    {
+        // Tolerance 0.1; the edge runs (0, 0)..(100, 0.09). Both centers lie within 0.1 of the
+        // segment, though 0.125 from a level line through the middle of it.
+        var group = Group(42, 10, -0.08);
+        group.Axis = [0, 1, 0];
+        group.SecondPosition = [20, -0.08, 0];
+        group.Positions = [new() { Index = 0, Point = [10, -0.08, 0] }, new() { Index = 1, Point = [20, -0.08, 0] }];
+        IReadOnlyList<OutlineTreeNodeResult> outline = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0.09], [100, 100], [0, 100]] }];
+        var chain = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true,
+            new BoltChainSettings(), new DimensionCoordinateSettings(0.1))
+            .Single(c => c.Kind == BoltChainCandidate.PartKind);
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(new[] { 10d, 10d, 80d }, chain.Segments);
+        Assert.Equal(new[] { 0d, 0d }, new[] { chain.Points[0].X, chain.Points[0].Y });
+        Assert.Equal(new[] { 100d, 0.09 }, new[] { chain.Points[3].X, chain.Points[3].Y });
+    }
+
+    [Fact]
+    public void APlanGroupOnThePartEdgeIsRefused()
+    {
+        IReadOnlyList<OutlineTreeNodeResult> outline = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }];
+        var chains = BoltChainCandidates.Build(Snapshot(Group(42, 20, 0.000001)), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true, new BoltChainSettings())
+            .Where(c => c.Kind == BoltChainCandidate.PartKind).ToArray();
+        Assert.Equal(2, chains.Length);
+        Assert.All(chains, chain => {
+            Assert.Contains("lies on the projected part edge", chain.BuiltRefusal);
+            Assert.Empty(chain.Points);
+        });
+    }
+
+    [Fact]
+    public void TwoGroupsInTheSameHolesOfOnePartAreDimensionedOnce()
+    {
+        // Bolts and a hole group in the same two holes of part 10: one chain per side, not two.
+        var bolts = Group(21, 20, 50);
+        var holes = Group(22, 20, 50);
+        holes.PartToBoltToId = 10;
+        var candidates = BoltChainCandidates.Build(Snapshot(bolts, holes), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = [new OutlineTreeNodeResult {
+                Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }] }, (_, _, _) => true, new BoltChainSettings());
+        Assert.DoesNotContain(candidates, c => c.GroupId == 22 && c.Kind != BoltChainCandidate.GroupKind);
+        Assert.Contains("as bolt group 21", candidates.Single(c => c.GroupId == 22).BuiltRefusal);
+        Assert.Contains(candidates, c => c.GroupId == 21 && c.Kind == BoltChainCandidate.PartKind && c.BuiltRefusal == null);
+    }
+
     private static JsonElement BoltChain(JsonElement answer, string key) => answer.GetProperty("chainPreview").EnumerateArray()
         .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray()
         .Single(chain => chain.GetProperty("key").GetString() == key);
@@ -332,9 +460,10 @@ public sealed class BoltChainRuleTests
     [Fact]
     public void BuiltChainsFromTwoGroupsOnOnePartStaySeparateAndKeepTheirKeys()
     {
-        var snapshot = Snapshot(Group(21, 20), Group(22, 120));
+        // Different bolts: the groups are not merged.
+        var snapshot = Snapshot(Group(21, 20), Sized(Group(22, 120), 20));
         var forward = Keys(BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings()));
-        var reversed = Keys(BoltChainCandidates.Build(Snapshot(Group(22, 120), Group(21, 20)), [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings()));
+        var reversed = Keys(BoltChainCandidates.Build(Snapshot(Sized(Group(22, 120), 20), Group(21, 20)), [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings()));
         Assert.Equal(forward, reversed);
         Assert.Contains("bolt-part-10-groups-21-Bottom", forward);
         Assert.Contains("bolt-part-10-groups-22-Bottom", forward);
@@ -342,7 +471,9 @@ public sealed class BoltChainRuleTests
         var first = candidates.Single(c => c.Key == "bolt-part-10-groups-21-Bottom");
         // Edge - two bolts of group 21 - edge: no bolt of group 22 and no span between the groups.
         Assert.Equal(new[] { 20d, 60d, 180d }, first.Segments);
-        Assert.Equal(10, first.BaseOffset, 6);
+        // The first point is the edge corner nearest the line, so the line stands one gap from it.
+        Assert.Equal(0, first.BaseOffset, 6);
+        Assert.Equal(new[] { 0d, 0d }, new[] { first.Points[0].X, first.Points[0].Y });
     }
 
     [Fact]
@@ -373,7 +504,9 @@ public sealed class BoltChainRuleTests
         // The beam runs 0..1000 at y -76..76; the bolts at y -40 stand nearer its bottom edge.
         Assert.Equal(new[] { 20d, 60d, 920d }, part.GetProperty("segments").EnumerateArray().Select(v => v.GetDouble()));
         Assert.Equal("0,-1,0", part.GetProperty("direction").GetString());
-        Assert.Equal(8 * 10 + 36, part.GetProperty("distance").GetDouble(), 6);
+        // The edge points stand at the corners of the beam bottom edge (y -76): the line one gap below.
+        Assert.Equal(8 * 10, part.GetProperty("distance").GetDouble(), 6);
+        Assert.Equal(-76, part.GetProperty("points")[0][1].GetDouble(), 6);
         Assert.DoesNotContain(DimensionChainRepeats.FromPreview(context.Query("chain")), chain => chain.Side == "Bolt");
 
         var writes = new List<CreateDimensionRequest>();
@@ -384,7 +517,7 @@ public sealed class BoltChainRuleTests
         });
         var write = Assert.Single(writes);
         Assert.Equal(12, write.Points.Length);
-        Assert.Equal(116, write.Distance!.Value, 6);
+        Assert.Equal(80, write.Distance!.Value, 6);
     }
 
     [Fact]
@@ -435,6 +568,70 @@ public sealed class BoltChainRuleTests
 
     private static DimensionRulePoint[] Points(int count) => Enumerable.Range(0, count)
         .Select(i => new DimensionRulePoint("p" + i, i * 10, 0, [])).ToArray();
+
+    [Fact]
+    public void GroupsWithTheSameHoleOnOnePartShareOneChain()
+    {
+        var snapshot = Snapshot(Group(21, 20), Group(22, 120));
+        var candidates = BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings());
+        var chain = candidates.Single(c => c.Key == "bolt-part-10-groups-21-22-Bottom");
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(new[] { 20d, 60d, 40d, 60d, 80d }, chain.Segments);
+        Assert.DoesNotContain(candidates, c => c.Kind == BoltChainCandidate.PartKind && c.GroupId == 22);
+        Assert.Equal(new[] { 21, 22 }, JsonSerializer.SerializeToElement(chain.Holes).EnumerateArray()
+            .Select(hole => hole.GetProperty("boltGroupId").GetInt32()));
+    }
+
+    [Theory]
+    [InlineData("Separate", 2)]
+    [InlineData("SameHole", 2)]
+    [InlineData("SameBoltSize", 1)]
+    public void TheMergeSettingDecidesWhichGroupsShareAChain(string merge, int bottomChains)
+    {
+        // Same bolt size, different holes (tolerance 2 and 3).
+        var wide = Group(22, 120);
+        wide.HoleTolerance = 3;
+        var tight = Group(21, 20);
+        tight.HoleTolerance = 2;
+        var candidates = BoltChainCandidates.Build(Snapshot(tight, wide), [10], [10], Contours(), (_, _, _) => true,
+            new BoltChainSettings(groupMerge: Enum.Parse<BoltGroupMerge>(merge)));
+        Assert.Equal(bottomChains, candidates.Count(c => c.Kind == BoltChainCandidate.PartKind && c.Key.EndsWith("-Bottom")));
+    }
+
+    [Theory]
+    [InlineData(20)]
+    [InlineData(120)]
+    public void AGroupOutsideTheViewDepthNeitherSuppressesNorJoinsAnAdmittedOne(double admittedX)
+    {
+        // Group 21 stands beyond the depth box; group 22 is admitted, in the same holes or elsewhere.
+        var outside = Group(21, 20);
+        outside.Positions.ForEach(position => position.Point[2] = 5000);
+        var candidates = BoltChainCandidates.Build(Snapshot(outside, Group(22, admittedX)), [10], [10], Contours(),
+            (_, _, _) => true, new BoltChainSettings());
+        var admitted = candidates.Single(c => c.Key == "bolt-part-10-groups-22-Bottom");
+        Assert.Null(admitted.BuiltRefusal);
+        Assert.DoesNotContain(candidates, c => c.Key.Contains("groups-21-22"));
+    }
+
+    [Fact]
+    public void SideGroupsInTheSameXyButMeasuredAlongDifferentAxesAreNotTwins()
+    {
+        var alongX = Group(21, 20, 50);
+        alongX.Axis = [1, 0, 0];
+        var alongY = Group(22, 20, 50);
+        alongY.Axis = [0, 1, 0];
+        var candidates = BoltChainCandidates.Build(Snapshot(alongX, alongY), [10], [10], Contours(),
+            (_, _, _) => true, new BoltChainSettings());
+        Assert.DoesNotContain(candidates, c => c.BuiltRefusal?.Contains("same projected bolt positions") == true);
+        Assert.Contains(candidates, c => c.GroupId == 21 && c.Kind == BoltChainCandidate.PartKind && c.Axis == 1);
+        Assert.Contains(candidates, c => c.GroupId == 22 && c.Kind == BoltChainCandidate.PartKind && c.Axis == 0);
+    }
+
+    private static BoltGroupGeometry Sized(BoltGroupGeometry group, double size)
+    {
+        group.BoltSize = size;
+        return group;
+    }
 
     private static BoltGroupGeometry Group(int id, double x, double y = 10) => new() {
         ModelId = id, Shape = "BoltArray", FirstPosition = [x, y, 0], SecondPosition = [x + 60, y, 0],

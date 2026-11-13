@@ -255,6 +255,9 @@ and from the side are dimensioned; position, check and combining options are off
   plane), `Skewed` (neither) or `Unresolved` (axis not read). `Skewed` and `Unresolved`
   groups are listed with their reason and not created. A `Side` group is measured only
   across its bolt axis; bolts one behind another give one point.
+- **Only bolts seen as circles are placed (skill rule, 2026-11-13):** the code offers
+  `Side` chains, but the standard run places `Plan` chains only. The switch lives in the
+  skill text (SKILL.md step 5), not in `BoltChainSettings`; remove that line to place both.
 - **All**: one chain per group, part and axis, edge - bolts - edge, beside the nearer part
   bound. A group joining the main part and secondary parts gets an edge chain on
   every secondary part; the main part takes it only when no secondary part is included.
@@ -266,6 +269,13 @@ and from the side are dimensioned; position, check and combining options are off
   crossing or the corner of the edge facing the dimension line. Every original bolt
   must lie in the same outer contour, including bolts merged in projection.
   `Internal` still offers steps.
+- **Ends, any view**: an edge crossing found square to the chain gives that edge's corner;
+  a crossing on a slanted edge gives the corner of the edge facing the dimension line.
+  A search that is ambiguous (a contour vertex at the bolts' height) or has no usable
+  contour gives no end; the facing corner never stands in for it.
+- **Bolts on the contour line** (within the coordinate tolerance, provisional rule): a
+  `Side` group is measured along the one edge all its bolts lie on, end to end of that
+  edge; a `Plan` group there, or bolts not on one edge along the chain, is refused.
 - **No steps without a datum**: under `All` steps between bolts are never placed alone. A
   dimension tied to no part edge or axis of symmetry cannot be measured on the part.
 - **Line placement**: a bolt line keeps a gap from overlapping parallel lines reserved
