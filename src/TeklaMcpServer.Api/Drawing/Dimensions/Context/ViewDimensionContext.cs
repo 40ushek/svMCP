@@ -367,8 +367,9 @@ public sealed class ViewDimensionContext
     internal const string LocalSide = "Local";
     private IReadOnlyList<InclinedChain>? _localChains;
 
-    // Short chains across the main part next to single parts. Straight parts only; a tilted part
-    // has its own chain. The line stands the default paper gap past the part, toward its far end.
+    // Short chains across the main part next to single parts. A tilted part has its own chain; a
+    // part with a slanted edge (a fin plate cut at an angle) is measured to its real corner across
+    // the main part. The line stands the default paper gap past the part, toward its far end.
     internal IReadOnlyList<InclinedChain> LocalChains()
     {
         if (_localChains != null) return _localChains;
@@ -392,19 +393,49 @@ public sealed class ViewDimensionContext
         if (Box(mainId, straightOnly: false) is not { } main || solid == null) return _localChains = [];
         double[] Levels(int axis) => solid.Solid.Vertices.Where(vertex => vertex.Point.Length >= 3)
             .Select(vertex => Math.Round(vertex.Point[axis], 2)).Distinct().OrderBy(value => value).ToArray();
-        var parts = _includedModelIds.Where(id => id != mainId && !inclined.Contains(id))
-            .Select(id => (Id: id, Box: Box(id, straightOnly: true))).Where(part => part.Box.HasValue)
+        var others = _includedModelIds.Where(id => id != mainId && !inclined.Contains(id)).ToArray();
+        var parts = others.Select(id => (Id: id, Box: Box(id, straightOnly: false))).Where(part => part.Box.HasValue)
             .ToDictionary(part => part.Id, part => part.Box!.Value);
+        // A part with a slanted edge: where along the main part its lowest and highest corners
+        // across it stand; of several at one level, the one toward the part's far end, where the line is.
+        var alongX = main.MaxX - main.MinX >= main.MaxY - main.MinY;
+        var corners = parts.Keys.Where(id => Box(id, straightOnly: true) == null).ToDictionary(id => id, id => {
+            var points = _group.Shapes.Where(shape => shape.ModelId == id && !shape.IsHole
+                    && shape.Shape.Kind == SolidContacts.PlanarShapeKind.Polygon)
+                .SelectMany(shape => shape.Shape.Points).Select(p => alongX ? (Along: p.X, Across: p.Y) : (Along: p.Y, Across: p.X)).ToArray();
+            var (low, high) = (points.Min(p => p.Across), points.Max(p => p.Across));
+            double At(double level) => points.Where(p => Math.Abs(p.Across - level) <= 0.01).Max(p => p.Along);
+            return (LowAlong: At(low), HighAlong: At(high));
+        });
         var evaluation = new DimensionRuleSet(new LocalPartDimensionRule(new LocalPartDimensionSettings(
                 repeatGapViewUnits: DimensionPlacementSettings.LocalChainRepeatGapPaperMm * Scale)))
-            .Calculate(new DimensionRuleContext([], null, new LocalPartDimensionInput(main, Levels(0), Levels(1), parts)));
+            .Calculate(new DimensionRuleContext([], null, new LocalPartDimensionInput(main, Levels(0), Levels(1), parts, corners)));
+        var gap = DimensionPlacementSettings.DefaultPaperGapMm * Scale;
+        var lines = new List<(double Nx, double Ny, double Line, double From, double To)>();
         return _localChains = evaluation.Results.Select(result => {
             var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
-            return new InclinedChain((int)result.Evidence["partId"],
-                result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(), result.Segments.ToArray(),
+            var distance = gap + (double)result.Evidence["baseOffset"];
+            return (Result: result, Normal: normal, Distance: distance,
+                Line: result.Points[0].X * normal.X + result.Points[0].Y * normal.Y + distance);
+        }).OrderBy(item => item.Line).Select(item => {
+            // A line within one gap of a line already taken, whose span overlaps it, stands one gap
+            // beyond that line: two parts at one place whose chains could not merge, or a
+            // neighbour's chain, never share a line.
+            var (normal, first) = (item.Normal, item.Result.Points[0]);
+            var start = first.X * normal.X + first.Y * normal.Y;
+            var along = item.Result.Points.Select(point => point.X * -normal.Y + point.Y * normal.X).ToArray();
+            var (from, to) = (along.Min(), along.Max());
+            var distance = item.Distance;
+            while (lines.Where(line => Math.Abs(line.Nx - normal.X) < 1e-9 && Math.Abs(line.Ny - normal.Y) < 1e-9
+                       && Math.Abs(line.Line - (start + distance)) < gap - DimensionPlacementSettings.VerificationToleranceViewUnits
+                       && line.From <= to && from <= line.To)
+                   .Select(line => (double?)line.Line).Max() is { } inTheWay)
+                distance = inTheWay + gap - start;
+            lines.Add((normal.X, normal.Y, start + distance, from, to));
+            return new InclinedChain((int)item.Result.Evidence["partId"],
+                item.Result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(), item.Result.Segments.ToArray(),
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
-                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["baseOffset"],
-                LocalSide, LocalPartDimensionRule.Kind);
+                distance, LocalSide, LocalPartDimensionRule.Kind);
         }).Where(InsideViewFrame).ToArray();
     }
 

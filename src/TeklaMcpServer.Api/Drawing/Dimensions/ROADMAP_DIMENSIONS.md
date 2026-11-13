@@ -28,6 +28,14 @@ Findings on the steel path (front views and sections):
 2. Across the main part only end parts are located; every other part goes to
    `skippedPartIds`, so a front view carries no height location for plates, gussets
    or stiffeners.
+   Since 2026-11-13 the `Local` chains also take parts with a slanted edge (a fin plate
+   cut at an angle), measured to the real corner across the main part, and parts at one
+   place share one chain whether or not they stand on a face (M.156: the stiffener
+   P/1342 and the fin plate P/1341 under the beam, `6 - 154 - 152` plus the plate's
+   lowest corner). Tilted parts keep their `Inclined` chain.
+   Parts that together would leave a segment too short to read keep their own chains, and
+   no two local lines share a place: a line within one gap of a taken one whose span
+   overlaps moves one gap beyond it (review 2026-11-13).
 3. Points are assigned to a side by the middle of the whole assembly
    (`CalcDimensionChains.AddX/AddY`), before any rule knows the main part. Each rule
    then works around it. This is the one layer to replace: a point list without

@@ -576,7 +576,8 @@ public sealed class DimensionChainPreviewTests
     internal static ViewDimensionContext Context(double rightHalfHeight, string viewType = "BackView",
         bool secondMain = false, bool closeRib = false, bool unclassified = false, bool unread = false,
         bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false, bool farGusset = false,
-        double[]? viewFrame = null, (double X0, double X1)? extraRib = null, ViewBoltGeometrySnapshot? bolts = null)
+        double[]? viewFrame = null, (double X0, double X1)? extraRib = null, ViewBoltGeometrySnapshot? bolts = null,
+        (int Id, double X0, double X1, double Y0, double Y1)[]? extraParts = null)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -600,12 +601,15 @@ public sealed class DimensionChainPreviewTests
         var ids = closeRib ? new[] { 10, 11, 12, 13, 15 } : new[] { 10, 11, 12, 13 };
         if (rakedEnd) ids = ids.Where(id => id != 13).ToArray();
         if (upperPlate || crossingPlate || edgeOnPlate || farGusset) ids = ids.Append(16).ToArray();
+        foreach (var extra in extraParts ?? []) parts[extra.Id] = Solid(extra.Id, extra.X0, extra.X1, extra.Y0, extra.Y1);
+        ids = ids.Concat((extraParts ?? []).Select(extra => extra.Id)).ToArray();
         var outline = TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts));
         var role = new PartRoleResult(PartRole.Included, "included", "test");
         var structural = new StructuralOutline(outline,
             (new[] { new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false),
              new(12, "P12", "P", role, secondMain), new(13, "P13", "P", role, false) })
-                .Where(p => !rakedEnd || p.ModelId != 13).Concat(upperPlate || crossingPlate || edgeOnPlate || farGusset ? [new PartRoleInView(16, "P16", "P", role, false)] : []).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : []).ToArray(),
+                .Where(p => !rakedEnd || p.ModelId != 13).Concat(upperPlate || crossingPlate || edgeOnPlate || farGusset ? [new PartRoleInView(16, "P16", "P", role, false)] : []).Concat(closeRib ? [new PartRoleInView(15, "P15", "P", role, false)] : [])
+                .Concat((extraParts ?? []).Select(extra => new PartRoleInView(extra.Id, "P" + extra.Id, "P", role, false))).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame }, bolts);

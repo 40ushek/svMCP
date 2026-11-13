@@ -37,8 +37,9 @@ internal sealed class LocalPartDimensionSettings
 
 /// <summary>
 /// What the rule needs of a view: the main part's box and the levels of its faces, and the box
-/// of every straight secondary part. Parts with tilted edges are not given: a box around them
-/// spans empty space.
+/// of every secondary part. A part with a slanted edge also gives, for its lowest and highest
+/// coordinate across the main part, where along the main part a real corner stands there: a box
+/// corner of such a part may lie in empty space, and the witness line must start on the part.
 /// </summary>
 internal sealed class LocalPartDimensionInput
 {
@@ -46,15 +47,20 @@ internal sealed class LocalPartDimensionInput
     public IReadOnlyList<double> MainLevelsX { get; }
     public IReadOnlyList<double> MainLevelsY { get; }
     public IReadOnlyDictionary<int, (double MinX, double MaxX, double MinY, double MaxY)> Parts { get; }
+    /// <summary>For a part with a slanted edge: along the main part, the corners at its lowest and
+    /// highest coordinate across it. Absent for a straight part: its box corners are its own.</summary>
+    public IReadOnlyDictionary<int, (double LowAlong, double HighAlong)> Corners { get; }
 
     public LocalPartDimensionInput((double MinX, double MaxX, double MinY, double MaxY) main,
         IReadOnlyList<double> mainLevelsX, IReadOnlyList<double> mainLevelsY,
-        IReadOnlyDictionary<int, (double MinX, double MaxX, double MinY, double MaxY)> parts)
+        IReadOnlyDictionary<int, (double MinX, double MaxX, double MinY, double MaxY)> parts,
+        IReadOnlyDictionary<int, (double LowAlong, double HighAlong)>? corners = null)
     {
         Main = main;
         MainLevelsX = mainLevelsX ?? throw new ArgumentNullException(nameof(mainLevelsX));
         MainLevelsY = mainLevelsY ?? throw new ArgumentNullException(nameof(mainLevelsY));
         Parts = parts ?? throw new ArgumentNullException(nameof(parts));
+        Corners = corners ?? new Dictionary<int, (double LowAlong, double HighAlong)>();
     }
 }
 
@@ -106,26 +112,34 @@ internal sealed class LocalPartDimensionRule(LocalPartDimensionSettings settings
             var highFace = FaceAt(high);
             if (lowFace.HasValue && highFace.HasValue) continue; // fitted between two faces: nothing to say
             var face = double.NaN;
-            var across = lowFace.HasValue ? new List<(double, double)> { (lowFace.Value, face), (high, alongTo) }
-                : highFace.HasValue ? new List<(double, double)> { (low, alongTo), (highFace.Value, face) }
-                : new List<(double, double)> { (mainAcrossMin, face), (low, alongTo), (high, alongTo), (mainAcrossMax, face) };
+            // The witness line starts at the part's own corner: the box corner for a straight part,
+            // the real corner for a part with a slanted edge.
+            var (lowAt, highAt) = input.Corners.TryGetValue(part.Key, out var corner) ? corner : (alongTo, alongTo);
+            var across = lowFace.HasValue ? new List<(double, double)> { (lowFace.Value, face), (high, highAt) }
+                : highFace.HasValue ? new List<(double, double)> { (low, lowAt), (highFace.Value, face) }
+                : new List<(double, double)> { (mainAcrossMin, face), (low, lowAt), (high, highAt), (mainAcrossMax, face) };
             chains.Add(new Chain(!lowFace.HasValue && !highFace.HasValue, alongFrom, alongTo, across, [part.Key]));
         }
 
         var merged = new List<Chain>();
-        foreach (var floating in new[] { true, false })
-            foreach (var chain in chains.Where(chain => chain.Floating == floating).OrderBy(chain => chain.AlongFrom))
+        foreach (var chain in chains.OrderBy(chain => chain.AlongFrom))
+        {
+            // Parts at one place along the main part are read together, on one line, whether they
+            // stand on a face or not: a stiffener hanging under a beam and the fin plate through it
+            // share one chain instead of two lines on top of each other. When together they would
+            // leave a segment too short to read, each keeps its own chain; the caller keeps their
+            // lines apart.
+            var last = merged.LastOrDefault();
+            if (last != null && chain.AlongFrom <= last.AlongTo + settings.SameCoordinateTolerance
+                && Readable(last.Across.Concat(chain.Across)))
             {
-                // Parts at one place along the main part are read together, on one line.
-                var last = merged.LastOrDefault(other => other.Floating == floating);
-                if (last != null && chain.AlongFrom <= last.AlongTo + settings.SameCoordinateTolerance)
-                {
-                    last.AlongTo = Math.Max(last.AlongTo, chain.AlongTo);
-                    last.Across.AddRange(chain.Across);
-                    last.PartIds.AddRange(chain.PartIds);
-                }
-                else merged.Add(chain);
+                last.AlongTo = Math.Max(last.AlongTo, chain.AlongTo);
+                last.Across.AddRange(chain.Across);
+                last.PartIds.AddRange(chain.PartIds);
+                continue;
             }
+            merged.Add(chain);
+        }
 
         var results = new List<DimensionRuleResult>();
         var placed = new List<(double Along, double[] Across)>();
@@ -161,6 +175,13 @@ internal sealed class LocalPartDimensionRule(LocalPartDimensionSettings settings
                 Kind, points, segments: across.Zip(across.Skip(1), (a, b) => Math.Round(b - a, 3)), evidence: evidence));
         }
         return new DimensionRuleEvaluation(results);
+    }
+
+    // Every segment of the chain these coordinates give is long enough to read.
+    private bool Readable(IEnumerable<(double Value, double Along)> values)
+    {
+        var across = Distinct(values).Select(item => item.Value).ToArray();
+        return across.Zip(across.Skip(1), (a, b) => b - a).All(segment => segment >= settings.MinimumSegmentViewUnits);
     }
 
     private (double Value, double Along)[] Distinct(IEnumerable<(double Value, double Along)> values)

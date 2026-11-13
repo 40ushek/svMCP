@@ -24,6 +24,52 @@ public sealed class LocalPartDimensionRuleTests
     private static double[] Segments(DimensionRuleResult result) => result.Segments.ToArray();
 
     [Fact]
+    public void AStiffenerAndAFinPlateWithASlantedEdgeAtOnePlaceShareOneChainToTheRealCorner()
+    {
+        // M.156 front view: a stiffener hanging under the girder (y -600..-594, x 500..700) and a fin
+        // plate through it from the girder face down to its lowest corner at x 560 (box x 520..690).
+        var results = new LocalPartDimensionRule(new LocalPartDimensionSettings()).Calculate(new DimensionRuleContext([], null,
+            new LocalPartDimensionInput(Girder, [0, 1000], FaceLevels,
+                new Dictionary<int, (double, double, double, double)> { [1] = (500, 700, -600, -594), [2] = (520, 690, -834, -400) },
+                new Dictionary<int, (double LowAlong, double HighAlong)> { [2] = (560, 690) }))).Results;
+        var chain = Assert.Single(results);
+        Assert.Equal(new[] { 234d, 6, 194, 800 }, Segments(chain));
+        // The witness line of the lowest point starts at the fin plate's own corner, not at its box.
+        Assert.Equal(560, chain.Points[0].X);
+        Assert.Equal(-834, chain.Points[0].Y);
+    }
+
+    [Fact]
+    public void PartsThatTogetherLeaveATooShortSegmentKeepTheirOwnChainsOnTwoRows()
+    {
+        // At x 500..510: a rib on the flange (-367..-167.7) and a free plate just above it
+        // (-166.7..-156.7). Together they would leave a 1 mm segment; each keeps its chain.
+        var results = Calculate((1, 500, 510, -367, -167.7), (2, 500, 510, -166.7, -156.7));
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, result => Segments(result).SequenceEqual(new[] { 199.3 }));
+        Assert.Contains(results, result => Segments(result).SequenceEqual(new[] { 233.3, 10, 556.7 }));
+    }
+
+    [Fact]
+    public void LocalChainsThatCouldNotMergeAndANeighbourNeverShareALine()
+    {
+        // On the beam 0..1000 (y -76..76): a rib on the bottom face at x 500..510 up to -20, a free
+        // plate just above it (-19..-9) that cannot join its chain, and a neighbour rib at 580..590
+        // whose own line would fall where the plate's line is pushed to.
+        var context = DimensionChainPreviewTests.Context(76, extraParts: [
+            (20, 500, 510, -76, -20), (21, 500, 510, -19, -9), (22, 580, 590, -76, 0)]);
+        var lines = context.LocalChains().Select(chain => {
+            var normal = chain.Direction.Split(',').Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            var ys = Enumerable.Range(0, chain.Points.Length / 3).Select(i => chain.Points[i * 3 + 1]).ToArray();
+            return (Line: chain.Points[0] * normal[0] + chain.Points[1] * normal[1] + chain.Distance, From: ys.Min(), To: ys.Max());
+        }).ToArray();
+        Assert.True(lines.Length >= 3);
+        foreach (var a in lines)
+            foreach (var b in lines.Where(b => b != a && b.From <= a.To && a.From <= b.To))
+                Assert.True(Math.Abs(a.Line - b.Line) >= 80 - 1e-6, $"lines {a.Line} and {b.Line} overlap");
+    }
+
+    [Fact]
     public void RibStandingOnAFlangeIsMeasuredFromThatFlange()
     {
         var chain = Assert.Single(Calculate((1, 500, 510, -367, -167.7)));
