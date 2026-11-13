@@ -28,20 +28,21 @@ rest of this file explains the reasons and covers every other request.
    the code compares a bottom or back view with what is already on the sheet.
 4. For the view call `get_view_dimension_context` with `viewId`,
    `ruleSet="steel"` and `questions="chain,scale,repeats"`. In the answer every
-   chain has a `key`, `segments` and `incomplete`, and `repeats` lists the keys
-   that repeat another chain. If the answer has `isComplete=false` or
+   chain has a `key`, `segments` and `incomplete`. A chain that repeats another
+   chain or a dimension already on the sheet comes with `incomplete=true`, a
+   `repeat` field and the reason; `repeats` lists the same keys. If the answer has `isComplete=false` or
    `sectionPreviewStatus` `refused`, place nothing on that view, go on to the next
    view and name the view and the reason in the report. That is not an error.
    If the row `Bolt` has a non-empty `readIncomplete`, place the other chains as
    usual, and say in the report that bolt dimensions on that view were skipped
    because the bolt read was incomplete, quoting `readIncomplete` (it names the
    reason and the part numbers). The row may then have no chains at all.
-5. Choose the keys to place: every chain with `incomplete=false` whose `key` is
-   not in `repeats`. Compare nothing yourself: the code has compared the chains
-   with each other and with the dimensions already on the sheet (rules:
+5. Choose the keys to place: every chain with `incomplete=false`. Compare
+   nothing yourself: the code has compared the chains with each other and with
+   the dimensions already on the sheet and marked the repeats (rules:
    `references/steel-rules.md`, "Repeats"). If the request says to keep repeats
-   ("с повторами", "keep repeats"), ignore `repeats` and take every chain with
-   `incomplete=false`.
+   ("с повторами", "keep repeats"), read the view with `questions="chain,scale"`
+   (without `repeats`): then nothing is marked as a repeat.
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error;
    - in the row `Bolt` do not place a chain with `viewClass` `Side` (bolts seen
@@ -55,7 +56,7 @@ rest of this file explains the reasons and covers every other request.
    `[{"preview":"Bottom-location"},{"preview":"Bottom-overall"}]`.
    Send keys only: no `pointIds`, no `direction`, no `paperGapMm`, no
    `attributesFile`. If no key is left for a view (on a bottom or back view every
-   chain is often in `repeats`), make no call for that view: that is a normal result. If the model has no attributes file for a chain kind, the
+   chain is often a repeat), make no call for that view: that is a normal result. If the model has no attributes file for a chain kind, the
    batch uses `standard` by itself and says so in `attributesFileUsed`.
    - On an older bridge the call can still fail with `Dimension attributes
      'overall' could not be loaded`: nothing was created; add
@@ -211,7 +212,7 @@ and `distance`; reference it by key. In this row `incomplete=true` means the rul
 decided not to create it, with the reason in `incompleteReason` (group skewed to
 the view, class switched off, setting `None`, part edge not confirmed on a
 section): do not repair, extend or place such a chain by hand. Placing one rejects
-the whole batch. Bolt chains are never in `repeats`. Each chain names its
+the whole batch. Bolt chains are never marked as repeats. Each chain names its
 `viewClass`; the standard run places `Plan` chains only and leaves `Side` ones out
 (step 5).
 

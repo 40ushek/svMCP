@@ -250,7 +250,8 @@ public sealed partial class ViewDimensionContextProvider
         if (references.Length == 0) return batch.Chains.Select(WithBoltKey).ToArray();
 
         var context = RequireContext(batch.ViewId, batch.ContextId);
-        var answer = context.Query(chainView, "all", ruleSet: ruleSet);
+        // The same answer the caller read: the repeats of the last chain read and the bolt rows they leave.
+        var answer = context.Query(chainView, "all", ruleSet: ruleSet, storedRepeats: true);
         if (!answer.TryGetProperty("chainPreview", out var rows))
             throw new ArgumentException("Cannot resolve preview chains from this context");
         var preview = IndexPreviewChains(rows, references.Select(chain => chain.Preview!));
@@ -258,14 +259,15 @@ public sealed partial class ViewDimensionContextProvider
             if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
                 throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
+            // A chain marked not to be created (a refused bolt chain, a repeat whose row is already
+            // given to the bolt lines) refuses the whole batch before any write, whatever its points.
+            if (selected.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == System.Text.Json.JsonValueKind.True)
+                throw new ArgumentException($"Preview chain '{chain.Preview}' is not to be created" +
+                    (selected.TryGetProperty("incompleteReason", out var why) && why.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? ": " + why.GetString() : ""));
             // An inclined or a local chain carries its own points, offset vector and distance.
             if (selected.TryGetProperty("points", out _) && selected.TryGetProperty("distance", out _))
             {
-                // A Bolt chain the rule decided not to create refuses the whole batch before any write.
-                if (selected.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == System.Text.Json.JsonValueKind.True)
-                    throw new ArgumentException($"Preview chain '{chain.Preview}' is not to be created" +
-                        (selected.TryGetProperty("incompleteReason", out var why) && why.ValueKind == System.Text.Json.JsonValueKind.String
-                            ? ": " + why.GetString() : ""));
                 if (chain.PaperGapMm.HasValue)
                     throw new ArgumentException($"Preview chain '{chain.Preview}' carries its own offset: give distance, not paperGapMm");
                 return new BatchDimensionChain {

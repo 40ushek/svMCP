@@ -137,9 +137,11 @@ per-part linkage.
 
 ## Repeats
 
-The code (`DimensionChainRepeats`) names the repeats when `get_view_dimension_context`
-is asked `repeats`; it drops nothing. A repeat is not placed in a standard run unless
-the request says to keep repeats. Two numbers are equal within 0.5 (2962.69 and
+The code (`DimensionChainRepeats`) finds the repeats when `get_view_dimension_context`
+is asked `repeats` and marks each one `incomplete=true`, with `repeat` and the reason;
+it drops nothing. A repeat is not placed in a standard run; to keep repeats, read the
+view without `repeats`. The repeats are decided before the bolt lines take their rows,
+so no row is kept for a repeat, and the batch writes from that same answer. Two numbers are equal within 0.5 (2962.69 and
 2962.699 are the same), and segments are compared as the preview gives them.
 
 - **Same view** (`sameView`): `Top` repeats `Bottom` and `Right` repeats `Left` when
@@ -279,7 +281,12 @@ and from the side are dimensioned; position, check and combining options are off
 - **No steps without a datum**: under `All` steps between bolts are never placed alone. A
   dimension tied to no part edge or axis of symmetry cannot be measured on the part.
 - **Line placement**: a bolt line keeps a gap from overlapping parallel lines reserved
-  for the side chains, `Local` and `Inclined`. It need not stand beyond every side-chain row.
+  for the side chains that will be placed (not repeats), `Local` and `Inclined`. It need
+  not stand beyond every side-chain row; a line in the way pushes it to one gap beyond,
+  and so does a part it would cross along its span (an end plate past a beam end).
+- **Merging groups**: groups of one part with the same hole in that part (diameter, type,
+  slots where the part's hole flag is on) share a chain along an axis when they stand one
+  beyond the other along it, or have the same spacing on it. Setting `GroupMerge`.
 - Bolt chains take no part in `repeats`: on a bottom or back view they repeat the bolt
   chains of the top or front view.
 

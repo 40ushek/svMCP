@@ -807,8 +807,9 @@ internal sealed partial class DrawingCommandHandler
                 args.Length > 8 ? args[8] : "horizontal",
                 ReadOptionalDoubleArg(args, 9, "paperGapMm"),
                 args.Length > 10 ? args[10] : "steel",
-                args.Length > 11 ? args[11] : string.Empty, layerRules);
-            WriteJson(questions.Split(',').Contains("repeats") ? _dimensionContexts.AddRepeats(context, answer) : answer);
+                args.Length > 11 ? args[11] : string.Empty, layerRules,
+                readSheet: _dimensionContexts.ReadSheet);
+            WriteJson(answer);
         }
         catch (Exception ex) { WriteError(ex.Message); }
         return true;

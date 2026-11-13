@@ -542,7 +542,10 @@ separate unimplemented policy roles. Geometry-specific work is tracked in
 from the side, at an angle), Tekla-like settings, a decision to create and a `Bolt` row
 in the chain preview, placed by the standard run. Bolt chains stay separate from part
 chains. Implemented (commit `8c71946`) and placed live on M.502 by a cold Haiku run;
-the batch gate below is still open. `boltChains` and `boltProposal` are obsolete. Details:
+the batch gate below is still open. `boltChains` and `boltProposal` are obsolete. Since
+2026-11-13 alike groups merge per axis, holes are read per part, and repeats are marked
+`incomplete` in the preview before bolt rows are taken (merging checked live on M.156;
+repeat marking not yet). Details:
 [Bolt Chains roadmap](ROADMAP_BOLT_CHAINS.md).
 
 - **Next gate: finish live acceptance of batch writes (step 6).** The code is

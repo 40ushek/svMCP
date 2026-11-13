@@ -50,7 +50,12 @@ close to Tekla's own. The neighbours own the rest:
   `SameBoltSize`. Groups merge only on the same dimensioned parts, of the same class and
   measured axes; the chain key names every group (`bolt-part-10-groups-21-22-Bottom`).
   Only groups with every center admitted on the view merge or make a twin: a blocked
-  group keeps its own refused chain (review 2026-11-13). Twins need the same measured
+  group keeps its own refused chain (review 2026-11-13).
+  Merging is decided per chain axis (agreed 2026-11-13, M.156 bottom view): along an
+  axis groups share a chain when one stands wholly beyond the other along it, or when
+  their bolts stand at the same coordinates on it. Groups overlapping along the chain
+  with different spacings keep their own chains, so a chain across a beam never mixes
+  rows at +-45 and +-50 into `30 - 5 - 90 - 5 - 30`. Twins need the same measured
   axes too: two `Side` groups in the same XY but with crossed bolt axes are both kept.
   A merged group keeps its own steps (`Internal`). No distance limit yet: on M.156 four
   groups along the beam flange gave four full-length rows; now one. A distance limit
@@ -60,6 +65,13 @@ close to Tekla's own. The neighbours own the rest:
   is bolt size plus tolerance. Every chain of the `Bolt` row carries `holes`: standard,
   bolt size, hole diameter, hole only, type and slots of each group it measures. Data
   only: the diameter is not written into the dimension text, the bolt mark shows it.
+- **The hole is the one in the part (agreed 2026-11-13):** Tekla's hole type and slots
+  act only on the parts whose flag `Hole1..Hole5` is on (part to bolt to, part to be
+  bolted, then the other parts), with a per-part override in `BoltHolesAttributes`; the
+  other parts get a plain hole. The read keeps `PartHoles`; `SameHole` and `holes`
+  use the hole in the dimensioned part. Found on M.156: group 10385171 has
+  `SlottedHoleY = 30` on the group but round holes on the beam, so it stayed apart.
+  Reading the flags is not yet checked live.
 - **Repeats:** exclude bolt chains from the current segment-length-only
   `DimensionChainRepeats` comparison. Equal steps in different groups do not prove a
   repeat. Both eligible projections may be dimensioned; mirror suppression comes
@@ -113,14 +125,32 @@ close to Tekla's own. The neighbours own the rest:
   gets an edge chain on every secondary part; the main part takes it only when
   nothing else is bolted. Under `Internal` the steps of the group are offered once.
 - **Line placement:** the line stands one paper gap beyond the nearer bound of its
-  part. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and
-  of the rows of the side chains on the same side (one row per offered chain, an
-  overall in `repeats` included): a line within one gap of a taken line whose span
+  part, and beyond every other part it would cross or come within one gap of along its
+  span (2026-11-13: the end plate P/1617 past the beam end on the M.156 bottom view; a
+  part only touching an end of the span does not count).
+  A part whose edge falls on the line itself is in the way too (review 2026-11-13).
+  Open: a part starting just beyond the line (by less than a gap) still leaves the line
+  close to its edge; the full rule would ask for a gap on the outer side as well.
+- **A key marked `incomplete` refuses the batch, whatever its points (review
+  2026-11-13).** A repeat keeps its `pointIds`, but its row may already be given to a
+  bolt line; written anyway it lay on that line. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and
+  of the rows of the side chains on the same side (one row per chain to be placed;
+  repeats are marked incomplete first and keep no row): a line within one gap of a taken line whose span
   overlaps moves to one gap beyond that line (2026-11-13; before, it moved by whole
   gaps from its own place, and bolts 5 mm off the outline lost a row).
-- **Open: the row of an overall in `repeats`.** Its row stays reserved and empty when
-  the overall is not placed (M.502 bottom view, M.156 top view). Whether a chain is a
-  repeat is decided later, from the sheet, so the bolt line cannot know it yet.
+- **Repeats keep no row (agreed 2026-11-13, replaces "open: the row of an overall in
+  `repeats`").** A chain read with `repeats` marks each repeat `incomplete=true` (with
+  `repeat` and the reason) before the bolt lines take their rows; the batch writes from
+  that same answer. On the M.156 bottom view the bolt line stood beyond two empty rows
+  kept for the repeated `Top-location` and `Top-overall`.
+- **Open idea: bolt chains before part chains.** The user is weighing whether bolt
+  lines should stand nearest the part, with the part chains beyond them. Not decided.
+- **Open: mirror bolt chains.** On a bottom or back view the bolt chains repeat those
+  of the top or front view; Haiku asks about it every run. A repeat by the same source
+  bolts seen from the other side is the next candidate rule.
+- **Open: reading a dimension on a mirrored, shortened view.** On the M.156 bottom view
+  `get_drawing_dimensions` reads the right bolt chain at distance 398.3 and x 3880.9
+  (compact: 1212.4), while it was written at 85.2 and stands at the beam end on the sheet.
 - **Open: vertical chains of a long part.** A chain across a beam stands beside the
   nearer part end, up to 1.3 m from its bolts (M.156 top view). Tekla's help does not
   say where it puts that line; merging leaves one such chain per side.

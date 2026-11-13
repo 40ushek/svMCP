@@ -180,8 +180,41 @@ public sealed class TeklaDrawingBoltGeometryApi : IDrawingBoltGeometryApi
             }
         }
 
+        result.PartHoles = ReadPartHoles(boltGroup, otherParts);
         if (includeSolidBbox) TryPopulateSolidBbox(boltGroup, result);
         return result;
+    }
+
+    // Hole1 = part to bolt to, Hole2 = part to be bolted, Hole3..5 = the other parts in their order.
+    // A part with its flag on gets the special hole: its own entry of BoltHolesAttributes when there
+    // is one, else the group's type and slots. A part with the flag off gets a plain hole.
+    private static List<BoltPartHole> ReadPartHoles(BoltGroup boltGroup, System.Collections.ArrayList? otherParts)
+    {
+        var holes = new List<BoltPartHole>();
+        try
+        {
+            var parts = new List<ModelPart?> { boltGroup.PartToBoltTo, boltGroup.PartToBeBolted };
+            if (otherParts != null) parts.AddRange(otherParts.Cast<object>().Select(item => item as ModelPart));
+            var flags = new[] { boltGroup.Hole1, boltGroup.Hole2, boltGroup.Hole3, boltGroup.Hole4, boltGroup.Hole5 };
+            var attributes = boltGroup.BoltHolesAttributes;
+            for (var index = 0; index < parts.Count && index < flags.Length; index++)
+            {
+                if (parts[index] is not { } part || holes.Any(hole => hole.PartId == part.Identifier.ID)) continue;
+                var own = attributes != null && index < attributes.Count ? attributes[index] : null;
+                holes.Add(new BoltPartHole {
+                    PartId = part.Identifier.ID, Special = flags[index],
+                    HoleType = flags[index] ? (own?.HoleType ?? boltGroup.HoleType).ToString() : "Plain",
+                    SlottedHoleX = flags[index] ? own?.LongHoleX ?? boltGroup.SlottedHoleX : 0,
+                    SlottedHoleY = flags[index] ? own?.LongHoleY ?? boltGroup.SlottedHoleY : 0
+                });
+            }
+        }
+        catch
+        {
+            // Not read: the group's own values count, as before.
+            holes.Clear();
+        }
+        return holes;
     }
 
     // Bolt positions lie in the XY plane of the group's coordinate system, so its normal is the bolt axis.

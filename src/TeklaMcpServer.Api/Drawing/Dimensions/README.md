@@ -64,9 +64,22 @@ corner; an ambiguous or invalid edge search gives no end. All original bolts mus
 belong to one outer contour, including sources merged in projection. A center within
 the coordinate tolerance of the contour line is on the boundary: a `Side` group there is
 measured along that one edge, a `Plan` group is refused (provisional). Under `All` steps never stand in for a refused
-edge chain. Bolt lines keep clear of `Local`, `Inclined`
-and side-chain rows. An incomplete bolt read creates no bolt chain and is reported in
+edge chain. Alike groups of a part (same hole in that part by default, setting
+`GroupMerge`) share one chain per axis when they stand one beyond the other along it or
+have the same spacing on it; two groups in the same holes are dimensioned once. Every
+chain carries `holes`. Bolt lines keep clear of `Local`, `Inclined`
+and the rows of side chains that will be placed. An incomplete bolt read creates no bolt chain and is reported in
 the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
+
+## Repeats are marked in the preview (2026-11-13)
+
+Asked `repeats`, a chain read marks every repeat (`sameView`, `overallOnSheet`,
+`mirror`; see `DimensionChainRepeats`) as `incomplete=true` with `repeat` and the reason,
+and lists them in `repeats` as before. This happens before the `Bolt` row takes its
+rows, so no row is kept for a chain that will not be placed. The context keeps the
+repeats of its last chain read; the batch resolves preview keys from that same answer
+(`storedRepeats`), so the bolt distances it writes are the ones the caller saw. A plain
+chain read clears them. The sheet is read through `ViewDimensionContextProvider.ReadSheet`.
 
 ## Provisional bolt-chain preview (2026-10-02, obsolete)
 

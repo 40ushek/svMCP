@@ -16,7 +16,7 @@ namespace TeklaMcpServer.Api.Drawing;
 /// - mirror: on a bottom or back view, any chain equal, in either order, to a dimension on the
 ///   top or front view. Sections and end views repeat nothing between views.
 /// </summary>
-internal static class DimensionChainRepeats
+public static class DimensionChainRepeats
 {
     /// <summary>Two numbers are equal when they differ by no more than this.</summary>
     public const double Tolerance = 0.5;

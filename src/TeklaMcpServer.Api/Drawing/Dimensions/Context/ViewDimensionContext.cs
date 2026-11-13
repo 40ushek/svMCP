@@ -144,7 +144,8 @@ public sealed class ViewDimensionContext
     public JsonElement Query(string questions = "points,edges,scale", string sides = "all",
         double[]? points = null, string direction = "horizontal", double? paperGapMm = null,
         string ruleSet = "steel", string contactPair = "", IReadOnlyList<PartLayerRule>? layerRules = null,
-        DimensionCoordinateSettings? coordinateSettings = null)
+        DimensionCoordinateSettings? coordinateSettings = null,
+        Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet = null, bool storedRepeats = false)
     {
         var requested = Split(questions);
         var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
@@ -258,6 +259,7 @@ public sealed class ViewDimensionContext
                     side = k.Side.ToString(),
                     chains = new[] { DimensionChainPreview.Short(SectionDimensionChainPreview.MergedChain(k), detailed, k.Side.ToString()) }
                 }).ToArray();
+                sideRows = MarkRepeats(sideRows, requested.Contains("repeats") ? readSheet : null, storedRepeats, result);
                 result["chainPreview"] = sideRows.Concat(selected.Length == 4 ? BoltRow(coordinateSettings, sideRows, sectionPlans?.Values) : []).ToArray();
                 result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
                 return Freeze(result, display: true);
@@ -287,12 +289,14 @@ public sealed class ViewDimensionContext
                 result["chainPreview"] = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().Concat([new {
                     side = LocalSide, chains = LocalChains().Select(chain => chain.Project()).ToArray()
                 }]).ToArray();
+            // Repeats are decided before the bolt lines take their rows, so no row is kept for a
+            // chain that will not be placed.
+            var rows = MarkRepeats(((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().ToArray(),
+                requested.Contains("repeats") ? readSheet : null, storedRepeats, result);
+            result["chainPreview"] = rows;
             // Bolt chains belong to no side either; each one says whether it is to be created.
             if (!panel && refusal == null && selected.Length == 4)
-            {
-                var sideRows = ((System.Collections.IEnumerable)result["chainPreview"]!).Cast<object>().ToArray();
-                result["chainPreview"] = sideRows.Concat(BoltRow(coordinateSettings, sideRows, sectionPlans?.Values)).ToArray();
-            }
+                result["chainPreview"] = rows.Concat(BoltRow(coordinateSettings, rows, sectionPlans?.Values)).ToArray();
         }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
@@ -404,6 +408,46 @@ public sealed class ViewDimensionContext
         }).Where(InsideViewFrame).ToArray();
     }
 
+    // The repeats of the last chain read with the repeats question; a plain chain read clears them.
+    // The batch writes from the same answer the caller saw: same repeats, same bolt rows.
+    private IReadOnlyList<DimensionChainRepeats.Repeat>? _repeats;
+
+    // A chain that repeats another one, or a dimension on the sheet, is marked incomplete with the
+    // reason, like any other chain not to be placed. readSheet: decide now (the repeats question);
+    // stored: use the last decision (the batch); neither: no repeats, and the last decision is cleared.
+    private object[] MarkRepeats(object[] rows, Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet,
+        bool stored, Dictionary<string, object?> result)
+    {
+        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        if (readSheet != null)
+        {
+            _repeats = DimensionChainRepeats.Find(ViewId, viewType,
+                DimensionChainRepeats.FromPreview(JsonSerializer.SerializeToElement(new { chainPreview = rows })), readSheet);
+            result["repeats"] = ViewDimensionContextProvider.ProjectRepeats(_repeats);
+        }
+        else if (!stored) _repeats = null;
+        var repeats = (readSheet != null || stored ? _repeats : null)?.ToDictionary(repeat => repeat.Key, StringComparer.Ordinal);
+        if (repeats is not { Count: > 0 }) return rows;
+        return JsonSerializer.SerializeToElement(rows).EnumerateArray().Select(row => (object)row.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Name != "chains" ? (object?)property.Value.Clone()
+                : property.Value.EnumerateArray().Select(chain => chain.TryGetProperty("key", out var key)
+                    && key.GetString() is { } name && repeats.TryGetValue(name, out var repeat)
+                    ? (object)Repeated(chain, repeat) : chain.Clone()).ToArray())).ToArray();
+    }
+
+    private static Dictionary<string, object?> Repeated(JsonElement chain, DimensionChainRepeats.Repeat repeat)
+    {
+        var marked = chain.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone());
+        marked["incomplete"] = true;
+        marked["repeat"] = repeat.Reason;
+        marked["incompleteReason"] = repeat.Reason switch {
+            "sameView" => $"repeats {repeat.Of} on this view",
+            "overallOnSheet" => $"repeats dimension {repeat.DimensionId} on view {repeat.ViewId}",
+            _ => $"mirrors dimension {repeat.DimensionId} on view {repeat.ViewId}"
+        };
+        return marked;
+    }
+
     internal const string BoltSide = "Bolt";
     private readonly Dictionary<string, IReadOnlyList<BoltRowChain>> _boltChains = new(StringComparer.Ordinal);
 
@@ -454,7 +498,7 @@ public sealed class ViewDimensionContext
         var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
             JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
             edgeConfirmed: viewType is not ("SectionView" or "EndView") ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
-            settings, coordinateSettings);
+            settings, coordinateSettings, DimensionPlacementSettings.DefaultPaperGapMm * Scale);
         var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
             .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
         var frame = ViewFrame();

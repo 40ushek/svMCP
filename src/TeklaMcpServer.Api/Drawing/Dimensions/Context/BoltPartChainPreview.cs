@@ -8,7 +8,7 @@ internal static class BoltPartChainPreview
     internal static object[] Build(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
-        BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyDictionary<int, int>? units = null)
+        BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyList<IReadOnlyDictionary<int, int>>? units = null)
     {
         var settings = boltSettings ?? new BoltChainSettings();
         if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<object>();
@@ -32,13 +32,14 @@ internal static class BoltPartChainPreview
                     sources.Add(new Source(partId, group.ModelId, position.Index, position.Point, reason, viewClass == BoltGroupViewClass.Side));
                 }
         }
-        // Per group: one chain per part, group (or merged groups) and side (the Bolt row); otherwise
-        // one per part and side.
-        return sources.GroupBy(source => (source.PartId, GroupId: perGroup ? Leader(source.GroupId, units) : 0))
-            .OrderBy(unit => unit.Key.PartId).ThenBy(unit => unit.Key.GroupId)
-            .SelectMany(unit => sides.Distinct().Select(side => BuildChain(unit.Key.PartId, unit.ToArray(), side, contours, tolerance, perGroup,
-                perGroup ? Key(unit.Key.PartId, unit.Key.GroupId, units, side) : $"bolt-part-{unit.Key.PartId}-{side}")))
-            .ToArray();
+        // Per group: one chain per part, group (or groups merged on that side's axis) and side (the
+        // Bolt row); otherwise one per part and side. units[axis] maps a group to the first of its merge.
+        return sides.Distinct().SelectMany(side => {
+            var merge = units?[side.RunsAlongX() ? 0 : 1];
+            return sources.GroupBy(source => (source.PartId, GroupId: perGroup ? Leader(source.GroupId, merge) : 0))
+                .Select(unit => (unit.Key.PartId, unit.Key.GroupId, Chain: BuildChain(unit.Key.PartId, unit.ToArray(), side, contours, tolerance, perGroup,
+                    perGroup ? Key(unit.Key.PartId, unit.Key.GroupId, merge, side) : $"bolt-part-{unit.Key.PartId}-{side}")));
+        }).OrderBy(chain => chain.PartId).ThenBy(chain => chain.GroupId).Select(chain => chain.Chain).ToArray();
     }
 
     // The first group of the merged groups a group belongs to; itself when not merged.

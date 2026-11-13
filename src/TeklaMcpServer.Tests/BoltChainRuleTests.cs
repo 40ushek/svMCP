@@ -542,6 +542,26 @@ public sealed class BoltChainRuleTests
         Assert.Empty(writes);
     }
 
+    [Fact]
+    public void ARepeatWithPointIdsRejectsTheWholeBatchBeforeAnyWrite()
+    {
+        // Top-overall is a repeat of Bottom-overall here; its row is already given to the bolt line.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [-15, 100, 0],
+            SecondPosition = [-5, 100, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [-15, 100, 0] }, new() { Index = 1, Point = [-5, 100, 0] }] };
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(group));
+        context.Query("chain,repeats", readSheet: () => []);
+        var writes = new List<CreateDimensionRequest>();
+        var provider = Provider(context, writes);
+        var error = Assert.Throws<ArgumentException>(() => provider.CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            Chains = [new() { Preview = "bolt-part-11-groups-42-Top" }, new() { Preview = "Top-overall" }]
+        }));
+        Assert.Contains("not to be created", error.Message);
+        Assert.Contains("Bottom-overall", error.Message);
+        Assert.Empty(writes);
+    }
+
     private static ViewDimensionContextProvider Provider(ViewDimensionContext context, List<CreateDimensionRequest> writes)
     {
         var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
@@ -625,6 +645,94 @@ public sealed class BoltChainRuleTests
         Assert.DoesNotContain(candidates, c => c.BuiltRefusal?.Contains("same projected bolt positions") == true);
         Assert.Contains(candidates, c => c.GroupId == 21 && c.Kind == BoltChainCandidate.PartKind && c.Axis == 1);
         Assert.Contains(candidates, c => c.GroupId == 22 && c.Kind == BoltChainCandidate.PartKind && c.Axis == 0);
+    }
+
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public void ASlotCountsOnlyInThePartsWhoseHoleFlagIsOn(bool slotInPart10, int bottomChains)
+    {
+        // Group 22 carries a slot of 30; it acts on part 10 only when its hole flag is on there.
+        var slotted = Group(22, 120);
+        slotted.SlottedHoleY = 30;
+        slotted.PartHoles = [new() { PartId = 10, Special = slotInPart10, HoleType = slotInPart10 ? "HOLE_TYPE_SLOTTED" : "Plain",
+            SlottedHoleY = slotInPart10 ? 30 : 0 }];
+        var plain = Group(21, 20);
+        plain.PartHoles = [new() { PartId = 10, Special = false, HoleType = "Plain" }];
+        var candidates = BoltChainCandidates.Build(Snapshot(plain, slotted), [10], [10], Contours(), (_, _, _) => true,
+            new BoltChainSettings());
+        Assert.Equal(bottomChains, candidates.Count(c => c.Kind == BoltChainCandidate.PartKind && c.Key.EndsWith("-Bottom")));
+    }
+
+    [Fact]
+    public void GroupsMergeAcrossOnlyWithTheSameSpacing()
+    {
+        // Three pairs across the part at x 40, 120 and 200: rows at y 120/220, 120/220 and 125/215.
+        // Along X they stand one beside the other: one chain. Across, the third spacing differs.
+        BoltGroupGeometry Pair(int id, double x, double low, double high) => new() {
+            ModelId = id, Shape = "BoltArray", FirstPosition = [x, low, 0], SecondPosition = [x, high, 0],
+            Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [x, low, 0] }, new() { Index = 1, Point = [x, high, 0] }] };
+        var candidates = BoltChainCandidates.Build(Snapshot(Pair(21, 40, 120, 220), Pair(22, 120, 120, 220), Pair(23, 200, 125, 215)),
+            [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings());
+        var keys = candidates.Where(c => c.Kind == BoltChainCandidate.PartKind).Select(c => c.Key).ToArray();
+        Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-21-22-23-") && (key.EndsWith("-Bottom") || key.EndsWith("-Top")));
+        Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-21-22-") && !key.Contains("-23-") && (key.EndsWith("-Left") || key.EndsWith("-Right")));
+        Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-23-") && (key.EndsWith("-Left") || key.EndsWith("-Right")));
+    }
+
+    [Fact]
+    public void ARepeatIsMarkedIncompleteAndKeepsNoRowForTheBoltLines()
+    {
+        // Bolts near the top of the tall end plate 11 (x -20..0, y -170..170): their line meets the
+        // Top rows, Top-location and Top-overall. Top-overall repeats Bottom-overall on this view.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [-15, 100, 0],
+            SecondPosition = [-5, 100, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [-15, 100, 0] }, new() { Index = 1, Point = [-5, 100, 0] }] };
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(group));
+        double TopBolt(JsonElement answer) => answer.GetProperty("chainPreview").EnumerateArray()
+            .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray()
+            .Single(chain => chain.GetProperty("key").GetString() == "bolt-part-11-groups-42-Top").GetProperty("distance").GetDouble();
+        var plain = TopBolt(context.Query("chain"));
+        var answer = context.Query("chain,repeats", readSheet: () => []);
+        var repeat = answer.GetProperty("chainPreview").EnumerateArray()
+            .Single(row => row.GetProperty("side").GetString() == "Top").GetProperty("chains").EnumerateArray()
+            .Single(chain => chain.GetProperty("key").GetString() == "Top-overall");
+        Assert.True(repeat.GetProperty("incomplete").GetBoolean());
+        Assert.Equal("sameView", repeat.GetProperty("repeat").GetString());
+        Assert.Contains("Bottom-overall", repeat.GetProperty("incompleteReason").GetString());
+        Assert.Contains(answer.GetProperty("repeats").EnumerateArray(), row => row.GetProperty("key").GetString() == "Top-overall");
+        // Both Top chains repeat the Bottom ones here: no Top row is kept, the bolt line stands one gap
+        // out instead of beyond two empty rows, and the batch reads the same answer.
+        Assert.All(answer.GetProperty("chainPreview").EnumerateArray().Single(row => row.GetProperty("side").GetString() == "Top")
+            .GetProperty("chains").EnumerateArray(), chain => Assert.True(chain.GetProperty("incomplete").GetBoolean()));
+        Assert.Equal(240, plain, 6);
+        Assert.Equal(80, TopBolt(answer), 6);
+        Assert.Equal(TopBolt(answer), TopBolt(context.Query("chain", storedRepeats: true)), 6);
+        // A plain chain read clears the repeats again.
+        Assert.Equal(plain, TopBolt(context.Query("chain")), 6);
+        Assert.Equal(plain, TopBolt(context.Query("chain", storedRepeats: true)), 6);
+    }
+
+    [Theory]
+    [InlineData(-14, 14)]
+    [InlineData(-200, 0)]
+    // The plate's near edge exactly one gap past the beam end, where the line would stand: in the way.
+    [InlineData(-94, 94)]
+    public void APartPastTheBeamEndPushesTheLineOfTheBeamBoltsOut(double plateX, double baseOffset)
+    {
+        // Bolts at x 300 across a beam 0..1000 (y -80..80); an end plate 14 wide (y -85..85) stands
+        // either at the beam end or 186 beyond it. The vertical chain stands on the Left, beside x 0.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [300, -45, 0],
+            SecondPosition = [300, 45, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [300, -45, 0] }, new() { Index = 1, Point = [300, 45, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -80], [1000, -80], [1000, 80], [0, 80]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[plateX, -85], [plateX + 14, -85], [plateX + 14, 85], [plateX, 85]] }] };
+        var left = BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80).Single(c => c.Key == "bolt-part-10-groups-42-Left");
+        Assert.Null(left.BuiltRefusal);
+        Assert.Equal(baseOffset, left.BaseOffset, 6);
     }
 
     private static BoltGroupGeometry Sized(BoltGroupGeometry group, double size)
