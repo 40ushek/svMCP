@@ -37,6 +37,12 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         }
         bool Owns(DimensionPoint point, int modelId) => point.Parents.Any(parent => parent.ModelId == modelId);
 
+        // The opposite side is built only when the main profile has a point there at every level;
+        // points go to a side by the middle of the whole assembly, so a long plate on one side can
+        // leave that side without any profile point.
+        var opposite = catalog.LinePoints(side.Opposite());
+        var oppositeBuilt = levels.All(level => opposite.Any(point => Owns(point, profileInput.MainPartId)
+            && Math.Abs(Along(point) - level) <= settings.SameCoordinateTolerance));
         var location = new List<DimensionPoint> { profilePoints[0], profilePoints[profilePoints.Length - 1] };
         var locatedByProfile = new List<int>();
         var otherSide = new List<int>();
@@ -52,8 +58,8 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
             var reachesHigh = allOwn.Any(point => Across(point) > center + settings.SameCoordinateTolerance);
             var reachesLow = allOwn.Any(point => Across(point) < center - settings.SameCoordinateTolerance);
             var thisSide = side is DimensionChainSide.Top or DimensionChainSide.Right ? reachesHigh : reachesLow;
-            if (!thisSide && (reachesHigh || reachesLow)
-                && catalog.LinePoints(side.Opposite()).Any(point => Owns(point, id)))
+            var belongsOpposite = !thisSide && (reachesHigh || reachesLow) && opposite.Any(point => Owns(point, id));
+            if (belongsOpposite && oppositeBuilt)
             {
                 otherSide.Add(id);
                 continue;
@@ -69,7 +75,9 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
                 wanted.Add(low);
                 // An end part or a plate seen face-on, inside the profile limits, is located by
                 // both of its edges: one edge alone leaves its size along the chain to be worked out.
-                if ((locationInput.EndPartIds.Contains(id) || locationInput.FaceOnPartIds.Contains(id))
+                // So is a part kept here because its own side is not built: it is read from this
+                // side alone, as the plate standing out of the other flange edge on a section.
+                if ((locationInput.EndPartIds.Contains(id) || locationInput.FaceOnPartIds.Contains(id) || belongsOpposite)
                     && high - low > settings.SameCoordinateTolerance)
                     wanted.Add(high);
             }

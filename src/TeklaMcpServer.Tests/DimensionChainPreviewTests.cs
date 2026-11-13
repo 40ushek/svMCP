@@ -515,10 +515,24 @@ public sealed class DimensionChainPreviewTests
         context.Query("chain", side).GetProperty("chainPreview").EnumerateArray().Single()
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
+    [Fact]
+    public void AFinPlateHandedToASideThatIsNotBuiltIsLocatedOnItsOwnSideByBothFaces()
+    {
+        // M.156 section E: the plate reaches far right, so every profile point goes to the Left
+        // side and the Right side is not built. The Left side keeps the plate: 95 - 10 - 95.
+        var context = ISectionContext(finPlateReach: 264);
+        var answer = context.Query("chainDetails", "Left,Right");
+        var left = answer.GetProperty("chainPreview").EnumerateArray().Single(row => row.GetProperty("side").GetString() == "Left")
+            .GetProperty("chains").EnumerateArray().Single(chain => chain.GetProperty("key").GetString() == "Left-location");
+        Assert.Equal(new[] { 95d, 10, 95 }, left.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
+        Assert.Empty(left.GetProperty("offeredOnOtherSidePartIds").EnumerateArray());
+        Assert.False(answer.TryGetProperty("unlocatedYModelIds", out _));
+    }
+
     internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
         double? edgeAboveFlange = null, double? insetPlateDepth = null, double? sidePlateThickness = null,
-        double[]? sidePlateAxisX = null, ViewBoltGeometrySnapshot? bolts = null)
+        double[]? sidePlateAxisX = null, ViewBoltGeometrySnapshot? bolts = null, double? finPlateReach = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -559,6 +573,12 @@ public sealed class DimensionChainPreviewTests
             if (sidePlateAxisX != null) { plate.AxisX = sidePlateAxisX; plate.AxisY = [0, 1, 0]; }
             parts.Add(16, plate);
             included.Add(new PartRoleInView(16, "P16", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        if (finPlateReach is { } reach)
+        {
+            // A fin plate 10 thick standing out of the web to the right, past the flange edges.
+            parts.Add(17, Solid(17, 10, reach, -5, 5));
+            included.Add(new PartRoleInView(17, "P17", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
         }
         if (insetPlateDepth is { } depth)
         {
