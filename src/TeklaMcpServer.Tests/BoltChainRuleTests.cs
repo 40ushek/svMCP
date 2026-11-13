@@ -755,6 +755,157 @@ public sealed class BoltChainRuleTests
         Assert.Equal(new[] { 30d, 30, 40 }, across.Segments);
     }
 
+    [Fact]
+    public void ABeamUnderAFinPlateDoesNotPushThePlateBoltLineAcrossTheView()
+    {
+        // M.156 top view: a fin plate 800..950 standing on a beam 0..1000 (y -80..80), up to y 200;
+        // bolts in the plate at x 830. The vertical chain stands beside the plate, not past the
+        // beam's far end: the beam lies under the chain, it is not beside it.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [830, 100, 0],
+            SecondPosition = [830, 150, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [830, 100, 0] }, new() { Index = 1, Point = [830, 150, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -80], [1000, -80], [1000, 80], [0, 80]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[800, 0], [950, 0], [950, 200], [800, 200]] }] };
+        var chain = BoltChainCandidates.Build(Snapshot(group), [10, 11], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80).Single(c => c.Key == "bolt-part-11-groups-42-Left");
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(0, chain.BaseOffset, 6);
+    }
+
+    [Fact]
+    public void ASecondPartInTheWayIsClearedTooAfterTheFirst()
+    {
+        // Gap 10. The bolts' part spans y 0..10; a part in the way at y 15..30 moves the bound to 30;
+        // the next one at y 25..100 starts before that bound but outside the part's own bound 10:
+        // it is in the way as well, not under the chain. The line clears both.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [20, 5, 0],
+            SecondPosition = [80, 5, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [20, 5, 0] }, new() { Index = 1, Point = [80, 5, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 10], [0, 10]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[0, 15], [100, 15], [100, 30], [0, 30]] }],
+            [12] = [new OutlineTreeNodeResult { Polygon = [[0, 25], [100, 25], [100, 100], [0, 100]] }] };
+        var top = BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 10).Single(c => c.Key == "bolt-part-10-groups-42-Top");
+        // The first point is the corner of the part's top edge (y 10); the bound ends at 100.
+        Assert.Equal(90, top.BaseOffset, 6);
+    }
+
+    [Fact]
+    public void BoltsWithoutAnEdgeOfTheirPlateAreCarriedByTheLocationChain()
+    {
+        // M.156 front view: a fin plate under the beam, pointed at the bottom (tip at x 550), its
+        // edges slanted at the bolts' height; no edge of the plate ends the bolt chain. The bolts
+        // go onto the Bottom location chain instead, as the detailer draws them.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [530, -180, 0],
+            SecondPosition = [570, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,
+            Positions = [new() { Index = 0, Point = [530, -180, 0] }, new() { Index = 1, Point = [570, -180, 0] }] };
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(group),
+            extraPolygons: [(30, [(500, -76), (600, -76), (600, -150), (550, -250), (500, -150)])]);
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var location = rows.Single(row => row.GetProperty("side").GetString() == "Bottom").GetProperty("chains").EnumerateArray()
+            .Single(chain => chain.GetProperty("key").GetString() == "Bottom-location");
+        Assert.True(location.GetProperty("incomplete").GetBoolean());
+        var bolt = rows.Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray().ToArray();
+        var carried = bolt.Single(chain => chain.GetProperty("key").GetString() == "Bottom-location-bolts");
+        Assert.False(carried.GetProperty("incomplete").GetBoolean());
+        var xs = carried.GetProperty("points").EnumerateArray().Select(point => point[0].GetDouble()).ToArray();
+        Assert.Contains(530d, xs);
+        Assert.Contains(570d, xs);
+        Assert.Contains("carried by Bottom-location-bolts",
+            bolt.Single(chain => chain.GetProperty("key").GetString() == "bolt-part-30-groups-42-Bottom").GetProperty("incompleteReason").GetString());
+        // The batch writes it like any chain with its own points.
+        var writes = new List<CreateDimensionRequest>();
+        Provider(context, writes).CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel", Chains = [new() { Preview = "Bottom-location-bolts" }] });
+        Assert.Equal(xs.Length * 3, Assert.Single(writes).Points.Length);
+    }
+
+    [Fact]
+    public void AnIncompleteBoltReadCarriesNoBoltsIntoTheLocationChain()
+    {
+        // As above, but the bolts of part 11 could not be read: no bolt dimension at all, so the
+        // location chain keeps its place and nothing carried can be written.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [530, -180, 0],
+            SecondPosition = [570, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,
+            Positions = [new() { Index = 0, Point = [530, -180, 0] }, new() { Index = 1, Point = [570, -180, 0] }] };
+        var bolts = ViewBoltGeometrySnapshot.Capture(7, [10, 11], id => id == 11
+                ? throw new InvalidOperationException("bolt read failed")
+                : new() { Success = true, ViewId = 7, PartId = id, BoltGroups = [group] },
+            new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true);
+        var context = DimensionChainPreviewTests.Context(76, bolts: bolts,
+            extraPolygons: [(30, [(500, -76), (600, -76), (600, -150), (550, -250), (500, -150)])]);
+        var rows = context.Query("chain").GetProperty("chainPreview").EnumerateArray().ToArray();
+        var boltRow = rows.Single(row => row.GetProperty("side").GetString() == "Bolt");
+        Assert.NotEqual(JsonValueKind.Null, boltRow.GetProperty("readIncomplete").ValueKind);
+        Assert.DoesNotContain(boltRow.GetProperty("chains").EnumerateArray(), chain => chain.GetProperty("key").GetString() == "Bottom-location-bolts");
+        Assert.False(rows.Single(row => row.GetProperty("side").GetString() == "Bottom").GetProperty("chains").EnumerateArray()
+            .Single(chain => chain.GetProperty("key").GetString() == "Bottom-location").GetProperty("incomplete").GetBoolean());
+        var writes = new List<CreateDimensionRequest>();
+        Assert.Throws<ArgumentException>(() => Provider(context, writes).CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel", Chains = [new() { Preview = "Bottom-location-bolts" }] }));
+        Assert.Empty(writes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TheOverallNeverLandsOnTheLineOfTheCarriedBoltChainWhateverTheBatchOrder(bool overallFirst)
+    {
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [530, -180, 0],
+            SecondPosition = [570, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,
+            Positions = [new() { Index = 0, Point = [530, -180, 0] }, new() { Index = 1, Point = [570, -180, 0] }] };
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(group),
+            extraPolygons: [(30, [(500, -76), (600, -76), (600, -150), (550, -250), (500, -150)])]);
+        context.Query("chain");
+        var lines = new Dictionary<int, double>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
+            (request, distance) => {
+                // The line of a Bottom chain: its first point along X, the distance downward.
+                var first = Enumerable.Range(0, request.Points.Length / 3).OrderBy(i => request.Points[i * 3]).First();
+                lines[request.Points.Length] = request.Points[first * 3 + 1] - distance;
+                return new() { Created = true, DimensionId = lines.Count };
+            },
+            readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
+        provider.Get(7);
+        BatchDimensionChain Overall() => new() { Preview = "Bottom-overall" };
+        BatchDimensionChain Carried() => new() { Preview = "Bottom-location-bolts" };
+        provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            Chains = overallFirst ? [Overall(), Carried()] : [Carried(), Overall()] });
+        // Two points for the overall, more for the carried chain; their lines one gap (80) apart at least.
+        var overall = lines[6];
+        var carried = lines.Single(line => line.Key > 6).Value;
+        Assert.True(Math.Abs(overall - carried) >= 80 - 1e-6, $"overall {overall}, carried {carried}");
+        Assert.True(overall < carried);
+    }
+
+    [Fact]
+    public void ACarriedChainMirroringOneOnTheFrontViewIsARepeat()
+    {
+        // The context is a back view. The front view already holds the same carried chain, so its
+        // mirror here is a repeat: not placed, and the batch refuses it.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [530, -180, 0],
+            SecondPosition = [570, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,
+            Positions = [new() { Index = 0, Point = [530, -180, 0] }, new() { Index = 1, Point = [570, -180, 0] }] };
+        var context = DimensionChainPreviewTests.Context(76, bolts: SnapshotOf(group),
+            extraPolygons: [(30, [(500, -76), (600, -76), (600, -150), (550, -250), (500, -150)])]);
+        JsonElement Carried(JsonElement answer) => answer.GetProperty("chainPreview").EnumerateArray()
+            .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray()
+            .Single(chain => chain.GetProperty("key").GetString() == "Bottom-location-bolts");
+        var segments = Carried(context.Query("chain")).GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray();
+        var answer = context.Query("chain,repeats",
+            readSheet: () => [new DimensionChainRepeats.Placed(900, 99, "FrontView", segments.Reverse().ToArray(), true)]);
+        var carried = Carried(answer);
+        Assert.True(carried.GetProperty("incomplete").GetBoolean());
+        Assert.Equal("mirror", carried.GetProperty("repeat").GetString());
+        Assert.Contains(answer.GetProperty("repeats").EnumerateArray(), row => row.GetProperty("key").GetString() == "Bottom-location-bolts");
+        var writes = new List<CreateDimensionRequest>();
+        Assert.Throws<ArgumentException>(() => Provider(context, writes).CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel", Chains = [new() { Preview = "Bottom-location-bolts" }] }));
+        Assert.Empty(writes);
+    }
+
     private static BoltGroupGeometry Sized(BoltGroupGeometry group, double size)
     {
         group.BoltSize = size;

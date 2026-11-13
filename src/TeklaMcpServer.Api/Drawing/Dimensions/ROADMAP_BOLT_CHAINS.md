@@ -147,6 +147,13 @@ close to Tekla's own. The neighbours own the rest:
   `repeat` and the reason) before the bolt lines take their rows; the batch writes from
   that same answer. On the M.156 bottom view the bolt line stood beyond two empty rows
   kept for the repeated `Top-location` and `Top-overall`.
+- **Bolts without an edge of their part go onto the location chain (trial, 2026-11-13).**
+  A `Plan` bolt chain left without any edge of its part (M.156 front view: P/1341, edges
+  slanted at the bolts, the facing edge a single tip between them) gives its bolts to the
+  location chain of the same side when they lie inside its span: the two become one chain
+  `<location key>-bolts` in the `Bolt` row, at the location chain's place, and the location
+  chain is marked not to be placed. Not on sections. A first step toward Tekla's
+  *Combine dimensions*; other choices (the nearest square edge, the main part end) open.
 - **Open idea: bolt chains before part chains.** The user is weighing whether bolt
   lines should stand nearest the part, with the part chains beyond them. Not decided.
 - **Open: mirror bolt chains.** On a bottom or back view the bolt chains repeat those

@@ -97,14 +97,20 @@ public sealed partial class ViewDimensionContextProvider
         // Resolve every point and placement before the first drawing mutation.
         var prepared = chains.Select(chain => PrepareBatchChain(batch, chain, 1)).ToArray();
         var before = _readDimensions(batch.ViewId);
+        // The lines of the chains with their own distance (bolt, local, inclined, given ones), in
+        // whatever order the batch lists them: an automatic chain never lands on one of them.
+        var taken = prepared.Where(entry => entry.Chain.Distance.HasValue)
+            .Select(entry => LineOf(entry.Write, Side(entry.Chain.Direction))).Where(line => line != null)
+            .Select(line => line!.Value).ToList();
         var rows = new Dictionary<string, int>();
         for (var i = 0; i < prepared.Length; i++)
         {
             var entry = prepared[i];
             var side = Side(entry.Chain.Direction);
+            if (entry.Chain.Distance.HasValue) continue;
             rows.TryGetValue(side, out var row);
             rows[side] = ++row;
-            if (entry.Chain.Distance.HasValue || entry.Chain.PaperGapMm.HasValue) continue;
+            if (entry.Chain.PaperGapMm.HasValue) continue;
 
             var existing = FindMatching(before, entry.Write, contained: false,
                 ignoreDistance: true, requireUnique: true);
@@ -116,6 +122,23 @@ public sealed partial class ViewDimensionContextProvider
             if (before.Groups.Any(group => GroupSide(group) == side && group.Items.Count > 0))
                 throw new ArgumentException($"Chain '{entry.Chain.Key}': new chains on occupied {side} require paperGapMm or distance");
             prepared[i] = PrepareBatchChain(batch, entry.Chain, row);
+            // Out by one row while a line with its own distance lies within one row of it on the
+            // same side and their spans overlap; the rows after it follow. One row is one paper gap,
+            // not the whole offset of the current row. A taken line blocks at most two rows, so a
+            // free row comes within 2 x lines + 1 moves; past that the batch is refused before any
+            // write rather than written onto a taken line.
+            bool InTheWay(PreparedDimensionWrite write) => write.Placement is { } placement
+                && LineOf(write, side) is { } line
+                && taken.Any(other => other.Side == side
+                    && Math.Abs(other.Line - line.Line) < DimensionPlacementSettings.DefaultPaperGapMm * placement.ViewScale - 1e-6
+                    && other.From <= line.To && line.From <= other.To);
+            for (var moved = 0; InTheWay(prepared[i].Write); moved++)
+            {
+                if (moved > 2 * taken.Count)
+                    throw new ArgumentException($"Chain '{entry.Chain.Key}': no free row on {side} clear of the chains with their own distance");
+                rows[side] = ++row;
+                prepared[i] = PrepareBatchChain(batch, entry.Chain, row);
+            }
         }
         var result = new CreateDimensionsBatchResult { ViewId = batch.ViewId };
         var stopped = false;
@@ -436,6 +459,21 @@ public sealed partial class ViewDimensionContextProvider
         var vector = DimensionCreatePlacementHelper.ResolveDirection(direction);
         return Axis(direction) == "Horizontal" ? (vector.Y > 0 ? "Top" : "Bottom")
             : Axis(direction) == "Vertical" ? (vector.X > 0 ? "Right" : "Left") : "Unknown";
+    }
+
+    // Where a chain's dimension line stands: Tekla measures the distance from the chain's first
+    // point along it, outward on the side; and the span the line covers along the chain.
+    private static (string Side, double Line, double From, double To)? LineOf(PreparedDimensionWrite write, string side)
+    {
+        var points = write.Request.Points;
+        if (points == null || points.Length < 6 || side is not ("Top" or "Bottom" or "Left" or "Right")) return null;
+        var horizontal = side is "Top" or "Bottom";
+        var (along, across) = horizontal ? (0, 1) : (1, 0);
+        var count = points.Length / 3;
+        var first = Enumerable.Range(0, count).OrderBy(index => points[index * 3 + along]).First();
+        var outward = side is "Top" or "Right" ? 1 : -1;
+        var values = Enumerable.Range(0, count).Select(index => points[index * 3 + along]).ToArray();
+        return (side, points[first * 3 + across] + outward * write.Distance, values.Min(), values.Max());
     }
 
     private static string GroupSide(DimensionGroupInfo group) =>

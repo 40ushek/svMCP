@@ -147,6 +147,12 @@ public sealed class ViewDimensionContext
         DimensionCoordinateSettings? coordinateSettings = null,
         Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet = null, bool storedRepeats = false)
     {
+        // The sheet is read at most once per answer, however many steps compare against it.
+        if (readSheet != null)
+        {
+            var sheet = new Lazy<IReadOnlyList<DimensionChainRepeats.Placed>>(readSheet);
+            readSheet = () => sheet.Value;
+        }
         var requested = Split(questions);
         var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
         if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
@@ -296,7 +302,13 @@ public sealed class ViewDimensionContext
             result["chainPreview"] = rows;
             // Bolt chains belong to no side either; each one says whether it is to be created.
             if (!panel && refusal == null && selected.Length == 4)
-                result["chainPreview"] = rows.Concat(BoltRow(coordinateSettings, rows, sectionPlans?.Values)).ToArray();
+            {
+                var withBolts = rows.Concat(BoltRow(coordinateSettings, rows, sectionPlans?.Values)).ToArray();
+                // Sections confirm bolt edges by their own section chains; nothing is carried there.
+                result["chainPreview"] = section ? withBolts
+                    : MarkCarriedRepeats(CarryEdgelessBolts(withBolts, (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm),
+                        requested.Contains("repeats") ? readSheet : null, storedRepeats, result);
+            }
         }
         if (Wants("points") || Wants("edges"))
             result["sides"] = selected.Select(side => {
@@ -477,6 +489,138 @@ public sealed class ViewDimensionContext
             _ => $"mirrors dimension {repeat.DimensionId} on view {repeat.ViewId}"
         };
         return marked;
+    }
+
+    internal const string BoltEdgeless = "no part edge is confirmed on this view";
+
+    // A plan bolt chain left without any edge of its part (a fin plate with slanted edges beside the
+    // bolts) gives its bolts to the location chain of the same side, as a detailer measures them from
+    // the edges that chain already gives: the location chain and the bolts become one chain in the
+    // Bolt row, placed where the location chain would stand, and the location chain is not placed.
+    // Only bolts lying inside that chain's span are carried; a location chain not to be placed (a
+    // repeat) carries nothing.
+    private object[] CarryEdgelessBolts(object[] rows, double tolerance)
+    {
+        var json = JsonSerializer.SerializeToElement(rows);
+        static Dictionary<string, object?> Copy(JsonElement element) =>
+            element.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone());
+        var copied = json.EnumerateArray().Select(row => {
+            var copy = Copy(row);
+            copy["chains"] = row.GetProperty("chains").EnumerateArray().Select(Copy).ToList();
+            return copy;
+        }).ToList();
+        List<Dictionary<string, object?>> Chains(Dictionary<string, object?> row) => (List<Dictionary<string, object?>>)row["chains"]!;
+        static JsonElement Value(Dictionary<string, object?> chain, string name) =>
+            chain.TryGetValue(name, out var value) && value is JsonElement element ? element : default;
+        static string? Text(Dictionary<string, object?> chain, string name) =>
+            chain.TryGetValue(name, out var value) && value is string text ? text
+            : Value(chain, name) is { ValueKind: JsonValueKind.String } element ? element.GetString() : null;
+        static bool Incomplete(Dictionary<string, object?> chain) =>
+            chain.TryGetValue("incomplete", out var value) && (value is true || value is JsonElement { ValueKind: JsonValueKind.True });
+
+        var bolt = copied.FirstOrDefault(row => Value(row, "side").GetString() == BoltSide);
+        // An incomplete bolt read creates no bolt dimension, a carried one included.
+        if (bolt == null || Value(bolt, "readIncomplete").ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)) return rows;
+        var carried = new Dictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
+        foreach (var chain in Chains(bolt).ToArray())
+        {
+            if (!Incomplete(chain) || Text(chain, "incompleteReason") != BoltEdgeless || Text(chain, "viewClass") != "Plan"
+                || Text(chain, "chainKind") != "part") continue;
+            var sideName = Text(chain, "key")!.Split('-').Last();
+            if (!Enum.TryParse<DimensionChainSide>(sideName, out var side)) continue;
+            var axis = side.RunsAlongX() ? 0 : 1;
+            var bolts = Value(chain, "sources").EnumerateArray()
+                .Select(source => source.GetProperty("point")).Select(point => new[] { point[0].GetDouble(), point[1].GetDouble() }).ToArray();
+            if (bolts.Length == 0) continue;
+            Dictionary<string, object?> target;
+            double[][] points;
+            if (carried.TryGetValue(sideName, out var existing))
+            {
+                target = existing;
+                points = Value(existing, "points").ValueKind == JsonValueKind.Array
+                    ? Value(existing, "points").EnumerateArray().Select(point => new[] { point[0].GetDouble(), point[1].GetDouble() }).ToArray()
+                    : ((double[][])existing["points"]!);
+            }
+            else
+            {
+                var row = copied.FirstOrDefault(candidate => Value(candidate, "side").GetString() == sideName);
+                var location = row == null ? null : Chains(row).FirstOrDefault(candidate => Text(candidate, "kind") == "location" && !Incomplete(candidate));
+                if (location == null || Text(location, "direction") == null) continue;
+                var ids = Value(location, "pointIds").EnumerateArray().Select(id => id.GetString()!).ToArray();
+                if (ids.Length < 2) continue;
+                var flat = ResolvePointIds(ids, Text(location, "direction")!, usePanelReference: false);
+                points = Enumerable.Range(0, flat.Length / 3).Select(i => new[] { flat[i * 3], flat[i * 3 + 1] }).ToArray();
+                target = new Dictionary<string, object?> {
+                    ["key"] = Text(location, "key") + "-bolts", ["direction"] = Text(location, "direction"),
+                    ["attributesFile"] = Text(location, "attributesFile") ?? "standard", ["kind"] = BoltChainRule.Kind,
+                    ["chainKind"] = "location", ["viewClass"] = "Plan", ["partId"] = Value(chain, "partId").Clone(),
+                    ["carries"] = Text(location, "key")
+                };
+                location["incomplete"] = true;
+                location["incompleteReason"] = "carried with the bolts of its part by " + target["key"];
+            }
+            var (from, to) = (points.Min(point => point[axis]), points.Max(point => point[axis]));
+            if (bolts.Any(point => point[axis] <= from + tolerance || point[axis] >= to - tolerance))
+            {
+                if (!carried.ContainsKey(sideName) && target.TryGetValue("carries", out var key))
+                {
+                    // Nothing carried after all: the location chain stays as it was.
+                    var row = copied.First(candidate => Value(candidate, "side").GetString() == sideName);
+                    var location = Chains(row).First(candidate => Text(candidate, "key") == (string)key!);
+                    location["incomplete"] = false;
+                    location.Remove("incompleteReason");
+                }
+                continue;
+            }
+            var merged = points.Concat(bolts).OrderBy(point => point[axis]).Aggregate(new List<double[]>(), (list, point) => {
+                if (list.Count == 0 || point[axis] - list[list.Count - 1][axis] > tolerance) list.Add(point);
+                return list;
+            }).ToArray();
+            var placement = Calculate(Text(target, "direction")!, merged.SelectMany(point => new[] { point[0], point[1], 0d }).ToArray());
+            target["points"] = merged;
+            target["segments"] = merged.Skip(1).Select((point, index) => Math.Round(point[axis] - merged[index][axis], 3)).ToArray();
+            target["distance"] = placement.Distance;
+            target["incomplete"] = false;
+            target["sources"] = (target.TryGetValue("sources", out var before) && before is List<JsonElement> list ? list : new List<JsonElement>())
+                .Concat(Value(chain, "sources").EnumerateArray().Select(source => source.Clone())).ToList();
+            if (!carried.ContainsKey(sideName)) { carried[sideName] = target; Chains(bolt).Add(target); }
+            chain["incompleteReason"] = BoltEdgeless + "; its bolts are carried by " + target["key"];
+        }
+        return carried.Count == 0 ? rows : copied.Cast<object>().ToArray();
+    }
+
+    // A location chain carrying bolts is compared for repeats like the location chain it stands
+    // for: on a back view, the mirror of the front view's carried chain is a repeat too. Its repeats
+    // join the stored ones, so the batch sees the same answer.
+    private object[] MarkCarriedRepeats(object[] rows, Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet,
+        bool stored, Dictionary<string, object?> result)
+    {
+        if (readSheet == null && !stored) return rows;
+        var json = JsonSerializer.SerializeToElement(rows);
+        var carried = json.EnumerateArray().Where(row => row.GetProperty("side").GetString() == BoltSide)
+            .SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .Where(chain => chain.TryGetProperty("carries", out var carries) && carries.ValueKind == JsonValueKind.String
+                && !(chain.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == JsonValueKind.True))
+            .Select(chain => new DimensionChainRepeats.Chain(chain.GetProperty("key").GetString()!,
+                chain.GetProperty("carries").GetString()!.Split('-')[0], "location",
+                chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray()))
+            .ToArray();
+        if (carried.Length == 0) return rows;
+        if (readSheet != null)
+        {
+            var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+            var found = DimensionChainRepeats.Find(ViewId, viewType, carried, readSheet);
+            _repeats = (_repeats ?? []).Where(repeat => carried.All(chain => chain.Key != repeat.Key)).Concat(found).ToArray();
+            result["repeats"] = ViewDimensionContextProvider.ProjectRepeats(_repeats);
+        }
+        var repeats = (_repeats ?? []).Where(repeat => carried.Any(chain => chain.Key == repeat.Key))
+            .ToDictionary(repeat => repeat.Key, StringComparer.Ordinal);
+        if (repeats.Count == 0) return rows;
+        return json.EnumerateArray().Select(row => (object)row.EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Name != "chains" ? (object?)property.Value.Clone()
+                : property.Value.EnumerateArray().Select(chain => chain.TryGetProperty("key", out var key)
+                    && key.GetString() is { } name && repeats.TryGetValue(name, out var repeat)
+                    ? (object)Repeated(chain, repeat) : chain.Clone()).ToArray())).ToArray();
     }
 
     internal const string BoltSide = "Bolt";

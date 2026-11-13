@@ -155,10 +155,36 @@ public sealed class DimensionRowPlacementTests
         batch.Chains[1].Row = 0;
         batch.Chains[1].Distance = 190;
         provider.CreateBatch(batch);
-        Assert.Equal(new[] { 80d, 190d, 240d, 320d }, distances);
+        // A given distance takes no row number; the automatic rows keep one gap from its line:
+        // 160 and 240 lie within 80 of 190, so the next free rows are 320 and 400.
+        Assert.Equal(new[] { 80d, 190d, 320d, 400d }, distances);
         distances.Clear();
         batch.Chains[1].Distance = null;
         provider.CreateBatch(batch);
         Assert.Equal(new[] { 80d, 160d, 240d, 320d }, distances);
+    }
+
+    [Fact]
+    public void AnAutomaticRowFindsTheFirstFreeRowPastSeveralGivenLines()
+    {
+        // Lines given at 120, 280 and 400 block the rows 80 to 400: the automatic chain goes to 480,
+        // never onto a given line, whatever the number of moves it takes.
+        var context = ViewDimensionContextTests.Context();
+        var ids = context.Query("dimensionPoints", "Bottom").GetProperty("dimensionPoints")
+            .GetProperty("sides")[0].GetProperty("points").EnumerateArray()
+            .Select(point => point.GetProperty("pointId").GetString()!).ToArray();
+        var distances = new List<double>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
+            (_, distance) => { distances.Add(distance); return new CreateDimensionResult { Created = true, DimensionId = distances.Count }; },
+            readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
+        provider.Get(7);
+        BatchDimensionChain Chain(string key, double? distance) => new() {
+            Key = key, Direction = "horizontal-down", PointIds = [ids[0], ids[^1]], Distance = distance
+        };
+        provider.CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId,
+            Chains = [Chain("a", 120), Chain("b", 280), Chain("c", 400), Chain("auto", null)]
+        });
+        Assert.Equal(new[] { 120d, 280d, 400d, 480d }, distances);
     }
 }

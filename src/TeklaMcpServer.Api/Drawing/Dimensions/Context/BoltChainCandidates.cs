@@ -147,6 +147,8 @@ internal static class BoltChainCandidates
             var box = bounds!.Value;
             var (from, to) = (points.Min(point => point[axis]), points.Max(point => point[axis]));
             var bound = sign > 0 ? box.Max[across] : box.Min[across];
+            // Under the chain or beside it is judged against the part's own bound, not the moved one.
+            var own = sign * bound;
             // Outward: the near side of a part in the way stands less than one gap past the bound,
             // and its far side past it; the bound moves to that far side until nothing is in the way.
             for (var moved = true; moved;)
@@ -156,7 +158,9 @@ internal static class BoltChainCandidates
                 {
                     var (near, far) = sign > 0 ? (other.Min[across], other.Max[across]) : (-other.Max[across], -other.Min[across]);
                     // A part starting on the line itself is in the way too: the line would lie on its edge.
-                    if (sign * bound >= far || near > sign * bound + gap + touch) continue;
+                    // A part reaching back inside the bound lies under the chain (the beam under a fin
+                    // plate), not beside it: the line cannot clear it and must not try.
+                    if (sign * bound >= far || near > sign * bound + gap + touch || near < own - touch) continue;
                     bound = sign * far;
                     moved = true;
                 }
