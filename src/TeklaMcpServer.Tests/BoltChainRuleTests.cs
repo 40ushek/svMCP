@@ -735,6 +735,26 @@ public sealed class BoltChainRuleTests
         Assert.Equal(baseOffset, left.BaseOffset, 6);
     }
 
+    [Fact]
+    public void ARowTurnedInTheViewPlaneIsDimensionedAlongTheViewAxes()
+    {
+        // M.156 front view: two bolts in plan along a slanted plate edge, (20, 30) and (50, 60) in
+        // the plate 0..100 x 0..100. No skewed group: edge - bolt - bolt - edge on both axes.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [20, 30, 0],
+            SecondPosition = [50, 60, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [20, 30, 0] }, new() { Index = 1, Point = [50, 60, 0] }] };
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = [new OutlineTreeNodeResult {
+                Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }] }, (_, _, _) => true, new BoltChainSettings());
+        Assert.DoesNotContain(candidates, c => c.Kind == BoltChainCandidate.GroupKind);
+        var along = candidates.Single(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 0);
+        var across = candidates.Single(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1);
+        Assert.Null(along.BuiltRefusal);
+        Assert.Null(across.BuiltRefusal);
+        Assert.Equal(new[] { 20d, 30, 50 }, along.Segments);
+        Assert.Equal(new[] { 30d, 30, 40 }, across.Segments);
+    }
+
     private static BoltGroupGeometry Sized(BoltGroupGeometry group, double size)
     {
         group.BoltSize = size;

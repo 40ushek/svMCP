@@ -53,6 +53,8 @@ internal static class BoltDimensionChainPreview
             .ToDictionary(values => values.Key, values => values.Count() == 1
                 ? values.First().GetProperty("centerState").GetString() : "Unresolved");
         var reason = PatternRefusal(group, viewClass, tolerance);
+        // Why the group gives no steps; its edge chains do not depend on it.
+        var stepReason = reason == null ? StepRefusal(group, viewClass, tolerance) : null;
         var chains = new List<object>();
         var edgeChains = new List<object>();
         var candidateChainCount = 0;
@@ -69,36 +71,31 @@ internal static class BoltDimensionChainPreview
             var cells = group.Positions.GroupBy(p => (X: x[p.Index], Y: y[p.Index]))
                 .OrderBy(cell => cell.Key.Y).ThenBy(cell => cell.Key.X)
                 .Select(cell => new Cell(cell.Key.X, cell.Key.Y, cell.OrderBy(p => p.Index).ToArray())).ToArray();
-            if (cells.Length != x.Values.Distinct().Count() * y.Values.Distinct().Count())
+            if (stepReason == null && cells.Length != x.Values.Distinct().Count() * y.Values.Distinct().Count())
+                stepReason = "projected pattern is staggered, irregular or incomplete; rectangular grouping is not justified";
+            // Every center stays a source of the edge chains whatever the pattern; only the steps
+            // need a rectangular grid along the view axes.
+            foreach (var cell in cells)
             {
-                reason = "projected pattern is staggered, irregular or incomplete; rectangular grouping is not justified";
-                decisions.AddRange(group.Positions.Select(p => (object)new {
-                    index = p.Index, state = "Blocked", reason, point = p.Point }));
+                foreach (var p in cell.Sources)
+                {
+                    centers.TryGetValue(p.Index, out var center);
+                    decisions.Add(new { index = p.Index, point = p.Point,
+                        state = center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
+                        reason = center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
+                            : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
+                        representativeIndex = cell.Point.Index });
+                }
             }
-            else
+            if (stepReason == null && sides.Any(side => side.RunsAlongX()))
             {
-                foreach (var cell in cells)
-                {
-                    foreach (var p in cell.Sources)
-                    {
-                        centers.TryGetValue(p.Index, out var center);
-                        decisions.Add(new { index = p.Index, point = p.Point,
-                            state = center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
-                            reason = center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
-                                : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
-                            representativeIndex = cell.Point.Index });
-                    }
-                }
-                if (sides.Any(side => side.RunsAlongX()))
-                {
-                    candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
-                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours, tolerance);
-                }
-                if (sides.Any(side => side is DimensionChainSide.Left or DimensionChainSide.Right))
-                {
-                    candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers);
-                    AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours, tolerance);
-                }
+                candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
+                AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours, tolerance);
+            }
+            if (stepReason == null && sides.Any(side => side is DimensionChainSide.Left or DimensionChainSide.Right))
+            {
+                candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers);
+                AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours, tolerance);
             }
         }
         if (reason == null && chains.Count > 0 && candidateChainCount == 0)
@@ -111,7 +108,7 @@ internal static class BoltDimensionChainPreview
             status = reason != null || (chains.Count > 0 && candidateChainCount == 0)
                 ? "Blocked" : chains.Count == 0 ? "NoInternalSpacing" : "Candidate",
             candidateChainCount, blockedChainCount = chains.Count - candidateChainCount,
-            reason, points = decisions, chains, edgeChains,
+            reason, stepReason, points = decisions, chains, edgeChains,
             edgeScopeStatus = partCandidates.Length == 0 ? "Blocked: no included related part"
                 : "separate proposals per related part; choose part and edge policy before creation"
         };
@@ -137,6 +134,19 @@ internal static class BoltDimensionChainPreview
             return "bolt axis was not read; the group's turn to the view is unresolved";
         if (viewClass == BoltGroupViewClass.Skewed)
             return "bolt group is skewed to the view; no chain is built for it yet";
+        return null;
+    }
+
+    /// <summary>
+    /// Why the group gives no steps between its bolts, or null. Steps run along the view axes, so
+    /// they need a group laid out along them. A group in plan or from the side whose row is turned
+    /// in the view plane (bolts along a slanted plate edge) is not skewed: only its steps are left
+    /// out, its edge chains along the view axes stay. Skewed is the class of a group whose bolt
+    /// axis is neither square to the view nor in its plane.
+    /// </summary>
+    internal static string? StepRefusal(BoltGroupGeometry group, BoltGroupViewClass viewClass,
+        double tolerance = CoordinateTolerance)
+    {
         if (!ValidPoint(group.FirstPosition) || !ValidPoint(group.SecondPosition))
             return "bolt-group reference direction is missing";
         var dx = Math.Abs(group.SecondPosition[0] - group.FirstPosition[0]);
@@ -145,7 +155,7 @@ internal static class BoltDimensionChainPreview
         if (viewClass == BoltGroupViewClass.Plan && dx <= tolerance && dy <= tolerance)
             return "bolt-group reference direction has no stable XY projection";
         if (dx > tolerance && dy > tolerance)
-            return "skewed bolt-group reference requires an explicit direction policy";
+            return "the bolt row is turned in the view plane; steps run along the view axes only";
         return null;
     }
 

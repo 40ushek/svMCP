@@ -55,25 +55,17 @@ public sealed class BoltDimensionChainPreviewTests
     }
 
     [Theory]
-    [InlineData("skewed", "skewed")]
     [InlineData("no-axis", "axis was not read")]
     [InlineData("skewed-to-view", "skewed to the view")]
-    [InlineData("staggered", "staggered")]
-    [InlineData("missing-cell", "incomplete")]
     [InlineData("circle", "BoltArray")]
-    [InlineData("direction", "stable XY")]
     public void UnsupportedPatternsAreReportedAndNeverFlattened(string mode, string reason)
     {
         var group = Rectangle();
         switch (mode)
         {
-            case "skewed": group.SecondPosition = [70, 80, 0]; break;
             case "no-axis": group.Axis = []; break;
             case "skewed-to-view": group.Axis = [0, Math.Sin(Math.PI / 6), Math.Cos(Math.PI / 6)]; break;
-            case "staggered": group.Positions[2].Point[0] += 15; break;
-            case "missing-cell": group.Positions.RemoveAt(3); break;
             case "circle": group.Shape = "BoltCircle"; break;
-            case "direction": group.SecondPosition = group.FirstPosition.ToArray(); break;
         }
         var answer = Preview(group).GetProperty("groups")[0];
         Assert.Equal("Blocked", answer.GetProperty("status").GetString());
@@ -81,6 +73,31 @@ public sealed class BoltDimensionChainPreviewTests
         Assert.Empty(answer.GetProperty("chains").EnumerateArray());
         Assert.All(answer.GetProperty("points").EnumerateArray(), point =>
             Assert.Equal("Blocked", point.GetProperty("state").GetString()));
+    }
+
+    // A group in plan whose row is turned in the view plane, staggered or incomplete is no skewed
+    // group: it gives no steps along the view axes, but its centers stay sources of the edge chains.
+    [Theory]
+    [InlineData("turned", "turned in the view plane")]
+    [InlineData("staggered", "staggered")]
+    [InlineData("missing-cell", "incomplete")]
+    [InlineData("direction", "stable XY")]
+    public void PatternsWithoutStepsKeepTheirCentersForEdgeChains(string mode, string stepReason)
+    {
+        var group = Rectangle();
+        switch (mode)
+        {
+            case "turned": group.SecondPosition = [70, 80, 0]; break;
+            case "staggered": group.Positions[2].Point[0] += 15; break;
+            case "missing-cell": group.Positions.RemoveAt(3); break;
+            case "direction": group.SecondPosition = group.FirstPosition.ToArray(); break;
+        }
+        var answer = Preview(group).GetProperty("groups")[0];
+        Assert.Equal("Plan", answer.GetProperty("viewClass").GetString());
+        Assert.Equal(JsonValueKind.Null, answer.GetProperty("reason").ValueKind);
+        Assert.Contains(stepReason, answer.GetProperty("stepReason").GetString());
+        Assert.Empty(answer.GetProperty("chains").EnumerateArray());
+        Assert.DoesNotContain(answer.GetProperty("points").EnumerateArray(), point => point.GetProperty("state").GetString() == "Blocked");
     }
 
     [Fact]
@@ -117,11 +134,13 @@ public sealed class BoltDimensionChainPreviewTests
     }
 
     [Fact]
-    public void ASkewedReferenceStaysRefusedForASideGroup()
+    public void ATurnedRowOfASideGroupGivesNoStepsButKeepsItsCenters()
     {
         var group = Side();
         group.SecondPosition = [70, 80, 0];
-        Assert.Contains("explicit direction policy", Preview(group).GetProperty("groups")[0].GetProperty("reason").GetString());
+        var answer = Preview(group).GetProperty("groups")[0];
+        Assert.Equal(JsonValueKind.Null, answer.GetProperty("reason").ValueKind);
+        Assert.Contains("turned in the view plane", answer.GetProperty("stepReason").GetString());
     }
 
     [Fact]
@@ -221,7 +240,8 @@ public sealed class BoltDimensionChainPreviewTests
         var coarse = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.1)));
         var fine = Freeze(BoltDimensionChainPreview.Build(snapshot, [10], AllSides, coordinateSettings: new(0.01)));
         Assert.Equal("Candidate", coarse.GetProperty("groups")[0].GetProperty("status").GetString());
-        Assert.Equal("Blocked", fine.GetProperty("groups")[0].GetProperty("status").GetString());
+        // At the fine tolerance the pattern is staggered: no steps, the edge chains stay.
+        Assert.Contains("staggered", fine.GetProperty("groups")[0].GetProperty("stepReason").GetString());
         Assert.Equal(0.01, fine.GetProperty("coordinateTolerance").GetDouble());
     }
 

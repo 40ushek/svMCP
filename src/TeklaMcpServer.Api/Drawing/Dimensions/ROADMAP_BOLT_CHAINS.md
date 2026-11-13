@@ -30,8 +30,12 @@ close to Tekla's own. The neighbours own the rest:
 4. **Every captured group is considered.** A readable axis gives its class: **in
    plan**, **from the side**, or **at an angle**; a missing axis gives `Unresolved`.
    Chains are built only for supported `Plan` and `Side` patterns. Other groups keep
-   their class and refusal reason, including a skewed group reference direction that
-   still requires an explicit direction policy. No chain is invented for them.
+   their class and refusal reason. No chain is invented for them. Skewed is the class
+   only: bolt axis neither square to the view nor in its plane. A `Plan` or `Side` group
+   whose row is turned in the view plane (bolts along a slanted plate edge, M.156 P/1341),
+   staggered or incomplete is not skewed: it gives no steps (`stepReason`), its edge
+   chains along the view axes stay (agreed 2026-11-13; before, the whole group was
+   refused as a "skewed bolt-group reference").
 5. **Creating is a separate decision.** Whether a built chain becomes a dimension is
    decided afterwards, from the class and the settings. Building a chain does not mean
    placing it.
@@ -260,7 +264,8 @@ The plant's own choice of all these options exists as a file in the model folder
   suffices; no confirmed end means refusal. A slanted crossing can use the facing
   edge's corner; all source bolts must first pass the single-contour check.
 - `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
-  orientation refusals are gone, the skewed-reference refusal stays.
+  orientation refusals are gone; a turned, staggered or incomplete pattern refuses its
+  steps only (`stepReason`).
 - `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
   chains of the `Bolt` row in the chain preview. A key from it is written by the batch
   like a `Local` key; a key marked not to create rejects the whole batch.

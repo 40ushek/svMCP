@@ -89,8 +89,9 @@ Kept only for placing one chosen bolt chain; use the `Bolt` row above.
 `boltChainPreview` from the frozen bolt snapshot. It proposes internal-spacing
 rows/columns for axis-aligned, constant-depth `BoltArray` projections with a full
 Cartesian pattern. A single row/column and unequal spacings are supported.
-Skewed, staggered, incomplete, circular and depth-spanning patterns are refused
-with reasons. Coordinates are clustered within 0.01 model/view units, independent
+Groups skewed to the view, circular and depth-spanning patterns are refused with
+reasons. A row turned in the view plane, a staggered or an incomplete pattern gives no
+steps (`stepReason`); its centers stay sources of the edge chains. Coordinates are clustered within 0.01 model/view units, independent
 of view scale; merged points retain all original source indices.
 
 `sides` filters axes only (Top/Bottom = X, Left/Right = Y), without duplicating
