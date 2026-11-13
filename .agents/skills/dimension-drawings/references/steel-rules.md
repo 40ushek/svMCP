@@ -256,12 +256,15 @@ and from the side are dimensioned; position, check and combining options are off
   groups are listed with their reason and not created. A `Side` group is measured only
   across its bolt axis; bolts one behind another give one point.
 - **All**: one chain per group, part and axis, edge - bolts - edge, beside the nearer part
-  bound. A group joining the main part and a secondary part is dimensioned on the
-  secondary part. Groups are never merged, and two chains may share a part edge.
+  bound. A group joining the main part and secondary parts gets an edge chain on
+  every secondary part; the main part takes it only when no secondary part is included.
+  Groups are never merged, and two chains may share a part edge.
 - **Internal**: the steps of each projected row of a group; no part edges.
-- **Sections and end views**: a part edge is not confirmed there (the section contour is
-  not read), so the edge chain is refused and the steps of the group are placed instead,
-  when there are at least two distinct points.
+- **Sections and end views**: a part edge counts as confirmed only when the part lies
+  wholly within the view depth; otherwise the edge chain is refused and the steps of the
+  group are placed instead, when there are at least two distinct points.
+- **Line placement**: a bolt line keeps a gap from overlapping parallel lines reserved
+  for the side chains, `Local` and `Inclined`. It need not stand beyond every side-chain row.
 - Bolt chains take no part in `repeats`: on a bottom or back view they repeat the bolt
   chains of the top or front view.
 

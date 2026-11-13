@@ -56,9 +56,11 @@ bolt axis and the view normal (`Plan`, `Side`, `Skewed`, `Unresolved`).
 `bolt-part-<partId>-groups-<groupId>-<side>`, `bolt-<groupId>-<axis>-<row>`,
 `bolt-<groupId>`. A chain carries points, offset vector and `distance` like a `Local`
 chain; `incomplete=true` there means "not to be created", with the reason, and such a
-key rejects the batch before any write. On sections and end views part edges are not
-confirmed, so the steps of the group stand in for its edge chain. The row takes no part
-in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
+key rejects the batch before any write. On sections and end views a part edge counts
+as confirmed only when the part lies wholly within the view depth; otherwise the steps
+of the group stand in for its edge chain. Bolt lines keep clear of `Local`, `Inclined`
+and side-chain rows. An incomplete bolt read creates no bolt chain and is reported in
+the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
 
 ## Provisional bolt-chain preview (2026-10-02, obsolete)
 

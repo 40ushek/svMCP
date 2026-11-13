@@ -1,8 +1,9 @@
 # Bolt Chains Roadmap
 
 Created 2026-11-13. Status: the first release (work order steps 1-5) is implemented
-on 2026-11-13 and read live on M.502; nothing was placed on a drawing yet. Open: the
-cold Haiku run (step 6), a live write of the `Bolt` row, and steps 7-10.
+(commit `8c71946`) and placed live on M.502 by a cold Haiku run. Open: the M.81
+sections run (rest of step 6), section edges by faces seen edge-on (step 6a), and
+steps 7-10.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
 close to Tekla's own. The neighbours own the rest:
@@ -47,10 +48,12 @@ close to Tekla's own. The neighbours own the rest:
   `DimensionChainRepeats` comparison. Equal steps in different groups do not prove a
   repeat. Both eligible projections may be dimensioned; mirror suppression comes
   later, based on the identities of the source bolts.
-- **Unverified edges:** a part edge counts as confirmed on a section only when the
-  section contour of that part is read; a full-solid projection alone does not
-  confirm it. Until such a read exists, no section edge is confirmed. An `All` chain
-  without a confirmed edge is not created. Its steps-only replacement (as for
+- **Unverified edges:** off sections and end views a part edge is confirmed. On them,
+  for now, an edge counts as confirmed only when the whole solid of the part lies
+  within the view depth (`WhollyInDepth`): a part the section cuts may change shape
+  behind the cut. View-depth processing exists, but some cases retain the full-solid
+  projection; it does not confirm every section edge. Step 6a replaces this rule. An `All`
+  chain without a confirmed edge is not created. Its steps-only replacement (as for
   `Internal`) is offered only when the group passes the class, settings, depth and
   pattern checks and has at least two distinct admissible projected positions.
   Otherwise no replacement is created. The edge chain stays in the preview with
@@ -61,6 +64,18 @@ close to Tekla's own. The neighbours own the rest:
   group uses it. With both edges confirmed, each group gets `edge - bolts - edge`;
   with one confirmed edge, it keeps that edge. Without confirmed edges, the
   conditional steps-only fallback above applies. Confirm this on a live drawing.
+- **A group on several parts:** a group joining the main part and secondary parts
+  gets an edge chain on every secondary part; the main part takes it only when
+  nothing else is bolted. The steps of the group are offered once.
+- **Steps on sections:** under `All`, where edges are not confirmed, the steps of the
+  group are placed whatever the edge search found.
+- **Line placement:** the line stands one paper gap beyond the nearer bound of its
+  part. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and
+  of the rows of the side chains on the same side (one row per offered chain, an
+  overall in `repeats` included): a line within one gap of a taken line whose span
+  overlaps moves out by one gap at a time.
+- **Incomplete bolt read:** no bolt chain is created; the `Bolt` row carries
+  `readIncomplete` with the reason and the unread parts, even when no group was read.
 
 ## Tekla's original rules
 
@@ -160,21 +175,32 @@ The plant's own choice of all these options exists as a file in the model folder
   before has no axis: its groups are `Unresolved` and give no chain.
 - Every group gets a class (`BoltGroupViewClassifier`): `Plan`, `Side`, `Skewed`,
   `Unresolved`. The `bolts` and `boltChains` answers show it.
+- On sections, edge chains are created only for parts wholly within the view depth;
+  otherwise the steps of the group.
 - `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
   orientation refusals are gone, the skewed-reference refusal stays.
 - `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
   chains of the `Bolt` row in the chain preview. A key from it is written by the batch
   like a `Local` key; a key marked not to create rejects the whole batch.
 - The skill places the `Bolt` row in the standard run; it takes no part in `repeats`.
+  It reports an incomplete bolt read from `readIncomplete`.
 - No *Position* and no *Check* dimension is built.
 
-Live read on M.502, 2026-11-13 (read only, nothing placed):
+Placed live on M.502, 2026-11-13, by a cold Haiku run (all dimensions deleted and
+placed again; 19 dimensions on 3 views, 13 tool calls, about 45 s, no failures):
 
-| View | Group | Answer |
+| View | Group | Placed |
 |---|---|---|
-| Bottom 1900 | 10126649, four bolts on part 10126565 | `Plan`. Created: `35 - 90 - 35` (Top) and `30 - 230 - 30` (Right) |
-| Bottom 1900 | 10129801, two bolts on part 10129088 | `Side`. Edge chain refused: `axis ray aligns with a contour vertex` (under `All` no steps are offered) |
-| Section 2149 | 10126649 | `Side`. Edge chain refused (edge not confirmed); steps `230` created instead |
+| Front 1417 | 10126649 on part 10126565 | `35 - 90 - 35` |
+| Front 1417 | 10129801 on part 10129088 | `180 - 60 - 40` and `50 - 50` |
+| Bottom 1900 | 10126649 on part 10126565 | `35 - 90 - 35` (Top) and `30 - 230 - 30` (Right) |
+| Bottom 1900 | 10129801 on part 10129088 | Refused: `axis ray aligns with a contour vertex` (`Side`; under `All` no steps off sections) |
+| Section 2149 | 10126649 | Steps `230` (edge chain refused; run before the `WhollyInDepth` rule) |
+
+The first run put bolt lines on the lines of neighbouring chains (`Local`, `Top`);
+after the line placement rule the user checked the section and the bottom view: no
+overlaps. On the bottom view one empty row stays between `Top-location` and the bolt
+line, reserved for `Top-overall`, which is not placed as a repeat.
 
 ## Target
 
@@ -285,8 +311,8 @@ decision is made in code, so a weak model only places what is marked.
 
 For `All`, the unit is a part, a group or a cluster of groups, and a placement side
 (top, bottom, left, right). One part can therefore have several chains on the same
-side. The code today builds one chain per part and side over all related groups;
-splitting those groups is part of this increment, not existing behaviour.
+side. The `Bolt` row builds one chain per part, group and side; the obsolete
+explicit path still builds one per part and side over all related groups.
 
 | Setting value | Chains offered | Never in them |
 |---|---|---|
@@ -384,6 +410,10 @@ Steps 1-5 done on 2026-11-13.
    while the acceptance of batch writes in the Dimensions roadmap is still open: the
    standard run already writes part chains through that batch, bolts add more.
 6. A cold Haiku run on M.502 and on the M.81 sections: result, time, tool calls.
+   M.502 done 2026-11-13 (see above); M.81 postponed by the user.
+6a. Section edges: measure to an edge only when it is a face seen edge-on, standing
+   perpendicular to the sheet (agreed with the user 2026-11-13). Replaces the
+   `WhollyInDepth` rule; an edge from a slanted face or a slanted cut gives steps only.
 7. The *Position* kind, then the *Check* kind, then centered bolts.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
@@ -404,8 +434,12 @@ Steps 1-5 done on 2026-11-13.
   by view. How the two work together is to be settled when preferred-view selection is added.
 - A bolt hidden behind another part. The class does not answer it; see the visibility
   probe in the Bolt Geometry roadmap.
-- Improving section contours remains open. Until an edge is confirmed on the section,
-  its chain is refused for automatic creation, as specified for the first release.
+- Section edges: the face-seen-edge-on rule (step 6a) is agreed in principle, not yet
+  specified: how a contour edge is matched to a face, and with which tolerance.
+- The row reserved for an overall that is not placed as a repeat leaves an empty row
+  before the bolt line. Reserve only the chains that will be placed?
+- Bolt lines are kept clear by rows only; text collisions and lines of dimensions
+  already on the sheet are not checked.
 
 ## Out of scope for now
 

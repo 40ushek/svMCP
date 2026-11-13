@@ -541,8 +541,8 @@ separate unimplemented policy roles. Geometry-specific work is tracked in
 **Bolt chains (2026-11-13):** chosen automatically - a class for every group (in plan,
 from the side, at an angle), Tekla-like settings, a decision to create and a `Bolt` row
 in the chain preview, placed by the standard run. Bolt chains stay separate from part
-chains. Implemented and read live on M.502; not yet placed live, and the batch gate
-below is still open. `boltChains` and `boltProposal` are obsolete. Details:
+chains. Implemented (commit `8c71946`) and placed live on M.502 by a cold Haiku run;
+the batch gate below is still open. `boltChains` and `boltProposal` are obsolete. Details:
 [Bolt Chains roadmap](ROADMAP_BOLT_CHAINS.md).
 
 - **Next gate: finish live acceptance of batch writes (step 6).** The code is
