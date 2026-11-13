@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -19,6 +20,8 @@ internal sealed class SectionProfileDimensionRule(SectionProfileDimensionSetting
         double Along(DimensionPoint point) => alongX ? point.X : point.Y;
         double Across(DimensionPoint point) => alongX ? point.Y : point.X;
         var outer = side.OutwardSign();
+        if (!Offered(line, input.MainPartId, levels, alongX, settings.SameCoordinateTolerance))
+            return new DimensionRuleEvaluation([Refused("main-profile support is not offered on this side")]);
 
         var profile = levels.Select(level => line
             .Where(point => point.Parents.Any(parent => parent.ModelId == input.MainPartId)
@@ -35,6 +38,16 @@ internal sealed class SectionProfileDimensionRule(SectionProfileDimensionSetting
         return new DimensionRuleEvaluation([new DimensionRuleResult(Direction(alongX), Placement(side, alongX),
             "profile", points, segments: segments)]);
     }
+
+    /// <summary>
+    /// Whether a side line holds a main-profile point at every level: only then is the side's
+    /// profile, and so its location chain, built. Points go to a side by the middle of the whole
+    /// assembly, so a long part on one side can leave that side without any profile point.
+    /// </summary>
+    internal static bool Offered(IReadOnlyList<DimensionPoint> line, int mainPartId, IReadOnlyList<double> levels,
+        bool alongX, double tolerance) =>
+        levels.All(level => line.Any(point => point.Parents.Any(parent => parent.ModelId == mainPartId)
+            && Math.Abs((alongX ? point.X : point.Y) - level) <= tolerance));
 
     private DimensionRuleResult Refused(string reason)
     {

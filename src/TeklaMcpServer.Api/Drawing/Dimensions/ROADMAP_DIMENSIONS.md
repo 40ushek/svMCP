@@ -49,7 +49,10 @@ Findings on the steel path (front views and sections):
    merged chain by coordinate alone and still counted as located, so the unlocated
    lists can be empty when a part has no dimension.
    A part is handed to the opposite side only when that side is built, with a main-profile
-   point at every level; otherwise it stays and is located by both faces (2026-11-13,
+   point at every level; otherwise it stays. Every section part is located by both faces,
+   inside the profile limits or past them, so a plate cut across shows its thickness
+   whichever side reads it (agreed 2026-11-13; a part with no own point left on the chain
+   is reported in `mergedNearbyPartIds`) (2026-11-13,
    M.156 section E: the fin plate P/1638 reaching past the flanges left the right side
    without profile points, since points go to a side by the middle of the assembly, see 3).
 7. Chains always run in ascending coordinate order; the "main part start" datum of

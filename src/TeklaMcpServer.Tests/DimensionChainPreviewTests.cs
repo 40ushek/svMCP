@@ -470,7 +470,7 @@ public sealed class DimensionChainPreviewTests
 
     [Theory]
     [InlineData(10, new[] { 50d, 100d, 50d })] // thin along the view depth: seen face-on, both edges are located
-    [InlineData(0, new[] { 50d, 150d })]       // no depth read: one edge, as before
+    [InlineData(0, new[] { 50d, 100d, 50d })]  // no depth read: both edges too, as every section part (2026-11-13)
     public void PlateSeenFaceOnIsLocatedByBothEdges(double thickness, double[] expected)
     {
         var context = ISectionContext(sidePlateThickness: thickness);
@@ -486,7 +486,7 @@ public sealed class DimensionChainPreviewTests
     [Theory]
     [InlineData(1, 0, 0, new[] { 50d, 100d, 50d })]      // both own axes in the view plane: face-on
     [InlineData(1, 0, 0.05, new[] { 50d, 100d, 50d })]   // nearly
-    [InlineData(0, 0, 1, new[] { 50d, 150d })]           // own X along the view depth: not face-on, whatever its extents
+    [InlineData(0, 0, 1, new[] { 50d, 100d, 50d })]      // own X along the view depth: not face-on, yet located by both edges like every section part
     public void PartAxesDecideWhetherAPlateIsSeenFaceOn(double x, double y, double z, double[] expected)
     {
         // No depth in the fixture, so the plate is not an end part and only its axes speak.
@@ -529,10 +529,41 @@ public sealed class DimensionChainPreviewTests
         Assert.False(answer.TryGetProperty("unlocatedYModelIds", out _));
     }
 
+    [Theory]
+    // A plate reaching far right past the top flange: the right side is not built, the plate is
+    // read on the left by both faces, the one inside the profile included.
+    [InlineData(80, 150, new[] { 180d, 20, 50 })]
+    [InlineData(-150, -80, new[] { 50d, 20, 180 })]
+    public void AKeptPlatePastAFlangeIsLocatedByBothFaces(double y0, double y1, double[] expected)
+    {
+        var context = ISectionContext(plates: [(10, 264, y0, y1)]);
+        Assert.Contains(VerticalChains(context), segments => segments.SequenceEqual(expected));
+        Assert.Empty(Unlocated(context, "Y"));
+    }
+
+    [Fact]
+    public void TwoPlatesToOppositeSidesAreEachLocatedByBothFaces()
+    {
+        // One plate out to the left at y 40..50, one out to the right at y -30..-20: every face
+        // appears in a vertical chain, whichever side reads it.
+        var context = ISectionContext(plates: [(-264, -10, 40, 50), (10, 264, -30, -20)]);
+        var coordinates = VerticalChains(context).Select(segments =>
+            segments.Aggregate(new List<double> { -100 }, (list, segment) => { list.Add(Math.Round(list[^1] + segment, 3)); return list; }))
+            .SelectMany(list => list).ToHashSet();
+        Assert.Superset(new HashSet<double> { -30, -20, 40, 50 }, coordinates);
+        Assert.Empty(Unlocated(context, "Y"));
+    }
+
+    private static double[][] VerticalChains(ViewDimensionContext context) =>
+        context.Query("chain").GetProperty("chainPreview").EnumerateArray()
+            .Where(row => row.GetProperty("side").GetString() is "Left" or "Right")
+            .SelectMany(row => row.GetProperty("chains").EnumerateArray()).Select(Segments).ToArray();
+
     internal static ViewDimensionContext ISectionContext(bool endPlate = false, bool rakedMain = false,
         string viewType = "SectionView", double? angleShift = null, bool roundedMain = false, double scale = 10,
         double? edgeAboveFlange = null, double? insetPlateDepth = null, double? sidePlateThickness = null,
-        double[]? sidePlateAxisX = null, ViewBoltGeometrySnapshot? bolts = null, double? finPlateReach = null)
+        double[]? sidePlateAxisX = null, ViewBoltGeometrySnapshot? bolts = null, double? finPlateReach = null,
+        (double X0, double X1, double Y0, double Y1)[]? plates = null)
     {
         var main = rakedMain
             ? Poly(10, (-80, -100), (80, -100), (70, 100), (-80, 100))
@@ -579,6 +610,11 @@ public sealed class DimensionChainPreviewTests
             // A fin plate 10 thick standing out of the web to the right, past the flange edges.
             parts.Add(17, Solid(17, 10, reach, -5, 5));
             included.Add(new PartRoleInView(17, "P17", "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
+        }
+        foreach (var (plate, index) in (plates ?? []).Select((plate, index) => (plate, index)))
+        {
+            parts.Add(20 + index, Solid(20 + index, plate.X0, plate.X1, plate.Y0, plate.Y1));
+            included.Add(new PartRoleInView(20 + index, "P" + (20 + index), "P", new PartRoleResult(PartRole.Included, "included", "test"), false));
         }
         if (insetPlateDepth is { } depth)
         {

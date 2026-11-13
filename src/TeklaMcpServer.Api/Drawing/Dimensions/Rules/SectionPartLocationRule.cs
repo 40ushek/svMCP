@@ -37,12 +37,10 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         }
         bool Owns(DimensionPoint point, int modelId) => point.Parents.Any(parent => parent.ModelId == modelId);
 
-        // The opposite side is built only when the main profile has a point there at every level;
-        // points go to a side by the middle of the whole assembly, so a long plate on one side can
-        // leave that side without any profile point.
+        // A part is handed to the opposite side only when that side is built.
         var opposite = catalog.LinePoints(side.Opposite());
-        var oppositeBuilt = levels.All(level => opposite.Any(point => Owns(point, profileInput.MainPartId)
-            && Math.Abs(Along(point) - level) <= settings.SameCoordinateTolerance));
+        var oppositeBuilt = SectionProfileDimensionRule.Offered(opposite, profileInput.MainPartId, levels, alongX,
+            settings.SameCoordinateTolerance);
         var location = new List<DimensionPoint> { profilePoints[0], profilePoints[profilePoints.Length - 1] };
         var locatedByProfile = new List<int>();
         var otherSide = new List<int>();
@@ -65,22 +63,12 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
                 continue;
             }
 
+            // A part is located by both of its edges, inside the profile limits or past them: one
+            // edge alone leaves its size along the chain to be worked out (a plate cut across shows
+            // its thickness, 71 - 10 - 71), whichever side it is read from and however long it is.
             var low = own.Min(Along);
             var high = own.Max(Along);
-            var wanted = new List<double>();
-            if (low < levels[0] - settings.SameCoordinateTolerance) wanted.Add(low);
-            if (high > levels[levels.Length - 1] + settings.SameCoordinateTolerance) wanted.Add(high);
-            if (wanted.Count == 0)
-            {
-                wanted.Add(low);
-                // An end part or a plate seen face-on, inside the profile limits, is located by
-                // both of its edges: one edge alone leaves its size along the chain to be worked out.
-                // So is a part kept here because its own side is not built: it is read from this
-                // side alone, as the plate standing out of the other flange edge on a section.
-                if ((locationInput.EndPartIds.Contains(id) || locationInput.FaceOnPartIds.Contains(id) || belongsOpposite)
-                    && high - low > settings.SameCoordinateTolerance)
-                    wanted.Add(high);
-            }
+            var wanted = high - low > settings.SameCoordinateTolerance ? new List<double> { low, high } : new List<double> { low };
             foreach (var coordinate in wanted)
             {
                 var pick = own.Where(point => Math.Abs(Along(point) - coordinate) <= settings.SameCoordinateTolerance)
@@ -93,19 +81,24 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         }
 
         var mergedNearby = new List<int>();
+        var kept = new HashSet<int>();
         var located = new List<int>(locatedByProfile);
         DimensionPoint? last = null;
         foreach (var candidate in candidates.OrderBy(candidate => Along(candidate.Point)).ThenBy(candidate => candidate.Id))
         {
-            if (last != null && Along(candidate.Point) - Along(last) < settings.ReadableGapViewUnits)
+            // A gap of exactly the readable size stays: rounding must not merge two edges of one plate.
+            if (last != null && Along(candidate.Point) - Along(last) < settings.ReadableGapViewUnits - settings.SameCoordinateTolerance)
                 mergedNearby.Add(candidate.Id);
             else
             {
                 location.Add(candidate.Point);
                 last = candidate.Point;
+                kept.Add(candidate.Id);
             }
             located.Add(candidate.Id);
         }
+        // A part is reported merged only when none of its own points is left on the chain.
+        mergedNearby = mergedNearby.Distinct().Where(id => !kept.Contains(id)).ToList();
 
         var ordered = location.GroupBy(Along)
             .Select(group => group.OrderByDescending(Outside).ThenBy(point => point.Id, StringComparer.Ordinal).First())
