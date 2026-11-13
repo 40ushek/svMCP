@@ -453,7 +453,7 @@ public sealed class ViewDimensionContext
         var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
         var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
             JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
-            edgesConfirmed: viewType is not ("SectionView" or "EndView") ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
+            edgeConfirmed: viewType is not ("SectionView" or "EndView") ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
             settings, coordinateSettings);
         var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
             .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
@@ -476,17 +476,19 @@ public sealed class ViewDimensionContext
 
     // Use the unmerged section supports, never the formatted answer. Both ends must be
     // supported by the same part on this axis; a matching coordinate on another part proves nothing.
-    private static Func<int, int, double[][], bool> SectionEdgeCheck(
+    private Func<int, int, double[], bool> SectionEdgeCheck(
         IEnumerable<SectionDimensionChainPreview.SideResult> sectionPlans)
     {
         var supports = sectionPlans.SelectMany(plan => plan.EdgePoints.SelectMany(point => point.Parents
             .Where(parent => parent.ModelId.HasValue && !parent.IsHole)
             .Select(parent => (PartId: parent.ModelId!.Value, Axis: plan.Side.RunsAlongX() ? 0 : 1,
                 Along: plan.Side.RunsAlongX() ? point.X : point.Y)))).ToArray();
+        // A part seen flat on the section is drawn whole, as on an ordinary view: its outline is true.
+        var flat = new HashSet<int>(FaceOnPartIds());
         var tolerance = CalcDimensionChains.PartSpanMatchToleranceMm;
-        return (partId, axis, points) => points.Length >= 2
-            && new[] { points[0], points[points.Length - 1] }.All(end => supports.Any(support =>
-                support.PartId == partId && support.Axis == axis && Math.Abs(support.Along - end[axis]) <= tolerance));
+        // A support counts only from a chain of the same axis: a vertical chain's point says nothing of an X edge.
+        return (partId, axis, end) => flat.Contains(partId) || supports.Any(support =>
+            support.PartId == partId && support.Axis == axis && Math.Abs(support.Along - end[axis]) <= tolerance);
     }
 
     // How many chains each side row offers for placing; each takes one row beyond the outline.

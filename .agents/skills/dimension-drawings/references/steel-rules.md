@@ -260,9 +260,12 @@ and from the side are dimensioned; position, check and combining options are off
   every secondary part; the main part takes it only when no secondary part is included.
   Groups are never merged, and two chains may share a part edge.
 - **Internal**: the steps of each projected row of a group; no part edges.
-- **Sections and end views**: an `All` chain is created only when both ends match source
-  section-chain supports of the same part and axis, before merging or formatting the
-  answer. A chain with only one confirmed edge is refused too; `Internal` still offers steps.
+- **Sections and end views**: each end needs source section-chain support of the same
+  part and axis, before answer merging/formatting, or the face-on part rule. One
+  confirmed end suffices; an unconfirmed end is omitted. The end is a square contour
+  crossing or the corner of the edge facing the dimension line. Every original bolt
+  must lie in the same outer contour, including bolts merged in projection.
+  `Internal` still offers steps.
 - **No steps without a datum**: under `All` steps between bolts are never placed alone. A
   dimension tied to no part edge or axis of symmetry cannot be measured on the part.
 - **Line placement**: a bolt line keeps a gap from overlapping parallel lines reserved

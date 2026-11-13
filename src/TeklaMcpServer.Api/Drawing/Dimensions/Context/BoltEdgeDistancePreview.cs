@@ -67,7 +67,7 @@ internal static class BoltEdgeDistancePreview
         return null;
     }
 
-    private static IEnumerable<OutlineTreeNodeResult> Flatten(IEnumerable<OutlineTreeNodeResult> nodes)
+    internal static IEnumerable<OutlineTreeNodeResult> Flatten(IEnumerable<OutlineTreeNodeResult> nodes)
     {
         foreach (var node in nodes)
         {

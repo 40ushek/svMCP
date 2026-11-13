@@ -14,7 +14,7 @@ internal static class BoltChainCandidates
 
     internal static IReadOnlyList<BoltChainCandidate> Build(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<int> mainPartIds, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
-        Func<int, int, double[][], bool> edgesConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null)
+        Func<int, int, double[], bool> edgeConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var preview = JsonSerializer.SerializeToElement(BoltDimensionChainPreview.Build(snapshot, includedPartIds,
@@ -58,13 +58,12 @@ internal static class BoltChainCandidates
                     var placement = Placement(contours, partId, axis, center);
                     var partKey = $"bolt-part-{partId}-groups-{groupId}-{placement.Side}";
                     if (!partChains.TryGetValue(partKey, out var part)) continue;
-                    var points = part.GetProperty("points").EnumerateArray()
-                        .Select(point => point.EnumerateArray().Select(value => value.GetDouble()).ToArray()).ToArray();
-                    confirmed[partId] = points.Length >= 2 && edgesConfirmed(partId, axis, points);
+                    var (points, chainRefusal) = PartChainPoints(part, end => edgeConfirmed(partId, axis, end), axis, tolerance);
+                    confirmed[partId] = points.Length >= 2;
                     result.Add(new BoltChainCandidate(partKey, BoltChainCandidate.PartKind, groupId, partId,
                         mainPartIds.Contains(partId), viewClass, axis, RulePoints(partKey, groupId, points),
-                        part.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()),
-                        placement.Refusal ?? (part.GetProperty("state").GetString() == "Candidate" ? null : part.GetProperty("reason").GetString()),
+                        points.Skip(1).Select((point, index) => point[axis] - points[index][axis]),
+                        placement.Refusal ?? chainRefusal,
                         confirmed[partId], placement.Normal, points.Length > 0 ? placement.Offset(points[0]) : 0,
                         part.GetProperty("projectedPositions").Clone()));
                 }
@@ -85,6 +84,30 @@ internal static class BoltChainCandidates
             }
         }
         return result;
+    }
+
+    // Edge - bolts - edge with each end kept on its own when the view confirms it. One end left
+    // gives edge - bolts; none, a refusal. Blocked bolt sources and split contours refuse as before.
+    private static (double[][] Points, string? Refusal) PartChainPoints(JsonElement part, Func<double[], bool> confirmed,
+        int axis, double tolerance)
+    {
+        var reason = part.GetProperty("reason").GetString();
+        if (part.GetProperty("blockedSources").GetArrayLength() > 0) return ([], reason);
+        if (part.TryGetProperty("boltRefusal", out var bolt) && bolt.ValueKind == JsonValueKind.String)
+            return ([], bolt.GetString());
+        var bolts = part.GetProperty("projectedPositions").EnumerateArray()
+            .Select(position => position.GetProperty("point").EnumerateArray().Select(value => value.GetDouble()).ToArray())
+            .OrderBy(point => point[axis]).ToArray();
+        double[]? End(string name) => part.TryGetProperty(name, out var end) && end.ValueKind == JsonValueKind.Array
+            ? end.EnumerateArray().Select(value => value.GetDouble()).ToArray() is var point && confirmed(point) ? point : null
+            : null;
+        var min = End("minEnd");
+        var max = End("maxEnd");
+        if (bolts.Length == 0) return ([], reason ?? "no bolt position");
+        if (min == null && max == null) return ([], "no part edge is confirmed on this view" + (reason != null ? "; " + reason : ""));
+        var points = (min == null ? bolts : new[] { min }.Concat(bolts)).Concat(max == null ? [] : new[] { max }).ToArray();
+        var bad = points.Skip(1).Select((point, index) => point[axis] - points[index][axis]).Any(value => value <= tolerance);
+        return (points, bad ? "edge endpoints do not bound all projected bolt coordinates" : null);
     }
 
     private sealed class LinePlacement(DimensionChainSide side, DimensionDirection normal, string? refusal,

@@ -82,7 +82,7 @@
 - `arrange_dimensions` — реализован, но **не является полноценным layout-движком**: сейчас это базовая раздвижка параллельных стеков через `Distance`, без нормализации distance и без полного учёта текста/меток
 - `combine_dimensions` — реализован как controlled combine path поверх grouping/reduction logic
 - Состояние болтовых цепочек и проверки: [roadmap размеров](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02).
-- Автоматический выбор цепочек по болтам (классы «в плане / сбоку / под углом», настройки как в Tekla): [roadmap цепочек болтов](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_BOLT_CHAINS.md). Первый выпуск реализован (коммит `8c71946`) и поставлен на M.502 холодным прогоном Haiku; открыты разрезы M.81 и правило краёв на разрезах.
+- Автоматический выбор цепочек по болтам (классы «в плане / сбоку / под углом», настройки как в Tekla): [roadmap цепочек болтов](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_BOLT_CHAINS.md). Первый выпуск реализован (коммит `8c71946`) и поставлен на M.502 холодным прогоном Haiku; уточнённое правило краёв реализовано, открыты его приёмка новой расстановкой и разрезы M.81.
 - Контракт предложений, read-only план композиции и дальнейшее расширение:
   [roadmap композиции](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
 - Следующий этап layout-размещения размеров, отдельный от незакрытой live-приёмки в

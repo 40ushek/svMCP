@@ -206,7 +206,7 @@ public sealed class BoltChainRuleTests
     public void SectionEdgesOfAnotherPartCannotConfirmAnInsetPlate()
     {
         // The plate and the main profile both span -80..80, but the plate is located by the
-        // profile and contributes no edge supports of its own to the section's chains.
+        // profile and contributes no X-edge supports of its own to the section's chains.
         var group = Group(42, -40, 0);
         group.PartToBeBoltedId = 15;
         group.SecondPosition = [40, 0, 0];
@@ -216,8 +216,68 @@ public sealed class BoltChainRuleTests
         {
             var chain = BoltChain(context.Query(question), "bolt-part-15-groups-42-Top");
             Assert.True(chain.GetProperty("incomplete").GetBoolean());
-            Assert.Equal("part edge is not confirmed on this view", chain.GetProperty("incompleteReason").GetString());
+            Assert.Equal("no part edge is confirmed on this view", chain.GetProperty("incompleteReason").GetString());
         }
+    }
+
+    [Fact]
+    public void ASlantedEdgeAtTheBoltGivesWayToTheCornerOfTheFacingEdge()
+    {
+        // A fin plate: top edge -20..130 at y 296, right edge square at x 130, slanted edge down to
+        // the tip at (-130, 130). Two bolts one above the other at x 90.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [90, 171, 0],
+            SecondPosition = [90, 261, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [90, 171, 0] }, new() { Index = 1, Point = [90, 261, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [11] = [new OutlineTreeNodeResult { Polygon = [[-130, 130], [130, 130], [130, 296], [-20, 296]] }]
+        };
+        var snapshot = ViewBoltGeometrySnapshot.Capture(7, [11], id => new() {
+            Success = true, ViewId = 7, PartId = id, BoltGroups = [group]
+        }, new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true).Answer;
+        var candidates = BoltChainCandidates.Build(snapshot, [11], [10], contours, (_, _, _) => true, new BoltChainSettings());
+        var top = candidates.Single(c => c.Key == "bolt-part-11-groups-42-Top");
+        Assert.Null(top.BuiltRefusal);
+        Assert.Equal(new[] { 110d, 40d }, top.Segments);
+        Assert.Equal(new[] { -20d, 296d }, new[] { top.Points[0].X, top.Points[0].Y });
+
+        // An end the view does not confirm is dropped: bolts - edge.
+        var oneEnd = BoltChainCandidates.Build(snapshot, [11], [10], contours,
+            (_, _, end) => end[0] > 0, new BoltChainSettings()).Single(c => c.Key == "bolt-part-11-groups-42-Top");
+        Assert.Equal(new[] { 40d }, oneEnd.Segments);
+    }
+
+    [Theory]
+    [InlineData("outside", "outside")]
+    [InlineData("split", "different outer contours")]
+    [InlineData("rows", "outside")]
+    public void BoltsMustStandInsideOneContourWhateverEndsAreFound(string mode, string reason)
+    {
+        // outside: a part 0..260 and a bolt at x -20; split: two contours 0..100 and 200..300, one bolt
+        // on each; rows: a part 0..100 x 0..100 with bolts at x 20, 80 and y 10, 20, 110 - the row at
+        // y 110 lies outside, and merging the projection must not hide it on either axis.
+        var (xs, ys) = mode switch {
+            "outside" => (new[] { -20d, 80 }, new[] { 50d }),
+            "split" => (new[] { 20d, 280 }, new[] { 50d }),
+            _ => (new[] { 20d, 80 }, new[] { 10d, 20, 110 })
+        };
+        var positions = ys.SelectMany(y => xs.Select(x => new[] { x, y, 0d }))
+            .Select((point, index) => new BoltPointGeometry { Index = index, Point = point }).ToList();
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = positions[0].Point.ToArray(),
+            SecondPosition = positions[1].Point.ToArray(), Axis = [0, 0, 1], PartToBeBoltedId = 10, Positions = positions };
+        IReadOnlyList<OutlineTreeNodeResult> outline = mode switch {
+            "outside" => [new OutlineTreeNodeResult { Polygon = [[0, 0], [260, 0], [260, 100], [0, 100]] }],
+            "split" => [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] },
+                new OutlineTreeNodeResult { Polygon = [[200, 0], [300, 0], [300, 100], [200, 100]] }],
+            _ => [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 100], [0, 100]] }]
+        };
+        var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10],
+            new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> { [10] = outline }, (_, _, _) => true, new BoltChainSettings());
+        var chains = candidates.Where(c => c.Kind == BoltChainCandidate.PartKind).ToArray();
+        Assert.Equal(2, chains.Length);
+        Assert.All(chains, chain => {
+            Assert.Contains(reason, chain.BuiltRefusal);
+            Assert.Empty(chain.Points);
+        });
     }
 
     private static JsonElement BoltChain(JsonElement answer, string key) => answer.GetProperty("chainPreview").EnumerateArray()

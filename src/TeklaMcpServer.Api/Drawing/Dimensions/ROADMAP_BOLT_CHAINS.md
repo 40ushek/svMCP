@@ -2,8 +2,10 @@
 
 Created 2026-11-13. Status: the first release (work order steps 1-5) is implemented
 (commit `8c71946`) and placed live on M.502 by a cold Haiku run. Open: the M.81
-sections run (rest of step 6), section edges by faces seen edge-on (step 6a), and
-steps 7-10.
+sections run (rest of step 6), fresh-placement acceptance of the refined section-edge
+rule (step 6a), and steps 7-10. The refinement is implemented: ends are confirmed
+independently, square edges or facing corners are used, and every source bolt must
+belong to the same outer contour before any end is admitted.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
 close to Tekla's own. The neighbours own the rest:
@@ -49,14 +51,27 @@ close to Tekla's own. The neighbours own the rest:
   repeat. Both eligible projections may be dimensioned; mirror suppression comes
   later, based on the identities of the source bolts.
 - **Section edges (agreed 2026-11-13):** off sections and end views a part edge is
-  confirmed. On them an edge chain is confirmed only when both of its end points
-  coincide, along the chain axis, with supports belonging to that same part in the
+  confirmed. On them an end of an edge chain is confirmed only when it
+  coincides, along the chain axis, with supports belonging to that same part in the
   source profile/location chains of this view (`Top`/`Bottom` for X, `Left`/`Right`
   for Y). Supports are taken before merging or formatting the answer; `chain` and
   `chainDetails` give the same eligibility decision. The points come from the same view context, so the
   part chains are computed first and the bolt chains after them; nothing is read
-  again from Tekla. Placing order is unchanged: one batch per view. An `All` chain
-  without both confirmed edges is not created and stays in the preview with its reason.
+  again from Tekla. Placing order is unchanged: one batch per view. Each end is
+  confirmed on its own (see "Ends of an edge chain"); an `All` chain with no confirmed
+  end is not created and stays in the preview with its reason. Every bolt must stand
+  inside one and the same outer contour of the part, checked on all original sources
+  before any end is admitted, not on the representatives after projection merging;
+  otherwise no chain on either axis.
+- **Parts seen flat on a section (agreed 2026-11-13):** a part lying flat in the
+  section plane is drawn whole, as on an ordinary view: its edges count without a
+  section-chain support.
+- **Ends of an edge chain (agreed 2026-11-13, M.501 fin plate):** each end is taken
+  on its own. An edge met at the bolt's height counts only where the part's edge runs
+  square to the chain there; a slanted edge gives no measure. Then the end is the
+  corner of the part's edge facing the dimension line (on a fin plate with a slanted
+  side: the corner of its top edge), as a detailer measures it. An end the view does
+  not confirm is dropped: one end left gives `edge - bolts`; none, a refusal.
 - **No steps without a datum (agreed 2026-11-13):** under `All` steps between bolts
   never stand in for an edge chain, on any view: tied to no edge or axis of symmetry
   they locate nothing. Steps alone come only from the `Internal` setting. A datum on
@@ -65,8 +80,7 @@ close to Tekla's own. The neighbours own the rest:
   using its own bolts and the confirmed part edges. Several chains may use the same
   part edge as a datum; do not remove a group's last edge datum because another
   group uses it. With both edges confirmed, each group gets `edge - bolts - edge`;
-  with only one or neither confirmed edge, no `All` chain is created. A one-ended
-  `edge - bolts` chain is deferred to a separate step. Confirm this on a live drawing.
+  with one confirmed edge, `edge - bolts`; with neither, no `All` chain.
 - **A group on several parts:** a group joining the main part and secondary parts
   gets an edge chain on every secondary part; the main part takes it only when
   nothing else is bolted. Under `Internal` the steps of the group are offered once.
@@ -176,8 +190,10 @@ The plant's own choice of all these options exists as a file in the model folder
   before has no axis: its groups are `Unresolved` and give no chain.
 - Every group gets a class (`BoltGroupViewClassifier`): `Plan`, `Side`, `Skewed`,
   `Unresolved`. The `bolts` and `boltChains` answers show it.
-- On sections, an `All` chain is created only when both ends match source section-chain
-  supports of the same part and axis; otherwise the chain is refused.
+- On sections, each end of an `All` chain is confirmed independently by same-part,
+  same-axis source section supports, or by the face-on part rule. One confirmed end
+  suffices; no confirmed end means refusal. A slanted crossing can use the facing
+  edge's corner; all source bolts must first pass the single-contour check.
 - `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
   orientation refusals are gone, the skewed-reference refusal stays.
 - `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
@@ -202,6 +218,11 @@ The first run put bolt lines on the lines of neighbouring chains (`Local`, `Top`
 after the line placement rule the user checked the section and the bottom view: no
 overlaps. On the bottom view one empty row stays between `Top-location` and the bolt
 line, reserved for `Top-overall`, which is not placed as a repeat.
+
+For M.501 Section C-C, the user reports the fin-plate chain `70 - 40` and the right
+chain `41 - 90 - 35` remain on the sheet after deployment of the contour checks.
+Those dimensions are from the previous run: this confirms their continued presence,
+not a fresh placement/read-back acceptance of the current implementation.
 
 ## Target
 
@@ -412,10 +433,13 @@ Steps 1-5 done on 2026-11-13.
    standard run already writes part chains through that batch, bolts add more.
 6. A cold Haiku run on M.502 and on the M.81 sections: result, time, tool calls.
    M.502 done 2026-11-13 (see above); M.81 postponed by the user.
-6a. Section edges: both ends must match the unmerged section-chain supports of the
-   same part and axis, independently of answer detail (see "Section edges"). Replaces the
-   `WhollyInDepth` rule. Considered and set aside: a face seen edge-on (harder to
-   match a contour edge to a face).
+6a. Section edges: implemented, fresh-placement acceptance remains open. Each end is
+   checked independently against unmerged same-part, same-axis supports or the
+   face-on part rule; one confirmed end suffices. Square crossings or facing corners
+   supply the ends, and all original bolts must belong to one outer contour on both
+   axes. Regression tests cover merged-away outside bolts, split contours, answer
+   detail and foreign supports. Replaces `WhollyInDepth`; direct matching to a face
+   seen edge-on was set aside.
 7. The *Position* kind, then the *Check* kind, then centered bolts.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.

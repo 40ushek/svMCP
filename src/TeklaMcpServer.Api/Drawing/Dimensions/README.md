@@ -56,9 +56,11 @@ bolt axis and the view normal (`Plan`, `Side`, `Skewed`, `Unresolved`).
 `bolt-part-<partId>-groups-<groupId>-<side>`, `bolt-<groupId>-<axis>-<row>`,
 `bolt-<groupId>`. A chain carries points, offset vector and `distance` like a `Local`
 chain; `incomplete=true` there means "not to be created", with the reason, and such a
-key rejects the batch before any write. On sections and end views an edge chain is
-created only when both ends match source section-chain supports of the same part and
-axis, before answer merging/formatting. Under `All` steps never stand in for a refused
+key rejects the batch before any write. Each edge-chain end is checked independently:
+on sections and end views it needs source section-chain support of the same part and
+axis, before answer merging/formatting, or the face-on part rule. One confirmed end
+suffices. Square crossings or facing corners supply the ends; all original bolts must
+belong to one outer contour, including sources merged in projection. Under `All` steps never stand in for a refused
 edge chain. Bolt lines keep clear of `Local`, `Inclined`
 and side-chain rows. An incomplete bolt read creates no bolt chain and is reported in
 the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
