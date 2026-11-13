@@ -42,6 +42,8 @@ public sealed class ViewDimensionContext
     public int ViewId { get; }
     public double Scale { get; }
     public string ContextId { get; } = "ctx_" + Guid.NewGuid().ToString("N");
+    /// <summary>Tekla view type of the view this context was read from (FrontView, BottomView...).</summary>
+    public string? ViewType => _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
     internal bool IsComplete => _complete;
     private readonly Func<ViewDimensionContextCase> _toCase;
 
@@ -149,7 +151,7 @@ public sealed class ViewDimensionContext
         if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
         if (normalizedRuleSet is not "steel" and not "panel")
             throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "boltchains", "scale", "placement", "contacts", "contactdetails", "diagnostics", "all" };
+        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "boltchains", "scale", "placement", "contacts", "contactdetails", "diagnostics", "repeats", "all" };
         if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
             throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, bolts, boltChains, scale, placement, contacts, contactDetails, diagnostics or all");
         var selected = ParseSides(sides);

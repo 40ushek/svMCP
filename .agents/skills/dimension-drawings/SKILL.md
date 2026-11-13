@@ -25,39 +25,19 @@ rest of this file explains the reasons and covers every other request.
    then sections and end views (in any order among themselves), then top view, then
    bottom view, then back view.
    The top view must be done before the bottom view and the front before the back:
-   the repeat rule below compares a bottom or back view with the one already done.
-4. For the view call `get_view_dimension_context` with `viewId` and
-   `ruleSet="steel"`; leave `questions` at its default. In the answer every chain
-   has a `key`, `segments` and `incomplete`. If the answer has `isComplete=false` or
+   the code compares a bottom or back view with what is already on the sheet.
+4. For the view call `get_view_dimension_context` with `viewId`,
+   `ruleSet="steel"` and `questions="chain,scale,repeats"`. In the answer every
+   chain has a `key`, `segments` and `incomplete`, and `repeats` lists the keys
+   that repeat another chain. If the answer has `isComplete=false` or
    `sectionPreviewStatus` `refused`, place nothing on that view, go on to the next
    view and name the view and the reason in the report. That is not an error.
-5. Choose the keys to place:
-   - take every chain with `incomplete=false`;
-   - inside one view only two pairs are compared: `Top` with `Bottom`, and `Left`
-     with `Right`. If a chain's `segments` equal those of the chain of the same
-     kind on the opposite side, keep `Bottom` of `Top`/`Bottom` and `Left` of
-     `Left`/`Right`. This covers overall chains too. Never compare `Local` or
-     `Inclined` chains with each other inside one view: three ribs give three
-     `Local` chains `[199.3]` at three different places, and all three are placed;
-   - two numbers are equal when they differ by no more than 0.5. This holds for
-     every comparison in this step;
-   - between views drop only these two repeats, nothing else:
-     an `overall` chain whose `segments` equal an overall already placed on the
-     sheet (equal means within 0.5: 2962.69 and 2962.699 are the same overall); and, on a back view or a bottom view, a chain whose `segments` equal a
-     chain placed on the opposite projection (back against front, bottom against
-     top), read in either order: `[200,106]` on a bottom view repeats `[106,200]`
-     on the top view. This covers every row of a back or bottom view: `Top`,
-     `Bottom`, `Left`, `Right`, `Inclined` and `Local`. A chain there that mirrors
-     one placed on the opposite projection is dropped, whatever its side. A chain on a section or an end view is kept even when its numbers match
-     a chain on another view: the section shows the same parts from another side;
-   - always compare the `segments` of the preview answers with each other. Do not
-     compare with the numbers in a batch answer: there `segments` are running
-     totals from the first point, and the points can be listed from the other end
-     (preview `[70,160]` comes back as `[70,230]` or `[160,230]`);
-   - take every chain of the `Inclined` row, except a mirror repeat as above;
-   - take every chain of the `Local` row, except a mirror repeat as above. These
-     are short chains next to single parts, across the main part (a gusset
-     400 / 15 / 385, a rib 199.3 from its flange, a cover plate 30);
+5. Choose the keys to place: every chain with `incomplete=false` whose `key` is
+   not in `repeats`. Compare nothing yourself: the code has compared the chains
+   with each other and with the dimensions already on the sheet (rules:
+   `references/steel-rules.md`, "Repeats"). If the request says to keep repeats
+   ("с повторами", "keep repeats"), ignore `repeats` and take every chain with
+   `incomplete=false`.
    - a chain with `incomplete=true` is not placed; its `incompleteReason` usually
      says another chain already covers it. That is normal, not an error;
    - other fields of a chain (`skippedPartIds`, `droppedShortPointIds`,
@@ -68,7 +48,7 @@ rest of this file explains the reasons and covers every other request.
    `[{"preview":"Bottom-location"},{"preview":"Bottom-overall"}]`.
    Send keys only: no `pointIds`, no `direction`, no `paperGapMm`, no
    `attributesFile`. If no key is left for a view (on a bottom or back view every
-   chain is often a repeat), make no call for that view: that is a normal result. If the model has no attributes file for a chain kind, the
+   chain is often in `repeats`), make no call for that view: that is a normal result. If the model has no attributes file for a chain kind, the
    batch uses `standard` by itself and says so in `attributesFileUsed`.
    - On an older bridge the call can still fail with `Dimension attributes
      'overall' could not be loaded`: nothing was created; add

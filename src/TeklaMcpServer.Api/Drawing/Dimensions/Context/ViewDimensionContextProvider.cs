@@ -105,6 +105,36 @@ public sealed partial class ViewDimensionContextProvider
         return context;
     }
 
+    /// <summary>
+    /// The preview answer with a <c>repeats</c> list: chains that repeat one on the same view or a
+    /// dimension already on the sheet. Nothing is dropped; the sheet is read fresh on every call.
+    /// </summary>
+    public JsonElement AddRepeats(ViewDimensionContext context, JsonElement answer)
+    {
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var sheetRead = false;
+        var repeats = DimensionChainRepeats.Find(context.ViewId, context.ViewType,
+            DimensionChainRepeats.FromPreview(answer), () => {
+                sheetRead = true;
+                return DimensionChainRepeats.FromSheet(new TeklaDrawingDimensionsApi().GetDimensions(null, includeTextBounds: false));
+            });
+        PerfTrace.Write("api-dimensions", "chain_repeats", timer.ElapsedMilliseconds,
+            $"viewId={context.ViewId} repeats={repeats.Count} sheetRead={sheetRead}");
+        return WithRepeats(answer, repeats);
+    }
+
+    internal static JsonElement WithRepeats(JsonElement answer, IReadOnlyList<DimensionChainRepeats.Repeat> repeats)
+    {
+        var result = answer.EnumerateObject().ToDictionary(p => p.Name, p => (object?)p.Value.Clone());
+        result["repeats"] = repeats.Select(r => {
+            var row = new Dictionary<string, object?> { ["key"] = r.Key, ["reason"] = r.Reason };
+            if (r.Of != null) row["of"] = r.Of;
+            if (r.DimensionId != null) { row["dimensionId"] = r.DimensionId; row["viewId"] = r.ViewId; }
+            return row;
+        }).ToArray();
+        return ViewDimensionContext.Freeze(result);
+    }
+
     public void ObserveView(int viewId)
     {
         if (_view == viewId) return;

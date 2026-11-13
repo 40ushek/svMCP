@@ -135,6 +135,34 @@ connects, and `M.355` has four more of them mid-span than its otherwise identica
 `M.47`/`M.48`, which is evidence against inventing a position from a pattern, whatever the
 per-part linkage.
 
+## Repeats
+
+The code (`DimensionChainRepeats`) names the repeats when `get_view_dimension_context`
+is asked `repeats`; it drops nothing. A repeat is not placed in a standard run unless
+the request says to keep repeats. Two numbers are equal within 0.5 (2962.69 and
+2962.699 are the same), and segments are compared as the preview gives them.
+
+- **Same view** (`sameView`): `Top` repeats `Bottom` and `Right` repeats `Left` when
+  both chains are of the same kind and their segments are equal; `Bottom` and `Left`
+  stay. `Local` and `Inclined` chains are never compared with each other inside one
+  view: three ribs give three `Local` chains `[199.3]` at three places, all placed.
+- **Overall on the sheet** (`overallOnSheet`): an overall chain equal to a
+  one-segment dimension of the same measure already on another view. The overall is
+  given once. Only front, top, bottom and back views take part. A horizontal overall
+  is the same measure on all four; a vertical one is the height on front and back and
+  the width on top and bottom, so the height 200 of a square tube on the front view
+  does not repeat its width 200 on the top view.
+- **Mirror** (`mirror`): on a bottom view against the top view, on a back view against
+  the front view, any row (`Top`, `Bottom`, `Left`, `Right`, `Inclined`, `Local`)
+  whose segments equal a dimension there in either order: `[200,106]` on a bottom
+  view repeats `[106,200]` on the top view. That is why the top view goes before the
+  bottom view and the front before the back.
+- **Sections and end views** repeat nothing between views: a section shows the same
+  parts from another side, so its chain stays even when its numbers match another
+  view.
+
+The sheet is read fresh on every call, so what the user placed by hand counts too.
+
 ## Settings
 
 Where reasonable people differ. Each has a policy - a default, or a question, or a stop

@@ -801,13 +801,14 @@ internal sealed partial class DrawingCommandHandler
                 args.Length > 4 ? args[4] : null, args.Length > 5 ? args[5] : null,
                 ReadBoolArg(args, 6, "refresh"), referenceZones,
                 referenceExclusions.Prefixes, referenceExclusions.Materials);
-            WriteJson(context.Query(questions,
+            var answer = context.Query(questions,
                 args.Length > 3 ? args[3] : "all",
                 args.Length > 7 && !string.IsNullOrWhiteSpace(args[7]) ? JsonSerializer.Deserialize<double[]>(args[7]) : null,
                 args.Length > 8 ? args[8] : "horizontal",
                 ReadOptionalDoubleArg(args, 9, "paperGapMm"),
                 args.Length > 10 ? args[10] : "steel",
-                args.Length > 11 ? args[11] : string.Empty, layerRules));
+                args.Length > 11 ? args[11] : string.Empty, layerRules);
+            WriteJson(questions.Split(',').Contains("repeats") ? _dimensionContexts.AddRepeats(context, answer) : answer);
         }
         catch (Exception ex) { WriteError(ex.Message); }
         return true;
