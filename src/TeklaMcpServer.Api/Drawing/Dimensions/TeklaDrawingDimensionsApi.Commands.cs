@@ -109,6 +109,10 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         var attr = DimensionCreatePlacementHelper.CreateAttributes(attributesFile);
         DimensionCreatePlacementHelper.ApplyDimensionType(attr, dimensionType);
+        // Free placing (the saved files' default) lets Tekla lay the line out itself: it ignored the
+        // requested offset on every write (40 → 10, 80 → 125) and each chain paid a correction
+        // Modify + commit + read of about 0.4 s. Fixed keeps the line at the requested distance.
+        attr.Placing.Placing = DimensionSetBaseAttributes.Placings.Fixed;
 
         var state = WriteVerifiedDimension(activeDrawing, view, points, dirVector, distance, attr);
 
@@ -153,8 +157,44 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
     }
 
-    public IReadOnlyList<DeleteDimensionResult> DeleteDimensions(IReadOnlyList<int> dimensionIds) =>
-        dimensionIds.Select(DeleteDimension).ToArray();
+    /// <summary>
+    /// Deletes several dimensions with one pass over the sheet per object type and one commit.
+    /// One by one, each id cost its own pass and its own commit: 15 dimensions took 6 s.
+    /// </summary>
+    public IReadOnlyList<DeleteDimensionResult> DeleteDimensions(IReadOnlyList<int> dimensionIds)
+    {
+        var activeDrawing = new DrawingHandler().GetActiveDrawing();
+        if (activeDrawing == null)
+            return dimensionIds.Select(id => new DeleteDimensionResult { HasActiveDrawing = false, DimensionId = id }).ToArray();
+
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var remaining = new HashSet<int>(dimensionIds);
+        var deleted = new HashSet<int>();
+        // Sets first: a set's segments carry ids of their own (set id + 1, + 2, ...), so the
+        // base type is searched only for what is not a straight set.
+        foreach (var type in new[] { typeof(StraightDimensionSet), typeof(DimensionBase) })
+        {
+            if (remaining.Count == 0) break;
+            var found = new List<DrawingObject>();
+            var all = activeDrawing.GetSheet().GetAllObjects(type);
+            while (all.MoveNext())
+                if (all.Current is DrawingObject candidate && remaining.Contains(candidate.GetIdentifier().ID))
+                    found.Add(candidate);
+            foreach (var drawingObject in found)
+            {
+                var id = drawingObject.GetIdentifier().ID;
+                drawingObject.Delete();
+                deleted.Add(id);
+                remaining.Remove(id);
+            }
+        }
+        if (deleted.Count > 0) activeDrawing.CommitChanges();
+        Diagnostics.PerfTrace.Write("api-dimensions", "delete_batch", timer.ElapsedMilliseconds,
+            $"requested={dimensionIds.Count} deleted={deleted.Count}");
+        return dimensionIds.Select(id => new DeleteDimensionResult {
+            HasActiveDrawing = true, Deleted = deleted.Contains(id), DimensionId = id
+        }).ToArray();
+    }
 
     /// <summary>
     /// Merges extra points into an existing straight dimension set.

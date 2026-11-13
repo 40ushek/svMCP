@@ -26,16 +26,35 @@ public sealed partial class TeklaDrawingDimensionsApi
             DimensionRenderedLineResult? renderedLine = null;
             long findMs = 0, correctionMs = 0, segmentsMs = 0, renderedMs = 0;
             var total = System.Diagnostics.Stopwatch.StartNew();
+            // The set Tekla hands back on creation is read again from the drawing by Select():
+            // a fresh read of this one object. Searching the whole sheet for its id took 0.44 s
+            // per look, twice per chain. The search stays as the fallback and for the cleanup.
+            StraightDimensionSet? created = null;
+            long handleSelectMs = 0;
+            var searches = 0;
+            StraightDimensionSet? Fresh(int id)
+            {
+                var select = System.Diagnostics.Stopwatch.StartNew();
+                var selected = created != null && created.GetIdentifier().ID == id && created.Select();
+                handleSelectMs += select.ElapsedMilliseconds;
+                if (selected) return created;
+                searches++;
+                var found = FindDimensionSet(drawing, id);
+                return found != null && found.Select() ? found : null;
+            }
             var state = DimensionWriteProtocol.Execute(
-                () => new StraightDimensionSetHandler()
-                    .CreateDimensionSet(view, ToPointList(points), direction, distance, attributes)
-                    ?.GetIdentifier().ID ?? 0,
+                () =>
+                {
+                    created = new StraightDimensionSetHandler()
+                        .CreateDimensionSet(view, ToPointList(points), direction, distance, attributes);
+                    return created?.GetIdentifier().ID ?? 0;
+                },
                 () => drawing.CommitChanges("(MCP) Verified dimension write"),
                 id =>
                 {
                     var step = System.Diagnostics.Stopwatch.StartNew();
-                    var read = FindDimensionSet(drawing, id);
-                    if (read == null || !read.Select()) return "Replacement cannot be read back";
+                    var read = Fresh(id);
+                    if (read == null) return "Replacement cannot be read back";
                     findMs += step.ElapsedMilliseconds;
                     if (read.GetView()?.GetIdentifier().ID != viewId) return "Replacement is in a different view";
                     if (!DimensionWriteProtocol.Finite(read.Distance)) return "Replacement offset is not finite";
@@ -48,8 +67,8 @@ public sealed partial class TeklaDrawingDimensionsApi
                         if (!read.Modify()) return "Replacement offset Modify() returned false";
                         if (!drawing.CommitChanges("(MCP) Dimension offset correction"))
                             return "Replacement offset CommitChanges() returned false";
-                        read = FindDimensionSet(drawing, id);
-                        if (read == null || !read.Select()) return "Corrected replacement cannot be read back";
+                        read = Fresh(id);
+                        if (read == null) return "Corrected replacement cannot be read back";
                         correctionMs += step.ElapsedMilliseconds;
                     }
                     step.Restart();
@@ -103,7 +122,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             Diagnostics.PerfTrace.Write("api-dimensions", "verified_write", total.ElapsedMilliseconds,
                 $"viewId={viewId} dimensionId={state.NewDimensionId} stage={state.Stage} " +
                 string.Join(" ", state.StageMs.Select(kv => $"{kv.Key}Ms={kv.Value}")) +
-                $" findMs={findMs} offsetCorrectionMs={correctionMs} segmentsMs={segmentsMs} renderedLineMs={renderedMs}");
+                $" findMs={findMs} offsetCorrectionMs={correctionMs} segmentsMs={segmentsMs} renderedLineMs={renderedMs}" +
+                FormattableString.Invariant($" requestedDistance={distance:0.###} initialDistance={initialDistance:0.###}") +
+                $" handleSelectMs={handleSelectMs} searches={searches}");
             return state;
         }
         finally { DrawingEnumeratorBase.AutoFetch = previousAutoFetch; }
