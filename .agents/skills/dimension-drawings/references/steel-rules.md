@@ -109,7 +109,7 @@ numbers that look alike (283 and 283) but measure different edges. Confirmed by 
 M.48 girder's raked ribs (top 15045.7 with bottom 15122.4, not 15142.3).
 
 Points come from the prepared chains of `get_view_dimension_context`
-(`questions="chain,scale"`, `ruleSet="steel"`), as `SKILL.md` describes; the tool no
+(`questions="chain,scale"`, `ruleSet="steel"`), as `steel-assembly.md` describes; the tool no
 longer answers a `points` question. `get_structural_chain_positions` is the
 full-evidence route for a specific doubt. Do not invent coordinates.
 
@@ -259,7 +259,7 @@ and from the side are dimensioned; position, check and combining options are off
   across its bolt axis; bolts one behind another give one point.
 - **Only bolts seen as circles are placed (skill rule, 2026-11-13):** the code offers
   `Side` chains, but the standard run places `Plan` chains only. The switch lives in the
-  skill text (SKILL.md step 5), not in `BoltChainSettings`; remove that line to place both.
+  skill text (steel-assembly.md step 5), not in `BoltChainSettings`; remove that line to place both.
 - **All**: one chain per group, part and axis, edge - bolts - edge, beside the nearer part
   bound. A group joining the main part and secondary parts gets an edge chain on
   every secondary part; the main part takes it only when no secondary part is included.

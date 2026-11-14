@@ -111,7 +111,8 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
                 Name = activeDrawing.Name ?? string.Empty,
                 Mark = activeDrawing.Mark ?? string.Empty,
                 Type = activeDrawing.GetType().Name,
-                Status = activeDrawing.UpToDateStatus.ToString()
+                Status = activeDrawing.UpToDateStatus.ToString(),
+                MainPartMaterial = activeDrawing is AssemblyDrawing assembly ? MainPartMaterial(assembly) : null
             }
         };
 
@@ -132,6 +133,40 @@ public sealed class TeklaDrawingInteractionApi : IDrawingInteractionApi
 
         return result;
     }
+
+    private string MainPartMaterial(AssemblyDrawing drawing)
+    {
+        try
+        {
+            if (drawing.AssemblyIdentifier == null
+                || _model.SelectModelObject(drawing.AssemblyIdentifier) is not Tekla.Structures.Model.Assembly assembly)
+                return MaterialClass(-1);
+#pragma warning disable CS0618
+            if ((assembly.GetMainObject() as Tekla.Structures.Model.Part ?? assembly.GetMainPart() as Tekla.Structures.Model.Part)
+                is not { } part)
+                return MaterialClass(-1);
+#pragma warning restore CS0618
+            var type = -1;
+            part.GetReportProperty("MATERIAL_TYPE", ref type);
+            if (type == -1)
+            {
+                var material = string.Empty;
+                part.GetReportProperty("MATERIAL", ref material);
+                type = TeklaDrawingPartGeometryApi.InferMaterialType(material);
+            }
+            return MaterialClass(type);
+        }
+        catch
+        {
+            // The route falls back to "stop and report"; the context read itself never fails on it.
+            return MaterialClass(-1);
+        }
+    }
+
+    /// <summary>Tekla MATERIAL_TYPE to the class the dimension skill routes on.</summary>
+    internal static string MaterialClass(int materialType) => materialType switch {
+        1 => "steel", 2 => "concrete", 5 => "timber", 6 => "misc", _ => "unknown"
+    };
 
     public SheetObjectsDebugResult GetSheetObjectsDebug()
     {

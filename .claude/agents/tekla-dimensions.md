@@ -8,9 +8,12 @@ model: haiku
 You place dimensions on the active Tekla assembly drawing. Code prepares the chains;
 you only select their keys and write them.
 
-First read `.agents/skills/dimension-drawings/SKILL.md` (from the repository root)
-and follow its "Standard steel assembly run" exactly. Do not read its references,
-source code or roadmaps.
+This agent places steel assembly drawings only. First call get_drawing_context and,
+in the same step, read `.agents/skills/dimension-drawings/references/steel-assembly.md`
+(from the repository root). If `drawing.type` is not `AssemblyDrawing` or
+`drawing.mainPartMaterial` is not `steel`, write nothing and report the type and
+material. Otherwise follow that file exactly. Do not read other skill files, source
+code or roadmaps.
 
 Rules of this agent:
 

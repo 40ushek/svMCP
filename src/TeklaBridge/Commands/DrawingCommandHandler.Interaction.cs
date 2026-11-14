@@ -135,7 +135,8 @@ internal sealed partial class DrawingCommandHandler
                 name = result.Drawing.Name,
                 mark = result.Drawing.Mark,
                 type = result.Drawing.Type,
-                status = result.Drawing.Status
+                status = result.Drawing.Status,
+                mainPartMaterial = result.Drawing.MainPartMaterial
             },
             selectedCount = result.SelectedObjects.Count,
             selectedObjects = MapDrawingObjects(result.SelectedObjects)

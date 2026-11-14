@@ -1,7 +1,8 @@
 # Detailed dimension workflows
 
-Read only for focused repair, review, debugging or nonstandard placement. The
-standard steel run is complete in ../SKILL.md and does not require this file.
+Read only for focused repair, review, debugging, timber panels or nonstandard
+placement. The standard steel run is complete in [steel-assembly.md](steel-assembly.md)
+and does not require this file.
 For fields omitted from the short answer, request details with the same viewId
 and previewPlanId; this returns the stored plan, not a new chainDetails variant.
 Preserve its original ruleSet, chainView and plan ID for batch writes.

@@ -60,6 +60,11 @@ public sealed class DrawingContextDrawingInfo
     public string Mark { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    /// <summary>
+    /// Material class of the assembly's main part on an assembly drawing: steel, concrete,
+    /// timber, misc or unknown; null on other drawing types. Selects the dimension skill route.
+    /// </summary>
+    public string? MainPartMaterial { get; set; }
 }
 
 public sealed class DrawingObjectItem

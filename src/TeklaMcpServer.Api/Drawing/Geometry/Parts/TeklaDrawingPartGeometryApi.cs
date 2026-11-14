@@ -339,7 +339,7 @@ public sealed class TeklaDrawingPartGeometryApi : IDrawingPartGeometryApi
     /// Infers Tekla MATERIAL_TYPE (1=Steel, 2=Concrete, 5=Timber, 6=Misc) from material name string.
     /// Used as fallback when GetReportProperty("MATERIAL_TYPE") returns -1.
     /// </summary>
-    private static int InferMaterialType(string materialName)
+    internal static int InferMaterialType(string materialName)
     {
         if (string.IsNullOrWhiteSpace(materialName)) return -1;
         var s = materialName.Trim().ToUpperInvariant();
