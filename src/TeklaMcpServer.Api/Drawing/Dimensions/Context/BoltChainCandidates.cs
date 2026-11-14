@@ -4,7 +4,8 @@ namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>
 /// Turns the frozen bolt previews into chains for <see cref="BoltChainRule"/>: per group, its
-/// part, the axes its class allows, the placement side next to the nearer part bound, and the
+/// part, the axes its class allows, the placement side (next to the nearer part bound, or the other
+/// one when the line stands nearer the bolts there, past the parts in the way on each), and the
 /// offset of the dimension line. Nothing is decided here.
 /// </summary>
 internal static class BoltChainCandidates
@@ -31,6 +32,36 @@ internal static class BoltChainCandidates
             AllSides, contours, tolerance, settings, perGroup: true, units))
             .EnumerateArray().ToDictionary(chain => chain.GetProperty("proposalId").GetString()!, StringComparer.Ordinal);
         var result = new List<BoltChainCandidate>();
+        var gap = Math.Max(lineGap, tolerance);
+        // The side of a part chain, decided once per merged chain, axis and part, so every group of
+        // the merged chain (its steps included) stands on the same side whatever the group order.
+        var sideOf = new Dictionary<(int Leader, int Axis, int PartId), (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain)?>();
+        (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain)? Side(
+            int partId, int axis, int leader, IReadOnlyDictionary<int, int> axisUnits, double center)
+        {
+            if (sideOf.TryGetValue((leader, axis, partId), out var known)) return known;
+            var across = 1 - axis;
+            // The side beside the nearer bound of the part, unless the line stands nearer its
+            // points on the other one: a plate at the left end of a beam has its right bound
+            // nearer its bolts, but the whole beam stands beyond it.
+            var near = Placement(contours, partId, axis, center, gap, tolerance);
+            var sides = new[] { near, Placement(contours, partId, axis, center, gap, tolerance, -near.Sign) }
+                .Select(placement => (Placement: placement, Key: BoltPartChainPreview.Key(partId, leader, axisUnits, placement.Side)))
+                .Where(side => partChains.ContainsKey(side.Key))
+                .Select(side => (side.Placement, side.Key, Chain: PartChainPoints(partChains[side.Key],
+                    end => edgeConfirmed(partId, axis, end), axis, tolerance)))
+                .ToArray();
+            // How far the line stands from the bolts; a side giving no chain is not compared.
+            double Reach((LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain) side) =>
+                side.Placement.Refusal == null && side.Chain.Refusal == null && side.Chain.Points.Length > 0
+                    ? Math.Abs(side.Chain.Points[0][across] + side.Placement.Sign * side.Placement.Offset(side.Chain.Points) - center)
+                    : double.MaxValue;
+            (LinePlacement, string, (double[][], string?))? best = sides.Length == 0 ? null
+                : sides.Length == 2 && Reach(sides[0]) < double.MaxValue && Reach(sides[1]) < Reach(sides[0]) - tolerance
+                    ? sides[1] : sides[0];
+            sideOf[(leader, axis, partId)] = best;
+            return best;
+        }
         foreach (var group in groups)
         {
             var (groupId, viewClass, dimensioned) = (group.Id, group.ViewClass, group.Dimensioned);
@@ -62,10 +93,9 @@ internal static class BoltChainCandidates
                 var confirmed = new Dictionary<int, bool>();
                 foreach (var partId in leader == groupId ? dimensioned : Array.Empty<int>())
                 {
-                    var placement = Placement(contours, partId, axis, center, Math.Max(lineGap, tolerance), tolerance);
-                    var partKey = BoltPartChainPreview.Key(partId, leader, axisUnits, placement.Side);
-                    if (!partChains.TryGetValue(partKey, out var part)) continue;
-                    var (points, chainRefusal) = PartChainPoints(part, end => edgeConfirmed(partId, axis, end), axis, tolerance);
+                    if (Side(partId, axis, leader, axisUnits, center) is not { } best) continue;
+                    var (placement, partKey, (points, chainRefusal)) = best;
+                    var part = partChains[partKey];
                     confirmed[partId] = points.Length >= 2;
                     result.Add(new BoltChainCandidate(partKey, BoltChainCandidate.PartKind, groupId, partId,
                         mainPartIds.Contains(partId), viewClass, axis, RulePoints(partKey, groupId, points),
@@ -75,7 +105,9 @@ internal static class BoltChainCandidates
                         part.GetProperty("projectedPositions").Clone(), Holes(merged, geometries, partId)));
                 }
                 // The steps of a group are the same whichever part it bolts: offered once, beside the first part.
-                var first = Placement(contours, dimensioned[0], axis, center, Math.Max(lineGap, tolerance), tolerance);
+                // A group merged into another one's chain takes the side chosen for that chain.
+                var first = Side(dimensioned[0], axis, leader, axisUnits, center)?.Placement
+                    ?? Placement(contours, dimensioned[0], axis, center, gap, tolerance);
                 foreach (var chain in group.Chains.Where(chain => chain.GetProperty("axis").GetString() == letter))
                 {
                     var key = chain.GetProperty("proposalId").GetString()!;
@@ -118,10 +150,12 @@ internal static class BoltChainCandidates
         return (points, bad ? "edge endpoints do not bound all projected bolt coordinates" : null);
     }
 
-    private sealed class LinePlacement(DimensionChainSide side, DimensionDirection normal, string? refusal,
+    private sealed class LinePlacement(DimensionChainSide side, int sign, DimensionDirection normal, string? refusal,
         Func<double[][], double> offset)
     {
         public DimensionChainSide Side { get; } = side;
+        /// <summary>Outward along the axis across the chain: +1 toward Top or Right.</summary>
+        public int Sign { get; } = sign;
         public DimensionDirection Normal { get; } = normal;
         public string? Refusal { get; } = refusal;
         /// <summary>From the chain's first point to the bound the line stands one gap beyond.</summary>
@@ -133,11 +167,11 @@ internal static class BoltChainCandidates
     // an end of the span is not crossed): an end plate
     // standing past the end of a beam pushes the line of the beam's bolts out with it.
     private static LinePlacement Placement(IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
-        int partId, int axis, double center, double gap, double touch)
+        int partId, int axis, double center, double gap, double touch, int? outward = null)
     {
         var across = 1 - axis;
         var bounds = Bounds(contours, partId);
-        var sign = bounds is { } b && b.Max[across] - center > center - b.Min[across] ? -1 : 1;
+        var sign = outward ?? (bounds is { } b && b.Max[across] - center > center - b.Min[across] ? -1 : 1);
         var side = axis == 0 ? (sign > 0 ? DimensionChainSide.Top : DimensionChainSide.Bottom)
             : (sign > 0 ? DimensionChainSide.Right : DimensionChainSide.Left);
         var others = contours == null ? [] : contours.Keys.Where(id => id != partId)
@@ -167,7 +201,7 @@ internal static class BoltChainCandidates
             }
             return Math.Max(0, sign * (bound - points[0][across]));
         }
-        return new LinePlacement(side, new DimensionDirection(axis == 0 ? 0 : sign, axis == 0 ? sign : 0),
+        return new LinePlacement(side, sign, new DimensionDirection(axis == 0 ? 0 : sign, axis == 0 ? sign : 0),
             bounds == null ? "part has no captured contour to place the line beside" : null,
             points => bounds == null ? 0 : Clear(points));
     }

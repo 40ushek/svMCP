@@ -135,6 +135,12 @@ close to Tekla's own. The neighbours own the rest:
   A part whose edge falls on the line itself is in the way too (review 2026-11-13).
   Open: a part starting just beyond the line (by less than a gap) still leaves the line
   close to its edge; the full rule would ask for a gap on the outer side as well.
+  Both sides are tried (2026-11-14, M.175 front view): the line goes to the other side
+  when, past the parts in the way there, it stands nearer the bolts. An end plate at the
+  left end has its right bound nearer its bolts, but the whole beam stands beyond it: the
+  line went past the right end of the beam, 4 m of extension lines across a shortened
+  view, and the view no longer fitted the sheet. A side whose chain is refused is not
+  compared; the steps of the group follow the side chosen for its first part.
 - **A key marked `incomplete` refuses the batch, whatever its points (review
   2026-11-13).** A repeat keeps its `pointIds`, but its row may already be given to a
   bolt line; written anyway it lay on that line. Lines are kept clear of each other, of the `Local` and `Inclined` lines, and

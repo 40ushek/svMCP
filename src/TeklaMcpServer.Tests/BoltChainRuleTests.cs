@@ -778,18 +778,70 @@ public sealed class BoltChainRuleTests
     {
         // Gap 10. The bolts' part spans y 0..10; a part in the way at y 15..30 moves the bound to 30;
         // the next one at y 25..100 starts before that bound but outside the part's own bound 10:
-        // it is in the way as well, not under the chain. The line clears both.
+        // it is in the way as well, not under the chain. The line clears both. Below, a part
+        // reaching down to y -300 keeps the line on top, where it stands nearer the bolts.
         var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [20, 5, 0],
             SecondPosition = [80, 5, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
             Positions = [new() { Index = 0, Point = [20, 5, 0] }, new() { Index = 1, Point = [80, 5, 0] }] };
         var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
             [10] = [new OutlineTreeNodeResult { Polygon = [[0, 0], [100, 0], [100, 10], [0, 10]] }],
             [11] = [new OutlineTreeNodeResult { Polygon = [[0, 15], [100, 15], [100, 30], [0, 30]] }],
-            [12] = [new OutlineTreeNodeResult { Polygon = [[0, 25], [100, 25], [100, 100], [0, 100]] }] };
+            [12] = [new OutlineTreeNodeResult { Polygon = [[0, 25], [100, 25], [100, 100], [0, 100]] }],
+            [13] = [new OutlineTreeNodeResult { Polygon = [[0, -300], [100, -300], [100, -5], [0, -5]] }] };
         var top = BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
             new BoltChainSettings(), lineGap: 10).Single(c => c.Key == "bolt-part-10-groups-42-Top");
         // The first point is the corner of the part's top edge (y 10); the bound ends at 100.
         Assert.Equal(90, top.BaseOffset, 6);
+    }
+
+    [Theory]
+    [InlineData(-70, -5, "Left")]     // the plate at the left end: its right bound is nearer, the beam beyond it
+    [InlineData(805, 870, "Right")]   // and the mirror at the right end
+    public void ABoltChainAcrossTheBeamStandsOnTheSideOfItsOwnEnd(double plateX0, double plateX1, string side)
+    {
+        // M.175 front view: an end plate 65 wide at an end of a beam (0..800 here, y -80..80), its two
+        // bolts 35 from its outer face. The near bound of the plate faces the beam, and a line there
+        // would be pushed past the whole beam; on the plate's own end it stands beside the bolts.
+        var x = plateX0 < 0 ? plateX0 + 35 : plateX1 - 35;
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [x, -30, 0],
+            SecondPosition = [x, 30, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [x, -30, 0] }, new() { Index = 1, Point = [x, 30, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -80], [800, -80], [800, 80], [0, 80]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[plateX0, -75], [plateX1, -75], [plateX1, 75], [plateX0, 75]] }] };
+        var chains = BoltChainCandidates.Build(Snapshot(group), [10, 11], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80).Where(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1).ToArray();
+        var chain = Assert.Single(chains);
+        Assert.Equal("bolt-part-11-groups-42-" + side, chain.Key);
+        Assert.Null(chain.BuiltRefusal);
+        Assert.Equal(0, chain.BaseOffset, 6);
+    }
+
+    [Theory]
+    [InlineData(-70, -5, -1)]
+    [InlineData(805, 870, 1)]
+    public void EveryGroupOfAMergedChainTakesTheSideChosenForIt(double plateX0, double plateX1, int outward)
+    {
+        // Two groups on one end plate, one above the other, merged into one chain across the beam.
+        // Under Internal each gives its own steps: both stand on the plate's own end, the second
+        // group too (it once fell back to the nearer bound, past the far end of the beam).
+        var x = plateX0 < 0 ? plateX0 + 35 : plateX1 - 35;
+        BoltGroupGeometry Column(int id, double y) => new() { ModelId = id, Shape = "BoltArray",
+            FirstPosition = [x, y, 0], SecondPosition = [x, y + 30, 0], Axis = [0, 0, 1], PartToBeBoltedId = 11,
+            Positions = [new() { Index = 0, Point = [x, y, 0] }, new() { Index = 1, Point = [x, y + 30, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -80], [800, -80], [800, 80], [0, 80]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[plateX0, -75], [plateX1, -75], [plateX1, 75], [plateX0, 75]] }] };
+        var all = BoltChainCandidates.Build(Snapshot(Column(42, -60), Column(43, 30)), [10, 11], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(secondaryPartInternal: BoltInternalDimensions.Internal), lineGap: 80);
+        // Merged: only the leading group gives the part chain across the beam.
+        Assert.Equal(42, Assert.Single(all, c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1).GroupId);
+        var steps = all.Where(c => c.Kind == BoltChainCandidate.InternalKind && c.Axis == 1).ToArray();
+        Assert.Equal(new[] { 42, 43 }, steps.Select(c => c.GroupId).OrderBy(id => id));
+        Assert.All(steps, c => {
+            Assert.Equal(outward, c.OutwardNormal.X);
+            Assert.True(c.BaseOffset < 100, $"group {c.GroupId}: offset {c.BaseOffset}");
+        });
     }
 
     [Fact]
