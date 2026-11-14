@@ -523,12 +523,66 @@ Steps 1-5 done on 2026-11-13.
    detail and foreign supports. Replaces `WhollyInDepth`; direct matching to a face
    seen edge-on was set aside.
 7. The *Position* kind, then the *Check* kind, then centered bolts.
+   Reference sheet: M.298 front view (riegel UPE200, 4720 long, two plates P/1631 bolted
+   to it), dimensioned by hand (2026-11-14):
+   - along the beam, one chain of the positions of every bolt group, the beam's own and
+     the plates', from the beam end: 40 / 260 / 760 / 60 / 100 / 660 / 2800; the plates
+     are located by their bolts (`Secondary part: By bolt`), with no chain of their own;
+   - across the beam, a short chain at each group, beside it: 60 / 80 / 60 at the left
+     end (line at x -86), 137.5 / 62.5 at x 979, 60 / 80 / 60 at x 1951 and at the right
+     end (x 4803) (bolt internal `All`, per group);
+   - the overall 4720;
+   - the plates are located by their edges on the bottom view only (260 / 75 / 850 / 75 /
+     3460), and dimensioned on the section (10 / 80, 55 / 80 / 54, 5 / 189 / 6).
+   The hand-made sheet is kept (restored by the user after a test run); read it again
+   rather than trusting these numbers if it changes.
+   The current `Bolt` row gives instead an edge - bolts - edge chain per part and group
+   (four chains along the beam, the plates measured from their own edges), the plate
+   location chain and local chains beside, the cross chain of the middle group at the
+   beam end and the two end groups merged into one cross chain on one side.
+   Scope agreed with the user (2026-11-14): this step is bolts only. Combining bolt
+   positions with part dimensions (Tekla's *Combine dimensions*) is a separate step with
+   its own setting, step 10.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
 10. Merging with part chains by Tekla's *Combine dimensions* modes: in the Chain
    Composition roadmap, not here.
 
 ## Open questions
+
+- **Merging far groups does harm (user, 2026-11-14, M.298).** Equal groups at the two
+  ends of a beam (60 / 80 / 60 each) are merged across it into one chain on one side.
+  A dimension standing far from its bolts reads as if those bolts had no dimension, and
+  its extension lines run through the whole member. The detailer gives each group its
+  own cross chain beside it. To do: merge across only groups standing close along the
+  member, with a threshold like Tekla's *Combine dimensions: Min distance* ("if the
+  distance between two details is less than the Min distance, the dimensions are
+  combined"; `XS_SINGLE_COMBINE_MIN_DISTANCE` for single-part views in assembly
+  drawings, a decimal such as `200.0`, units not stated, blank by default;
+  `XS_DIMENSION_ALL_BOLT_GROUPS_SEPARATELY` turns merging off). Proposed default: one
+  dimension-line offset on paper (8 mm, 80 model mm at 1:10). This settles the
+  `GroupMergeDistance` question below for the cross direction.
+  Done in source 2026-11-14, not deployed: `BoltChainSettings.CombineMinDistance` (model
+  mm; null is one line offset); groups share a chain only when they stand no farther
+  apart across it. And a group standing in the middle of its part (the part reaching more
+  than one gap past it on both sides) gets its line beside it, one gap past its outer
+  bolt, with the edge points moved across to it along edges running straight past it;
+  with no paper gap given, the line stays past the part. Beside the group the line clears
+  the parts in the way exactly as past the part (review 2026-11-14: a plate standing next
+  to the group took the line), before the two sides are compared. Unlike past the part, a
+  part reaching over the group is in the way too (second review: a plate x 300..600,
+  y 60..110 over a column at x 440 was crossed at x 360): inside the part there is room
+  past it. Replayed on the saved M.298
+  front view: one cross chain per group, each beside its group (980 against the
+  detailer's 979; 1800 against 1951, the other side of the group); one cross chain more
+  than the detailer's, the plate bolts through the beam at x 300.
+- **The extension line starts at the nearest bolt (user, 2026-11-14, M.298).** When
+  bolts of a merged chain share a position across the member, the chain keeps the first
+  one, here the far group's bolt: the extension lines start 2800 mm away, cross the
+  near group, and the near bolts get no line of their own. The point of a chain must be
+  the bolt nearest the dimension line, as Tekla's
+  `XS_DO_NOT_EXTEND_DIMENSION_LINES_THROUGH_ALL_HOLES` does (idea 6 above); this holds
+  for one group with several rows too, not only for merged groups.
 
 - Future group merging: `GroupMergeDistance` is not part of the first release;
   neither its value nor its metric is chosen. When a concrete case needs it, agree whether it

@@ -53,13 +53,23 @@ internal sealed class BoltChainSettings
     /// <summary>Which groups of one part share one edge chain.</summary>
     public BoltGroupMerge GroupMerge { get; }
 
+    /// <summary>
+    /// Like Tekla's Combine dimensions: Min distance (<c>XS_SINGLE_COMBINE_MIN_DISTANCE</c>): groups
+    /// share a chain only when they stand no farther apart across it than this, in model mm. A
+    /// dimension far from its bolts reads as if they had none. Null: one dimension-line offset on paper.
+    /// </summary>
+    public double? CombineMinDistance { get; }
+
     public BoltChainSettings(double classToleranceDegrees = 1.0,
         BoltInternalDimensions mainPartInternal = BoltInternalDimensions.All,
         BoltInternalDimensions secondaryPartInternal = BoltInternalDimensions.All,
         BoltDimensionedProjections dimensionedProjections = BoltDimensionedProjections.Both,
-        BoltGroupMerge groupMerge = BoltGroupMerge.SameHole)
+        BoltGroupMerge groupMerge = BoltGroupMerge.SameHole, double? combineMinDistance = null)
     {
         GroupMerge = groupMerge;
+        if (combineMinDistance is { } distance && (double.IsNaN(distance) || double.IsInfinity(distance) || distance < 0))
+            throw new ArgumentOutOfRangeException(nameof(combineMinDistance), "Combine distance must be finite and not negative.");
+        CombineMinDistance = combineMinDistance;
         if (double.IsNaN(classToleranceDegrees) || double.IsInfinity(classToleranceDegrees)
             || classToleranceDegrees < 0 || classToleranceDegrees >= 45)
             throw new ArgumentOutOfRangeException(nameof(classToleranceDegrees), "Class tolerance must be finite, at least 0 and below 45 degrees.");

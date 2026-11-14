@@ -27,7 +27,7 @@ internal static class BoltChainCandidates
             : new Dictionary<int, BoltGroupGeometry>();
         var groups = preview.GetProperty("groups").EnumerateArray()
             .Select(group => Read(group, mainPartIds, geometries)).ToArray();
-        var (twins, units) = Units(groups, settings.GroupMerge, tolerance);
+        var (twins, units) = Units(groups, settings.GroupMerge, tolerance, settings.CombineMinDistance ?? lineGap);
         var partChains = JsonSerializer.SerializeToElement(BoltPartChainPreview.Build(snapshot, includedPartIds,
             AllSides, contours, tolerance, settings, perGroup: true, units))
             .EnumerateArray().ToDictionary(chain => chain.GetProperty("proposalId").GetString()!, StringComparer.Ordinal);
@@ -37,7 +37,7 @@ internal static class BoltChainCandidates
         // the merged chain (its steps included) stands on the same side whatever the group order.
         var sideOf = new Dictionary<(int Leader, int Axis, int PartId), (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain)?>();
         (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain)? Side(
-            int partId, int axis, int leader, IReadOnlyDictionary<int, int> axisUnits, double center)
+            int partId, int axis, int leader, IReadOnlyDictionary<int, int> axisUnits, double center, double[][] bolts)
         {
             if (sideOf.TryGetValue((leader, axis, partId), out var known)) return known;
             var across = 1 - axis;
@@ -50,6 +50,8 @@ internal static class BoltChainCandidates
                 .Where(side => partChains.ContainsKey(side.Key))
                 .Select(side => (side.Placement, side.Key, Chain: PartChainPoints(partChains[side.Key],
                     end => edgeConfirmed(partId, axis, end), axis, tolerance)))
+                // Without a paper gap there is no measure of "far": the line stays past the part.
+                .Select(side => lineGap > 0 ? Beside(contours, partId, axis, side, bolts, gap, tolerance) : side)
                 .ToArray();
             // How far the line stands from the bolts; a side giving no chain is not compared.
             double Reach((LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain) side) =>
@@ -86,14 +88,14 @@ internal static class BoltChainCandidates
                 var merged = axisUnits.Where(unit => unit.Value == leader).Select(unit => unit.Key).DefaultIfEmpty(groupId).OrderBy(id => id).ToArray();
                 var letter = axis == 0 ? "X" : "Y";
                 var across = 1 - axis;
-                var center = groups.Where(other => merged.Contains(other.Id)).SelectMany(other => other.Positions)
-                    .Select(point => point[across]).DefaultIfEmpty(0).Average();
+                var bolts = groups.Where(other => merged.Contains(other.Id)).SelectMany(other => other.Positions).ToArray();
+                var center = bolts.Select(point => point[across]).DefaultIfEmpty(0).Average();
                 // Whether the edges of each part chain on this axis are confirmed; the steps
                 // of the group follow the chain of the first part.
                 var confirmed = new Dictionary<int, bool>();
                 foreach (var partId in leader == groupId ? dimensioned : Array.Empty<int>())
                 {
-                    if (Side(partId, axis, leader, axisUnits, center) is not { } best) continue;
+                    if (Side(partId, axis, leader, axisUnits, center, bolts) is not { } best) continue;
                     var (placement, partKey, (points, chainRefusal)) = best;
                     var part = partChains[partKey];
                     confirmed[partId] = points.Length >= 2;
@@ -106,7 +108,7 @@ internal static class BoltChainCandidates
                 }
                 // The steps of a group are the same whichever part it bolts: offered once, beside the first part.
                 // A group merged into another one's chain takes the side chosen for that chain.
-                var first = Side(dimensioned[0], axis, leader, axisUnits, center)?.Placement
+                var first = Side(dimensioned[0], axis, leader, axisUnits, center, bolts)?.Placement
                     ?? Placement(contours, dimensioned[0], axis, center, gap, tolerance);
                 foreach (var chain in group.Chains.Where(chain => chain.GetProperty("axis").GetString() == letter))
                 {
@@ -174,36 +176,86 @@ internal static class BoltChainCandidates
         var sign = outward ?? (bounds is { } b && b.Max[across] - center > center - b.Min[across] ? -1 : 1);
         var side = axis == 0 ? (sign > 0 ? DimensionChainSide.Top : DimensionChainSide.Bottom)
             : (sign > 0 ? DimensionChainSide.Right : DimensionChainSide.Left);
-        var others = contours == null ? [] : contours.Keys.Where(id => id != partId)
-            .Select(id => Bounds(contours, id)).Where(box => box != null).Select(box => box!.Value).ToArray();
+        var others = Others(contours, partId);
         double Clear(double[][] points)
         {
             var box = bounds!.Value;
-            var (from, to) = (points.Min(point => point[axis]), points.Max(point => point[axis]));
-            var bound = sign > 0 ? box.Max[across] : box.Min[across];
-            // Under the chain or beside it is judged against the part's own bound, not the moved one.
-            var own = sign * bound;
-            // Outward: the near side of a part in the way stands less than one gap past the bound,
-            // and its far side past it; the bound moves to that far side until nothing is in the way.
-            for (var moved = true; moved;)
-            {
-                moved = false;
-                foreach (var other in others.Where(other => other.Min[axis] < to - touch && other.Max[axis] > from + touch))
-                {
-                    var (near, far) = sign > 0 ? (other.Min[across], other.Max[across]) : (-other.Max[across], -other.Min[across]);
-                    // A part starting on the line itself is in the way too: the line would lie on its edge.
-                    // A part reaching back inside the bound lies under the chain (the beam under a fin
-                    // plate), not beside it: the line cannot clear it and must not try.
-                    if (sign * bound >= far || near > sign * bound + gap + touch || near < own - touch) continue;
-                    bound = sign * far;
-                    moved = true;
-                }
-            }
+            var bound = ClearPast(sign > 0 ? box.Max[across] : box.Min[across], sign, axis, points, others, gap, touch);
             return Math.Max(0, sign * (bound - points[0][across]));
         }
         return new LinePlacement(side, sign, new DimensionDirection(axis == 0 ? 0 : sign, axis == 0 ? sign : 0),
             bounds == null ? "part has no captured contour to place the line beside" : null,
             points => bounds == null ? 0 : Clear(points));
+    }
+
+    private static (double[] Min, double[] Max)[] Others(IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
+        int partId) => contours == null ? [] : contours.Keys.Where(id => id != partId)
+            .Select(id => Bounds(contours, id)).Where(box => box != null).Select(box => box!.Value).ToArray();
+
+    // The bound the line stands one gap beyond, moved outward past every other part in the way along
+    // the chain's span: the near side of a part in the way stands less than one gap past the bound,
+    // and its far side past it; the bound moves to that far side until nothing is in the way.
+    private static double ClearPast(double start, int sign, int axis, double[][] points,
+        (double[] Min, double[] Max)[] others, double gap, double touch, bool skipUnder = true)
+    {
+        var across = 1 - axis;
+        var (from, to) = (points.Min(point => point[axis]), points.Max(point => point[axis]));
+        var bound = start;
+        // Under the chain or beside it is judged against the starting bound, not the moved one.
+        var own = sign * start;
+        for (var moved = true; moved;)
+        {
+            moved = false;
+            foreach (var other in others.Where(other => other.Min[axis] < to - touch && other.Max[axis] > from + touch))
+            {
+                var (near, far) = sign > 0 ? (other.Min[across], other.Max[across]) : (-other.Max[across], -other.Min[across]);
+                // A part starting on the line itself is in the way too: the line would lie on its edge.
+                // Past the part, a part reaching back inside the bound lies under the chain (the beam
+                // under a fin plate), not beside it: the line cannot clear it and must not try.
+                if (sign * bound >= far || near > sign * bound + gap + touch || skipUnder && near < own - touch) continue;
+                bound = sign * far;
+                moved = true;
+            }
+        }
+        return bound;
+    }
+
+    // A part reaching far past its group on both sides (a beam 4720 long, a group 1060 from its end)
+    // gets the line beside the group, one gap past its outer bolt, not past the part's end: a dimension
+    // far from its bolts reads as if they had none (M.298). The end points move across to the group, along edges
+    // that run straight past it; where an edge does not, the line stays past the part.
+    private static (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain) Beside(
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, int partId, int axis,
+        (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain) side,
+        double[][] bolts, double gap, double tolerance)
+    {
+        var (placement, key, chain) = side;
+        if (placement.Refusal != null || chain.Refusal != null || chain.Points.Length < 2 || bolts.Length == 0
+            || Bounds(contours, partId) is not { } box) return side;
+        var across = 1 - axis;
+        var sign = placement.Sign;
+        var outer = sign > 0 ? bolts.Max(point => point[across]) : bolts.Min(point => point[across]);
+        // Only a group standing in the middle of its part: the part reaches more than one gap past
+        // it on both sides. A group at an end of the part keeps its line past that end.
+        if (box.Max[across] - bolts.Max(point => point[across]) <= gap + tolerance
+            || bolts.Min(point => point[across]) - box.Min[across] <= gap + tolerance) return side;
+        var edges = BoltEdgeDistancePreview.Flatten(contours![partId]).Where(node => !node.IsHole)
+            .SelectMany(node => node.Polygon.Select((point, index) => (A: point, B: node.Polygon[(index + 1) % node.Polygon.Count])))
+            .ToArray();
+        bool IsBolt(double[] point) => bolts.Any(bolt => Math.Abs(bolt[0] - point[0]) <= tolerance && Math.Abs(bolt[1] - point[1]) <= tolerance);
+        bool EdgeAt(double[] point) => edges.Any(edge => Math.Abs(edge.A[axis] - point[axis]) <= tolerance
+            && Math.Abs(edge.B[axis] - point[axis]) <= tolerance
+            && Math.Min(edge.A[across], edge.B[across]) <= outer + tolerance && Math.Max(edge.A[across], edge.B[across]) >= outer - tolerance);
+        if (chain.Points.Any(point => !IsBolt(point) && !EdgeAt(point))) return side;
+        var moved = chain.Points.Select(point => IsBolt(point) ? point
+            : axis == 0 ? new[] { point[0], outer } : new[] { outer, point[1] }).ToArray();
+        // Beside the group the line clears the parts in the way as it does past the part (a plate
+        // standing next to the group), and a part reaching over the group too: inside the part there
+        // is room past it, and a line left there would cross it.
+        var others = Others(contours, partId);
+        return (new LinePlacement(placement.Side, sign, placement.Normal, null,
+            points => Math.Max(0, sign * (ClearPast(outer, sign, axis, points, others, gap, tolerance, skipUnder: false) - points[0][across]))),
+            key, (moved, null));
     }
 
     // A Plan group is measured along both view axes; a Side group only across its bolt axis:
@@ -259,7 +311,7 @@ internal static class BoltChainCandidates
     // the other along it, or when their bolts stand at the same coordinates on it. Groups that overlap
     // along the chain with different spacings keep their own chains: one chain would mix both spacings.
     private static (Dictionary<int, int> Twins, IReadOnlyDictionary<int, int>[] Units) Units(GroupInfo[] groups,
-        BoltGroupMerge merge, double tolerance)
+        BoltGroupMerge merge, double tolerance, double combineDistance)
     {
         var twins = new Dictionary<int, int>();
         var units = new[] { new Dictionary<int, int>(), new Dictionary<int, int>() };
@@ -281,7 +333,7 @@ internal static class BoltChainCandidates
                 var leader = key == null ? null : taken.FirstOrDefault(other => Alike(other)
                     && MergeKey(merge, other.Geometry, other.Dimensioned) == key
                     && taken.Where(member => axisUnits[member.Id] == axisUnits[other.Id])
-                        .All(member => Fit(member.Positions, group.Positions, axis, tolerance)));
+                        .All(member => Fit(member.Positions, group.Positions, axis, tolerance, combineDistance)));
                 axisUnits[group.Id] = leader == null ? group.Id : axisUnits[leader.Id];
             }
             taken.Add(group);
@@ -290,9 +342,15 @@ internal static class BoltChainCandidates
     }
 
     // Two groups fit one chain along an axis when one stands wholly beyond the other along it, or
-    // when their bolts stand at the same coordinates on it.
-    private static bool Fit(double[][] a, double[][] b, int axis, double tolerance)
+    // when their bolts stand at the same coordinates on it; and only when they stand no farther apart
+    // across it than the combine distance: the chain stands beside each of them (M.298, equal groups
+    // at the two ends of a beam keep a cross chain each).
+    private static bool Fit(double[][] a, double[][] b, int axis, double tolerance, double combineDistance)
     {
+        var across = 1 - axis;
+        var apart = Math.Max(a.Min(point => point[across]), b.Min(point => point[across]))
+            - Math.Min(a.Max(point => point[across]), b.Max(point => point[across]));
+        if (apart > combineDistance + tolerance) return false;
         var (aMin, aMax) = (a.Min(point => point[axis]), a.Max(point => point[axis]));
         var (bMin, bMax) = (b.Min(point => point[axis]), b.Max(point => point[axis]));
         if (aMax < bMin - tolerance || bMax < aMin - tolerance) return true;

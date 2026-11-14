@@ -592,8 +592,10 @@ public sealed class BoltChainRuleTests
     [Fact]
     public void GroupsWithTheSameHoleOnOnePartShareOneChain()
     {
+        // 40 apart along the part: within one line offset (80), so they share the cross chain too.
         var snapshot = Snapshot(Group(21, 20), Group(22, 120));
-        var candidates = BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings());
+        var candidates = BoltChainCandidates.Build(snapshot, [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings(),
+            lineGap: 80);
         var chain = candidates.Single(c => c.Key == "bolt-part-10-groups-21-22-Bottom");
         Assert.Null(chain.BuiltRefusal);
         Assert.Equal(new[] { 20d, 60d, 40d, 60d, 80d }, chain.Segments);
@@ -669,16 +671,114 @@ public sealed class BoltChainRuleTests
     {
         // Three pairs across the part at x 40, 120 and 200: rows at y 120/220, 120/220 and 125/215.
         // Along X they stand one beside the other: one chain. Across, the third spacing differs.
+        // 80 apart along X, within one line offset (80): close enough to share a cross chain.
         BoltGroupGeometry Pair(int id, double x, double low, double high) => new() {
             ModelId = id, Shape = "BoltArray", FirstPosition = [x, low, 0], SecondPosition = [x, high, 0],
             Axis = [0, 0, 1], PartToBeBoltedId = 10,
             Positions = [new() { Index = 0, Point = [x, low, 0] }, new() { Index = 1, Point = [x, high, 0] }] };
         var candidates = BoltChainCandidates.Build(Snapshot(Pair(21, 40, 120, 220), Pair(22, 120, 120, 220), Pair(23, 200, 125, 215)),
-            [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings());
+            [10], [10], Contours(), (_, _, _) => true, new BoltChainSettings(), lineGap: 80);
         var keys = candidates.Where(c => c.Kind == BoltChainCandidate.PartKind).Select(c => c.Key).ToArray();
         Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-21-22-23-") && (key.EndsWith("-Bottom") || key.EndsWith("-Top")));
         Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-21-22-") && !key.Contains("-23-") && (key.EndsWith("-Left") || key.EndsWith("-Right")));
         Assert.Contains(keys, key => key.StartsWith("bolt-part-10-groups-23-") && (key.EndsWith("-Left") || key.EndsWith("-Right")));
+    }
+
+    [Theory]
+    // M.298: equal groups at the two ends of a beam, 600 apart: each keeps its own cross chain,
+    // beside it; a dimension far from its bolts reads as if they had none.
+    [InlineData(null, 2)]
+    // A combine distance as long as the beam merges them again, as Tekla's Min distance would.
+    [InlineData(1000d, 1)]
+    public void EqualGroupsFarApartKeepACrossChainEach(double? combineMinDistance, int crossChains)
+    {
+        BoltGroupGeometry Column(int id, double x) => new() { ModelId = id, Shape = "BoltArray",
+            FirstPosition = [x, -40, 0], SecondPosition = [x, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [x, -40, 0] }, new() { Index = 1, Point = [x, 40, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -100], [700, -100], [700, 100], [0, 100]] }] };
+        var cross = BoltChainCandidates.Build(Snapshot(Column(21, 40), Column(22, 660)), [10], [10], contours, (_, _, _) => true,
+                new BoltChainSettings(combineMinDistance: combineMinDistance), lineGap: 80)
+            .Where(c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1).ToArray();
+        Assert.Equal(crossChains, cross.Length);
+        Assert.All(cross, c => Assert.Equal(new[] { 60d, 80, 60 }, c.Segments));
+        if (crossChains == 2)
+        {
+            // Each on the end of its own group, with no offset past other parts.
+            Assert.Contains(cross, c => c.GroupId == 21 && c.Key.EndsWith("-Left") && c.BaseOffset == 0);
+            Assert.Contains(cross, c => c.GroupId == 22 && c.Key.EndsWith("-Right") && c.BaseOffset == 0);
+        }
+    }
+
+    [Fact]
+    public void ACrossChainOfAGroupInTheMiddleOfTheBeamStandsBesideTheGroup()
+    {
+        // M.298: a column of two bolts at x 440 of a beam 0..900 (y -100..100). Both ends are far
+        // from it, so the line stands one gap past the column, not past the beam end; the edge
+        // points move across to the column, on the flange edges running past it.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [440, -40, 0],
+            SecondPosition = [440, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [440, -40, 0] }, new() { Index = 1, Point = [440, 40, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -100], [900, -100], [900, 100], [0, 100]] }] };
+        var cross = Assert.Single(BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80), c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1);
+        Assert.Null(cross.BuiltRefusal);
+        Assert.Equal(new[] { 60d, 80, 60 }, cross.Segments);
+        Assert.All(cross.Points, point => Assert.Equal(440, point.X, 6));
+        Assert.Equal(0, cross.BaseOffset, 6);
+    }
+
+    private static BoltChainCandidate CrossBesideColumn(params (double X0, double X1)[] plates) =>
+        CrossBesideColumn(plates.Select(plate => (plate.X0, plate.X1, -110d, 110d)).ToArray());
+
+    private static BoltChainCandidate CrossBesideColumn(params (double X0, double X1, double Y0, double Y1)[] plates)
+    {
+        // A column of two bolts at x 440 of a beam 0..900 (y -100..100), plates beside it.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [440, -40, 0],
+            SecondPosition = [440, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [440, -40, 0] }, new() { Index = 1, Point = [440, 40, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -100], [900, -100], [900, 100], [0, 100]] }] };
+        foreach (var (plate, index) in plates.Select((plate, index) => (plate, index)))
+            contours[11 + index] = [new OutlineTreeNodeResult { Polygon = [[plate.X0, plate.Y0], [plate.X1, plate.Y0], [plate.X1, plate.Y1], [plate.X0, plate.Y1]] }];
+        return Assert.Single(BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80), c => c.Kind == BoltChainCandidate.PartKind && c.Axis == 1);
+    }
+
+    // Where the line stands: one gap past the bound the offset leads to.
+    private static double CrossLine(BoltChainCandidate cross) =>
+        cross.Points[0].X + (cross.Key.EndsWith("-Right") ? 1 : -1) * (cross.BaseOffset + 80);
+
+    [Theory]
+    // A plate standing 70 left of the column (x 350..370) is in the way of the line beside the
+    // group on the left; on the right nothing is: the chain goes right, beside the column.
+    [InlineData(350, 370, "Right")]
+    // The mirror: the plate on the right, the chain on the left.
+    [InlineData(510, 530, "Left")]
+    public void ALineBesideTheGroupClearsAPlateStandingNextToIt(double plateX0, double plateX1, string side)
+    {
+        var cross = CrossBesideColumn((plateX0, plateX1));
+        Assert.EndsWith("-" + side, cross.Key);
+        Assert.Equal(side == "Right" ? 520 : 360, CrossLine(cross), 6);
+    }
+
+    [Theory]
+    // A plate reaching over the column, along a part of the chain only (y 60..110): the line
+    // beside the group would cross it at x 360; it stands past the plate instead.
+    [InlineData(300, 600)]
+    [InlineData(280, 580)]
+    public void ALineBesideTheGroupClearsAPlateReachingOverTheGroup(double plateX0, double plateX1)
+    {
+        var line = CrossLine(CrossBesideColumn((plateX0, plateX1, 60d, 110d)));
+        Assert.True(line < plateX0 || line > plateX1, $"line at {line} crosses the plate {plateX0}..{plateX1}");
+    }
+
+    [Fact]
+    public void ALineBesideTheGroupBetweenTwoPlatesNeverLiesOnEither()
+    {
+        var line = CrossLine(CrossBesideColumn((350, 370), (500, 530)));
+        Assert.False(line >= 350 && line <= 370 || line >= 500 && line <= 530, $"line at {line} lies on a plate");
     }
 
     [Fact]
@@ -721,11 +821,11 @@ public sealed class BoltChainRuleTests
     [InlineData(-94, 94)]
     public void APartPastTheBeamEndPushesTheLineOfTheBeamBoltsOut(double plateX, double baseOffset)
     {
-        // Bolts at x 300 across a beam 0..1000 (y -80..80); an end plate 14 wide (y -85..85) stands
-        // either at the beam end or 186 beyond it. The vertical chain stands on the Left, beside x 0.
-        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [300, -45, 0],
-            SecondPosition = [300, 45, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
-            Positions = [new() { Index = 0, Point = [300, -45, 0] }, new() { Index = 1, Point = [300, 45, 0] }] };
+        // Bolts at x 40 across a beam 0..1000 (y -80..80), near its end; an end plate 14 wide (y -85..85)
+        // stands either at the beam end or 186 beyond it. The vertical chain stands on the Left, beside x 0.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [40, -45, 0],
+            SecondPosition = [40, 45, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [40, -45, 0] }, new() { Index = 1, Point = [40, 45, 0] }] };
         var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
             [10] = [new OutlineTreeNodeResult { Polygon = [[0, -80], [1000, -80], [1000, 80], [0, 80]] }],
             [11] = [new OutlineTreeNodeResult { Polygon = [[plateX, -85], [plateX + 14, -85], [plateX + 14, 85], [plateX, 85]] }] };
