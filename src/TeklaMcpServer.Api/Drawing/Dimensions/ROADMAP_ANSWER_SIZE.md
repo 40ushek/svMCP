@@ -252,6 +252,19 @@ the largest saving; a smaller environment is.
 
 ### 7. Next: fewer steps and shorter remaining answers — proposed, not started
 
+Agreed order: check the running tool schema, then 5 and 2, then 3, then shorter tool
+descriptions (keep how each parameter is used; describe obsolete `boltChains` in one
+line, drop repeats and long examples first), then a "delete all" command (later; it
+must name what it deletes: today only `StraightDimensionSet`, not angle or radius
+dimensions, be bound to the expected drawing and report partial deletion). Item 1
+needs its own design (below).
+
+Savings below are hypotheses, not measured acceptance results, and overlap: do not
+add their percentages. Compare runs with the same drawing state and selected keys,
+counting fresh input, cache writes, cache reads and output separately. Measure the
+final report separately from the model's other output; the proposed 5-10 % saving
+from a shorter report is unverified, and not all output tokens belong to that report.
+
 1. **Fewer turns.** Read all views in one call and write all views in one call:
    about 5 turns instead of 13, about 13 % of a run's cost (see above). Keeping the
    contexts of all views is not enough:
@@ -265,18 +278,75 @@ the largest saving; a smaller environment is.
    (`mergedIntoDimensionId`, `error`, `renderedLineStatus`) and lists every created
    dimension again in `finalDimensions`. Keep per chain the key, the dimension id and
    the status (`created`, `retained`, `merged`, `uncertain`, `failed`, `skipped`) with
-   its error, and a general re-read failure. Only the representation shrinks; the
-   internal write verification stays. Expected about 1 000-1 500 characters instead
-   of 5 160.
+   its error, `mergedIntoDimensionId` when merged, and `finalReadError`. Keep
+   non-empty warnings too: the API result names a substituted attributes file
+   (`AttributesFileUsed`), which the bridge does not pass on today. Only the
+   representation shrinks; the internal re-read that turns a write into `created`,
+   `merged`, `uncertain` or `failed` stays. Expected about 1 000-1 500 characters
+   instead of 5 160. Return one result for every selected key, including every
+   non-success status. A non-empty `finalReadError` means final verification did not
+   complete, even if individual results look successful; the agent must report it.
+   Preserve non-empty diagnostic warnings, including rendered-line limitations and
+   provisional bolt verification. Keep a full write response available for repair
+   and debugging; `previewPlanId` stores the pre-write plan, not the actual write
+   outcome, so it cannot replace that response.
 3. **Short view list.** Placement needs id, type and name of each view, about 300
-   characters instead of 1 850.
+   characters instead of 1 850. Add a short representation; the full answer stays
+   for layout operations.
 4. **No doubtful chains.** The model spent 2 300 output tokens deciding about
    `Top-location` on "Unten". Depends on the open question above: first whether the
    chain is redundant, then rule or skill.
+5. **Short refusals.** On M.394 4 500 of the 8 200 characters of view answers are
+   chains that may not be placed: incomplete, bolt groups not of class `Plan`,
+   repeats. The agent reads them in full and then skips them. Give eligible chains
+   as now and the others as `key`, a reason code and a short note when needed.
+   Separate selectable chains from refusals explicitly (for example, `chains` and
+   `refused` in each row), rather than mixing objects of different completeness in
+   one selection list. Update the skill's selection instructions with the response
+   contract: today they select by `incomplete=false` and bolt class.
+   - The verdict "do not place" stays with the code; it covers `incomplete`, the bolt
+     class and repeats. The projection only shortens existing verdicts; it must not
+     introduce another set of geometry or repeat rules. A query without `repeats`
+     must still allow explicitly requested repeats.
+   - `Bolt.readIncomplete` blocks every bolt write on the view and must stay even
+     when no bolt chain was read. Keep view-level `isComplete`, section refusals and
+     other general blockers: an empty chain list must not imply a successful read
+     with no bolts or no dimensions needed.
+   - Full fields remain available through the stored `previewPlanId`; the stored plan
+     and the batch do not change. Implement in `DimensionAnswerProjection`.
+   - Expected about 1 000 characters instead of 4 500 on M.394: about 2-3 % of a run's
+     cost, but about 19 chains to read instead of about 30, so less room for doubt.
+   - **Done when:** saved cases with repeats, an incomplete bolt read and write errors
+     give the same plan, the same writes and the same refusals, with a shorter answer.
+     Selection from the short answer must produce exactly the same keys and preserve
+     every condition requiring the agent to stop. Cover empty bolt rows with
+     `readIncomplete` and queries with and without repeats. For item 2, cover
+     `merged`, `uncertain`, `failed`, `skipped`, attributes fallback and a failed final
+     read. Test the actual JSON emitted by the bridge as well as API results: the
+     earlier `mainPartMaterial` omission passed API tests but lost the field in the
+     bridge's response mapping. A single successful live run is not acceptance.
 
 A dedicated agent (`.claude/agents/`, only the tekla tools and the skill) is the way
 to cut the 39 600-token environment, the largest single part of the cost. It is a
 separate topic: the goal is an autonomous drawing agent (views, dimensions, marks).
+
+**Items 5 and 2 implemented 2026-11-14, tested, not deployed.**
+- Item 5: `DimensionAnswerProjection` splits every row into `chains` (placeable) and
+  `refused` (`key`, `reason`: `repeat`, `incomplete`, `boltClass`,
+  `boltReadIncomplete`; `note` from the code's reason). Row fields such as
+  `readIncomplete` and top-level `isComplete` and section status stay; the top-level
+  `repeats` list is dropped, its verdicts are on the chains. Placeable chains keep
+  `key`, `chainKind`, `viewClass`, `segments`, `remark`, `carries`, `restoredBesides`.
+  `steel-assembly.md` step 5 now says: select every key in `chains`.
+  On the eight saved cases the short answers went from 18 533 to 14 539 characters;
+  the placeable keys equal the old selection rule on every case.
+- Item 2: `BatchAnswerProjection` in the API. Short (default): per key `status`,
+  plus `dimensionId`, `mergedIntoDimensionId`, `error`, `attributesFileUsed`,
+  `boltGeometryVerification`, `renderedLineStatus` (only a mismatch) when set;
+  `renderedLineNotVerified` counts unchecked lines; `finalReadError` when set.
+  `create_dimensions_batch(fullResult=true)` returns every field and the final
+  dimensions; the full answer now also carries `attributesFileUsed`.
+- Needs the bridge and the MCP server (new `fullResult` parameter) deployed.
 
 ### 8. Dedicated dimension agent — done 2026-11-14
 

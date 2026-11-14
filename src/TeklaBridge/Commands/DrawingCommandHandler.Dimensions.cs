@@ -727,19 +727,8 @@ internal sealed partial class DrawingCommandHandler
         try
         {
             var result = _dimensionContexts.CreateBatch(DrawingCommandParsers.ParseCreateDimensionsBatchRequest(args));
-            WriteJson(new {
-                viewId = result.ViewId,
-                chains = result.Chains.Select(item => new {
-                    key = item.Key, status = item.Status, dimensionId = item.DimensionId,
-                    mergedIntoDimensionId = item.MergedIntoDimensionId,
-                    renderedLineStatus = item.RenderedLineStatus, error = item.Error
-                }),
-                finalDimensions = result.FinalDimensions.Select(item => new {
-                    id = item.Id, side = item.Side, lineAt = item.LineAt,
-                    from = item.From, to = item.To, segments = item.Segments
-                }),
-                finalReadError = result.FinalReadError
-            });
+            var full = args.Length > 7 && args[7] == "full";
+            WriteJson(full ? BatchAnswerProjection.Full(result) : BatchAnswerProjection.Short(result));
         }
         catch (Exception exception) { WriteError(exception.Message); }
         return true;

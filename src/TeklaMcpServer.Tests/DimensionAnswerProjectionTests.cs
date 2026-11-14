@@ -25,21 +25,30 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
         var summary = DimensionAnswerProjection.Compact(full);
         Assert.Equal(full.GetProperty("previewPlanId").GetString(), summary.GetProperty("previewPlanId").GetString());
         Assert.Equal(full.GetProperty("isComplete").GetBoolean(), summary.GetProperty("isComplete").GetBoolean());
-        var original = Chains(full).ToArray();
-        var compact = Chains(summary).ToArray();
-        Assert.Equal(original.Select(chain => chain.GetProperty("key").GetString()), compact.Select(chain => chain.GetProperty("key").GetString()));
-        Assert.Equal(original.Length, compact.Length);
-        for (var i = 0; i < original.Length; i++)
+        // Every key is either placeable or refused, once, and the placeable ones are exactly
+        // the ones the code allows today.
+        var original = Chains(full).Select(chain => chain.GetProperty("key").GetString()!).ToArray();
+        var placeable = SummaryKeys(summary);
+        var refused = Refused(summary).Select(chain => chain.GetProperty("key").GetString()!).ToArray();
+        Assert.Equal(original.OrderBy(key => key), placeable.Concat(refused).OrderBy(key => key));
+        Assert.Equal(EligibleKeys(full), placeable);
+        var byKey = Chains(full).ToDictionary(chain => chain.GetProperty("key").GetString()!);
+        foreach (var chain in Chains(summary))
         {
-            foreach (var field in new[] { "segments", "incomplete", "chainKind", "viewClass", "incompleteReason", "repeat", "remark" })
-                if (original[i].TryGetProperty(field, out var value) && value.ValueKind != JsonValueKind.Null)
-                    Assert.Equal(value.GetRawText(), compact[i].GetProperty(field).GetRawText());
-            Assert.False(compact[i].TryGetProperty("points", out _));
-            Assert.False(compact[i].TryGetProperty("pointIds", out _));
-            Assert.False(compact[i].TryGetProperty("sources", out _));
-            Assert.False(compact[i].TryGetProperty("holes", out _));
+            var source = byKey[chain.GetProperty("key").GetString()!];
+            foreach (var field in new[] { "segments", "chainKind", "viewClass", "remark", "carries", "restoredBesides" })
+                if (source.TryGetProperty(field, out var value) && value.ValueKind != JsonValueKind.Null)
+                    Assert.Equal(value.GetRawText(), chain.GetProperty(field).GetRawText());
+            foreach (var field in new[] { "points", "pointIds", "sources", "holes", "incomplete", "incompleteReason" })
+                Assert.False(chain.TryGetProperty(field, out _));
         }
-        Assert.Equal(EligibleKeys(full), EligibleKeys(summary));
+        foreach (var chain in Refused(summary))
+        {
+            var source = byKey[chain.GetProperty("key").GetString()!];
+            Assert.Contains(chain.GetProperty("reason").GetString(), new[] { "repeat", "incomplete", "boltClass", "boltReadIncomplete" });
+            if (source.TryGetProperty("incompleteReason", out var why) && why.ValueKind == JsonValueKind.String)
+                Assert.Equal(why.GetString(), chain.GetProperty("note").GetString());
+        }
         var writes = new List<string>();
         var provider = Provider(context, writes);
         var details = provider.GetPreviewPlanDetails(7, summary.GetProperty("previewPlanId").GetString()!);
@@ -69,7 +78,7 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
         // Reading the detailed representation and unrelated questions cannot change the selection.
         compact.GetPreviewPlanDetails(7, summary.GetProperty("previewPlanId").GetString()!);
         context.Query("chain");
-        compact.CreateBatch(Batch(context, summary));
+        compact.CreateBatch(Batch(context, summary, SummaryKeys(summary)));
         Assert.NotEmpty(expected);
         Assert.Equal(expected, actual);
     }
@@ -114,11 +123,12 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
         Assert.Equal("refused", summary.GetProperty("sectionPreviewStatus").GetString());
         Assert.Equal("missing contour", summary.GetProperty("error").GetString());
         Assert.Equal("unread parts 42", summary.GetProperty("chainPreview")[0].GetProperty("readIncomplete").GetString());
-        var chain = Assert.Single(Chains(summary));
-        Assert.Equal("[549.999,5.001]", chain.GetProperty("segments").GetRawText());
-        Assert.Equal("blocked", chain.GetProperty("incompleteReason").GetString());
-        Assert.False(chain.TryGetProperty("remark", out _));
-        Assert.Equal(new[] { "key", "chainKind", "viewClass", "segments", "incomplete", "incompleteReason" }, chain.EnumerateObject().Select(field => field.Name));
+        Assert.Empty(Chains(summary));
+        var refused = Assert.Single(Refused(summary));
+        Assert.Equal("bolt-position-Bottom", refused.GetProperty("key").GetString());
+        Assert.Equal("incomplete", refused.GetProperty("reason").GetString());
+        Assert.Equal("blocked", refused.GetProperty("note").GetString());
+        Assert.Equal(new[] { "key", "reason", "note" }, refused.EnumerateObject().Select(field => field.Name));
         Assert.False(summary.TryGetProperty("partSpanMatchToleranceMm", out _));
         var diagnostic = DimensionAnswerProjection.Compact(full, includeDiagnostics: true);
         Assert.True(diagnostic.TryGetProperty("boltSettings", out _));
@@ -133,7 +143,7 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
             {"previewPlanId":"plan","chainPreview":[{"side":"Bottom","chains":[
              {"key":"Bottom-overall","segments":[100],"incomplete":false,"restoredBesides":"Bottom-location-bolts","attributesFile":"overall"}]},
              {"side":"Bolt","chains":[
-             {"key":"Bottom-location-bolts","segments":[20,60,20],"incomplete":false,"carries":"Bottom-location","points":[[0,0]]}]}]}
+             {"key":"Bottom-location-bolts","viewClass":"Plan","segments":[20,60,20],"incomplete":false,"carries":"Bottom-location","points":[[0,0]]}]}]}
             """);
         var chains = Chains(DimensionAnswerProjection.Compact(document.RootElement)).ToArray();
         Assert.Equal("Bottom-location-bolts", chains[0].GetProperty("restoredBesides").GetString());
@@ -179,6 +189,34 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void RefusalsKeepTheCodesVerdictAndTheViewBlockers()
+    {
+        using var document = JsonDocument.Parse("""
+            {"isComplete":true,"repeats":[{"key":"Top-overall","reason":"sameView","of":"Bottom-overall"}],
+             "chainPreview":[{"side":"Bottom","chains":[
+               {"key":"Bottom-overall","segments":[100],"incomplete":false},
+               {"key":"Top-overall","segments":[100],"incomplete":true,"incompleteReason":"repeats Bottom-overall on this view","repeat":"sameView"},
+               {"key":"Left-location","segments":[],"incomplete":true,"incompleteReason":"no part sticks out"}]},
+              {"side":"Bolt","chains":[
+               {"key":"bolt-a","viewClass":"Plan","segments":[50],"incomplete":false},
+               {"key":"bolt-b","viewClass":"Side","segments":[50],"incomplete":false}]},
+              {"side":"Bolt","readIncomplete":"unread parts 42","chains":[
+               {"key":"bolt-c","viewClass":"Plan","segments":[50],"incomplete":false}]}]}
+            """);
+        var summary = DimensionAnswerProjection.Compact(document.RootElement);
+        Assert.Equal(new[] { "Bottom-overall", "bolt-a" }, SummaryKeys(summary));
+        Assert.Equal(new[] { ("Top-overall", "repeat"), ("Left-location", "incomplete"), ("bolt-b", "boltClass"), ("bolt-c", "boltReadIncomplete") },
+            Refused(summary).Select(chain => (chain.GetProperty("key").GetString()!, chain.GetProperty("reason").GetString()!)));
+        Assert.Equal("repeats Bottom-overall on this view", Refused(summary).First().GetProperty("note").GetString());
+        Assert.Equal("Side", Refused(summary).ElementAt(2).GetProperty("note").GetString());
+        var unread = summary.GetProperty("chainPreview")[2];
+        Assert.Equal("unread parts 42", unread.GetProperty("readIncomplete").GetString());
+        Assert.Empty(unread.GetProperty("chains").EnumerateArray());
+        Assert.True(summary.GetProperty("isComplete").GetBoolean());
+        Assert.False(summary.TryGetProperty("repeats", out _));
+    }
+
+    [Fact]
     public void NonChainResponsesAreNotChanged()
     {
         using var document = JsonDocument.Parse("""{"isComplete":false,"error":"unread"}""");
@@ -210,10 +248,17 @@ public sealed class DimensionAnswerProjectionTests(ITestOutputHelper output)
             && (row.GetProperty("side").GetString() != "Bolt" || chain.GetProperty("viewClass").GetString() == "Plan")))
         .Select(chain => chain.GetProperty("key").GetString()!).ToArray();
 
-    private static CreateDimensionsBatchRequest Batch(ViewDimensionContext context, JsonElement answer) => new() {
+    private static CreateDimensionsBatchRequest Batch(ViewDimensionContext context, JsonElement answer, string[]? keys = null) => new() {
         ViewId = 7, ContextId = context.ContextId, PreviewPlanId = answer.GetProperty("previewPlanId").GetString(),
-        RuleSet = "steel", Chains = EligibleKeys(answer).Select(key => new BatchDimensionChain { Preview = key }).ToList()
+        RuleSet = "steel", Chains = (keys ?? EligibleKeys(answer)).Select(key => new BatchDimensionChain { Preview = key }).ToList()
     };
+
+    /// <summary>The short answer's rule: place every key in chains.</summary>
+    private static string[] SummaryKeys(JsonElement summary) =>
+        Chains(summary).Select(chain => chain.GetProperty("key").GetString()!).ToArray();
+
+    private static IEnumerable<JsonElement> Refused(JsonElement answer) => answer.GetProperty("chainPreview").EnumerateArray()
+        .SelectMany(row => row.TryGetProperty("refused", out var refused) ? refused.EnumerateArray() : Enumerable.Empty<JsonElement>());
 
     private static ViewDimensionContextProvider Provider(ViewDimensionContext context, List<string> writes)
     {

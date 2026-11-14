@@ -356,20 +356,21 @@ public static partial class ModelTools
         }
     }
 
-    [McpServerTool, Description("Create 1–32 reviewed chains from one context. Entries use preview, pointIds plus direction, or boltProposal plus partId and direction. Bolt chains come by preview key from the Bolt row; boltProposal is obsolete and kept only for placing one chosen bolt chain. A preview key the rule marked not to create rejects the whole batch. Preview entries require the read ruleSet and chainView. All entries are validated before writes; returns verified results and final dimensions.")]
+    [McpServerTool, Description("Create 1–32 reviewed chains from one context. Entries use preview, pointIds plus direction, or boltProposal plus partId and direction. Bolt chains come by preview key from the Bolt row; boltProposal is obsolete and kept only for placing one chosen bolt chain. A preview key the rule marked not to create rejects the whole batch. Preview entries require the read ruleSet and chainView. All entries are validated before writes. Returns one verified result per key (status, dimensionId, error and warnings when set); fullResult adds every field and the final dimensions.")]
     public static string CreateDimensionsBatch(
         [Description("Target drawing view ID.")] int viewId,
         [Description("Cached context ID returned by get_view_dimension_context(questions=chain or boltChains). All pointIds must belong to this context.")] string contextId,
         [Description("JSON array of reviewed chains, e.g. [{\"preview\":\"Top-location\"},{\"preview\":\"Bottom-overall\",\"dimensionType\":\"Absolute\"}]. Bolt selection example: {\"boltProposal\":\"bolt-42-X-0\",\"partId\":10,\"direction\":\"horizontal-down\",\"distance\":80}. Explicit pointIds entries remain supported. No per-point removals. dimensionType overrides the attributes file; new chains on occupied sides need paperGapMm or distance.")] string chainsJson,
         [Description("Same ruleSet as the preview read: steel or panel. Required for preview entries and explicit pointIds in a reference-zone context. Both rule sets use the same chain keys with different geometry and placement scopes.")] string ruleSet = "",
         [Description("Same preview variant as the read: chain (default; consolidated sections) or chainDetails (split sections).")] string chainView = "chain",
-        [Description("previewPlanId from the exact reviewed chain answer. Required when more than one plan exists; intermediate reads cannot alter this plan.")] string previewPlanId = "")
+        [Description("previewPlanId from the exact reviewed chain answer. Required when more than one plan exists; intermediate reads cannot alter this plan.")] string previewPlanId = "",
+        [Description("true returns every result field and the final dimensions, for repair and debugging.")] bool fullResult = false)
     {
         ruleSet = string.IsNullOrWhiteSpace(ruleSet) ? string.Empty : TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(ruleSet);
         chainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(chainView);
         var json = RunBridge("create_dimensions_batch",
             viewId.ToString(CultureInfo.InvariantCulture), contextId ?? string.Empty, chainsJson ?? string.Empty,
-            ruleSet, chainView, previewPlanId);
+            ruleSet, chainView, previewPlanId, fullResult ? "full" : "short");
         try
         {
             var doc = JsonDocument.Parse(json);
