@@ -527,6 +527,64 @@ public sealed class DimensionChainPreviewTests
         context.Query("chain", side).GetProperty("chainPreview").EnumerateArray().Single()
             .GetProperty("chains").EnumerateArray().Single(c => c.GetProperty("kind").GetString() == kind);
 
+    // A channel 70 wide and 140 high, web 8 and flanges 10 thick; mirrored, its web on the right.
+    private static PartSolidGeometryInViewResult Channel(int sign) => Poly(10,
+        (sign * -35, -70), (sign * 35, -70), (sign * 35, -60), (sign * -27, -60),
+        (sign * -27, 60), (sign * 35, 60), (sign * 35, 70), (sign * -35, 70));
+
+    private static double[] SectionSegments(ViewDimensionContext context, string key) =>
+        context.Query("chain,chainDetails").GetProperty("chainPreview").EnumerateArray()
+            .SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .Single(chain => chain.GetProperty("key").GetString() == key)
+            .GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray();
+
+    [Theory]
+    [InlineData(1, new[] { 8d, 62 })]
+    [InlineData(-1, new[] { 62d, 8 })]
+    public void AChannelSectionIsDimensionedByItsOwnFaces(int sign, double[] web)
+    {
+        // M.294: a UPE140 riegel, refused before as neither a rectangle nor an I profile.
+        var context = Bare("SectionView", null, Channel(sign));
+        Assert.Equal(web, SectionSegments(context, "Top-profile"));
+        Assert.Equal(new[] { 10d, 120, 10 }, SectionSegments(context, "Left-profile"));
+    }
+
+    [Fact]
+    public void AnAngleSectionIsDimensionedByItsOwnFaces()
+    {
+        var context = Bare("SectionView", null, Poly(10, (0, 0), (80, 0), (80, 8), (8, 8), (8, 60), (0, 60)));
+        Assert.Equal(new[] { 8d, 72 }, SectionSegments(context, "Bottom-profile"));
+        Assert.Equal(new[] { 8d, 52 }, SectionSegments(context, "Left-profile"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-1)]
+    public void AChannelWhoseFlangeEndsAreShorterThanARoundingIsRefused(int sign)
+    {
+        // Flanges 2 thick: their ends are shorter than the shortest segment, so no level
+        // stands at the flange edges and the width 70 would be lost. Refused, not built without it.
+        var context = Bare("SectionView", null, Poly(10,
+            (sign * -35, -70), (sign * 35, -70), (sign * 35, -68), (sign * -27, -68),
+            (sign * -27, 68), (sign * 35, 68), (sign * 35, 70), (sign * -35, 70)));
+        var answer = context.Query("chain");
+        Assert.Equal("refused", answer.GetProperty("sectionPreviewStatus").GetString());
+        Assert.Contains("too short to read", answer.GetProperty("chainPreview")[0].GetProperty("chains")[0]
+            .GetProperty("incompleteReason").GetString());
+    }
+
+    [Fact]
+    public void ASectionWithASlantedFaceIsStillRefused()
+    {
+        // A channel with tapered flanges: a long face along neither axis.
+        var context = Bare("SectionView", null, Poly(10, (-35, -70), (35, -70), (35, -62), (-27, -58),
+            (-27, 58), (35, 62), (35, 70), (-35, 70)));
+        var answer = context.Query("chain");
+        Assert.Equal("refused", answer.GetProperty("sectionPreviewStatus").GetString());
+        Assert.Contains("slanted face", answer.GetProperty("chainPreview")[0].GetProperty("chains")[0]
+            .GetProperty("incompleteReason").GetString());
+    }
+
     [Fact]
     public void AFinPlateHandedToASideThatIsNotBuiltIsLocatedOnItsOwnSideByBothFaces()
     {
@@ -697,7 +755,8 @@ public sealed class DimensionChainPreviewTests
             TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts.ToDictionary(part => part.ModelId))),
             parts.Select((part, index) => new PartRoleInView(part.ModelId, "P" + part.ModelId, "P", role, index == 0)).ToArray(),
             [], [], [], [], ids);
-        return new ViewDimensionContext(7, ids[0], structural, [], new { drawingGuid = "test" },
+        // Scale 1:10.
+        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" },
             new { viewType, viewFrame = (double[]?)null }, bolts);
     }
 

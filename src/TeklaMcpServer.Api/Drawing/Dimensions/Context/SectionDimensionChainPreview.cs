@@ -108,9 +108,18 @@ internal sealed class SectionDimensionChainPreview
                 points.Select(p => new Vec3(p.Y, p.X, 0)).ToArray(), yLevels, xLevels));
         var rectangle = xLevels.Length == 2 && yLevels.Length == 2 &&
             HasRectangle(points, xLevels, yLevels);
-        if (!iProfile && !rectangle)
+        // Any other profile (a channel, an angle, a tee) whose faces all lie along the view axes:
+        // the levels are its own faces, nothing to recognize.
+        // Its outer levels must be the contour's own extent: a face shorter than a rounding (a
+        // flange 2 thick) would otherwise drop the width and leave no level at its edge.
+        var straight = Square(points, minFeatureLength);
+        var spanned = xLevels.Length >= 2 && yLevels.Length >= 2
+            && Spans(xLevels, points.Select(p => p.X)) && Spans(yLevels, points.Select(p => p.Y));
+        if (!iProfile && !rectangle && !(straight && spanned))
         {
-            reason = "main-part contour is not a verified rectangular or I profile; profile dimensions need manual selection";
+            reason = !straight
+                ? "main-part contour has a slanted face; profile dimensions need manual selection"
+                : "a face at the main-part contour's extent is too short to read; profile dimensions need manual selection";
             return false;
         }
 
@@ -261,6 +270,18 @@ internal sealed class SectionDimensionChainPreview
                     webEdges.Add(web);
         }
         return horizontalCaps == 2 && webEdges.Count == 2;
+    }
+
+    // Every edge long enough to be a face runs along X or along Y; shorter ones are roundings.
+    private static bool Square(IReadOnlyList<Vec3> points, double minLength) =>
+        points.Select((a, i) => (A: a, B: points[(i + 1) % points.Count])).All(edge =>
+            Math.Sqrt(Math.Pow(edge.A.X - edge.B.X, 2) + Math.Pow(edge.A.Y - edge.B.Y, 2)) < minLength
+            || Math.Abs(edge.A.X - edge.B.X) <= SameCoordinate || Math.Abs(edge.A.Y - edge.B.Y) <= SameCoordinate);
+
+    private static bool Spans(double[] levels, IEnumerable<double> coordinates)
+    {
+        var all = coordinates.ToArray();
+        return Math.Abs(levels[0] - all.Min()) <= SameCoordinate && Math.Abs(levels[levels.Length - 1] - all.Max()) <= SameCoordinate;
     }
 
     private static bool HasRectangle(IReadOnlyList<Vec3> points, double[] x, double[] y)

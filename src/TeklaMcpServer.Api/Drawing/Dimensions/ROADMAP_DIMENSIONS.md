@@ -55,6 +55,34 @@ Findings on the steel path (front views and sections):
    is reported in `mergedNearbyPartIds`) (2026-11-13,
    M.156 section E: the fin plate P/1638 reaching past the flanges left the right side
    without profile points, since points go to a side by the middle of the assembly, see 3).
+   Other profiles (agreed 2026-11-14, not started). M.294: the main part is a UPE140
+   channel; its contour has 3 levels on one axis and 4 on the other, so both end views
+   are refused ("not a verified rectangular or I profile") and get no dimension at all.
+   The same holds for angles, tees and tubes. The rules downstream need only the face
+   levels per axis, so only the source of the levels changes:
+   - First, the cut of the main part by the view plane. Tekla's cut is already read
+     (`PartSolidGeometry.ViewPlaneCut`) and drawn for a member running through the view
+     (`TeklaDrawingAssemblyOutlineApi.WithinDepth`). On a true cut the contour is the real
+     section, cut-outs included, so the levels come from its straight edges for any
+     profile and the rectangle/I recognition is no longer needed there.
+     Done in source 2026-11-14, not deployed: `SectionDimensionChainPreview.TryCreate`
+     also takes a contour whose every face (an edge at least the shortest segment long)
+     runs along X or Y; shorter edges are roundings. A channel, an angle or a tee is
+     dimensioned by its own faces. A contour with a long slanted face (tapered flanges of
+     UPN or IPN) is still refused, now as "main-part contour has a slanted face"; that is
+     left to the catalog step.
+   - Then the catalog, for an end view at the very end of the member where the view
+     plane only touches the end and there is no cut (likely M.294 end view 1543):
+     `LibraryProfileItem.Select(profile)`, `GetCrossSection()` corner points without
+     chamfers and `ProfileItemType` (I, U, L, T, ...), carried from the part's local axes
+     into the view. Check once on a live part where the catalog origin lies against the
+     reference line when the part is offset by its position settings. The levels the
+     contour on the view does not confirm (a coped member) refuse, as now.
+     `Tekla.Structures.Catalogs` is already referenced and mapped in the bridge config.
+   - Tests: a channel with its web left and right, an angle, a cut contour that differs
+     from the catalog, an I profile giving the same chains as today, a saved M.294 case.
+   Not covered: what an end view taken at the member's end should show when the end
+   plate lies wholly in it (M.294 end view 1543, plate P/1633).
 7. Chains always run in ascending coordinate order; the "main part start" datum of
    `steel-rules.md` is not implemented.
 8. One unread main-part flag on any part, excluded ones included, refuses the view.
@@ -360,6 +388,26 @@ Work order:
    setting to come (with the settings object), not something to tighten in the
    skill text. Both purlin sheets also show what the missing bolt and hole chains
    cost: 9 of the engineer's 33 dimensions on M.100, 11 of 18 on M.37.
+   **A repeat is the same parts measured the same way, not the same numbers (user,
+   2026-11-14).** Not started. Seen on the upright riegels M.40 and M.294: the length
+   878 and the chain 10 / 858 / 10 stand on both the front and the bottom view. The
+   overall rule calls a vertical dimension the height on a front view and the width on
+   a bottom view (`DimensionChainRepeats.Measure`), true only for a horizontal main
+   part; and a bottom view is compared only with a top view (M.214 and M.215 show
+   the same location chain on two views too). Equal numbers are not enough either: two
+   parts 878 long are two dimensions. The rule to come:
+   - two dimensions repeat each other when they measure the same faces of the same
+     parts (model ids) along the same direction in the model, on any of the front,
+     top, bottom and back views; sections and end views stay out, as now; the view
+     placed first keeps it;
+   - a chain we propose knows its parts: every point carries its part ids;
+   - a dimension already on the sheet does not: Tekla keeps only its points. First
+     record it when the batch writes it (the batch knows each point's parts), kept per
+     drawing; later, for dimensions placed by hand, find the parts by carrying the
+     points into the model and looking which parts they lie on (dearer, less sure);
+   - the direction in the model comes from the view's own axes, so how the member
+     lies on the sheet no longer matters.
+   This may still become the option above (allow or forbid repeats between views).
    Open: the left chain of F (400 / 92 / 275.9 / 36.6 / 26.4) and the 7.1 on M.85 D are
    not reviewed; M.46 D is still refused for one part on the depth boundary.
 
