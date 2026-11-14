@@ -6,9 +6,12 @@ Later source increments implement section-edge checks, position chains closed on
 far square end, cross chains from the main part and shared-group reuse. The bolt-core
 core refactor was validated in `4e926bb`. The final geometry/source contracts,
 checked-in compatibility fixtures and typed carry/repeat integration are now implemented
-in the working tree, pending an explicit build/test run; they are not deployed.
+and committed (`6560c59`, `99a0307`, `4e0110e`). As of 2026-11-14 the bridge and API are
+updated from this source, including items below still marked "done in source, not
+deployed"; the MCP server with the new tool schema is not rebuilt yet. Cold Haiku runs
+on M.298, M.187, M.116 and M.394 used the updated bridge.
 Open: the M.81 sections run (rest of step 6), fresh-placement acceptance of the refined
-section-edge rule (step 6a), validation/deployment of the final refactor, and the unfinished
+section-edge rule (step 6a), and the unfinished
 functional work in steps 7-10. Replay of saved cases is not live placement acceptance.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
@@ -834,6 +837,14 @@ Steps 1-5 done on 2026-11-13.
    Composition roadmap, not here.
 
 ## Open questions
+
+- **Found in cold Haiku runs (2026-11-14), not investigated yet.**
+  - M.394 front view: the bolt position chain ends at 3564.9 and does not reach the
+    end plate edge at 3574.9 (the plate sticks out 10 past the beam).
+  - M.116 section: the bolt chain ends look wrong (30 / 30, an end at 34).
+  - M.187 bottom view: bolts seen from below are classed `Side` and dropped; the
+    position chain starts at 0 instead of -10.
+  - Optional `Side` bolt chains: the user may want them; not now.
 
 - **Bolts over bolts are dimensioned twice (user, 2026-11-14, M.298).** A plate P/1631
   bolted to the beam has its own bolt group (11229963) standing on the same points as a

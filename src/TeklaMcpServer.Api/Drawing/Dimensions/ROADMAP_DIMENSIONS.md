@@ -44,11 +44,15 @@ implementation, compilation, automated verification and live acceptance as the
 same status. Commit/deploy only when explicitly requested.
 
 Delivery evidence (2026-11-14): Release API, bridge, controller, MCP and tests built
-in `.codex-build/dimension-correctness/`; 1754 tests passed, 1 skipped. The checked-in
+in `.codex-build/dimension-correctness/`; 1754 tests passed, 1 skipped (1756 after the
+answer-size work). The checked-in
 bolt fixtures and saved-case replay passed. Two tests for the removed, unused
 temporary-value formatter were deleted; new tests cover plans, moved-distance
 verification and compact/batch factual agreement. No deployment or live drawing
 mutation was performed. The earlier 1742/1 result belongs to the preceding delivery.
+(Historical record of that delivery. Later, on 2026-11-14, the bridge and API were
+updated and placement was run cold with Haiku; the MCP server with the new tool
+schema is not rebuilt yet. See ROADMAP_ANSWER_SIZE.md.)
 
 Implementation details and acceptance limits:
 

@@ -1,9 +1,10 @@
 # Answer Size Roadmap
 
 Created 2026-11-14, revised the same day after review.
-Status: current refactor implemented, reviewed and tested; the bridge is deployed and one
-cold Haiku run on M.394 placed 18 dimensions with no write errors, including
-`bolt-position-Bottom`. The MCP server is not rebuilt yet (details by previewPlanId).
+Status: current refactor implemented, reviewed and tested. The bridge and API are
+updated; the MCP server with the new tool schema is not rebuilt yet (details by
+previewPlanId). One cold Haiku run on M.394: no write errors, `bolt-position-Bottom`
+placed, but an eligible chain skipped by the model (open, see "Live run").
 
 Current scope: shorten the skill, separate the stored write plan from its answer,
 and remove unnecessary fields from the short answer. Preserve existing rounding
@@ -192,9 +193,116 @@ a plan is the whole published answer, so another question set gets its own plan 
 details always return the answer that named the plan; details are refused, like a
 batch, once the sheet the plan was read on has changed. 1756 tests passed, 1 skipped.
 
-Deployment requires the matching bridge/API and refreshed MCP tool schema for the
-new optional previewPlanId detail argument. No deployment, push or drawing mutation
-was performed. Only the initial roadmap was committed before implementation.
+Committed and pushed as `4e0110e`. The bridge and API are updated. The MCP server
+with the new tool schema is not rebuilt, so the optional previewPlanId detail argument
+appears only after that; placement does not need it.
+
+## Live run after the bridge update (2026-11-14)
+
+Cold Haiku run on M.394 after deleting all 18 dimensions: 18 placed in 46 s,
+15 tool calls, 61 000 tokens, no write errors. The same count is not the same set:
+one chain came, one went.
+
+- Confirmed: `bolt-position-Bottom` placed (skipped in 2 of 3 runs before the skill change).
+- **Open: the model drops eligible chains on its own.** `Top-location` on the bottom
+  view "Unten" was eligible and not marked as a repeat, but the model skipped it as a
+  "probable duplicate" of the front `Bottom-location`. It stood in the previous set.
+  The answer-size work is done; this problem is not.
+  First establish on the drawing whether this chain is really redundant. Only then
+  choose a fix; these are different decisions:
+  - if it is redundant, the repeat rule has to say so. Today the code compares a
+    `BottomView` only with the `TopView` (`DimensionChainRepeats.cs`, mirror pairs), not
+    with the `FrontView`. Do not widen the rule just to remove the model's doubt;
+  - if it is needed, the skill forbids dropping an eligible chain by the model's own
+    judgement.
+- View answers: 9 260 characters on M.394, down from 25 100. Skill: 4 920.
+
+Where the 61 000 tokens went:
+
+| Part | Tokens, approx. |
+|---|---|
+| Agent environment before the first step (Claude Code prompt, every tool description, project instructions) | 39 600 |
+| All tool answers (22 600 characters, table below) | 7 000 |
+| Model output, mostly reasoning | 6 700 |
+| Rest (turn overhead) | ~8 000 |
+
+| Tool answers | Characters |
+|---|---|
+| `get_view_dimension_context`, 4 views | 9 260 |
+| `create_dimensions_batch`, 4 views | 5 160 |
+| Skill | 4 920 |
+| `get_drawing_views` | 1 850 |
+| File and tool search | 820 |
+| Active drawing, dimension check | 460 |
+
+The first table counts the environment once. Every turn re-reads the whole
+conversation from cache. Split by token kind (Haiku prices: cache write x1.25,
+cache read x0.1, output x5 of a fresh input token):
+
+| Kind | Tokens | Weight in fresh-input tokens |
+|---|---|---|
+| Cache writes (new content) | 59 600 | ~74 500 |
+| Cache reads over 13 turns | 609 500 | ~61 000 |
+| Output | 6 700 | ~33 700 |
+
+Cutting 13 turns to about 5 removes roughly half of the cache reads: about 13 % of
+the run's cost. The environment alone costs about 49 500 on its first write plus
+about 39 600 across its cache reads: roughly half of the run. So fewer turns is not
+the largest saving; a smaller environment is.
+
+### 7. Next: fewer steps and shorter remaining answers — proposed, not started
+
+1. **Fewer turns.** Read all views in one call and write all views in one call:
+   about 5 turns instead of 13, about 13 % of a run's cost (see above). Keeping the
+   contexts of all views is not enough:
+   - plans are bound to the state of the whole sheet; writing the first view changes
+     it, and `RequireSameSheet` then refuses the plans of the other views;
+   - repeats of later views depend on the dimensions already placed.
+   A batch over views must order the views and re-plan after each write, or plan them
+   together against the sheet they will produce. Switching off the staleness guard is
+   not a solution.
+2. **Short write answer.** `create_dimensions_batch` repeats null fields
+   (`mergedIntoDimensionId`, `error`, `renderedLineStatus`) and lists every created
+   dimension again in `finalDimensions`. Keep per chain the key, the dimension id and
+   the status (`created`, `retained`, `merged`, `uncertain`, `failed`, `skipped`) with
+   its error, and a general re-read failure. Only the representation shrinks; the
+   internal write verification stays. Expected about 1 000-1 500 characters instead
+   of 5 160.
+3. **Short view list.** Placement needs id, type and name of each view, about 300
+   characters instead of 1 850.
+4. **No doubtful chains.** The model spent 2 300 output tokens deciding about
+   `Top-location` on "Unten". Depends on the open question above: first whether the
+   chain is redundant, then rule or skill.
+
+A dedicated agent (`.claude/agents/`, only the tekla tools and the skill) is the way
+to cut the 39 600-token environment, the largest single part of the cost. It is a
+separate topic: the goal is an autonomous drawing agent (views, dimensions, marks).
+
+### 8. Dedicated dimension agent — done 2026-11-14
+
+`.claude/agents/tekla-dimensions.md`: Haiku, tools `Read` plus six tekla tools
+(drawing context, views, dimensions, delete batch, view chain context, create batch).
+It reads the skill file itself, so the rules stay in one place. It may delete only
+when the task says replace or delete, and it may not drop an eligible chain by its
+own judgement. A new agent type is picked up only at session start.
+
+Cold run on M.394, task "replace": deleted 18, placed 19 on 4 views, no write errors.
+Both `bolt-position-Bottom` and the bottom-view `Top-location` were placed; every
+chain left out was marked by code (repeat, incomplete, `Side` class).
+
+| | general-purpose Haiku | `tekla-dimensions` |
+|---|---|---|
+| Environment before the first step | 39 600 | 7 700 |
+| Final conversation size | 61 000 | 24 000 |
+| Model turns / tool calls | 13 / 15 | 12 / 14 (incl. delete) |
+| Cache writes / reads / output | 59 600 / 609 500 / 6 700 | 23 100 / 179 800 / 4 700 |
+| Cost in fresh-input tokens | ~169 000 | ~70 000 |
+| Time | 46 s | 41 s |
+
+The run is about 2.4 times cheaper. The open question about `Top-location` on the
+bottom view (redundant or needed) stays open: this run placed it because the skill
+and the agent forbid dropping eligible chains, which is not yet a decision that the
+chain is needed.
 
 ## Risks
 
