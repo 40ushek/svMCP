@@ -132,13 +132,106 @@ internal static class BoltChainCandidates
         // A main part with no axis (a plate) offers no position chain at all.
         if (mainStart is { Length: >= 2 } && mainEnd is { Length: >= 2 } && settings.PositionBoltsTo != BoltPositionTo.None
             && Position(groups, mainPartIds, contours, mainStart, mainEnd, settings, geometries, gap, tolerance) is { } position)
+        {
             result.Add(position);
+            if (position.BuiltRefusal == null)
+                AcrossFromMainPart(result, position, groups, contours, geometries, gap, tolerance);
+        }
         return OverMainPartBolts(result, boltsOf, tolerance);
+    }
+
+    // Across the main part, the bolts of a secondary part the position chain holds are measured from
+    // the main part's edges too, as the plant draws (user, 2026-11-14; M.298: the plate at x 1220
+    // gave 54 / 80 / 55 from its own edges where the plate at x 300 gave 60 / 80 / 60 from the beam).
+    // One chain per chain of the secondary part across, over all its bolts: only where every one of
+    // them lies inside the main part, off its edge, and each end point of the chain stands on a main
+    // part edge running straight through it. The new chain needs the position chain created (decided
+    // last, with the view frame), and the secondary part's chain is linked to it and left out only
+    // once it is created; otherwise that chain stays as it was.
+    private static void AcrossFromMainPart(List<BoltChainCandidate> result, BoltChainCandidate position, GroupInfo[] groups,
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
+        IReadOnlyDictionary<int, BoltGroupGeometry> geometries, double gap, double tolerance)
+    {
+        if (position.PartId is not { } mainId || contours == null || !contours.TryGetValue(mainId, out var mainOutline)
+            || Bounds(contours, mainId) is not { } box) return;
+        var axis = 1 - position.Axis;
+        var across = position.Axis;
+        var edges = BoltEdgeDistancePreview.Flatten(mainOutline).Where(node => !node.IsHole)
+            .SelectMany(node => node.Polygon.Select((point, index) => (A: point, B: node.Polygon[(index + 1) % node.Polygon.Count])))
+            .ToArray();
+        // A point stands on a main part edge that runs along the chain's cross direction through it.
+        bool OnEdge(double[] point) => edges.Any(edge => Math.Abs(edge.A[axis] - point[axis]) <= tolerance
+            && Math.Abs(edge.B[axis] - point[axis]) <= tolerance
+            && Math.Min(edge.A[across], edge.B[across]) <= point[across] + tolerance
+            && Math.Max(edge.A[across], edge.B[across]) >= point[across] - tolerance);
+        var held = new HashSet<int>(position.GroupIds);
+        var byId = groups.ToDictionary(group => group.Id);
+        var replaced = result.Where(chain => chain.Kind == BoltChainCandidate.PartKind && !chain.MainPart && chain.Axis == axis
+            && chain.BuiltRefusal == null && chain.OverMainPartChain == null && chain.GroupIds.Count > 0
+            && chain.GroupIds.All(id => held.Contains(id) && byId.ContainsKey(id))).ToArray();
+        var acrossByGroups = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var own in replaced)
+        {
+            // Several secondary parts may share all the same bolt groups. Reuse their chain by
+            // source identity: its projected row points retain only one bolt per row.
+            var groupKey = string.Join("-", own.GroupIds.OrderBy(id => id));
+            if (acrossByGroups.TryGetValue(groupKey, out var sharedKey))
+            {
+                result[result.IndexOf(own)] = own.Over(sharedKey);
+                continue;
+            }
+            var bolts = own.GroupIds.SelectMany(id => byId[id].Positions).ToArray();
+            if (BoltPartChainPreview.BoltsOnOneContour(mainOutline, bolts, tolerance, out _, out var onEdge) != null || onEdge)
+                continue;
+            // Bolts standing over the main part's own bolts already have its chain across (bolts over bolts).
+            if (result.Any(chain => chain.Kind == BoltChainCandidate.PartKind && chain.MainPart && chain.Axis == axis
+                    && bolts.All(bolt => chain.Points.Any(point => Math.Abs(point.X - bolt[0]) <= tolerance
+                        && Math.Abs(point.Y - bolt[1]) <= tolerance))))
+                continue;
+            var (low, high) = (box.Min[axis], box.Max[axis]);
+            var center = bolts.Average(point => point[across]);
+            (LinePlacement Placement, string Key, (double[][] Points, string? Refusal) Chain)? best = null;
+            var bestReach = double.MaxValue;
+            var near = Placement(contours, mainId, axis, center, gap, tolerance);
+            foreach (var sign in new[] { near.Sign, -near.Sign })
+            {
+                // One point per row across, carried by the bolt nearest the line; the main part's edges close it.
+                var rows = bolts.OrderBy(point => point[axis]).Aggregate(new List<List<double[]>>(), (list, point) => {
+                    if (list.Count == 0 || Math.Abs(point[axis] - list[list.Count - 1][0][axis]) > tolerance) list.Add([]);
+                    list[list.Count - 1].Add(point);
+                    return list;
+                }).Select(row => row.OrderByDescending(point => sign * point[across]).First()).ToArray();
+                var x = rows.Max(point => sign * point[across]) * sign;
+                double[] At(double along) => axis == 0 ? new[] { along, x } : new[] { x, along };
+                var points = new[] { At(low) }.Concat(rows).Concat([At(high)]).ToArray();
+                if (points.Skip(1).Select((point, index) => point[axis] - points[index][axis]).Any(value => value <= tolerance)) continue;
+                var placement = Placement(contours, mainId, axis, center, gap, tolerance, sign);
+                var key = $"bolt-part-{mainId}-groups-{groupKey}-{placement.Side}";
+                var side = Beside(contours, mainId, axis, (placement, key, (points, (string?)null)), bolts, gap, tolerance);
+                if (side.Placement.Refusal != null || side.Chain.Points.Length < 2) continue;
+                // The end points as finally placed must stand on the main part's edges.
+                if (!OnEdge(side.Chain.Points[0]) || !OnEdge(side.Chain.Points[side.Chain.Points.Length - 1])) continue;
+                var reach = Math.Abs(side.Chain.Points[0][across] + side.Placement.Sign * side.Placement.Offset(side.Chain.Points) - center);
+                if (reach < bestReach - tolerance) (best, bestReach) = (side, reach);
+            }
+            if (best is not { } chosen) continue;
+            var (line, chainKey, (chainPoints, _)) = chosen;
+            result.Add(new BoltChainCandidate(chainKey, BoltChainCandidate.PartKind, own.GroupIds[0], mainId, true, BoltGroupViewClass.Plan,
+                axis, RulePoints(chainKey, own.GroupIds[0], chainPoints),
+                chainPoints.Skip(1).Select((point, index) => Math.Round(point[axis] - chainPoints[index][axis], 3)), null, true,
+                line.Normal, line.Offset(chainPoints), chainPoints.Select(point => (object)new { point }).ToArray(),
+                Holes(own.GroupIds, geometries, mainId), groupIds: own.GroupIds, requiresChain: position.Key));
+            acrossByGroups.Add(groupKey, chainKey);
+            var index = result.IndexOf(own);
+            result[index] = own.Over(chainKey);
+        }
     }
 
     // Tekla's Position bolts to: Main part, measured here from the main part's physical start (the
     // plant's practice; Tekla takes the reference line): one chain along the main part through every
-    // bolt column in order, ending at the last column (M.298: 40 / 260 / 760 / 60 / 100 / 660 / 2800).
+    // bolt column in order, closed on the far end (user, 2026-11-14; M.298:
+    // 40 / 260 / 760 / 60 / 100 / 660 / 2800 / 40). A far end that is not square leaves the chain open
+    // at its last column and says so.
     // The start is the end the part's start point lies at, so a mirrored view or a member drawn the
     // other way starts at the same end; the datum lies on that end's contour, which must be square.
     // Plan groups of the main part take part, and with Secondary part: By bolt or By both the groups
@@ -156,8 +249,10 @@ internal static class BoltChainCandidates
         // Every bolt of a group in one outer contour of one of its parts, by the same check as its
         // part chains: a group whose bolts stand outside its parts, or each in another contour, is
         // left out (a missing usable edge does not matter here).
+        // A Plan group with a center on its part's edge is refused by its part chains (provisional);
+        // it stays out of the position chain too.
         bool OnOnePart(GroupInfo group) => contours != null && group.Parts.Any(part => contours.TryGetValue(part, out var outline)
-            && BoltPartChainPreview.BoltsOnOneContour(outline, group.Positions, tolerance, out _, out _) == null);
+            && BoltPartChainPreview.BoltsOnOneContour(outline, group.Positions, tolerance, out _, out var onEdge) == null && !onEdge);
         var taking = groups.Where(group => group.ViewClass == BoltGroupViewClass.Plan
             && group.Admitted && group.Positions.Length > 0 && group.Parts.Length > 0
             && (group.Parts.Contains(id) || bySecondary) && OnOnePart(group)).ToArray();
@@ -180,34 +275,50 @@ internal static class BoltChainCandidates
         if (taking.Length == 0) return null;
         groupIds = taking.Select(group => group.Id).OrderBy(groupId => groupId).ToArray();
         var datum = forward > 0 ? box.Min[axis] : box.Max[axis];
-        var endEdges = BoltEdgeDistancePreview.Flatten(contours![mainId]).Where(node => !node.IsHole)
+        var far = forward > 0 ? box.Max[axis] : box.Min[axis];
+        var outline = BoltEdgeDistancePreview.Flatten(contours![mainId]).Where(node => !node.IsHole)
             .SelectMany(node => node.Polygon.Select((point, index) => (A: point, B: node.Polygon[(index + 1) % node.Polygon.Count])))
-            .Where(edge => Math.Abs(edge.A[axis] - datum) <= tolerance && Math.Abs(edge.B[axis] - datum) <= tolerance
-                && Math.Abs(edge.A[across] - edge.B[across]) > tolerance).ToArray();
+            .ToArray();
+        // The square edges of an end of the main part: across it, at that end's coordinate.
+        (double[] A, double[] B)[] EndAt(double at) => outline.Where(edge => Math.Abs(edge.A[axis] - at) <= tolerance
+            && Math.Abs(edge.B[axis] - at) <= tolerance && Math.Abs(edge.A[across] - edge.B[across]) > tolerance).ToArray();
+        var endEdges = EndAt(datum);
         if (endEdges.Length == 0) return Refused("the start end of the main part is not square on this view");
         var bolts = taking.SelectMany(group => group.Positions).ToArray();
         // The line stands on the side of the main part the bolts stand nearer to.
         var sign = bolts.Average(point => point[across]) >= (box.Min[across] + box.Max[across]) / 2 ? 1 : -1;
-        var datumAcross = sign > 0 ? endEdges.Max(edge => Math.Max(edge.A[across], edge.B[across]))
-            : endEdges.Min(edge => Math.Min(edge.A[across], edge.B[across]));
+        double Outer((double[] A, double[] B)[] edges) => sign > 0 ? edges.Max(edge => Math.Max(edge.A[across], edge.B[across]))
+            : edges.Min(edge => Math.Min(edge.A[across], edge.B[across]));
+        var datumAcross = Outer(endEdges);
         // One point per column; the column's bolt nearest the line carries it.
         var columns = bolts.OrderBy(point => forward * point[axis]).Aggregate(new List<List<double[]>>(), (list, point) => {
             if (list.Count == 0 || Math.Abs(point[axis] - list[list.Count - 1][0][axis]) > tolerance) list.Add([]);
             list[list.Count - 1].Add(point);
             return list;
         }).Select(column => column.OrderByDescending(point => sign * point[across]).First()).ToArray();
-        var first = axis == 0 ? new[] { datum, datumAcross } : new[] { datumAcross, datum };
-        var points = new[] { first }.Concat(columns).ToArray();
+        double[] At(double along, double acrossAt) => axis == 0 ? new[] { along, acrossAt } : new[] { acrossAt, along };
+        var points = new[] { At(datum, datumAcross) }.Concat(columns).ToArray();
+        if (points.Skip(1).Select((point, index) => Math.Abs(point[axis] - points[index][axis])).Any(value => value <= tolerance))
+            return Refused("a bolt column stands on the start end of the main part");
+        // Closed on the far end, on the same side as the datum; a column on that end closes it already.
+        string? remark = null;
+        if (Math.Abs(far - points[points.Length - 1][axis]) > tolerance)
+        {
+            var farEdges = EndAt(far);
+            if (farEdges.Length > 0) points = points.Concat([At(far, Outer(farEdges))]).ToArray();
+            else remark = "the far end of the main part is not square on this view: the chain is not closed";
+        }
         var segments = points.Skip(1).Select((point, index) => Math.Round(Math.Abs(point[axis] - points[index][axis]), 3)).ToArray();
-        if (segments.Any(value => value <= tolerance)) return Refused("a bolt column stands on the start end of the main part");
         var center = bolts.Average(point => point[across]);
-        var placement = Placement(contours, mainId, axis, center, gap, tolerance, sign);
+        // The line runs the whole main part, end to end: every part standing out of it along the way
+        // is in the way, a part reaching back into the main part included (a plate at the far end).
+        var placement = Placement(contours, mainId, axis, center, gap, tolerance, sign, skipUnder: false);
         var key = $"bolt-position-{placement.Side}";
         return new BoltChainCandidate(key, BoltChainCandidate.PositionKind, groupIds[0], mainId, true,
             BoltGroupViewClass.Plan, axis, RulePoints(key, groupIds[0], points), segments, placement.Refusal, true,
             placement.Normal, placement.Offset(points),
             points.Skip(1).Select(point => (object)new { point }).ToArray(), Holes(groupIds, geometries, mainId),
-            groupIds: groupIds);
+            groupIds: groupIds, remark: remark);
     }
 
     // Bolts of a secondary part standing on the very points of the main part's bolts (a plate bolted
@@ -269,7 +380,7 @@ internal static class BoltChainCandidates
     // an end of the span is not crossed): an end plate
     // standing past the end of a beam pushes the line of the beam's bolts out with it.
     private static LinePlacement Placement(IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
-        int partId, int axis, double center, double gap, double touch, int? outward = null)
+        int partId, int axis, double center, double gap, double touch, int? outward = null, bool skipUnder = true)
     {
         var across = 1 - axis;
         var bounds = Bounds(contours, partId);
@@ -280,7 +391,7 @@ internal static class BoltChainCandidates
         double Clear(double[][] points)
         {
             var box = bounds!.Value;
-            var bound = ClearPast(sign > 0 ? box.Max[across] : box.Min[across], sign, axis, points, others, gap, touch);
+            var bound = ClearPast(sign > 0 ? box.Max[across] : box.Min[across], sign, axis, points, others, gap, touch, skipUnder);
             return Math.Max(0, sign * (bound - points[0][across]));
         }
         return new LinePlacement(side, sign, new DimensionDirection(axis == 0 ? 0 : sign, axis == 0 ? sign : 0),

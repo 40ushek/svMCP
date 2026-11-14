@@ -68,6 +68,8 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
                 ["viewClass"] = candidate.ViewClass.ToString(), ["baseOffset"] = candidate.BaseOffset,
                 ["sources"] = candidate.Sources, ["holes"] = candidate.Holes,
                 ["overMainPartChain"] = candidate.OverMainPartChain ?? "",
-                ["groupIds"] = candidate.GroupIds.ToArray()
+                ["groupIds"] = candidate.GroupIds.ToArray(),
+                ["remark"] = candidate.Remark ?? "",
+                ["requiresChain"] = candidate.RequiresChain ?? ""
             });
 }

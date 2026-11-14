@@ -72,7 +72,7 @@ and the rows of side chains that will be placed. An incomplete bolt read creates
 the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
 
 Since 2026-11-14 the row also offers a `position` chain, `bolt-position-<side>`: along
-the main part from its physical start through every bolt column (Tekla's *Position
+the main part from its physical start through every bolt column to its far end (Tekla's *Position
 bolts to: Main part*, measured from the end, not the reference line). Once it is created,
 the part chains along the main part whose groups it holds say "bolt positions are given
 by" it. Bolt-chain settings come from `%LOCALAPPDATA%\svMCP\settings\bolt-chains.json`,

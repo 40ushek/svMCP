@@ -852,13 +852,13 @@ public sealed class BoltChainRuleTests
     // its own column at x 520 joining it to a member outside the assembly (M.298, the plate at 1220).
     private static ViewDimensionContext PositionBeam(double[]? viewFrame = null, bool reversed = false,
         (double, double)[]? beamOutline = null, double startX = 0, bool edgelessPlate = false, string viewType = "FrontView",
-        double halfHeight = 100)
+        double halfHeight = 100, double plateColumn = 520)
     {
         BoltGroupGeometry Column(int id, int part, double x) => new() { ModelId = id, Shape = "BoltArray",
             FirstPosition = [x, -40, 0], SecondPosition = [x, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = part,
             Positions = [new() { Index = 0, Point = [x, -40, 0] }, new() { Index = 1, Point = [x, 40, 0] }] };
         var bolts = ViewBoltGeometrySnapshot.Capture(7, [10, 11], id => new() { Success = true, ViewId = 7, PartId = id,
-                BoltGroups = id == 10 ? [Column(41, 10, 40), Column(42, 10, 300), Column(43, 10, 860)] : [Column(44, 11, 520)] },
+                BoltGroups = id == 10 ? [Column(41, 10, 40), Column(42, 10, 300), Column(43, 10, 860)] : [Column(44, 11, plateColumn)] },
             new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true);
         var beam = beamOutline == null ? DimensionChainPreviewTests.Solid(10, 0, 900, -halfHeight, halfHeight)
             : DimensionChainPreviewTests.Poly(10, beamOutline);
@@ -866,7 +866,7 @@ public sealed class BoltChainRuleTests
         beam.EndPoint = reversed ? [startX, 0, 0] : [900, 0, 0];
         var plate = edgelessPlate
             ? DimensionChainPreviewTests.Poly(11, (480, -95), (560, -95), (560, -60), (520, 95), (480, -60))
-            : DimensionChainPreviewTests.Solid(11, 480, 560, -95, 95);
+            : DimensionChainPreviewTests.Solid(11, plateColumn - 40, plateColumn + 40, -95, 95);
         return DimensionChainPreviewTests.Framed(viewType, bolts, viewFrame, beam, plate);
     }
 
@@ -904,8 +904,8 @@ public sealed class BoltChainRuleTests
         var row = BoltRowOf(PositionBeam());
         var position = PositionChain(row);
         Assert.False(position.GetProperty("incomplete").GetBoolean());
-        // Datum 0, then the columns 40, 300, 520 (the plate's), 860; it ends at the last column.
-        Assert.Equal(new[] { 40d, 260, 220, 340 }, Numbers(position, "segments"));
+        // Datum 0, then the columns 40, 300, 520 (the plate's), 860, closed on the far end at 900.
+        Assert.Equal(new[] { 40d, 260, 220, 340, 40 }, Numbers(position, "segments"));
         // The chains along the beam it holds are given by it; the cross chains stay.
         Assert.Empty(CreatedAlong(row));
         Assert.Contains(row, chain => chain.GetProperty("incompleteReason").GetString()?.Contains("given by bolt-position-") == true);
@@ -924,15 +924,15 @@ public sealed class BoltChainRuleTests
         Assert.NotEmpty(CreatedAlong(today));
         // ByPart keeps the plate's column out of the chain, the beam's stay.
         var byPart = PositionChain(BoltRowOf(context, new BoltChainSettings(secondaryPart: BoltSecondaryPartPosition.ByPart)));
-        Assert.Equal(new[] { 40d, 260, 560 }, Numbers(byPart, "segments"));
+        Assert.Equal(new[] { 40d, 260, 560, 40 }, Numbers(byPart, "segments"));
     }
 
     [Fact]
     public void AMemberDrawnTheOtherWayStartsAtTheSameEnd()
     {
-        // Drawn from x 900: the chain runs from the beam's start at x 900 back to the column at x 40.
+        // Drawn from x 900: the chain runs from the beam's start at x 900 back to its end at x 0.
         var position = PositionChain(BoltRowOf(PositionBeam(reversed: true)));
-        Assert.Equal(new[] { 40d, 340, 220, 260 }, Numbers(position, "segments"));
+        Assert.Equal(new[] { 40d, 340, 220, 260, 40 }, Numbers(position, "segments"));
         Assert.Equal(900, position.GetProperty("points")[0][0].GetDouble(), 6);
     }
 
@@ -942,7 +942,7 @@ public sealed class BoltChainRuleTests
         // The axis starts 10 before the beam's end contour (an offset reference line, M.298): the
         // chain still starts on the end contour at x 0.
         var position = PositionChain(BoltRowOf(PositionBeam(startX: -10)));
-        Assert.Equal(new[] { 40d, 260, 220, 340 }, Numbers(position, "segments"));
+        Assert.Equal(new[] { 40d, 260, 220, 340, 40 }, Numbers(position, "segments"));
     }
 
     [Fact]
@@ -953,6 +953,16 @@ public sealed class BoltChainRuleTests
         var position = PositionChain(row);
         Assert.Contains("not square", position.GetProperty("incompleteReason").GetString());
         Assert.NotEmpty(CreatedAlong(row));
+    }
+
+    [Fact]
+    public void AnUnsquareFarEndLeavesTheChainOpenAndSaysSo()
+    {
+        // The far end is raked: the chain is created, open at its last column, with a remark.
+        var position = PositionChain(BoltRowOf(PositionBeam(beamOutline: [(0, -100), (900, -100), (880, 100), (0, 100)])));
+        Assert.False(position.GetProperty("incomplete").GetBoolean());
+        Assert.Equal(new[] { 40d, 260, 220, 340 }, Numbers(position, "segments"));
+        Assert.Contains("not closed", position.GetProperty("remark").GetString());
     }
 
     [Fact]
@@ -976,7 +986,7 @@ public sealed class BoltChainRuleTests
             [10], [10], contours, (_, _, _) => true, new BoltChainSettings(), lineGap: 80, mainStart: [0, 0, 0], mainEnd: [900, 0, 0]),
             c => c.Kind == BoltChainCandidate.PositionKind);
         Assert.Equal(new[] { 41 }, position.GroupIds);
-        Assert.Equal(new[] { 40d }, position.Segments);
+        Assert.Equal(new[] { 40d, 860 }, position.Segments);
     }
 
     [Theory]
@@ -1019,11 +1029,192 @@ public sealed class BoltChainRuleTests
     }
 
     [Fact]
+    public void ThePositionLineClearsAPlateStandingOutOfTheBeamNearItsFarEnd()
+    {
+        // A plate at x 800..850 standing out of the beam top (y -50..300): the closed chain reaches
+        // x 900, so its line must stand past the plate, not through it (review).
+        BoltGroupGeometry Column(double x) => new() { ModelId = 41, Shape = "BoltArray",
+            FirstPosition = [x, -40, 0], SecondPosition = [x, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [x, -40, 0] }, new() { Index = 1, Point = [x, 40, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -100], [900, -100], [900, 100], [0, 100]] }],
+            [11] = [new OutlineTreeNodeResult { Polygon = [[800, -50], [850, -50], [850, 300], [800, 300]] }] };
+        var position = Assert.Single(BoltChainCandidates.Build(Snapshot(Column(40)), [10, 11], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80, mainStart: [0, 0, 0], mainEnd: [900, 0, 0]),
+            c => c.Kind == BoltChainCandidate.PositionKind);
+        Assert.Equal(new[] { 40d, 860 }, position.Segments);
+        // The line stands one gap past the bound the offset leads to: past the plate top at 300.
+        var line = position.Points[0].Y + position.BaseOffset + 80;
+        Assert.True(line >= 300 + 80 - 1e-6, $"line at {line} crosses the plate");
+    }
+
+    [Fact]
+    public void BoltsOnTheBeamEdgeStayOutOfThePositionChain()
+    {
+        // Bolts on the beam's top edge (y 100): the part chains refuse them; the position chain too.
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [20, 100, 0],
+            SecondPosition = [80, 100, 0], Axis = [0, 0, 1], PartToBeBoltedId = 10,
+            Positions = [new() { Index = 0, Point = [20, 100, 0] }, new() { Index = 1, Point = [80, 100, 0] }] };
+        var contours = new Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>> {
+            [10] = [new OutlineTreeNodeResult { Polygon = [[0, -100], [900, -100], [900, 100], [0, 100]] }] };
+        Assert.DoesNotContain(BoltChainCandidates.Build(Snapshot(group), [10], [10], contours, (_, _, _) => true,
+            new BoltChainSettings(), lineGap: 80, mainStart: [0, 0, 0], mainEnd: [900, 0, 0]),
+            c => c.Kind == BoltChainCandidate.PositionKind);
+    }
+
+    [Fact]
+    public void ThePlatesBoltsAreMeasuredAcrossFromTheBeamFlanges()
+    {
+        // The plate P11 at x 480..560 (y -95..95) has its own column at x 520 (y -40, 40), with no
+        // holes of the beam under it: across, it is measured from the beam flanges (y -100, 100),
+        // 60 / 80 / 60, not from the plate edges, 55 / 80 / 55 (M.298, the plate at x 1220).
+        var row = BoltRowOf(PositionBeam());
+        var created = row.Where(chain => !chain.GetProperty("incomplete").GetBoolean()
+            && chain.GetProperty("chainKind").GetString() == BoltChainCandidate.PartKind
+            && chain.GetProperty("boltGroupId").GetInt32() == 44
+            && (chain.GetProperty("key").GetString()!.EndsWith("-Left") || chain.GetProperty("key").GetString()!.EndsWith("-Right")))
+            .ToArray();
+        var across = Assert.Single(created);
+        Assert.StartsWith("bolt-part-10-groups-44-", across.GetProperty("key").GetString());
+        Assert.Equal(new[] { 60d, 80, 60 }, Numbers(across, "segments"));
+        Assert.Contains(row, chain => chain.GetProperty("key").GetString()!.StartsWith("bolt-part-11-groups-44-")
+            && chain.GetProperty("incompleteReason").GetString()?.Contains("from the main part by bolt-part-10-groups-44-") == true);
+    }
+
+    [Fact]
+    public void APlateOverTheBeamsBoltsGetsNoSecondChainAcross()
+    {
+        // The plate column over the beam's column at x 300 (the plate moved there): the beam's own
+        // chain across already holds those bolts; no second chain from the beam flanges.
+        var row = BoltRowOf(PositionBeam(plateColumn: 300));
+        var across = row.Where(chain => !chain.GetProperty("incomplete").GetBoolean()
+            && chain.GetProperty("chainKind").GetString() == BoltChainCandidate.PartKind
+            && (chain.GetProperty("key").GetString()!.EndsWith("-Left") || chain.GetProperty("key").GetString()!.EndsWith("-Right"))
+            && chain.GetProperty("points")[1][0].GetDouble() is > 290 and < 310).ToArray();
+        Assert.Equal("bolt-part-10-groups-42-", Assert.Single(across).GetProperty("key").GetString()![..23]);
+    }
+
+    // A beam (the outline given, 0..900 by default) drawn from x 0 with a column at x 40, a plate
+    // P11 on it and the plate's groups given as (id, x, y0, y1); every group is merged as the rules say.
+    private static JsonElement[] AcrossCase((double, double)[]? beamOutline, (double X0, double X1, double Y0, double Y1) plate,
+        (int Id, double X, double Y0, double Y1)[] plateGroups, double[]? viewFrame = null)
+    {
+        BoltGroupGeometry Column(int id, int part, double x, double y0, double y1) => new() { ModelId = id, Shape = "BoltArray",
+            FirstPosition = [x, y0, 0], SecondPosition = [x, y1, 0], Axis = [0, 0, 1], PartToBeBoltedId = part,
+            Positions = [new() { Index = 0, Point = [x, y0, 0] }, new() { Index = 1, Point = [x, y1, 0] }] };
+        var bolts = ViewBoltGeometrySnapshot.Capture(7, [10, 11], id => new() { Success = true, ViewId = 7, PartId = id,
+                BoltGroups = id == 10 ? [Column(41, 10, 40, -40, 40)]
+                    : plateGroups.Select(group => Column(group.Id, 11, group.X, group.Y0, group.Y1)).ToList() },
+            new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true);
+        var beam = beamOutline == null ? DimensionChainPreviewTests.Solid(10, 0, 900, -100, 100)
+            : DimensionChainPreviewTests.Poly(10, beamOutline);
+        beam.StartPoint = [0, 0, 0];
+        beam.EndPoint = [900, 0, 0];
+        return BoltRowOf(DimensionChainPreviewTests.Framed("FrontView", bolts, viewFrame, beam,
+            DimensionChainPreviewTests.Solid(11, plate.X0, plate.X1, plate.Y0, plate.Y1)));
+    }
+
+    // The created chains across (Left / Right) of the given part.
+    private static string[] CreatedAcross(JsonElement[] row, int partId) => row.Where(chain => !chain.GetProperty("incomplete").GetBoolean()
+            && chain.GetProperty("chainKind").GetString() == BoltChainCandidate.PartKind
+            && chain.GetProperty("key").GetString()!.StartsWith($"bolt-part-{partId}-")
+            && (chain.GetProperty("key").GetString()!.EndsWith("-Left") || chain.GetProperty("key").GetString()!.EndsWith("-Right")))
+        .Select(chain => chain.GetProperty("key").GetString()!).ToArray();
+
+    [Fact]
+    public void AMergedPlateChainWithABoltOffTheBeamKeepsItsOwnChainAcross()
+    {
+        // Two groups of a tall plate merged across: 44 inside the beam, 45 above it (y 150, 190).
+        // The chain of both stays the plate's: a chain from the beam would lose group 45 (review).
+        var row = AcrossCase(null, (480, 560, -95, 250), [(44, 520, -40, 40), (45, 520, 150, 190)]);
+        Assert.Contains(CreatedAcross(row, 11), key => key.StartsWith("bolt-part-11-groups-44-45-"));
+        Assert.DoesNotContain(CreatedAcross(row, 10), key => key.Contains("groups-44"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TwoPlatesSharingABoltGroupUseOneMainPartChainAcross(bool multipleColumns)
+    {
+        var group = new BoltGroupGeometry { ModelId = 44, Shape = "BoltArray", Axis = [0, 0, 1],
+            PartToBeBoltedId = 11, PartToBoltToId = 12,
+            FirstPosition = [500, -40, 0], SecondPosition = multipleColumns ? [540, -40, 0] : [500, 40, 0] };
+        foreach (var x in multipleColumns ? new[] { 500d, 540d } : new[] { 500d })
+            foreach (var y in new[] { -40d, 40d })
+                group.Positions.Add(new BoltPointGeometry { Index = group.Positions.Count, Point = [x, y, 0] });
+        var beam = DimensionChainPreviewTests.Solid(10, 0, 900, -100, 100);
+        beam.StartPoint = [0, 0, 0];
+        beam.EndPoint = [900, 0, 0];
+        var context = DimensionChainPreviewTests.Framed("FrontView", SnapshotOf(group), null, beam,
+            DimensionChainPreviewTests.Solid(11, 480, 560, -95, 95),
+            DimensionChainPreviewTests.Solid(12, 480, 560, -95, 95));
+        var rows = context.Query("chain").GetProperty("chainPreview");
+        var row = rows.EnumerateArray().Single(r => r.GetProperty("side").GetString() == "Bolt")
+            .GetProperty("chains").EnumerateArray().ToArray();
+        var key = Assert.Single(CreatedAcross(row, 10));
+        Assert.Equal(row.Length, row.Select(chain => chain.GetProperty("key").GetString()).Distinct().Count());
+        foreach (var partId in new[] { 11, 12 })
+        {
+            Assert.Empty(CreatedAcross(row, partId));
+            Assert.Contains(row, chain => chain.GetProperty("key").GetString()!.StartsWith($"bolt-part-{partId}-")
+                && chain.GetProperty("incompleteReason").GetString() == $"the same bolts are dimensioned from the main part by {key}");
+        }
+        Assert.Single(ViewDimensionContextProvider.IndexPreviewChains(rows, [key]));
+        var writes = new List<CreateDimensionRequest>();
+        Provider(context, writes).CreateBatch(new CreateDimensionsBatchRequest {
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel", Chains = [new() { Preview = key }]
+        });
+        Assert.Equal(12, Assert.Single(writes).Points.Length);
+    }
+
+    [Fact]
+    public void ABeamEdgeNotRunningThroughTheEndPointKeepsThePlatesChainAcross()
+    {
+        // The beam's bottom edge is notched at the plate's column (y -80 for x 510..530): the end
+        // point (520, -100) would lie off the beam. No chain from the beam; the plate keeps its own.
+        var row = AcrossCase([(0, -100), (510, -100), (510, -80), (530, -80), (530, -100), (900, -100), (900, 100), (0, 100)],
+            (480, 560, -60, 95), [(44, 520, -40, 40)]);
+        Assert.DoesNotContain(CreatedAcross(row, 10), key => key.Contains("groups-44"));
+        Assert.Contains(CreatedAcross(row, 11), key => key.StartsWith("bolt-part-11-groups-44-"));
+    }
+
+    [Fact]
+    public void ARefusedPositionChainLeavesThePlatesChainAcross()
+    {
+        // The frame starts at x 10: the position chain, starting at x 0, is refused; the chain from
+        // the beam is refused with it and the plate keeps its own (review).
+        var row = AcrossCase(null, (480, 560, -95, 95), [(44, 520, -40, 40)], viewFrame: [10, -300, 1000, 300]);
+        Assert.DoesNotContain(CreatedAcross(row, 10), key => key.Contains("groups-44"));
+        Assert.Contains(row, chain => chain.GetProperty("key").GetString()!.StartsWith("bolt-part-10-groups-44-")
+            && chain.GetProperty("incompleteReason").GetString()!.Contains("created only with bolt-position-"));
+        Assert.Contains(CreatedAcross(row, 11), key => key.StartsWith("bolt-part-11-groups-44-"));
+    }
+
+    [Fact]
+    public void WithAllChecksPassedThePlateIsMeasuredFromTheBeam()
+    {
+        // The same plate with nothing in the way: across from the beam, the plate's own chain left out.
+        var row = AcrossCase(null, (480, 560, -95, 95), [(44, 520, -40, 40)]);
+        Assert.Contains(CreatedAcross(row, 10), key => key.StartsWith("bolt-part-10-groups-44-"));
+        Assert.Empty(CreatedAcross(row, 11));
+    }
+
+    [Fact]
+    public void WithoutThePositionChainThePlatesBoltsKeepTheirOwnChainAcross()
+    {
+        var row = BoltRowOf(PositionBeam(), new BoltChainSettings(positionBoltsTo: BoltPositionTo.None));
+        Assert.DoesNotContain(row, chain => chain.GetProperty("key").GetString()!.StartsWith("bolt-part-10-groups-44-"));
+        Assert.Contains(row, chain => !chain.GetProperty("incomplete").GetBoolean()
+            && chain.GetProperty("key").GetString()!.StartsWith("bolt-part-11-groups-44-")
+            && Numbers(chain, "segments").Select(value => Math.Round(value, 3)).SequenceEqual(new[] { 55d, 80, 55 }));
+    }
+
+    [Fact]
     public void APositionChainMirroringOneOnTheFrontViewIsARepeat()
     {
         // A back view: the front view already holds the same chain, read the other way.
         var answer = PositionBeam(viewType: "BackView").Query("chain,repeats",
-            readSheet: () => [new DimensionChainRepeats.Placed(900, 99, "FrontView", [340, 220, 260, 40], true)]);
+            readSheet: () => [new DimensionChainRepeats.Placed(900, 99, "FrontView", [40, 340, 220, 260, 40], true)]);
         var position = PositionChain(answer.GetProperty("chainPreview").EnumerateArray()
             .Single(row => row.GetProperty("side").GetString() == "Bolt").GetProperty("chains").EnumerateArray().ToArray());
         Assert.True(position.GetProperty("incomplete").GetBoolean());

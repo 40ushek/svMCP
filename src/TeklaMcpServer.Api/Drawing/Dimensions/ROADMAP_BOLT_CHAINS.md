@@ -640,11 +640,42 @@ Steps 1-5 done on 2026-11-13.
    The batch takes the line of a chain from its first point written, as the bolt rows do
    (review: a position chain of a member drawn the other way starts at its far end, and the
    line was taken from its smallest coordinate, so the overall landed on it).
-   Not done yet: reporting the span not covered when the overall is missing.
-   Decided (review, 2026-11-14): the chain does not close to the far end when the overall
-   is given on another view; it is on the sheet. When the overall is missing because it
-   was refused or its write failed, the answer reports the uncovered span instead of
-   changing what the chain holds.
+   Decided by the user (2026-11-14), replacing the review's "do not close": the chain is
+   always closed on the far end of the main part, whatever the overall
+   (M.298: 40 / 260 / 760 / 60 / 100 / 660 / 2800 / 40). The closing point lies on the far
+   end's square contour, on the datum's side; a column standing on that end closes it
+   already; a far end that is not square leaves the chain open at its last column and the
+   chain says so in `remark`, it is not refused. Done in source, not deployed.
+   Review of the closing (2026-11-14): the position line clears every part standing out of
+   the main part along its whole span, a part reaching back into the main part included (a
+   plate at the far end was crossed: the "under the chain" exception of the part chains
+   does not hold for a line along the main part); a Plan group with a center on its part's
+   edge stays out of the position chain, as its part chains refuse it.
+   Across too, from the main part (user, 2026-11-14, M.298): with the position chain
+   created, the bolts of a secondary part it holds are measured across from the main
+   part's edges, not from the part's own (the plate at x 1220 gave 54 / 80 / 55 from its
+   edges, the plate at x 300 60 / 80 / 60 from the beam); only where every bolt lies inside
+   the main part, off its edge, and the main part's edges run straight past the group; a
+   group whose bolts stand over the main part's own bolts keeps that chain and gets no
+   second one. The line stands as the other cross chains. The secondary part's own chain
+   across is linked to it and left out only once it is created. In Tekla, position
+   dimensions run from the main part's reference line (the help does not say in which
+   directions); from the flanges is the plant's practice, agreed with the user. Saved
+   M.298 front view: 60 / 80 / 60 at both plates. Done in source, not deployed.
+   Review of it (2026-11-14), three faults fixed: the chain from the main part is built per
+   chain of the secondary part across, over all its bolts and merged groups (one group
+   replaced a merged chain and the other group lost its dimension); its end points, as
+   finally placed, must stand on main part edges running through them (they were checked
+   at another place and could lie off the beam); and it is created only with the position
+   chain (`RequiresChain`, decided in `BoltChains` after the view frame), so a refused
+   position chain leaves the secondary part's chain across as it was. Tests: a merged
+   chain with a bolt off the beam, a notched flange, a refused position chain, and the
+   case with nothing in the way as control.
+   Shared groups on several secondary parts reuse one chain across from the main part,
+   identified by the complete set of source groups; every secondary part chain links to
+   it. Comparing only the retained row points missed other bolt columns and produced
+   duplicate preview keys. Regression coverage checks one and two columns, both plate
+   links, unique keys and batch reference resolution. Done in source, not deployed.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
 10. Merging with part chains by Tekla's *Combine dimensions* modes: in the Chain

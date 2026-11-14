@@ -688,7 +688,8 @@ public sealed class ViewDimensionContext
             segments = result.Segments, distance,
             points = result.Points.Select(point => new[] { point.X, point.Y }).ToArray(),
             sources = result.Evidence["sources"], holes = result.Evidence["holes"],
-            incomplete = !Create, incompleteReason = Reason
+            incomplete = !Create, incompleteReason = Reason,
+            remark = result.Evidence.TryGetValue("remark", out var remark) && remark is string text && text.Length > 0 ? text : null
         };
     }
 
@@ -750,6 +751,16 @@ public sealed class ViewDimensionContext
                     && ((int[])results[i].Evidence["groupIds"]).All(held.Contains))
                     givenBy[i] = $"bolt positions are given by {position.Evidence["key"]}";
         }
+        // A chain created only with another one (across from the main part, with the position chain)
+        // is refused when that one is not created.
+        var placed = new HashSet<string>(results.Where((result, index) => result.Note == null && refusals[index] == null
+                && givenBy[index] == null)
+            .Select(result => (string)result.Evidence["key"]), StringComparer.Ordinal);
+        for (var i = 0; i < results.Count; i++)
+            if (refusals[i] == null && results[i].Note == null && givenBy[i] == null
+                && results[i].Evidence.TryGetValue("requiresChain", out var required) && required is string needed
+                && needed.Length > 0 && !placed.Contains(needed))
+                refusals[i] = $"created only with {needed}, which is not created";
         // A secondary part's bolts standing on the main part's are left out only now, when the main
         // part's chain is known to be created: settings and view frame have refused what they refuse.
         var created = new HashSet<string>(results.Where((result, index) => result.Note == null && refusals[index] == null

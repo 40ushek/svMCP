@@ -41,13 +41,19 @@ internal sealed class BoltChainCandidate
     public string? OverMainPartChain { get; }
     /// <summary>Every bolt group the chain measures.</summary>
     public IReadOnlyList<int> GroupIds { get; }
+    /// <summary>Something to know about a chain that is created all the same (a chain left open).</summary>
+    public string? Remark { get; }
+    /// <summary>The key of a chain this one is created only with (the position chain for a chain across from the main part).</summary>
+    public string? RequiresChain { get; }
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
         string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null,
-        string? overMainPartChain = null, IEnumerable<int>? groupIds = null)
+        string? overMainPartChain = null, IEnumerable<int>? groupIds = null, string? remark = null, string? requiresChain = null)
     {
+        RequiresChain = requiresChain;
         OverMainPartChain = overMainPartChain;
+        Remark = remark;
         GroupIds = (groupIds ?? [groupId]).ToArray();
         Key = key;
         Kind = kind;
@@ -68,7 +74,8 @@ internal sealed class BoltChainCandidate
 
     /// <summary>The same chain, linked to the main-part chain standing on its bolts.</summary>
     public BoltChainCandidate Over(string mainPartChain) => new(Key, Kind, GroupId, PartId, MainPart, ViewClass, Axis,
-        Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain, GroupIds);
+        Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain, GroupIds, Remark,
+        RequiresChain);
 }
 
 /// <summary>What the bolt rule needs: the chains built on the view; the settings come with the rule.</summary>
