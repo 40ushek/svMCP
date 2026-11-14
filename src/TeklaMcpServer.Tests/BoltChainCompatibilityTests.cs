@@ -108,7 +108,7 @@ public sealed class BoltChainCompatibilityTests
         return Regex.Replace(JsonSerializer.Serialize(value), "ctx_[0-9a-f]{32}", "ctx");
     }
 
-    private static ViewDimensionContext Context(JsonElement fixture)
+    internal static ViewDimensionContext Context(JsonElement fixture)
     {
         BoltGroupGeometry Column(int id, int part, double x) => new() { ModelId = id, Shape = "BoltArray",
             FirstPosition = [x, -40, 0], SecondPosition = [x, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = part,

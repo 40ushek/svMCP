@@ -333,9 +333,9 @@ public sealed class ViewDimensionContext
         Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet)
     {
         var answer = Freeze(result, display: true);
-        if (!answer.TryGetProperty("chainPreview", out var rows)) return answer;
+        if (!answer.TryGetProperty("chainPreview", out _)) return answer;
         result["previewPlanId"] = PreviewPlans.Publish(ruleSet,
-            requested.Contains("chaindetails") ? "chaindetails" : "chain", rows, readSheet?.Invoke());
+            requested.Contains("chaindetails") ? "chaindetails" : "chain", answer, readSheet?.Invoke());
         return Freeze(result, display: true);
     }
 

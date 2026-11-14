@@ -1,0 +1,265 @@
+# Detailed dimension workflows
+
+Read only for focused repair, review, debugging or nonstandard placement. The
+standard steel run is complete in ../SKILL.md and does not require this file.
+For fields omitted from the short answer, request details with the same viewId
+and previewPlanId; this returns the stored plan, not a new chainDetails variant.
+Preserve its original ruleSet, chainView and plan ID for batch writes.
+
+For a focused request, use the corresponding route instead of the whole-drawing
+run: `move_dimension` / `move_angle_dimension` for an explicit move;
+`arrange_dimensions` for rearranging existing lines; `combine_dimensions`, `add_dimension_points` or `recreate_dimension` for an
+explicit edit of existing chains; and `place_control_diagonals`,
+`place_contour_angle_dimensions` or `place_contour_radius_dimensions` for those
+specific requests. Use `get_dimension_chain_coverage` for a targeted anchor review.
+These are separate actions, not automatic follow-ups to reading a preview. A saved
+distance or verified object presence does not establish visually correct placement;
+respect the operation's refusal/error and verification status.
+
+## Scope and mode
+
+- **Review / explain:** read only; no dimensions or debug objects.
+- **Place / fix:** finish the requested changes, not just an analysis.
+- **One dimension, side or part:** plan that scope; other sides are untouched,
+  not implicitly approved, deleted or declared complete.
+- **Whole view / complete drawing:** resolve `Top`, `Bottom`, `Left`, `Right`
+  for every requested view. Include relevant steel connection sections.
+
+Use the user's already stated policy, attributes and tolerances for the same
+task. Ask missing settings together, once. Do not ask again unless the subject,
+plant convention or request changes. Distinguish `recognizableDistance` from
+`minDimensionLength`: an answer of 1 mm to the former does not change the latter.
+
+## Efficient read route
+
+Read only the relevant references, once per run; reuse them while unchanged.
+
+| Subject / action | Read |
+|---|---|
+| Timber frame/panel | [plant-rules.md](plant-rules.md) |
+| Steel member with plates/gussets | [steel-rules.md](steel-rules.md) |
+| First drawing write of the run, outside a standard run | [placement-and-verification.md](placement-and-verification.md) |
+
+Do not blend timber and steel rules. If neither applies or the subject is
+ambiguous, ask. Do not routinely read HISTORY, roadmaps, code or the internet
+during placement; consult them only for an actual unresolved capability/rule.
+A missing historical case does not block placement.
+
+For each target view:
+
+1. Establish active drawing identity/type and view identity/type. Use a current
+   response already in the run if sufficient; do not fetch the same context
+   under several command names. Report the human view label as well as its ID.
+2. Read `get_drawing_parts` if needed to choose the subject/rule set or resolve
+   unread roles. Reuse an existing current parts response.
+3. Use `get_view_dimension_context` with `questions="chain,scale"`, the sides
+   in scope and explicit `ruleSet` (`panel` for timber-wall elevations, `steel`
+   for steel). Review the prepared `chainPreview`: decide which chains to keep
+   or remove. Ordered pointIds are available in the full stored-plan details. When the running batch schema
+   supports preview references, submit the selected chain keys instead of copying
+   IDs, with the same `ruleSet` and `chainView` (`chain` or `chainDetails`) as the read.
+   Do not request all source
+   points or reconstruct chains from candidates in the normal placement run.
+   For full details, call `get_view_dimension_context` with the same viewId and previewPlanId.
+   The chainDetails question builds a different section variant; it is not a detail toggle.
+   Inspect completeness and refusal reasons. The short answer intentionally omits
+   point IDs; that absence is not a refusal. Missing/invalid points in the full
+   stored plan or an incomplete outline block creation; missing supports or unlocated parts require an explicit
+   keep/remove judgement with the limitation reported. A missing valid proposal
+   is a preview capability issue, not permission to invent points.
+4. Read `get_drawing_dimensions <viewId>` once to identify chains to retain or
+   change. These and the chain positions are the normal planning inputs.
+
+**Do not automatically add** structural outline, all solid geometry, contacts,
+dimension contexts, coverage or debug overlays. Each extra read must answer a
+specific outstanding question. For review, begin with context and dimensions;
+fetch structural positions only if the question requires them.
+
+The bridge treats source geometry as fixed while working on one view. Reuse it
+for all sides. After external model/view edits or uncertain source identity,
+request refresh=true on a context or chain-position read. Switching requested
+view/drawing clears the snapshot; different filters resolve separate snapshots.
+External edits are not automatically detected during the run.
+A dimension-only write invalidates the dimension snapshot because of reflow;
+it does not by itself require another full solid/outline read. During one placement run, read source geometry once per target view and reuse that geometry snapshot for all chain planning and writes. Do not force refresh=true for each chain or after dimension-only writes. Use refresh=true only when model geometry or view properties changed since the snapshot, or when source identity is uncertain. Read back dimensions after writes without refreshing source geometry.
+
+`isComplete=false` stops automatic placement for that group, not independent
+complete groups. Report the actual issue: unread properties, no included parts,
+or failed/missing outline geometry. An unfamiliar mark alone is not a blocker.
+Depth selection is separate from prefix/material exclusions and is not proof
+that full-solid projection equals the clipped section contour.
+
+## Plan before writing
+
+The LLM chooses dimensions; tools validate/read/write those choices. A write
+that matches a bad plan does not make the plan good.
+
+For each side **in scope**, record create, recreate, retain an already verified
+chain, or intentionally no chain with a reason. For every prepared chain
+on a side being planned, record `Kept` or `Removed` and a short drawing reason.
+Use its selected points directly; do not enumerate raw candidates to rebuild it.
+Do not silently shorten an existing chain. For a full view, settle all four
+sides before writing; for a narrow request, do not expand to other sides.
+
+Keep one compact plan, not repeated prose copies:
+- purpose: size, location or overall;
+- reference body and measured subject, identified by model IDs;
+- selected preview chain and its support evidence; reasons for removed chains;
+- closure endpoints, first point/datum, side, offset, attributes and row type;
+- chosen rule set and its policy settings.
+
+**Prepared chains:** use the preview's chain keys from the same `contextId`,
+`ruleSet` and `chainView` when the running batch supports references; otherwise
+forward its ordered `pointIds`. Do not replace their coordinates with bbox, vertices, axes or
+contacts. Selecting a prepared chain and its dimension type is the normal
+decision boundary; fixing point selection belongs in the preview rules.
+
+**Local chains:** a steel whole-view preview can add a row `Local` with keys
+`Local-<partId>`: a short chain across the main part next to one part or a group
+of parts at one place. Like an inclined chain it carries its own points, offset
+vector and `distance`; reference it by key, override `distance` if the line
+collides with something, never `paperGapMm`.
+
+**Bolt chains:** a steel whole-view preview can add a row `Bolt`. Keys:
+`bolt-part-<partId>-groups-<groupId>-<side>` (edge - bolts - edge),
+`bolt-<groupId>-<X|Y>-<row>` (steps of one row) and `bolt-<groupId>` (a group no
+chain was built for). Like a local chain each carries its own points, offset vector
+and `distance`; reference it by key. In this row `incomplete=true` means the rule
+decided not to create it, with the reason in `incompleteReason` (group skewed to
+the view, class switched off, setting `None`, part edge not confirmed on a
+section): do not repair, extend or place such a chain by hand. Placing one rejects
+the whole batch. Ordinary part/internal bolt chains are not compared as repeats; position and carried location chains can be repeats. Each chain names its
+`viewClass`; the standard run places `Plan` chains only and leaves `Side` ones out
+(step 5).
+
+**Inclined chains:** a steel whole-view preview can add a row `Inclined` with
+keys `Inclined-<partId>`: a chain along a tilted part (a head plate on a sloped
+cut), with its own points, offset vector and `distance`. Reference it like any
+other prepared chain; override `distance` if needed, never `paperGapMm`. The
+axis-aligned chain across the main part then leaves that part out and says so.
+A repeated batch does not recognise an inclined chain already on the sheet:
+check existing dimensions first.
+
+**Reference is not closure.** The steel main part or timber frame is what
+locates the subject. For longitudinal/main-frame chains, use its real ends as
+the rule set requires. A transverse steel plate-location chain can close on
+the plate's edges while retaining the main-profile edges between them. State
+that choice. A bare plate width/height does not prove its location.
+
+**Datum:** `points[0]` chooses the start of a new chain. For running dimensions,
+follow the rule-set main-part-start convention or the explicitly agreed reverse;
+read the main part's model `StartPoint` only when needed to establish that datum.
+For an existing chain, recover start only from a unique connected
+`Segment.StartPoint/EndPoint` path. Normalized JSON order is not evidence.
+Ambiguous start is `unverified`; do not claim absolute values/counts-from.
+
+**Policy:** apply the selected reference's checks, not timber's removal rules
+to steel. Steel `Internal=None / Necessary / All` is explicit; `Necessary`
+needs `recognizableDistance`. `All` is not filtered by `Necessary`.
+Do not change the user's chosen row type just to fit a tool.
+
+**Targeted contacts:** only when a keep/remove decision requires contact
+evidence. Use `get_contact_candidate_points <viewId> false <modelIds>` with
+the specific two or three parts, never an unfiltered search. Reuse the result
+for the same pair/snapshot. `selectionComplete=false` proves no absence.
+A contact can justify an existing candidate, never demand/add a coordinate.
+For timber's reduction to one position, use the exact rule 4b gate.
+
+**Visual checks:** no debug lines by default. Prepared section/end-view chains
+are placed as provisional and reported so; a chain built by hand there still
+requires the visual confirmation in steel-rules. Use the current matching view image;
+an overlay is a drawing mutation, not a read. Only create one if genuinely
+needed and authorized; track and remove only this run's own overlay objects.
+Never clear unrelated/pre-existing annotations. Avoid a fixed-name overlay
+command if its automatic group cleanup could erase an earlier overlay.
+
+## Apply and verify
+
+Outside a standard run, read the placement reference before the first write.
+Preserve matching dimensions. Direction chooses the side; distance is non-negative. Keep the
+returned new ID when Tekla renumbers a chain.
+
+Use available, known working tools; source code existing is not proof that the
+running bridge contains it. The experimental structural preview/apply commands
+were removed. For two or more reviewed chains on one view, use
+`create_dimensions_batch` once with the same current `contextId`. Prefer entries
+such as `{"preview":"Top-location"}` with the matching `ruleSet` (required, no default: a forgotten value is rejected) and `chainView`
+when supported by the running schema; omit chains to remove them. References
+resolve ordered points and direction on the server; do not pass `pointIds` or
+direction with a reference. Keep per-entry attribute, row-type and offset choices.
+Otherwise forward the preview's ordered point IDs and directions. Explicit-point
+entries remain available for reviewed steel cases beyond the prepared preview.
+On an empty side the batch assigns rows in submission order: 1, 2, 3, ...;
+a lone overall uses row 1. Do not forward a preview row. Without explicit offsets,
+repeated batches retain unique existing matches at their current distances.
+A new chain on an occupied side or an ambiguous existing match needs explicit
+`paperGapMm` or `distance`. It validates
+the full plan before writing and returns one final dimension read-back; inspect
+each chain status, especially `merged` and `uncertain`, before reporting success.
+Use `create_dimension` for one chain or when the batch tool is unavailable on the
+running server. Omit `distance` for the automatic 8-paper-mm gap, or supply
+`paperGapMm`. Do not supply both distance and paperGapMm.
+
+After a single write that can reflow neighbours, re-read
+`get_drawing_dimensions <viewId>` and compare to the plan. For a batch, use its
+single final read-back for all chains and compare it to the complete plan:
+- kept coordinates present, removed ones absent from the planned chain;
+- each witness point uses its own intended support;
+- reference line on the correct side/offset: inspect `writeState.RenderedLine`
+  when available. `matched` checks this chain's rendered offset; `not verified`
+  needs the remaining visual check. Calculated `referenceLine` and stored-value
+  `Verified=true` alone are not independent evidence (placement reference);
+- intended relative/absolute rows and closure;
+- affected neighbouring chains still correct.
+
+Use this one read-back for all those checks. Do not repeat full model reads
+unless it reveals a specific geometric doubt. A successful create response
+alone is not verification; a verified-write response does not replace the
+neighbour check.
+
+On write error, keep all returned IDs and `writeState`; inspect the view before
+retrying. If `writeState.newDimensionRemoved` is true the failed replacement is
+gone and the original stands; otherwise an old and new dimension may both exist
+(a failed cleanup says so). Never delete the old chain merely because a new ID
+exists. Correct a demonstrated
+mismatch, then verify again. If the same failure repeats without new evidence,
+stop that operation and report the state; do not loop speculative writes.
+
+Coverage is a targeted anchor diagnostic, not a mandatory call per dimension.
+Its reliability is unresolved. If it fails, report that check and inspect
+already-read geometry or make one targeted geometry read; do not retry the
+same failing call across every chain. A failed diagnostic is not evidence that
+the point is valid or invalid.
+
+## Progress log
+
+Only actual drawing review/placement runs need bridge logging; skill/code-only
+work does not. In a standard run the log is optional: skip it when you cannot run
+the bridge executable directly, and say so in the report. Before the first bridge read:
+
+```powershell
+TeklaBridge.exe log_skill_event start dimension-drawings <runId>
+TeklaBridge.exe log_skill_event task dimension-drawings <runId> "<next phase>"
+TeklaBridge.exe log_skill_event finish dimension-drawings <runId> "<summary>"
+```
+
+Mark reading/planning/applying/verifying transitions **before** acting, not
+every individual tool call; commands already log themselves. Name failures in
+the next task mark; finish once. Use the extension-folder bridge for
+`log_skill_event` (no MCP tool); use available MCP tools for other operations.
+
+## Completion and response
+
+A narrow request is complete when its requested dimensions are verified; state
+that other sides were not reviewed. A full-view/drawing request is complete
+only when every requested side has a verified chain or a justified no-chain
+outcome. An overlay, preview or partial ID list is not completion.
+
+For placement, report briefly:
+- created/replaced/deleted IDs and verification for the requested scope;
+- rule set and actual settings: on steel Internal, anchor, recognizableDistance
+  if applicable, closure, datum and row type;
+- unresolved side/check and exact blocker.
+
+For review, answer the question with checked findings only. Do not claim live
+verification from unit tests, historic examples or a successful write response.

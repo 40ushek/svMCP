@@ -114,10 +114,10 @@ Part-chain geometry has get-only properties and typed source references. Common 
 traversal/edges belong to `OutlineTreeGeometry`; row representatives and the shared
 coverage policy belong to `BoltChainGeometry`.
 `DimensionPreviewChain` / `DimensionPreviewRow` are the carry/repeat calculation contract.
-Existing structural producers still pass through JSON in `DimensionChainPreview.Short`
-and `DimensionPreviewProjection.Structural`. Their adapter retains opaque output metadata, but
-composition and repeat selection inspect only typed fields. Output precision freezing
-and the legacy shapes are handled by the final projection converters. The context owns
+Structural producers return `StructuralChain`; `DimensionChainPreview.Short` and
+`DimensionPreviewProjection.Structural` read its fields directly. The adapter retains
+opaque output metadata, while composition and repeat selection inspect typed fields.
+Display precision and legacy shapes are handled by the final projection converters. The context owns
 cached repeat state; it does not make carry decisions through preview dictionaries.
 The general `DimensionChainComposer` keeps its verified proposal/datum requirements;
 the existing edgeless carry policy does not supply those semantics and is kept in its
@@ -267,7 +267,7 @@ of this placement change is still pending.
 
 ## Preview references in batch (2026-10-02, source implemented; not deployed)
 
-Each preview chain now exposes `key`, `direction` and default `attributesFile`.
+The full preview representation exposes `key`, `direction` and default `attributesFile`.
 `create_dimensions_batch` accepts an entry such as `{"preview":"Top-location"}`
 instead of repeating ordered point IDs. Pass the same `contextId`, `ruleSet`
 (`steel` or `panel`), `chainView` (`chain` or `chainDetails`) and `previewPlanId` as the preview read.
@@ -283,6 +283,26 @@ including mixed batches. Existing row, occupied-side, retention and read-back
 checks run after reference resolution. No per-point removal is implemented.
 
 Deployment and live same-view performance validation remain pending.
+
+### Compact model answers (2026-11-14)
+
+The bridge returns ordinary `chain` responses as a selection summary: each chain
+keeps key, segments, incomplete/refusal/repeat/remark and, for bolts, chainKind and
+viewClass. Bolt.readIncomplete and top-level identity/completeness/section/error
+fields remain. Points, pointIds, offsets, attributes, holes, sources and diagnostic
+lists stay in the full saved plan; boltSettings/tolerance metadata is omitted unless
+diagnostics is requested. This changes the model-facing default response, not the
+public API `Query` contract or write parameters. No rounding change is made.
+
+For full details of that exact selection, call `get_view_dimension_context` with
+viewId and previewPlanId. Other preview options are ignored; the answer reports the
+original ruleSet and chainView and does not read geometry or recalculate. Using
+`questions=chainDetails` instead still creates the separate split-section variant.
+Batch calls keep the same contextId, previewPlanId, ruleSet and chainView; they resolve
+the full stored rows, never the compact projection. Unknown or expired IDs fail.
+
+See [ROADMAP_ANSWER_SIZE.md](ROADMAP_ANSWER_SIZE.md) for evidence and deferred work.
+The new detail argument needs a refreshed MCP schema and matching bridge deployment.
 
 ## Purpose
 

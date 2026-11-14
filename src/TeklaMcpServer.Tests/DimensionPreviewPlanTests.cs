@@ -60,9 +60,9 @@ public sealed class DimensionPreviewPlanTests
     public void EvictedPlansAreRefusedAndUnknownPlansNeverTriggerCalculation()
     {
         var plans = new DimensionPreviewPlans();
-        var first = plans.Publish("steel", "chain", JsonSerializer.SerializeToElement(new[] { 0 }), null);
+        var first = plans.Publish("steel", "chain", JsonSerializer.SerializeToElement(new { chainPreview = new[] { 0 } }), null);
         for (var i = 1; i <= 32; i++)
-            plans.Publish("steel", "chain", JsonSerializer.SerializeToElement(new[] { i }), null);
+            plans.Publish("steel", "chain", JsonSerializer.SerializeToElement(new { chainPreview = new[] { i } }), null);
         Assert.Throws<InvalidOperationException>(() => plans.Require(first, "steel", "chain"));
         Assert.Throws<InvalidOperationException>(() => plans.Require("unknown", "steel", "chain"));
     }

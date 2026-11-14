@@ -793,6 +793,11 @@ internal sealed partial class DrawingCommandHandler
         }
         try
         {
+            if (args.Length > 16 && !string.IsNullOrWhiteSpace(args[16]))
+            {
+                WriteJson(_dimensionContexts.GetPreviewPlanDetails(viewId, args[16]));
+                return true;
+            }
             var questions = DrawingCommandParsers.NormalizePreviewQuestions(args.Length > 2 ? args[2] : null);
             var layerRules = DrawingCommandParsers.ParseViewDimensionLayerRules(args);
             var referenceZones = DrawingCommandParsers.ParseViewDimensionReferenceZones(args);
@@ -809,7 +814,8 @@ internal sealed partial class DrawingCommandHandler
                 args.Length > 10 ? args[10] : "steel",
                 args.Length > 11 ? args[11] : string.Empty, layerRules,
                 readSheet: _dimensionContexts.ReadSheet);
-            WriteJson(answer);
+            WriteJson(questions.Split(',').Contains("chaindetails") ? answer
+                : DimensionAnswerProjection.Compact(answer, questions.Split(',').Contains("diagnostics")));
         }
         catch (Exception ex) { WriteError(ex.Message); }
         return true;

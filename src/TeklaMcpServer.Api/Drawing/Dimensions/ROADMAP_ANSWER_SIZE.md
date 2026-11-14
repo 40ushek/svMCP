@@ -1,6 +1,9 @@
 # Answer Size Roadmap
 
-Created 2026-11-14, revised the same day after review. Status: planned, nothing implemented.
+Created 2026-11-14, revised the same day after review.
+Status: current refactor implemented, reviewed and tested; the bridge is deployed and one
+cold Haiku run on M.394 placed 18 dimensions with no write errors, including
+`bolt-position-Bottom`. The MCP server is not rebuilt yet (details by previewPlanId).
 
 Current scope: shorten the skill, separate the stored write plan from its answer,
 and remove unnecessary fields from the short answer. Preserve existing rounding
@@ -77,24 +80,25 @@ Displayed numbers carry geometry noise: `2345.002`, `549.999`, `1820.003`, `5.00
 
 ## Work order
 
-### 1. Fix the reference — planned
+### 1. Fix the reference — existing automated reference reused
 
-- Record, on the four baseline drawings from a known sheet state, the chains a standard
-  run must place and the write parameters of each (points, distance, direction,
-  attributes file).
-- Record the per-run figures to compare later: characters and tokens read, tool calls,
-  time, and **the number of placeable chains skipped**.
-- Repeat each run more than once; one run is not evidence.
+- Reuse the checked-in full-answer fixtures and batch regressions to preserve points,
+  distance, direction and attributes. Do not regenerate their expected answers.
+- Additional measurements on the four drawings are optional future benchmarking,
+  with a recorded initial sheet state. They are not required before this refactor.
+- For any later model benchmark, record tokens, calls, time and skipped eligible
+  chains across repeated runs; one run is not evidence.
 
-### 2. Shorter standard part of the skill — planned
+### 2. Shorter standard part of the skill — implemented
 
 - Split the skill: a short standard-run part (target: under 8 000 characters) and a
   reference part read only for repair, review or debugging.
 - Name `bolt-position-*` explicitly: place it when `incomplete=false`.
 - Ask for a short final report.
-- **Done when:** the reference runs place the same chains, with no skipped chain.
+- **Automated gate:** retain the existing completeness/class policy and explicitly
+  include eligible position chains. Live model skip-rate measurements are separate.
 
-### 3. Separate the stored plan from the answer — planned
+### 3. Separate the stored plan from the answer — implemented and tested
 
 - The published plan keeps the current write parameters exactly as written today.
 - The model's answer becomes a projection of that plan; batch resolution reads only the plan.
@@ -103,7 +107,7 @@ Displayed numbers carry geometry noise: `2345.002`, `549.999`, `1820.003`, `5.00
 - **Done when:** batch tests and the compatibility corpus pass unchanged; the answer
   text is still identical at this step.
 
-### 4. Shorter fields — planned
+### 4. Shorter fields — implemented and tested
 
 - Required in every short answer:
   - top level: `contextId`, `previewPlanId`, `isComplete`, the section refusal and
@@ -117,9 +121,9 @@ Displayed numbers carry geometry noise: `2345.002`, `549.999`, `1820.003`, `5.00
   `boltGroupId`, `partId`, `distance`, `attributesFile`, `kind`, `null` fields,
   `boltSettings` and tolerances.
 - Expected: the `Bolt` row from about 67 500 to about 15 000 characters on the baseline set.
-- **Done when:** the reference runs place the same chains with the same write
-  parameters; corpus differences are reviewed and accepted explicitly, not
-  regenerated silently.
+- **Automated gate:** full and compact selections produce identical write parameters;
+  full-answer fixtures pass unchanged. Summary-field differences are checked in
+  separate tests rather than silently regenerating the full-answer corpus.
 
 ### 5. Rounding of displayed numbers — deferred, outside the current scope
 
@@ -132,11 +136,65 @@ Displayed numbers carry geometry noise: `2345.002`, `549.999`, `1820.003`, `5.00
 - **Guarantee:** rounded numbers take no part in repeat selection, checks or writes;
   those keep reading the plan. A test proves it.
 
-### 6. Acceptance — planned
+### 6. Acceptance — automated checks passed; live benchmarking optional
 
-- Reference runs on M.298, M.187, M.116 and M.394 after each step.
-- **Criterion:** no skipped placeable chain and no change of write parameters.
-- Characters, tokens, tool calls and time are recorded and compared, not required.
+- **Automated criterion:** no eligible key is dropped by projection, required safety
+  status remains, and write parameters do not change. Existing fixtures stay intact.
+- Optional later model runs on M.298, M.187, M.116 and M.394 can measure skips,
+  characters/tokens, calls and time from a recorded sheet state. No live write is
+  part of this implementation task.
+
+## Implementation and verification (2026-11-14)
+
+The user's subsequent direction simplified acceptance: proceed with the refactor,
+use tests and existing captured answers to preserve write parameters, and defer
+rounding. Additional cold-model runs and live placements are not prerequisites for
+this implementation and were not performed. The reference-drawing observations
+above remain historical measurements, not a claim that this delivery was run live.
+
+- **Skill:** the standard entry point is 4547 characters / 73 lines, down from
+  23027 characters / 363 lines. Focused repair, timber and review instructions
+  moved to `references/workflows.md`; they are not read for a standard steel run.
+  Eligible `bolt-position-*` chains are explicitly included under the existing
+  completeness and Plan-class checks. The default report stays short.
+- **Stored plan:** capture the full, already formatted API answer alongside the
+  immutable rows. Batch resolution still reads those rows and keeps its existing
+  precision, scope, expiry and sheet-state checks. No calculation or write path
+  consumes the compact answer. Public API `Query` stays full for compatibility.
+- **Compact answer:** the bridge projects ordinary `chain` responses to selection
+  fields, including refusals/repeats and Bolt.readIncomplete. It omits write-only
+  points/IDs/offsets/attributes, hole/source metadata and diagnostic lists. Top-level
+  safety/error/status fields remain. `boltSettings` and tolerance metadata remain
+  available when diagnostics is requested. `chainDetails` remains its existing full
+  split-section variant; obsolete explicit bolt-proposal responses are unchanged.
+- **Same-plan details:** call `get_view_dimension_context(viewId, previewPlanId=...)`.
+  Other preview options are ignored. The saved full answer is returned with its
+  ruleSet/chainView; there is no geometry read, recalculation or variant switch.
+  Unknown/expired plans are refused. Never use chainDetails as a detail toggle.
+- **No rounding change:** compact fields are copied as JsonElements; no new numeric
+  formatting is applied. Full source precision and current write coordinates stay
+  in the captured full answer. Step 5 remains deferred.
+
+Release API, bridge, MCP/controller and tests built in `.codex-build/answer-size/`.
+1753 tests passed, 1 skipped. Existing full-answer fixtures were not regenerated.
+New tests compare all selection fields, retained safety status, unchanged decimals,
+same-plan section detail retrieval without geometry reads, transport of the plan ID
+and identical write points/direction/distance/attributes for full and compact
+selections (front, reversed back and tall-beam cases).
+
+Eight synthetic scenarios produced 63566 characters of full answers and 18533 of
+compact answers, about 3.4 times smaller. These are synthetic character counts,
+not the four-drawing live baseline or measured model tokens/latency. Results and
+per-case counts are in `.codex-build/answer-size-results/answer-size.trx` locally.
+
+Review fixes (2026-11-14): the compact answer keeps `carries` and `restoredBesides`;
+a plan is the whole published answer, so another question set gets its own plan and
+details always return the answer that named the plan; details are refused, like a
+batch, once the sheet the plan was read on has changed. 1756 tests passed, 1 skipped.
+
+Deployment requires the matching bridge/API and refreshed MCP tool schema for the
+new optional previewPlanId detail argument. No deployment, push or drawing mutation
+was performed. Only the initial roadmap was committed before implementation.
 
 ## Risks
 

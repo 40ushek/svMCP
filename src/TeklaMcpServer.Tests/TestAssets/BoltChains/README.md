@@ -23,5 +23,9 @@ Expected answers are checked-in evidence, not generated during a test. Update on
 only after an explicitly reviewed behavior change, recording its reason in the
 roadmap. A replay match does not establish correct live placement in Tekla.
 
+The answer-size refactor keeps these full public-API answers unchanged. The bridge's
+compact selection projection is checked separately by DimensionAnswerProjectionTests,
+including identical batch write parameters and full details of the same saved plan.
+
 The final-refactor tests and fixtures have been added in source; their compilation
 and execution require the next explicit build/test command.

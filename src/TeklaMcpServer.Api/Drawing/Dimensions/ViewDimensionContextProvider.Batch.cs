@@ -315,8 +315,7 @@ public sealed partial class ViewDimensionContextProvider
                 Distance = chain.Distance, PaperGapMm = chain.PaperGapMm, DimensionType = chain.DimensionType
             };
         }).ToArray();
-        if (plan.Sheet != null && plan.Sheet != DimensionPreviewPlans.Fingerprint(_readSheet()))
-            throw new InvalidOperationException("Drawing dimensions changed after the preview; read a new plan before writing");
+        DimensionPreviewPlans.RequireSameSheet(plan, _readSheet);
         return resolved;
     }
 

@@ -109,6 +109,23 @@ public sealed partial class ViewDimensionContextProvider
         return context;
     }
 
+    /// <summary>Full details of the exact saved selection; never reads geometry or switches plan variant.</summary>
+    public JsonElement GetPreviewPlanDetails(int viewId, string previewPlanId)
+    {
+        if (viewId <= 0 || string.IsNullOrWhiteSpace(previewPlanId))
+            throw new ArgumentException("viewId and previewPlanId are required");
+        ObserveActiveDrawing();
+        if (_drawing == null || _view != viewId)
+            throw new InvalidOperationException("Unknown or expired preview plan; read chains for this view again");
+        foreach (var context in _contexts.Values)
+            if (context.PreviewPlans.Find(previewPlanId) is { } plan)
+            {
+                DimensionPreviewPlans.RequireSameSheet(plan, _readSheet);
+                return plan.Details();
+            }
+        throw new InvalidOperationException("Unknown or expired preview plan; read chains for this view again");
+    }
+
     /// <summary>
     /// Every dimension on the sheet, read fresh, for the repeats of a chain read: the view context
     /// marks the chains that repeat one on the same view or a dimension already on the sheet.
