@@ -32,6 +32,21 @@ public sealed class DimensionChainRepeatsTests
     }
 
     [Fact]
+    public void AnOverallRepeatsAOneSegmentLocationChainOpposite()
+    {
+        // M.160 bottom view: the left location chain is the 180 itself, the right overall repeats it.
+        var chains = new[] {
+            new Chain("Left-location", "Left", "location", [180]),
+            new Chain("Right-location", "Right", "location", [5, 175]),
+            new Chain("Right-overall", "Right", "overall", [180])
+        };
+
+        var repeat = Assert.Single(Find(7, "SectionView", chains, []));
+
+        Assert.Equal(("Right-overall", "sameView", "Left-location"), (repeat.Key, repeat.Reason, repeat.Of!));
+    }
+
+    [Fact]
     public void LocalAndInclinedChainsAreNeverComparedInsideOneView()
     {
         var chains = new[] {

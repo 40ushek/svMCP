@@ -98,6 +98,26 @@ public sealed class DimensionChainPreviewTests
     }
 
     [Fact]
+    public void AnOverallEqualToTheLocationChainIsNotOffered()
+    {
+        // M.160 bottom view: a stub beam 103 long, shorter than its 180 height, with an end plate
+        // as tall. Across it the location chain is the overall itself: one 180, not two.
+        var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
+            [10] = Solid(10, 0, 103, -90, 90), [11] = Solid(11, -15, 0, -90, 90)
+        };
+        var ids = new[] { 10, 11 };
+        var role = new PartRoleResult(PartRole.Included, "included", "test");
+        var structural = new StructuralOutline(TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts)),
+            [new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false)], [], [], [], [], ids);
+        var context = new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" },
+            new { viewType = "BottomView", viewFrame = (double[]?)null }, null);
+        Assert.Equal(new[] { 180d }, Segments(Chain(context, "Left", "location")));
+        var overall = Chain(context, "Left", "overall");
+        Assert.Empty(overall.GetProperty("pointIds").EnumerateArray());
+        Assert.Contains("already spans the overall", overall.GetProperty("incompleteReason").GetString());
+    }
+
+    [Fact]
     public void OverallChainHasTwoPointsAtTheExtremes()
     {
         var chain = Chain(Context(rightHalfHeight: 68), "Bottom", "overall");

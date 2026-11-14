@@ -10,7 +10,8 @@ namespace TeklaMcpServer.Api.Drawing;
 /// already on the sheet. Read-only: it names repeats and why, it never drops a chain; whether a
 /// repeat is placed is the caller's choice.
 /// Rules (the standard run of the dimension skill):
-/// - same view: Top repeats Bottom and Right repeats Left, same kind, equal segments;
+/// - same view: Top repeats Bottom and Right repeats Left, same kind, equal segments; an overall
+///   also repeats a one-segment location chain opposite;
 /// - overall: an overall chain equal to a one-segment dimension of the same measure already on
 ///   another front, top, bottom or back view (see <see cref="Measure"/>);
 /// - mirror: on a bottom or back view, any chain equal, in either order, to a dimension on the
@@ -83,8 +84,10 @@ public static class DimensionChainRepeats
     private static Chain? SameView(Chain chain, IReadOnlyList<Chain> chains)
     {
         var kept = chain.Side switch { "Top" => "Bottom", "Right" => "Left", _ => null };
-        return kept == null ? null : chains.FirstOrDefault(other =>
-            other.Side == kept && other.Kind == chain.Kind && Same(other.Segments, chain.Segments));
+        // An overall also repeats a location chain of one segment opposite: that chain is the overall.
+        return kept == null ? null : chains.FirstOrDefault(other => other.Side == kept
+            && (other.Kind == chain.Kind || chain.Kind == "overall" && other.Kind == "location")
+            && Same(other.Segments, chain.Segments));
     }
 
     private static string? OverallMeasure(string? viewType, Chain chain) => chain.Kind != "overall" ? null : chain.Side switch {

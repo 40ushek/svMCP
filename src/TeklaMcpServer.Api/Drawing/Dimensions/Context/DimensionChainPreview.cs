@@ -88,6 +88,15 @@ internal static class DimensionChainPreview
             new SteelPartLocationSettings(side, minSegmentLength, SameCoordinate, partAnchor, endPartAnchor)))
             .Calculate(ruleContext).Results.Single();
         var location = SteelLocation(side, locationResult);
+        // A location chain of just the two extremes is the overall itself, whatever the shape of
+        // the main part (a stub shorter than its height): one dimension, not two.
+        if (locationResult.Note == null && locationResult.Points.Count == 2 && line.Count >= 2)
+        {
+            var along = locationResult.Points.Select(point => alongX ? point.X : point.Y).ToArray();
+            var (from, to) = (along.Min(), along.Max());
+            if (Math.Abs(from - line.Min(ctx.Along)) <= SameCoordinate && Math.Abs(to - line.Max(ctx.Along)) <= SameCoordinate)
+                overall = Empty(side, "overall", "the location chain already spans the overall");
+        }
         return [location, overall];
     }
 
