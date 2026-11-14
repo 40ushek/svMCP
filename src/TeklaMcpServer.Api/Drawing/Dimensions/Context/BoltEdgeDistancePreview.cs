@@ -1,3 +1,4 @@
+using static TeklaMcpServer.Api.Drawing.BoltChainGeometry;
 using TeklaMcpServer.Api.Algorithms.Geometry;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -110,14 +111,7 @@ internal static class BoltEdgeDistancePreview
         return Math.Sqrt(x * x + y * y);
     }
 
-    internal static IEnumerable<OutlineTreeNodeResult> Flatten(IEnumerable<OutlineTreeNodeResult> nodes)
-    {
-        foreach (var node in nodes)
-        {
-            yield return node;
-            foreach (var child in Flatten(node.Children)) yield return child;
-        }
-    }
+
 }
 
 /// <summary>Where a bolt center stands against one projected contour, within the coordinate tolerance.</summary>

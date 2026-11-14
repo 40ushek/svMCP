@@ -1,19 +1,22 @@
 namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>
-/// Decides, from the class of the group, the part role and the settings, which built bolt chains
-/// become dimensions. Every offered chain comes back with "create" and, when false, the reason;
-/// a weak model only places what is marked.
+/// Evaluates settings and geometric refusals on typed candidates. Final view admission,
+/// coverage and dependencies belong to BoltChainSelectionPlanner; this rule assigns no rows.
+/// Calculate retains compatibility with the generic dimension-rule diagnostics.
 /// </summary>
 internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
 {
     public const string Kind = "bolt";
 
     public DimensionRuleEvaluation Calculate(DimensionRuleContext context)
+        => new(Evaluate(context.Require<BoltChainInput>().Candidates)
+            .Select(BoltChainPreviewProjection.RuleResult));
+
+    internal IReadOnlyList<BoltChainDecision> Evaluate(IReadOnlyList<BoltChainCandidate> candidates)
     {
-        var input = context.Require<BoltChainInput>();
-        var results = new List<DimensionRuleResult>();
-        foreach (var candidate in input.Candidates)
+        var results = new List<BoltChainDecision>();
+        foreach (var candidate in candidates)
         {
             string? reason;
             switch (candidate.Kind)
@@ -41,9 +44,9 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
                     reason = Refusal(candidate);
                     break;
             }
-            results.Add(Result(candidate, reason));
+            results.Add(new BoltChainDecision(candidate, reason));
         }
-        return new DimensionRuleEvaluation(results);
+        return results;
     }
 
     private BoltInternalDimensions Policy(BoltChainCandidate candidate) => settings.For(candidate.MainPart);
@@ -59,17 +62,4 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
         return null;
     }
 
-    private static DimensionRuleResult Result(BoltChainCandidate candidate, string? reason) =>
-        new(new DimensionDirection(candidate.Axis == 0 ? 1 : 0, candidate.Axis == 0 ? 0 : 1),
-            new OutsideOutlineDimensionPlacement(candidate.OutwardNormal, 1), Kind, candidate.Points,
-            note: reason, segments: candidate.Segments, evidence: new Dictionary<string, object> {
-                ["key"] = candidate.Key, ["chainKind"] = candidate.Kind, ["create"] = reason == null,
-                ["groupId"] = candidate.GroupId, ["partId"] = candidate.PartId ?? 0,
-                ["viewClass"] = candidate.ViewClass.ToString(), ["baseOffset"] = candidate.BaseOffset,
-                ["sources"] = candidate.Sources, ["holes"] = candidate.Holes,
-                ["overMainPartChain"] = candidate.OverMainPartChain ?? "",
-                ["groupIds"] = candidate.GroupIds.ToArray(),
-                ["remark"] = candidate.Remark ?? "",
-                ["requiresChain"] = candidate.RequiresChain ?? ""
-            });
 }

@@ -21,6 +21,9 @@ internal sealed class BoltChainCandidate
     /// <summary>0 for a chain along view X, 1 along view Y.</summary>
     public int Axis { get; }
     public IReadOnlyList<DimensionRulePoint> Points { get; }
+    /// <summary>All source bolt centers, before rows or columns retain their representatives.
+    /// Used for coverage; dimension points must never be used to infer source identity.</summary>
+    public IReadOnlyList<double[]> SourcePositions { get; }
     public IReadOnlyList<double> Segments { get; }
     /// <summary>Why the chain could not be built; null when it was.</summary>
     public string? BuiltRefusal { get; }
@@ -30,8 +33,8 @@ internal sealed class BoltChainCandidate
     public DimensionDirection OutwardNormal { get; }
     /// <summary>View units from the first point to the part's outer bound along the normal.</summary>
     public double BaseOffset { get; }
-    /// <summary>Source bolt group and bolt index of every point.</summary>
-    public object Sources { get; }
+    /// <summary>Explicit source representation for the preview contract.</summary>
+    public BoltChainSources Sources { get; }
     /// <summary>Bolt and hole of every group the chain measures.</summary>
     public object Holes { get; }
     /// <summary>
@@ -48,8 +51,9 @@ internal sealed class BoltChainCandidate
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
-        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null,
-        string? overMainPartChain = null, IEnumerable<int>? groupIds = null, string? remark = null, string? requiresChain = null)
+        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, BoltChainSources sources, object? holes = null,
+        string? overMainPartChain = null, IEnumerable<int>? groupIds = null, string? remark = null, string? requiresChain = null,
+        IEnumerable<double[]>? sourcePositions = null)
     {
         RequiresChain = requiresChain;
         OverMainPartChain = overMainPartChain;
@@ -63,6 +67,7 @@ internal sealed class BoltChainCandidate
         ViewClass = viewClass;
         Axis = axis;
         Points = points.ToArray();
+        SourcePositions = (sourcePositions ?? []).ToArray();
         Segments = segments.ToArray();
         BuiltRefusal = builtRefusal;
         EdgeConfirmed = edgeConfirmed;
@@ -75,7 +80,7 @@ internal sealed class BoltChainCandidate
     /// <summary>The same chain, linked to the main-part chain standing on its bolts.</summary>
     public BoltChainCandidate Over(string mainPartChain) => new(Key, Kind, GroupId, PartId, MainPart, ViewClass, Axis,
         Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain, GroupIds, Remark,
-        RequiresChain);
+        RequiresChain, SourcePositions);
 }
 
 /// <summary>What the bolt rule needs: the chains built on the view; the settings come with the rule.</summary>

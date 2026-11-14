@@ -668,31 +668,6 @@ public sealed class ViewDimensionContext
     internal const string BoltSide = "Bolt";
     private readonly Dictionary<string, IReadOnlyList<BoltRowChain>> _boltChains = new(StringComparer.Ordinal);
 
-    /// <summary>A bolt chain of the Bolt row: written by key like a Local chain when it is to be created.</summary>
-    internal sealed class BoltRowChain(DimensionRuleResult result, double distance, string? frameRefusal, string? givenBy = null)
-    {
-        public string Key { get; } = (string)result.Evidence["key"];
-        // A chain given by another one says so first: an edgeless chain whose bolts the position
-        // chain holds is not carried into the location chain.
-        public string? Reason { get; } = givenBy ?? result.Note ?? frameRefusal;
-        public bool Create => Reason == null;
-
-        public object Project() => new {
-            key = Key, direction = string.Join(",", new[] {
-                ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal.X,
-                ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal.Y, 0d }
-                .Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
-            attributesFile = "standard", kind = BoltChainRule.Kind,
-            chainKind = result.Evidence["chainKind"], boltGroupId = result.Evidence["groupId"],
-            partId = result.Evidence["partId"], viewClass = result.Evidence["viewClass"],
-            segments = result.Segments, distance,
-            points = result.Points.Select(point => new[] { point.X, point.Y }).ToArray(),
-            sources = result.Evidence["sources"], holes = result.Evidence["holes"],
-            incomplete = !Create, incompleteReason = Reason,
-            remark = result.Evidence.TryGetValue("remark", out var remark) && remark is string text && text.Length > 0 ? text : null
-        };
-    }
-
     private object[] BoltRow(DimensionCoordinateSettings? coordinateSettings, object[] sideRows,
         IEnumerable<SectionDimensionChainPreview.SideResult>? sectionPlans)
     {
@@ -725,59 +700,12 @@ public sealed class ViewDimensionContext
             edgeConfirmed: !section ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
             settings, coordinateSettings, DimensionPlacementSettings.DefaultPaperGapMm * Scale,
             mainSolid?.StartPoint, mainSolid?.EndPoint);
-        var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
-            .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
+        var evaluated = new BoltChainRule(settings).Evaluate(candidates);
         var frame = ViewFrame();
-        var readRefusal = BoltReadRefusal();
+        var decisions = BoltChainSelectionPlanner.Select(evaluated, BoltReadRefusal(), point => frame is { } f
+            && (point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY));
         var gap = DimensionPlacementSettings.DefaultPaperGapMm * Scale;
-        var rows = OccupiedLines(sideRowCounts, gap);
-        var refusals = evaluation.Results.Select(result => {
-            var outside = frame is { } f && result.Points.Any(point =>
-                point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY);
-            return readRefusal ?? (outside ? "a point lies outside the view frame" : null);
-        }).ToArray();
-        var results = evaluation.Results;
-        // The position chain replaces the chains along the main part of the groups it holds only
-        // once it is known to be created; refused, it leaves every chain of today in place.
-        var givenBy = new string?[results.Count];
-        foreach (var position in results.Where((result, index) => (string)result.Evidence["chainKind"] == BoltChainCandidate.PositionKind
-                     && result.Note == null && refusals[index] == null))
-        {
-            var held = new HashSet<int>((int[])position.Evidence["groupIds"]);
-            var along = position.Direction.X != 0 ? 0 : 1;
-            for (var i = 0; i < results.Count; i++)
-                if ((string)results[i].Evidence["chainKind"] == BoltChainCandidate.PartKind
-                    && (results[i].Direction.X != 0 ? 0 : 1) == along
-                    && ((int[])results[i].Evidence["groupIds"]).All(held.Contains))
-                    givenBy[i] = $"bolt positions are given by {position.Evidence["key"]}";
-        }
-        // A chain created only with another one (across from the main part, with the position chain)
-        // is refused when that one is not created.
-        var placed = new HashSet<string>(results.Where((result, index) => result.Note == null && refusals[index] == null
-                && givenBy[index] == null)
-            .Select(result => (string)result.Evidence["key"]), StringComparer.Ordinal);
-        for (var i = 0; i < results.Count; i++)
-            if (refusals[i] == null && results[i].Note == null && givenBy[i] == null
-                && results[i].Evidence.TryGetValue("requiresChain", out var required) && required is string needed
-                && needed.Length > 0 && !placed.Contains(needed))
-                refusals[i] = $"created only with {needed}, which is not created";
-        // A secondary part's bolts standing on the main part's are left out only now, when the main
-        // part's chain is known to be created: settings and view frame have refused what they refuse.
-        var created = new HashSet<string>(results.Where((result, index) => result.Note == null && refusals[index] == null
-                && givenBy[index] == null)
-            .Select(result => (string)result.Evidence["key"]), StringComparer.Ordinal);
-        for (var i = 0; i < refusals.Length; i++)
-            if (refusals[i] == null && evaluation.Results[i].Note == null && givenBy[i] == null
-                && evaluation.Results[i].Evidence.TryGetValue("overMainPartChain", out var over)
-                && over is string main && main.Length > 0 && created.Contains(main))
-                refusals[i] = $"the same bolts are dimensioned from the main part by {main}";
-        // Rows go only to the chains that will be placed.
-        var chains = evaluation.Results.Select((result, index) => {
-            var distance = gap + (double)result.Evidence["baseOffset"];
-            if (result.Note == null && refusals[index] == null && givenBy[index] == null && result.Points.Count > 0)
-                distance = NextFreeRow(rows, result, distance, gap);
-            return new BoltRowChain(result, distance, refusals[index], givenBy[index]);
-        }).ToArray();
+        var chains = BoltChainRowPlanner.Place(decisions, OccupiedLines(sideRowCounts, gap), gap);
         if (boltSettings == null) _boltChains.Add(cacheKey, chains);
         return chains;
     }
@@ -839,28 +767,6 @@ public sealed class ViewDimensionContext
             rows.Add((nx, ny, chain.Points[0] * nx + chain.Points[1] * ny + chain.Distance, along.Min(), along.Max()));
         }
         return rows;
-    }
-
-    // Bolt chains on one side whose lines would fall on one another and whose spans overlap are
-    // moved out to one paper gap beyond the line in the way, so a chain whose points stand a little
-    // off the outline does not lose a row. Tekla measures the offset from the chain's first point.
-    private static double NextFreeRow(List<(double Nx, double Ny, double Line, double From, double To)> rows,
-        DimensionRuleResult result, double distance, double gap)
-    {
-        var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
-        var first = result.Points[0];
-        var along = result.Points.Select(point => point.X * -normal.Y + point.Y * normal.X).ToArray();
-        var (from, to) = (along.Min(), along.Max());
-        var start = first.X * normal.X + first.Y * normal.Y;
-        while (rows.Where(row => Math.Abs(row.Nx - normal.X) < 1e-9 && Math.Abs(row.Ny - normal.Y) < 1e-9
-                   // One gap apart is a free row: rounded points must not push a line one row further.
-                   && Math.Abs(row.Line - (start + distance)) < gap - DimensionPlacementSettings.VerificationToleranceViewUnits
-                   && row.From <= to && from <= row.To)
-               .Select(row => (double?)row.Line).Max() is { } inTheWay)
-            distance = inTheWay + gap - start;
-        double Line(double d) => start + d;
-        rows.Add((normal.X, normal.Y, Line(distance), from, to));
-        return distance;
     }
 
     // An incomplete bolt read can hide groups: no bolt chain is created from it.

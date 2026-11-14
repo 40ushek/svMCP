@@ -451,7 +451,7 @@ public sealed class BoltChainRuleTests
     public void ARefusedGroupIsAlwaysListed()
     {
         var group = new BoltChainCandidate("bolt-42", BoltChainCandidate.GroupKind, 42, 10, true, BoltGroupViewClass.Skewed,
-            0, [], [], "bolt group is skewed to the view; no chain is built for it yet", true, new DimensionDirection(0, -1), 0, new object());
+            0, [], [], "bolt group is skewed to the view; no chain is built for it yet", true, new DimensionDirection(0, -1), 0, BoltChainSources.Empty);
         var result = Assert.Single(Decide(new BoltChainSettings(), group));
         Assert.False(result.Create);
         Assert.Contains("skewed", result.Reason);
@@ -579,12 +579,12 @@ public sealed class BoltChainRuleTests
     private static BoltChainCandidate Part(bool main = true, BoltGroupViewClass viewClass = BoltGroupViewClass.Plan,
         bool edges = true, string? refusal = null) =>
         new("bolt-part-10-groups-42-Bottom", BoltChainCandidate.PartKind, 42, 10, main, viewClass, 0,
-            Points(4), [10, 60, 10], refusal, edges, new DimensionDirection(0, -1), 20, new object());
+            Points(4), [10, 60, 10], refusal, edges, new DimensionDirection(0, -1), 20, BoltChainSources.Empty);
 
     private static BoltChainCandidate Steps(bool main = true, bool edges = true, int points = 2, string? refusal = null,
         string key = "bolt-42-X-0") =>
         new(key, BoltChainCandidate.InternalKind, 42, 10, main, BoltGroupViewClass.Plan, 0,
-            Points(points), [60], refusal, edges, new DimensionDirection(0, -1), 20, new object());
+            Points(points), [60], refusal, edges, new DimensionDirection(0, -1), 20, BoltChainSources.Empty);
 
     private static DimensionRulePoint[] Points(int count) => Enumerable.Range(0, count)
         .Select(i => new DimensionRulePoint("p" + i, i * 10, 0, [])).ToArray();

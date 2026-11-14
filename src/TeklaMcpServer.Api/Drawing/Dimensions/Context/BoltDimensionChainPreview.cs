@@ -15,9 +15,8 @@ internal static class BoltDimensionChainPreview
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var settings = boltSettings ?? new BoltChainSettings();
-        var groups = snapshot.TryGetProperty("boltGroups", out var rows)
-            ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, partContours, tolerance, settings)).ToArray()
-            : Array.Empty<object>();
+        var groups = BuildGroups(snapshot, includedPartIds, sides, partContours, tolerance, settings)
+            .Select(group => group.Project()).ToArray();
         return new {
             scope = "bolt-chain-proposals", coordinateSystem = "display",
             coordinateTolerance = tolerance, classToleranceDegrees = settings.ClassToleranceDegrees,
@@ -34,10 +33,16 @@ internal static class BoltDimensionChainPreview
         };
     }
 
+    internal static Group[] BuildGroups(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
+        IReadOnlyCollection<DimensionChainSide> sides, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
+        double tolerance, BoltChainSettings settings) => snapshot.TryGetProperty("boltGroups", out var rows)
+        ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, contours, tolerance, settings)).ToArray()
+        : [];
+
     private static bool Flag(JsonElement value, string name) =>
         value.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.True;
 
-    private static object BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
+    private static Group BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance,
         BoltChainSettings settings)
@@ -55,14 +60,13 @@ internal static class BoltDimensionChainPreview
         var reason = PatternRefusal(group, viewClass, tolerance);
         // Why the group gives no steps; its edge chains do not depend on it.
         var stepReason = reason == null ? StepRefusal(group, viewClass, tolerance) : null;
-        var chains = new List<object>();
+        var chains = new List<StepChain>();
         var edgeChains = new List<object>();
         var candidateChainCount = 0;
-        var decisions = new List<object>();
+        var decisions = new List<GroupPoint>();
         if (reason != null)
         {
-            decisions.AddRange(group.Positions.Select(p => (object)new {
-                index = p.Index, state = "Blocked", reason, point = p.Point }));
+            decisions.AddRange(group.Positions.Select(p => new GroupPoint(p.Index, p.Point, "Blocked", reason!)));
         }
         else
         {
@@ -80,11 +84,11 @@ internal static class BoltDimensionChainPreview
                 foreach (var p in cell.Sources)
                 {
                     centers.TryGetValue(p.Index, out var center);
-                    decisions.Add(new { index = p.Index, point = p.Point,
-                        state = center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
-                        reason = center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
+                    decisions.Add(new GroupPoint(p.Index, p.Point,
+                        center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
+                        center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
                             : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
-                        representativeIndex = cell.Point.Index });
+                        cell.Point.Index));
                 }
             }
             if (stepReason == null && sides.Any(side => side.RunsAlongX()))
@@ -100,17 +104,64 @@ internal static class BoltDimensionChainPreview
         }
         if (reason == null && chains.Count > 0 && candidateChainCount == 0)
             reason = "no internal chain has all source centers admitted by the restriction evidence";
-        return new {
-            boltGroupId = group.ModelId, relatedPartIds = related, partCandidates,
-            partScopeStatus = partCandidates.Length == 1 ? "single included related part; role/policy still requires review"
+        return new Group(group, viewClass, related, partCandidates, reason, stepReason,
+            decisions.ToArray(), chains.ToArray(), edgeChains.ToArray());
+    }
+
+    internal sealed class Group(BoltGroupGeometry geometry, BoltGroupViewClass viewClass, int[] related,
+        int[] partCandidates, string? reason, string? stepReason, GroupPoint[] points, StepChain[] chains, object[] edgeChains)
+    {
+        public BoltGroupGeometry Geometry { get; } = geometry;
+        public BoltGroupViewClass ViewClass { get; } = viewClass;
+        public int[] PartCandidates { get; } = partCandidates;
+        public string? Reason { get; } = reason;
+        public GroupPoint[] Points { get; } = points;
+        public StepChain[] Chains { get; } = chains;
+
+        public object Project() => new {
+            boltGroupId = Geometry.ModelId, relatedPartIds = related, partCandidates = PartCandidates,
+            partScopeStatus = PartCandidates.Length == 1 ? "single included related part; role/policy still requires review"
                 : "unresolved: choose the dimensioned part explicitly",
-            shape = group.Shape, viewClass = viewClass.ToString(),
-            status = reason != null || (chains.Count > 0 && candidateChainCount == 0)
-                ? "Blocked" : chains.Count == 0 ? "NoInternalSpacing" : "Candidate",
-            candidateChainCount, blockedChainCount = chains.Count - candidateChainCount,
-            reason, stepReason, points = decisions, chains, edgeChains,
-            edgeScopeStatus = partCandidates.Length == 0 ? "Blocked: no included related part"
+            shape = Geometry.Shape, viewClass = ViewClass.ToString(),
+            status = Reason != null || (Chains.Length > 0 && Chains.All(chain => !chain.Candidate))
+                ? "Blocked" : Chains.Length == 0 ? "NoInternalSpacing" : "Candidate",
+            candidateChainCount = Chains.Count(chain => chain.Candidate), blockedChainCount = Chains.Count(chain => !chain.Candidate),
+            reason = Reason, stepReason, points = Points.Select(point => point.Project()).ToArray(),
+            chains = Chains.Select(chain => chain.Project()).ToArray(), edgeChains,
+            edgeScopeStatus = PartCandidates.Length == 0 ? "Blocked: no included related part"
                 : "separate proposals per related part; choose part and edge policy before creation"
+        };
+    }
+
+    internal sealed class GroupPoint(int index, double[] point, string state, string reason, int? representativeIndex = null)
+    {
+        public double[] Point { get; } = point;
+        public bool Blocked => state == "Blocked";
+        public object Project() => representativeIndex.HasValue
+            ? (object)new { index, point = Point, state, reason, representativeIndex = representativeIndex.Value }
+            : new { index, state, reason, point = Point };
+    }
+
+    internal sealed class StepPoint(double[] point, int[] sourceIndices)
+    {
+        public double[] Point { get; } = point;
+        public int[] SourceIndices { get; } = sourceIndices;
+        public object Project() => new { point = Point, sourceIndices = SourceIndices };
+    }
+
+    internal sealed class StepChain(string key, int axis, int[] blocked, int startIndex, StepPoint[] points, double[] segments)
+    {
+        public string Key { get; } = key;
+        public int Axis { get; } = axis;
+        public bool Candidate => blocked.Length == 0;
+        public string Reason => Candidate ? "ordered adjacent bolt centers; policy and visibility are not verified"
+            : "restriction evidence does not admit every source; the chain is not shortened";
+        public StepPoint[] Points { get; } = points;
+        public double[] Segments { get; } = segments;
+        public object Project() => new {
+            proposalId = Key, kind = "internal", axis = Axis == 0 ? "X" : "Y", direction = Axis == 0 ? "horizontal" : "vertical",
+            state = Candidate ? "Candidate" : "Blocked", creationMode = "explicitSelectionOnly", reason = Reason,
+            blockedIndices = blocked, startIndex, points = Points.Select(point => point.Project()).ToArray(), segments = Segments
         };
     }
 
@@ -173,7 +224,7 @@ internal static class BoltDimensionChainPreview
         return result;
     }
 
-    private static int AddChains(List<object> chains, IEnumerable<IGrouping<int, Cell>> rows,
+    private static int AddChains(List<StepChain> chains, IEnumerable<IGrouping<int, Cell>> rows,
         int axis, int groupId, IReadOnlyDictionary<int, string?> centers)
     {
         var candidates = 0;
@@ -185,17 +236,10 @@ internal static class BoltDimensionChainPreview
                 .Where(p => !centers.TryGetValue(p.Index, out var state) || state != "Inside")
                 .Select(p => p.Index).OrderBy(index => index).ToArray();
             if (blocked.Length == 0) candidates++;
-            chains.Add(new {
-                proposalId = $"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}", kind = "internal",
-                axis = axis == 0 ? "X" : "Y", direction = axis == 0 ? "horizontal" : "vertical",
-                state = blocked.Length == 0 ? "Candidate" : "Blocked", creationMode = "explicitSelectionOnly",
-                reason = blocked.Length == 0 ? "ordered adjacent bolt centers; policy and visibility are not verified"
-                    : "restriction evidence does not admit every source; the chain is not shortened",
-                blockedIndices = blocked, startIndex = points[0].Point.Index,
-                points = points.Select(cell => new { point = cell.Point.Point,
-                    sourceIndices = cell.Sources.Select(p => p.Index).ToArray() }).ToArray(),
-                segments = points.Skip(1).Select((cell, index) => cell.Point.Point[axis] - points[index].Point.Point[axis]).ToArray()
-            });
+            chains.Add(new StepChain($"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}", axis, blocked,
+                points[0].Point.Index, points.Select(cell => new StepPoint(cell.Point.Point,
+                    cell.Sources.Select(p => p.Index).ToArray())).ToArray(),
+                points.Skip(1).Select((cell, index) => cell.Point.Point[axis] - points[index].Point.Point[axis]).ToArray()));
         }
         return candidates;
     }

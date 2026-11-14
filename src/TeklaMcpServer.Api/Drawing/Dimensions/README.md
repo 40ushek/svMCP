@@ -80,6 +80,39 @@ read once per context and shown in the answer as `boltSettings`; no file gives t
 defaults, `{ "positionBoltsTo": "None", "secondaryPart": "ByPart" }` gives the chains of
 before. Edit the file, then read the view again with `refresh=true`.
 
+### Bolt-chain architecture
+
+Current status and the remaining stages are tracked in the
+[architectural work order](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14).
+
+The frozen snapshot is read at the input boundary. Geometry builders return typed
+groups, spacing chains and part-chain geometry; the calculation does not serialize a
+preview and read its JSON back. Legacy `boltChains` responses project the same geometry.
+
+| Stage | Owner | Result |
+|---|---|---|
+| Group admission and part roles | `BoltChainGroup` | Typed source groups |
+| Twins and per-axis merging | `BoltGroupMergePlanner` | Merge units |
+| Candidate construction | `BoltChainCandidates`, `BoltMainPartChainBuilder` | Geometry, source identity, replacement and required-chain links |
+| Placement against contours and obstacles | `BoltChainPlacement` | Candidate side and base offset |
+| Settings | `BoltChainRule.Evaluate` | Typed `BoltChainDecision` values |
+| Final selection | `BoltChainSelectionPlanner` | View admission, position coverage, requirements, then main-part replacements |
+| Annotation rows | `BoltChainRowPlanner` | Offsets for selected chains only |
+| Answer formatting | `BoltChainPreviewProjection` | Existing Bolt-row contract |
+
+`ViewDimensionContext` supplies the frozen inputs, section-edge support, occupied lines
+and cache. It does not interpret `Evidence` dictionaries to choose bolt chains. The
+generic `IDimensionRule` adapter remains available for diagnostics. Candidates retain
+all `SourcePositions` separately from their representative dimension `Points`; coverage
+uses the former, including the pre-check in `BoltMainPartChainBuilder.AddAcross`.
+`BoltChainSources` explicitly distinguishes captured positions, chain points and spacing
+indices; output precision does not depend on an input collection's runtime type.
+Part-chain geometry has get-only properties and typed source references. Shared contour
+edges and row/column representatives are built by `BoltChainGeometry`.
+Source-coordinate precision, keys, reasons and preview order remain
+unchanged. Final selection refers to the planned preview; the existing batch writer
+still validates and writes the caller's selection separately.
+
 ## Repeats are marked in the preview (2026-11-13)
 
 Asked `repeats`, a chain read marks every repeat (`sameView`, `overallOnSheet`,

@@ -1,21 +1,138 @@
 # Bolt Chains Roadmap
 
-Created 2026-11-13. Status: the first release (work order steps 1-5) is implemented
-(commit `8c71946`) and placed live on M.502 by a cold Haiku run. Open: the M.81
-sections run (rest of step 6), fresh-placement acceptance of the refined section-edge
-rule (step 6a), and steps 7-10. The refinement is implemented: ends are confirmed
-independently, square edges or facing corners are used, and every source bolt must
-belong to the same outer contour before any end is admitted.
+Created 2026-11-13. Status synchronized 2026-11-14 with the current working tree.
+The first release (work order steps 1-5) was placed live on M.502 by a cold Haiku run.
+Later source increments implement section-edge checks, position chains closed on the
+far square end, cross chains from the main part and shared-group reuse. The bolt-core
+architectural refactor is implemented and tested, but is not deployed.
+Open: the M.81 sections run (rest of step 6), fresh-placement acceptance of the refined
+section-edge rule (step 6a), the remaining architectural stages below, and the unfinished
+functional work in steps 7-10. Replay of saved cases is not live placement acceptance.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
 close to Tekla's own. The neighbours own the rest:
 
 | Roadmap | Owns |
 |---|---|
-| [Dimensions](ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02) | Delivery status of what exists: bolt preview and explicit creation |
+| [Dimensions](ROADMAP_DIMENSIONS.md#bolt-chains-and-composition-current-work-order-2026-10-02) | Summary of bolt delivery and the independent write/placement gates |
 | [Bolt Geometry](../Geometry/Bolts/ROADMAP_BOLT_GEOMETRY.md) | Bolt geometry facts, the selection gate by view depth, earlier research of Tekla's rules and DLLs |
 | [Chain Composition](ROADMAP_CHAIN_COMPOSITION.md) | Merging chains of different kinds, bolts with parts included |
 | this file | Classes of bolt groups, the settings, the decision to create, the `Bolt` row |
+
+## Architectural refactor: status and plan (2026-11-14)
+
+This section is the current architectural work order for bolt dimensions. The older
+work-order entries below retain the functional decisions and drawing evidence; they
+do not mean that the whole architectural plan or the live acceptance gates are closed.
+Preserve public MCP/bridge contracts, preview keys, point order, source precision,
+refusal reasons, offsets and the verified-write protocol throughout these stages.
+Behavior changes discovered during the refactor need their own regression and decision.
+
+### 0. Separate the bolt calculation stages — implemented in source
+
+| Responsibility | Current owner |
+|---|---|
+| Read typed group projection and assign part roles | `BoltChainGroup` |
+| Twins and per-axis merge units | `BoltGroupMergePlanner` |
+| Assemble candidates and link coincident bolt coverage | `BoltChainCandidates` |
+| Main-part position and cross-chain geometry | `BoltMainPartChainBuilder` |
+| Contour/obstacle placement and side alternatives | `BoltChainPlacement` |
+| Settings and built-geometry refusals | `BoltChainRule.Evaluate` |
+| View/read admission, position coverage, requirements, main-part replacements | `BoltChainSelectionPlanner` |
+| Assign annotation rows to selected chains | `BoltChainRowPlanner` |
+| Bolt-row output and generic rule diagnostics | `BoltChainPreviewProjection` |
+
+Candidate construction consumes typed results instead of serializing previews and
+reading them back. `BoltChainDecision` replaces `Evidence` lookups and parallel refusal
+arrays in `ViewDimensionContext.BoltChains`. `SourcePositions` retains all source centers
+separately from representative dimension `Points`. The generic `IDimensionRule` adapter
+and legacy `boltChains` response remain supported.
+
+Validation completed after the review follow-up: 1718 tests passed, 1 skipped with invariant culture; Release API
+and bridge builds succeeded using the existing built `SolidContacts` dependency. All
+696 pre/post answers matched exactly after normalizing context IDs: 64 synthetic
+contexts and 168 locally saved contexts, queried as `chain`, `chainDetails`, `boltChains`.
+That comparison used a temporary local harness and local snapshots; it is evidence for
+this increment, not yet a reproducible checked-in corpus. No new deployment or live
+dimension placement was performed.
+
+Review follow-up in the working tree, **built and tested**: `AddAcross` now
+checks complete `SourcePositions` and links to the covering chain instead of creating
+an orphan cross chain; this is a correctness change, not only a mechanical extraction.
+Contour traversal/edges, source coverage and row representatives share one implementation.
+`BoltChainSources` gives the three supported source forms explicit types; captured
+source precision no longer depends on array-versus-list inputs. `BuiltChain` has get-only
+properties and typed source/blocked-source references. Position coverage enumerates a
+snapshot before replacing array entries. Added regressions cover orphan prevention,
+disabled-main-part fallback, direct merge/placement behavior, representative clustering
+and source output forms/precision. The full test run and Release builds passed after
+these changes; all 696 compatibility answers matched the pre-refactor baseline again.
+The corpus does not contain the orphan case; its intended correction is covered by the
+new builder/context regressions. Deployment and live acceptance remain open.
+
+### 1. Make the compatibility baseline reproducible — next
+
+- Add a small checked-in, suitably sanitized fixture set and a repeatable comparison
+  test using the existing context-case infrastructure. Cover M.298-style position and
+  cross chains, sections, mirrored/reversed members, shared and merged groups, notched
+  contours, view-frame refusal and incomplete reads.
+- Capture expected keys, ordered points/segments, source precision, creation/refusal,
+  replacement reasons and offsets. Normalize only volatile context identity; numerical
+  differences or missing source records must remain visible.
+- Include `chain,repeats` followed by batch reference resolution so the preview read,
+  cached repeat state and submitted offsets are checked together.
+- **Done when:** a clean checkout can reproduce these comparisons without the temporary
+  harness or `%LOCALAPPDATA%` snapshots; all existing tests still pass.
+
+### 2. Finish the geometry and source contracts — partial source follow-up; completion after stage 1
+
+- Move reusable geometry data out of nested legacy-preview types
+  (`BoltDimensionChainPreview.Group` / `StepChain`, `BoltPartChainPreview.BuiltChain`).
+  Both the Bolt row and the legacy preview should consume the same typed geometry;
+  output projection must not own the calculation's data contract.
+- The source review follow-up replaces `Sources` with `BoltChainSources` and makes
+  group/index references explicit; its validation passed. `Holes` remains an opaque
+  output payload. Finish the minimal typed contract for owning-part/hole metadata and
+  retain complete source membership when projection merges centers or selects row points.
+- The `AddAcross` point comparison is corrected in the source follow-up above. Continue
+  the source-identity audit: a representative dimension point is not proof that every
+  original bolt is covered. The orphan regression passes; keep this observable
+  correction distinct from the mechanical contract migration.
+- **Done when:** neither geometry nor coverage must inspect output JSON or infer source
+  membership from retained dimension points; single/multiple columns, multiple plates,
+  merged groups and coincident centers pass provenance and compatibility checks.
+
+### 3. Separate structural-chain composition and repeat state — planned, after stage 2
+
+- `CarryEdgelessBolts` and `MarkCarriedRepeats` still live in `ViewDimensionContext` and
+  transform serialized preview rows. This part was not migrated in stage 0.
+- Reuse the existing composition/repeat domain where appropriate; move bolt carry,
+  restored overall and repeat decisions onto typed inputs/results before final projection.
+  Keep `ViewDimensionContext` responsible for frozen view inputs and cached read state.
+- Preserve the order of decisions, `storedRepeats`, refusal precedence, fallback to the
+  plate chain and row reservation only for selected chains. Distinguish a planned chain
+  from a dimension actually written by the batch; do not treat preview eligibility as
+  successful creation.
+- **Done when:** these operations do not read formatted preview dictionaries, and tests
+  cover carry/restored-overall repeats, mirror repeats, preview-to-batch consistency,
+  refused dependencies and the absence of reserved rows for omitted chains.
+
+### 4. Review, deploy and accept in Tekla — planned
+
+- Review the accumulated diff against the compatibility baseline; rerun the full tests
+  and bridge build. Record exactly which architectural stages the delivery contains.
+- Deploy the matching bridge/API/contact assemblies through the controller workflow;
+  verify deployed hashes and use fresh contexts for the live check.
+- Place and read back M.298 (closed longitudinal chain, both cross chains `60 / 80 / 60`,
+  shared-group case), then the M.81 sections and the refined section-edge cases of 6a.
+  Check rendered lines, edge attachment, offsets and neighbouring dimensions; restore
+  the reference sheet after the agreed live run.
+- **Done when:** the deployed version and fresh-placement evidence are recorded, with
+  remaining failures stated explicitly. A green replay/build alone cannot close 6/6a.
+
+Functional extensions stay in the separate work order below: `WorkingPoints`, *Check*,
+centered bolts, `.adcd` decoding, unsupported skewed patterns, `Necessary` and combined
+steps are not implemented or accepted by this architectural refactor.
 
 ## Decisions (2026-11-13)
 
@@ -279,12 +396,16 @@ The plant's own choice of all these options exists as a file in the model folder
 - `boltChains` (obsolete) builds chains for `Plan` and `Side` groups; the two old
   orientation refusals are gone; a turned, staggered or incomplete pattern refuses its
   steps only (`stepReason`).
-- `BoltChainSettings`, `BoltChainCandidates` and `BoltChainRule` build and decide the
-  chains of the `Bolt` row in the chain preview. A key from it is written by the batch
-  like a `Local` key; a key marked not to create rejects the whole batch.
-- The skill places the `Bolt` row in the standard run; it takes no part in `repeats`.
-  It reports an incomplete bolt read from `readIncomplete`.
-- No *Position* and no *Check* dimension is built.
+- The Bolt row uses the typed construction, selection and placement stages listed in
+  the architectural plan above. A key from it is written by the batch like a `Local`
+  key; a key marked not to create rejects the whole batch.
+- The skill places the `Bolt` row in the standard run. Ordinary group chains do not
+  take part in the segment-only repeat comparison; position chains and carried
+  location chains are compared as location chains. An incomplete bolt read is reported
+  in `readIncomplete` and creates no bolt dimensions.
+- *Position* to the main part and associated cross chains are implemented in source.
+  `WorkingPoints`, *Check* and centered-bolt support remain open; live acceptance of
+  the later source increments has not been completed.
 
 Placed live on M.502, 2026-11-13, by a cold Haiku run (all dimensions deleted and
 placed again; 19 dimensions on 3 views, 13 tool calls, about 45 s, no failures):
@@ -608,14 +729,15 @@ Steps 1-5 done on 2026-11-13.
       refuses with a reason; the settings chosen reach the batch.
       Live: M.298 (restore the hand-made sheet afterwards), M.175, M.119.
    Done in source 2026-11-14, not deployed: settings `PositionBoltsTo` / `SecondaryPart`
-   (default MainPart + ByBolt); the `position` chain built in `BoltChainCandidates.Position`
+   (default MainPart + ByBolt); the `position` chain is now built in `BoltMainPartChainBuilder.BuildPosition`
    (non-section views, one main part with a start and end point; none offered for a main
    part with no axis, a plate); its decision in `BoltChainRule` (None leaves it out,
-   WorkingPoints refuses); in `ViewDimensionContext.BoltChains`, once it is created after
+   WorkingPoints refuses); in `BoltChainSelectionPlanner`, once it is selected after
    the view frame and the bolt read, the part chains along it whose every group it holds
    say "bolt positions are given by <key>" (that reason comes first, so an edgeless chain
    it holds is not carried); compared for repeats like a carried chain. The saved M.298
-   front view gives 40 / 260 / 760 / 60 / 100 / 660 / 2800 exactly. Tests: refused by the
+   front view initially gave 40 / 260 / 760 / 60 / 100 / 660 / 2800, before the later
+   decision below added the closing 40. Tests: refused by the
    frame keeps today's chains, the order of columns, None + ByPart, ByPart without the
    plate, the member drawn the other way, the datum on the end contour when the axis
    starts 10 before it, an unsquare start end, WorkingPoints, an edgeless plate not
@@ -667,7 +789,7 @@ Steps 1-5 done on 2026-11-13.
    replaced a merged chain and the other group lost its dimension); its end points, as
    finally placed, must stand on main part edges running through them (they were checked
    at another place and could lie off the beam); and it is created only with the position
-   chain (`RequiresChain`, decided in `BoltChains` after the view frame), so a refused
+   chain (`RequiresChain`, now decided in `BoltChainSelectionPlanner` after the view frame), so a refused
    position chain leaves the secondary part's chain across as it was. Tests: a merged
    chain with a bolt off the beam, a notched flange, a refused position chain, and the
    case with nothing in the way as control.
@@ -676,6 +798,8 @@ Steps 1-5 done on 2026-11-13.
    it. Comparing only the retained row points missed other bolt columns and produced
    duplicate preview keys. Regression coverage checks one and two columns, both plate
    links, unique keys and batch reference resolution. Done in source, not deployed.
+   Architectural refactor status, validation and remaining work are maintained in
+   [the architectural plan](#architectural-refactor-status-and-plan-2026-11-14) above.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
 10. Merging with part chains by Tekla's *Combine dimensions* modes: in the Chain
@@ -693,7 +817,7 @@ Steps 1-5 done on 2026-11-13.
     the main part's (reason names the group). Done in source 2026-11-14, not deployed:
     a secondary part chain whose every bolt stands on a bolt of a main-part chain on the
     same axis is linked to it when the chains are built (`OverMainPartChain`); in
-    `ViewDimensionContext.BoltChains`, after the settings, the view frame and the bolt
+    `BoltChainSelectionPlanner`, after the settings, the view frame and the bolt
     read, it is refused only when that main-part chain is created, "the same bolts are
     dimensioned from the main part by <key>", and rows go to the chains placed after that
     (review: decided at build time, a main chain refused later by `MainPartInternal=None`

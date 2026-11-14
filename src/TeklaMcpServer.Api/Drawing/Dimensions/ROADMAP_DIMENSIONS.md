@@ -1,6 +1,7 @@
 # Dimensions Roadmap
 
-Updated 2026-11-12 (assembly chain review added below; the rest is as of 2026-10-02).
+Updated 2026-11-14 (bolt delivery and architectural-refactor status synchronized;
+assembly chain review is dated 2026-11-12; other historical sections retain their dates).
 This file is the active work order. Steps 1-3 have source
 implementations and automated tests; placement/write acceptance still has live
 gates. Step 4's steel, section and timber-wall previews are implemented behind
@@ -499,6 +500,25 @@ selection or dimension placement was added.
 This update supplements the structural/panel work order below. It does not close
 the independent batch, contact, layout or panel acceptance gates.
 
+**Current update (2026-11-14):** the automatic `Bolt` row, main-part position and cross
+chains, shared-group reuse and the bolt-core architectural refactor are implemented in
+source. The refactor separates typed geometry, settings, final selection, annotation
+rows and output projection; deployment remains open. Validation:
+1718 tests passed, 1 skipped with invariant culture; API/bridge Release builds succeeded;
+696 pre/post preview answers matched after normalizing context IDs. The comparison
+uses local snapshots and a temporary harness, so a checked-in compatibility corpus is
+the next step. These results do not replace fresh live placement/read-back acceptance.
+The source review fixes orphan cross chains and tightens source/geometry contracts;
+the validation counts and repeated compatibility comparison above include that follow-up.
+
+The detailed current status and ordered plan live in
+[Bolt Chains: architectural refactor](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14):
+reproducible fixtures → geometry/source contracts → typed structural composition and
+repeat handling → review/deployment/live acceptance. The M.81 run and refined
+section-edge gate remain open. Functional extensions such as `WorkingPoints`, *Check*
+and `.adcd` decoding remain separate. The October notes below describe the earlier
+explicit-selection increment, not the whole current automatic path.
+
 **Implemented:** frozen raw bolt groups in the view dimension context; internal
 row/column and actual projected part-edge proposals; combined per-part chains
 across model bolt groups, preserving group/index provenance; explicit selection
@@ -516,19 +536,21 @@ projected contour; its correspondence to the section edge remains unverified.
 all blocked-source diagnostics, boundary tests and shorter tool descriptions are
 implemented and tested. Deployment and runtime acceptance of that cleanup remain
 open; live evidence above belongs to the previous deployed increment. This section
-is the canonical status for bolt-chain delivery; other roadmaps link here.
+summarizes bolt delivery; the Bolt Chains roadmap owns its current detailed plan.
 Composition design/work order lives in [Chain Composition roadmap](ROADMAP_CHAIN_COMPOSITION.md).
 Commit/push history belongs in Git, not roadmap status.
 
 ### Targeted refactoring before chain composition (2026-10-02)
 
-Status: review findings and proposed work, not implemented. Preserve the public
-MCP/bridge contracts and verified-write protocol. Prefer existing domain models;
+Status synchronized 2026-11-14: the bolt-candidate core of this proposal is implemented;
+typed structural composition and repeat handling remain planned in the Bolt Chains
+roadmap. The other batch, reconciliation and performance items below retain their
+independent status. Preserve the public MCP/bridge contracts and verified-write protocol. Prefer existing domain models;
 do not replace the whole dimension module or introduce a new framework.
 
 | Priority | Area | Proposed change and acceptance |
 |---|---|---|
-| High | `ViewDimensionContext`, bolt preview/resolution | Define only the minimal typed proposal contract needed by the first composition use case, reusing existing models and adapters. Preserve supported point order, provenance, eligibility, IDs, precision and refusal diagnostics; JSON remains an output boundary. Do not require migration of all preview families before composition starts. |
+| High, partially implemented | `ViewDimensionContext`, bolt preview/resolution | The bolt candidate/selection/row stages now use typed data. Finish shared geometry/source contracts and the remaining carry/repeat integration through the [bolt architectural plan](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14). Preserve point order, provenance, eligibility, IDs, precision and refusal diagnostics; do not require migration of every preview family before composition starts. |
 | Incremental | `ViewDimensionContextProvider.Batch.cs` | Extract phases only where the composition integration needs them. Avoid repeated source resolution and attribute validation; recalculate only placement for the actual row. Full batch restructuring is a separate task, not a prerequisite. Preserve complete preflight, retention, stop-on-failure and partial-success reporting. |
 | High, separate correctness fix | Final batch reconciliation | Compare final observed points, side, offset and type with the prepared plan, including retained and merged cases. Keep rendered-line observation distinct from calculated reference lines. Add unchanged-ID reflow regressions and the false-merged regression specified below. |
 | High, measured | Verified-write lookup | `FindDimensionSet` enumerates sets across the whole sheet and repeats on verification/correction/cleanup. Baseline below confirms a major remaining per-chain cost. Evaluate view-scoped or ID-based lookup with a fresh read after each commit; preserve ownership/deletion/cleanup checks and never trust stale drawing handles. |

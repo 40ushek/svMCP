@@ -74,6 +74,9 @@
 
 Подробный план: [`src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md)
 Архитектура цепочек и композиция: [отдельный roadmap](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
+Архитектурный рефакторинг болтовых размеров: [состояние и пошаговый план](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14).
+Ядро разделено на этапы и проверено в исходниках; остаются воспроизводимый корпус,
+контракты геометрии и источников, перенос/повторы конструктивных цепочек и live-приёмка.
 Общий drawing-level план: [`src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`](src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md)
 
 Краткое состояние:
