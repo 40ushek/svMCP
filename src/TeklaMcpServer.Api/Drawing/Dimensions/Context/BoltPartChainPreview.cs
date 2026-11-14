@@ -16,26 +16,31 @@ internal static class BoltPartChainPreview
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
         BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyList<IReadOnlyDictionary<int, int>>? units = null)
+        => BuildChains(BoltSnapshotInput.Read(snapshot), includedParts, sides, contours, tolerance, boltSettings, perGroup, units);
+
+    internal static BoltPartChainGeometry[] BuildChains(BoltSnapshotInput snapshot, IReadOnlyCollection<int> includedParts,
+        IReadOnlyCollection<DimensionChainSide> sides,
+        IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
+        BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyList<IReadOnlyDictionary<int, int>>? units = null)
     {
         var settings = boltSettings ?? new BoltChainSettings();
-        if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<BoltPartChainGeometry>();
         var sources = new List<Source>();
-        foreach (var row in rows.EnumerateArray())
+        foreach (var row in snapshot.Groups)
         {
-            var group = BoltDimensionChainPreview.ReadGroup(row);
+            var group = row.Geometry;
             var related = new[] { group.PartToBeBoltedId, group.PartToBoltToId }
                 .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds).Distinct()
                 .Where(includedParts.Contains);
-            var restriction = row.GetProperty("restriction").EnumerateArray().ToArray();
+            var restriction = row.Restrictions;
             var viewClass = BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees);
             var refusal = BoltDimensionChainPreview.PatternRefusal(group, viewClass, tolerance);
             foreach (var partId in related)
                 foreach (var position in group.Positions)
                 {
-                    var evidence = restriction.Where(r => r.GetProperty("index").GetInt32() == position.Index).ToArray();
-                    var reason = refusal ?? (evidence.Length == 1 && evidence[0].GetProperty("centerState").GetString() == "Inside"
+                    var evidence = restriction.Where(r => r.Index == position.Index).ToArray();
+                    var reason = refusal ?? (evidence.Length == 1 && evidence[0].CenterState == "Inside"
                         ? null : "center restriction is " + (evidence.Length == 1
-                            ? evidence[0].GetProperty("centerState").GetString() : "missing or ambiguous"));
+                            ? evidence[0].CenterState : "missing or ambiguous"));
                     sources.Add(new Source(partId, group.ModelId, position.Index, position.Point, reason, viewClass == BoltGroupViewClass.Side));
                 }
         }

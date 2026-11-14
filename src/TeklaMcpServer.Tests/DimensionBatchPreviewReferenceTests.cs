@@ -49,6 +49,7 @@ public sealed class DimensionBatchPreviewReferenceTests
                 if (file == "overall") throw new InvalidOperationException("Dimension attributes 'overall' could not be loaded; nothing created");
             });
         provider.Get(7);
+        context.Query("chain");
 
         var result = provider.CreateBatch(new CreateDimensionsBatchRequest {
             ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
@@ -214,6 +215,7 @@ public sealed class DimensionBatchPreviewReferenceTests
     public void SerializedReferenceRetainsDefaultOverallAttributes()
     {
         var context = Context("steel");
+        context.Query("chain");
         var json = JsonSerializer.Serialize(new[] { new BatchDimensionChain { Preview = "Bottom-overall" } });
         var request = DrawingCommandParsers.ParseCreateDimensionsBatchRequest([
             "create_dimensions_batch", "7", context.ContextId, json, "steel"
@@ -227,6 +229,7 @@ public sealed class DimensionBatchPreviewReferenceTests
     public void PreviewReferenceWithoutRuleSetIsRejectedBeforeAnyWrite()
     {
         var context = Context("steel");
+        context.Query("chain");
         var json = JsonSerializer.Serialize(new[] { new BatchDimensionChain { Preview = "Bottom-overall" } });
         var request = DrawingCommandParsers.ParseCreateDimensionsBatchRequest([
             "create_dimensions_batch", "7", context.ContextId, json
@@ -274,7 +277,8 @@ public sealed class DimensionBatchPreviewReferenceTests
 
     private static CreateDimensionsBatchRequest Batch(ViewDimensionContext context, BatchDimensionChain chain,
         string ruleSet = "steel", string chainView = "chain") => new() {
-        ViewId = 7, ContextId = context.ContextId, RuleSet = ruleSet, ChainView = chainView, Chains = [chain]
+        ViewId = 7, ContextId = context.ContextId, RuleSet = ruleSet, ChainView = chainView,
+        PreviewPlanId = context.Query(chainView, ruleSet: ruleSet).GetProperty("previewPlanId").GetString(), Chains = [chain]
     };
 
     private sealed class Harness

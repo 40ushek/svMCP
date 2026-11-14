@@ -160,7 +160,7 @@ internal sealed class SectionDimensionChainPreview
         return new SideResult([
             ProfileChain(profileResult),
             LocationChain(locationResult),
-            Empty("overall", overallNote)], (int[])locationResult.Evidence["locatedPartIds"],
+            Empty("overall", overallNote)], locationResult.RequireDetails<SectionLocationDetails>().LocatedPartIds,
             MergeChain(profile, location, side), side,
             profile.Concat(location).GroupBy(point => point.Id).Select(group => group.First()).ToArray());
     }
@@ -218,9 +218,9 @@ internal sealed class SectionDimensionChainPreview
             points = result.Points.Select(point => new { pointId = point.Id,
                 partIds = point.Sources.Where(source => source.ModelId.HasValue)
                     .Select(source => source.ModelId!.Value).Distinct().ToArray() }).ToArray(),
-            locatedByProfilePartIds = (int[])result.Evidence["locatedByProfilePartIds"],
-            offeredOnOtherSidePartIds = (int[])result.Evidence["offeredOnOtherSidePartIds"],
-            mergedNearbyPartIds = (int[])result.Evidence["mergedNearbyPartIds"],
+            locatedByProfilePartIds = result.RequireDetails<SectionLocationDetails>().LocatedByProfilePartIds,
+            offeredOnOtherSidePartIds = result.RequireDetails<SectionLocationDetails>().OfferedOnOtherSidePartIds,
+            mergedNearbyPartIds = result.RequireDetails<SectionLocationDetails>().MergedNearbyPartIds,
             note = (string?)null
         };
 

@@ -148,8 +148,11 @@ public sealed partial class TeklaDrawingDimensionsApi
             activeDrawing.CommitChanges("(MCP) PlaceControlDiagonals");
             commitSw.Stop();
 
-            result.Created = true;
-            result.CreatedCount = dimIds.Count;
+            var verified = ReadCreatedDimensionIds(activeDrawing, typeof(StraightDimensionSet), dimIds, out var readError);
+            result.Created = readError == null && verified.Count == pairs.Count;
+            result.VerificationStatus = readError != null ? "readbackFailed" : result.Created ? "presenceVerified; rendered geometry unverified" : "readbackIncomplete";
+            result.Error = result.Created ? null : readError ?? "Not all requested dimensions were inserted and found on read-back; inspect before retrying";
+            result.CreatedCount = verified.Count;
             result.DimensionId = dimIds[0];
             result.DimensionIds = dimIds.ToArray();
             result.CommitMs = commitSw.ElapsedMilliseconds;
@@ -290,6 +293,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     }
 
                     var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
+                    result.RequestedCount++;
                     if (angleDim.Insert())
                         dimIds.Add(angleDim.GetIdentifier().ID);
                 }
@@ -335,6 +339,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                     }
 
                     var angleDim = new AngleDimension(targetView, vertex, first, second, distance, attributes);
+                    result.RequestedCount++;
                     if (angleDim.Insert())
                         dimIds.Add(angleDim.GetIdentifier().ID);
                 }
@@ -355,8 +360,11 @@ public sealed partial class TeklaDrawingDimensionsApi
 
         activeDrawing.CommitChanges("(MCP) PlaceContourAngleDimensions");
 
-        result.Created = true;
-        result.CreatedCount = dimIds.Count;
+        var verified = ReadCreatedDimensionIds(activeDrawing, typeof(AngleDimension), dimIds, out var readError);
+        result.Created = readError == null && verified.Count == result.RequestedCount;
+        result.VerificationStatus = readError != null ? "readbackFailed" : result.Created ? "presenceVerified; rendered geometry unverified" : "readbackIncomplete";
+        result.Error = result.Created ? null : readError ?? "Not all requested dimensions were inserted and found on read-back; inspect before retrying";
+        result.CreatedCount = verified.Count;
         result.DimensionIds = dimIds.ToArray();
         return result;
     }
@@ -514,10 +522,36 @@ public sealed partial class TeklaDrawingDimensionsApi
         }
 
         activeDrawing.CommitChanges("(MCP) PlaceContourRadiusDimensions");
-        result.Created = true;
-        result.CreatedCount = dimIds.Count;
+        var verified = ReadCreatedDimensionIds(activeDrawing, typeof(RadiusDimension), dimIds, out var readError);
+        result.Created = readError == null && verified.Count == result.ArcCount;
+        result.VerificationStatus = readError != null ? "readbackFailed" : result.Created ? "presenceVerified; rendered geometry unverified" : "readbackIncomplete";
+        result.Error = result.Created ? null : readError ?? "Not all requested dimensions were inserted and found on read-back; inspect before retrying";
+        result.CreatedCount = verified.Count;
         result.DimensionIds = dimIds.ToArray();
         return result;
+    }
+
+    private static HashSet<int> ReadCreatedDimensionIds(Tekla.Structures.Drawing.Drawing drawing,
+        System.Type type, IReadOnlyCollection<int> expected, out string? error)
+    {
+        error = null;
+        var previous = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = true;
+        try
+        {
+            var found = new HashSet<int>();
+            var objects = drawing.GetSheet().GetAllObjects(type);
+            while (objects.MoveNext())
+                if (objects.Current is DrawingObject item && expected.Contains(item.GetIdentifier().ID))
+                    found.Add(item.GetIdentifier().ID);
+            return found;
+        }
+        catch (System.Exception ex)
+        {
+            error = "Dimension read-back failed after insertion: " + ex.Message + "; inspect before retrying";
+            return [];
+        }
+        finally { DrawingEnumeratorBase.AutoFetch = previous; }
     }
 
     private static AngleDimensionDebugInfo CreateAngleDimensionDebugInfo(AngleDimension dim)

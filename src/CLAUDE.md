@@ -210,7 +210,7 @@ direction = `"-dy,dx,0"` (перпендикуляр к диагонали)
 - `TextBounds` пока intentionally conservative: `null`, без fake geometry
 - measured value пока не торчит в публичный JSON; compile-spike подтверждён через `StraightDimension.Value.GetUnformattedString()`
 - dimensions arrangement сейчас перепроектируется по эталону `E:\repos\svMCP\dim`
-- публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
+- `arrange_dimensions` — публичный MCP-инструмент; `get_dimension_arrangement_debug` есть только как команда моста
 - контракт для будущего arrange:
   - входной gap задаётся в бумажных единицах
   - внутри он переводится в drawing units как `paperGap * viewScale`

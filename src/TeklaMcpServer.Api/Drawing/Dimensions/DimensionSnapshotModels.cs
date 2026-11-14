@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -48,4 +49,43 @@ internal sealed class TeklaDimensionSetSnapshot
     public DimensionGeometryKind GeometryKind { get; set; }
     public DimensionType ClassifiedDimensionType { get; set; }
     public List<DimensionSourceReference> SourceReferences { get; } = [];
+}
+
+/// <summary>Compatibility input adapter; grouping always uses the production snapshot contract.</summary>
+internal static class DimensionSnapshotProjection
+{
+    internal static TeklaDimensionSetSnapshot FromReadModel(DrawingDimensionInfo source)
+    {
+        var snapshot = new TeklaDimensionSetSnapshot {
+            Id = source.Id, Type = source.Type, TeklaDimensionType = source.DimensionType,
+            ViewId = source.ViewId, ViewType = source.ViewType, ViewScale = source.ViewScale,
+            Orientation = source.Orientation, Distance = source.Distance,
+            DirectionX = source.DirectionX, DirectionY = source.DirectionY, TopDirection = source.TopDirection,
+            Bounds = Copy(source.Bounds), ReferenceLine = Copy(source.ReferenceLine),
+            SourceKind = source.SourceKind, GeometryKind = source.GeometryKind,
+            ClassifiedDimensionType = source.ClassifiedDimensionType
+        };
+        snapshot.MeasuredPoints.AddRange(source.MeasuredPoints.Select(point => new DrawingPointInfo {
+            X = point.X, Y = point.Y, Order = point.Order
+        }));
+        snapshot.Segments.AddRange(source.Segments.Select(FromReadModel));
+        snapshot.SourceReferences.AddRange(source.SourceReferences.Select(reference => new DimensionSourceReference {
+            SourceKind = reference.SourceKind, DrawingObjectId = reference.DrawingObjectId, ModelId = reference.ModelId
+        }));
+        return snapshot;
+    }
+
+    internal static TeklaDimensionSegmentSnapshot FromReadModel(DimensionSegmentInfo source) => new() {
+        Id = source.Id, StartX = source.StartX, StartY = source.StartY, EndX = source.EndX, EndY = source.EndY,
+        Distance = source.Distance, DirectionX = source.DirectionX, DirectionY = source.DirectionY,
+        TopDirection = source.TopDirection, Bounds = Copy(source.Bounds), TextBounds = Copy(source.TextBounds),
+        DimensionLine = Copy(source.DimensionLine), LeadLineMain = Copy(source.LeadLineMain), LeadLineSecond = Copy(source.LeadLineSecond)
+    };
+
+    private static DrawingBoundsInfo? Copy(DrawingBoundsInfo? source) => source == null ? null : new() {
+        MinX = source.MinX, MinY = source.MinY, MaxX = source.MaxX, MaxY = source.MaxY
+    };
+    private static DrawingLineInfo? Copy(DrawingLineInfo? source) => source == null ? null : new() {
+        StartX = source.StartX, StartY = source.StartY, EndX = source.EndX, EndY = source.EndY
+    };
 }

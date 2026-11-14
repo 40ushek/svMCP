@@ -16,7 +16,7 @@ public sealed partial class TeklaDrawingDimensionsApi
             throw new DrawingNotOpenException();
 
         var previousAutoFetch = DrawingEnumeratorBase.AutoFetch;
-        DrawingEnumeratorBase.AutoFetch = false;
+        DrawingEnumeratorBase.AutoFetch = true;
         try
         {
             StraightDimensionSet? dimSet = null;
@@ -33,10 +33,10 @@ public sealed partial class TeklaDrawingDimensionsApi
             if (dimSet == null)
                 throw new System.Exception($"DimensionSet {dimensionId} not found");
 
-            dimSet.Distance += delta;
-            dimSet.Modify();
-            activeDrawing.CommitChanges();
-            return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = dimSet.Distance };
+            return DimensionMoveProtocol.Execute(dimensionId, dimSet.Distance, delta,
+                distance => { dimSet.Distance = distance; return dimSet.Modify(); },
+                () => activeDrawing.CommitChanges(),
+                () => ReadMovedDistance(activeDrawing, typeof(StraightDimensionSet), dimensionId));
         }
         finally
         {
@@ -80,15 +80,33 @@ public sealed partial class TeklaDrawingDimensionsApi
                 };
             }
 
-            angleDimension.Distance += delta;
-            angleDimension.Modify();
-            activeDrawing.CommitChanges();
-            return new MoveDimensionResult { Moved = true, DimensionId = dimensionId, NewDistance = angleDimension.Distance };
+            return DimensionMoveProtocol.Execute(dimensionId, angleDimension.Distance, delta,
+                distance => { angleDimension.Distance = distance; return angleDimension.Modify(); },
+                () => activeDrawing.CommitChanges(),
+                () => ReadMovedDistance(activeDrawing, typeof(AngleDimension), dimensionId));
         }
         finally
         {
             DrawingEnumeratorBase.AutoFetch = previousAutoFetch;
         }
+    }
+
+    private static double? ReadMovedDistance(Tekla.Structures.Drawing.Drawing drawing, System.Type type, int id)
+    {
+        // A fresh enumerator with AutoFetch reads persisted attributes, not the modified wrapper.
+        var previous = DrawingEnumeratorBase.AutoFetch;
+        DrawingEnumeratorBase.AutoFetch = true;
+        try
+        {
+            var objects = drawing.GetSheet().GetAllObjects(type);
+            while (objects.MoveNext())
+            {
+                if (objects.Current is not DrawingObject item || item.GetIdentifier().ID != id) continue;
+                return item switch { StraightDimensionSet straight => straight.Distance, AngleDimension angle => angle.Distance, _ => null };
+            }
+            return null;
+        }
+        finally { DrawingEnumeratorBase.AutoFetch = previous; }
     }
 
     public CreateDimensionResult CreateDimension(int viewId, double[] points, string direction, double distance, string attributesFile)

@@ -24,8 +24,8 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
             .Where(result => result != null).Select(result => result!).ToArray();
         // A part carried by another part's chain has no chain of its own. Two parts that carry
         // each other (equal plates at one place) keep one chain: that of the lower id.
-        static int Id(DimensionRuleResult result) => (int)result.Evidence["partId"];
-        static int[] Carries(DimensionRuleResult result) => (int[])result.Evidence["attachedPartIds"];
+        static int Id(DimensionRuleResult result) => result.RequireDetails<InclinedPartDetails>().PartId;
+        static int[] Carries(DimensionRuleResult result) => result.RequireDetails<InclinedPartDetails>().AttachedPartIds;
         return new DimensionRuleEvaluation(results.Where(result => !results.Any(other =>
             Carries(other).Contains(Id(result)) && (!Carries(result).Contains(Id(other)) || Id(other) < Id(result)))));
     }
@@ -114,16 +114,11 @@ internal sealed class InclinedPartDimensionRule(InclinedPartDimensionSettings se
             "i" + partId.ToString(CultureInfo.InvariantCulture) + "-" + index.ToString(CultureInfo.InvariantCulture),
             p.Point.X, p.Point.Y, [new DimensionPointSource("part", p.Owner, "inclined-contour")])).ToArray();
         var segments = ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(Along(b.Point) - Along(a.Point), 3));
-        var evidence = new Dictionary<string, object> {
-            ["partId"] = partId,
-            ["attachedPartIds"] = attached.ToArray(),
-            ["tiltDegrees"] = Math.Round(tilt, 3),
-            // From the lowest chain point across the part to the highest: the line clears all of them.
-            ["acrossSpan"] = ordered.Max(p => Across(p.Point)) - ordered.Min(p => Across(p.Point))
-        };
+        var details = new InclinedPartDetails(partId, attached.ToArray(), Math.Round(tilt, 3),
+            ordered.Max(p => Across(p.Point)) - ordered.Min(p => Across(p.Point)));
         return new DimensionRuleResult(new DimensionDirection(along.X, along.Y),
             new OutsideOutlineDimensionPlacement(new DimensionDirection(across.X, across.Y), 1),
-            Kind, rulePoints, segments: segments, evidence: evidence);
+            Kind, rulePoints, segments: segments, details: details);
     }
 
     // The direction of the longest edge, pointing right (or up when vertical).

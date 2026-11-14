@@ -338,7 +338,7 @@ src/
 - `combine_dimensions` уже работает как controlled combine path и не тождественен обычной группировке
 - `TextBounds` пока остаётся `null`, пока Tekla-side text geometry не подтверждена runtime-spike'ом
 - блок `Drawing/Dimensions` сейчас перепроектируется по эталону `E:\repos\svMCP\dim`
-- публичные `arrange_dimensions` и `get_dimension_arrangement_debug` временно скрыты до завершения line-based redesign
+- `arrange_dimensions` — публичный MCP-инструмент; `get_dimension_arrangement_debug` есть только как команда моста
 
 ## Диагностика
 

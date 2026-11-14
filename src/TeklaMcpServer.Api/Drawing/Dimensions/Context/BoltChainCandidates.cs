@@ -15,6 +15,13 @@ internal static class BoltChainCandidates
         IReadOnlyCollection<int> mainPartIds, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
         Func<int, int, double[], bool> edgeConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null,
         double lineGap = 0, double[]? mainStart = null, double[]? mainEnd = null)
+        => Build(BoltSnapshotInput.Read(snapshot), includedPartIds, mainPartIds, contours, edgeConfirmed, settings,
+            coordinateSettings, lineGap, mainStart, mainEnd);
+
+    internal static IReadOnlyList<BoltChainCandidate> Build(BoltSnapshotInput snapshot, IReadOnlyCollection<int> includedPartIds,
+        IReadOnlyCollection<int> mainPartIds, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
+        Func<int, int, double[], bool> edgeConfirmed, BoltChainSettings settings, DimensionCoordinateSettings? coordinateSettings = null,
+        double lineGap = 0, double[]? mainStart = null, double[]? mainEnd = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var preview = BoltDimensionChainPreview.BuildGroups(snapshot, includedPartIds,

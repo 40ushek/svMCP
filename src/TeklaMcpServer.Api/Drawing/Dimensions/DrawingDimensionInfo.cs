@@ -111,6 +111,7 @@ public sealed class DimensionGroupInfo
 
 public sealed class GetDimensionsResult
 {
+    public string TextBoundsPolicy { get; set; } = "runtimeOnly; missing bounds are unavailable";
     public int Total { get; set; }
     public int DrawingDimensionCount { get; set; }
     public int RawItemCount { get; set; }

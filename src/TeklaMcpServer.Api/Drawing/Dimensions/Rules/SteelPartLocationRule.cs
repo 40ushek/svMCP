@@ -206,28 +206,21 @@ internal sealed class SteelPartLocationRule(SteelPartLocationSettings settings) 
         var points = ordered.Select(item => context.GetPoint(item.Point.Id)).ToArray();
         var segments = points.Zip(points.Skip(1), (first, second) => Math.Round(
             calculation.AlongX ? second.X - first.X : second.Y - first.Y, 3));
-        var evidence = new Dictionary<string, object> {
-            ["roles"] = ordered.Select(item => item.Roles.ToArray()).ToArray(),
-            ["partIds"] = ordered.Select(item => calculation.Parts(item.Point).ToArray()).ToArray(),
-            ["skippedPartIds"] = skipped,
-            ["offeredOnOtherSidePartIds"] = (offeredOnOtherSide ?? Array.Empty<int>()).ToArray(),
-            ["droppedShortPointIds"] = dropped.Select(point => point.Id).ToArray()
-        };
+        var details = new SteelLocationDetails(
+            ordered.Select(item => item.Roles.ToArray()).ToArray(),
+            ordered.Select(item => calculation.Parts(item.Point).ToArray()).ToArray(), skipped,
+            (offeredOnOtherSide ?? Array.Empty<int>()).ToArray(), dropped.Select(point => point.Id).ToArray());
         return new DimensionRuleResult(Direction(calculation.AlongX), Placement(calculation.AlongX),
-            "location", points, segments: segments, evidence: evidence);
+            "location", points, segments: segments, details: details);
     }
 
     private DimensionRuleResult Empty(string note, IReadOnlyCollection<int>? skipped = null,
         IReadOnlyCollection<string>? dropped = null)
     {
         var alongX = settings.Side.RunsAlongX();
-        var evidence = new Dictionary<string, object> {
-            ["roles"] = Array.Empty<string[]>(), ["partIds"] = Array.Empty<int[]>(),
-            ["skippedPartIds"] = (skipped ?? Array.Empty<int>()).ToArray(),
-            ["offeredOnOtherSidePartIds"] = Array.Empty<int>(),
-            ["droppedShortPointIds"] = (dropped ?? Array.Empty<string>()).ToArray()
-        };
-        return new DimensionRuleResult(Direction(alongX), Placement(alongX), "location", [], note, evidence: evidence);
+        var details = new SteelLocationDetails([], [], (skipped ?? Array.Empty<int>()).ToArray(), [],
+            (dropped ?? Array.Empty<string>()).ToArray());
+        return new DimensionRuleResult(Direction(alongX), Placement(alongX), "location", [], note, details: details);
     }
 
     private IReadOnlyList<DimensionPoint> OuterHalf(IReadOnlyList<DimensionPoint> line,

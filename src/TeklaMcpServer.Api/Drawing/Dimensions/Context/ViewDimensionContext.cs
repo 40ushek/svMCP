@@ -1,3 +1,4 @@
+using static TeklaMcpServer.Api.Drawing.DimensionContextQuery;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -6,7 +7,6 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using TeklaMcpServer.Api.Drawing.Dimensions;
 
 namespace TeklaMcpServer.Api.Drawing;
@@ -33,17 +33,21 @@ public sealed class ViewDimensionContext
     private (double X, double Y)[]? _referenceVertices;
     private GeometryGroupExtent? _panelReferenceExtent;
     private readonly Dictionary<string, JsonElement> _boltPreviews = new(StringComparer.Ordinal);
+    private readonly DimensionPreviewSession _previewSession = new();
+    internal DimensionPreviewPlans PreviewPlans => _previewSession.Plans;
     private readonly int[] _mainPartIds;
     private readonly int[] _mainPartUnresolvedIds;
     private readonly int[] _includedModelIds;
     private readonly JsonElement _bolts;
-    private readonly JsonElement _partContours;
+    private readonly IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>> _partContours;
+    private readonly BoltSnapshotInput _boltInput;
+    private readonly (double MinX, double MaxX, double MinY, double MaxY)? _viewFrame;
     private string? _fingerprint;
     public int ViewId { get; }
     public double Scale { get; }
     public string ContextId { get; } = "ctx_" + Guid.NewGuid().ToString("N");
     /// <summary>Tekla view type of the view this context was read from (FrontView, BottomView...).</summary>
-    public string? ViewType => _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+    public string? ViewType { get; }
     internal bool IsComplete => _complete;
     private readonly Func<ViewDimensionContextCase> _toCase;
 
@@ -70,10 +74,12 @@ public sealed class ViewDimensionContext
         ViewId = viewId;
         _boltSettings = boltSettings ?? new BoltChainSettings();
         _toCase = () => ViewDimensionContextCase.From(viewId, scale, outline, exclusions, source, metadata, bolts, _boltSettings);
-        _partContours = Freeze(outline.Outline.PartNodes);
+        _partContours = JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(
+            Freeze(outline.Outline.PartNodes).GetRawText())!;
         Scale = scale;
         _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,
             visibilityVerified = false, error = "Bolt geometry was not captured" });
+        _boltInput = BoltSnapshotInput.Read(_bolts);
         _group = StructuralGeometryGroupBuilder.Build(outline);
         _referenceZone = outline.ReferenceZone;
         if (_referenceZone is { IsComplete: true })
@@ -94,6 +100,8 @@ public sealed class ViewDimensionContext
         _contactSelectionUnread = outline.ContactSelectionUnread;
         _source = Freeze(source);
         _metadata = Freeze(metadata);
+        ViewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        _viewFrame = ReadViewFrame(_metadata);
         _exclusions = exclusions.Select(x => x.Id).ToArray();
         _partAttributes = Array.AsReadOnly(outline.Included.Concat(outline.Excluded).Concat(outline.Unclassified)
             .GroupBy(p => p.ModelId).Select(g => g.First()).ToArray());
@@ -158,15 +166,10 @@ public sealed class ViewDimensionContext
             var sheet = new Lazy<IReadOnlyList<DimensionChainRepeats.Placed>>(readSheet);
             readSheet = () => sheet.Value;
         }
-        var requested = Split(questions);
-        var normalizedRuleSet = (ruleSet ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalizedRuleSet.Length == 0) normalizedRuleSet = "steel";
-        if (normalizedRuleSet is not "steel" and not "panel")
-            throw new ArgumentException("ruleSet must be 'steel' or 'panel'");
-        var allowed = new[] { "points", "dimensionpoints", "chain", "chaindetails", "edges", "parts", "bolts", "boltchains", "scale", "placement", "contacts", "contactdetails", "diagnostics", "repeats", "all" };
-        if (requested.Length == 0 || requested.Any(q => !allowed.Contains(q)))
-            throw new ArgumentException("questions must contain points, dimensionPoints, chain, chainDetails, edges, parts, bolts, boltChains, scale, placement, contacts, contactDetails, diagnostics or all");
-        var selected = ParseSides(sides);
+        var query = DimensionContextQuery.Parse(questions, sides, ruleSet);
+        var requested = query.Questions;
+        var normalizedRuleSet = query.RuleSet;
+        var selected = query.Sides;
         bool Wants(string q) => requested.Contains(q) ||
             (requested.Contains("all") && q is not "contacts" and not "bolts" and not "boltchains" and not "dimensionpoints" and not "chain" and not "chaindetails" and not "diagnostics");
         var wantsChain = requested.Contains("chain") || requested.Contains("chaindetails");
@@ -194,7 +197,7 @@ public sealed class ViewDimensionContext
                 result["success"] = false;
                 result["error"] = _group.Completeness.Issues.FirstOrDefault(i => i.Id == "structural-outline")?.Reason ?? ex.Message;
                 result["calculationError"] = ex.Message;
-                return Freeze(result, display: true);
+                return PublishPreview(result, normalizedRuleSet, requested, readSheet);
             }
         }
         if (requested.Contains("dimensionpoints"))
@@ -205,7 +208,7 @@ public sealed class ViewDimensionContext
             var panel = normalizedRuleSet == "panel";
             var refusal = panel ? PanelPreviewRefusal() : ChainPreviewRefusal();
             var detailed = requested.Contains("chaindetails");
-            var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+            var viewType = ViewType;
             var section = viewType is "SectionView" or "EndView";
             var panelPlans = panel && refusal == null
                 ? TimberPanelChainPreview.Build(GetDimensionPointCatalog(), _group, _includedModelIds,
@@ -271,7 +274,7 @@ public sealed class ViewDimensionContext
                 sideRows = MarkRepeats(sideRows, requested.Contains("repeats") ? readSheet : null, storedRepeats, result);
                 result["chainPreview"] = sideRows.Concat(selected.Length == 4 ? BoltRow(coordinateSettings, sideRows, sectionPlans?.Values) : []).ToArray();
                 result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
-                return Freeze(result, display: true);
+                return PublishPreview(result, normalizedRuleSet, requested, readSheet);
             }
             result["chainPreview"] = selected.Select(side => new DimensionPreviewRow(side.ToString(),
                 panelPlans != null
@@ -323,6 +326,16 @@ public sealed class ViewDimensionContext
                 return row;
             }).ToArray();
         result["partSpanMatchToleranceMm"] = CalcDimensionChains.PartSpanMatchToleranceMm;
+        return PublishPreview(result, normalizedRuleSet, requested, readSheet);
+    }
+
+    private JsonElement PublishPreview(Dictionary<string, object?> result, string ruleSet, string[] requested,
+        Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet)
+    {
+        var answer = Freeze(result, display: true);
+        if (!answer.TryGetProperty("chainPreview", out var rows)) return answer;
+        result["previewPlanId"] = PreviewPlans.Publish(ruleSet,
+            requested.Contains("chaindetails") ? "chaindetails" : "chain", rows, readSheet?.Invoke());
         return Freeze(result, display: true);
     }
 
@@ -367,12 +380,12 @@ public sealed class ViewDimensionContext
             .Calculate(new DimensionRuleContext([], null, InclinedPartDimensionInput.FromGroup(_group, _mainPartIds[0])));
         return _inclinedChains = evaluation.Results.Select(result => {
             var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
-            return new InclinedChain((int)result.Evidence["partId"],
+            return new InclinedChain(result.RequireDetails<InclinedPartDetails>().PartId,
                 result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(),
                 result.Segments.ToArray(),
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
-                DimensionPlacementSettings.DefaultPaperGapMm * Scale + (double)result.Evidence["acrossSpan"],
-                attachedPartIds: (int[])result.Evidence["attachedPartIds"]);
+                DimensionPlacementSettings.DefaultPaperGapMm * Scale + result.RequireDetails<InclinedPartDetails>().AcrossSpan,
+                attachedPartIds: result.RequireDetails<InclinedPartDetails>().AttachedPartIds);
         }).Where(InsideViewFrame).ToArray();
     }
 
@@ -433,7 +446,7 @@ public sealed class ViewDimensionContext
         var lines = new List<(double Nx, double Ny, double Line, double From, double To)>();
         return _localChains = evaluation.Results.Select(result => {
             var normal = ((OutsideOutlineDimensionPlacement)result.Placement).OutwardNormal;
-            var distance = gap + (double)result.Evidence["baseOffset"];
+            var distance = gap + result.RequireDetails<LocalPartDetails>().BaseOffset;
             return (Result: result, Normal: normal, Distance: distance,
                 Line: result.Points[0].X * normal.X + result.Points[0].Y * normal.Y + distance);
         }).OrderBy(item => item.Line).Select(item => {
@@ -451,7 +464,7 @@ public sealed class ViewDimensionContext
                    .Select(line => (double?)line.Line).Max() is { } inTheWay)
                 distance = inTheWay + gap - start;
             lines.Add((normal.X, normal.Y, start + distance, from, to));
-            return new InclinedChain((int)item.Result.Evidence["partId"],
+            return new InclinedChain(item.Result.RequireDetails<LocalPartDetails>().PartId,
                 item.Result.Points.SelectMany(point => new[] { point.X, point.Y, 0d }).ToArray(), item.Result.Segments.ToArray(),
                 string.Join(",", new[] { normal.X, normal.Y, 0d }.Select(value => value.ToString("R", CultureInfo.InvariantCulture))),
                 distance, LocalSide, LocalPartDimensionRule.Kind);
@@ -460,22 +473,18 @@ public sealed class ViewDimensionContext
 
     // The repeats of the last chain read with the repeats question; a plain chain read clears them.
     // The batch writes from the same answer the caller saw: same repeats, same bolt rows.
-    private IReadOnlyList<DimensionChainRepeats.Repeat>? _repeats;
 
     private DimensionPreviewRow[] MarkRepeats(DimensionPreviewRow[] rows,
         Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet, bool stored, Dictionary<string, object?> result) =>
-        ApplyRepeatPlan(DimensionPreviewRepeatPlanner.Structural(ViewId, PreviewViewType(), rows, readSheet, stored, _repeats), result);
+        ApplyRepeatPlan(_previewSession.Structural(ViewId, ViewType, rows, readSheet, stored), result);
 
     private DimensionPreviewRow[] MarkCarriedRepeats(DimensionPreviewRow[] rows,
         Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet, bool stored, Dictionary<string, object?> result) =>
-        ApplyRepeatPlan(DimensionPreviewRepeatPlanner.Carried(ViewId, PreviewViewType(), rows, readSheet, stored, _repeats), result);
-
-    private string? PreviewViewType() => _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        ApplyRepeatPlan(_previewSession.Carried(ViewId, ViewType, rows, readSheet, stored), result);
 
     private DimensionPreviewRow[] ApplyRepeatPlan(DimensionPreviewRepeatPlan plan, Dictionary<string, object?> result)
     {
-        _repeats = plan.Repeats;
-        if (plan.Publish) result["repeats"] = ViewDimensionContextProvider.ProjectRepeats(_repeats ?? []);
+        if (plan.Publish) result["repeats"] = ViewDimensionContextProvider.ProjectRepeats(plan.Repeats ?? []);
         return plan.Rows;
     }
 
@@ -507,12 +516,12 @@ public sealed class ViewDimensionContext
         // Settings given by the caller are not the context's own: their answer is not kept.
         if (boltSettings == null && _boltChains.TryGetValue(cacheKey, out var cached)) return cached;
         var settings = boltSettings ?? _boltSettings;
-        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var viewType = ViewType;
         var section = viewType is "SectionView" or "EndView";
         // The position chain runs along the main part; a section shows its profile, not its length.
         var mainSolid = !section && _mainPartIds.Length == 1 ? GetPartSolidGeometrySnapshot(_mainPartIds[0]) : null;
-        var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
-            JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
+        var candidates = BoltChainCandidates.Build(_boltInput, _includedModelIds, _mainPartIds,
+            _partContours,
             edgeConfirmed: !section ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
             settings, coordinateSettings, DimensionPlacementSettings.DefaultPaperGapMm * Scale,
             mainSolid?.StartPoint, mainSolid?.EndPoint);
@@ -568,7 +577,7 @@ public sealed class ViewDimensionContext
                     rows.Add((nx, ny, bound + row * gap, double.NegativeInfinity, double.PositiveInfinity));
                 }
         // Sections and end views offer no local or inclined row.
-        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var viewType = ViewType;
         var ownOffset = viewType is "SectionView" or "EndView" ? [] : InclinedChains().Concat(LocalChains());
         foreach (var chain in ownOffset)
         {
@@ -662,7 +671,7 @@ public sealed class ViewDimensionContext
     {
         if (!_complete)
             return "the structural view context is incomplete; inspect issues and unresolvedDepthModelIds";
-        var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var viewType = ViewType;
         if (viewType is not "FrontView" and not "BackView")
             return "panel chain preview currently supports FrontView/BackView elevations only";
         return null;
@@ -677,7 +686,7 @@ public sealed class ViewDimensionContext
         if (!_boltPreviews.TryGetValue(key, out var preview))
         {
             preview = Freeze(BoltDimensionChainPreview.Build(_bolts, _includedModelIds, selected,
-                JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()), settings));
+                _partContours, settings));
             _boltPreviews.Add(key, preview);
         }
         return preview;
@@ -765,10 +774,12 @@ public sealed class ViewDimensionContext
     // maxX, maxY]. It is the drawn frame, annotations included, so it never cuts off a point the
     // view shows. The restriction box is not used for this: its X and Y limits can be narrower
     // than the drawn view (M.81 section H).
-    private (double MinX, double MaxX, double MinY, double MaxY)? ViewFrame()
+    private (double MinX, double MaxX, double MinY, double MaxY)? ViewFrame() => _viewFrame;
+
+    private static (double MinX, double MaxX, double MinY, double MaxY)? ReadViewFrame(JsonElement metadata)
     {
-        if (_metadata.ValueKind != JsonValueKind.Object
-            || !_metadata.TryGetProperty("viewFrame", out var frame) || frame.ValueKind != JsonValueKind.Array
+        if (metadata.ValueKind != JsonValueKind.Object
+            || !metadata.TryGetProperty("viewFrame", out var frame) || frame.ValueKind != JsonValueKind.Array
             || frame.GetArrayLength() != 4) return null;
         const double tolerance = 0.5;
         return (frame[0].GetDouble() - tolerance, frame[2].GetDouble() + tolerance,
@@ -1007,32 +1018,7 @@ public sealed class ViewDimensionContext
         }
     };
 
-    internal static JsonElement Freeze(object value, bool display = false)
-    {
-        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(value, display ? DisplayOptions : null));
-        return doc.RootElement.Clone();
-    }
-
-    private static readonly JsonSerializerOptions DisplayOptions = new() { Converters = { new DisplayDoubleConverter() } };
-    private sealed class DisplayDoubleConverter : JsonConverter<double>
-    {
-        public override double Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) => reader.GetDouble();
-        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) =>
-            writer.WriteRawValue(Math.Round(value, 3).ToString("0.###", CultureInfo.InvariantCulture));
-    }
-
-    private static string[] Split(string value) => value.Split(',').Select(s => s.Trim().ToLowerInvariant())
-        .Where(s => s.Length > 0).Distinct().ToArray();
-
-    private static DimensionChainSide[] ParseSides(string sides)
-    {
-        var names = Split(sides);
-        if (names.Length == 1 && names[0] == "all") return (DimensionChainSide[])Enum.GetValues(typeof(DimensionChainSide));
-        if (names.Length == 0) throw new ArgumentException("sides must not be empty");
-        return names.Select(n => Enum.TryParse<DimensionChainSide>(n, true, out var s)
-            && Enum.IsDefined(typeof(DimensionChainSide), s) && !char.IsDigit(n[0])
-                ? s : throw new ArgumentException("sides must contain Top, Bottom, Left, Right or all")).ToArray();
-    }
+    internal static JsonElement Freeze(object value, bool display = false) => DimensionPreviewProjection.Freeze(value, display);
 
     internal static DimensionChainSide ParseSide(string direction) => direction.Trim().ToLowerInvariant() switch {
         "horizontal" or "h" or "horizontal-up" => DimensionChainSide.Top,

@@ -137,20 +137,13 @@ internal sealed class TimberPanelPartLocationRule(TimberPanelPartLocationSetting
             new DimensionDirection(alongX ? 0 : outer, alongX ? outer : 0), 1);
         if (note != null) return new DimensionRuleResult(direction, placement, "location", [], note);
         var coordinates = chain.Coordinates(alongX);
-        var evidence = new Dictionary<string, object> {
-            ["pointPartIds"] = chain.Points.Select(PartIds).ToArray(),
-            ["candidateKinds"] = chain.CandidateKinds
-                .Select(kinds => kinds.Select(kind => kind.ToString()).ToArray()).ToArray(),
-            ["pointRoles"] = chain.Points.Select((_, index) =>
-                index == 0 || index == chain.Points.Length - 1 ? "extreme" : "member-face").ToArray(),
-            ["droppedShortPartIds"] = chain.DroppedIds,
-            ["minimumSegmentViewUnits"] = minimumSegment,
-            ["missingSupportModelIds"] = chain.MissingIds,
-            ["incomplete"] = chain.MissingIds.Length > 0 || chain.Points.Length < 2
-        };
+        var details = new PanelLocationDetails(chain.Points.Select(PartIds).ToArray(),
+            chain.CandidateKinds.Select(kinds => kinds.Select(kind => kind.ToString()).ToArray()).ToArray(),
+            chain.Points.Select((_, index) => index == 0 || index == chain.Points.Length - 1 ? "extreme" : "member-face").ToArray(),
+            chain.DroppedIds, minimumSegment, chain.MissingIds, chain.MissingIds.Length > 0 || chain.Points.Length < 2);
         return new DimensionRuleResult(direction, placement, "location",
             chain.Points.Select(point => context.GetPoint(point.Id)),
-            segments: coordinates.Zip(coordinates.Skip(1), (a, b) => Math.Round(b - a, 3)), evidence: evidence);
+            segments: coordinates.Zip(coordinates.Skip(1), (a, b) => Math.Round(b - a, 3)), details: details);
     }
 
     private static PickedPoint BuildX(DimensionPointCatalog catalog, DimensionChainSide side,

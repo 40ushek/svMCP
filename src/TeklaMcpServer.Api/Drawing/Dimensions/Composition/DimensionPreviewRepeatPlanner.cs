@@ -58,3 +58,24 @@ internal static class DimensionPreviewRepeatPlanner
             (byKey.TryGetValue(chain.Key, out var repeat) ? chain.Repeated(repeat) : chain).PreserveTemplatePrecision(includeCarried: true)))).ToArray();
     }
 }
+
+/// <summary>Owns mutable query repeat state separately from immutable published plans.</summary>
+internal sealed class DimensionPreviewSession
+{
+    private IReadOnlyList<DimensionChainRepeats.Repeat>? _repeats;
+    internal DimensionPreviewPlans Plans { get; } = new();
+
+    internal DimensionPreviewRepeatPlan Structural(int viewId, string? viewType, DimensionPreviewRow[] rows,
+        Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet, bool stored) =>
+        Remember(DimensionPreviewRepeatPlanner.Structural(viewId, viewType, rows, readSheet, stored, _repeats));
+
+    internal DimensionPreviewRepeatPlan Carried(int viewId, string? viewType, DimensionPreviewRow[] rows,
+        Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet, bool stored) =>
+        Remember(DimensionPreviewRepeatPlanner.Carried(viewId, viewType, rows, readSheet, stored, _repeats));
+
+    private DimensionPreviewRepeatPlan Remember(DimensionPreviewRepeatPlan plan)
+    {
+        _repeats = plan.Repeats;
+        return plan;
+    }
+}

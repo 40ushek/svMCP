@@ -155,34 +155,35 @@ public static partial class ModelTools
                 if (!group.TryGetProperty("items", out var items)) continue;
                 foreach (var item in items.EnumerateArray())
                 {
-                    var type = item.TryGetProperty("dimensionType", out var t) ? t.GetString() : null;
-                    var horizontal = string.Equals(type, "Horizontal", StringComparison.OrdinalIgnoreCase);
+                    var type = item.TryGetProperty("dimensionType", out var t) ? t.GetString()
+                        : group.TryGetProperty("dimensionType", out t) ? t.GetString() : null;
                     var top = (item.TryGetProperty("topDirection", out var td) || group.TryGetProperty("topDirection", out td))
-                        && td.ValueKind == JsonValueKind.Number ? td.GetDouble() : 0;
-                    // topDirection 1: line above (horizontal) or left (vertical); -1: below or right.
-                    var side = horizontal ? (top >= 0 ? "Top" : "Bottom") : (top >= 0 ? "Left" : "Right");
-                    double? at = null;
+                        && td.ValueKind == JsonValueKind.Number ? td.GetInt32() : 0;
+                    double? lineX = null, lineY = null;
                     if (item.TryGetProperty("referenceLine", out var line) && line.ValueKind == JsonValueKind.Object)
-                        at = Math.Round(line.GetProperty(horizontal ? "startY" : "startX").GetDouble(), 3);
-                    var axis = new List<double>();
-                    if (item.TryGetProperty("pointList", out var points))
-                        foreach (var p in points.EnumerateArray())
-                            axis.Add(p.GetProperty(horizontal ? "x" : "y").GetDouble());
-                    axis.Sort();
+                    {
+                        lineX = line.GetProperty("startX").GetDouble();
+                        lineY = line.GetProperty("startY").GetDouble();
+                    }
+                    var points = item.TryGetProperty("pointList", out var pointList)
+                        ? pointList.EnumerateArray().Select(point => (point.GetProperty("x").GetDouble(), point.GetProperty("y").GetDouble())).ToArray()
+                        : Array.Empty<(double, double)>();
+                    var lengths = item.TryGetProperty("lengthList", out var lengthList)
+                        ? lengthList.EnumerateArray().Select(value => value.GetDouble()).ToArray() : null;
+                    var geometry = TeklaMcpServer.Shared.DimensionReadbackGeometry.Read(type, top, points, lineX, lineY, lengths);
                     rows.Add(new {
                         id = item.GetProperty("id").GetInt32(),
-                        view = item.TryGetProperty("viewId", out var v) ? v.GetInt32() : 0,
-                        side, at,
-                        from = axis.Count > 0 ? Math.Round(axis[0], 3) : (double?)null,
-                        to = axis.Count > 0 ? Math.Round(axis[axis.Count - 1], 3) : (double?)null,
-                        segments = axis.Zip(axis.Skip(1), (a, b) => Math.Round(b - a, 3)).ToArray()
+                        view = item.TryGetProperty("viewId", out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt32() : 0,
+                        side = geometry.Side, at = geometry.LineAt,
+                        from = geometry.From, to = geometry.To, segments = geometry.Segments
                     });
                 }
             }
         // The read model merges look-alike sets; say how many are not listed.
         var onDrawing = root.TryGetProperty("drawingDimensionCount", out var count) && count.ValueKind == JsonValueKind.Number
             ? count.GetInt32() : rows.Count;
-        return JsonSerializer.Serialize(new { total = rows.Count, merged = Math.Max(0, onDrawing - rows.Count), dimensions = rows });
+        return JsonSerializer.Serialize(new { total = rows.Count, merged = Math.Max(0, onDrawing - rows.Count),
+            lineAtSource = TeklaMcpServer.Shared.DimensionReadbackGeometry.LineAtSource, dimensions = rows });
     }
 
     [McpServerTool, Description("Move a StraightDimensionSet by changing its dimension line offset (Distance). Positive delta moves the line away from measured points, negative — closer. dimensionId from get_drawing_dimensions.")]

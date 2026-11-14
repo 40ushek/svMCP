@@ -1505,7 +1505,8 @@ public sealed class BoltChainRuleTests
         Assert.Contains(answer.GetProperty("repeats").EnumerateArray(), row => row.GetProperty("key").GetString() == "Bottom-location-bolts");
         var writes = new List<CreateDimensionRequest>();
         Assert.Throws<ArgumentException>(() => Provider(context, writes).CreateBatch(new CreateDimensionsBatchRequest {
-            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel", Chains = [new() { Preview = "Bottom-location-bolts" }] }));
+            ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            PreviewPlanId = answer.GetProperty("previewPlanId").GetString(), Chains = [new() { Preview = "Bottom-location-bolts" }] }));
         Assert.Empty(writes);
     }
 

@@ -264,10 +264,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         StraightDimensionSet dimSet,
         View view)
     {
-        var formattedValue = DimensionTextValueFormatter.TryFormatMeasuredValue(segment, dimSet, view);
-        if (!string.IsNullOrWhiteSpace(formattedValue))
-            return formattedValue;
-
         try
         {
             return segment.Value?.GetUnformattedString();
@@ -312,11 +308,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
-    internal static string NormalizeTemporaryDimensionValue(
-        string? rawValue,
-        DimensionSetBaseAttributes.DimensionValueUnits dimensionUnits,
-        bool negative) => DimensionTextValueFormatter.NormalizeTemporaryValue(rawValue, dimensionUnits, negative);
-
     private static string TryGetDimensionTextPlacing(StraightDimensionSet dimSet) => DimensionTextPlacementHelper.GetTextPlacing(dimSet);
 
     internal static List<double[]>? TryCreateTextPolygon(
@@ -338,32 +329,12 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         if (textAttributes == null)
             return null;
 
-        var upDirection = TryGetUpDirection(segment, out var resolvedUpDirection)
-            ? resolvedUpDirection
-            : ((double X, double Y)?)null;
-        var placementContext = CreateDimensionTextPlacementContext(segment, dimSet);
-
         var runtimePolygon = TryCreateTextPolygonFromRuntimeTextObjects(segment, dimSet, textValue!, dimensionLine, textAttributes.Frame.Type);
         if (runtimePolygon != null)
             return runtimePolygon;
 
-        var effectiveDimensionLine = ApplyDimensionTextLineOffsets(
-            dimensionLine,
-            placementContext.LeftTagLineOffset,
-            placementContext.RightTagLineOffset);
-
-        var size = TryMeasureTextSizeForFallback(view, textValue!, textAttributes);
-        if (!size.HasValue)
-            return null;
-
-        var correctedSize = ApplyFrameSizeCorrection(size.Value.Width, size.Value.Height, textAttributes.Frame.Type);
-        return DimensionTextPolygonPlacementHelper.CreateFallbackPolygon(
-            effectiveDimensionLine,
-            correctedSize.Width,
-            correctedSize.Height,
-            TryGetViewScale(view),
-            placementContext,
-            upDirection);
+        // Reading never inserts temporary drawing objects to estimate missing text bounds.
+        return null;
     }
 
     private static DrawingBoundsInfo CreateBoundsFromPolygon(IReadOnlyList<double[]> polygon)
@@ -373,24 +344,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
             polygon.Min(static point => point[1]),
             polygon.Max(static point => point[0]),
             polygon.Max(static point => point[1]));
-    }
-
-    internal static List<double[]>? CreateDimStyleTextPolygon(
-        DrawingLineInfo dimensionLine,
-        double widthAlongLine,
-        double heightPerpendicularToLine,
-        double viewScale) => DimensionTextPolygonPlacementHelper.CreateDimStyleTextPolygon(dimensionLine, widthAlongLine, heightPerpendicularToLine, viewScale);
-
-    internal static bool TryGetDimStyleLineVector(
-        DrawingLineInfo dimensionLine,
-        out (double X, double Y) lineVector) => DimensionPlacementHeuristics.TryGetDimStyleLineVector(dimensionLine, out lineVector);
-
-    internal static bool ComparePointsLeftToRight((double X, double Y) left, (double X, double Y) right)
-    {
-        if (!(left.X >= right.X && left.Y >= right.Y))
-            return left.X > right.X && left.Y < right.Y;
-
-        return true;
     }
 
     private static double TryGetViewScale(View view)
@@ -405,27 +358,9 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         }
     }
 
-    private static DimensionTextPlacementContext CreateDimensionTextPlacementContext(
-        StraightDimension segment,
-        StraightDimensionSet dimSet)
-    {
-        int? topDirection = null;
-        if (TryGetUpDirection(segment, out var upDirection))
-            topDirection = GetTopDirection(upDirection.X, upDirection.Y);
-
-        return DimensionTextPlacementHelper.CreateContext(dimSet, topDirection);
-    }
-
-    internal static int ResolveDimensionTextSideSign(int topDirection, int placingDirectionSign) => DimensionTextPlacementHelper.ResolveTextSideSign(topDirection, placingDirectionSign);
-
     private static int TryGetDimensionPlacingDirectionSign(StraightDimensionSet dimSet) => DimensionTextPlacementHelper.GetPlacingDirectionSign(dimSet);
 
     private static double TryGetTagLineOffset(StraightDimensionSet dimSet, bool left) => DimensionTextPlacementHelper.GetTagLineOffset(dimSet, left);
-
-    internal static DrawingLineInfo ApplyDimensionTextLineOffsets(
-        DrawingLineInfo dimensionLine,
-        double startOffset,
-        double endOffset) => DimensionTextPlacementHelper.ApplyLineOffsets(dimensionLine, startOffset, endOffset);
 
     private static List<double[]>? TryCreateTextPolygonFromRuntimeTextObjects(
         StraightDimension segment,
@@ -513,75 +448,6 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         return (
             polygon.Average(static point => point[0]),
             polygon.Average(static point => point[1]));
-    }
-
-    private static double GetPolygonSpanAlongDirection(
-        IReadOnlyList<double[]> polygon,
-        double axisX,
-        double axisY)
-    {
-        if (!TryNormalizeDirection(axisX, axisY, out var normalizedAxis))
-            return 0.0;
-
-        var min = double.MaxValue;
-        var max = double.MinValue;
-        foreach (var point in polygon)
-        {
-            var projection = (point[0] * normalizedAxis.X) + (point[1] * normalizedAxis.Y);
-            min = System.Math.Min(min, projection);
-            max = System.Math.Max(max, projection);
-        }
-
-        return max > min ? max - min : 0.0;
-    }
-
-    private static List<double[]> OffsetPolygon(
-        IReadOnlyList<double[]> polygon,
-        double offsetX,
-        double offsetY)
-    {
-        return polygon
-            .Select(point => new[]
-            {
-                System.Math.Round(point[0] + offsetX, 3),
-                System.Math.Round(point[1] + offsetY, 3)
-            })
-            .ToList();
-    }
-
-    private static (double Width, double Height)? TryMeasureTextSizeForFallback(
-        View view,
-        string textValue,
-        Text.TextAttributes textAttributes)
-    {
-        Text? text = null;
-        try
-        {
-            var placing = new AlongLinePlacing(new Point(0.0, 0.0, 0.0), new Point(1000.0, 0.0, 0.0));
-            text = new Text(view, new Point(0.0, 0.0, 0.0), textValue, placing, textAttributes);
-            if (!text.Insert())
-                return null;
-
-            var objectAlignedBoundingBox = text.GetObjectAlignedBoundingBox();
-            return (objectAlignedBoundingBox.Width, objectAlignedBoundingBox.Height);
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            if (text != null)
-            {
-                try
-                {
-                    text.Delete();
-                }
-                catch
-                {
-                }
-            }
-        }
     }
 
     internal static (double Width, double Height) ApplyFrameSizeCorrection(
@@ -783,43 +649,7 @@ public sealed partial class TeklaDrawingDimensionsApi : IDrawingDimensionsApi
         IReadOnlyList<DimensionSegmentInfo> segments,
         double directionX,
         double directionY)
-    {
-        var nodes = new Dictionary<(double X, double Y), HashSet<(double X, double Y)>>();
-
-        foreach (var segment in segments)
-        {
-            var start = (System.Math.Round(segment.StartX, 3), System.Math.Round(segment.StartY, 3));
-            var end = (System.Math.Round(segment.EndX, 3), System.Math.Round(segment.EndY, 3));
-
-            if (!nodes.TryGetValue(start, out var startNeighbours))
-            {
-                startNeighbours = [];
-                nodes[start] = startNeighbours;
-            }
-
-            if (!nodes.TryGetValue(end, out var endNeighbours))
-            {
-                endNeighbours = [];
-                nodes[end] = endNeighbours;
-            }
-
-            startNeighbours.Add(end);
-            endNeighbours.Add(start);
-        }
-
-        if (nodes.Count == 0)
-            return [];
-
-        var orderedKeys = OrderMeasuredPointKeys(nodes, directionX, directionY);
-        return orderedKeys
-            .Select((point, index) => new DrawingPointInfo
-            {
-                X = point.X,
-                Y = point.Y,
-                Order = index
-            })
-            .ToList();
-    }
+        => BuildMeasuredPointListFromSnapshots(segments.Select(DimensionSnapshotProjection.FromReadModel).ToArray(), directionX, directionY);
 
     internal static List<DrawingPointInfo> BuildMeasuredPointListFromSnapshots(
         IReadOnlyList<TeklaDimensionSegmentSnapshot> segments,

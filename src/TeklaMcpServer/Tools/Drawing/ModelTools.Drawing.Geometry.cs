@@ -57,7 +57,7 @@ public static partial class ModelTools
             verbose ? "verbose" : "compact", refresh.ToString());
     }
 
-    [McpServerTool, Description("Read prepared dimension chains from the captured view context. Default questions=chain,scale; chainDetails returns detailed chains (split chains for sections). Submit selected chain keys as preview references to create_dimensions_batch with the same ruleSet and chainView, without retyping pointIds. ruleSet selects steel (default) or panel. Source-point, edge, placement and contact questions are rejected before geometry is read. Source geometry is cached; refresh only after external geometry or view changes.")]
+    [McpServerTool, Description("Read prepared dimension chains from the captured view context. Default questions=chain,scale; chainDetails returns detailed chains (split chains for sections). Submit selected chain keys as preview references to create_dimensions_batch with the same ruleSet, chainView and returned previewPlanId, without retyping pointIds. ruleSet selects steel (default) or panel. Source-point, edge, placement and contact questions are rejected before geometry is read. Source geometry is cached; refresh only after external geometry or view changes.")]
     public static string GetViewDimensionContext(
         [Description("Drawing view ID")] int viewId,
         [Description("Questions: chain, chainDetails, parts, bolts, boltChains, scale, diagnostics, repeats. Default chain,scale. repeats (with chain) adds a repeats list: chain keys that repeat a chain on this view (sameView: Top of Bottom, Right of Left) or a dimension already on the sheet (overallOnSheet; mirror on a bottom/back view against top/front), within 0.5. Nothing is dropped; the caller decides. chain also returns a Bolt row: bolt chains by Tekla-like settings (class Plan/Side/Skewed/Unresolved per group), keyed like Local chains; incomplete=true there means the rule decided not to create it (reason in incompleteReason). bolts returns raw groups with their class. boltChains is obsolete (use the Bolt row): Candidate/Blocked proposals with creationMode=explicitSelectionOnly, kept only for placing one chosen bolt chain. Visibility and section clipping are unverified. Source-point, edge, placement and contact questions are unsupported.")] string questions = "chain,scale",
@@ -65,18 +65,14 @@ public static partial class ModelTools
         [Description("Same excluded prefixes as create_dimension")] string excludePrefixes = "",
         [Description("Same excluded material substrings as create_dimension")] string excludeMaterials = "",
         [Description("Re-read source geometry after external edits")] bool refresh = false,
-        [Description("Legacy argument; unused by prepared-chain questions")] string points = "",
-        [Description("Legacy argument; unused by prepared-chain questions")] string direction = "horizontal",
-        [Description("Legacy argument; unused by prepared-chain questions")] double? paperGapMm = null,
         [Description("Rule set for questions=chain: steel (default) or panel")] string ruleSet = "steel",
-        [Description("Legacy argument; contact questions are not supported by this tool.")] string contactPair = "",
         [Description("Diagnostic rules for panel chainDetails: JSON [{id,className,conditions:[{property,matchKind,value}],priority?,data?}]. Properties: Name,Prefix,Profile,Material. Matches: Equals (default),Contains,StartsWith. Conditions are AND, ignoring case. Empty disables classification. Does not change dimensions; examples in ROADMAP_CHAIN_COMPOSITION.md.")] string layerRules = "",
         [Description("Explicit ZONE values for the reference layer to mix in (e.g. the frame), e.g. [\"0\"]. Only with ruleSet=panel. Empty disables mixing. An unread zone suppresses reference geometry.")] string[]? referenceZones = null,
         [Description("Comma-separated prefixes to drop from the reference layer's own candidates - e.g. insulation inside the frame. Independent of excludePrefixes: a part excluded there (to keep it out of the layer being measured) stays eligible as reference unless also named here. Only with referenceZones.")] string referenceExcludePrefixes = "",
         [Description("Comma-separated material substrings to drop from the reference layer's own candidates. Independent of excludeMaterials, same reasoning as referenceExcludePrefixes. Only with referenceZones.")] string referenceExcludeMaterials = "")
     {
         return RunBridge(BuildViewDimensionContextArgs(viewId, questions, sides, excludePrefixes, excludeMaterials,
-            refresh, points, direction, paperGapMm, ruleSet, contactPair, layerRules, referenceZones,
+            refresh, string.Empty, "horizontal", null, ruleSet, string.Empty, layerRules, referenceZones,
             referenceExcludePrefixes, referenceExcludeMaterials));
     }
 

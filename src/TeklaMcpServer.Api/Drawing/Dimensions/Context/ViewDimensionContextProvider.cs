@@ -20,6 +20,7 @@ public sealed partial class ViewDimensionContextProvider
     private readonly Action _invalidateGeometry;
     private readonly Func<CreateDimensionRequest, double, CreateDimensionResult> _write;
     private readonly Func<int, GetDimensionsResult> _readDimensions;
+    private readonly Func<IReadOnlyList<DimensionChainRepeats.Placed>> _readSheet;
     private readonly Action<string> _validateAttributes;
     private readonly Func<int, int, PartSolidGeometryInViewResult> _readContactSolid;
     private readonly Dictionary<string, ViewDimensionContext> _contexts = new();
@@ -35,7 +36,8 @@ public sealed partial class ViewDimensionContextProvider
         _readContactSolid = reader.ReadPartSolidGeometry;
         _invalidateGeometry = DrawingPartGeometryCache.InvalidateAll;
         _write = Write;
-        _readDimensions = viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId, includeTextBounds: false);
+        _readDimensions = viewId => new TeklaDrawingDimensionsApi().GetDimensionFacts(viewId);
+        _readSheet = ReadSheet;
         _validateAttributes = file => { DimensionCreatePlacementHelper.CreateAttributes(file); };
     }
 
@@ -46,14 +48,16 @@ public sealed partial class ViewDimensionContextProvider
         Func<int, GetDimensionsResult>? readDimensions = null,
         Action<string>? validateAttributes = null,
         Func<int, IReadOnlyList<PartExclusionRule>, IReadOnlyCollection<string>,
-            IReadOnlyList<PartExclusionRule>, ViewDimensionContext>? referenceRead = null)
+            IReadOnlyList<PartExclusionRule>, ViewDimensionContext>? referenceRead = null,
+        Func<IReadOnlyList<DimensionChainRepeats.Placed>>? readSheet = null)
     {
         _drawingIdentity = drawingIdentity;
         _read = referenceRead ?? ((id, rules, zones, referenceExclusions) => zones.Count == 0 ? read(id, rules)
             : throw new InvalidOperationException("Reference-zone reader is unavailable"));
         _invalidateGeometry = invalidateGeometry;
         _write = write ?? Write;
-        _readDimensions = readDimensions ?? (viewId => new TeklaDrawingDimensionsApi().GetDimensions(viewId, includeTextBounds: false));
+        _readDimensions = readDimensions ?? (viewId => new TeklaDrawingDimensionsApi().GetDimensionFacts(viewId));
+        _readSheet = readSheet ?? (() => DimensionChainRepeats.FromSheet(_readDimensions(0)));
         _validateAttributes = validateAttributes ?? (file => { DimensionCreatePlacementHelper.CreateAttributes(file); });
         _readContactSolid = readContactSolid ?? ((viewId, modelId) =>
             throw new InvalidOperationException("Contact solid reader is unavailable"));
@@ -112,7 +116,7 @@ public sealed partial class ViewDimensionContextProvider
     public IReadOnlyList<DimensionChainRepeats.Placed> ReadSheet()
     {
         var timer = System.Diagnostics.Stopwatch.StartNew();
-        var sheet = DimensionChainRepeats.FromSheet(new TeklaDrawingDimensionsApi().GetDimensions(null, includeTextBounds: false));
+        var sheet = DimensionChainRepeats.FromSheet(new TeklaDrawingDimensionsApi().GetDimensionFacts(null));
         PerfTrace.Write("api-dimensions", "chain_repeats_sheet", timer.ElapsedMilliseconds, $"dimensions={sheet.Count}");
         return sheet;
     }

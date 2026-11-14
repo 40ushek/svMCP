@@ -5,8 +5,8 @@ These eight fixtures contain synthetic input parameters and 24 expected answers
 `4e926bb`. They contain no model paths, private drawing identifiers or local case files.
 The test factory reconstructs the same geometry using the existing test helpers.
 
-`BoltChainCompatibilityTests` compares the entire response, normalizing only volatile
-context IDs. The cases cover front/back views, reversed direction, a tall main part,
+`BoltChainCompatibilityTests` compares the entire response, normalizing volatile
+context IDs and excluding the newly introduced previewPlanId transport metadata. The cases cover front/back views, reversed direction, a tall main part,
 an edgeless plate, frame refusal, a section and an end view. Shared/merged groups,
 notches, incomplete reads, source precision and orphan prevention have focused
 regressions in the bolt component/rule tests. Carry/overall restoration and cached

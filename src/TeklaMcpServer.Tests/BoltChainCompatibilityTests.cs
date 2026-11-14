@@ -49,7 +49,7 @@ public sealed class BoltChainCompatibilityTests
             readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
         provider.Get(7);
         provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId,
-            RuleSet = "steel", Chains = [new() { Preview = key }] });
+            RuleSet = "steel", PreviewPlanId = answer.GetProperty("previewPlanId").GetString(), Chains = [new() { Preview = key }] });
         // This test checks preparation/resolution; verified drawing read-back has separate coverage.
         Assert.Equal(selected.GetProperty("distance").GetDouble(), Assert.Single(offsets));
     }
@@ -62,7 +62,8 @@ public sealed class BoltChainCompatibilityTests
         Assert.Equal("FullLengthFinPlate", fixture.RootElement.GetProperty("scenario").GetString());
         var expected = fixture.RootElement.GetProperty("expected");
         var context = BoltChainRuleTests.FullLengthFinPlate();
-        var rows = context.Query("chain,repeats", readSheet: () => []).GetProperty("chainPreview");
+        var answer = context.Query("chain,repeats", readSheet: () => []);
+        var rows = answer.GetProperty("chainPreview");
         var key = expected.GetProperty("key").GetString()!;
         var carried = rows.EnumerateArray().Single(row => row.GetProperty("side").GetString() == "Bolt")
             .GetProperty("chains").EnumerateArray().Single(chain => chain.GetProperty("key").GetString() == key);
@@ -88,7 +89,7 @@ public sealed class BoltChainCompatibilityTests
             readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
         provider.Get(7);
         provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId,
-            RuleSet = "steel", Chains = [new() { Preview = key }] });
+            RuleSet = "steel", PreviewPlanId = answer.GetProperty("previewPlanId").GetString(), Chains = [new() { Preview = key }] });
         var write = Assert.Single(writes);
         Assert.Equal(carried.GetProperty("distance").GetDouble(), write.Distance);
         Assert.Equal(carried.GetProperty("points").EnumerateArray().SelectMany(point => new[] { point[0].GetDouble(), point[1].GetDouble(), 0d }),
@@ -98,7 +99,14 @@ public sealed class BoltChainCompatibilityTests
     private static JsonDocument Load(string name) => JsonDocument.Parse(File.ReadAllText(
         Path.Combine(AppContext.BaseDirectory, "TestAssets", "BoltChains", name + ".json")));
 
-    private static string Normalize(JsonElement value) => Regex.Replace(JsonSerializer.Serialize(value), "ctx_[0-9a-f]{32}", "ctx");
+    private static string Normalize(JsonElement value)
+    {
+        // Plan IDs are new volatile transport metadata; the captured geometry contract is unchanged.
+        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty("previewPlanId", out _))
+            value = JsonSerializer.SerializeToElement(value.EnumerateObject().Where(property => property.Name != "previewPlanId")
+                .ToDictionary(property => property.Name, property => property.Value));
+        return Regex.Replace(JsonSerializer.Serialize(value), "ctx_[0-9a-f]{32}", "ctx");
+    }
 
     private static ViewDimensionContext Context(JsonElement fixture)
     {

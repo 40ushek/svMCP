@@ -35,28 +35,31 @@ internal static class BoltDimensionChainPreview
 
     internal static BoltGroupProjection[] BuildGroups(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
-        double tolerance, BoltChainSettings settings) => snapshot.TryGetProperty("boltGroups", out var rows)
-        ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, contours, tolerance, settings)).ToArray()
-        : [];
+        double tolerance, BoltChainSettings settings) => BuildGroups(BoltSnapshotInput.Read(snapshot), includedPartIds, sides, contours, tolerance, settings);
+
+    internal static BoltGroupProjection[] BuildGroups(BoltSnapshotInput snapshot, IReadOnlyCollection<int> includedPartIds,
+        IReadOnlyCollection<DimensionChainSide> sides, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
+        double tolerance, BoltChainSettings settings) => snapshot.Groups
+        .Select(row => BuildGroup(row, includedPartIds, sides, contours, tolerance, settings)).ToArray();
 
     private static bool Flag(JsonElement value, string name) =>
         value.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.True;
 
-    private static BoltGroupProjection BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
+    private static BoltGroupProjection BuildGroup(BoltSnapshotGroup row, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance,
         BoltChainSettings settings)
     {
-        var group = ReadGroup(row);
+        var group = row.Geometry;
         var viewClass = BoltGroupViewClassifier.Classify(group.Axis, settings.ClassToleranceDegrees);
         var related = new[] { group.PartToBeBoltedId, group.PartToBoltToId }
             .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds)
             .Distinct().OrderBy(id => id).ToArray();
         var partCandidates = related.Where(includedPartIds.Contains).ToArray();
-        var centers = row.GetProperty("restriction").EnumerateArray()
-            .GroupBy(value => value.GetProperty("index").GetInt32())
+        var centers = row.Restrictions
+            .GroupBy(value => value.Index)
             .ToDictionary(values => values.Key, values => values.Count() == 1
-                ? values.First().GetProperty("centerState").GetString() : "Unresolved");
+                ? values.First().CenterState : "Unresolved");
         var reason = PatternRefusal(group, viewClass, tolerance);
         // Why the group gives no steps; its edge chains do not depend on it.
         var stepReason = reason == null ? StepRefusal(group, viewClass, tolerance) : null;

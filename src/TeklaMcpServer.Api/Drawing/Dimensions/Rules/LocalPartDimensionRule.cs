@@ -164,15 +164,10 @@ internal sealed class LocalPartDimensionRule(LocalPartDimensionSettings settings
                 "l" + id.ToString(CultureInfo.InvariantCulture) + "-" + index.ToString(CultureInfo.InvariantCulture),
                 alongX ? At(item.Along) : item.Value, alongX ? item.Value : At(item.Along),
                 owners.Select(owner => new DimensionPointSource("part", owner, "local-box")))).ToArray();
-            var evidence = new Dictionary<string, object> {
-                ["partId"] = id, ["partIds"] = owners,
-                // Tekla measures the offset from the lowest point of the chain; the line must still
-                // clear the farthest part.
-                ["baseOffset"] = chain.AlongTo - At(own[0].Along)
-            };
+            var details = new LocalPartDetails(id, owners, chain.AlongTo - At(own[0].Along));
             results.Add(new DimensionRuleResult(new DimensionDirection(alongX ? 0 : 1, alongX ? 1 : 0),
                 new OutsideOutlineDimensionPlacement(new DimensionDirection(alongX ? 1 : 0, alongX ? 0 : 1), 1),
-                Kind, points, segments: across.Zip(across.Skip(1), (a, b) => Math.Round(b - a, 3)), evidence: evidence));
+                Kind, points, segments: across.Zip(across.Skip(1), (a, b) => Math.Round(b - a, 3)), details: details));
         }
         return new DimensionRuleEvaluation(results);
     }

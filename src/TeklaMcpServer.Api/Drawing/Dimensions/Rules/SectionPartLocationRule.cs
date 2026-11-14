@@ -106,14 +106,10 @@ internal sealed class SectionPartLocationRule(SectionPartLocationSettings settin
         var points = ordered.Select(point => context.GetPoint(point.Id)).ToArray();
         var segments = points.Zip(points.Skip(1), (first, second) =>
             Math.Round(alongX ? second.X - first.X : second.Y - first.Y, 3));
-        var evidence = new Dictionary<string, object> {
-            ["locatedByProfilePartIds"] = locatedByProfile.ToArray(),
-            ["offeredOnOtherSidePartIds"] = otherSide.ToArray(),
-            ["mergedNearbyPartIds"] = mergedNearby.ToArray(),
-            ["locatedPartIds"] = located.Distinct().ToArray()
-        };
+        var details = new SectionLocationDetails(locatedByProfile.ToArray(), otherSide.ToArray(),
+            mergedNearby.ToArray(), located.Distinct().ToArray());
         return new DimensionRuleEvaluation([new DimensionRuleResult(Direction(alongX), Placement(side, alongX),
-            "location", points, segments: segments, evidence: evidence)]);
+            "location", points, segments: segments, details: details)]);
     }
 
     private DimensionRuleResult Refused(string reason)

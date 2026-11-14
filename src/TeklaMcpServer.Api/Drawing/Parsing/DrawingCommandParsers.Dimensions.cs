@@ -25,7 +25,8 @@ public static partial class DrawingCommandParsers
                 ?? throw new ArgumentException("chainsJson must be an array"),
             RuleSet = args.Length > 4 && !string.IsNullOrWhiteSpace(args[4])
                 ? TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeRuleSet(args[4]) : string.Empty,
-            ChainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(args.Length > 5 ? args[5] : null)
+            ChainView = TeklaMcpServer.Shared.DimensionPreviewQuestions.NormalizeChainView(args.Length > 5 ? args[5] : null),
+            PreviewPlanId = args.Length > 6 ? args[6] : null
         };
     }
 

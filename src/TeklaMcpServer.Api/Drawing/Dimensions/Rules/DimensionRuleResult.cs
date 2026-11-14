@@ -14,14 +14,18 @@ internal sealed class DimensionRuleResult
     public string? Note { get; }
     public IReadOnlyList<double> Segments { get; }
     public IReadOnlyDictionary<string, object> Evidence { get; }
+    public DimensionRuleDetails? Details { get; }
+    public T RequireDetails<T>() where T : DimensionRuleDetails => Details as T
+        ?? throw new InvalidOperationException($"Rule result {Kind} requires {typeof(T).Name}");
     public DimensionProposalIdentity? Proposal { get; }
     public DimensionCompositionIntent? CompositionIntent { get; }
 
     public DimensionRuleResult(DimensionDirection direction, DimensionLinePlacement placement, string kind,
         IEnumerable<DimensionRulePoint> points, string? note = null, IEnumerable<double>? segments = null,
         IReadOnlyDictionary<string, object>? evidence = null, DimensionProposalIdentity? proposal = null,
-        DimensionCompositionIntent? compositionIntent = null)
+        DimensionCompositionIntent? compositionIntent = null, DimensionRuleDetails? details = null)
     {
+        Details = details;
         Direction = direction ?? throw new ArgumentNullException(nameof(direction));
         Placement = placement ?? throw new ArgumentNullException(nameof(placement));
         Kind = kind;
@@ -31,6 +35,7 @@ internal sealed class DimensionRuleResult
         Proposal = proposal;
         CompositionIntent = compositionIntent;
         var copy = new Dictionary<string, object>();
+        evidence ??= details?.ToEvidence();
         if (evidence != null)
             foreach (var item in evidence)
                 copy.Add(item.Key, item.Value);
@@ -38,5 +43,5 @@ internal sealed class DimensionRuleResult
     }
 
     public DimensionRuleResult WithProposal(DimensionProposalIdentity proposal) =>
-        new(Direction, Placement, Kind, Points, Note, Segments, Evidence, proposal, CompositionIntent);
+        new(Direction, Placement, Kind, Points, Note, Segments, Evidence, proposal, CompositionIntent, Details);
 }

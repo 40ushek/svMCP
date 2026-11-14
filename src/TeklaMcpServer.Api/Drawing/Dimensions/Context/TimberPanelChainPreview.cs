@@ -100,7 +100,7 @@ internal static class TimberPanelChainPreview
                 var evidence = result.Evidence.ToDictionary(pair => pair.Key, pair => pair.Value);
                 evidence["legacyPreviewRefusal"] = "The panel four-side preview does not support this placement or direction.";
                 proposal = new DimensionRuleResult(result.Direction, result.Placement, result.Kind,
-                    result.Points, result.Note, result.Segments, evidence, result.Proposal, result.CompositionIntent);
+                    result.Points, result.Note, result.Segments, evidence, result.Proposal, result.CompositionIntent, result.Details);
             }
             return proposal.WithProposal(DimensionProposalIdentity.Create(contextId, viewId, "panel",
                 hasSide ? side + "-" + result.Kind : null, proposal,
@@ -118,21 +118,21 @@ internal static class TimberPanelChainPreview
     {
         var side = AxisAlignedDimensionRulePreviewAdapter.GetSide(result);
         if (result.Note != null) return Empty(side, result.Kind, result.Note);
-        var partIds = (int[][])result.Evidence["pointPartIds"];
-        var candidateKinds = (string[][])result.Evidence["candidateKinds"];
-        var roles = (string[])result.Evidence["pointRoles"];
+        var partIds = result.RequireDetails<PanelLocationDetails>().PointPartIds;
+        var candidateKinds = result.RequireDetails<PanelLocationDetails>().CandidateKinds;
+        var roles = result.RequireDetails<PanelLocationDetails>().PointRoles;
         return new {
             side = side.ToString(), kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
             segments = result.Segments,
             points = result.Points.Select((point, index) => new {
                 pointId = point.Id, partIds = partIds[index], role = roles[index], candidateKinds = candidateKinds[index]
             }).ToArray(),
-            droppedShortPartIds = (int[])result.Evidence["droppedShortPartIds"],
-            minimumSegmentViewUnits = (double)result.Evidence["minimumSegmentViewUnits"],
-            incomplete = (bool)result.Evidence["incomplete"],
-            missingSupportModelIds = (int[])result.Evidence["missingSupportModelIds"],
-            incompleteReason = ((int[])result.Evidence["missingSupportModelIds"]).Length > 0
-                ? "No selected support for model IDs: " + string.Join(",", (int[])result.Evidence["missingSupportModelIds"])
+            droppedShortPartIds = result.RequireDetails<PanelLocationDetails>().DroppedShortPartIds,
+            minimumSegmentViewUnits = result.RequireDetails<PanelLocationDetails>().MinimumSegmentViewUnits,
+            incomplete = result.RequireDetails<PanelLocationDetails>().Incomplete,
+            missingSupportModelIds = result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds,
+            incompleteReason = (result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds).Length > 0
+                ? "No selected support for model IDs: " + string.Join(",", result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds)
                 : result.Points.Count < 2 ? "fewer than two selected points" : null
         };
     }

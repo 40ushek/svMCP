@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Reflection;
 using Tekla.Structures.Drawing;
 using TeklaMcpServer.Api.Drawing;
 using System.Globalization;
@@ -358,26 +357,11 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionGroupsDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionGroupReductionDebug", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (method == null)
+        DimensionReductionDebugResult result;
+        try { result = api.GetDimensionGroupReductionDebug(viewId); }
+        catch (Exception ex)
         {
-            WriteError("Internal GetDimensionGroupReductionDebug() was not found.");
-            return true;
-        }
-
-        object? result;
-        try
-        {
-            result = method.Invoke(api, new object?[] { viewId });
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            WriteJson(new
-            {
-                error = ex.InnerException.Message,
-                type = ex.InnerException.GetType().Name,
-                stack = ex.InnerException.StackTrace
-            });
+            WriteJson(new { error = ex.Message, type = ex.GetType().Name, stack = ex.StackTrace });
             return true;
         }
 
@@ -387,21 +371,20 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var resultType = result.GetType();
-        var groups = resultType.GetProperty("Groups")?.GetValue(result) as System.Collections.IEnumerable;
+        var groups = result.Groups;
         if (groups == null)
         {
             WriteError("Reduction debug groups were not found.");
             return true;
         }
 
-        var payload = groups.Cast<object>().Select(group => new
+        var payload = groups.Select(group => new
         {
-            rawGroup = SerializeGroup(group.GetType().GetProperty("RawGroup")?.GetValue(group)),
-            reducedGroup = SerializeGroup(group.GetType().GetProperty("ReducedGroup")?.GetValue(group)),
-            reduction = SerializeReductionItems(group.GetType().GetProperty("Items")?.GetValue(group) as System.Collections.IEnumerable),
-            packets = SerializeRepresentativePackets(group.GetType().GetProperty("Packets")?.GetValue(group) as System.Collections.IEnumerable),
-            combineCandidates = SerializeCombineCandidates(group.GetType().GetProperty("CombineCandidates")?.GetValue(group) as System.Collections.IEnumerable)
+            rawGroup = SerializeGroup(group.RawGroup),
+            reducedGroup = SerializeGroup(group.ReducedGroup),
+            reduction = SerializeReductionItems(group.Items),
+            packets = SerializeRepresentativePackets(group.Packets),
+            combineCandidates = SerializeCombineCandidates(group.CombineCandidates)
         });
 
         WriteJson(new { groups = payload });
@@ -411,26 +394,11 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionOrchestrationDebug(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionOrchestrationDebug", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (method == null)
+        DimensionOrchestrationDebugResult result;
+        try { result = api.GetDimensionOrchestrationDebug(viewId); }
+        catch (Exception ex)
         {
-            WriteError("Internal GetDimensionOrchestrationDebug() was not found.");
-            return true;
-        }
-
-        object? result;
-        try
-        {
-            result = method.Invoke(api, new object?[] { viewId });
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            WriteJson(new
-            {
-                error = ex.InnerException.Message,
-                type = ex.InnerException.GetType().Name,
-                stack = ex.InnerException.StackTrace
-            });
+            WriteJson(new { error = ex.Message, type = ex.GetType().Name, stack = ex.StackTrace });
             return true;
         }
 
@@ -440,8 +408,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var resultType = result.GetType();
-        var packets = resultType.GetProperty("Packets")?.GetValue(result) as System.Collections.IEnumerable;
+        var packets = result.Packets;
         if (packets == null)
         {
             WriteError("Orchestration debug packets were not found.");
@@ -450,7 +417,7 @@ internal sealed partial class DrawingCommandHandler
 
         WriteJson(new
         {
-            viewId = resultType.GetProperty("ViewId")?.GetValue(result),
+            viewId = result.ViewId,
             packetCount = packets.Cast<object>().Count(),
             packets = SerializeOrchestrationPackets(packets)
         });
@@ -516,26 +483,11 @@ internal sealed partial class DrawingCommandHandler
     private bool HandleGetDimensionActionPlan(TeklaDrawingDimensionsApi api, string[] args)
     {
         var viewId = DrawingCommandParsers.ParseOptionalViewId(args);
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionActionPlan", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (method == null)
+        DimensionActionPlanResult result;
+        try { result = api.GetDimensionActionPlan(viewId); }
+        catch (Exception ex)
         {
-            WriteError("Internal GetDimensionActionPlan() was not found.");
-            return true;
-        }
-
-        object? result;
-        try
-        {
-            result = method.Invoke(api, new object?[] { viewId });
-        }
-        catch (TargetInvocationException ex) when (ex.InnerException != null)
-        {
-            WriteJson(new
-            {
-                error = ex.InnerException.Message,
-                type = ex.InnerException.GetType().Name,
-                stack = ex.InnerException.StackTrace
-            });
+            WriteJson(new { error = ex.Message, type = ex.GetType().Name, stack = ex.StackTrace });
             return true;
         }
 
@@ -545,8 +497,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var resultType = result.GetType();
-        var steps = resultType.GetProperty("Steps")?.GetValue(result) as System.Collections.IEnumerable;
+        var steps = result.Steps;
         if (steps == null)
         {
             WriteError("Action plan steps were not found.");
@@ -555,7 +506,7 @@ internal sealed partial class DrawingCommandHandler
 
         WriteJson(new
         {
-            viewId = resultType.GetProperty("ViewId")?.GetValue(result),
+            viewId = result.ViewId,
             stepCount = steps.Cast<object>().Count(),
             steps = SerializeActionPlanSteps(steps)
         });
@@ -665,14 +616,7 @@ internal sealed partial class DrawingCommandHandler
             return true;
         }
 
-        var method = typeof(TeklaDrawingDimensionsApi).GetMethod("GetDimensionArrangementDebug", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (method == null)
-        {
-            WriteError("Internal GetDimensionArrangementDebug() was not found.");
-            return true;
-        }
-
-        var result = method.Invoke(api, new object?[] { viewId, targetGap, allowInwardCorrectionFromPartsBounds }) as DimensionArrangementDebugResult;
+        var result = api.GetDimensionArrangementDebug(viewId, targetGap, allowInwardCorrectionFromPartsBounds);
         if (result == null)
         {
             WriteError("Internal GetDimensionArrangementDebug() returned null.");
@@ -981,6 +925,7 @@ internal sealed partial class DrawingCommandHandler
         {
             created = result.Created,
             createdCount = result.CreatedCount,
+            verificationStatus = result.VerificationStatus,
             viewId = result.ViewId,
             viewType = result.ViewType,
             rectangleLike = result.RectangleLike,
@@ -1022,6 +967,7 @@ internal sealed partial class DrawingCommandHandler
         {
             created = result.Created,
             createdCount = result.CreatedCount,
+            verificationStatus = result.VerificationStatus,
             viewId = result.ViewId,
             viewType = result.ViewType,
             modelId = result.ModelId,
@@ -1051,10 +997,12 @@ internal sealed partial class DrawingCommandHandler
         {
             created = result.Created,
             createdCount = result.CreatedCount,
+            verificationStatus = result.VerificationStatus,
             viewId = result.ViewId,
             viewType = result.ViewType,
             modelId = result.ModelId,
             contourPointCount = result.ContourPointCount,
+            requestedCount = result.RequestedCount,
             flipped = result.Flipped,
             skippedRightAngleCount = result.SkippedRightAngleCount,
             dimensionIds = result.DimensionIds,
@@ -1084,6 +1032,7 @@ internal sealed partial class DrawingCommandHandler
         {
             total = result.Total,
             drawingDimensionCount = result.DrawingDimensionCount,
+            textBoundsPolicy = result.TextBoundsPolicy,
             rawItemCount = result.RawItemCount,
             reducedItemCount = result.ReducedItemCount,
             groupCount = result.GroupCount,

@@ -8,6 +8,21 @@ namespace TeklaMcpServer.Api.Drawing;
 /// Composition/repeat selection operates only on typed DimensionPreviewChain fields.</summary>
 internal static class DimensionPreviewProjection
 {
+    internal static JsonElement Freeze(object value, bool display = false)
+    {
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(value, display ? DisplayOptions : null));
+        return doc.RootElement.Clone();
+    }
+
+    private static readonly JsonSerializerOptions DisplayOptions = new() { Converters = { new DisplayDoubleConverter() } };
+    private sealed class DisplayDoubleConverter : JsonConverter<double>
+    {
+        public override double Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) => reader.GetDouble();
+        public override void Write(Utf8JsonWriter writer, double value, JsonSerializerOptions options) =>
+            writer.WriteRawValue(Math.Round(value, 3).ToString("0.###", CultureInfo.InvariantCulture));
+    }
+
+
     internal static string Direction(double x, double y) => string.Join(",", new[] { x, y, 0d }
         .Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
 

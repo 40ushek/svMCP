@@ -106,7 +106,9 @@ public sealed class ViewDimensionContextCaseTests
 
     // Each build issues its own context id; everything else must match.
     private static string Answer(JsonElement answer) =>
-        System.Text.RegularExpressions.Regex.Replace(answer.GetRawText(), "ctx_[0-9a-f]{32}", "ctx");
+        System.Text.RegularExpressions.Regex.Replace(
+            System.Text.RegularExpressions.Regex.Replace(answer.GetRawText(), "ctx_[0-9a-f]{32}", "ctx"),
+            "plan_[0-9a-f]{32}", "plan");
 
     private static PartSolidGeometryInViewResult Rectangle(int id, double x0, double x1, double y0, double y1)
     {

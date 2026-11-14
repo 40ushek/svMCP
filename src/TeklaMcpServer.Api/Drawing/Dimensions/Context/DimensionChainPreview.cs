@@ -105,12 +105,12 @@ internal static class DimensionChainPreview
 
     private static object SteelLocation(DimensionChainSide side, DimensionRuleResult result)
     {
-        var skipped = (int[])result.Evidence["skippedPartIds"];
-        var dropped = (string[])result.Evidence["droppedShortPointIds"];
+        var skipped = result.RequireDetails<SteelLocationDetails>().SkippedPartIds;
+        var dropped = result.RequireDetails<SteelLocationDetails>().DroppedShortPointIds;
         if (result.Note != null)
             return Empty(side, result.Kind, result.Note, skipped, dropped);
-        var roles = (string[][])result.Evidence["roles"];
-        var partIds = (int[][])result.Evidence["partIds"];
+        var roles = result.RequireDetails<SteelLocationDetails>().Roles;
+        var partIds = result.RequireDetails<SteelLocationDetails>().PartIds;
         return new {
             side = side.ToString(), kind = result.Kind,
             pointIds = result.Points.Select(point => point.Id).ToArray(),
@@ -119,7 +119,7 @@ internal static class DimensionChainPreview
                 pointId = point.Id, roles = roles[index], partIds = partIds[index]
             }).ToArray(),
             skippedPartIds = skipped,
-            offeredOnOtherSidePartIds = (int[])result.Evidence["offeredOnOtherSidePartIds"],
+            offeredOnOtherSidePartIds = result.RequireDetails<SteelLocationDetails>().OfferedOnOtherSidePartIds,
             droppedShortPointIds = dropped,
             note = (string?)null
         };

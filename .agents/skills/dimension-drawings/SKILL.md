@@ -11,6 +11,16 @@ change code, rules or roadmaps during placement without a separate request.
 
 ## Standard run: steel assembly, whole drawing
 
+For a focused request, use the corresponding route instead of the whole-drawing
+run: `move_dimension` / `move_angle_dimension` for an explicit move;
+`arrange_dimensions` for rearranging existing lines; `combine_dimensions`, `add_dimension_points` or `recreate_dimension` for an
+explicit edit of existing chains; and `place_control_diagonals`,
+`place_contour_angle_dimensions` or `place_contour_radius_dimensions` for those
+specific requests. Use `get_dimension_chain_coverage` for a targeted anchor review.
+These are separate actions, not automatic follow-ups to reading a preview. A saved
+distance or verified object presence does not establish visually correct placement;
+respect the operation's refusal/error and verification status.
+
 Follow these steps in order for "place the dimensions on this drawing" on a steel
 assembly. The code proposes the chains; your job is to pick keys, not points. The
 rest of this file explains the reasons and covers every other request.
@@ -28,7 +38,9 @@ rest of this file explains the reasons and covers every other request.
    the code compares a bottom or back view with what is already on the sheet.
 4. For the view call `get_view_dimension_context` with `viewId`,
    `ruleSet="steel"` and `questions="chain,scale,repeats"`. In the answer every
-   chain has a `key`, `segments` and `incomplete`. A chain that repeats another
+   chain has a `key`, `segments` and `incomplete`. Keep the answer's `previewPlanId`
+   with its `contextId`: it identifies the immutable selection, even after another
+   read of the same view. A chain that repeats another
    chain or a dimension already on the sheet comes with `incomplete=true`, a
    `repeat` field and the reason; `repeats` lists the same keys. If the answer has `isComplete=false` or
    `sectionPreviewStatus` `refused`, place nothing on that view, go on to the next
@@ -52,12 +64,14 @@ rest of this file explains the reasons and covers every other request.
      `offeredOnOtherSidePartIds`) are explanations. They change nothing in what
      you place; they belong in a debug report only.
 6. Call `create_dimensions_batch` once for the view with the same `viewId`,
-   `contextId`, `ruleSet="steel"` and `chainsJson` such as
+   `contextId`, the reviewed answer's `previewPlanId`, `ruleSet="steel"` and `chainsJson` such as
    `[{"preview":"Bottom-location"},{"preview":"Bottom-overall"}]`.
    Send keys only: no `pointIds`, no `direction`, no `paperGapMm`, no
    `attributesFile`. If no key is left for a view (on a bottom or back view every
    chain is often a repeat), make no call for that view: that is a normal result. If the model has no attributes file for a chain kind, the
    batch uses `standard` by itself and says so in `attributesFileUsed`.
+   If the plan is expired or drawing dimensions changed, re-read and select from
+   the new answer. Never replace the ID on an old selection without reviewing it.
    - On an older bridge the call can still fail with `Dimension attributes
      'overall' could not be loaded`: nothing was created; add
      `"attributesFile":"standard"` to the overall entries and send it again.

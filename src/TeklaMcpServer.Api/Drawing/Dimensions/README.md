@@ -137,9 +137,15 @@ Asked `repeats`, a chain read marks every repeat (`sameView`, `overallOnSheet`,
 `mirror`; see `DimensionChainRepeats`) as `incomplete=true` with `repeat` and the reason,
 and lists them in `repeats` as before. This happens before the `Bolt` row takes its
 rows, so no row is kept for a chain that will not be placed. The context keeps the
-repeats of its last chain read; the batch resolves preview keys from that same answer
-(`storedRepeats`), so the bolt distances it writes are the ones the caller saw. A plain
-chain read clears them. The sheet is read through `ViewDimensionContextProvider.ReadSheet`.
+mutable repeat state for subsequent queries, but batch selection no longer uses it.
+Every chain answer publishes an immutable `previewPlanId`. Intermediate reads cannot
+change that plan's selected/refused chains or bolt offsets. Pass that exact ID to the
+batch; an omitted ID is accepted only if one matching plan exists. The context keeps
+at most 32 distinct plans; evicted IDs are refused. A production plan records sheet
+dimension facts and the batch rejects changed IDs, points, type, line or distance
+before writing. External model/part/view edits still require `refresh=true`; the sheet
+fingerprint does not prove source solids are unchanged. The sheet is read through
+`ViewDimensionContextProvider.ReadSheet`, without text bounds or legacy reduction.
 
 ## Provisional bolt-chain preview (2026-10-02, obsolete)
 
@@ -264,7 +270,7 @@ of this placement change is still pending.
 Each preview chain now exposes `key`, `direction` and default `attributesFile`.
 `create_dimensions_batch` accepts an entry such as `{"preview":"Top-location"}`
 instead of repeating ordered point IDs. Pass the same `contextId`, `ruleSet`
-(`steel` or `panel`) and `chainView` (`chain` or `chainDetails`) as the preview read.
+(`steel` or `panel`), `chainView` (`chain` or `chainDetails`) and `previewPlanId` as the preview read.
 Section `chain` uses consolidated keys such as `Top-chain`; `chainDetails` uses
 split profile/location keys. Only the listed chains are submitted, in list order.
 
@@ -573,3 +579,27 @@ as the strategic document:
 - what is still being aligned to `dim`
 - what remains intentionally deferred
 - what future functionality should be exposed later
+
+## Correctness refactor (2026-11-14, source changes)
+
+Normal reads use existing runtime text objects only. Missing text bounds remain
+unavailable (`textBoundsPolicy`); reading cannot create temporary text or dimensions.
+Text-bound selection is an explicit argument, not a thread-static switch.
+Move commands check Modify, commit and fresh distance read-back. Standalone contour
+and diagonal creation reports partial insertion/read-back failures and explicitly
+separates object presence from unverified rendered geometry.
+
+The batch factual read does not merge or reduce distinct dimension sets. The legacy
+read-model grouping overload adapts to the same snapshot implementation as production.
+Compact MCP and batch read-back use shared side/span/segment interpretation; inclined
+chains have Unknown side and no axis line, and reported segment lengths take precedence
+when present. Line positions are calculated, not presentation observations.
+
+Steel, section, panel, inclined and local rule results carry typed details. Evidence
+is retained as a compatibility/diagnostic projection. Context requests, repeat session
+state, published plans and output serialization have separate owners. Captured bolt
+inputs, part contours and view metadata are decoded once. Source geometry, settings,
+point ordering and creation/arrangement policies are preserved. Build/test and live
+acceptance must be reported separately; no deployment is implied by these edits.
+The new previewPlanId argument and removal of legacy preview arguments change the
+MCP schema; a future deployment also needs an MCP server/client schema refresh.

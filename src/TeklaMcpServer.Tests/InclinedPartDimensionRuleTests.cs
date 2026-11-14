@@ -158,6 +158,7 @@ public sealed class InclinedPartDimensionRuleTests
             (request, distance) => { writes.Add((request, distance)); return new() { Created = true, DimensionId = 101 }; },
             readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
         provider.Get(7);
+        context.Query("chain");
 
         var result = provider.CreateBatch(new CreateDimensionsBatchRequest {
             ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",

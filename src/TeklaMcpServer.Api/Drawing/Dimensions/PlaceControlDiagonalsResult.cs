@@ -3,6 +3,7 @@ namespace TeklaMcpServer.Api.Drawing;
 public sealed class PlaceControlDiagonalsResult
 {
     public bool Created { get; set; }
+    public string VerificationStatus { get; set; } = "notWritten";
     public int CreatedCount { get; set; }
     public int ViewId { get; set; }
     public string ViewType { get; set; } = string.Empty;

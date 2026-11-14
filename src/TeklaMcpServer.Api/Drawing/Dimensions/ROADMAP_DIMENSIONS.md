@@ -1,5 +1,91 @@
 # Dimensions Roadmap
 
+## Correctness and architecture work order (2026-11-14)
+
+Authorized order: record this plan first, then implement in the following stages.
+Keep the Tekla capture / pure calculation boundary, settings, source-point order
+and existing rules. No rewrite, automatic deployment or drawing mutation during
+code work. Automated verification and live acceptance are recorded separately.
+
+1. **Bind batch selection to an immutable preview plan — implemented and tested.** Give each
+   published chain answer its own plan ID, scope (context, rule set, chain view,
+   selected sides) and captured chains. Resolve selected keys from that plan,
+   never by recalculating with mutable `_repeats`. Intermediate chain/diagnostic
+   reads must not alter an earlier plan. Reject unknown, expired or mismatched
+   plans before writing. Check current drawing dimensions against the state read
+   for that plan; geometry/view edits still require a refreshed context. Existing
+   same-view geometric matching remains a separate idempotency safeguard.
+   Acceptance: repeat -> ordinary read -> batch retains the original refusal;
+   two plans coexist; changed drawing state, context/scope mismatch and stale
+   plans fail before any write; normal preview keys/offsets stay unchanged.
+2. **Make reads and write results truthful — implemented; live acceptance pending.** Remove temporary text and
+   dimension insertion from ordinary reads; report unavailable text bounds
+   explicitly. Check modification results and re-read moved dimensions. Apply
+   the same principle to contour/angle/radius creation without claiming visual
+   verification from a successful Insert alone. Acceptance: read paths cannot
+   insert/delete objects; failed Modify and discrepant read-back are not success.
+3. **Remove confirmed duplication and tool noise — implemented and tested.** Replace reflection
+   into our own API with direct calls, remove four unused prepared-preview tool
+   arguments while preserving bridge argument positions, synchronize compact
+   reads and current documentation. Consolidate duplicated grouping/geometry
+   implementations behind the production snapshot path. Audit callers, including
+   direct bridge diagnostics, before deleting anything in `Orchestration/`.
+4. **Define the shared factual read contract — implemented and tested.** Creation and arrangement
+   share dimension geometry, side and occupied-line facts; keep their distinct
+   placement policies unless a concrete conflict requires a change. Regression
+   coverage must exercise the production path, not only compatibility overloads.
+5. **Finish typed rule results and split context responsibilities — implemented scope tested.**
+   Replace hard-cast `Evidence` payloads incrementally; parse captured view data
+   once. Extract plan ownership, question handling and output projection along
+   responsibility boundaries. Preserve saved-case replay and public behavior.
+
+Each stage needs a reviewed diff and targeted regression coverage. Do not mark
+implementation, compilation, automated verification and live acceptance as the
+same status. Commit/deploy only when explicitly requested.
+
+Delivery evidence (2026-11-14): Release API, bridge, controller, MCP and tests built
+in `.codex-build/dimension-correctness/`; 1754 tests passed, 1 skipped. The checked-in
+bolt fixtures and saved-case replay passed. Two tests for the removed, unused
+temporary-value formatter were deleted; new tests cover plans, moved-distance
+verification and compact/batch factual agreement. No deployment or live drawing
+mutation was performed. The earlier 1742/1 result belongs to the preceding delivery.
+
+Implementation details and acceptance limits:
+
+- `DimensionPreviewPlans` retains at most 32 immutable published selections per
+  context. `previewPlanId` passes through MCP and bridge. Missing IDs are supported
+  only for an unambiguous matching plan. Production plans fingerprint straight
+  dimensions on the sheet (including ID, points, type, line and distance); changes
+  require a new preview, including reuse after a successful write. This does not
+  detect external solid/view changes: those still require `refresh=true`.
+- Reads no longer create temporary text/dimensions. Missing runtime text bounds
+  are unavailable, with an explicit policy in the response. The text-bounds option
+  is passed through capture, rather than stored in a thread-static switch.
+- Move success requires Modify and fresh distance agreement. Diagonal/angle/radius
+  creation checks all requested insertions and re-reads object IDs; partial writes
+  and read-back errors are reported. Object presence is verified, rendered geometry
+  is explicitly unverified. These Tekla write paths still need live acceptance.
+- Legacy grouping inputs adapt to the production snapshot implementation. Batch
+  facts bypass cross-set grouping/reduction. Compact and batch interpretation share
+  one helper: inclined side is Unknown, and reported segment lengths are retained.
+- Own API method calls in the bridge are direct. Existing diagnostic-property
+  projection remains separate technical debt; it is not a reason to delete reachable
+  diagnostics. `Orchestration/` remains reachable through direct bridge commands.
+- Steel/section/panel/inclined/local rules carry typed details; Evidence remains
+  a legacy diagnostic projection. Context question parsing, repeat session state,
+  immutable plans and final serialization have separate owners. Captured bolt
+  geometry/restrictions, contours and view metadata are decoded once. Further
+  extraction of part-specific geometry is not required for this correctness fix.
+
+Remaining acceptance: deploy only on request, then verify move failures/successes,
+missing runtime text bounds and partial contour writes on disposable drawing cases;
+re-read M.298 previews and compare the existing plate chains. Do not use production
+drawings for destructive failure injection. Keep path-dependent output precision
+as the separately documented bolt-refactor debt.
+This delivery also changes the MCP tool schema (previewPlanId and removed legacy
+arguments): the next requested deployment must refresh/restart the MCP server,
+not only copy bridge/API assemblies. The currently running tools were not restarted.
+
 Updated 2026-11-14 (bolt delivery and architectural-refactor status synchronized;
 assembly chain review is dated 2026-11-12; other historical sections retain their dates).
 This file is the active work order. Steps 1-3 have source

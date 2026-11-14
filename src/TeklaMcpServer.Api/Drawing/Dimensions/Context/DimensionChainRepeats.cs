@@ -38,6 +38,8 @@ public static class DimensionChainRepeats
         public double[] Segments { get; } = segments;
         /// <summary>True when it measures along X, false along Y, null when inclined.</summary>
         public bool? Horizontal { get; } = horizontal;
+        [System.Text.Json.Serialization.JsonIgnore]
+        internal string? ReadState { get; set; }
     }
 
     public sealed class Repeat(string key, string reason, string? of = null, int? dimensionId = null, int? viewId = null)
@@ -120,7 +122,11 @@ public static class DimensionChainRepeats
             var (ax, ay) = Axis(group);
             bool? horizontal = Math.Abs(ax) > AxisAligned ? true : Math.Abs(ay) > AxisAligned ? false : null;
             return group.Items.Select(item => new Placed(item.Id,
-                item.ViewId ?? group.ViewId ?? 0, group.ViewType, Segments(ax, ay, item), horizontal));
+                item.ViewId ?? group.ViewId ?? 0, group.ViewType, Segments(ax, ay, item), horizontal) {
+                    ReadState = System.Text.Json.JsonSerializer.Serialize(new {
+                        item.Distance, item.TeklaDimensionType, item.PointList, item.ReferenceLine
+                    })
+                });
         }).ToArray();
 
     /// <summary>A unit axis is horizontal or vertical when its leading component exceeds this.</summary>

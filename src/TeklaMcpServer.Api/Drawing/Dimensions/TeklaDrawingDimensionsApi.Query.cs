@@ -8,9 +8,9 @@ namespace TeklaMcpServer.Api.Drawing;
 
 public sealed partial class TeklaDrawingDimensionsApi
 {
-    internal List<TeklaDimensionSetSnapshot> GetDimensionSnapshots(int? viewId)
+    internal List<TeklaDimensionSetSnapshot> GetDimensionSnapshots(int? viewId, bool includeTextBounds = true)
         => DimensionStableReadHelper.ReadStable(
-            () => ReadDimensionSnapshotsCore(viewId),
+            () => ReadDimensionSnapshotsCore(viewId, includeTextBounds),
             BuildDimensionSnapshotFingerprint);
 
     private List<TeklaDimensionSetSnapshot> GetDimensionSnapshots(
@@ -23,7 +23,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 "snapshot_read",
                 $"readIndex={readIndex} elapsedMs={elapsedMs}"));
 
-    private List<TeklaDimensionSetSnapshot> ReadDimensionSnapshotsCore(int? viewId)
+    private List<TeklaDimensionSetSnapshot> ReadDimensionSnapshotsCore(int? viewId, bool includeTextBounds = true)
     {
         var activeDrawing = new DrawingHandler().GetActiveDrawing();
         if (activeDrawing == null)
@@ -43,7 +43,7 @@ public sealed partial class TeklaDrawingDimensionsApi
                 if (dimObjects.Current is not StraightDimensionSet dimSet)
                     continue;
 
-                dimensions.Add(BuildDimensionSnapshot(dimSet));
+                dimensions.Add(BuildDimensionSnapshot(dimSet, includeTextBounds));
             }
 
             PerfTrace.Write("api-dimensions", "snapshot_read_phases", total.ElapsedMilliseconds,
@@ -94,14 +94,20 @@ public sealed partial class TeklaDrawingDimensionsApi
 
     public GetDimensionsResult GetDimensions(int? viewId) => GetDimensions(viewId, includeTextBounds: true);
 
+    /// <summary>Batch/repeat facts do not depend on legacy grouping or reduction decisions.</summary>
+    internal GetDimensionsResult GetDimensionFacts(int? viewId)
+    {
+        var snapshots = GetDimensionSnapshots(viewId, includeTextBounds: false);
+        var result = BuildGetDimensionsResult(snapshots.Count, DimensionGroupFactory.BuildFactGroups(snapshots));
+        result.TextBoundsPolicy = "notRequested";
+        return result;
+    }
+
     /// <summary>Text bounds cost most of a read (about 78% on five dimensions); callers that
     /// only need points, sides and offsets (batch read-back, compact read) skip them.</summary>
     public GetDimensionsResult GetDimensions(int? viewId, bool includeTextBounds)
     {
-        _skipTextBounds = !includeTextBounds;
-        List<TeklaDimensionSetSnapshot> snapshots;
-        try { snapshots = GetDimensionSnapshots(viewId); }
-        finally { _skipTextBounds = false; }
+        var snapshots = GetDimensionSnapshots(viewId, includeTextBounds);
         // A plain read reports every dimension: reduction hid a created overall behind a chain
         // with the same extent, so the batch read-back declared it merged.
         var groups = DimensionGroupFactory.BuildGroups(snapshots, reductionPolicy: new DimensionReductionPolicy
@@ -110,7 +116,9 @@ public sealed partial class TeklaDrawingDimensionsApi
             EnableCoverageReduction = false,
             EnableRepresentativeSelection = false
         });
-        return BuildGetDimensionsResult(snapshots.Count, groups);
+        var result = BuildGetDimensionsResult(snapshots.Count, groups);
+        result.TextBoundsPolicy = includeTextBounds ? "runtimeOnly; missing bounds are unavailable" : "notRequested";
+        return result;
     }
 
     public GetDimensionContextsResult GetDimensionContexts(int viewId)
@@ -450,11 +458,10 @@ public sealed partial class TeklaDrawingDimensionsApi
     }
 
     [ThreadStatic] private static long[]? _snapshotPhaseMs;
-    [ThreadStatic] private static bool _skipTextBounds;
 
     private static long[] SnapshotPhases => _snapshotPhaseMs ??= new long[6];
 
-    private TeklaDimensionSetSnapshot BuildDimensionSnapshot(StraightDimensionSet dimSet)
+    private TeklaDimensionSetSnapshot BuildDimensionSnapshot(StraightDimensionSet dimSet, bool includeTextBounds = true)
     {
         var phase = Stopwatch.StartNew();
         var (ownerViewId, ownerViewType, ownerViewScale) = GetOwnerViewInfo(dimSet);
@@ -475,7 +482,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         };
 
         foreach (var segment in segments)
-            snapshot.Segments.Add(BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext));
+            snapshot.Segments.Add(BuildDimensionSegmentSnapshot(segment, dimSet, dimSet.Distance, lineContext, includeTextBounds));
         SnapshotPhases[2] += phase.ElapsedMilliseconds; phase.Restart();
 
         snapshot.Bounds ??= CombineBounds(snapshot.Segments.Select(static s => s.Bounds));
@@ -698,7 +705,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         StraightDimension segment,
         StraightDimensionSet dimSet,
         double distance,
-        DimensionLineContext? lineContext = null)
+        DimensionLineContext? lineContext = null, bool includeTextBounds = true)
     {
         var start = segment.StartPoint;
         var end = segment.EndPoint;
@@ -743,7 +750,7 @@ public sealed partial class TeklaDrawingDimensionsApi
         var boundsTimer = Stopwatch.StartNew();
         var segmentBounds = TryGetBounds(segment);
         SnapshotPhases[4] += boundsTimer.ElapsedMilliseconds; boundsTimer.Restart();
-        var segmentTextBounds = _skipTextBounds ? null : TryGetTextBounds(segment, dimSet, dimensionLine);
+        var segmentTextBounds = includeTextBounds ? TryGetTextBounds(segment, dimSet, dimensionLine) : null;
         SnapshotPhases[5] += boundsTimer.ElapsedMilliseconds;
         return new TeklaDimensionSegmentSnapshot
         {

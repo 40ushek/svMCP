@@ -13,6 +13,7 @@ public sealed class CreateDimensionsBatchRequest
     // rule sets with different points, so a forgotten value must not silently resolve to steel.
     public string RuleSet { get; set; } = string.Empty;
     public string ChainView { get; set; } = "chain";
+    public string? PreviewPlanId { get; set; }
     public List<BatchDimensionChain> Chains { get; set; } = [];
 }
 
@@ -68,6 +69,7 @@ public sealed class BatchDimensionReadback
     public string TeklaDimensionType { get; set; } = string.Empty;
     public string Side { get; set; } = string.Empty;
     public double? LineAt { get; set; }
+    public string LineAtSource { get; set; } = TeklaMcpServer.Shared.DimensionReadbackGeometry.LineAtSource;
     public double? From { get; set; }
     public double? To { get; set; }
     public double[] Segments { get; set; } = [];
@@ -273,12 +275,9 @@ public sealed partial class ViewDimensionContextProvider
         if (references.Length == 0) return batch.Chains.Select(WithBoltKey).ToArray();
 
         var context = RequireContext(batch.ViewId, batch.ContextId);
-        // The same answer the caller read: the repeats of the last chain read and the bolt rows they leave.
-        var answer = context.Query(chainView, "all", ruleSet: ruleSet, storedRepeats: true);
-        if (!answer.TryGetProperty("chainPreview", out var rows))
-            throw new ArgumentException("Cannot resolve preview chains from this context");
-        var preview = IndexPreviewChains(rows, references.Select(chain => chain.Preview!));
-        return batch.Chains.Select(chain => {
+        var plan = context.PreviewPlans.Require(batch.PreviewPlanId, ruleSet, chainView);
+        var preview = IndexPreviewChains(plan.Rows, references.Select(chain => chain.Preview!));
+        var resolved = batch.Chains.Select(chain => {
             if (chain.Preview == null) return WithBoltKey(chain);
             if (!preview.TryGetValue(chain.Preview, out var selected))
                 throw new ArgumentException($"Unknown preview chain '{chain.Preview}' for ruleSet={ruleSet}, chainView={chainView}");
@@ -316,6 +315,9 @@ public sealed partial class ViewDimensionContextProvider
                 Distance = chain.Distance, PaperGapMm = chain.PaperGapMm, DimensionType = chain.DimensionType
             };
         }).ToArray();
+        if (plan.Sheet != null && plan.Sheet != DimensionPreviewPlans.Fingerprint(_readSheet()))
+            throw new InvalidOperationException("Drawing dimensions changed after the preview; read a new plan before writing");
+        return resolved;
     }
 
     // The preview names a default attributes file per chain kind ("overall" for an overall).
@@ -517,21 +519,15 @@ public sealed partial class ViewDimensionContextProvider
         return sign * (line - source) > 0;
     }
 
-    private static List<BatchDimensionReadback> ProjectReadback(GetDimensionsResult snapshot)
+    internal static List<BatchDimensionReadback> ProjectReadback(GetDimensionsResult snapshot)
     {
         return snapshot.Groups.SelectMany(group => group.Items.Select(item => {
-            var horizontal = string.Equals(group.DimensionType, "Horizontal", StringComparison.OrdinalIgnoreCase);
-            var vertical = string.Equals(group.DimensionType, "Vertical", StringComparison.OrdinalIgnoreCase);
-            var coordinates = item.PointList.Select(point => horizontal ? point.X : point.Y).ToArray();
-            var side = horizontal ? (group.TopDirection >= 0 ? "Top" : "Bottom")
-                : vertical ? (group.TopDirection >= 0 ? "Left" : "Right") : "Unknown";
+            var geometry = TeklaMcpServer.Shared.DimensionReadbackGeometry.Read(string.IsNullOrWhiteSpace(item.DimensionType) ? group.DimensionType : item.DimensionType,
+                group.TopDirection, item.PointList.Select(point => (point.X, point.Y)).ToArray(),
+                item.ReferenceLine?.StartX, item.ReferenceLine?.StartY, item.LengthList.ToArray());
             return new BatchDimensionReadback {
-                Id = item.Id, TeklaDimensionType = item.TeklaDimensionType, Side = side,
-                LineAt = item.ReferenceLine == null ? null
-                    : horizontal ? item.ReferenceLine.StartY : vertical ? item.ReferenceLine.StartX : null,
-                From = coordinates.Length == 0 || (!horizontal && !vertical) ? null : coordinates.Min(),
-                To = coordinates.Length == 0 || (!horizontal && !vertical) ? null : coordinates.Max(),
-                Segments = item.LengthList.ToArray()
+                Id = item.Id, TeklaDimensionType = item.TeklaDimensionType, Side = geometry.Side,
+                LineAt = geometry.LineAt, From = geometry.From, To = geometry.To, Segments = geometry.Segments
             };
         })).ToList();
     }

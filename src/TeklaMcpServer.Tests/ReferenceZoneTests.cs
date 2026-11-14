@@ -278,6 +278,7 @@ public sealed class ReferenceZoneTests
                 return new CreateDimensionResult { Created = true, DimensionId = id };
             }, referenceRead: (_, _, _, _) => context, readDimensions: _ => dimensions, validateAttributes: _ => { });
         provider.Get(7, referenceZones: ["0"]);
+        context.Query("chain", ruleSet: "panel");
         var result = provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId,
             RuleSet = "panel", Chains = [new BatchDimensionChain { Preview = "Bottom-location", PaperGapMm = 1 }] });
         Assert.Equal("created", result.Chains.Single().Status);
