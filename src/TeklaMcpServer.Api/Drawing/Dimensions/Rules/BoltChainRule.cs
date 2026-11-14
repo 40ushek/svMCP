@@ -3,15 +3,10 @@ namespace TeklaMcpServer.Api.Drawing;
 /// <summary>
 /// Evaluates settings and geometric refusals on typed candidates. Final view admission,
 /// coverage and dependencies belong to BoltChainSelectionPlanner; this rule assigns no rows.
-/// Calculate retains compatibility with the generic dimension-rule diagnostics.
 /// </summary>
-internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
+internal sealed class BoltChainRule(BoltChainSettings settings)
 {
     public const string Kind = "bolt";
-
-    public DimensionRuleEvaluation Calculate(DimensionRuleContext context)
-        => new(Evaluate(context.Require<BoltChainInput>().Candidates)
-            .Select(BoltChainPreviewProjection.RuleResult));
 
     internal IReadOnlyList<BoltChainDecision> Evaluate(IReadOnlyList<BoltChainCandidate> candidates)
     {

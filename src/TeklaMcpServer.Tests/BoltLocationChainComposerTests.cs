@@ -89,7 +89,7 @@ public sealed class BoltLocationChainComposerTests
     }
 
     [Fact]
-    public void RepeatProjectionPreservesTheLegacyPrecisionOfFrozenCarriedPoints()
+    public void RepeatProjectionRoundsCarriedPointsLikeEveryOtherNumber()
     {
         const double x = 20.123456789;
         var composed = Compose(Rows([x, 80]));
@@ -99,7 +99,8 @@ public sealed class BoltLocationChainComposerTests
         var carried = answer[1].GetProperty("chains").EnumerateArray().Single(chain => chain.TryGetProperty("carries", out _));
         Assert.Equal("mirror", carried.GetProperty("repeat").GetString());
         Assert.True(carried.GetProperty("incomplete").GetBoolean());
-        Assert.Equal(x, carried.GetProperty("points")[1][0].GetDouble());
+        // One coordinate policy: display numbers carry three decimals.
+        Assert.Equal(20.123, carried.GetProperty("points")[1][0].GetDouble());
     }
 
     [Fact]
@@ -126,6 +127,23 @@ public sealed class BoltLocationChainComposerTests
         Assert.Empty(BoltChainSources.Indices([[1, 2]]).CapturedPositions);
         var position = new BoltProjectedPosition([1, 2, 0], [new(42, 0)]);
         Assert.Same(position, Assert.Single(BoltChainSources.Captured([position]).CapturedPositions));
+    }
+
+    [Fact]
+    public void AChangedOrdinaryChainRoundsItsPointsLikeAnUntouchedOneAndKeepsSourcePrecision()
+    {
+        const double x = 20.123456789;
+        var candidate = new BoltChainCandidate("bolt-part-11-groups-42-Bottom", BoltChainCandidate.PartKind, 42, 11, true,
+            BoltGroupViewClass.Plan, 0, [new DimensionRulePoint("p0", 0, 0, []), new DimensionRulePoint("p1", x, 0, [])],
+            [x], null, true, new(0, -1), 0, BoltChainSources.Captured([new BoltProjectedPosition([x, 0, 0], [new(42, 0)])]));
+        var chain = DimensionPreviewChain.Bolt(new BoltRowChain(new BoltChainDecision(candidate), 80));
+        foreach (var output in new[] { chain, chain.Refused("repeats on this view") }
+            .Select(value => ViewDimensionContext.Freeze(value, display: true)))
+        {
+            Assert.Equal(Math.Round(x, 3), output.GetProperty("points")[1][0].GetDouble());
+            Assert.Equal(Math.Round(x, 3), output.GetProperty("segments")[0].GetDouble());
+            Assert.Equal(x, output.GetProperty("sources")[0].GetProperty("point")[0].GetDouble());
+        }
     }
 
     private static DimensionPreviewRow[] Compose(DimensionPreviewRow[] rows) =>

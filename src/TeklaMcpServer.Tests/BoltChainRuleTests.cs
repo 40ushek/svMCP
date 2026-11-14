@@ -177,10 +177,9 @@ public sealed class BoltChainRuleTests
         var candidates = BoltChainCandidates.Build(Snapshot(group), [10], [10], Contours(),
             (partId, axis, points) => false, new BoltChainSettings());
         Assert.All(candidates.Where(c => c.Kind != BoltChainCandidate.GroupKind), c => Assert.False(c.EdgeConfirmed));
-        var results = new DimensionRuleSet(new BoltChainRule(new BoltChainSettings()))
-            .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates))).Results;
-        Assert.DoesNotContain(results, r => (bool)r.Evidence["create"]);
-        Assert.Contains(results, r => ((string)r.Evidence["key"]).StartsWith("bolt-part-10-groups-42-"));
+        var results = new BoltChainRule(new BoltChainSettings()).Evaluate(candidates);
+        Assert.DoesNotContain(results, r => r.PolicyRefusal == null);
+        Assert.Contains(results, r => r.Candidate.Key.StartsWith("bolt-part-10-groups-42-"));
     }
 
     [Theory]
@@ -571,9 +570,8 @@ public sealed class BoltChainRuleTests
     }
 
     private static (string Key, bool Create, string? Reason)[] Decide(BoltChainSettings settings, params BoltChainCandidate[] candidates) =>
-        new DimensionRuleSet(new BoltChainRule(settings))
-            .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates))).Results
-            .Select(result => ((string)result.Evidence["key"], (bool)result.Evidence["create"], result.Note)).ToArray();
+        new BoltChainRule(settings).Evaluate(candidates)
+            .Select(result => (result.Candidate.Key, result.PolicyRefusal == null, result.PolicyRefusal)).ToArray();
 
     private static BoltChainCandidate Part(bool main = true, BoltGroupViewClass viewClass = BoltGroupViewClass.Plan,
         bool edges = true, string? refusal = null) =>

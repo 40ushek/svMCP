@@ -55,18 +55,14 @@ internal static class DimensionPreviewProjection
                 ["distance"] = chain.Distance, ["incomplete"] = chain.Incomplete,
                 ["sources"] = BoltChainPreviewProjection.Sources(chain.Sources)
             };
-            if (chain.FreezeCarriedTemplate)
-                carried = JsonSerializer.SerializeToElement(carried).EnumerateObject()
-                    .ToDictionary(property => property.Name, property => (object?)property.Value.Clone());
             ApplySelection(carried, chain);
             return carried;
         }
-        if (!chain.FreezeTemplate && !chain.SelectionChanged && !chain.PointIdsChanged)
+        if (!chain.SelectionChanged && !chain.PointIdsChanged)
             return chain.OutputTemplate!;
-        // Legacy composition froze the untouched fields before modifying a chain. Retain that
-        // precision at the output boundary instead of exposing JSON to calculation code.
-        var template = chain.FreezeTemplate ? JsonSerializer.SerializeToElement(chain.OutputTemplate)
-            : JsonSerializer.SerializeToElement(chain.OutputTemplate, options);
+        // One coordinate policy: calculated numbers leave through the caller's display options
+        // (rounded); captured source points are JsonElements and keep their source precision.
+        var template = JsonSerializer.SerializeToElement(chain.OutputTemplate, options);
         var result = template.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone());
         if (chain.PointIdsChanged) { result["pointIds"] = chain.PointIds; result["segments"] = chain.Segments; }
         ApplySelection(result, chain);

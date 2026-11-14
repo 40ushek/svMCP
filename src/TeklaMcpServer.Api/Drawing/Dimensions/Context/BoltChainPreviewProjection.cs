@@ -24,25 +24,6 @@ internal static class BoltChainPreviewProjection
         };
     }
 
-    // Compatibility with the generic dimension-rule diagnostics; the bolt pipeline uses typed decisions.
-    internal static DimensionRuleResult RuleResult(BoltChainDecision decision)
-    {
-        var candidate = decision.Candidate;
-        var reason = decision.PolicyRefusal;
-        return new(new DimensionDirection(candidate.Axis == 0 ? 1 : 0, candidate.Axis == 0 ? 0 : 1),
-            new OutsideOutlineDimensionPlacement(candidate.OutwardNormal, 1), BoltChainRule.Kind, candidate.Points,
-            note: reason, segments: candidate.Segments, evidence: new Dictionary<string, object> {
-                ["key"] = candidate.Key, ["chainKind"] = candidate.Kind, ["create"] = reason == null,
-                ["groupId"] = candidate.GroupId, ["partId"] = candidate.PartId ?? 0,
-                ["viewClass"] = candidate.ViewClass.ToString(), ["baseOffset"] = candidate.BaseOffset,
-                ["sources"] = Sources(candidate.Sources), ["holes"] = Holes(candidate.Holes),
-                ["overMainPartChain"] = candidate.OverMainPartChain ?? "",
-                ["groupIds"] = candidate.GroupIds.ToArray(),
-                ["remark"] = candidate.Remark ?? "",
-                ["requiresChain"] = candidate.RequiresChain ?? ""
-            });
-    }
-
     internal static object Sources(BoltChainSources sources) => sources switch {
         BoltChainSources.CapturedParts captured => JsonSerializer.SerializeToElement(captured.Positions.Select(Position).ToArray()),
         BoltChainSources.ChainPoints points => points.Positions.Select(point => new { point }).ToArray(),

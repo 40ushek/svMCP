@@ -82,9 +82,3 @@ internal sealed class BoltChainCandidate
         Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain, GroupIds, Remark,
         RequiresChain, SourcePositions);
 }
-
-/// <summary>What the bolt rule needs: the chains built on the view; the settings come with the rule.</summary>
-internal sealed class BoltChainInput(IEnumerable<BoltChainCandidate> candidates)
-{
-    public IReadOnlyList<BoltChainCandidate> Candidates { get; } = candidates.ToArray();
-}

@@ -135,17 +135,15 @@ new builder/context regressions. Deployment and live acceptance remain open.
   These source changes have not yet been compiled or executed. A planned chain is
   still distinct from a dimension successfully written and verified in Tekla.
 
-### Deferred precision contract
+### Precision contract — done
 
-The output template and `FreezeTemplate`, `FreezeCarriedTemplate`,
-`SelectionChanged`, `PointIdsChanged` flags preserve legacy rounding that depends
-on the route through serialization. This is compatibility debt, not the target
-architecture. In a separate behavior change, define one coordinate policy (retain
-source precision, round derived display values), review fixture differences, then
-remove path-dependent precision flags. Do not silently update expected answers.
-Structural producers still serialize through `DimensionChainPreview.Short` and
-`DimensionPreviewProjection.Structural`; the no-JSON calculation claim currently
-covers bolt construction and typed composition/repeat selection only.
+The path-dependent precision flags (`FreezeTemplate`, `FreezeCarriedTemplate`) are
+removed. Calculated coordinates (points, segments, distance) are rounded to three
+decimals on every path, touched or not; captured source coordinates (`sources[].point`)
+keep their source precision. The bolt rule no longer converts its typed decisions back to the generic
+rule result (`RuleResult`, `BoltChainInput` removed). Remaining debt: structural
+producers still serialize through `DimensionChainPreview.Short` and
+`DimensionPreviewProjection.Structural`.
 
 ### 4. Review, deploy and accept in Tekla — planned
 

@@ -55,7 +55,7 @@ internal static class DimensionPreviewRepeatPlanner
         var byKey = repeats.ToDictionary(repeat => repeat.Key, StringComparer.Ordinal);
         if (byKey.Count == 0) return rows;
         return rows.Select(row => row.WithChains(row.Chains.Select(chain =>
-            (byKey.TryGetValue(chain.Key, out var repeat) ? chain.Repeated(repeat) : chain).PreserveTemplatePrecision(includeCarried: true)))).ToArray();
+            byKey.TryGetValue(chain.Key, out var repeat) ? chain.Repeated(repeat) : chain))).ToArray();
     }
 }
 

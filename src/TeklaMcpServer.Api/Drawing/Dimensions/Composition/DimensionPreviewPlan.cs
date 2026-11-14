@@ -27,8 +27,6 @@ internal sealed class DimensionPreviewChain(string key, string kind, string? dir
     public string? RestoredBesides { get; private set; }
     public string? Repeat { get; private set; }
     internal object? OutputTemplate { get; } = outputTemplate;
-    internal bool FreezeTemplate { get; private set; }
-    internal bool FreezeCarriedTemplate { get; private set; }
     internal bool SelectionChanged { get; private set; }
     internal bool PointIdsChanged { get; private set; }
 
@@ -84,14 +82,6 @@ internal sealed class DimensionPreviewChain(string key, string kind, string? dir
         copy.Reason = null;
         copy.SelectionChanged = copy.PointIdsChanged = true;
         copy.RestoredBesides = beside;
-        return copy;
-    }
-
-    internal DimensionPreviewChain PreserveTemplatePrecision(bool includeCarried = false)
-    {
-        var copy = (DimensionPreviewChain)MemberwiseClone();
-        copy.FreezeTemplate = true;
-        copy.FreezeCarriedTemplate |= includeCarried && Carries != null;
         return copy;
     }
 }

@@ -64,7 +64,7 @@ internal static class BoltLocationChainComposer
                 && chain.Reason?.EndsWith(DimensionChainPreview.OverallSpanned, StringComparison.Ordinal) == true);
             if (overall != null) Replace(working[rowIndex], overall.Restore(location, pair.Value.Key));
         }
-        return rows.Select((row, index) => row.WithChains(working[index].Select(chain => chain.PreserveTemplatePrecision()))).ToArray();
+        return rows.Select((row, index) => row.WithChains(working[index])).ToArray();
     }
 
     private static void Replace(List<DimensionPreviewChain> chains, DimensionPreviewChain replacement) =>

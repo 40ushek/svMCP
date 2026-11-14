@@ -56,60 +56,64 @@ internal static class BoltDimensionChainPreview
             .Where(id => id.HasValue).Select(id => id!.Value).Concat(group.OtherPartIds)
             .Distinct().OrderBy(id => id).ToArray();
         var partCandidates = related.Where(includedPartIds.Contains).ToArray();
-        var centers = row.Restrictions
-            .GroupBy(value => value.Index)
-            .ToDictionary(values => values.Key, values => values.Count() == 1
-                ? values.First().CenterState : "Unresolved");
         var reason = PatternRefusal(group, viewClass, tolerance);
+        if (reason != null)
+            return new BoltGroupProjection(group, viewClass, related, partCandidates, reason, null,
+                group.Positions.Select(p => new BoltProjectedCenter(p.Index, p.Point, "Blocked", reason)).ToArray(), [], []);
+        var centers = CenterStates(row);
         // Why the group gives no steps; its edge chains do not depend on it.
-        var stepReason = reason == null ? StepRefusal(group, viewClass, tolerance) : null;
+        var stepReason = StepRefusal(group, viewClass, tolerance);
+        var (cells, rectangular) = Cells(group.Positions, tolerance);
+        if (stepReason == null && !rectangular)
+            stepReason = "projected pattern is staggered, irregular or incomplete; rectangular grouping is not justified";
         var chains = new List<BoltSpacingChain>();
         var edgeChains = new List<BoltEdgeDistanceGeometry>();
         var candidateChainCount = 0;
-        var decisions = new List<BoltProjectedCenter>();
-        if (reason != null)
+        if (stepReason == null)
         {
-            decisions.AddRange(group.Positions.Select(p => new BoltProjectedCenter(p.Index, p.Point, "Blocked", reason!)));
-        }
-        else
-        {
-            var x = Cluster(group.Positions, 0, tolerance);
-            var y = Cluster(group.Positions, 1, tolerance);
-            var cells = group.Positions.GroupBy(p => (X: x[p.Index], Y: y[p.Index]))
-                .OrderBy(cell => cell.Key.Y).ThenBy(cell => cell.Key.X)
-                .Select(cell => new Cell(cell.Key.X, cell.Key.Y, cell.OrderBy(p => p.Index).ToArray())).ToArray();
-            if (stepReason == null && cells.Length != x.Values.Distinct().Count() * y.Values.Distinct().Count())
-                stepReason = "projected pattern is staggered, irregular or incomplete; rectangular grouping is not justified";
-            // Every center stays a source of the edge chains whatever the pattern; only the steps
-            // need a rectangular grid along the view axes.
-            foreach (var cell in cells)
+            // X steps for the top/bottom sides, Y steps for the left/right ones.
+            foreach (var axis in new[] { 0, 1 }.Where(axis => sides.Any(side => side.RunsAlongX() == (axis == 0))))
             {
-                foreach (var p in cell.Sources)
-                {
-                    centers.TryGetValue(p.Index, out var center);
-                    decisions.Add(new BoltProjectedCenter(p.Index, p.Point,
-                        center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
-                        center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
-                            : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
-                        cell.Point.Index));
-                }
-            }
-            if (stepReason == null && sides.Any(side => side.RunsAlongX()))
-            {
-                candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers);
-                AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.Y), 0, group.ModelId, centers, partCandidates, partContours, tolerance);
-            }
-            if (stepReason == null && sides.Any(side => side is DimensionChainSide.Left or DimensionChainSide.Right))
-            {
-                candidateChainCount += AddChains(chains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers);
-                AddEdgeChains(edgeChains, cells.GroupBy(cell => cell.X), 1, group.ModelId, centers, partCandidates, partContours, tolerance);
+                var rows = cells.GroupBy(cell => axis == 0 ? cell.Y : cell.X).ToArray();
+                candidateChainCount += AddChains(chains, rows, axis, group.ModelId, centers);
+                AddEdgeChains(edgeChains, rows, axis, group.ModelId, centers, partCandidates, partContours, tolerance);
             }
         }
-        if (reason == null && chains.Count > 0 && candidateChainCount == 0)
+        if (chains.Count > 0 && candidateChainCount == 0)
             reason = "no internal chain has all source centers admitted by the restriction evidence";
         return new BoltGroupProjection(group, viewClass, related, partCandidates, reason, stepReason,
-            decisions.ToArray(), chains.ToArray(), edgeChains.ToArray());
+            Decisions(cells, centers), chains.ToArray(), edgeChains.ToArray());
     }
+
+    // One state per bolt index; an index read more than once is unresolved.
+    private static Dictionary<int, string?> CenterStates(BoltSnapshotGroup row) => row.Restrictions
+        .GroupBy(value => value.Index)
+        .ToDictionary(values => values.Key, values => values.Count() == 1 ? values.First().CenterState : "Unresolved");
+
+    // Projected centers grouped into grid cells along the view axes; rectangular when every
+    // column meets every row.
+    private static (Cell[] Cells, bool Rectangular) Cells(IReadOnlyCollection<BoltPointGeometry> positions, double tolerance)
+    {
+        var x = Cluster(positions, 0, tolerance);
+        var y = Cluster(positions, 1, tolerance);
+        var cells = positions.GroupBy(p => (X: x[p.Index], Y: y[p.Index]))
+            .OrderBy(cell => cell.Key.Y).ThenBy(cell => cell.Key.X)
+            .Select(cell => new Cell(cell.Key.X, cell.Key.Y, cell.OrderBy(p => p.Index).ToArray())).ToArray();
+        return (cells, cells.Length == x.Values.Distinct().Count() * y.Values.Distinct().Count());
+    }
+
+    // Every center stays a source of the edge chains whatever the pattern; only the steps need a
+    // rectangular grid along the view axes.
+    private static BoltProjectedCenter[] Decisions(Cell[] cells, IReadOnlyDictionary<int, string?> centers) => cells
+        .SelectMany(cell => cell.Sources.Select(p =>
+        {
+            centers.TryGetValue(p.Index, out var center);
+            return new BoltProjectedCenter(p.Index, p.Point,
+                center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
+                center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
+                    : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
+                cell.Point.Index);
+        })).ToArray();
 
     internal static BoltGroupGeometry ReadGroup(JsonElement row) =>
         JsonSerializer.Deserialize<BoltGroupGeometry>(row.GetProperty("geometry").GetRawText(),
