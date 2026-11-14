@@ -543,6 +543,74 @@ Steps 1-5 done on 2026-11-13.
    Scope agreed with the user (2026-11-14): this step is bolts only. Combining bolt
    positions with part dimensions (Tekla's *Combine dimensions*) is a separate step with
    its own setting, step 10.
+
+   **Decision (user, 2026-11-14): a setting, on by default, that can be switched back.**
+   Two settings in `BoltChainSettings`, named and valued as on Tekla's Position dimensions
+   tab: `PositionBoltsTo` (None / MainPart / WorkingPoints) and `SecondaryPart` (None /
+   ByBolt / ByPart / ByBoth). Default `MainPart` + `ByBolt`, as the plant draws (M.298);
+   `None` + `ByPart` gives back today's chains unchanged, so a sheet where the new chain
+   is worse is fixed by the setting, not by code.
+   The Tekla names are supported in part, and the answer says so: in Tekla `Main part`
+   measures from the main part's reference line, here from its physical end (the plant's
+   practice; the reference line is a later value); `ByBolt` / `ByPart` choose the holes
+   or the edges of the secondary part, here `ByBolt` only adds its bolts to the position
+   chain and its location by edges stays. `WorkingPoints` refuses with a reason until it
+   is implemented.
+   The setting must reach the sheet, not only the code: today the context builds
+   `new BoltChainSettings()`. The chosen values travel with the chain read into the
+   context and from it to the batch (the batch writes from the same answer, as the
+   repeats do), and the bolt-chain cache key includes them.
+
+   Plan:
+   1. A new chain kind *position* in the `Bolt` row, one per view axis along the main
+      part: from the datum through every projected bolt column, in order, ending at the
+      last column (the detailer's chain ends at 4680, the overall gives 4720). The datum
+      is a point on the confirmed physical end contour of the main part. `StartPoint`
+      and `EndPoint`, carried into the view, determine which end is the start; they are
+      axis points, not proof of where the physical end lies. On a mirrored view or a
+      member drawn the other way the chain starts at the same end of the member, not
+      at the smallest view coordinate. If the direction or the physical end cannot be
+      confirmed, the position chain refuses and today's chains stay. Measuring from
+      the reference line start is a later option. Columns within the
+      coordinate tolerance are one point; the point of a column is its bolt nearest the
+      line, as for the other chains. Key `bolt-position-<axis>`.
+   2. Which bolts: `Plan` groups of the main part, and with `SecondaryPart = ByBolt` or
+      `ByBoth` the groups of the secondary parts bolted to it. Bolted to it is read from
+      the model links of the group (its parts include the main part), never from its
+      projection standing over the main part. A group joining secondary parts only stays
+      out for now. `Side` and `Skewed` groups stay out, as now.
+   3. What it replaces, with `PositionBoltsTo = MainPart`: along the main part, the
+      edge - bolts - edge chains of the groups the position chain covers (the main
+      part's, and with `ByBolt` the secondary parts'), marked as given by it. Only once
+      the position chain is finally created: after the settings, the view frame and the
+      bolt read, as for the bolts over bolts; a refused position chain leaves every chain
+      of today in place. Across the main part nothing changes: one chain per group,
+      beside it. Carrying edgeless bolts into the location chain stops only for the bolts
+      the created position chain holds; on unsupported views and when it is refused, the
+      carry works as today.
+   4. The side: the side of the main part the bolts stand nearer to on the view (the
+      detailer's top on M.298); the row and the clearing as for the other bolt lines.
+   5. Repeats: compared like a location chain (sameView, mirror), as the carried chain
+      is today.
+   6. Not in this step: dropping the secondary part's location by edges with `ByBolt`
+      (the part location chain is the steel rule's, and the detailer keeps it on the
+      bottom view of M.298); working points; an upright member (the riegels M.40 and
+      M.294 run up the sheet: the axis comes from the main part, not from the sheet).
+   7. Tests, the first one the most important: the position chain refused (outside the
+      view frame, incomplete bolt read) leaves today's chains and the carry as they were;
+      the saved M.298 front view gives 40 / 260 / 760 / 60 / 100 / 660 / 2800 on top;
+      `None` + `ByPart` gives today's keys and segments; the member drawn the other way
+      starts the chain at the same physical end; when the axis start differs from the
+      physical end, the datum is on the confirmed end contour; an unconfirmed direction
+      or end refuses the position chain and preserves today's chains;
+      a plate whose bolts have no edge joins
+      the position chain; a group joining secondary parts only does not; `WorkingPoints`
+      refuses with a reason; the settings chosen reach the batch.
+      Live: M.298 (restore the hand-made sheet afterwards), M.175, M.119.
+   Decided (review, 2026-11-14): the chain does not close to the far end when the overall
+   is given on another view; it is on the sheet. When the overall is missing because it
+   was refused or its write failed, the answer reports the uncovered span instead of
+   changing what the chain holds.
 8. Decoding the plant's `.adcd` file, so the settings can be filled from it.
 9. Skewed-to-part groups, `Necessary`, combined steps.
 10. Merging with part chains by Tekla's *Combine dimensions* modes: in the Chain
