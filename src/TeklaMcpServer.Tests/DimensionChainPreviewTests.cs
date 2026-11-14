@@ -102,15 +102,7 @@ public sealed class DimensionChainPreviewTests
     {
         // M.160 bottom view: a stub beam 103 long, shorter than its 180 height, with an end plate
         // as tall. Across it the location chain is the overall itself: one 180, not two.
-        var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
-            [10] = Solid(10, 0, 103, -90, 90), [11] = Solid(11, -15, 0, -90, 90)
-        };
-        var ids = new[] { 10, 11 };
-        var role = new PartRoleResult(PartRole.Included, "included", "test");
-        var structural = new StructuralOutline(TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts)),
-            [new PartRoleInView(10, "P10", "P", role, true), new(11, "P11", "P", role, false)], [], [], [], [], ids);
-        var context = new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" },
-            new { viewType = "BottomView", viewFrame = (double[]?)null }, null);
+        var context = Bare("BottomView", null, Solid(10, 0, 103, -90, 90), Solid(11, -15, 0, -90, 90));
         Assert.Equal(new[] { 180d }, Segments(Chain(context, "Left", "location")));
         var overall = Chain(context, "Left", "overall");
         Assert.Empty(overall.GetProperty("pointIds").EnumerateArray());
@@ -695,7 +687,21 @@ public sealed class DimensionChainPreviewTests
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame }, bolts);
     }
 
-    private static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>
+    // A view of the given parts only, the first one the main part.
+    internal static ViewDimensionContext Bare(string viewType, ViewBoltGeometrySnapshot? bolts,
+        params PartSolidGeometryInViewResult[] parts)
+    {
+        var ids = parts.Select(part => part.ModelId).ToArray();
+        var role = new PartRoleResult(PartRole.Included, "included", "test");
+        var structural = new StructuralOutline(
+            TeklaDrawingAssemblyOutlineApi.Build(7, ids, new Solids(parts.ToDictionary(part => part.ModelId))),
+            parts.Select((part, index) => new PartRoleInView(part.ModelId, "P" + part.ModelId, "P", role, index == 0)).ToArray(),
+            [], [], [], [], ids);
+        return new ViewDimensionContext(7, ids[0], structural, [], new { drawingGuid = "test" },
+            new { viewType, viewFrame = (double[]?)null }, bolts);
+    }
+
+    internal static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>
         Poly(id, (x0, y0), (x1, y0), (x1, y1), (x0, y1));
 
     internal static PartSolidGeometryInViewResult Poly(int id, params (double, double)[] points)

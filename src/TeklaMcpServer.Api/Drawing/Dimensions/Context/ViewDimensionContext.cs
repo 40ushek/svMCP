@@ -522,6 +522,7 @@ public sealed class ViewDimensionContext
         // An incomplete bolt read creates no bolt dimension, a carried one included.
         if (bolt == null || Value(bolt, "readIncomplete").ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)) return rows;
         var carried = new Dictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
+        var locations = new Dictionary<string, Dictionary<string, object?>>(StringComparer.Ordinal);
         foreach (var chain in Chains(bolt).ToArray())
         {
             if (!Incomplete(chain) || Text(chain, "incompleteReason") != BoltEdgeless || Text(chain, "viewClass") != "Plan"
@@ -583,10 +584,35 @@ public sealed class ViewDimensionContext
             target["incomplete"] = false;
             target["sources"] = (target.TryGetValue("sources", out var before) && before is List<JsonElement> list ? list : new List<JsonElement>())
                 .Concat(Value(chain, "sources").EnumerateArray().Select(source => source.Clone())).ToList();
-            if (!carried.ContainsKey(sideName)) { carried[sideName] = target; Chains(bolt).Add(target); }
+            if (!carried.ContainsKey(sideName))
+            {
+                carried[sideName] = target;
+                Chains(bolt).Add(target);
+                var row = copied.First(candidate => Value(candidate, "side").GetString() == sideName);
+                locations[sideName] = Chains(row).First(candidate => Text(candidate, "key") == Text(target, "carries"));
+            }
             chain["incompleteReason"] = BoltEdgeless + "; its bolts are carried by " + target["key"];
         }
+        foreach (var pair in carried) RestoreOverall(copied.First(row => Value(row, "side").GetString() == pair.Key),
+            locations[pair.Key], pair.Value);
         return carried.Count == 0 ? rows : copied.Cast<object>().ToArray();
+
+        // A location chain of one segment was the side's overall; with the bolts in it, it is not any
+        // more, so the overall comes back on its two points. Only an overall left out for that reason
+        // returns; one refused for anything else stays refused, and its repeats are decided after.
+        void RestoreOverall(Dictionary<string, object?> row, Dictionary<string, object?> location, Dictionary<string, object?> target)
+        {
+            var ids = Value(location, "pointIds");
+            if (ids.GetArrayLength() != 2 || ((double[][])target["points"]!).Length <= 2) return;
+            var overall = Chains(row).FirstOrDefault(candidate => Text(candidate, "kind") == "overall" && Incomplete(candidate)
+                && Text(candidate, "incompleteReason")?.EndsWith(DimensionChainPreview.OverallSpanned, StringComparison.Ordinal) == true);
+            if (overall == null) return;
+            overall["pointIds"] = ids.Clone();
+            overall["segments"] = Value(location, "segments").Clone();
+            overall["incomplete"] = false;
+            overall.Remove("incompleteReason");
+            overall["restoredBesides"] = Text(target, "key");
+        }
     }
 
     // A location chain carrying bolts is compared for repeats like the location chain it stands
@@ -597,6 +623,8 @@ public sealed class ViewDimensionContext
     {
         if (readSheet == null && !stored) return rows;
         var json = JsonSerializer.SerializeToElement(rows);
+        var restored = json.EnumerateArray().SelectMany(row => row.GetProperty("chains").EnumerateArray())
+            .Where(chain => chain.TryGetProperty("restoredBesides", out _)).Select(chain => chain.GetProperty("key").GetString()!).ToArray();
         var carried = json.EnumerateArray().Where(row => row.GetProperty("side").GetString() == BoltSide)
             .SelectMany(row => row.GetProperty("chains").EnumerateArray())
             .Where(chain => chain.TryGetProperty("carries", out var carries) && carries.ValueKind == JsonValueKind.String
@@ -606,14 +634,17 @@ public sealed class ViewDimensionContext
                 chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray()))
             .ToArray();
         if (carried.Length == 0) return rows;
+        var keys = carried.Select(chain => chain.Key).Concat(restored).ToHashSet(StringComparer.Ordinal);
         if (readSheet != null)
         {
             var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
-            var found = DimensionChainRepeats.Find(ViewId, viewType, carried, readSheet);
-            _repeats = (_repeats ?? []).Where(repeat => carried.All(chain => chain.Key != repeat.Key)).Concat(found).ToArray();
+            // A restored overall is compared with every chain left on the view, as on any other side.
+            var chains = DimensionChainRepeats.FromPreview(JsonSerializer.SerializeToElement(new { chainPreview = rows })).Concat(carried).ToArray();
+            var found = DimensionChainRepeats.Find(ViewId, viewType, chains, readSheet).Where(repeat => keys.Contains(repeat.Key));
+            _repeats = (_repeats ?? []).Where(repeat => !keys.Contains(repeat.Key)).Concat(found).ToArray();
             result["repeats"] = ViewDimensionContextProvider.ProjectRepeats(_repeats);
         }
-        var repeats = (_repeats ?? []).Where(repeat => carried.Any(chain => chain.Key == repeat.Key))
+        var repeats = (_repeats ?? []).Where(repeat => keys.Contains(repeat.Key))
             .ToDictionary(repeat => repeat.Key, StringComparer.Ordinal);
         if (repeats.Count == 0) return rows;
         return json.EnumerateArray().Select(row => (object)row.EnumerateObject()

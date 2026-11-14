@@ -12,6 +12,9 @@ internal static class DimensionChainPreview
 {
     private const double SameCoordinate = 0.01;
 
+    /// <summary>How a reason left out an overall a location chain already gives.</summary>
+    internal const string OverallSpanned = "the location chain already spans the overall";
+
     /// <summary>
     /// The default answer: side, kind, ids and segments, plus notes and lists only when they
     /// have content. Roles and part ids stay behind the detailed question.
@@ -81,7 +84,7 @@ internal static class DimensionChainPreview
         // Across the main part the location chain already spans the whole width, so no overall.
         var overall = alongX == mainAlongX
             ? Overall(side, line, ctx)
-            : Empty(side, "overall", "across the main part the location chain already spans the overall");
+            : Empty(side, "overall", "across the main part " + OverallSpanned);
         var ruleContext = DimensionRuleContext.FromCatalog(catalog,
             new SteelPartLocationInput(catalog, mainPartIds, inclinedPartIds, faceOnPartIds, partThickness, carriedPartIds));
         var locationResult = new DimensionRuleSet(new SteelPartLocationRule(
@@ -95,7 +98,7 @@ internal static class DimensionChainPreview
             var along = locationResult.Points.Select(point => alongX ? point.X : point.Y).ToArray();
             var (from, to) = (along.Min(), along.Max());
             if (Math.Abs(from - line.Min(ctx.Along)) <= SameCoordinate && Math.Abs(to - line.Max(ctx.Along)) <= SameCoordinate)
-                overall = Empty(side, "overall", "the location chain already spans the overall");
+                overall = Empty(side, "overall", OverallSpanned);
         }
         return [location, overall];
     }

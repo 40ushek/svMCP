@@ -906,6 +906,65 @@ public sealed class BoltChainRuleTests
         Assert.Empty(writes);
     }
 
+    // A fin plate as long as the beam under it, pointed at the bottom: the Bottom location chain is
+    // the two ends, 1000, so no overall is offered beside it; then the plate's edgeless bolts go
+    // into that chain. The overall 1000 comes back on its own line, once.
+    private static ViewDimensionContext FullLengthFinPlate()
+    {
+        var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [450, -180, 0],
+            SecondPosition = [550, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,
+            Positions = [new() { Index = 0, Point = [450, -180, 0] }, new() { Index = 1, Point = [550, -180, 0] }] };
+        var bolts = ViewBoltGeometrySnapshot.Capture(7, [10, 30],
+            id => new() { Success = true, ViewId = 7, PartId = id, BoltGroups = id == 30 ? [group] : [] },
+            new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true);
+        return DimensionChainPreviewTests.Bare("FrontView", bolts, DimensionChainPreviewTests.Solid(10, 0, 1000, -76, 76),
+            DimensionChainPreviewTests.Poly(30, (0, -76), (1000, -76), (1000, -150), (500, -250), (0, -150)));
+    }
+
+    private static JsonElement[] SideChains(JsonElement answer) => answer.GetProperty("chainPreview").EnumerateArray()
+        .Where(row => row.GetProperty("side").GetString() is "Top" or "Bottom" or "Left" or "Right")
+        .SelectMany(row => row.GetProperty("chains").EnumerateArray()).ToArray();
+
+    [Fact]
+    public void AnOverallGivenByALocationChainComesBackWhenBoltsAreCarriedIntoIt()
+    {
+        var context = FullLengthFinPlate();
+        var answer = context.Query("chain,repeats", readSheet: () => []);
+        // The 1000 alone is placed exactly once: the restored Bottom overall.
+        var whole = SideChains(answer).Where(chain => !chain.GetProperty("incomplete").GetBoolean()
+            && chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).SequenceEqual([1000d])).ToArray();
+        Assert.Equal("Bottom-overall", Assert.Single(whole).GetProperty("key").GetString());
+        // The bolt steps stay in the carried chain.
+        var carried = answer.GetProperty("chainPreview").EnumerateArray().Single(row => row.GetProperty("side").GetString() == "Bolt")
+            .GetProperty("chains").EnumerateArray().Single(chain => chain.GetProperty("key").GetString() == "Bottom-location-bolts");
+        Assert.Equal(new[] { 450d, 100, 450 }, carried.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()));
+        // The batch takes both and gives them different lines.
+        var lines = new List<double>();
+        var provider = new ViewDimensionContextProvider(() => "drawing-a", (_, _) => context, () => { },
+            (request, distance) => {
+                var first = Enumerable.Range(0, request.Points.Length / 3).OrderBy(i => request.Points[i * 3]).First();
+                lines.Add(request.Points[first * 3 + 1] - distance);
+                return new() { Created = true, DimensionId = lines.Count };
+            },
+            readDimensions: _ => new GetDimensionsResult(), validateAttributes: _ => { });
+        provider.Get(7);
+        provider.CreateBatch(new CreateDimensionsBatchRequest { ViewId = 7, ContextId = context.ContextId, RuleSet = "steel",
+            Chains = [new() { Preview = "Bottom-overall" }, new() { Preview = "Bottom-location-bolts" }] });
+        Assert.Equal(2, lines.Count);
+        Assert.True(Math.Abs(lines[0] - lines[1]) >= 80 - 1e-6, $"lines {lines[0]} and {lines[1]}");
+    }
+
+    [Fact]
+    public void ARestoredOverallStaysARepeatOfTheSameOverallOnAnotherView()
+    {
+        // The top view already gives the length 1000: the restored overall is not placed again.
+        var answer = FullLengthFinPlate().Query("chain,repeats",
+            readSheet: () => [new DimensionChainRepeats.Placed(900, 99, "TopView", [1000], true)]);
+        var overall = SideChains(answer).Single(chain => chain.GetProperty("key").GetString() == "Bottom-overall");
+        Assert.True(overall.GetProperty("incomplete").GetBoolean());
+        Assert.Equal("overallOnSheet", overall.GetProperty("repeat").GetString());
+    }
+
     private static BoltGroupGeometry Sized(BoltGroupGeometry group, double size)
     {
         group.BoltSize = size;
