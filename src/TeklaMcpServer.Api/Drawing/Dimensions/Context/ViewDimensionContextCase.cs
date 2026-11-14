@@ -119,6 +119,9 @@ internal sealed class ViewDimensionContextCase
 
     public JsonElement? Bolts { get; set; }
 
+    /// <summary>The bolt-chain settings the context was built with; null in cases saved before them.</summary>
+    public BoltChainSettingsData? BoltSettings { get; set; }
+
     public List<ViewDimensionContextCaseRule> Exclusions { get; set; } = new();
 
     public List<ViewDimensionContextCasePart> Included { get; set; } = new();
@@ -145,7 +148,7 @@ internal sealed class ViewDimensionContextCase
     /// <summary>Captures the arguments of the <see cref="ViewDimensionContext"/> constructor.</summary>
     public static ViewDimensionContextCase From(int viewId, double scale, StructuralOutline outline,
         IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata,
-        ViewBoltGeometrySnapshot? bolts = null)
+        ViewBoltGeometrySnapshot? bolts = null, BoltChainSettings? boltSettings = null)
     {
         var reference = outline.ReferenceZone;
         return new ViewDimensionContextCase
@@ -155,6 +158,7 @@ internal sealed class ViewDimensionContextCase
             Source = ViewDimensionContext.Freeze(source),
             Metadata = ViewDimensionContext.Freeze(metadata),
             Bolts = bolts?.Answer,
+            BoltSettings = boltSettings == null ? null : BoltChainSettingsData.From(boltSettings),
             Exclusions = exclusions.Select(rule => new ViewDimensionContextCaseRule {
                 Id = rule.Id, Kind = rule.Kind, Value = rule.Value }).ToList(),
             Included = outline.Included.Select(Part).ToList(),
@@ -186,7 +190,8 @@ internal sealed class ViewDimensionContextCase
             ContactSelectionUnread.Select(Unread).ToArray(), reference);
         var context = new ViewDimensionContext(ViewId, Scale, structural,
             Exclusions.Select(rule => new PartExclusionRule(rule.Id, rule.Kind, rule.Value)).ToArray(),
-            Source, Metadata, Bolts is { } bolts ? ViewBoltGeometrySnapshot.Restore(bolts) : null);
+            Source, Metadata, Bolts is { } bolts ? ViewBoltGeometrySnapshot.Restore(bolts) : null,
+            BoltSettings?.ToSettings("Saved case"));
         context.AttachContacts(new ViewContactsSnapshot(ViewId, context.ContactModelIds, context.ContactSelectionUnread,
             modelId => new PartSolidGeometryInViewResult { ViewId = ViewId, ModelId = modelId,
                 Error = "solid was not captured in this case" }));

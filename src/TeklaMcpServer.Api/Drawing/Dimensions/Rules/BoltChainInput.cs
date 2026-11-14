@@ -9,6 +9,8 @@ internal sealed class BoltChainCandidate
     public const string InternalKind = "internal";
     /// <summary>A group no chain could be built for; carries only its refusal.</summary>
     public const string GroupKind = "group";
+    /// <summary>Every bolt column along the main part from its start (Tekla's Position bolts to: Main part).</summary>
+    public const string PositionKind = "position";
 
     public string Key { get; }
     public string Kind { get; }
@@ -37,13 +39,16 @@ internal sealed class BoltChainCandidate
     /// its bolts. It is left out only when that chain is finally created.
     /// </summary>
     public string? OverMainPartChain { get; }
+    /// <summary>Every bolt group the chain measures.</summary>
+    public IReadOnlyList<int> GroupIds { get; }
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
         string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null,
-        string? overMainPartChain = null)
+        string? overMainPartChain = null, IEnumerable<int>? groupIds = null)
     {
         OverMainPartChain = overMainPartChain;
+        GroupIds = (groupIds ?? [groupId]).ToArray();
         Key = key;
         Kind = kind;
         GroupId = groupId;
@@ -63,7 +68,7 @@ internal sealed class BoltChainCandidate
 
     /// <summary>The same chain, linked to the main-part chain standing on its bolts.</summary>
     public BoltChainCandidate Over(string mainPartChain) => new(Key, Kind, GroupId, PartId, MainPart, ViewClass, Axis,
-        Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain);
+        Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain, GroupIds);
 }
 
 /// <summary>What the bolt rule needs: the chains built on the view; the settings come with the rule.</summary>

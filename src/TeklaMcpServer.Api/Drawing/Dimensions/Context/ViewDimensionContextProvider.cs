@@ -299,7 +299,10 @@ internal sealed class TeklaViewDimensionContextReader(Model model)
                     new Tekla.Structures.Geometry3d.Point(point[0], point[1], point[2])));
                 return new[] { local.X, local.Y, local.Z };
             }, outline.IsComplete, depth.Error);
-        var context = new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata, bolts);
+        // Read once per context: an edited file takes effect on the next context (refresh=true); a
+        // broken one is an error here, not other settings in silence.
+        var boltSettings = BoltChainSettingsFile.Load(BoltChainSettingsFile.DefaultPath);
+        var context = new ViewDimensionContext(viewId, scale, outline, exclusions, source, metadata, bolts, boltSettings);
         SaveCase(context.ToCase);
         return context;
     }

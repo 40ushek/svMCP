@@ -704,7 +704,7 @@ public sealed class DimensionChainPreviewTests
         bool rakedEnd = false, bool upperPlate = false, bool tallEnd = false, bool crossingPlate = false, bool edgeOnPlate = false, bool midEnd = false, bool farGusset = false,
         double[]? viewFrame = null, (double X0, double X1)? extraRib = null, ViewBoltGeometrySnapshot? bolts = null,
         (int Id, double X0, double X1, double Y0, double Y1)[]? extraParts = null,
-        (int Id, (double, double)[] Points)[]? extraPolygons = null)
+        (int Id, (double, double)[] Points)[]? extraPolygons = null, BoltChainSettings? boltSettings = null)
     {
         var parts = new Dictionary<int, PartSolidGeometryInViewResult> {
             [10] = Solid(10, 0, 1000, -76, 76),
@@ -742,7 +742,7 @@ public sealed class DimensionChainPreviewTests
                 .Concat((extraPolygons ?? []).Select(polygon => new PartRoleInView(polygon.Id, "P" + polygon.Id, "P", role, false))).ToArray(),
             [], unclassified ? [new PartRoleInView(14, "P14", "P", role, false)] : [],
             unread ? [new UnreadPart(14, "property read failed")] : [], [], ids);
-        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame }, bolts);
+        return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" }, new { viewType, viewFrame }, bolts, boltSettings);
     }
 
     // A view of the given parts only, the first one the main part.

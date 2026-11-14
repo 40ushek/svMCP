@@ -35,6 +35,32 @@ internal enum BoltGroupMerge
     SameBoltSize
 }
 
+/// <summary>
+/// Tekla's "Position bolts to" (Position dimensions tab), supported in part: <c>MainPart</c> measures
+/// from the main part's physical start here, not from its reference line as Tekla does;
+/// <c>WorkingPoints</c> is refused until it is implemented.
+/// </summary>
+internal enum BoltPositionTo
+{
+    /// <summary>No position chain: today's edge chains along the main part.</summary>
+    None,
+    MainPart,
+    WorkingPoints
+}
+
+/// <summary>
+/// Tekla's "Secondary part" (Position dimensions tab), supported in part: <c>ByBolt</c> and
+/// <c>ByBoth</c> put the bolts of the secondary parts bolted to the main part into the position
+/// chain; the part's location by its edges stays whatever the value.
+/// </summary>
+internal enum BoltSecondaryPartPosition
+{
+    None,
+    ByBolt,
+    ByPart,
+    ByBoth
+}
+
 /// <summary>Every number and choice for bolt chains; the bolt rule holds no constants of its own.</summary>
 internal sealed class BoltChainSettings
 {
@@ -60,12 +86,22 @@ internal sealed class BoltChainSettings
     /// </summary>
     public double? CombineMinDistance { get; }
 
+    /// <summary>Tekla: Position bolts to. Default MainPart, as the plant draws; None gives today's chains.</summary>
+    public BoltPositionTo PositionBoltsTo { get; }
+
+    /// <summary>Tekla: Secondary part. Default ByBolt; ByPart keeps the secondary parts' bolts out of the position chain.</summary>
+    public BoltSecondaryPartPosition SecondaryPart { get; }
+
     public BoltChainSettings(double classToleranceDegrees = 1.0,
         BoltInternalDimensions mainPartInternal = BoltInternalDimensions.All,
         BoltInternalDimensions secondaryPartInternal = BoltInternalDimensions.All,
         BoltDimensionedProjections dimensionedProjections = BoltDimensionedProjections.Both,
-        BoltGroupMerge groupMerge = BoltGroupMerge.SameHole, double? combineMinDistance = null)
+        BoltGroupMerge groupMerge = BoltGroupMerge.SameHole, double? combineMinDistance = null,
+        BoltPositionTo positionBoltsTo = BoltPositionTo.MainPart,
+        BoltSecondaryPartPosition secondaryPart = BoltSecondaryPartPosition.ByBolt)
     {
+        PositionBoltsTo = positionBoltsTo;
+        SecondaryPart = secondaryPart;
         GroupMerge = groupMerge;
         if (combineMinDistance is { } distance && (double.IsNaN(distance) || double.IsInfinity(distance) || distance < 0))
             throw new ArgumentOutOfRangeException(nameof(combineMinDistance), "Combine distance must be finite and not negative.");

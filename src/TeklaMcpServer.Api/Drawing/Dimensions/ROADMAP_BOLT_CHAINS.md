@@ -607,6 +607,40 @@ Steps 1-5 done on 2026-11-13.
       the position chain; a group joining secondary parts only does not; `WorkingPoints`
       refuses with a reason; the settings chosen reach the batch.
       Live: M.298 (restore the hand-made sheet afterwards), M.175, M.119.
+   Done in source 2026-11-14, not deployed: settings `PositionBoltsTo` / `SecondaryPart`
+   (default MainPart + ByBolt); the `position` chain built in `BoltChainCandidates.Position`
+   (non-section views, one main part with a start and end point; none offered for a main
+   part with no axis, a plate); its decision in `BoltChainRule` (None leaves it out,
+   WorkingPoints refuses); in `ViewDimensionContext.BoltChains`, once it is created after
+   the view frame and the bolt read, the part chains along it whose every group it holds
+   say "bolt positions are given by <key>" (that reason comes first, so an edgeless chain
+   it holds is not carried); compared for repeats like a carried chain. The saved M.298
+   front view gives 40 / 260 / 760 / 60 / 100 / 660 / 2800 exactly. Tests: refused by the
+   frame keeps today's chains, the order of columns, None + ByPart, ByPart without the
+   plate, the member drawn the other way, the datum on the end contour when the axis
+   starts 10 before it, an unsquare start end, WorkingPoints, an edgeless plate not
+   carried, a mirror repeat.
+   Changed from the plan, on the evidence of M.298: the groups of the secondary parts are
+   taken whatever their bolts join them to. The plate at x 1220 is welded to the beam and
+   its group joins it to a member outside the assembly; reading "bolted to the main part"
+   from the model links left its column out, and the detailer has it. So a group takes
+   part when one of its included parts is the main part, or, with ByBolt / ByBoth, any
+   included part; a group standing past the main part's ends does not.
+   A group takes part only when all its bolts lie in one outer contour of one of its parts,
+   by the same check as its part chains (`BoltPartChainPreview.BoltsOnOneContour`); a
+   missing usable edge does not matter (review: bolts outside the beam were taken).
+   Settings path (review, agreed 2026-11-14): `%LOCALAPPDATA%\svMCP\settings\bolt-chains.json`,
+   read once when a context is built (`BoltChainSettingsFile`); the context keeps the
+   values, so the preview and the batch of one context use the same ones whatever happens
+   to the file; an edited file takes effect with `refresh=true`, no MCP restart. The values
+   applied are shown in the chain answer (`boltSettings`) and kept in the saved case. No
+   file gives the defaults; a broken file, an unknown setting or value is an error naming
+   the file when the context is built, never other settings in silence. Example, back to
+   today's chains: `{ "positionBoltsTo": "None", "secondaryPart": "ByPart" }`.
+   The batch takes the line of a chain from its first point written, as the bolt rows do
+   (review: a position chain of a member drawn the other way starts at its far end, and the
+   line was taken from its smallest coordinate, so the overall landed on it).
+   Not done yet: reporting the span not covered when the overall is missing.
    Decided (review, 2026-11-14): the chain does not close to the far end when the overall
    is given on another view; it is on the sheet. When the overall is missing because it
    was refused or its write failed, the answer reports the uncovered span instead of

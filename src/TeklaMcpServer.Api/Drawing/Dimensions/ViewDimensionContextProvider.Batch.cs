@@ -461,8 +461,10 @@ public sealed partial class ViewDimensionContextProvider
             : Axis(direction) == "Vertical" ? (vector.X > 0 ? "Right" : "Left") : "Unknown";
     }
 
-    // Where a chain's dimension line stands: Tekla measures the distance from the chain's first
-    // point along it, outward on the side; and the span the line covers along the chain.
+    // Where a chain's dimension line stands: Tekla measures the distance from the first point
+    // written, outward on the side, as the bolt rows do (a position chain of a member drawn the
+    // other way starts at its far end, not at its smallest coordinate); and the span the line
+    // covers along the chain.
     private static (string Side, double Line, double From, double To)? LineOf(PreparedDimensionWrite write, string side)
     {
         var points = write.Request.Points;
@@ -470,10 +472,9 @@ public sealed partial class ViewDimensionContextProvider
         var horizontal = side is "Top" or "Bottom";
         var (along, across) = horizontal ? (0, 1) : (1, 0);
         var count = points.Length / 3;
-        var first = Enumerable.Range(0, count).OrderBy(index => points[index * 3 + along]).First();
         var outward = side is "Top" or "Right" ? 1 : -1;
         var values = Enumerable.Range(0, count).Select(index => points[index * 3 + along]).ToArray();
-        return (side, points[first * 3 + across] + outward * write.Distance, values.Min(), values.Max());
+        return (side, points[across] + outward * write.Distance, values.Min(), values.Max());
     }
 
     private static string GroupSide(DimensionGroupInfo group) =>

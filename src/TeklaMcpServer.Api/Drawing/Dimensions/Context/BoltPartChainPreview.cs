@@ -128,7 +128,7 @@ internal static class BoltPartChainPreview
     // Every bolt must stand in one and the same outer contour of the part, whatever ends are found
     // later: a bolt outside the part or on another contour gives no chain. A center within the
     // tolerance of the contour line is on its edge, whichever side of the line rounding put it.
-    private static string? BoltsOnOneContour(IReadOnlyList<OutlineTreeNodeResult>? contours, IEnumerable<double[]> bolts,
+    internal static string? BoltsOnOneContour(IReadOnlyList<OutlineTreeNodeResult>? contours, IEnumerable<double[]> bolts,
         double tolerance, out IReadOnlyList<double[]>? polygon, out bool onEdge)
     {
         polygon = null;

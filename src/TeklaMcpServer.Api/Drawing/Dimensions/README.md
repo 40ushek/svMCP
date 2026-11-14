@@ -71,6 +71,15 @@ chain carries `holes`. Bolt lines keep clear of `Local`, `Inclined`
 and the rows of side chains that will be placed. An incomplete bolt read creates no bolt chain and is reported in
 the row's `readIncomplete`. The row takes no part in `repeats`. See [ROADMAP_BOLT_CHAINS.md](ROADMAP_BOLT_CHAINS.md).
 
+Since 2026-11-14 the row also offers a `position` chain, `bolt-position-<side>`: along
+the main part from its physical start through every bolt column (Tekla's *Position
+bolts to: Main part*, measured from the end, not the reference line). Once it is created,
+the part chains along the main part whose groups it holds say "bolt positions are given
+by" it. Bolt-chain settings come from `%LOCALAPPDATA%\svMCP\settings\bolt-chains.json`,
+read once per context and shown in the answer as `boltSettings`; no file gives the
+defaults, `{ "positionBoltsTo": "None", "secondaryPart": "ByPart" }` gives the chains of
+before. Edit the file, then read the view again with `refresh=true`.
+
 ## Repeats are marked in the preview (2026-11-13)
 
 Asked `repeats`, a chain read marks every repeat (`sameView`, `overallOnSheet`,

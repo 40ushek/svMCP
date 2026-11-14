@@ -59,12 +59,17 @@ public sealed class ViewDimensionContext
     internal PartSolidGeometryInViewResult? GetPartSolidGeometrySnapshot(int modelId) =>
         _partSolids.TryGetValue(modelId, out var geometry) ? geometry : null;
 
+    // The bolt-chain settings this context was built with, read once: the preview and the batch of
+    // this context use them, whatever happens to the settings file in between.
+    private readonly BoltChainSettings _boltSettings;
+
     internal ViewDimensionContext(int viewId, double scale, StructuralOutline outline,
         IReadOnlyList<PartExclusionRule> exclusions, object source, object metadata,
-        ViewBoltGeometrySnapshot? bolts = null)
+        ViewBoltGeometrySnapshot? bolts = null, BoltChainSettings? boltSettings = null)
     {
         ViewId = viewId;
-        _toCase = () => ViewDimensionContextCase.From(viewId, scale, outline, exclusions, source, metadata, bolts);
+        _boltSettings = boltSettings ?? new BoltChainSettings();
+        _toCase = () => ViewDimensionContextCase.From(viewId, scale, outline, exclusions, source, metadata, bolts, _boltSettings);
         _partContours = Freeze(outline.Outline.PartNodes);
         Scale = scale;
         _bolts = bolts?.Answer ?? Freeze(new { isComplete = false, selectionComplete = false,
@@ -303,6 +308,8 @@ public sealed class ViewDimensionContext
             // Bolt chains belong to no side either; each one says whether it is to be created.
             if (!panel && refusal == null && selected.Length == 4)
             {
+                // The values the bolt row was built with, as applied: for diagnosis and replay.
+                result["boltSettings"] = BoltChainSettingsData.From(_boltSettings);
                 var withBolts = rows.Concat(BoltRow(coordinateSettings, rows, sectionPlans?.Values)).ToArray();
                 // Sections confirm bolt edges by their own section chains; nothing is carried there.
                 result["chainPreview"] = section ? withBolts
@@ -627,10 +634,14 @@ public sealed class ViewDimensionContext
             .Where(chain => chain.TryGetProperty("restoredBesides", out _)).Select(chain => chain.GetProperty("key").GetString()!).ToArray();
         var carried = json.EnumerateArray().Where(row => row.GetProperty("side").GetString() == BoltSide)
             .SelectMany(row => row.GetProperty("chains").EnumerateArray())
-            .Where(chain => chain.TryGetProperty("carries", out var carries) && carries.ValueKind == JsonValueKind.String
+            // The position chain stands for the location of the bolts along the main part, as a
+            // carried chain does: compared like a location chain on its side.
+            .Where(chain => (chain.TryGetProperty("carries", out var carries) && carries.ValueKind == JsonValueKind.String
+                    || chain.GetProperty("chainKind").GetString() == BoltChainCandidate.PositionKind)
                 && !(chain.TryGetProperty("incomplete", out var incomplete) && incomplete.ValueKind == JsonValueKind.True))
             .Select(chain => new DimensionChainRepeats.Chain(chain.GetProperty("key").GetString()!,
-                chain.GetProperty("carries").GetString()!.Split('-')[0], "location",
+                chain.TryGetProperty("carries", out var carried) && carried.ValueKind == JsonValueKind.String
+                    ? carried.GetString()!.Split('-')[0] : chain.GetProperty("key").GetString()!.Split('-').Last(), "location",
                 chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray()))
             .ToArray();
         if (carried.Length == 0) return rows;
@@ -658,10 +669,12 @@ public sealed class ViewDimensionContext
     private readonly Dictionary<string, IReadOnlyList<BoltRowChain>> _boltChains = new(StringComparer.Ordinal);
 
     /// <summary>A bolt chain of the Bolt row: written by key like a Local chain when it is to be created.</summary>
-    internal sealed class BoltRowChain(DimensionRuleResult result, double distance, string? frameRefusal)
+    internal sealed class BoltRowChain(DimensionRuleResult result, double distance, string? frameRefusal, string? givenBy = null)
     {
         public string Key { get; } = (string)result.Evidence["key"];
-        public string? Reason { get; } = result.Note ?? frameRefusal;
+        // A chain given by another one says so first: an edgeless chain whose bolts the position
+        // chain holds is not carried into the location chain.
+        public string? Reason { get; } = givenBy ?? result.Note ?? frameRefusal;
         public bool Create => Reason == null;
 
         public object Project() => new {
@@ -701,12 +714,16 @@ public sealed class ViewDimensionContext
             : JsonSerializer.SerializeToElement(sideRows).GetRawText());
         // Settings given by the caller are not the context's own: their answer is not kept.
         if (boltSettings == null && _boltChains.TryGetValue(cacheKey, out var cached)) return cached;
-        var settings = boltSettings ?? new BoltChainSettings();
+        var settings = boltSettings ?? _boltSettings;
         var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
+        var section = viewType is "SectionView" or "EndView";
+        // The position chain runs along the main part; a section shows its profile, not its length.
+        var mainSolid = !section && _mainPartIds.Length == 1 ? GetPartSolidGeometrySnapshot(_mainPartIds[0]) : null;
         var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
             JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
-            edgeConfirmed: viewType is not ("SectionView" or "EndView") ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
-            settings, coordinateSettings, DimensionPlacementSettings.DefaultPaperGapMm * Scale);
+            edgeConfirmed: !section ? (_, _, _) => true : SectionEdgeCheck(sectionPlans ?? []),
+            settings, coordinateSettings, DimensionPlacementSettings.DefaultPaperGapMm * Scale,
+            mainSolid?.StartPoint, mainSolid?.EndPoint);
         var evaluation = new DimensionRuleSet(new BoltChainRule(settings))
             .Calculate(new DimensionRuleContext([], null, new BoltChainInput(candidates)));
         var frame = ViewFrame();
@@ -718,21 +735,37 @@ public sealed class ViewDimensionContext
                 point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY);
             return readRefusal ?? (outside ? "a point lies outside the view frame" : null);
         }).ToArray();
+        var results = evaluation.Results;
+        // The position chain replaces the chains along the main part of the groups it holds only
+        // once it is known to be created; refused, it leaves every chain of today in place.
+        var givenBy = new string?[results.Count];
+        foreach (var position in results.Where((result, index) => (string)result.Evidence["chainKind"] == BoltChainCandidate.PositionKind
+                     && result.Note == null && refusals[index] == null))
+        {
+            var held = new HashSet<int>((int[])position.Evidence["groupIds"]);
+            var along = position.Direction.X != 0 ? 0 : 1;
+            for (var i = 0; i < results.Count; i++)
+                if ((string)results[i].Evidence["chainKind"] == BoltChainCandidate.PartKind
+                    && (results[i].Direction.X != 0 ? 0 : 1) == along
+                    && ((int[])results[i].Evidence["groupIds"]).All(held.Contains))
+                    givenBy[i] = $"bolt positions are given by {position.Evidence["key"]}";
+        }
         // A secondary part's bolts standing on the main part's are left out only now, when the main
         // part's chain is known to be created: settings and view frame have refused what they refuse.
-        var created = new HashSet<string>(evaluation.Results.Where((result, index) => result.Note == null && refusals[index] == null)
+        var created = new HashSet<string>(results.Where((result, index) => result.Note == null && refusals[index] == null
+                && givenBy[index] == null)
             .Select(result => (string)result.Evidence["key"]), StringComparer.Ordinal);
         for (var i = 0; i < refusals.Length; i++)
-            if (refusals[i] == null && evaluation.Results[i].Note == null
+            if (refusals[i] == null && evaluation.Results[i].Note == null && givenBy[i] == null
                 && evaluation.Results[i].Evidence.TryGetValue("overMainPartChain", out var over)
                 && over is string main && main.Length > 0 && created.Contains(main))
                 refusals[i] = $"the same bolts are dimensioned from the main part by {main}";
         // Rows go only to the chains that will be placed.
         var chains = evaluation.Results.Select((result, index) => {
             var distance = gap + (double)result.Evidence["baseOffset"];
-            if (result.Note == null && refusals[index] == null && result.Points.Count > 0)
+            if (result.Note == null && refusals[index] == null && givenBy[index] == null && result.Points.Count > 0)
                 distance = NextFreeRow(rows, result, distance, gap);
-            return new BoltRowChain(result, distance, refusals[index]);
+            return new BoltRowChain(result, distance, refusals[index], givenBy[index]);
         }).ToArray();
         if (boltSettings == null) _boltChains.Add(cacheKey, chains);
         return chains;

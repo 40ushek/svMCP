@@ -21,6 +21,11 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
                 case BoltChainCandidate.GroupKind:
                     reason = candidate.BuiltRefusal ?? "no chain was built for this group";
                     break;
+                case BoltChainCandidate.PositionKind:
+                    if (settings.PositionBoltsTo == BoltPositionTo.None) continue;
+                    reason = settings.PositionBoltsTo == BoltPositionTo.WorkingPoints
+                        ? "Position bolts to: Working points is not implemented yet" : Refusal(candidate);
+                    break;
                 case BoltChainCandidate.PartKind:
                     var partPolicy = Policy(candidate);
                     if (partPolicy is BoltInternalDimensions.None or BoltInternalDimensions.Internal) continue;
@@ -62,6 +67,7 @@ internal sealed class BoltChainRule(BoltChainSettings settings) : IDimensionRule
                 ["groupId"] = candidate.GroupId, ["partId"] = candidate.PartId ?? 0,
                 ["viewClass"] = candidate.ViewClass.ToString(), ["baseOffset"] = candidate.BaseOffset,
                 ["sources"] = candidate.Sources, ["holes"] = candidate.Holes,
-                ["overMainPartChain"] = candidate.OverMainPartChain ?? ""
+                ["overMainPartChain"] = candidate.OverMainPartChain ?? "",
+                ["groupIds"] = candidate.GroupIds.ToArray()
             });
 }
