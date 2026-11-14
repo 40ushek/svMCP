@@ -1,3 +1,4 @@
+using static TeklaMcpServer.Api.Drawing.OutlineTreeGeometry;
 using static TeklaMcpServer.Api.Drawing.BoltChainGeometry;
 
 namespace TeklaMcpServer.Api.Drawing;

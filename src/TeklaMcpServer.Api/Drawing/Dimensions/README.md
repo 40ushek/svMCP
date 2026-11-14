@@ -98,7 +98,9 @@ preview and read its JSON back. Legacy `boltChains` responses project the same g
 | Settings | `BoltChainRule.Evaluate` | Typed `BoltChainDecision` values |
 | Final selection | `BoltChainSelectionPlanner` | View admission, position coverage, requirements, then main-part replacements |
 | Annotation rows | `BoltChainRowPlanner` | Offsets for selected chains only |
-| Answer formatting | `BoltChainPreviewProjection` | Existing Bolt-row contract |
+| Structural carry and overall restoration | `BoltLocationChainComposer` | Typed working preview chains |
+| Structural/carried repeats | `DimensionPreviewRepeatPlanner`, `DimensionChainRepeats` | Typed repeat plan and state for the next batch |
+| Answer formatting | `BoltChainPreviewProjection`, `DimensionPreviewProjection` | Existing Bolt-row and structural contracts |
 
 `ViewDimensionContext` supplies the frozen inputs, section-edge support, occupied lines
 and cache. It does not interpret `Evidence` dictionaries to choose bolt chains. The
@@ -106,12 +108,28 @@ generic `IDimensionRule` adapter remains available for diagnostics. Candidates r
 all `SourcePositions` separately from their representative dimension `Points`; coverage
 uses the former, including the pre-check in `BoltMainPartChainBuilder.AddAcross`.
 `BoltChainSources` explicitly distinguishes captured positions, chain points and spacing
-indices; output precision does not depend on an input collection's runtime type.
-Part-chain geometry has get-only properties and typed source references. Shared contour
-edges and row/column representatives are built by `BoltChainGeometry`.
+indices; its data contains no serialization. Reusable geometry/source/hole models live
+in `Calculation/BoltProjectionGeometry.cs`, independently of legacy-preview owners.
+Part-chain geometry has get-only properties and typed source references. Common contour
+traversal/edges belong to `OutlineTreeGeometry`; row representatives and the shared
+coverage policy belong to `BoltChainGeometry`.
+`DimensionPreviewChain` / `DimensionPreviewRow` are the carry/repeat calculation contract.
+Existing structural producers still pass through JSON in `DimensionChainPreview.Short`
+and `DimensionPreviewProjection.Structural`. Their adapter retains opaque output metadata, but
+composition and repeat selection inspect only typed fields. Output precision freezing
+and the legacy shapes are handled by the final projection converters. The context owns
+cached repeat state; it does not make carry decisions through preview dictionaries.
+The general `DimensionChainComposer` keeps its verified proposal/datum requirements;
+the existing edgeless carry policy does not supply those semantics and is kept in its
+dedicated typed composer rather than weakening the general composition rules.
 Source-coordinate precision, keys, reasons and preview order remain
 unchanged. Final selection refers to the planned preview; the existing batch writer
 still validates and writes the caller's selection separately.
+
+Eight checked-in synthetic compatibility fixtures retain 24 baseline answers and need
+no local case directory. The final contract/composition refactor and its added tests
+are source changes pending an explicit build/test run; the earlier 1718-test result
+does not validate this increment. Deployment/live acceptance remain open.
 
 ## Repeats are marked in the preview (2026-11-13)
 

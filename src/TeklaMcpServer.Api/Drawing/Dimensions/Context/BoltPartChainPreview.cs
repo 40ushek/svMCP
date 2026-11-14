@@ -10,15 +10,15 @@ internal static class BoltPartChainPreview
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
         BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyList<IReadOnlyDictionary<int, int>>? units = null)
         => BuildChains(snapshot, includedParts, sides, contours, tolerance, boltSettings, perGroup, units)
-            .Select(chain => chain.Project()).ToArray();
+            .Select(BoltChainPreviewProjection.Part).ToArray();
 
-    internal static BuiltChain[] BuildChains(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
+    internal static BoltPartChainGeometry[] BuildChains(JsonElement snapshot, IReadOnlyCollection<int> includedParts,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance = DimensionCoordinateSettings.DefaultToleranceMm,
         BoltChainSettings? boltSettings = null, bool perGroup = false, IReadOnlyList<IReadOnlyDictionary<int, int>>? units = null)
     {
         var settings = boltSettings ?? new BoltChainSettings();
-        if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<BuiltChain>();
+        if (!snapshot.TryGetProperty("boltGroups", out var rows)) return Array.Empty<BoltPartChainGeometry>();
         var sources = new List<Source>();
         foreach (var row in rows.EnumerateArray())
         {
@@ -61,7 +61,7 @@ internal static class BoltPartChainPreview
         return $"bolt-part-{partId}-groups-{string.Join("-", groups)}-{side}";
     }
 
-    private static BuiltChain BuildChain(int partId, Source[] sources, DimensionChainSide side,
+    private static BoltPartChainGeometry BuildChain(int partId, Source[] sources, DimensionChainSide side,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours, double tolerance, bool perGroup, string proposalId)
     {
         var axis = side.RunsAlongX() ? 0 : 1;
@@ -69,7 +69,7 @@ internal static class BoltPartChainPreview
         var sign = side.OutwardSign();
         var blockedSources = sources.Where(source => source.Reason != null)
             .OrderBy(source => source.GroupId).ThenBy(source => source.Index)
-            .Select(source => new BlockedSource(source.GroupId, source.Index, source.Reason)).ToArray();
+            .Select(source => new BoltBlockedSource(source.GroupId, source.Index, source.Reason)).ToArray();
         var reason = blockedSources.Length == 0 ? null : "one or more bolt sources are blocked; see blockedSources";
         var clusters = new List<List<Source>>();
         if (reason == null)
@@ -117,64 +117,10 @@ internal static class BoltPartChainPreview
         var segments = points.Skip(1).Select((point, index) => point[axis] - points[index][axis]).ToArray();
         if (reason == null && (segments.Length == 0 || segments.Any(value => value <= tolerance)))
             reason = "edge endpoints do not bound all projected bolt coordinates";
-        return new BuiltChain(proposalId, partId, axis, side, reason, blockedSources, points, segments,
+        return new BoltPartChainGeometry(proposalId, partId, axis, side, reason, blockedSources, points, segments,
             minEnd, maxEnd, minEndKind, maxEndKind, boltRefusal,
-            clusters.Select((cluster, index) => new ProjectedPosition(representatives[index].Point,
-                cluster.Select(source => new SourceReference(source.GroupId, source.Index)).ToArray())).ToArray());
-    }
-
-    /// <summary>Geometry before admission and placement; Project is used only by the legacy preview.</summary>
-    internal sealed class BuiltChain(string key, int partId, int axis, DimensionChainSide side, string? reason,
-        BlockedSource[] blockedSources, double[][] points, double[] segments, double[]? minEnd, double[]? maxEnd,
-        string? minEndKind, string? maxEndKind, string? boltRefusal, ProjectedPosition[] projectedPositions)
-    {
-        public string Key { get; } = key;
-        public int PartId { get; } = partId;
-        public int Axis { get; } = axis;
-        public DimensionChainSide Side { get; } = side;
-        public string? Reason { get; } = reason;
-        public BlockedSource[] BlockedSources { get; } = blockedSources;
-        public double[][] Points { get; } = points;
-        public double[] Segments { get; } = segments;
-        public double[]? MinEnd { get; } = minEnd;
-        public double[]? MaxEnd { get; } = maxEnd;
-        public string? MinEndKind { get; } = minEndKind;
-        public string? MaxEndKind { get; } = maxEndKind;
-        public string? BoltRefusal { get; } = boltRefusal;
-        public ProjectedPosition[] ProjectedPositions { get; } = projectedPositions;
-
-        public object Project() => new {
-            proposalId = Key, kind = "part", partId = PartId,
-            axis = Axis == 0 ? "X" : "Y", placementSide = Side.ToString(),
-            state = Reason == null ? "Candidate" : "Blocked", reason = Reason,
-            creationMode = "explicitSelectionOnly", blockedSources = BlockedSources.Select(source => source.Project()).ToArray(),
-            points = Points, segments = Segments,
-            minEnd = MinEnd, maxEnd = MaxEnd, minEndKind = MinEndKind, maxEndKind = MaxEndKind, boltRefusal = BoltRefusal,
-            projectedPositions = ProjectedPositions.Select(position => position.Project()).ToArray(),
-            contourSource = "captured full-solid projected outer contour; section clipping and visibility are unverified"
-        };
-    }
-
-    internal sealed class SourceReference(int groupId, int index)
-    {
-        public int GroupId { get; } = groupId;
-        public int Index { get; } = index;
-        public object Project() => new { boltGroupId = GroupId, index = Index };
-    }
-
-    internal sealed class BlockedSource(int groupId, int index, string? reason)
-    {
-        public int GroupId { get; } = groupId;
-        public int Index { get; } = index;
-        public string? Reason { get; } = reason;
-        public object Project() => new { boltGroupId = GroupId, index = Index, reason = Reason };
-    }
-
-    internal sealed class ProjectedPosition(double[] point, SourceReference[] sources)
-    {
-        public double[] Point { get; } = point;
-        public SourceReference[] Sources { get; } = sources;
-        public object Project() => new { point = Point, sources = Sources.Select(source => source.Project()).ToArray() };
+            clusters.Select((cluster, index) => new BoltProjectedPosition(representatives[index].Point,
+                cluster.Select(source => new BoltSourceReference(source.GroupId, source.Index)).ToArray())).ToArray());
     }
 
     // Every bolt must stand in one and the same outer contour of the part, whatever ends are found
@@ -186,7 +132,7 @@ internal static class BoltPartChainPreview
         polygon = null;
         onEdge = false;
         if (contours == null || contours.Count == 0) return "part has no captured projected contour";
-        var outer = BoltChainGeometry.Flatten(contours).Where(node => !node.IsHole && node.Polygon.Count >= 3
+        var outer = OutlineTreeGeometry.Flatten(contours).Where(node => !node.IsHole && node.Polygon.Count >= 3
             && node.Polygon.All(point => point.Length >= 2)).ToArray();
         var owners = new HashSet<int>();
         foreach (var bolt in bolts)

@@ -19,7 +19,7 @@ internal static class DimensionChainPreview
     /// The default answer: side, kind, ids and segments, plus notes and lists only when they
     /// have content. Roles and part ids stay behind the detailed question.
     /// </summary>
-    public static object Short(object chain, bool detailed = false, string? side = null)
+    public static DimensionPreviewChain Short(object chain, bool detailed = false, string? side = null)
     {
         using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(chain));
         var result = new Dictionary<string, object?>();
@@ -57,7 +57,7 @@ internal static class DimensionChainPreview
                     && note.ValueKind == System.Text.Json.JsonValueKind.String
                     ? note.GetString()! : "fewer than two selected points";
         }
-        return result;
+        return DimensionPreviewProjection.Structural(doc.RootElement, result);
     }
 
     /// <summary>Both chains of a side, refused with a reason instead of built.</summary>

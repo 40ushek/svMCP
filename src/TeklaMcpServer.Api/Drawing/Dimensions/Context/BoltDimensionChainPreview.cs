@@ -16,7 +16,7 @@ internal static class BoltDimensionChainPreview
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var settings = boltSettings ?? new BoltChainSettings();
         var groups = BuildGroups(snapshot, includedPartIds, sides, partContours, tolerance, settings)
-            .Select(group => group.Project()).ToArray();
+            .Select(BoltChainPreviewProjection.Group).ToArray();
         return new {
             scope = "bolt-chain-proposals", coordinateSystem = "display",
             coordinateTolerance = tolerance, classToleranceDegrees = settings.ClassToleranceDegrees,
@@ -33,7 +33,7 @@ internal static class BoltDimensionChainPreview
         };
     }
 
-    internal static Group[] BuildGroups(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
+    internal static BoltGroupProjection[] BuildGroups(JsonElement snapshot, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides, IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? contours,
         double tolerance, BoltChainSettings settings) => snapshot.TryGetProperty("boltGroups", out var rows)
         ? rows.EnumerateArray().Select(row => BuildGroup(row, includedPartIds, sides, contours, tolerance, settings)).ToArray()
@@ -42,7 +42,7 @@ internal static class BoltDimensionChainPreview
     private static bool Flag(JsonElement value, string name) =>
         value.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.True;
 
-    private static Group BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
+    private static BoltGroupProjection BuildGroup(JsonElement row, IReadOnlyCollection<int> includedPartIds,
         IReadOnlyCollection<DimensionChainSide> sides,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance,
         BoltChainSettings settings)
@@ -60,13 +60,13 @@ internal static class BoltDimensionChainPreview
         var reason = PatternRefusal(group, viewClass, tolerance);
         // Why the group gives no steps; its edge chains do not depend on it.
         var stepReason = reason == null ? StepRefusal(group, viewClass, tolerance) : null;
-        var chains = new List<StepChain>();
-        var edgeChains = new List<object>();
+        var chains = new List<BoltSpacingChain>();
+        var edgeChains = new List<BoltEdgeDistanceGeometry>();
         var candidateChainCount = 0;
-        var decisions = new List<GroupPoint>();
+        var decisions = new List<BoltProjectedCenter>();
         if (reason != null)
         {
-            decisions.AddRange(group.Positions.Select(p => new GroupPoint(p.Index, p.Point, "Blocked", reason!)));
+            decisions.AddRange(group.Positions.Select(p => new BoltProjectedCenter(p.Index, p.Point, "Blocked", reason!)));
         }
         else
         {
@@ -84,7 +84,7 @@ internal static class BoltDimensionChainPreview
                 foreach (var p in cell.Sources)
                 {
                     centers.TryGetValue(p.Index, out var center);
-                    decisions.Add(new GroupPoint(p.Index, p.Point,
+                    decisions.Add(new BoltProjectedCenter(p.Index, p.Point,
                         center == "Inside" ? (p == cell.Point ? "Candidate" : "Merged") : "Blocked",
                         center == "Inside" ? (p == cell.Point ? "internal-spacing source" : "duplicate projected center")
                             : "center restriction is " + (center ?? "Unresolved") + "; axial extent is not verified",
@@ -104,65 +104,8 @@ internal static class BoltDimensionChainPreview
         }
         if (reason == null && chains.Count > 0 && candidateChainCount == 0)
             reason = "no internal chain has all source centers admitted by the restriction evidence";
-        return new Group(group, viewClass, related, partCandidates, reason, stepReason,
+        return new BoltGroupProjection(group, viewClass, related, partCandidates, reason, stepReason,
             decisions.ToArray(), chains.ToArray(), edgeChains.ToArray());
-    }
-
-    internal sealed class Group(BoltGroupGeometry geometry, BoltGroupViewClass viewClass, int[] related,
-        int[] partCandidates, string? reason, string? stepReason, GroupPoint[] points, StepChain[] chains, object[] edgeChains)
-    {
-        public BoltGroupGeometry Geometry { get; } = geometry;
-        public BoltGroupViewClass ViewClass { get; } = viewClass;
-        public int[] PartCandidates { get; } = partCandidates;
-        public string? Reason { get; } = reason;
-        public GroupPoint[] Points { get; } = points;
-        public StepChain[] Chains { get; } = chains;
-
-        public object Project() => new {
-            boltGroupId = Geometry.ModelId, relatedPartIds = related, partCandidates = PartCandidates,
-            partScopeStatus = PartCandidates.Length == 1 ? "single included related part; role/policy still requires review"
-                : "unresolved: choose the dimensioned part explicitly",
-            shape = Geometry.Shape, viewClass = ViewClass.ToString(),
-            status = Reason != null || (Chains.Length > 0 && Chains.All(chain => !chain.Candidate))
-                ? "Blocked" : Chains.Length == 0 ? "NoInternalSpacing" : "Candidate",
-            candidateChainCount = Chains.Count(chain => chain.Candidate), blockedChainCount = Chains.Count(chain => !chain.Candidate),
-            reason = Reason, stepReason, points = Points.Select(point => point.Project()).ToArray(),
-            chains = Chains.Select(chain => chain.Project()).ToArray(), edgeChains,
-            edgeScopeStatus = PartCandidates.Length == 0 ? "Blocked: no included related part"
-                : "separate proposals per related part; choose part and edge policy before creation"
-        };
-    }
-
-    internal sealed class GroupPoint(int index, double[] point, string state, string reason, int? representativeIndex = null)
-    {
-        public double[] Point { get; } = point;
-        public bool Blocked => state == "Blocked";
-        public object Project() => representativeIndex.HasValue
-            ? (object)new { index, point = Point, state, reason, representativeIndex = representativeIndex.Value }
-            : new { index, state, reason, point = Point };
-    }
-
-    internal sealed class StepPoint(double[] point, int[] sourceIndices)
-    {
-        public double[] Point { get; } = point;
-        public int[] SourceIndices { get; } = sourceIndices;
-        public object Project() => new { point = Point, sourceIndices = SourceIndices };
-    }
-
-    internal sealed class StepChain(string key, int axis, int[] blocked, int startIndex, StepPoint[] points, double[] segments)
-    {
-        public string Key { get; } = key;
-        public int Axis { get; } = axis;
-        public bool Candidate => blocked.Length == 0;
-        public string Reason => Candidate ? "ordered adjacent bolt centers; policy and visibility are not verified"
-            : "restriction evidence does not admit every source; the chain is not shortened";
-        public StepPoint[] Points { get; } = points;
-        public double[] Segments { get; } = segments;
-        public object Project() => new {
-            proposalId = Key, kind = "internal", axis = Axis == 0 ? "X" : "Y", direction = Axis == 0 ? "horizontal" : "vertical",
-            state = Candidate ? "Candidate" : "Blocked", creationMode = "explicitSelectionOnly", reason = Reason,
-            blockedIndices = blocked, startIndex, points = Points.Select(point => point.Project()).ToArray(), segments = Segments
-        };
     }
 
     internal static BoltGroupGeometry ReadGroup(JsonElement row) =>
@@ -224,7 +167,7 @@ internal static class BoltDimensionChainPreview
         return result;
     }
 
-    private static int AddChains(List<StepChain> chains, IEnumerable<IGrouping<int, Cell>> rows,
+    private static int AddChains(List<BoltSpacingChain> chains, IEnumerable<IGrouping<int, Cell>> rows,
         int axis, int groupId, IReadOnlyDictionary<int, string?> centers)
     {
         var candidates = 0;
@@ -236,15 +179,15 @@ internal static class BoltDimensionChainPreview
                 .Where(p => !centers.TryGetValue(p.Index, out var state) || state != "Inside")
                 .Select(p => p.Index).OrderBy(index => index).ToArray();
             if (blocked.Length == 0) candidates++;
-            chains.Add(new StepChain($"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}", axis, blocked,
-                points[0].Point.Index, points.Select(cell => new StepPoint(cell.Point.Point,
+            chains.Add(new BoltSpacingChain($"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}", axis, blocked,
+                points[0].Point.Index, points.Select(cell => new BoltSpacingPoint(cell.Point.Point,
                     cell.Sources.Select(p => p.Index).ToArray())).ToArray(),
                 points.Skip(1).Select((cell, index) => cell.Point.Point[axis] - points[index].Point.Point[axis]).ToArray()));
         }
         return candidates;
     }
 
-    private static void AddEdgeChains(List<object> chains, IEnumerable<IGrouping<int, Cell>> rows,
+    private static void AddEdgeChains(List<BoltEdgeDistanceGeometry> chains, IEnumerable<IGrouping<int, Cell>> rows,
         int axis, int groupId, IReadOnlyDictionary<int, string?> centers, int[] partIds,
         IReadOnlyDictionary<int, IReadOnlyList<OutlineTreeNodeResult>>? partContours, double tolerance)
     {
@@ -258,8 +201,8 @@ internal static class BoltDimensionChainPreview
                 IReadOnlyList<OutlineTreeNodeResult>? contours = null;
                 partContours?.TryGetValue(partId, out contours);
                 var rowId = $"bolt-{groupId}-{(axis == 0 ? "X" : "Y")}-{row.Key}";
-                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[0].Sources, axis, -1, contours, rowInside, tolerance));
-                chains.Add(BoltEdgeDistancePreview.Build(groupId, partId, rowId, points[points.Length - 1].Sources, axis, 1, contours, rowInside, tolerance));
+                chains.Add(BoltEdgeDistancePreview.BuildGeometry(groupId, partId, rowId, points[0].Sources, axis, -1, contours, rowInside, tolerance));
+                chains.Add(BoltEdgeDistancePreview.BuildGeometry(groupId, partId, rowId, points[points.Length - 1].Sources, axis, 1, contours, rowInside, tolerance));
             }
         }
     }

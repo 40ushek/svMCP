@@ -511,6 +511,13 @@ the next step. These results do not replace fresh live placement/read-back accep
 The source review fixes orphan cross chains and tightens source/geometry contracts;
 the validation counts and repeated compatibility comparison above include that follow-up.
 
+Final-refactor source update: checked-in synthetic compatibility fixtures, independent
+geometry/source/hole contracts, and typed structural carry/repeat integration are
+implemented in the working tree. Their added tests and changed sources have not been
+compiled or executed; the 1718-test/696-answer result above remains the prior verified
+baseline. Next gate: an explicit build/test command, followed separately by deployment
+and live acceptance. Expected fixtures are not regenerated automatically.
+
 The detailed current status and ordered plan live in
 [Bolt Chains: architectural refactor](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14):
 reproducible fixtures → geometry/source contracts → typed structural composition and
@@ -542,15 +549,15 @@ Commit/push history belongs in Git, not roadmap status.
 
 ### Targeted refactoring before chain composition (2026-10-02)
 
-Status synchronized 2026-11-14: the bolt-candidate core of this proposal is implemented;
-typed structural composition and repeat handling remain planned in the Bolt Chains
-roadmap. The other batch, reconciliation and performance items below retain their
+Status synchronized 2026-11-14: the bolt core and typed structural carry/repeat
+integration are implemented in source; the final increment awaits an explicit build/test
+run, as recorded in the Bolt Chains roadmap. The other batch, reconciliation and performance items below retain their
 independent status. Preserve the public MCP/bridge contracts and verified-write protocol. Prefer existing domain models;
 do not replace the whole dimension module or introduce a new framework.
 
 | Priority | Area | Proposed change and acceptance |
 |---|---|---|
-| High, partially implemented | `ViewDimensionContext`, bolt preview/resolution | The bolt candidate/selection/row stages now use typed data. Finish shared geometry/source contracts and the remaining carry/repeat integration through the [bolt architectural plan](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14). Preserve point order, provenance, eligibility, IDs, precision and refusal diagnostics; do not require migration of every preview family before composition starts. |
+| High, partially implemented | `ViewDimensionContext`, bolt preview/resolution | The candidate/selection/row stages and carry/repeat integration now use typed data; shared source/hole contracts are implemented. Validate the final increment through the [bolt architectural plan](ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14). Preserve point order, provenance, eligibility, IDs, precision and refusal diagnostics; do not require migration of every preview family before composition starts. |
 | Incremental | `ViewDimensionContextProvider.Batch.cs` | Extract phases only where the composition integration needs them. Avoid repeated source resolution and attribute validation; recalculate only placement for the actual row. Full batch restructuring is a separate task, not a prerequisite. Preserve complete preflight, retention, stop-on-failure and partial-success reporting. |
 | High, separate correctness fix | Final batch reconciliation | Compare final observed points, side, offset and type with the prepared plan, including retained and merged cases. Keep rendered-line observation distinct from calculated reference lines. Add unchanged-ID reflow regressions and the false-merged regression specified below. |
 | High, measured | Verified-write lookup | `FindDimensionSet` enumerates sets across the whole sheet and repeats on verification/correction/cleanup. Baseline below confirms a major remaining per-chain cost. Evaluate view-scoped or ID-based lookup with a fresh read after each commit; preserve ownership/deletion/cleanup checks and never trust stale drawing handles. |

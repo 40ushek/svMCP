@@ -75,8 +75,9 @@
 Подробный план: [`src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md`](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_DIMENSIONS.md)
 Архитектура цепочек и композиция: [отдельный roadmap](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_CHAIN_COMPOSITION.md).
 Архитектурный рефакторинг болтовых размеров: [состояние и пошаговый план](src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_BOLT_CHAINS.md#architectural-refactor-status-and-plan-2026-11-14).
-Ядро разделено на этапы и проверено в исходниках; остаются воспроизводимый корпус,
-контракты геометрии и источников, перенос/повторы конструктивных цепочек и live-приёмка.
+Рефакторинг исходников завершён: добавлен воспроизводимый корпус, выделены контракты
+геометрии/источников и типизированы перенос/повторы конструктивных цепочек. Финальный
+этап ещё не собран и не проверен тестами; запуск — по команде, live-приёмка отдельно.
 Общий drawing-level план: [`src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md`](src/TeklaMcpServer.Api/Drawing/ROADMAP_DRAWING.md)
 
 Краткое состояние:
@@ -274,3 +275,10 @@ public class McpServerPlugin : PluginBase
 TeklaBridge читает `C:\temp\tekla_mcp_port.txt` → HTTP → плагин. Fallback: нет файла → Remoting.
 Регистрация: `.inp` в `applications/`. Пример: `E:\repos\MpdEdit\MpdEdit.Core\Plugins\` (CutPlugin, SvPluginBase).
 Объём: ~250 строк + `.inp`.
+
+Bolt-refactor review follow-up (source only, execution pending): corrected the
+`4e926bb` fixture provenance, encapsulated captured source access, added a live
+repeat-planner exclusion regression and a reviewed full-length-fin carry contract
+through context/cache/batch resolution. Path-dependent precision flags remain
+explicit debt in `src/TeklaMcpServer.Api/Drawing/Dimensions/ROADMAP_BOLT_CHAINS.md`;
+structural producers still have a JSON adapter. Build/tests require a separate command.

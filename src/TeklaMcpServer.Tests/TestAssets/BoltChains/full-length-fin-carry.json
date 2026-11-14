@@ -1,0 +1,25 @@
+{
+  "scenario": "FullLengthFinPlate",
+  "expected": {
+    "key": "Bottom-location-bolts",
+    "carries": "Bottom-location",
+    "segments": [
+      450,
+      100,
+      450
+    ],
+    "sourceXs": [
+      450,
+      550
+    ],
+    "groupId": 42,
+    "sourceIndices": [
+      0,
+      1
+    ],
+    "overallKey": "Bottom-overall",
+    "overallSegments": [
+      1000
+    ]
+  }
+}

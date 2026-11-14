@@ -1,3 +1,4 @@
+using static TeklaMcpServer.Api.Drawing.OutlineTreeGeometry;
 using static TeklaMcpServer.Api.Drawing.BoltChainGeometry;
 using static TeklaMcpServer.Api.Drawing.BoltChainPlacement;
 
@@ -49,8 +50,7 @@ internal static class BoltMainPartChainBuilder
             if (BoltPartChainPreview.BoltsOnOneContour(mainOutline, bolts, tolerance, out _, out var onEdge) != null || onEdge)
                 continue;
             // Bolts standing over the main part's own bolts already have its chain across (bolts over bolts).
-            var covering = result.FirstOrDefault(chain => chain.Kind == BoltChainCandidate.PartKind
-                && chain.MainPart && chain.Axis == axis && Covers(bolts, chain.SourcePositions, tolerance));
+            var covering = CoveringMainPart(result, axis, bolts, tolerance, includeDependentChains: true);
             if (covering != null)
             {
                 result[result.IndexOf(own)] = own.Over(covering.Key);

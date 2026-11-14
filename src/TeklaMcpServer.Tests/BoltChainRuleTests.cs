@@ -507,7 +507,6 @@ public sealed class BoltChainRuleTests
         // The edge points stand at the corners of the beam bottom edge (y -76): the line one gap below.
         Assert.Equal(8 * 10, part.GetProperty("distance").GetDouble(), 6);
         Assert.Equal(-76, part.GetProperty("points")[0][1].GetDouble(), 6);
-        Assert.DoesNotContain(DimensionChainRepeats.FromPreview(context.Query("chain")), chain => chain.Side == "Bolt");
 
         var writes = new List<CreateDimensionRequest>();
         var provider = Provider(context, writes);
@@ -600,7 +599,7 @@ public sealed class BoltChainRuleTests
         Assert.Null(chain.BuiltRefusal);
         Assert.Equal(new[] { 20d, 60d, 40d, 60d, 80d }, chain.Segments);
         Assert.DoesNotContain(candidates, c => c.Kind == BoltChainCandidate.PartKind && c.GroupId == 22);
-        Assert.Equal(new[] { 21, 22 }, JsonSerializer.SerializeToElement(chain.Holes).EnumerateArray()
+        Assert.Equal(new[] { 21, 22 }, JsonSerializer.SerializeToElement(BoltChainPreviewProjection.Holes(chain.Holes)).EnumerateArray()
             .Select(hole => hole.GetProperty("boltGroupId").GetInt32()));
     }
 
@@ -1513,7 +1512,7 @@ public sealed class BoltChainRuleTests
     // A fin plate as long as the beam under it, pointed at the bottom: the Bottom location chain is
     // the two ends, 1000, so no overall is offered beside it; then the plate's edgeless bolts go
     // into that chain. The overall 1000 comes back on its own line, once.
-    private static ViewDimensionContext FullLengthFinPlate()
+    internal static ViewDimensionContext FullLengthFinPlate()
     {
         var group = new BoltGroupGeometry { ModelId = 42, Shape = "BoltArray", FirstPosition = [450, -180, 0],
             SecondPosition = [550, -180, 0], Axis = [0, 0, 1], PartToBeBoltedId = 30,

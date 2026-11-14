@@ -142,17 +142,15 @@ internal static class BoltChainCandidates
     // and the view frame have had their say.
     private static List<BoltChainCandidate> OverMainPartBolts(List<BoltChainCandidate> result, double tolerance)
     {
-        var main = result.Where(chain => chain.Kind == BoltChainCandidate.PartKind && chain.MainPart
-            && chain.RequiresChain == null && chain.SourcePositions.Count > 0).ToArray();
         return result.Select(chain => chain.Kind != BoltChainCandidate.PartKind || chain.MainPart
                 || chain.SourcePositions.Count == 0
-                || main.FirstOrDefault(other => other.Axis == chain.Axis && Covers(chain.SourcePositions, other.SourcePositions, tolerance)) is not { } by
+                || CoveringMainPart(result, chain.Axis, chain.SourcePositions, tolerance) is not { } by
             ? chain : chain.Over(by.Key)).ToList();
     }
 
     // Edge - bolts - edge with each end kept on its own when the view confirms it. One end left
     // gives edge - bolts; none, a refusal. Blocked bolt sources and split contours refuse as before.
-    private static (double[][] Points, string? Refusal) PartChainPoints(BoltPartChainPreview.BuiltChain part, Func<double[], bool> confirmed,
+    private static (double[][] Points, string? Refusal) PartChainPoints(BoltPartChainGeometry part, Func<double[], bool> confirmed,
         int axis, double tolerance)
     {
         var reason = part.Reason;
@@ -169,7 +167,7 @@ internal static class BoltChainCandidates
         return (points, bad ? "edge endpoints do not bound all projected bolt coordinates" : null);
     }
 
-    private static BoltChainCandidate Refused(int groupId, int? partId, BoltGroupViewClass viewClass, string reason, object holes) =>
+    private static BoltChainCandidate Refused(int groupId, int? partId, BoltGroupViewClass viewClass, string reason, IEnumerable<BoltHoleGeometry> holes) =>
         new($"bolt-{groupId}", BoltChainCandidate.GroupKind, groupId, partId, false, viewClass, 0, [], [], reason,
             false, new DimensionDirection(0, -1), 0, BoltChainSources.Empty, holes);
 

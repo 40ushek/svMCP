@@ -4,9 +4,11 @@ Created 2026-11-13. Status synchronized 2026-11-14 with the current working tree
 The first release (work order steps 1-5) was placed live on M.502 by a cold Haiku run.
 Later source increments implement section-edge checks, position chains closed on the
 far square end, cross chains from the main part and shared-group reuse. The bolt-core
-architectural refactor is implemented and tested, but is not deployed.
+core refactor was validated in `4e926bb`. The final geometry/source contracts,
+checked-in compatibility fixtures and typed carry/repeat integration are now implemented
+in the working tree, pending an explicit build/test run; they are not deployed.
 Open: the M.81 sections run (rest of step 6), fresh-placement acceptance of the refined
-section-edge rule (step 6a), the remaining architectural stages below, and the unfinished
+section-edge rule (step 6a), validation/deployment of the final refactor, and the unfinished
 functional work in steps 7-10. Replay of saved cases is not live placement acceptance.
 
 This file owns one question: **how bolt chains are chosen automatically**, by rules
@@ -40,7 +42,9 @@ Behavior changes discovered during the refactor need their own regression and de
 | Settings and built-geometry refusals | `BoltChainRule.Evaluate` |
 | View/read admission, position coverage, requirements, main-part replacements | `BoltChainSelectionPlanner` |
 | Assign annotation rows to selected chains | `BoltChainRowPlanner` |
-| Bolt-row output and generic rule diagnostics | `BoltChainPreviewProjection` |
+| Structural carry and overall restoration | `BoltLocationChainComposer` |
+| Repeat selection and returned cache state | `DimensionPreviewRepeatPlanner`, `DimensionChainRepeats` |
+| Final output and generic diagnostics | `BoltChainPreviewProjection`, `DimensionPreviewProjection` |
 
 Candidate construction consumes typed results instead of serializing previews and
 reading them back. `BoltChainDecision` replaces `Evidence` lookups and parallel refusal
@@ -48,7 +52,7 @@ arrays in `ViewDimensionContext.BoltChains`. `SourcePositions` retains all sourc
 separately from representative dimension `Points`. The generic `IDimensionRule` adapter
 and legacy `boltChains` response remain supported.
 
-Validation completed after the review follow-up: 1718 tests passed, 1 skipped with invariant culture; Release API
+Last verified baseline (`4e926bb`), before the final refactor below: 1718 tests passed, 1 skipped with invariant culture; Release API
 and bridge builds succeeded using the existing built `SolidContacts` dependency. All
 696 pre/post answers matched exactly after normalizing context IDs: 64 synthetic
 contexts and 168 locally saved contexts, queried as `chain`, `chainDetails`, `boltChains`.
@@ -56,7 +60,7 @@ That comparison used a temporary local harness and local snapshots; it is eviden
 this increment, not yet a reproducible checked-in corpus. No new deployment or live
 dimension placement was performed.
 
-Review follow-up in the working tree, **built and tested**: `AddAcross` now
+Review follow-up included in `4e926bb`, **built and tested**: `AddAcross` now
 checks complete `SourcePositions` and links to the covering chain instead of creating
 an orphan cross chain; this is a correctness change, not only a mechanical extraction.
 Contour traversal/edges, source coverage and row representatives share one implementation.
@@ -70,57 +74,83 @@ these changes; all 696 compatibility answers matched the pre-refactor baseline a
 The corpus does not contain the orphan case; its intended correction is covered by the
 new builder/context regressions. Deployment and live acceptance remain open.
 
-### 1. Make the compatibility baseline reproducible — next
+### 1. Make the compatibility baseline reproducible — implemented in source, execution pending
 
-- Add a small checked-in, suitably sanitized fixture set and a repeatable comparison
-  test using the existing context-case infrastructure. Cover M.298-style position and
-  cross chains, sections, mirrored/reversed members, shared and merged groups, notched
-  contours, view-frame refusal and incomplete reads.
-- Capture expected keys, ordered points/segments, source precision, creation/refusal,
-  replacement reasons and offsets. Normalize only volatile context identity; numerical
-  differences or missing source records must remain visible.
-- Include `chain,repeats` followed by batch reference resolution so the preview read,
-  cached repeat state and submitted offsets are checked together.
-- **Done when:** a clean checkout can reproduce these comparisons without the temporary
-  harness or `%LOCALAPPDATA%` snapshots; all existing tests still pass.
+- `TestAssets/BoltChains` contains eight synthetic fixtures with 24 captured baseline
+  answers. They describe reconstructible geometry, not local production files. The
+  expected answers were taken from the baseline used to verify `4e926bb`.
+- `BoltChainCompatibilityTests` compares complete `chain`, `chainDetails`, `boltChains`
+  responses and normalizes only context IDs. Cases cover front/back, reversed members,
+  frame refusal, edgeless plates, a tall beam, section/end views. Existing component
+  and rule regressions cover shared/merged groups, notches and incomplete reads.
+- The eight captured fixtures describe the baseline verified in `4e926bb`, before
+  the second stage, not before the entire refactor. A separate reviewed
+  `full-length-fin-carry.json` contract exercises a real context carry, source
+  references, restored overall and batch resolution. It is not a captured baseline
+  response and does not fix an independently recorded absolute offset.
+- Added repeat-read ? stored-read ? batch reference/offset checks. New typed composer
+  tests cover carry, restored overall, repeat state, source precision and refused carry.
+- **Remaining gate:** compile and execute on the user's command, from a clean checkout
+  without `%LOCALAPPDATA%` snapshots or the temporary comparison harness. Baselines
+  must not be silently regenerated when a test fails.
 
-### 2. Finish the geometry and source contracts — partial source follow-up; completion after stage 1
+### 2. Finish geometry and source contracts — implemented in source, validation pending
 
-- Move reusable geometry data out of nested legacy-preview types
-  (`BoltDimensionChainPreview.Group` / `StepChain`, `BoltPartChainPreview.BuiltChain`).
-  Both the Bolt row and the legacy preview should consume the same typed geometry;
-  output projection must not own the calculation's data contract.
-- The source review follow-up replaces `Sources` with `BoltChainSources` and makes
-  group/index references explicit; its validation passed. `Holes` remains an opaque
-  output payload. Finish the minimal typed contract for owning-part/hole metadata and
-  retain complete source membership when projection merges centers or selects row points.
-- The `AddAcross` point comparison is corrected in the source follow-up above. Continue
-  the source-identity audit: a representative dimension point is not proof that every
-  original bolt is covered. The orphan regression passes; keep this observable
-  correction distinct from the mechanical contract migration.
-- **Done when:** neither geometry nor coverage must inspect output JSON or infer source
-  membership from retained dimension points; single/multiple columns, multiple plates,
-  merged groups and coincident centers pass provenance and compatibility checks.
+- Shared models now live in `Calculation/BoltProjectionGeometry.cs`; `BoltChainGroup`,
+  both previews and candidate construction use them without depending on nested
+  `BoltDimensionChainPreview.Group` / `StepChain` or `BoltPartChainPreview.BuiltChain`.
+- `BoltHoleGeometry` snapshots part/hole metadata. `BoltChainSources` holds only data;
+  captured positions retain typed group/index references. All source/hole and legacy
+  geometry projection belongs to `BoltChainPreviewProjection`.
+- Consumers obtain captured positions through `BoltChainSources.CapturedPositions`;
+  only the output projection distinguishes concrete source variants.
+- Coverage selection is centralized in `BoltChainGeometry.CoveringMainPart`: `AddAcross`
+  explicitly allows dependent alternatives, while the final coincidence pass uses
+  original main-part chains. Both use complete source centers, never row representatives.
+- `OutlineTreeGeometry` owns common contour traversal/edges, so the edge-geometry reader
+  does not depend on bolt-chain orchestration. Row/column clustering remains shared.
+- **Remaining gate:** compile and run the provenance, collection/precision, merged-group,
+  multi-plate and orphan regressions; compare the checked-in compatibility fixtures.
 
-### 3. Separate structural-chain composition and repeat state — planned, after stage 2
+### 3. Separate structural composition and repeats — implemented in source, validation pending
 
-- `CarryEdgelessBolts` and `MarkCarriedRepeats` still live in `ViewDimensionContext` and
-  transform serialized preview rows. This part was not migrated in stage 0.
-- Reuse the existing composition/repeat domain where appropriate; move bolt carry,
-  restored overall and repeat decisions onto typed inputs/results before final projection.
-  Keep `ViewDimensionContext` responsible for frozen view inputs and cached read state.
-- Preserve the order of decisions, `storedRepeats`, refusal precedence, fallback to the
-  plate chain and row reservation only for selected chains. Distinguish a planned chain
-  from a dimension actually written by the batch; do not treat preview eligibility as
-  successful creation.
-- **Done when:** these operations do not read formatted preview dictionaries, and tests
-  cover carry/restored-overall repeats, mirror repeats, preview-to-batch consistency,
-  refused dependencies and the absence of reserved rows for omitted chains.
+- `DimensionPreviewChain` / `DimensionPreviewRow` carry typed inputs/results. The
+  existing structural-family adapter converts its calculation output once and keeps
+  opaque formatting metadata. Algorithms do not inspect that metadata or formatted
+  preview dictionaries.
+- `BoltLocationChainComposer` implements carry and restored overalls. It takes explicit
+  point-resolution and placement callbacks; it has no context cache or Tekla access.
+- `DimensionPreviewRepeatPlanner` reuses `DimensionChainRepeats` and returns rows plus
+  repeat state. `ViewDimensionContext` owns the state for `storedRepeats`/batch reuse;
+  its former dictionary-based carry/repeat implementations are removed.
+- A direct live-planner regression checks that ordinary Bolt chains do not become
+  repeats while a matching structural chain does. The unused JSON reader
+  `DimensionChainRepeats.FromPreview` is removed; its checks now run on
+  `DimensionPreviewRepeatPlanner.StructuralChains`.
+- Final projection converters preserve legacy property shapes, refusal ordering,
+  captured-source precision and the original precision-freezing behavior. Only the
+  projection layer serializes the composed rows.
+- **Remaining gate:** on command, run carry/restored-overall/mirror/refusal regressions,
+  verify preview-to-batch key/offset consistency and the complete compatibility corpus.
+  These source changes have not yet been compiled or executed. A planned chain is
+  still distinct from a dimension successfully written and verified in Tekla.
+
+### Deferred precision contract
+
+The output template and `FreezeTemplate`, `FreezeCarriedTemplate`,
+`SelectionChanged`, `PointIdsChanged` flags preserve legacy rounding that depends
+on the route through serialization. This is compatibility debt, not the target
+architecture. In a separate behavior change, define one coordinate policy (retain
+source precision, round derived display values), review fixture differences, then
+remove path-dependent precision flags. Do not silently update expected answers.
+Structural producers still serialize through `DimensionChainPreview.Short` and
+`DimensionPreviewProjection.Structural`; the no-JSON calculation claim currently
+covers bolt construction and typed composition/repeat selection only.
 
 ### 4. Review, deploy and accept in Tekla — planned
 
-- Review the accumulated diff against the compatibility baseline; rerun the full tests
-  and bridge build. Record exactly which architectural stages the delivery contains.
+- Review the accumulated diff against the compatibility baseline; on explicit command,
+  run the full tests and bridge build. Record exactly which architectural stages the delivery contains.
 - Deploy the matching bridge/API/contact assemblies through the controller workflow;
   verify deployed hashes and use fresh contexts for the live check.
 - Place and read back M.298 (closed longitudinal chain, both cross chains `60 / 80 / 60`,

@@ -1,7 +1,7 @@
 namespace TeklaMcpServer.Api.Drawing;
 
 /// <summary>A captured group with typed projection evidence and its dimensioned part roles.</summary>
-internal sealed class BoltChainGroup(int id, BoltGroupViewClass viewClass, int[] dimensioned, BoltDimensionChainPreview.StepChain[] chains,
+internal sealed class BoltChainGroup(int id, BoltGroupViewClass viewClass, int[] dimensioned, BoltSpacingChain[] chains,
         string? refusal, double[][] positions, BoltGroupGeometry? geometry, int[] parts)
 {
     public int Id { get; } = id;
@@ -9,7 +9,7 @@ internal sealed class BoltChainGroup(int id, BoltGroupViewClass viewClass, int[]
     public int[] Parts { get; } = parts;
     public BoltGroupViewClass ViewClass { get; } = viewClass;
     public int[] Dimensioned { get; } = dimensioned;
-    public BoltDimensionChainPreview.StepChain[] Chains { get; } = chains;
+    public BoltSpacingChain[] Chains { get; } = chains;
     public string? Refusal { get; } = refusal;
     public double[][] Positions { get; } = positions;
     public BoltGroupGeometry? Geometry { get; } = geometry;
@@ -17,7 +17,7 @@ internal sealed class BoltChainGroup(int id, BoltGroupViewClass viewClass, int[]
     /// <summary>Every center is admitted on this view; a blocked group neither merges nor makes a twin.</summary>
     public bool Admitted { get; private set; }
 
-    internal static BoltChainGroup Read(BoltDimensionChainPreview.Group group, IReadOnlyCollection<int> mainPartIds)
+    internal static BoltChainGroup Read(BoltGroupProjection group, IReadOnlyCollection<int> mainPartIds)
     {
         var parts = group.PartCandidates;
         // A group joining the main part and secondary parts is dimensioned on every secondary part;

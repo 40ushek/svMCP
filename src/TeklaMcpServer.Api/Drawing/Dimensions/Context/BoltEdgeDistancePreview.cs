@@ -1,5 +1,5 @@
-using static TeklaMcpServer.Api.Drawing.BoltChainGeometry;
 using TeklaMcpServer.Api.Algorithms.Geometry;
+using static TeklaMcpServer.Api.Drawing.OutlineTreeGeometry;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -7,6 +7,11 @@ namespace TeklaMcpServer.Api.Drawing;
 internal static class BoltEdgeDistancePreview
 {
     internal static object Build(int groupId, int partId, string rowId, BoltPointGeometry[] sources,
+        int axis, int sign, IReadOnlyList<OutlineTreeNodeResult>? contours, bool centersInside,
+        double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
+        => BoltChainPreviewProjection.Edge(BuildGeometry(groupId, partId, rowId, sources, axis, sign, contours, centersInside, tolerance));
+
+    internal static BoltEdgeDistanceGeometry BuildGeometry(int groupId, int partId, string rowId, BoltPointGeometry[] sources,
         int axis, int sign, IReadOnlyList<OutlineTreeNodeResult>? contours, bool centersInside,
         double tolerance = DimensionCoordinateSettings.DefaultToleranceMm)
     {
@@ -17,18 +22,8 @@ internal static class BoltEdgeDistancePreview
         if (reason == null)
             reason = FindEdge(contours, center, axis, sign, out edge, out contourIndex, tolerance);
         var distance = edge == null ? (double?)null : Math.Abs(edge[axis] - center[axis]);
-        return new {
-            proposalId = $"{rowId}-part-{partId}-edge-{(sign < 0 ? "min" : "max")}",
-            kind = "edge", boltGroupId = groupId, partId,
-            axis = axis == 0 ? "X" : "Y", direction = axis == 0 ? "horizontal" : "vertical",
-            edgeSide = sign < 0 ? "min" : "max",
-            state = reason == null ? "Candidate" : "Blocked", reason,
-            creationMode = "explicitSelectionOnly", sourceIndices = sources.Select(p => p.Index).ToArray(),
-            center, edgePoint = edge, distance, contourIndex,
-            points = edge == null ? Array.Empty<double[]>() : sign < 0 ? new[] { edge, center } : new[] { center, edge },
-            contourSource = "captured full-solid projected outer contour; section clipping is unverified",
-            policyStatus = "part-specific proposal; edge-dimension policy and placement are unverified"
-        };
+        return new BoltEdgeDistanceGeometry($"{rowId}-part-{partId}-edge-{(sign < 0 ? "min" : "max")}",
+            groupId, partId, axis, sign, reason, sources.Select(point => point.Index).ToArray(), center, edge, distance, contourIndex);
     }
 
     internal static string? FindEdge(IReadOnlyList<OutlineTreeNodeResult>? contours, double[] center,
@@ -110,8 +105,6 @@ internal static class BoltEdgeDistancePreview
         var (x, y) = (a[0] + t * dx - point[0], a[1] + t * dy - point[1]);
         return Math.Sqrt(x * x + y * y);
     }
-
-
 }
 
 /// <summary>Where a bolt center stands against one projected contour, within the coordinate tolerance.</summary>

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 
 namespace TeklaMcpServer.Api.Drawing;
 
@@ -114,23 +113,6 @@ public static class DimensionChainRepeats
 
     internal static bool Same(double[] a, double[] b) =>
         a.Length > 0 && a.Length == b.Length && a.Zip(b, (x, y) => Math.Abs(x - y) <= Tolerance).All(equal => equal);
-
-    /// <summary>The complete chains of a preview answer; incomplete ones are never placed.</summary>
-    public static IReadOnlyList<Chain> FromPreview(JsonElement answer)
-    {
-        if (!answer.TryGetProperty("chainPreview", out var rows) || rows.ValueKind != JsonValueKind.Array) return [];
-        // Bolt chains are compared by segment lengths here, not by their source bolts: equal steps in
-        // different groups prove no repeat, so the Bolt row takes no part.
-        return rows.EnumerateArray().Where(row => row.GetProperty("side").GetString() != ViewDimensionContext.BoltSide)
-            .SelectMany(row => row.GetProperty("chains").EnumerateArray()
-            .Where(chain => !(chain.TryGetProperty("incomplete", out var incomplete) && incomplete.GetBoolean()))
-            .Select(chain => new Chain(
-                chain.GetProperty("key").GetString()!,
-                row.GetProperty("side").GetString()!,
-                chain.TryGetProperty("kind", out var kind) ? kind.GetString() ?? string.Empty : string.Empty,
-                chain.GetProperty("segments").EnumerateArray().Select(value => value.GetDouble()).ToArray())))
-            .ToArray();
-    }
 
     /// <summary>Every dimension on the sheet, as segment lengths along its measuring axis.</summary>
     public static IReadOnlyList<Placed> FromSheet(GetDimensionsResult sheet) =>

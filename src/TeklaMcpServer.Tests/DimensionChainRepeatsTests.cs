@@ -149,16 +149,16 @@ public sealed class DimensionChainRepeatsTests
     }
 
     [Fact]
-    public void PreviewGivesOnlyCompleteChainsWithTheirRowSide()
+    public void PreviewGivesOnlyCompleteNonBoltChainsWithTheirRowSide()
     {
-        using var doc = JsonDocument.Parse("""
-            {"chainPreview":[
-              {"side":"Top","chains":[{"key":"Top-location","kind":"location","segments":[1,2],"incomplete":false},
-                                      {"key":"Top-overall","kind":"overall","segments":[],"incomplete":true}]},
-              {"side":"Local","chains":[{"key":"Local-7","kind":"local","segments":[30],"incomplete":false}]}]}
-            """);
+        DimensionPreviewRow[] rows = [
+            new("Top", [new DimensionPreviewChain("Top-location", "location", "horizontal", "standard", [], [1, 2], false, null),
+                new DimensionPreviewChain("Top-overall", "overall", "horizontal", "overall", [], [], true, "refused")]),
+            new("Local", [new DimensionPreviewChain("Local-7", "local", "1,0,0", "standard", [], [30], false, null)]),
+            new(ViewDimensionContext.BoltSide, [new DimensionPreviewChain("bolt-1", "bolt", "0,1,0", "standard", [], [1, 2], false, null)])
+        ];
 
-        var chains = FromPreview(doc.RootElement);
+        var chains = DimensionPreviewRepeatPlanner.StructuralChains(rows);
 
         Assert.Equal(new[] { ("Top-location", "Top"), ("Local-7", "Local") }, chains.Select(c => (c.Key, c.Side)).ToArray());
     }

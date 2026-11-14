@@ -36,7 +36,7 @@ internal sealed class BoltChainCandidate
     /// <summary>Explicit source representation for the preview contract.</summary>
     public BoltChainSources Sources { get; }
     /// <summary>Bolt and hole of every group the chain measures.</summary>
-    public object Holes { get; }
+    public IReadOnlyList<BoltHoleGeometry> Holes { get; }
     /// <summary>
     /// For a secondary part chain: the key of a main-part chain whose bolts stand on every one of
     /// its bolts. It is left out only when that chain is finally created.
@@ -51,7 +51,7 @@ internal sealed class BoltChainCandidate
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
-        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, BoltChainSources sources, object? holes = null,
+        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, BoltChainSources sources, IEnumerable<BoltHoleGeometry>? holes = null,
         string? overMainPartChain = null, IEnumerable<int>? groupIds = null, string? remark = null, string? requiresChain = null,
         IEnumerable<double[]>? sourcePositions = null)
     {
@@ -74,7 +74,7 @@ internal sealed class BoltChainCandidate
         OutwardNormal = outwardNormal;
         BaseOffset = baseOffset;
         Sources = sources;
-        Holes = holes ?? Array.Empty<object>();
+        Holes = (holes ?? []).ToArray();
     }
 
     /// <summary>The same chain, linked to the main-part chain standing on its bolts.</summary>

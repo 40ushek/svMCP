@@ -104,10 +104,10 @@ public sealed class BoltChainComponentTests
     public void CapturedSourcePrecisionDoesNotDependOnWhetherTheInputIsAnArrayOrAList(bool useList)
     {
         const double x = 20.123456789;
-        var position = new BoltPartChainPreview.ProjectedPosition([x, 30.654321, 0], [new(42, 3)]);
-        IEnumerable<BoltPartChainPreview.ProjectedPosition> positions = useList
-            ? new List<BoltPartChainPreview.ProjectedPosition> { position } : new[] { position };
-        var answer = ViewDimensionContext.Freeze(new { sources = BoltChainSources.Captured(positions).Project() }, display: true);
+        var position = new BoltProjectedPosition([x, 30.654321, 0], [new(42, 3)]);
+        IEnumerable<BoltProjectedPosition> positions = useList
+            ? new List<BoltProjectedPosition> { position } : new[] { position };
+        var answer = ViewDimensionContext.Freeze(new { sources = BoltChainPreviewProjection.Sources(BoltChainSources.Captured(positions)) }, display: true);
         var source = answer.GetProperty("sources")[0];
         Assert.Equal(x, source.GetProperty("point")[0].GetDouble());
         Assert.Equal(42, source.GetProperty("sources")[0].GetProperty("boltGroupId").GetInt32());
@@ -117,11 +117,11 @@ public sealed class BoltChainComponentTests
     [Fact]
     public void PointAndSpacingSourcesKeepTheirDifferentPreviewShapes()
     {
-        var points = JsonSerializer.SerializeToElement(BoltChainSources.Points([new[] { 12.5, 30d }]).Project());
+        var points = JsonSerializer.SerializeToElement(BoltChainPreviewProjection.Sources(BoltChainSources.Points([new[] { 12.5, 30d }])));
         Assert.Equal(12.5, points[0].GetProperty("point")[0].GetDouble());
-        var indices = JsonSerializer.SerializeToElement(BoltChainSources.Indices([new[] { 1, 3 }]).Project());
+        var indices = JsonSerializer.SerializeToElement(BoltChainPreviewProjection.Sources(BoltChainSources.Indices([new[] { 1, 3 }])));
         Assert.Equal(new[] { 1, 3 }, indices[0].EnumerateArray().Select(index => index.GetInt32()).ToArray());
-        Assert.Empty(JsonSerializer.SerializeToElement(BoltChainSources.Empty.Project()).EnumerateArray());
+        Assert.Empty(JsonSerializer.SerializeToElement(BoltChainPreviewProjection.Sources(BoltChainSources.Empty)).EnumerateArray());
     }
 
     private static BoltGroupGeometry Grid(int id, int partId) => new() {
