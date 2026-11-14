@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace TeklaMcpServer.Api.Drawing;
 
-/// <summary>Adapters at the existing structural-preview boundary and final response serialization.
+/// <summary>Typed structural chains to preview chains, and final response serialization.
 /// Composition/repeat selection operates only on typed DimensionPreviewChain fields.</summary>
 internal static class DimensionPreviewProjection
 {
@@ -26,22 +26,15 @@ internal static class DimensionPreviewProjection
     internal static string Direction(double x, double y) => string.Join(",", new[] { x, y, 0d }
         .Select(value => value.ToString("R", CultureInfo.InvariantCulture)));
 
-    internal static DimensionPreviewChain Structural(JsonElement source, Dictionary<string, object?> projection)
+    internal static DimensionPreviewChain Structural(StructuralChain source, Dictionary<string, object?> projection)
     {
-        static string? Text(object? value) => value is string text ? text
-            : value is JsonElement { ValueKind: JsonValueKind.String } json ? json.GetString() : null;
-        var kind = source.GetProperty("kind").GetString()!;
-        var key = projection.TryGetValue("key", out var name) ? Text(name) ?? "" : "";
-        var direction = projection.TryGetValue("direction", out var dir) ? Text(dir) : null;
-        var attributes = projection.TryGetValue("attributesFile", out var file) ? Text(file) ?? "standard" : "standard";
-        var ids = source.TryGetProperty("pointIds", out var points)
-            ? points.EnumerateArray().Select(point => point.GetString()!).ToArray() : [];
-        var segments = source.GetProperty("segments").EnumerateArray()
-            .Select(value => (double)Math.Round((decimal)value.GetDouble(), 3)).ToArray();
-        var incomplete = projection.TryGetValue("incomplete", out var omitted)
-            && (omitted is true || omitted is JsonElement { ValueKind: JsonValueKind.True });
-        var reason = projection.TryGetValue("incompleteReason", out var why) ? Text(why) : null;
-        return new DimensionPreviewChain(key, kind, direction, attributes, ids, segments, incomplete, reason, projection);
+        var key = projection.TryGetValue("key", out var name) ? name as string ?? "" : "";
+        var direction = projection.TryGetValue("direction", out var dir) ? dir as string : null;
+        var attributes = projection.TryGetValue("attributesFile", out var file) ? file as string ?? "standard" : "standard";
+        var segments = source.Segments.Select(value => (double)Math.Round((decimal)value, 3)).ToArray();
+        var incomplete = projection.TryGetValue("incomplete", out var omitted) && omitted is true;
+        var reason = projection.TryGetValue("incompleteReason", out var why) ? why as string : null;
+        return new DimensionPreviewChain(key, source.Kind, direction, attributes, source.PointIds, segments, incomplete, reason, projection);
     }
 
     internal static object Output(DimensionPreviewChain chain, JsonSerializerOptions options)

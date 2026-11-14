@@ -37,10 +37,10 @@ internal sealed class SectionDimensionChainPreview
 
     public IReadOnlyList<int> SecondaryIds => _secondaryIds;
 
-    internal sealed class SideResult(object[] chains, int[] locatedPartIds, DimensionPoint[]? merged = null,
+    internal sealed class SideResult(StructuralChain[] chains, int[] locatedPartIds, DimensionPoint[]? merged = null,
         DimensionChainSide side = DimensionChainSide.Top, DimensionPoint[]? edgePoints = null)
     {
-        public object[] Chains { get; } = chains;
+        public StructuralChain[] Chains { get; } = chains;
         public int[] LocatedPartIds { get; } = locatedPartIds;
         /// <summary>Profile and part-location points of this side as one chain, ordered along it.</summary>
         public DimensionPoint[] Merged { get; } = merged ?? [];
@@ -74,11 +74,9 @@ internal sealed class SectionDimensionChainPreview
         return kept;
     }
 
-    public static object MergedChain(SideResult side) => new {
-        kind = "chain",
-        pointIds = side.Merged.Select(p => p.Id).ToArray(),
-        segments = side.Merged.Zip(side.Merged.Skip(1), (a, b) => Math.Round(side.AlongOf(b) - side.AlongOf(a), 3)).ToArray()
-    };
+    public static StructuralChain MergedChain(SideResult side) => new("chain",
+        side.Merged.Select(p => p.Id).ToArray(),
+        side.Merged.Zip(side.Merged.Skip(1), (a, b) => Math.Round(side.AlongOf(b) - side.AlongOf(a), 3)).ToArray());
 
     public static bool TryCreate(DimensionPointCatalog catalog, GeometryGroup group, int mainId,
         IEnumerable<int> includedIds, double minFeatureLength, double scale,
@@ -200,36 +198,29 @@ internal sealed class SectionDimensionChainPreview
     public static SideResult Refused(string reason) => new(
         [Empty("profile", reason), Empty("location", reason), Empty("overall", reason)], []);
 
-    private static object ProfileChain(DimensionRuleResult result) => new {
-        kind = result.Kind,
-        pointIds = result.Points.Select(point => point.Id).ToArray(),
-        segments = result.Segments,
-        points = result.Points.Select(point => new { pointId = point.Id,
-            partIds = point.Sources.Where(source => source.ModelId.HasValue)
-                .Select(source => source.ModelId!.Value).Distinct().ToArray() }).ToArray(),
-        locatedByProfilePartIds = Array.Empty<int>(), offeredOnOtherSidePartIds = Array.Empty<int>(),
-        mergedNearbyPartIds = Array.Empty<int>(), note = (string?)null
-    };
+    private static StructuralChain ProfileChain(DimensionRuleResult result) =>
+        Chain(result, Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
 
-    private static object LocationChain(DimensionRuleResult result) => new {
-            kind = result.Kind,
-            pointIds = result.Points.Select(point => point.Id).ToArray(),
-            segments = result.Segments,
-            points = result.Points.Select(point => new { pointId = point.Id,
+    private static StructuralChain LocationChain(DimensionRuleResult result)
+    {
+        var details = result.RequireDetails<SectionLocationDetails>();
+        return Chain(result, details.LocatedByProfilePartIds, details.OfferedOnOtherSidePartIds, details.MergedNearbyPartIds);
+    }
+
+    private static StructuralChain Chain(DimensionRuleResult result, int[] locatedByProfile, int[] offeredOnOtherSide, int[] mergedNearby) =>
+        new(result.Kind, result.Points.Select(point => point.Id).ToArray(), result.Segments.ToArray()) {
+            Points = result.Points.Select(point => (object)new { pointId = point.Id,
                 partIds = point.Sources.Where(source => source.ModelId.HasValue)
                     .Select(source => source.ModelId!.Value).Distinct().ToArray() }).ToArray(),
-            locatedByProfilePartIds = result.RequireDetails<SectionLocationDetails>().LocatedByProfilePartIds,
-            offeredOnOtherSidePartIds = result.RequireDetails<SectionLocationDetails>().OfferedOnOtherSidePartIds,
-            mergedNearbyPartIds = result.RequireDetails<SectionLocationDetails>().MergedNearbyPartIds,
-            note = (string?)null
+            Details = Lists(locatedByProfile, offeredOnOtherSide, mergedNearby), ReportsNote = true
         };
 
-    private static object Empty(string kind, string note) => new {
-        kind, pointIds = Array.Empty<string>(), segments = Array.Empty<double>(),
-        points = Array.Empty<object>(),
-        locatedByProfilePartIds = Array.Empty<int>(), offeredOnOtherSidePartIds = Array.Empty<int>(),
-        mergedNearbyPartIds = Array.Empty<int>(), note
-    };
+    private static (string Name, object? Value)[] Lists(int[] locatedByProfile, int[] offeredOnOtherSide, int[] mergedNearby) =>
+        [("locatedByProfilePartIds", locatedByProfile), ("offeredOnOtherSidePartIds", offeredOnOtherSide),
+            ("mergedNearbyPartIds", mergedNearby)];
+
+    private static StructuralChain Empty(string kind, string note) =>
+        StructuralChain.Empty(kind, note, null, Lists(Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>()));
 
     private static double[] AxisLevels(IReadOnlyList<Vec3> points, bool alongX, double minLength)
     {

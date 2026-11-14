@@ -19,52 +19,43 @@ internal static class DimensionChainPreview
     /// The default answer: side, kind, ids and segments, plus notes and lists only when they
     /// have content. Roles and part ids stay behind the detailed question.
     /// </summary>
-    public static DimensionPreviewChain Short(object chain, bool detailed = false, string? side = null)
+    public static DimensionPreviewChain Short(StructuralChain chain, bool detailed = false, string? side = null)
     {
-        using var doc = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(chain));
         var result = new Dictionary<string, object?>();
         if (side != null)
         {
-            var kind = doc.RootElement.GetProperty("kind").GetString();
-            result["key"] = side + "-" + kind;
+            result["key"] = side + "-" + chain.Kind;
             result["direction"] = side switch {
                 "Top" => "horizontal", "Bottom" => "horizontal-down",
                 "Left" => "vertical-left", "Right" => "vertical",
                 _ => throw new ArgumentException("Unknown preview side")
             };
-            result["attributesFile"] = kind == "overall" ? "overall" : "standard";
+            result["attributesFile"] = chain.Kind == "overall" ? "overall" : "standard";
         }
-        foreach (var property in doc.RootElement.EnumerateObject())
+        foreach (var (name, value) in chain.Fields())
         {
-            var value = property.Value;
-            if (property.Name == "row" || (!detailed && (property.Name is "points" or "side"))) continue;
-            if (value.ValueKind == System.Text.Json.JsonValueKind.Null) continue;
-            if (!detailed && value.ValueKind == System.Text.Json.JsonValueKind.Array && value.GetArrayLength() == 0
-                && property.Name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds"
+            if (!detailed && name is "points" or "side") continue;
+            if (value == null) continue;
+            if (!detailed && value is Array { Length: 0 }
+                && name is "skippedPartIds" or "droppedShortPointIds" or "offeredOnOtherSidePartIds"
                     or "unlocatedPartIds" or "locatedByProfilePartIds" or "mergedNearbyPartIds") continue;
             // Numbers go through decimal so the answer prints 1088.417, not its binary tail.
-            result[property.Name] = value.ValueKind == System.Text.Json.JsonValueKind.Array
-                ? value.EnumerateArray().Select(e => e.ValueKind == System.Text.Json.JsonValueKind.Number
-                    ? (object)Math.Round((decimal)e.GetDouble(), 3) : e.Clone()).ToArray()
-                : value.Clone();
+            result[name] = value is double[] numbers ? numbers.Select(number => (object)Math.Round((decimal)number, 3)).ToArray() : value;
         }
         if (!result.ContainsKey("incomplete"))
         {
-            var incomplete = doc.RootElement.GetProperty("pointIds").GetArrayLength() < 2;
+            var incomplete = chain.PointIds.Length < 2;
             result["incomplete"] = incomplete;
-            if (incomplete)
-                result["incompleteReason"] = doc.RootElement.TryGetProperty("note", out var note)
-                    && note.ValueKind == System.Text.Json.JsonValueKind.String
-                    ? note.GetString()! : "fewer than two selected points";
+            if (incomplete) result["incompleteReason"] = chain.Note ?? "fewer than two selected points";
         }
-        return DimensionPreviewProjection.Structural(doc.RootElement, result);
+        return DimensionPreviewProjection.Structural(chain, result);
     }
 
     /// <summary>Both chains of a side, refused with a reason instead of built.</summary>
-    public static object[] Refused(DimensionChainSide side, string note) =>
+    public static StructuralChain[] Refused(DimensionChainSide side, string note) =>
         [Empty(side, "location", note), Empty(side, "overall", note)];
 
-    public static object[] Build(DimensionPointCatalog catalog, DimensionChainSide side,
+    public static StructuralChain[] Build(DimensionPointCatalog catalog, DimensionChainSide side,
         IReadOnlyCollection<int> mainPartIds, double minSegmentLength,
         DimensionPartAnchor partAnchor = DimensionPartAnchor.LowFace,
         DimensionPartAnchor endPartAnchor = DimensionPartAnchor.BothFaces,
@@ -103,60 +94,45 @@ internal static class DimensionChainPreview
         return [location, overall];
     }
 
-    private static object SteelLocation(DimensionChainSide side, DimensionRuleResult result)
+    private static StructuralChain SteelLocation(DimensionChainSide side, DimensionRuleResult result)
     {
-        var skipped = result.RequireDetails<SteelLocationDetails>().SkippedPartIds;
-        var dropped = result.RequireDetails<SteelLocationDetails>().DroppedShortPointIds;
+        var details = result.RequireDetails<SteelLocationDetails>();
         if (result.Note != null)
-            return Empty(side, result.Kind, result.Note, skipped, dropped);
-        var roles = result.RequireDetails<SteelLocationDetails>().Roles;
-        var partIds = result.RequireDetails<SteelLocationDetails>().PartIds;
-        return new {
-            side = side.ToString(), kind = result.Kind,
-            pointIds = result.Points.Select(point => point.Id).ToArray(),
-            segments = result.Segments,
-            points = result.Points.Select((point, index) => new {
-                pointId = point.Id, roles = roles[index], partIds = partIds[index]
+            return Empty(side, result.Kind, result.Note, details.SkippedPartIds, details.DroppedShortPointIds);
+        return new StructuralChain(result.Kind, result.Points.Select(point => point.Id).ToArray(), result.Segments.ToArray()) {
+            Side = side.ToString(),
+            Points = result.Points.Select((point, index) => (object)new {
+                pointId = point.Id, roles = details.Roles[index], partIds = details.PartIds[index]
             }).ToArray(),
-            skippedPartIds = skipped,
-            offeredOnOtherSidePartIds = result.RequireDetails<SteelLocationDetails>().OfferedOnOtherSidePartIds,
-            droppedShortPointIds = dropped,
-            note = (string?)null
+            Details = [("skippedPartIds", details.SkippedPartIds), ("offeredOnOtherSidePartIds", details.OfferedOnOtherSidePartIds),
+                ("droppedShortPointIds", details.DroppedShortPointIds)],
+            ReportsNote = true
         };
     }
 
-    private static object Overall(DimensionChainSide side, IReadOnlyList<DimensionPoint> line, ChainAxis ctx)
+    private static StructuralChain Overall(DimensionChainSide side, IReadOnlyList<DimensionPoint> line, ChainAxis ctx)
     {
         if (line.Count < 2) return Empty(side, "overall", "fewer than two points on this side");
         var picks = new List<ChainPick> {
             new(ctx.Best(line.Where(p => Math.Abs(ctx.Along(p) - line.Min(ctx.Along)) <= SameCoordinate)), "extreme", 1),
             new(ctx.Best(line.Where(p => Math.Abs(ctx.Along(p) - line.Max(ctx.Along)) <= SameCoordinate)), "extreme", 1)
         };
-        return Result(side, picks, ctx);
-    }
-
-    private static object Result(DimensionChainSide side, List<ChainPick> picks, ChainAxis ctx)
-    {
         var ordered = ctx.Settle(picks).OrderBy(x => ctx.Along(x.Point)).ToArray();
-        return new {
-            side = side.ToString(), kind = "overall",
-            pointIds = ordered.Select(x => x.Point.Id).ToArray(),
-            segments = ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(ctx.Along(b.Point) - ctx.Along(a.Point), 3)).ToArray(),
-            points = ordered.Select(x => new {
-                pointId = x.Point.Id, roles = x.Roles,
-                partIds = ctx.Parts(x.Point).ToArray()
+        return new StructuralChain("overall", ordered.Select(x => x.Point.Id).ToArray(),
+            ordered.Zip(ordered.Skip(1), (a, b) => Math.Round(ctx.Along(b.Point) - ctx.Along(a.Point), 3)).ToArray()) {
+            Side = side.ToString(),
+            Points = ordered.Select(x => (object)new {
+                pointId = x.Point.Id, roles = x.Roles, partIds = ctx.Parts(x.Point).ToArray()
             }).ToArray(),
-            skippedPartIds = Array.Empty<int>(),
-            offeredOnOtherSidePartIds = Array.Empty<int>(),
-            droppedShortPointIds = Array.Empty<string>(),
-            note = (string?)null
+            Details = [("skippedPartIds", Array.Empty<int>()), ("offeredOnOtherSidePartIds", Array.Empty<int>()),
+                ("droppedShortPointIds", Array.Empty<string>())],
+            ReportsNote = true
         };
     }
 
-    private static object Empty(DimensionChainSide side, string kind, string note,
-        IReadOnlyCollection<int>? skipped = null, IReadOnlyCollection<string>? dropped = null) => new {
-        side = side.ToString(), kind, pointIds = Array.Empty<string>(), segments = Array.Empty<double>(),
-        points = Array.Empty<object>(), skippedPartIds = (skipped ?? Array.Empty<int>()).ToArray(),
-        droppedShortPointIds = (dropped ?? Array.Empty<string>()).ToArray(), note
-    };
+    private static StructuralChain Empty(DimensionChainSide side, string kind, string note,
+        IReadOnlyCollection<int>? skipped = null, IReadOnlyCollection<string>? dropped = null) =>
+        StructuralChain.Empty(kind, note, side.ToString(),
+            ("skippedPartIds", (skipped ?? Array.Empty<int>()).ToArray()),
+            ("droppedShortPointIds", (dropped ?? Array.Empty<string>()).ToArray()));
 }

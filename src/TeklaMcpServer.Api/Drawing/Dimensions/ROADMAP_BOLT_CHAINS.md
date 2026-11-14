@@ -141,9 +141,9 @@ The path-dependent precision flags (`FreezeTemplate`, `FreezeCarriedTemplate`) a
 removed. Calculated coordinates (points, segments, distance) are rounded to three
 decimals on every path, touched or not; captured source coordinates (`sources[].point`)
 keep their source precision. The bolt rule no longer converts its typed decisions back to the generic
-rule result (`RuleResult`, `BoltChainInput` removed). Remaining debt: structural
-producers still serialize through `DimensionChainPreview.Short` and
-`DimensionPreviewProjection.Structural`.
+rule result (`RuleResult`, `BoltChainInput` removed). Steel, section and panel
+producers return a typed `StructuralChain`; `DimensionChainPreview.Short` and
+`DimensionPreviewProjection.Structural` read it directly, with no JSON round trip.
 
 ### 4. Review, deploy and accept in Tekla — planned
 

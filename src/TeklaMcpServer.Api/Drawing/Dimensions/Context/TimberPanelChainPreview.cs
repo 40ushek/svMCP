@@ -9,10 +9,10 @@ namespace TeklaMcpServer.Api.Drawing;
 /// <summary>Read-only chain proposal for straight timber wall panels.</summary>
 internal static class TimberPanelChainPreview
 {
-    internal sealed class PreviewRow(string side, object[] chains)
+    internal sealed class PreviewRow(string side, StructuralChain[] chains)
     {
         public string side { get; } = side;
-        public object[] chains { get; } = chains;
+        public StructuralChain[] chains { get; } = chains;
     }
 
     internal sealed class PreviewResult(PreviewRow[] rows, int[][] contactFallbackPairs,
@@ -110,34 +110,33 @@ internal static class TimberPanelChainPreview
         return DimensionChainComposer.Compose(proposals, evaluation.Diagnostics, coordinateSettings);
     }
 
-    private static PreviewRow[] Rows(Func<DimensionChainSide, object[]> chains) =>
+    private static PreviewRow[] Rows(Func<DimensionChainSide, StructuralChain[]> chains) =>
         Enum.GetValues(typeof(DimensionChainSide)).Cast<DimensionChainSide>()
             .Select(side => new PreviewRow(side.ToString(), chains(side))).ToArray();
 
-    private static object Location(DimensionRuleResult result)
+    private static StructuralChain Location(DimensionRuleResult result)
     {
         var side = AxisAlignedDimensionRulePreviewAdapter.GetSide(result);
         if (result.Note != null) return Empty(side, result.Kind, result.Note);
-        var partIds = result.RequireDetails<PanelLocationDetails>().PointPartIds;
-        var candidateKinds = result.RequireDetails<PanelLocationDetails>().CandidateKinds;
-        var roles = result.RequireDetails<PanelLocationDetails>().PointRoles;
-        return new {
-            side = side.ToString(), kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
-            segments = result.Segments,
-            points = result.Points.Select((point, index) => new {
-                pointId = point.Id, partIds = partIds[index], role = roles[index], candidateKinds = candidateKinds[index]
+        var details = result.RequireDetails<PanelLocationDetails>();
+        return new StructuralChain(result.Kind, result.Points.Select(point => point.Id).ToArray(), result.Segments.ToArray()) {
+            Side = side.ToString(),
+            Points = result.Points.Select((point, index) => (object)new {
+                pointId = point.Id, partIds = details.PointPartIds[index], role = details.PointRoles[index],
+                candidateKinds = details.CandidateKinds[index]
             }).ToArray(),
-            droppedShortPartIds = result.RequireDetails<PanelLocationDetails>().DroppedShortPartIds,
-            minimumSegmentViewUnits = result.RequireDetails<PanelLocationDetails>().MinimumSegmentViewUnits,
-            incomplete = result.RequireDetails<PanelLocationDetails>().Incomplete,
-            missingSupportModelIds = result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds,
-            incompleteReason = (result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds).Length > 0
-                ? "No selected support for model IDs: " + string.Join(",", result.RequireDetails<PanelLocationDetails>().MissingSupportModelIds)
-                : result.Points.Count < 2 ? "fewer than two selected points" : null
+            Details = [
+                ("droppedShortPartIds", details.DroppedShortPartIds),
+                ("minimumSegmentViewUnits", details.MinimumSegmentViewUnits),
+                ("incomplete", details.Incomplete),
+                ("missingSupportModelIds", details.MissingSupportModelIds),
+                ("incompleteReason", details.MissingSupportModelIds.Length > 0
+                    ? "No selected support for model IDs: " + string.Join(",", details.MissingSupportModelIds)
+                    : result.Points.Count < 2 ? "fewer than two selected points" : null)
+            ]
         };
     }
 
-    private static object Empty(DimensionChainSide side, string kind, string note) => new {
-        side = side.ToString(), kind, pointIds = Array.Empty<string>(), segments = Array.Empty<double>(), points = Array.Empty<object>(), note
-    };
+    private static StructuralChain Empty(DimensionChainSide side, string kind, string note) =>
+        StructuralChain.Empty(kind, note, side.ToString());
 }

@@ -317,7 +317,7 @@ public sealed class TimberPanelChainPreviewTests
             proposal: new DimensionProposalIdentity("snapshot", 7, "panel:123456789abcdef0",
                 DimensionMeasurementPurpose.Location, DimensionMeasurementReference.Unknown,
                 DimensionReferenceSupport.Unspecified, "Bottom-location"));
-        var rows = new[] { new TimberPanelChainPreview.PreviewRow("Bottom", [new { kind = "location", pointIds = new[] { "p1", "p2" } }]) };
+        var rows = new[] { new TimberPanelChainPreview.PreviewRow("Bottom", [new StructuralChain("location", ["p1", "p2"], [100])]) };
         var calls = 0;
         var preview = new TimberPanelChainPreview.PreviewResult(rows, [], [], [], [], "not-requested", () => {
             calls++;

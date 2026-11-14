@@ -38,15 +38,12 @@ internal static class AxisAlignedDimensionRulePreviewAdapter
         return false;
     }
 
-    public static object ToPreview(DimensionRuleResult result)
+    public static StructuralChain ToPreview(DimensionRuleResult result)
     {
         var side = GetSide(result).ToString();
-        if (result.Note != null)
-            return new { side, kind = result.Kind, pointIds = Array.Empty<string>(),
-                segments = Array.Empty<double>(), points = Array.Empty<object>(), note = result.Note };
-        return new {
-            side, kind = result.Kind, pointIds = result.Points.Select(point => point.Id).ToArray(),
-            segments = result.Segments, points = Array.Empty<object>()
+        if (result.Note != null) return StructuralChain.Empty(result.Kind, result.Note, side);
+        return new StructuralChain(result.Kind, result.Points.Select(point => point.Id).ToArray(), result.Segments.ToArray()) {
+            Side = side, Points = []
         };
     }
 }
