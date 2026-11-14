@@ -692,14 +692,16 @@ public sealed class ViewDimensionContext
     // Bolt chains by Tekla-like settings. Part edges count as confirmed only off sections: a
     // section contour is not read yet, so there an edge counts only where a part chain uses it.
     internal IReadOnlyList<BoltRowChain> BoltChains(DimensionCoordinateSettings? coordinateSettings = null,
-        object[]? sideRows = null, IEnumerable<SectionDimensionChainPreview.SideResult>? sectionPlans = null)
+        object[]? sideRows = null, IEnumerable<SectionDimensionChainPreview.SideResult>? sectionPlans = null,
+        BoltChainSettings? boltSettings = null)
     {
         var tolerance = (coordinateSettings ?? new DimensionCoordinateSettings()).ToleranceMm;
         var sideRowCounts = sideRows == null ? null : SideRowCounts(sideRows);
         var cacheKey = tolerance.ToString("R", CultureInfo.InvariantCulture) + ":" + (sideRows == null ? ""
             : JsonSerializer.SerializeToElement(sideRows).GetRawText());
-        if (_boltChains.TryGetValue(cacheKey, out var cached)) return cached;
-        var settings = new BoltChainSettings();
+        // Settings given by the caller are not the context's own: their answer is not kept.
+        if (boltSettings == null && _boltChains.TryGetValue(cacheKey, out var cached)) return cached;
+        var settings = boltSettings ?? new BoltChainSettings();
         var viewType = _metadata.TryGetProperty("viewType", out var type) ? type.GetString() : null;
         var candidates = BoltChainCandidates.Build(_bolts, _includedModelIds, _mainPartIds,
             JsonSerializer.Deserialize<Dictionary<int, IReadOnlyList<OutlineTreeNodeResult>>>(_partContours.GetRawText()),
@@ -711,16 +713,28 @@ public sealed class ViewDimensionContext
         var readRefusal = BoltReadRefusal();
         var gap = DimensionPlacementSettings.DefaultPaperGapMm * Scale;
         var rows = OccupiedLines(sideRowCounts, gap);
-        var chains = evaluation.Results.Select(result => {
+        var refusals = evaluation.Results.Select(result => {
             var outside = frame is { } f && result.Points.Any(point =>
                 point.X < f.MinX || point.X > f.MaxX || point.Y < f.MinY || point.Y > f.MaxY);
-            var refusal = readRefusal ?? (outside ? "a point lies outside the view frame" : null);
-            var distance = gap + (double)result.Evidence["baseOffset"];
-            if (result.Note == null && refusal == null && result.Points.Count > 0)
-                distance = NextFreeRow(rows, result, distance, gap);
-            return new BoltRowChain(result, distance, refusal);
+            return readRefusal ?? (outside ? "a point lies outside the view frame" : null);
         }).ToArray();
-        _boltChains.Add(cacheKey, chains);
+        // A secondary part's bolts standing on the main part's are left out only now, when the main
+        // part's chain is known to be created: settings and view frame have refused what they refuse.
+        var created = new HashSet<string>(evaluation.Results.Where((result, index) => result.Note == null && refusals[index] == null)
+            .Select(result => (string)result.Evidence["key"]), StringComparer.Ordinal);
+        for (var i = 0; i < refusals.Length; i++)
+            if (refusals[i] == null && evaluation.Results[i].Note == null
+                && evaluation.Results[i].Evidence.TryGetValue("overMainPartChain", out var over)
+                && over is string main && main.Length > 0 && created.Contains(main))
+                refusals[i] = $"the same bolts are dimensioned from the main part by {main}";
+        // Rows go only to the chains that will be placed.
+        var chains = evaluation.Results.Select((result, index) => {
+            var distance = gap + (double)result.Evidence["baseOffset"];
+            if (result.Note == null && refusals[index] == null && result.Points.Count > 0)
+                distance = NextFreeRow(rows, result, distance, gap);
+            return new BoltRowChain(result, distance, refusals[index]);
+        }).ToArray();
+        if (boltSettings == null) _boltChains.Add(cacheKey, chains);
         return chains;
     }
 

@@ -32,11 +32,18 @@ internal sealed class BoltChainCandidate
     public object Sources { get; }
     /// <summary>Bolt and hole of every group the chain measures.</summary>
     public object Holes { get; }
+    /// <summary>
+    /// For a secondary part chain: the key of a main-part chain whose bolts stand on every one of
+    /// its bolts. It is left out only when that chain is finally created.
+    /// </summary>
+    public string? OverMainPartChain { get; }
 
     public BoltChainCandidate(string key, string kind, int groupId, int? partId, bool mainPart,
         BoltGroupViewClass viewClass, int axis, IEnumerable<DimensionRulePoint> points, IEnumerable<double> segments,
-        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null)
+        string? builtRefusal, bool edgeConfirmed, DimensionDirection outwardNormal, double baseOffset, object sources, object? holes = null,
+        string? overMainPartChain = null)
     {
+        OverMainPartChain = overMainPartChain;
         Key = key;
         Kind = kind;
         GroupId = groupId;
@@ -53,6 +60,10 @@ internal sealed class BoltChainCandidate
         Sources = sources;
         Holes = holes ?? Array.Empty<object>();
     }
+
+    /// <summary>The same chain, linked to the main-part chain standing on its bolts.</summary>
+    public BoltChainCandidate Over(string mainPartChain) => new(Key, Kind, GroupId, PartId, MainPart, ViewClass, Axis,
+        Points, Segments, BuiltRefusal, EdgeConfirmed, OutwardNormal, BaseOffset, Sources, Holes, mainPartChain);
 }
 
 /// <summary>What the bolt rule needs: the chains built on the view; the settings come with the rule.</summary>

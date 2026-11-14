@@ -781,6 +781,72 @@ public sealed class BoltChainRuleTests
         Assert.False(line >= 350 && line <= 370 || line >= 500 && line <= 530, $"line at {line} lies on a plate");
     }
 
+    // A beam 0..900 (y -100..100) and a plate P11 on it (x 260..335, y -95..95); a column of two
+    // bolts at x 300 in the beam and one in the plate, on the very same points (M.298).
+    private static ViewDimensionContext BoltsOverBolts(double[]? viewFrame, double shift = 0)
+    {
+        BoltGroupGeometry Column(int id, int part, double x) => new() { ModelId = id, Shape = "BoltArray",
+            FirstPosition = [x, -40, 0], SecondPosition = [x, 40, 0], Axis = [0, 0, 1], PartToBeBoltedId = part,
+            Positions = [new() { Index = 0, Point = [x, -40, 0] }, new() { Index = 1, Point = [x, 40, 0] }] };
+        var bolts = ViewBoltGeometrySnapshot.Capture(7, [10, 11], id => new() { Success = true, ViewId = 7, PartId = id,
+                BoltGroups = id == 10 ? [Column(42, 10, 300)] : [Column(43, 11, 300 + shift)] },
+            new DepthBox(-1000, -1000, -1000, 1000, 1000, 1000), point => point, true);
+        return DimensionChainPreviewTests.Framed("FrontView", bolts, viewFrame,
+            DimensionChainPreviewTests.Solid(10, 0, 900, -100, 100), DimensionChainPreviewTests.Solid(11, 260, 335, -95, 95));
+    }
+
+    // The keys of the created cross chains (along view Y) per part, and the reasons of the others.
+    private static (int[] Created, string[] Reasons) Cross(ViewDimensionContext context, BoltChainSettings settings)
+    {
+        var chains = context.BoltChains(boltSettings: settings).Select(chain => JsonSerializer.SerializeToElement(chain.Project()))
+            .Where(chain => chain.GetProperty("chainKind").GetString() == "part"
+                && (chain.GetProperty("key").GetString()!.EndsWith("-Left") || chain.GetProperty("key").GetString()!.EndsWith("-Right")))
+            .ToArray();
+        return (chains.Where(chain => !chain.GetProperty("incomplete").GetBoolean()).Select(chain => chain.GetProperty("partId").GetInt32()).ToArray(),
+            chains.Where(chain => chain.GetProperty("incomplete").GetBoolean())
+                .Select(chain => chain.GetProperty("incompleteReason").GetString() ?? "").ToArray());
+    }
+
+    [Fact]
+    public void BoltsOfAPlateOverTheBeamsBoltsAreDimensionedFromTheBeamOnly()
+    {
+        var (created, reasons) = Cross(BoltsOverBolts(null), new BoltChainSettings());
+        Assert.Equal(new[] { 10 }, created);
+        Assert.Contains(reasons, reason => reason.Contains("dimensioned from the main part by bolt-part-10-"));
+    }
+
+    [Fact]
+    public void BoltsOfAPlateStillGetTheirChainWhenTheBeamTakesNone()
+    {
+        var (created, _) = Cross(BoltsOverBolts(null), new BoltChainSettings(mainPartInternal: BoltInternalDimensions.None));
+        Assert.Equal(new[] { 11 }, created);
+    }
+
+    [Fact]
+    public void BoltsOfAPlateStillGetTheirChainWhenTheBeamChainLeavesTheViewFrame()
+    {
+        // The frame ends at y +-97: the beam edges (+-100) lie outside it, the plate edges (+-95) inside.
+        var (created, reasons) = Cross(BoltsOverBolts([-50, -97, 950, 97]), new BoltChainSettings());
+        Assert.Equal(new[] { 11 }, created);
+        Assert.Contains(reasons, reason => reason.Contains("outside the view frame"));
+    }
+
+    [Fact]
+    public void NothingIsCreatedWhenBothChainsAreRefused()
+    {
+        // The frame ends at y +-90: both chains have edge points outside it.
+        var (created, reasons) = Cross(BoltsOverBolts([-50, -90, 950, 90]), new BoltChainSettings());
+        Assert.Empty(created);
+        Assert.DoesNotContain(reasons, reason => reason.Contains("dimensioned from the main part"));
+    }
+
+    [Fact]
+    public void BoltsOfAPlateOffTheBeamsBoltsAreDimensionedBoth()
+    {
+        var (created, _) = Cross(BoltsOverBolts(null, shift: 20), new BoltChainSettings());
+        Assert.Equal(new[] { 10, 11 }, created.OrderBy(id => id));
+    }
+
     [Fact]
     public void ARepeatIsMarkedIncompleteAndKeepsNoRowForTheBoltLines()
     {

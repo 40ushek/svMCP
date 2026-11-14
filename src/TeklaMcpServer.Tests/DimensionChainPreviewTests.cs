@@ -747,6 +747,10 @@ public sealed class DimensionChainPreviewTests
 
     // A view of the given parts only, the first one the main part.
     internal static ViewDimensionContext Bare(string viewType, ViewBoltGeometrySnapshot? bolts,
+        params PartSolidGeometryInViewResult[] parts) => Framed(viewType, bolts, null, parts);
+
+    // As Bare, with a view frame [minX, minY, maxX, maxY].
+    internal static ViewDimensionContext Framed(string viewType, ViewBoltGeometrySnapshot? bolts, double[]? viewFrame,
         params PartSolidGeometryInViewResult[] parts)
     {
         var ids = parts.Select(part => part.ModelId).ToArray();
@@ -757,7 +761,7 @@ public sealed class DimensionChainPreviewTests
             [], [], [], [], ids);
         // Scale 1:10.
         return new ViewDimensionContext(7, 10, structural, [], new { drawingGuid = "test" },
-            new { viewType, viewFrame = (double[]?)null }, bolts);
+            new { viewType, viewFrame }, bolts);
     }
 
     internal static PartSolidGeometryInViewResult Solid(int id, double x0, double x1, double y0, double y1) =>

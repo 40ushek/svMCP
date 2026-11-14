@@ -32,6 +32,8 @@ internal static class BoltChainCandidates
             AllSides, contours, tolerance, settings, perGroup: true, units))
             .EnumerateArray().ToDictionary(chain => chain.GetProperty("proposalId").GetString()!, StringComparer.Ordinal);
         var result = new List<BoltChainCandidate>();
+        // The bolts every part chain measures, to find a secondary part's bolts standing over the main part's.
+        var boltsOf = new Dictionary<string, double[][]>(StringComparer.Ordinal);
         var gap = Math.Max(lineGap, tolerance);
         // The side of a part chain, decided once per merged chain, axis and part, so every group of
         // the merged chain (its steps included) stands on the same side whatever the group order.
@@ -98,6 +100,7 @@ internal static class BoltChainCandidates
                     if (Side(partId, axis, leader, axisUnits, center, bolts) is not { } best) continue;
                     var (placement, partKey, (points, chainRefusal)) = best;
                     var part = partChains[partKey];
+                    boltsOf[partKey] = bolts;
                     confirmed[partId] = points.Length >= 2;
                     result.Add(new BoltChainCandidate(partKey, BoltChainCandidate.PartKind, groupId, partId,
                         mainPartIds.Contains(partId), viewClass, axis, RulePoints(partKey, groupId, points),
@@ -125,7 +128,25 @@ internal static class BoltChainCandidates
                 }
             }
         }
-        return result;
+        return OverMainPartBolts(result, boltsOf, tolerance);
+    }
+
+    // Bolts of a secondary part standing on the very points of the main part's bolts (a plate bolted
+    // over the beam's holes, two groups in the model) are dimensioned once, from the main part: the
+    // plate has its own drawing (M.298). Here the plate's chain is only linked to the main part's
+    // chain on that axis; it is left out where that chain is finally created, after the settings
+    // and the view frame have had their say.
+    private static List<BoltChainCandidate> OverMainPartBolts(List<BoltChainCandidate> result,
+        IReadOnlyDictionary<string, double[][]> boltsOf, double tolerance)
+    {
+        var main = result.Where(chain => chain.Kind == BoltChainCandidate.PartKind && chain.MainPart
+            && boltsOf.ContainsKey(chain.Key)).ToArray();
+        bool Over(double[][] bolts, double[][] under) => bolts.Length > 0 && bolts.All(bolt => under.Any(point =>
+            Math.Abs(point[0] - bolt[0]) <= tolerance && Math.Abs(point[1] - bolt[1]) <= tolerance));
+        return result.Select(chain => chain.Kind != BoltChainCandidate.PartKind || chain.MainPart
+                || !boltsOf.TryGetValue(chain.Key, out var bolts)
+                || main.FirstOrDefault(other => other.Axis == chain.Axis && Over(bolts, boltsOf[other.Key])) is not { } by
+            ? chain : chain.Over(by.Key)).ToList();
     }
 
     // Edge - bolts - edge with each end kept on its own when the view confirms it. One end left

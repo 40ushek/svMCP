@@ -550,6 +550,29 @@ Steps 1-5 done on 2026-11-13.
 
 ## Open questions
 
+- **Bolts over bolts are dimensioned twice (user, 2026-11-14, M.298).** A plate P/1631
+  bolted to the beam has its own bolt group (11229963) standing on the same points as a
+  group of the beam (11221297). Each part gets its edge - bolts - edge chain: 60 / 80 / 60
+  from the beam flanges and 54 / 80 / 55 from the plate edges, beside them the plate's
+  location 6 / 189 / 5. The plate has its own drawing. To do:
+  - groups of different parts standing on the same projected points are dimensioned
+    once on a view, from the main part; the secondary part's chain is marked as given by
+    the main part's (reason names the group). Done in source 2026-11-14, not deployed:
+    a secondary part chain whose every bolt stands on a bolt of a main-part chain on the
+    same axis is linked to it when the chains are built (`OverMainPartChain`); in
+    `ViewDimensionContext.BoltChains`, after the settings, the view frame and the bolt
+    read, it is refused only when that main-part chain is created, "the same bolts are
+    dimensioned from the main part by <key>", and rows go to the chains placed after that
+    (review: decided at build time, a main chain refused later by `MainPartInternal=None`
+    or by the view frame left no chain at all). On the saved M.298 front view both chains
+    of the plate at x 300 are refused;
+    the plate at x 1220 keeps its chains, the beam has no group under its bolts;
+  - a setting to dimension bolts to the main part, as Tekla's *Position bolts to: Main
+    part* with *Secondary part: By bolt* (Position dimensions tab), so the bolts of a
+    secondary part are measured from the main part whether or not the main part has a
+    group under them. `SecondaryPartInternal = None` alone only drops the plate's chains;
+    it gives no chain from the main part. This is the *Position* kind, step 7.
+
 - **Merging far groups does harm (user, 2026-11-14, M.298).** Equal groups at the two
   ends of a beam (60 / 80 / 60 each) are merged across it into one chain on one side.
   A dimension standing far from its bolts reads as if those bolts had no dimension, and
